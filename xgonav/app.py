@@ -1,6 +1,7 @@
 """Hauptschleife: Kamera -> Ego-Motion -> Tracker/Detektor -> Freiraum -> Verhalten -> Robot."""
 from __future__ import annotations
 
+import collections
 import logging
 import math
 import threading
@@ -91,6 +92,7 @@ class App:
         self._cmd = Command()
         self._det_count = 0
         self._loop_ms = 0.0
+        self._loop_hist = collections.deque(maxlen=250)   # letzte Schleifenzeiten (ms): p95/max
         self.emotions = None           # emotion.Emotions, von __main__ gesetzt (nur am Rider)
 
     # ------------------------------------------------------------------
@@ -174,7 +176,9 @@ class App:
                 last = f.idx
                 t0 = time.perf_counter()
                 self._step(f)
-                self._loop_ms = 0.9 * self._loop_ms + 0.1 * (time.perf_counter() - t0) * 1000
+                ms = (time.perf_counter() - t0) * 1000
+                self._loop_ms = 0.9 * self._loop_ms + 0.1 * ms
+                self._loop_hist.append(ms)
                 if isinstance(self.src, OpenCVSource):
                     self.src.mark_consumed()
         finally:
@@ -296,6 +300,7 @@ class App:
                         free=self._free_ctrl or self._free,
                         ego=ego, cmd=self._cmd, sent=self.robot.command,
                         stats={"fps": round(self.src.fps_measured, 1), "loop_ms": round(self._loop_ms, 1),
+                               **self._loop_spread(),
                                "det_ms": round(self.det.infer_ms, 1), "det_batches": self._det_count,
                                "mode": self.behavior.name, "yaw_vis_deg": round(math.degrees(self.vis_yaw), 1),
                                "yaw_drv": self.robot.state.yaw_deg, "battery": self.robot.state.battery,
@@ -309,6 +314,14 @@ class App:
             self.snapshot = snap
             self.snap_cond.notify_all()
 
+
+    def _loop_spread(self) -> dict:
+        """p95 und Maximum der letzten ~10 s Schleifenzeiten (Spitzen sieht das Mittel nicht)."""
+        h = self._loop_hist
+        if len(h) < 10:
+            return {}
+        v = sorted(h)
+        return {"loop_p95": round(v[int(0.95 * (len(v) - 1))], 1), "loop_max": round(v[-1], 1)}
 
     def _emotion_tick(self, person: bool | None) -> None:
         if self.emotions is not None:

@@ -133,7 +133,8 @@ const felder = [
   ['Akku', s => s.battery != null ? s.battery + ' %' : '-'],
   ['Zustand', s => s.balancing == null ? '-' : (s.balancing ? 'balanciert' : 'gefallen / geparkt')],
   ['Kurs', s => s.yaw_drv != null ? Math.round(s.yaw_drv) + '°' : '-'],
-  ['Kamera / Schleife', s => (s.fps ?? '-') + ' fps / ' + (s.loop_ms ?? '-') + ' ms'],
+  ['Kamera / Schleife', s => (s.fps ?? '-') + ' fps / ' + (s.loop_ms ?? '-') + ' ms' +
+    (s.loop_p95 != null ? ' (p95 ' + s.loop_p95 + ', max ' + s.loop_max + ')' : '')],
   ['Detektor', s => s.det_ms != null ? Math.round(s.det_ms) + ' ms' : '-'],
   ['Nicken', s => (s.pitch_src ?? '-') + ' ' + (s.pitch_deg != null ? s.pitch_deg.toFixed(1) + '°' : '')],
   ['Drehrate Gier / Nick', s => s.ego ? s.ego.yaw_dps.toFixed(0) + ' / ' + s.ego.pitch_dps.toFixed(0) + ' °/s' : '-'],
