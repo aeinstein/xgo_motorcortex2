@@ -555,3 +555,33 @@ def test_cpu_pinning_helpers(tmp_path):
     p.write_text("[cpu]\nmain_cpus = [0, 1]\ndetector_cpus = [2, 3]\nrender_cpus = [0, 1, 2, 3]\n")
     c = Config.load(p)
     assert c.cpu.main_cpus == [0, 1] and c.cpu.detector_cpus == [2, 3] and c.cpu.render_cpus == [0, 1, 2, 3]
+
+
+def test_freespace_worker_matches_direct_update():
+    from xgonav.config import FreespaceCfg
+    from xgonav.freespace import FreeSpaceEstimator, FreeSpaceWorker
+    rng = np.random.default_rng(3)
+    imgs = []
+    for _ in range(4):                                      # Boden unten grau, oben "Wand"
+        im = np.full((480, 640, 3), 120, np.uint8)
+        im[:200] = (30, 90, 160)
+        imgs.append(np.clip(im + rng.integers(-6, 7, im.shape), 0, 255).astype(np.uint8))
+    direct = FreeSpaceEstimator(FreespaceCfg(), (640, 480))
+    w = FreeSpaceWorker(FreeSpaceEstimator(FreespaceCfg(), (640, 480)))
+    w.start()
+    try:
+        assert w.poll() is None
+        for im in imgs:
+            ref = direct.update(im, 0.0, [])
+            w.offer(im, 0.0, [])
+            t_end = time.monotonic() + 5
+            got = None
+            while got is None and time.monotonic() < t_end:
+                got = w.poll()
+                time.sleep(0.005)
+            assert got is not None
+            assert got.sectors == ref.sectors and np.array_equal(got.columns, ref.columns)
+            assert w.poll() is None                         # Ergebnis nur einmal
+    finally:
+        w.close()
+    assert not w._thread.is_alive()

@@ -14,11 +14,13 @@ from __future__ import annotations
 import logging
 import math
 import os
+import threading
 from dataclasses import dataclass, field
 
 import cv2
 import numpy as np
 
+from .affinity import pin_thread
 from .config import FreespaceCfg
 from .geometry import CamGeometry
 from .shading import ShadingModel
@@ -260,3 +262,68 @@ class FreeSpaceEstimator:
         n = len(fs.sectors)
         ex = np.linspace(0, self.W, n + 1).astype(int)
         fs.sectors = [_p20(fs.columns[ex[i]:ex[i + 1]]) for i in range(n)]
+
+
+class FreeSpaceWorker:
+    """Bodenmodell in eigenem Thread, nach dem Muster des DetectorWorker: offer() legt den
+    neuesten Auftrag ab (ein älterer, noch nicht begonnener wird ersetzt), poll() holt das
+    neueste fertige Ergebnis. Nur dieser Thread ruft est.update() auf; block_boxes() und die
+    Konstanten (W, H, scale) des Schätzers darf die Hauptschleife weiter nutzen, diag wird
+    je Lauf durch ein neues dict ersetzt (nie verändert)."""
+
+    def __init__(self, est: FreeSpaceEstimator, cpus=None):
+        self.est = est
+        self.cpus = list(cpus or [])
+        self._cond = threading.Condition()
+        self._job = None
+        self._result: FreeSpace | None = None
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+        self.busy = False
+        self.ms = 0.0                      # gleitendes Mittel der Rechenzeit
+
+    def start(self) -> None:
+        self._thread = threading.Thread(target=self._run, name="freespace", daemon=True)
+        self._thread.start()
+
+    def close(self) -> None:
+        self._stop.set()
+        with self._cond:
+            self._cond.notify_all()
+        if self._thread:
+            self._thread.join(timeout=2)
+
+    def offer(self, bgr, pitch_dev: float, boxes) -> None:
+        with self._cond:
+            self._job = (bgr, pitch_dev, list(boxes))
+            self._cond.notify()
+
+    def poll(self) -> FreeSpace | None:
+        with self._cond:
+            r, self._result = self._result, None
+            return r
+
+    def _run(self) -> None:
+        if self.cpus:
+            pin_thread(self.cpus, "Bodenmodell")
+        import time
+        while not self._stop.is_set():
+            with self._cond:
+                while self._job is None and not self._stop.is_set():
+                    self._cond.wait(0.1)
+                if self._stop.is_set():
+                    return
+                job, self._job = self._job, None
+            self.busy = True
+            t0 = time.perf_counter()
+            try:
+                fs = self.est.update(*job)
+            except Exception:
+                log.exception("Bodenmodell fehlgeschlagen")
+                fs = None
+            ms = (time.perf_counter() - t0) * 1000
+            self.ms = 0.8 * self.ms + 0.2 * ms if self.ms else ms
+            self.busy = False
+            if fs is not None:
+                with self._cond:
+                    self._result = fs

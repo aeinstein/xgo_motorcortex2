@@ -1,4 +1,4 @@
-"""Closed-Loop-Szenarien im Simulator. python3 tests/sim_run.py follow|explore [sekunden] [video.mp4]"""
+"""Closed-Loop-Szenarien im Simulator. python3 tests/sim_run.py follow|explore [sekunden] [video.mp4] [--imu] [--fs-thread]"""
 import logging, math, sys, threading, time
 sys.path.insert(0, ".")
 import numpy as np
@@ -8,11 +8,12 @@ from xgonav.robot import SimRobot
 from xgonav.sim import FakeDetector, Person, SimImu, SimWorld
 
 
-def run(mode="follow", secs=25.0, video=None, shake=1.0, quiet=True, imu=False):
+def run(mode="follow", secs=25.0, video=None, shake=1.0, quiet=True, imu=False, fs_thread=False):
     logging.basicConfig(level=logging.WARNING if quiet else logging.INFO)
     cfg = Config()
     cfg.behavior.mode = mode
     cfg.output.web_port = 0
+    cfg.freespace.threaded = fs_thread
     robot = SimRobot(cfg.robot)
     person = Person([(3.2, 1.3), (4.8, 4.6), (1.4, 5.0), (1.2, 3.0)], speed=0.3) if mode != "explore" else None
     world = SimWorld(cfg.camera, robot, person, start=(1.0, 1.2, 0.2), shake=shake,
@@ -63,4 +64,4 @@ if __name__ == "__main__":
     mode = sys.argv[1] if len(sys.argv) > 1 else "follow"
     secs = float(sys.argv[2]) if len(sys.argv) > 2 and not sys.argv[2].startswith("--") else 25
     args = [a for a in sys.argv[3:] if not a.startswith("--")]
-    print(run(mode, secs, args[0] if args else None, imu="--imu" in sys.argv))
+    print(run(mode, secs, args[0] if args else None, imu="--imu" in sys.argv, fs_thread="--fs-thread" in sys.argv))

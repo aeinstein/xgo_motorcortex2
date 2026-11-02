@@ -17,7 +17,7 @@ from .camera import FrameSource, OpenCVSource, make_source
 from .config import Config
 from .detector import Detection, DetectorWorker
 from .egomotion import EgoMotion, EgoResult, warp_box
-from .freespace import FreeSpace, FreeSpaceEstimator
+from .freespace import FreeSpace, FreeSpaceEstimator, FreeSpaceWorker
 from .geometry import CamGeometry
 from .imu import ImuSource, ImuSync, make_imu
 from .localmap import LocalMap, mask_movable
@@ -103,6 +103,8 @@ class App:
         self.geo = CamGeometry(size[0], size[1], cfg.camera.hfov_deg, cfg.camera.tilt_deg,
                                cfg.camera.mount_offset_mm, cfg.behavior.height_cruise_mm)
         self.fse = FreeSpaceEstimator(cfg.freespace, size, self.geo) if cfg.freespace.enabled else None
+        self.fs_worker = FreeSpaceWorker(self.fse, cfg.cpu.freespace_cpus) \
+            if self.fse is not None and cfg.freespace.threaded else None
         m = cfg.map
         self.lmap = LocalMap(self.geo, self.fse.W, self.fse.H, max_age_s=m.max_age_s, confirm=m.confirm,
                              confirm_radius_m=m.confirm_radius_m) if self.fse else None
@@ -189,6 +191,8 @@ class App:
         self.robot.start()
         self.src.start()
         has_det = self.det.start()
+        if self.fs_worker is not None:
+            self.fs_worker.start()
         if self.imu is not None and not self.imu.start():
             self.imu = None
         log.info("läuft: Modus=%s, Detektor=%s, IMU=%s", self.behavior.name,
@@ -226,6 +230,8 @@ class App:
             if self.imu is not None:
                 self.imu.close()
             self.det.close()
+            if self.fs_worker is not None:
+                self.fs_worker.close()
             self.src.close()
             self.robot.close()
             log.info("beendet")
@@ -292,7 +298,14 @@ class App:
         self.det.offer(f, ego.sharpness, self.ego.sharpness_median())
         tm.mark("det")
 
-        if self.fse is not None and (f.idx % 2 == 0 or self._free is None):
+        if self.fs_worker is not None:
+            # eigener Thread: neuestes Ergebnis übernehmen, jedes 2. Bild einen Auftrag geben
+            r = self.fs_worker.poll()
+            if r is not None:
+                self._free = r
+            if f.idx % 2 == 0 or self._free is None:
+                self.fs_worker.offer(f.bgr, pitch_dev, [t.box for t in self.tracker.tracks])
+        elif self.fse is not None and (f.idx % 2 == 0 or self._free is None):
             self._free = self.fse.update(f.bgr, pitch_dev, [t.box for t in self.tracker.tracks])
             tm.fs_ran = True
         tracks = self.tracker.confirmed(f.t)
@@ -345,6 +358,7 @@ class App:
                         stats={"fps": round(self.src.fps_measured, 1), "loop_ms": round(self._loop_ms, 1),
                                **self._loop_spread(),
                                "det_ms": round(self.det.infer_ms, 1), "det_batches": self._det_count,
+                               "fs_ms": round(self.fs_worker.ms, 1) if self.fs_worker is not None else None,
                                "mode": self.behavior.name, "yaw_vis_deg": round(math.degrees(self.vis_yaw), 1),
                                "yaw_drv": self.robot.state.yaw_deg, "battery": self.robot.state.battery,
                                "balancing": self.robot.state.balancing,

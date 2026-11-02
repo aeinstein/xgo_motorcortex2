@@ -111,6 +111,9 @@ class TrackerCfg:
 @dataclass
 class FreespaceCfg:
     enabled: bool = True
+    # Bodenmodell in eigenem Thread (FreeSpaceWorker): nimmt der Hauptschleife jedes 2. Bild
+    # ~13 ms ab (CM4); das Ergebnis kommt dafür ein Bild später an. False = wie früher im Takt.
+    threaded: bool = False
     width: int = 160
     sample_rows: float = 0.18      # Höhe der Boden-Referenz (Anteil der Bildhöhe)
     sample_bottom: float = 0.0     # Abstand der Referenz vom unteren Bildrand (Anteil der Bildhöhe)
@@ -196,6 +199,8 @@ class CpuCfg:
     # Leer = erben main_cpus. Am RiderPi alle Kerne: neben YOLO ist auf 2-3 noch Luft, und
     # auf 0-1 verdrängten sie sonst die Hauptschleife (p95 39 -> 47 ms gemessen).
     render_cpus: list = field(default_factory=list)
+    # Bodenmodell-Thread ([freespace] threaded). Leer = erben main_cpus.
+    freespace_cpus: list = field(default_factory=list)
 
 
 @dataclass
