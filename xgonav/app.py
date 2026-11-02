@@ -368,8 +368,9 @@ def _ascii(s: str) -> str:
     return s.translate(_ASCII).encode("ascii", "replace").decode()
 
 
-def render(snap: Snapshot) -> np.ndarray | None:
-    """Debug-Overlay zeichnen (nur auf Anfrage, kostet Zeit)."""
+def render(snap: Snapshot, text: bool = True) -> np.ndarray | None:
+    """Debug-Overlay zeichnen (nur auf Anfrage, kostet Zeit). text=False lässt die
+    Statuszeilen weg (~10 ms je Bild am CM4); die Weboberfläche zeigt sie als HTML."""
     if snap.frame is None:
         return None
     img = snap.frame.copy()
@@ -402,6 +403,8 @@ def render(snap: Snapshot) -> np.ndarray | None:
     v, w = snap.sent
     cv2.rectangle(img, (W - 20, H // 2), (W - 10, int(H // 2 - v * H)), (255, 128, 0), -1)
     cv2.rectangle(img, (W // 2, 4), (int(W // 2 - w * W), 12), (255, 128, 0), -1)
+    if not text:
+        return img
     lines = [snap.cmd.status,
              "fps %s loop %sms det %sms | nick %s %+.1f°" % (
                  snap.stats.get("fps"), snap.stats.get("loop_ms"), snap.stats.get("det_ms"),

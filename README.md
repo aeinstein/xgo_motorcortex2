@@ -195,7 +195,8 @@ auf `127.0.0.1:8088` (`/status`, `/ws`, `/frame`, `/stream`, `POST /mode|/stop|/
 reicht nginx direkt von xgonav durch. Die Oberfläche bekommt die Bilder über eine
 WebSocket-Verbindung (`/xgonav/ws`, TLS endet in nginx) und bestätigt jedes Bild; erst
 dann schickt xgonav das nächste, neueste. Der frühere MJPEG-Stream staute sich über
-schwaches WLAN in den TCP-Puffern (bis 20 s Verzögerung). Keine Authentifizierung,
+schwaches WLAN in den TCP-Puffern (bis 20 s Verzögerung). Das Overlay enthält dort keine
+Statuszeilen (~10 ms je Bild gespart), die Werte stehen in der Statustabelle. Keine Authentifizierung,
 also nur im LAN betreiben. Einrichtung am RiderPi (TLS macht nginx auf 443; früher
 stunnel, das nach jedem Start und alle 24 h DH-Parameter rechnete, ~15 % CPU):
 

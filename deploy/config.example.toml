@@ -42,6 +42,7 @@ pitch_ref_deg = -2.7     # [K] IMU-Rohpitch in typischer Balance-Lage, Paar mit 
 [detector]
 model = "models/yolo11n_256.onnx"
 threads = 2            # 2 lassen der Hauptschleife genug Kerne (CM4 gemessen)
+max_hz = 5.0           # Detektion höchstens 5x/s (ohne Pause ~7 Hz, ~2 Kerne); spart ~60 % CPU
 conf = 0.35
 classes = ["person"]   # nur Personen; Hindernisse kommen vom Bodenmodell (leer = alle COCO-Klassen)
 

@@ -504,3 +504,27 @@ def test_websocket_handshake_and_frames():
     assert ws_read(io.BytesIO(struct.pack("!BB", 0x81, 0x80 | 2) + mask + data)) == (0x1, b"ok")
     assert ws_read(io.BytesIO(b"")) is None
 
+
+def test_detector_max_hz_limits_rate():
+    from xgonav.camera import Frame
+    from xgonav.detector import DetectorWorker
+    from xgonav.config import DetectorCfg
+    w = DetectorWorker(DetectorCfg(max_hz=5.0, max_wait_s=0.0))
+    calls = []
+
+    class M:
+        def __call__(self, bgr):
+            calls.append(time.monotonic())
+            return []
+    w.model = M()
+    import threading
+    w._thread = threading.Thread(target=w._run, daemon=True)
+    w._thread.start()
+    f = Frame(0, 0.0, np.zeros((4, 4, 3), np.uint8))
+    t_end = time.monotonic() + 1.05
+    while time.monotonic() < t_end:            # Kamera bietet laufend Bilder an
+        w.offer(f, 1.0, 1.0)
+        time.sleep(0.01)
+    w.close()
+    assert 4 <= len(calls) <= 6                # ~5 Hz statt ~100 Hz
+    assert min(b - a for a, b in zip(calls, calls[1:])) >= 0.19

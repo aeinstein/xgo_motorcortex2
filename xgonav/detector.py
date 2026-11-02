@@ -178,7 +178,13 @@ class DetectorWorker:
         return sh >= self.cfg.sharpness_rel * med or waited >= self.cfg.max_wait_s
 
     def _run(self) -> None:
+        t_start = 0.0
         while not self._stop.is_set():
+            # Höchstrate: frühestens 1/max_hz nach dem Start des letzten Laufs
+            if self.cfg.max_hz > 0:
+                rest = t_start + 1.0 / self.cfg.max_hz - time.monotonic()
+                if rest > 0 and self._stop.wait(rest):
+                    return
             with self._cond:
                 while not self._stop.is_set() and not self._ready():
                     self._cond.wait(0.02)
@@ -187,6 +193,7 @@ class DetectorWorker:
                 frame, _, _ = self._cand
                 self._cand = None
             self.busy = True
+            t_start = time.monotonic()
             t0 = time.perf_counter()
             try:
                 dets = self.model(frame.bgr)

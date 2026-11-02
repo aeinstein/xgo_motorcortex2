@@ -95,6 +95,9 @@ class DetectorCfg:
     threads: int = 2               # CM4 gemessen: 3 Threads verdrängen die Hauptschleife (>33 ms)
     sharpness_rel: float = 0.6     # Frame nur nehmen, wenn Schärfe >= rel * Median
     max_wait_s: float = 0.25       # spätestens dann auch unscharfe Frames nehmen
+    # Höchstrate der Detektion. 0 = ohne Pause (CM4: ~7 Hz bei 140 ms/Bild, ~2 Kerne).
+    # 5 Hz spart rund ein Drittel davon; der Simulator-Detektor liefert ebenfalls 5 Hz.
+    max_hz: float = 0.0
     classes: list[str] = field(default_factory=list)  # leer = alle COCO-Klassen
 
 

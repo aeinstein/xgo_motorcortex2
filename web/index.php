@@ -134,7 +134,10 @@ const felder = [
   ['Zustand', s => s.balancing == null ? '-' : (s.balancing ? 'balanciert' : 'gefallen / geparkt')],
   ['Kurs', s => s.yaw_drv != null ? Math.round(s.yaw_drv) + '°' : '-'],
   ['Kamera / Schleife', s => (s.fps ?? '-') + ' fps / ' + (s.loop_ms ?? '-') + ' ms'],
-  ['Nicken', s => (s.pitch_src ?? '-') + ' ' + (s.pitch_deg ?? '')],
+  ['Detektor', s => s.det_ms != null ? Math.round(s.det_ms) + ' ms' : '-'],
+  ['Nicken', s => (s.pitch_src ?? '-') + ' ' + (s.pitch_deg != null ? s.pitch_deg.toFixed(1) + '°' : '')],
+  ['Drehrate Gier / Nick', s => s.ego ? s.ego.yaw_dps.toFixed(0) + ' / ' + s.ego.pitch_dps.toFixed(0) + ' °/s' : '-'],
+  ['TTC / Schärfe', s => (s.ttc != null ? s.ttc.toFixed(1) + ' s' : '-') + ' / ' + (s.ego ? s.ego.sharp : '-')],
 ];
 let aktModus = null;
 function zeige(text) { document.getElementById('meldung').textContent = text || ''; }

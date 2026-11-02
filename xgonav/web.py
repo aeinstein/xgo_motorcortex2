@@ -11,6 +11,7 @@ import base64
 import hashlib
 import json
 import logging
+import math
 import socket
 import struct
 import threading
@@ -101,6 +102,10 @@ def serve(app: App, host: str, port: int, fps: int) -> ThreadingHTTPServer:
                         **s.stats}
                 body["mode"] = app.mode       # stats stammt vom letzten Bild und kann veraltet sein
                 body["start"] = START
+                e = s.ego                     # Werte der früheren Overlay-Textzeilen
+                body["ego"] = None if e is None else {
+                    "yaw_dps": round(math.degrees(e.yaw_rate), 1), "pitch_dps": round(math.degrees(e.pitch_rate), 1),
+                    "sharp": round(e.sharpness)}
                 body["frame"] = s.idx         # Bildzähler (Diagnose: tatsächliche Bildrate)
                 body["frame_t"] = round(s.t, 4)
                 meta = s.cam_meta or {}
@@ -193,7 +198,7 @@ def serve(app: App, host: str, port: int, fps: int) -> ThreadingHTTPServer:
                     if not app.running:
                         break
                     # bei gestoppter Bildverarbeitung: dasselbe Bild höchstens einmal pro Sekunde
-                    img = render(snap)
+                    img = render(snap, text=False)   # Statuszeilen zeigt die Oberfläche
                     if img is None:
                         continue
                     ok, jpg = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 70])
@@ -227,7 +232,7 @@ def serve(app: App, host: str, port: int, fps: int) -> ThreadingHTTPServer:
             with app.snap_cond:
                 app.snap_cond.wait_for(lambda: app.snapshot.idx != after or not app.running, timeout=1.0)
                 snap = app.snapshot
-            img = render(snap)
+            img = render(snap, text=False)   # Statuszeilen zeigt die Oberfläche
             if img is None:
                 return self._send(503, b'{"error":"kein Bild"}')
             ok, jpg = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 70])
@@ -260,7 +265,7 @@ def serve(app: App, host: str, port: int, fps: int) -> ThreadingHTTPServer:
                     if snap.idx == last:
                         continue
                     last = snap.idx
-                    img = render(snap)
+                    img = render(snap, text=False)   # Statuszeilen zeigt die Oberfläche
                     if img is None:
                         continue
                     ok, jpg = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 70])
