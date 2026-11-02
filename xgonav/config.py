@@ -187,6 +187,18 @@ class EmotionCfg:
 
 
 @dataclass
+class CpuCfg:
+    # CPU-Pinning (Linux). Leer = nicht pinnen. Am RiderPi: Hauptschleife samt Kamera,
+    # OpenCV-Workern und Rest des Systems auf 0-1, YOLO auf 2-3 (Aufrufer + Pool-Thread).
+    main_cpus: list = field(default_factory=list)
+    detector_cpus: list = field(default_factory=list)
+    # Threads, die Bilder für die Oberfläche zeichnen und kodieren (WebSocket, /frame, /stream).
+    # Leer = erben main_cpus. Am RiderPi alle Kerne: neben YOLO ist auf 2-3 noch Luft, und
+    # auf 0-1 verdrängten sie sonst die Hauptschleife (p95 39 -> 47 ms gemessen).
+    render_cpus: list = field(default_factory=list)
+
+
+@dataclass
 class Config:
     robot: RobotCfg = field(default_factory=RobotCfg)
     camera: CameraCfg = field(default_factory=CameraCfg)
@@ -199,6 +211,7 @@ class Config:
     behavior: BehaviorCfg = field(default_factory=BehaviorCfg)
     output: OutputCfg = field(default_factory=OutputCfg)
     emotion: EmotionCfg = field(default_factory=EmotionCfg)
+    cpu: CpuCfg = field(default_factory=CpuCfg)
     control_hz: float = 20.0
 
     @classmethod

@@ -81,3 +81,10 @@ enabled = true          # surprised: Person erscheint; doubt/embarrassed: keine 
 gap_s = 5.0             # surprised erst nach so langer Pause ohne Person
 lost_s = 2.0            # doubt bzw. embarrassed nach so langer Zeit ohne Person
 battery_low = 20        # %, Treiber schaltet bei 8 % ab
+
+[cpu]
+# CPU-Pinning (CM4, 4 Kerne), gemessen 2026-11-02: CPU 282 -> 249 %, Detektor 149 -> 129 ms,
+# Schleife p95 38 -> 35 ms; mit Bild-Client 286 -> 263 %, p95 39 -> 36 ms.
+main_cpus = [0, 1]          # Hauptschleife, Kamera, OpenCV-Worker, Rest des Systems
+detector_cpus = [2, 3]      # YOLO: Aufrufer-Thread auf 2, onnxruntime-Pool-Thread auf 3
+render_cpus = [0, 1, 2, 3]  # Bilder für die Oberfläche: alle Kerne (auf 2-3 ist neben YOLO Luft)

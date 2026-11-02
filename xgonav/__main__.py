@@ -15,6 +15,7 @@ import sys
 import threading
 import time
 
+from .affinity import pin_thread
 from .app import App, render
 from .config import Config
 from .robot import make_robot
@@ -61,6 +62,13 @@ def main(argv=None) -> int:
     if a.fast:
         cfg.camera.realtime_file = False
     kind = a.robot or ("proc" if cfg.camera.source == "picam" else "sim")
+    # Pinning vor allen Threads: Kamera, libcamera, OpenCV-Pool, IMU und Web erben die Kerne.
+    # Den Detektor legt DetectorWorker selbst auf [cpu] detector_cpus.
+    main_cpus = pin_thread(cfg.cpu.main_cpus, "Hauptschleife")
+    if main_cpus:
+        import cv2
+        cv2.setNumThreads(len(main_cpus))   # sonst 4 OpenCV-Worker auf 2 Kernen
+        logging.getLogger("xgonav").info("OpenCV-Threads: %d", cv2.getNumThreads())
 
     robot = make_robot(kind, cfg.robot)
     app = App(cfg, robot)
@@ -72,7 +80,7 @@ def main(argv=None) -> int:
 
     if cfg.output.web_port:
         from .web import serve
-        serve(app, cfg.output.web_host, cfg.output.web_port, cfg.output.web_fps)
+        serve(app, cfg.output.web_host, cfg.output.web_port, cfg.output.web_fps, cfg.cpu.render_cpus)
     if cfg.output.lcd_fifo and kind == "proc":
         from .lcd import LcdOut
         LcdOut(app, cfg.output.lcd_fifo, cfg.output.lcd_fps)

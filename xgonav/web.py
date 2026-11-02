@@ -21,6 +21,7 @@ from urllib.parse import parse_qs, urlparse
 
 import cv2
 
+from .affinity import pin_thread
 from .app import App, render
 
 log = logging.getLogger(__name__)
@@ -73,7 +74,7 @@ def ws_read(rfile) -> tuple[int, bytes] | None:
     return opcode, bytes(data)
 
 
-def serve(app: App, host: str, port: int, fps: int) -> ThreadingHTTPServer:
+def serve(app: App, host: str, port: int, fps: int, render_cpus=None) -> ThreadingHTTPServer:
     class H(BaseHTTPRequestHandler):
         def log_message(self, *a):
             pass
@@ -175,6 +176,7 @@ def serve(app: App, host: str, port: int, fps: int) -> ThreadingHTTPServer:
             Bestätigung des Browsers (beliebige Nachricht) und schickt dann das neueste Bild.
             So bleibt es bei einer Verbindung, ohne dass sich Bilder in TCP-Puffern stauen
             (MJPEG über schwaches WLAN: bis 20 s). Binärnachricht: 4 Byte Bildnummer + JPEG."""
+            pin_thread(render_cpus, "Bild-Thread", quiet=True)
             key = self.headers.get("Sec-WebSocket-Key")
             if not key or "websocket" not in self.headers.get("Upgrade", "").lower():
                 return self._send(400, b'{"error":"WebSocket erwartet"}')
@@ -225,6 +227,7 @@ def serve(app: App, host: str, port: int, fps: int) -> ThreadingHTTPServer:
             """Ein JPEG pro Anfrage. Der Browser holt das nächste erst, wenn dieses angekommen
             ist: kein Rückstau in TCP-Puffern (beim MJPEG-Stream über schwaches WLAN bis 20 s).
             after=<idx>: bis 1 s auf ein neueres Bild warten. Header X-Frame = Bildnummer."""
+            pin_thread(render_cpus, "Bild-Thread", quiet=True)
             try:
                 after = int(q.get("after", ["-1"])[0])
             except ValueError:
@@ -251,6 +254,7 @@ def serve(app: App, host: str, port: int, fps: int) -> ThreadingHTTPServer:
                 pass
 
         def _stream(self):
+            pin_thread(render_cpus, "Bild-Thread", quiet=True)
             self.send_response(200)
             self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=f")
             self.send_header("Cache-Control", "no-store")

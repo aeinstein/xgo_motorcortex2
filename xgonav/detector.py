@@ -18,6 +18,7 @@ from dataclasses import dataclass
 import cv2
 import numpy as np
 
+from .affinity import ort_pool_affinities, pin_thread
 from .config import DetectorCfg
 
 log = logging.getLogger(__name__)
@@ -50,12 +51,17 @@ class DetectionBatch:
 
 
 class YoloOnnx:
-    def __init__(self, cfg: DetectorCfg):
+    def __init__(self, cfg: DetectorCfg, cpus=None):
         import onnxruntime as ort
 
         so = ort.SessionOptions()
         so.intra_op_num_threads = cfg.threads
         so.inter_op_num_threads = 1
+        # Der Pool entsteht hier (im Hauptthread) und würde dessen Kerne erben: Pool-Threads
+        # deshalb ausdrücklich auf die Detektor-Kerne legen. Den Aufrufer pinnt _run.
+        aff = ort_pool_affinities(cpus, cfg.threads)
+        if aff:
+            so.add_session_config_entry("session.intra_op_thread_affinities", aff)
         so.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
         self.sess = ort.InferenceSession(cfg.model, so, providers=["CPUExecutionProvider"])
         self.inp = self.sess.get_inputs()[0]
@@ -122,8 +128,9 @@ class YoloOnnx:
 
 
 class DetectorWorker:
-    def __init__(self, cfg: DetectorCfg):
+    def __init__(self, cfg: DetectorCfg, cpus=None):
         self.cfg = cfg
+        self.cpus = list(cpus or [])   # [cpu] detector_cpus: Aufrufer auf cpus[0], Pool auf den Rest
         self.model: YoloOnnx | None = None
         self._cond = threading.Condition()
         self._cand = None          # (frame, sharpness)
@@ -140,7 +147,7 @@ class DetectorWorker:
         if not os.path.exists(self.cfg.model):
             log.warning("Modell %s fehlt – Objekterkennung aus (siehe tools/export_model.sh)", self.cfg.model)
             return False
-        self.model = YoloOnnx(self.cfg)
+        self.model = YoloOnnx(self.cfg, self.cpus)
         log.info("YOLO geladen: %s (%dpx, %d Klassen)", self.cfg.model, self.model.size, len(self.model.names))
         self._thread = threading.Thread(target=self._run, name="detector", daemon=True)
         self._thread.start()
@@ -178,6 +185,8 @@ class DetectorWorker:
         return sh >= self.cfg.sharpness_rel * med or waited >= self.cfg.max_wait_s
 
     def _run(self) -> None:
+        if self.cpus:
+            pin_thread(self.cpus[:1], "Detektor")
         t_start = 0.0
         while not self._stop.is_set():
             # Höchstrate: frühestens 1/max_hz nach dem Start des letzten Laufs

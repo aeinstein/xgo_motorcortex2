@@ -528,3 +528,30 @@ def test_detector_max_hz_limits_rate():
     w.close()
     assert 4 <= len(calls) <= 6                # ~5 Hz statt ~100 Hz
     assert min(b - a for a, b in zip(calls, calls[1:])) >= 0.19
+
+
+def test_cpu_pinning_helpers(tmp_path):
+    import os
+    from xgonav.affinity import ort_pool_affinities, pin_thread
+    assert pin_thread([], "x") == set()                         # leer = nichts tun
+    assert ort_pool_affinities([2, 3], 2) == "4"                # Aufrufer 2, Pool-Thread Kern 3 (1-basiert)
+    assert ort_pool_affinities([2, 3], 3) == "4;4"
+    assert ort_pool_affinities([1, 2, 3], 3) == "3;4"
+    assert ort_pool_affinities([2], 2) == "3"                   # nur ein Kern: Pool teilt ihn
+    assert ort_pool_affinities([], 2) == "" and ort_pool_affinities([2, 3], 1) == ""
+    if hasattr(os, "sched_setaffinity"):
+        import threading
+        res = {}
+        before = os.sched_getaffinity(0)
+
+        def worker():                                           # nur dieser Thread wird gepinnt
+            res["set"] = pin_thread([0, 9999], "Test")          # 9999 gibt es nicht: verworfen
+            res["now"] = os.sched_getaffinity(0)
+        t = threading.Thread(target=worker)
+        t.start(); t.join()
+        assert res["set"] == {0} and res["now"] == {0}
+        assert os.sched_getaffinity(0) == before                 # aufrufender Thread unverändert
+    p = tmp_path / "c.toml"
+    p.write_text("[cpu]\nmain_cpus = [0, 1]\ndetector_cpus = [2, 3]\nrender_cpus = [0, 1, 2, 3]\n")
+    c = Config.load(p)
+    assert c.cpu.main_cpus == [0, 1] and c.cpu.detector_cpus == [2, 3] and c.cpu.render_cpus == [0, 1, 2, 3]

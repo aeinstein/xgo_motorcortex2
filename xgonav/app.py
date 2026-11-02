@@ -63,7 +63,7 @@ class App:
         self.hfov = math.radians(cfg.camera.hfov_deg)
         self.ego = EgoMotion(cfg.ego, size, cfg.camera.hfov_deg)
         self.tracker = Tracker(cfg.tracker, size)
-        self.det = DetectorWorker(cfg.detector)
+        self.det = DetectorWorker(cfg.detector, cfg.cpu.detector_cpus)
         self.geo = CamGeometry(size[0], size[1], cfg.camera.hfov_deg, cfg.camera.tilt_deg,
                                cfg.camera.mount_offset_mm, cfg.behavior.height_cruise_mm)
         self.fse = FreeSpaceEstimator(cfg.freespace, size, self.geo) if cfg.freespace.enabled else None
