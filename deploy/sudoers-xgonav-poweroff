@@ -1,0 +1,3 @@
+# Weboberfläche (php-fpm als www-data): nur Herunterfahren erlauben.
+# Nach /etc/sudoers.d/xgonav-poweroff, Rechte 0440, vorher mit "visudo -cf <datei>" prüfen.
+www-data ALL=(root) NOPASSWD: /usr/bin/systemctl poweroff

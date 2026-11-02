@@ -1,0 +1,73 @@
+# xgonav – Overrides der Defaults aus xgonav/config.py
+# Nur eintragen, was abweichen soll.
+#
+# Werte für den XGO RiderPi (CM4, OV5647 mit Weitwinkelobjektiv), gemessen und
+# getestet an EINEM Gerät am 2026-11-01/02 (Folgefahrten bei Tageslicht und
+# Abendlicht auf Laminat). Mit [K] markierte Werte sind gerätespezifisch und sollten
+# neu kalibriert werden (README, Abschnitt „Kalibrieren“).
+
+control_hz = 20.0
+
+[robot]
+max_v = 0.15          # ~23 cm/s (gemessen: v=0,08 -> ~12,5 cm/s); höher nicht getestet
+max_w = 0.15          # höher nicht getestet
+reverse_gain = 2.0    # [K] rückwärts schwächer: v=-0,15 -> u8 90 statt 109 (Fahrtest 2026-11-02)
+kernel_watchdog_ms = 1000
+
+[camera]
+source = "picam"
+width = 640
+height = 480
+fps = 30
+hfov_deg = 91.0       # [K] gemessen; der Default 62,2 gilt für die RPi-Kamera v1, nicht den RiderPi
+# 4 ms war bei Wohnraum-Licht (15–50 Lux) fast schwarz. 15 ms reichte bei Tages- und
+# Lampenlicht, kostet aber Schärfe bei schnellen Drehungen. 0 = Auto (Modus "short").
+exposure_us = 15000
+mount_offset_mm = 43.0   # [K] Kamerahöhe 128 mm über Boden bei Körperhöhe 85 mm
+tilt_deg = 1.39          # [K] gilt zusammen mit imu.pitch_ref_deg
+
+[imu]
+# braucht Treiber-Patch 0002 (/proc/XGORider/imu_log)
+enabled = true
+imu_hz = 50
+pitch_ref_deg = -2.7     # [K] IMU-Rohpitch in typischer Balance-Lage, Paar mit camera.tilt_deg
+# Vorzeichen und Zeitversatz werden automatisch aus dem Bild bestimmt (RiderPi: -1, +4..+8 ms).
+# Optional fest eintragen:
+# pitch_sign = -1
+# time_offset_ms = 8
+
+[detector]
+model = "models/yolo11n_256.onnx"
+threads = 2            # 2 lassen der Hauptschleife genug Kerne (CM4 gemessen)
+conf = 0.35
+# classes = ["person", "chair", "dog", "cat", "bottle"]   # leer = alle
+
+[freespace]
+# [K] Linsenabschattung: tools/calibrate.py shading erzeugt shading.json. Fehlt die
+# Datei, läuft xgonav ohne Korrektur (Warnung im Log) – dann hält das Bodenmodell am
+# RiderPi die Bildränder für Hindernisse und die Bahnprüfung blockiert.
+shading_file = "shading.json"
+shading_max_gain = 5.0   # Nahbereich mit verrauschtem Rot gilt als unbekannt statt Hindernis
+sample_rows = 0.34       # Bodenprobe vom unteren Rand bis ~0,6 m (naher und ferner Boden)
+sample_cols = 0.5
+
+[map]
+confirm = 3              # Kartenpunkt blockiert die Bahn erst nach 3 Beobachtungen
+
+[behavior]
+mode = "idle"         # idle | follow | explore | approach
+target_class = "person"
+follow_dist_m = 0.9
+dist_deadband = 0.10
+approach_dist_m = 0.5
+cruise_v = 0.15
+search_w = 0.07          # langsam suchen; kleinere Werte ignoriert die Firmware
+search_timeout_s = 10.0
+height_fast_mm = 80.0    # Abstand zu den Höhengrenzen (nie ganz nach unten)
+height_search_mm = 100.0
+
+[output]
+web_host = "127.0.0.1"  # nur lokal; Oberfläche: PHP über nginx (deploy/nginx-xgonav.conf)
+web_port = 8088
+lcd_fifo = "/tmp/lcd0"
+lcd_fps = 15

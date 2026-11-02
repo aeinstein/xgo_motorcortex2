@@ -1,0 +1,22 @@
+__pycache__/
+.pytest_cache/
+models/*.onnx
+*.mp4
+.venv/
+.idea/
+driver-test/constants.h
+driver-test/km/*
+!driver-test/km/test_main.c
+# Kernel-Build
+*.o
+*.ko
+*.mod
+*.mod.c
+.*.cmd
+Module.symvers
+modules.order
+.tmp_versions/
+# st7789-Build
+st7789/project/riderpi/st7789_server
+st7789/project/riderpi/libst7789.so*
+st7789/project/riderpi/libst7789.a

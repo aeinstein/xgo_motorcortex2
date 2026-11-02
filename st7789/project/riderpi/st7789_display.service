@@ -1,0 +1,10 @@
+[Unit]
+Description=Simple ST7789 Display Driver
+
+[Service]
+Type=simple
+ExecStart=st7789_server
+
+[Install]
+WantedBy=multi-user.target
+

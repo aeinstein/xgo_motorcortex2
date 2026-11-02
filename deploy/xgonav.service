@@ -1,0 +1,20 @@
+[Unit]
+Description=xgonav - kamerabasierte Navigation XGO Rider
+After=rc-local.service network-online.target
+Requires=rc-local.service
+
+[Service]
+Type=simple
+User=__USER__
+Group=video
+WorkingDirectory=/opt/xgonav
+ExecStart=/opt/xgonav/venv/bin/python -m xgonav --config /opt/xgonav/config.toml
+Restart=on-failure
+RestartSec=3
+# Speicherlimit: lieber xgonav neu starten als den ganzen Pi ins OOM treiben
+MemoryMax=1200M
+Nice=-5
+# Kamera (libcamera) und /proc/XGORider brauchen keine Root-Rechte
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,12 @@
+#!/bin/sh -e
+# Nach /etc/rc.local (über deploy/rc-local.service). UART im Rohmodus, Treiber laden,
+# Display-Daemon starten (FIFO /tmp/lcd0, schreibbar für die Gruppe video).
+
+stty -F /dev/ttyAMA0 115200 cs8 -cstopb -parenb -brkint -imaxbel -opost -onlcr -isig -icanon -iexten -echo -echoe -echok -echoctl -echoke -ixon -ixoff -icrnl -inlcr -igncr -istrip min 0 time 1
+modprobe xgo-drv
+st7789_server
+chgrp video /tmp/lcd0
+chmod g+w /tmp/lcd0
+
+exit 0
+
