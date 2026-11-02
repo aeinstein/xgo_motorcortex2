@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import collections
+import gc
 import logging
 import math
 import threading
@@ -48,6 +49,41 @@ class ModeNotAllowed(ValueError):
     """Modus existiert, ist mit der aktuellen Konfiguration aber nicht sicher."""
 
 
+
+_GC_MS = [0.0]          # Summe der GC-Pausen (ms), von gc.callbacks hochgezählt
+_GC_T0 = [0.0]
+
+
+def _gc_cb(phase, info):
+    if phase == "start":
+        _GC_T0[0] = time.perf_counter()
+    else:
+        _GC_MS[0] += (time.perf_counter() - _GC_T0[0]) * 1000
+
+
+gc.callbacks.append(_gc_cb)
+
+
+class _Marks:
+    """Zeitmarken eines Schleifendurchlaufs: Wanduhr und CPU-Zeit des Threads je Abschnitt."""
+    __slots__ = ("t", "c", "t0", "c0", "gc0", "seg", "fs_ran")
+
+    def __init__(self):
+        self.t0 = self.t = time.perf_counter()
+        self.c0 = self.c = time.thread_time()
+        self.gc0 = _GC_MS[0]
+        self.seg = []
+        self.fs_ran = False
+
+    def mark(self, name: str) -> None:
+        t, c = time.perf_counter(), time.thread_time()
+        self.seg.append((name, (t - self.t) * 1000, (c - self.c) * 1000))
+        self.t, self.c = t, c
+
+    def done(self) -> dict:
+        return {"seg": self.seg, "wall": (self.t - self.t0) * 1000, "cpu": (self.c - self.c0) * 1000,
+                "gc": _GC_MS[0] - self.gc0, "fs_ran": self.fs_ran}
+
 class App:
     def __init__(self, cfg: Config, robot: Robot, source: FrameSource | None = None,
                  imu: ImuSource | None = None):
@@ -93,6 +129,7 @@ class App:
         self._det_count = 0
         self._loop_ms = 0.0
         self._loop_hist = collections.deque(maxlen=250)   # letzte Schleifenzeiten (ms): p95/max
+        self._seg_hist = collections.deque(maxlen=250)    # je Bild: Abschnittszeiten, siehe loop_breakdown()
         self.emotions = None           # emotion.Emotions, von __main__ gesetzt (nur am Rider)
 
     # ------------------------------------------------------------------
@@ -230,6 +267,7 @@ class App:
         time.sleep(max(0.0, self._last_ctrl + period - time.monotonic()))
 
     def _step(self, f) -> None:
+        tm = _Marks()
         self._apply_pending_mode()
 
         excl = [t.box for t in self.tracker.tracks]
@@ -239,6 +277,7 @@ class App:
         pitch_dev = self._pitch_dev(f, ego)
         self.last_pitch_dev = pitch_dev
         self.tracker.predict(ego.A, ego.dt)
+        tm.mark("ego")
 
         batch = self.det.poll()
         if batch is not None:
@@ -251,10 +290,13 @@ class App:
                 log.debug("Detektion zu alt, verworfen")
         self.tracker.prune(f.t)
         self.det.offer(f, ego.sharpness, self.ego.sharpness_median())
+        tm.mark("det")
 
         if self.fse is not None and (f.idx % 2 == 0 or self._free is None):
             self._free = self.fse.update(f.bgr, pitch_dev, [t.box for t in self.tracker.tracks])
+            tm.fs_ran = True
         tracks = self.tracker.confirmed(f.t)
+        tm.mark("fs")
 
         now = time.monotonic()
         if now - self._last_ctrl >= 1.0 / self.cfg.control_hz:
@@ -293,6 +335,7 @@ class App:
             self._free_ctrl = free
             cls = self.cfg.behavior.target_class
             self._emotion_tick(any(t.cls == cls and t.lost_s(f.t) < 0.5 for t in tracks))
+        tm.mark("ctrl")
 
         snap = Snapshot(frame=f.bgr, idx=f.idx, t=f.t, pitch_dev=pitch_dev, tracks=list(tracks),
                         tracks_all=list(self.tracker.tracks), cam_meta=f.meta,
@@ -313,7 +356,43 @@ class App:
         with self.snap_cond:
             self.snapshot = snap
             self.snap_cond.notify_all()
+        tm.mark("snap")
+        self._seg_hist.append(tm.done())
 
+
+    def loop_breakdown(self) -> dict:
+        """Wo die Schleifenzeit hingeht (letzte ~250 Bilder): je Abschnitt Mittel und p95 der
+        Wanduhrzeit, dazu für die langsamsten 5 % der Bilder der Mittelwert je Abschnitt,
+        die CPU-Zeit des Threads (Wand >> CPU = gewartet: GIL oder Kern belegt) und die
+        Pausen des Garbage Collectors. Nur auf Anfrage berechnet (/status?breakdown=1)."""
+        for _ in range(3):
+            try:
+                rows = list(self._seg_hist)
+                break
+            except RuntimeError:            # deque während des Kopierens verändert
+                continue
+        else:
+            return {}
+        if len(rows) < 20:
+            return {}
+        names = [n for n, _, _ in rows[-1]["seg"]]
+        tot = sorted(rows, key=lambda r: r["wall"])
+        slow = tot[int(0.95 * len(tot)):]
+
+        def stat(rs):
+            out = {}
+            for i, n in enumerate(names):
+                w = sorted(r["seg"][i][1] for r in rs)
+                out[n] = {"mean": round(sum(w) / len(w), 1), "p95": round(w[int(0.95 * (len(w) - 1))], 1),
+                          "cpu": round(sum(r["seg"][i][2] for r in rs) / len(rs), 1)}
+            return out
+        return {"n": len(rows), "alle": stat(rows), "langsamste_5pct": stat(slow),
+                "langsam_wall": round(sum(r["wall"] for r in slow) / len(slow), 1),
+                "langsam_cpu": round(sum(r["cpu"] for r in slow) / len(slow), 1),
+                "langsam_gc_ms": round(sum(r["gc"] for r in slow) / len(slow), 1),
+                "langsam_fs_anteil": round(sum(1 for r in slow if r["fs_ran"]) / len(slow), 2),
+                "fs_anteil": round(sum(1 for r in rows if r["fs_ran"]) / len(rows), 2),
+                "gc_ms_gesamt": round(sum(r["gc"] for r in rows), 1)}
 
     def _loop_spread(self) -> dict:
         """p95 und Maximum der letzten ~10 s Schleifenzeiten (Spitzen sieht das Mittel nicht)."""

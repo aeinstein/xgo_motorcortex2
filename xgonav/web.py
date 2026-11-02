@@ -103,6 +103,8 @@ def serve(app: App, host: str, port: int, fps: int, render_cpus=None) -> Threadi
                         **s.stats}
                 body["mode"] = app.mode       # stats stammt vom letzten Bild und kann veraltet sein
                 body["start"] = START
+                if parse_qs(u.query).get("breakdown"):
+                    body["loop_breakdown"] = app.loop_breakdown()
                 e = s.ego                     # Werte der früheren Overlay-Textzeilen
                 body["ego"] = None if e is None else {
                     "yaw_dps": round(math.degrees(e.yaw_rate), 1), "pitch_dps": round(math.degrees(e.pitch_rate), 1),
