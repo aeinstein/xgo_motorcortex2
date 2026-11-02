@@ -18,6 +18,7 @@ import cv2
 from .app import App, render
 
 log = logging.getLogger(__name__)
+START = time.time()      # Startzeit des Prozesses: Oberfläche verbindet den Stream nach Neustart neu
 
 # Schnittstelle für die PHP-Oberfläche (web/) bzw. nginx. Keine HTML-Seite mehr hier.
 API = {"GET": ["/status", "/stream"],
@@ -53,6 +54,7 @@ def serve(app: App, host: str, port: int, fps: int) -> ThreadingHTTPServer:
                         "ttc": round(s.ego.ttc, 2) if s.ego and s.ego.ttc < 99 else None,
                         **s.stats}
                 body["mode"] = app.mode       # stats stammt vom letzten Bild und kann veraltet sein
+                body["start"] = START
                 meta = s.cam_meta or {}
                 body["exposure"] = {"soll_us": app.src.exposure_us, "max_us": app.src.exposure_max_us,
                                     "ist_us": meta.get("exp_us"), "gain": meta.get("gain"),

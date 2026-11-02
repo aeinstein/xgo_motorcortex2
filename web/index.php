@@ -138,6 +138,14 @@ const felder = [
 ];
 let aktModus = null;
 function zeige(text) { document.getElementById('meldung').textContent = text || ''; }
+// Verbindungsfehler verschwinden von selbst, sobald xgonav wieder antwortet (andere Meldungen bleiben)
+const VERBINDUNG = /nicht erreichbar|keine Verbindung/;
+function verbindungOk() {
+  if (VERBINDUNG.test(document.getElementById('meldung').textContent)) zeige('');
+}
+// Stream neu verbinden: ein beendeter MJPEG-Stream bleibt sonst als Standbild stehen
+let xgonavStart;          // undefined = Seite frisch geladen, null = xgonav war weg
+function streamNeu() { document.getElementById('bild').src = 'stream?' + Date.now(); }
 async function befehl(a, p = {}, still = false) {
   const q = new URLSearchParams({a, ...p});
   try {
@@ -153,7 +161,10 @@ async function status() {
   try {
     const r = await fetch('api.php?a=status');
     const s = await r.json();
-    if (!r.ok) { zeige(s.error || ('Fehler ' + r.status)); return; }
+    if (!r.ok) { zeige(s.error || ('Fehler ' + r.status)); xgonavStart = null; return; }
+    verbindungOk();
+    if (xgonavStart !== undefined && s.start !== xgonavStart) streamNeu();   // nach Ausfall oder Neustart
+    xgonavStart = s.start;
     aktModus = s.mode;
     document.getElementById('kurz').innerHTML = felder
       .map(([k, f]) => '<tr><td>' + k + '</td><td>' + String(f(s) ?? '-').replace(/[<&]/g, c => c === '<' ? '&lt;' : '&amp;') + '</td></tr>').join('');
@@ -163,7 +174,7 @@ async function status() {
     gainStatus(s.exposure);
     document.getElementById('pip-an').classList.toggle('aktiv', s.pipeline === 'läuft');
     document.getElementById('pip-aus').classList.toggle('aktiv', s.pipeline === 'gestoppt');
-  } catch (e) { zeige('keine Verbindung zu xgonav'); }
+  } catch (e) { zeige('keine Verbindung zu xgonav'); xgonavStart = null; }
 }
 
 // --- Handsteuerung: solange gedrückt alle 200 ms senden; xgonav hält nach 0,5 s ohne Sollwert an
