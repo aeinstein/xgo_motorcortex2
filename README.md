@@ -190,9 +190,12 @@ python -m xgonav --mode idle --record debug.mp4   # nur schauen, Overlay aufzeic
 
 Bedienoberfläche: PHP (`web/`) hinter nginx, `https://riderpi/xgonav/`: Live-Overlay,
 Status, Moduswechsel und **STOPP**. xgonav selbst liefert nur eine lokale Schnittstelle
-auf `127.0.0.1:8088` (`/status`, `/stream`, `POST /mode|/stop|/pipeline|...`);
+auf `127.0.0.1:8088` (`/status`, `/ws`, `/frame`, `/stream`, `POST /mode|/stop|/pipeline|...`);
 `api.php` nimmt nur bekannte Befehle per POST an und prüft die Parameter, das Live-Bild
-reicht nginx direkt von xgonav durch. Keine Authentifizierung,
+reicht nginx direkt von xgonav durch. Die Oberfläche bekommt die Bilder über eine
+WebSocket-Verbindung (`/xgonav/ws`, TLS endet in nginx) und bestätigt jedes Bild; erst
+dann schickt xgonav das nächste, neueste. Der frühere MJPEG-Stream staute sich über
+schwaches WLAN in den TCP-Puffern (bis 20 s Verzögerung). Keine Authentifizierung,
 also nur im LAN betreiben. Einrichtung am RiderPi (TLS macht nginx auf 443; früher
 stunnel, das nach jedem Start und alle 24 h DH-Parameter rechnete, ~15 % CPU):
 

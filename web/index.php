@@ -51,7 +51,7 @@ pre{background:#1b1b1b;padding:8px;overflow:auto;max-height:40vh}
 <body>
 <div class="raster">
 <div>
-  <img id="bild" src="stream" alt="Kamerabild" width="640" height="480">
+  <img id="bild" alt="Kamerabild" width="640" height="480">
   <div style="margin-top:6px">
     <button id="stop" onclick="befehl('stop')">STOPP</button>
     <button data-modus="idle" onclick="modus('idle')">Idle</button>
@@ -143,9 +143,23 @@ const VERBINDUNG = /nicht erreichbar|keine Verbindung/;
 function verbindungOk() {
   if (VERBINDUNG.test(document.getElementById('meldung').textContent)) zeige('');
 }
-// Stream neu verbinden: ein beendeter MJPEG-Stream bleibt sonst als Standbild stehen
-let xgonavStart;          // undefined = Seite frisch geladen, null = xgonav war weg
-function streamNeu() { document.getElementById('bild').src = 'stream?' + Date.now(); }
+// Kamerabild über eine WebSocket-Verbindung. Jedes Bild wird sofort bestätigt, erst dann
+// schickt xgonav das nächste (neueste): kein Rückstau wie beim MJPEG-Stream über schwaches
+// WLAN (bis 20 s). Nachricht: 4 Byte Bildnummer + JPEG. Bei Abbruch nach 1 s neu verbinden.
+let bildUrl = null;
+function bildVerbinden() {
+  const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host +
+                           location.pathname.replace(/[^/]*$/, '') + 'ws');
+  ws.binaryType = 'arraybuffer';
+  ws.onmessage = ev => {
+    ws.send('ok');                                    // Bestätigung: nächstes Bild bitte
+    const url = URL.createObjectURL(new Blob([new Uint8Array(ev.data, 4)], {type: 'image/jpeg'}));
+    document.getElementById('bild').src = url;
+    if (bildUrl) URL.revokeObjectURL(bildUrl);
+    bildUrl = url;
+  };
+  ws.onclose = () => setTimeout(bildVerbinden, 1000);
+}
 async function befehl(a, p = {}, still = false) {
   const q = new URLSearchParams({a, ...p});
   try {
@@ -161,10 +175,8 @@ async function status() {
   try {
     const r = await fetch('api.php?a=status');
     const s = await r.json();
-    if (!r.ok) { zeige(s.error || ('Fehler ' + r.status)); xgonavStart = null; return; }
+    if (!r.ok) { zeige(s.error || ('Fehler ' + r.status)); return; }
     verbindungOk();
-    if (xgonavStart !== undefined && s.start !== xgonavStart) streamNeu();   // nach Ausfall oder Neustart
-    xgonavStart = s.start;
     aktModus = s.mode;
     document.getElementById('kurz').innerHTML = felder
       .map(([k, f]) => '<tr><td>' + k + '</td><td>' + String(f(s) ?? '-').replace(/[<&]/g, c => c === '<' ? '&lt;' : '&amp;') + '</td></tr>').join('');
@@ -174,7 +186,7 @@ async function status() {
     gainStatus(s.exposure);
     document.getElementById('pip-an').classList.toggle('aktiv', s.pipeline === 'läuft');
     document.getElementById('pip-aus').classList.toggle('aktiv', s.pipeline === 'gestoppt');
-  } catch (e) { zeige('keine Verbindung zu xgonav'); xgonavStart = null; }
+  } catch (e) { zeige('keine Verbindung zu xgonav'); }
 }
 
 // --- Handsteuerung: solange gedrückt alle 200 ms senden; xgonav hält nach 0,5 s ohne Sollwert an
@@ -292,10 +304,7 @@ function herunterfahren() {
   if (confirm('Rider wirklich herunterfahren?')) befehl('shutdown');
 }
 
-// Stream nach Abbruch (z. B. Neustart von xgonav) neu verbinden
-document.getElementById('bild').onerror = function () {
-  setTimeout(() => { this.src = 'stream?' + Date.now(); }, 2000);
-};
+bildVerbinden();
 status();
 setInterval(status, 700);
 </script>

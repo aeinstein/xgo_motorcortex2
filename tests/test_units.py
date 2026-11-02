@@ -488,3 +488,19 @@ def test_gain_runtime_limits():
         with pytest.raises(ValueError):
             src.set_gain(bad)
     assert src.set_gain(0) == 0.0
+
+
+def test_websocket_handshake_and_frames():
+    import io
+    import struct
+    from xgonav.web import ws_accept, ws_frame, ws_read
+    assert ws_accept("dGhlIHNhbXBsZSBub25jZQ==") == "s3pPLMBiTxaQ9kYGzzhZRbK+xOo="   # RFC 6455, 1.3
+    for n in (5, 300, 70000):                                  # 7-, 16- und 64-Bit-Länge
+        f = ws_frame(0x2, b"x" * n)
+        assert f[0] == 0x82 and f.endswith(b"x" * n)
+    # maskierte Client-Nachricht "ok"
+    mask = b"\x01\x02\x03\x04"
+    data = bytes(c ^ mask[i % 4] for i, c in enumerate(b"ok"))
+    assert ws_read(io.BytesIO(struct.pack("!BB", 0x81, 0x80 | 2) + mask + data)) == (0x1, b"ok")
+    assert ws_read(io.BytesIO(b"")) is None
+
