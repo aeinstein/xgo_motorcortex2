@@ -77,6 +77,22 @@ class FreeSpaceEstimator:
             # je Spalte: Zeilen von unten bis zum ersten zuverlässigen Pixel (H = keines)
             inv = self._srel[::-1]
             self._unknown_rows = np.where(inv.any(axis=0), inv.argmax(axis=0), self.H).astype(np.float32)
+        # Konstant je Lauf, deshalb nur einmal: Probenmaske aus der Abschattung, Puffer,
+        # Zeilenindizes für _column_free (am CM4 kosteten die Neuberechnungen ~1 ms je Bild).
+        x0, y0, x1, y1 = self._sample_rect()
+        self._smask_rel = None
+        if self._srel is not None:
+            rel = self._srel[y0:y1, x0:x1]
+            if rel.mean() > 0.2:          # sonst lieber die ganze Probe als fast keine
+                self._smask_rel = rel.astype(np.uint8) * 255
+        self._fbuf = np.empty((self.H, self.W, 3), np.float32)
+        self._sel = None if self._smask_rel is None else self._smask_rel > 0   # Probenpixel (bool)
+        self._idx16 = np.arange(self.H, dtype=np.int16)[:, None]
+        self._thr_reach = (self.H - np.arange(self.H, dtype=np.float32))[:, None]  # Lauf bis oben
+        self._y_base = (self.H - np.arange(self.H, dtype=np.float32)) * self.scale  # Zeilen-Unterkante
+        self._k_erode = np.ones((1, 5), np.uint8)
+        self._k3 = np.ones((3, 3), np.uint8)
+        self._k5 = np.ones((5, 5), np.uint8)
 
     def _sample_rect(self):
         y1 = int(round(self.H * (1 - self.cfg.sample_bottom)))
@@ -91,16 +107,17 @@ class FreeSpaceEstimator:
         Probenbereich als Boden und erkennt danach den echten Boden nicht mehr."""
         small = cv2.resize(bgr, (self.W, self.H), interpolation=cv2.INTER_AREA)
         if self._sgain is not None:
-            small = np.clip(small.astype(np.float32) * self._sgain, 0, 255).astype(np.uint8)
+            # = clip(small * gain, 0, 255) -> uint8; Verstärkung >= 0, also nur oben begrenzen
+            # (np.clip hat in der numpy-Version am Rider viel Overhead)
+            buf = self._fbuf
+            np.multiply(small, self._sgain, out=buf)
+            np.minimum(buf, 255, out=buf)
+            small = buf.astype(np.uint8)
         small = cv2.GaussianBlur(small, (5, 5), 0)
         hsv = cv2.cvtColor(small, cv2.COLOR_BGR2HSV)
         x0, y0, x1, y1 = self._sample_rect()
         sample = hsv[y0:y1, x0:x1]
-        smask = None
-        if self._srel is not None:
-            rel = self._srel[y0:y1, x0:x1]
-            if rel.mean() > 0.2:          # sonst lieber die ganze Probe als fast keine
-                smask = rel.astype(np.uint8) * 255
+        smask = self._smask_rel           # konstant, in __init__ berechnet; nicht verändern
         occupied = 0.0
         if len(exclude_boxes):
             occ = np.zeros((y1 - y0, x1 - x0), np.uint8)
@@ -128,7 +145,8 @@ class FreeSpaceEstimator:
             # Modell nur nachführen, wenn die Probe zum Modell passt (sonst steht
             # wahrscheinlich gerade ein Hindernis im Probenbereich)
             bp = cv2.calcBackProject([sample], [0, 1], self.model, self._ranges, 1)
-            bpm = float(bp[smask > 0].mean()) if smask is not None and (smask > 0).any() else float(bp.mean())
+            sel = self._sel if smask is self._smask_rel else (None if smask is None else smask > 0)
+            bpm = float(bp[sel].mean()) if sel is not None and sel.any() else float(bp.mean())
             if bpm / 255.0 > self.cfg.floor_thresh * 2:
                 self.model = cv2.addWeighted(self.model, 0.9, hist, 0.1, 0)
                 updated = True
@@ -137,31 +155,41 @@ class FreeSpaceEstimator:
         # Graue Böden: Hue ist bei niedriger Sättigung Rauschen -> S-Kanal glätten hilft,
         # zusätzlich Helligkeitsähnlichkeit als schwacher Faktor
         v = hsv[..., 2].astype(np.float32)
-        vref = float(np.median(sample[..., 2][smask > 0] if smask is not None else sample[..., 2]))
-        prob *= np.clip(1.2 - np.abs(v - vref) / 160.0, 0.2, 1.0)
+        vsel = self._sel if smask is self._smask_rel else (None if smask is None else smask > 0)
+        vref = float(np.median(sample[..., 2][vsel] if vsel is not None else sample[..., 2]))
+        fac = np.abs(v - vref)            # = clip(1.2 - |v - vref| / 160, 0.2, 1.0), ohne np.clip
+        fac /= -160.0
+        fac += 1.2
+        np.maximum(fac, 0.2, out=fac)
+        np.minimum(fac, 1.0, out=fac)
+        prob *= fac
         edges = cv2.Canny(cv2.cvtColor(small, cv2.COLOR_BGR2GRAY), 40, 120)
-        edges = cv2.dilate(edges, np.ones((3, 3), np.uint8))
-        prob[edges > 0] *= self.cfg.edge_weight
+        edges = cv2.dilate(edges, self._k3)
+        np.multiply(prob, np.float32(self.cfg.edge_weight), out=prob, where=edges > 0)
         floor = (prob > self.cfg.floor_thresh).astype(np.uint8) * 255
         if self._srel is not None:
             floor[~self._srel] = 255      # Farbe nicht messbar: unbekannt, nie Hindernis
-        floor = cv2.morphologyEx(floor, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
-        floor = cv2.morphologyEx(floor, cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8))
+        floor = cv2.morphologyEx(floor, cv2.MORPH_OPEN, self._k3)
+        floor = cv2.morphologyEx(floor, cv2.MORPH_CLOSE, self._k5)
 
         hz_full = self.geo.horizon_row(pitch_dev) if self.geo else self.H * self.scale / 2
         horizon = hz_full / self.scale
-        horizon = float(np.clip(horizon, self.H * 0.2, self.H * 0.8))
+        horizon = min(max(float(horizon), self.H * 0.2), self.H * 0.8)
         cols = self._column_free(floor, horizon, pitch_dev)
         n = self.cfg.sectors
         edges_x = np.linspace(0, self.W, n + 1).astype(int)
         sectors = [_p20(cols[edges_x[i]:edges_x[i + 1]]) for i in range(n)]
         hz_i = int(horizon)
-        below = floor[hz_i:]
         if self._srel is not None:
-            below = below[self._srel[hz_i:]]
+            rel_b = self._srel[hz_i:]
+            n_b = int(np.count_nonzero(rel_b))
+            ff = np.count_nonzero(np.logical_and(floor[hz_i:] > 0, rel_b)) / n_b if n_b else None
+        else:
+            below = floor[hz_i:]
+            ff = float((below > 0).mean()) if below.size else None
         self.diag = {"updated": updated, "match": None if bpm is None else round(bpm / 255.0, 3),
                      "occupied": round(occupied, 2), "sample_px": int((smask > 0).sum()) if smask is not None else int(sample.shape[0] * sample.shape[1]),
-                     "floor_frac": round(float((below > 0).mean()), 3) if below.size else None}
+                     "floor_frac": None if ff is None else round(float(ff), 3)}
         known = None
         if self._srel is not None:
             known = np.clip(self._unknown_rows / max(1.0, self.H - horizon), 0.0, 1.0)
@@ -177,34 +205,39 @@ class FreeSpaceEstimator:
         R = max(1, H - int(np.floor(horizon)))           # Fußpunkte nur unterhalb des Horizonts
         obst = floor[::-1] == 0                           # ganze Spalte, Index 0 = unterste Zeile
         # Länge des Laufs, der in jeder Zeile beginnt (rückwärts aufsummiert, auch über
-        # den Horizont hinaus: ein Gegenstand endet nicht an der Horizontlinie)
-        idx = np.arange(H, dtype=np.int32)[:, None]
+        # den Horizont hinaus: ein Gegenstand endet nicht an der Horizontlinie).
+        # int16 reicht (Werte <= H) und halbiert den Speicherverkehr gegenüber int32/64.
+        idx = self._idx16
         # nächste Bodenzeile oberhalb (bzw. H): kumulatives Minimum von oben nach unten gelesen
-        nxt = np.where(obst, H, idx)
+        nxt = np.where(obst, np.int16(H), idx)
         nxt = np.minimum.accumulate(nxt[::-1], axis=0)[::-1]
-        run = np.where(obst, nxt - idx, 0).astype(np.int32)
-        start = obst.copy()
-        start[1:] &= ~obst[:-1]
-        obst, run, start = obst[:R], run[:R], start[:R]
+        ob = obst[:R]                                     # ab hier nur Zeilen unter dem Horizont
+        run = nxt[:R] - idx[:R]
+        run[~ob] = 0
+        start = ob.copy()
+        start[1:] &= ~ob[:-1]
         need = np.full(R, float(self.cfg.min_obst_rows), np.float32)
         h = self.cfg.min_obst_height_m
         if h > 0 and self.geo is not None:
             g = self.geo
-            r_idx = np.arange(R, dtype=np.float32)
-            y_base = (H - r_idx) * self.scale            # Unterkante der Zeile, Vollbild
+            y_base = self._y_base[:R]                     # Unterkante der Zeile, Vollbild
             d = g.ground_dist_np(y_base, pitch_dev)
             off = math.radians(g.tilt_deg) + pitch_dev
             with np.errstate(invalid="ignore"):
                 y_top = g.H / 2 + g.f * np.tan(np.arctan2(g.cam_h - h, d) + off)
                 rows_h = (y_base - y_top) / self.scale
             need = np.maximum(need, np.where(np.isfinite(rows_h), rows_h, 0.0)).astype(np.float32)
-        reach = np.arange(R)[:, None] + run >= H           # Lauf reicht bis zum oberen Bildrand
-        valid = start & ((run >= need[:, None]) | reach)
+        # gültig: Lauf hoch genug (need) oder bis zum oberen Bildrand (Zeile + Lauf >= H);
+        # beides als eine Schwelle: run >= min(need, H - Zeile)
+        thr = np.minimum(need[:, None], self._thr_reach[:R])
+        valid = start & (run >= thr)
         has = valid.any(axis=0)
         first = np.where(has, valid.argmax(axis=0), span).astype(np.float32)
-        free = np.clip(first / span, 0.0, 1.0)
+        free = first / span
+        np.maximum(free, 0.0, out=free)
+        np.minimum(free, 1.0, out=free)
         # glätten (einzelne Ausreißerspalten)
-        free = cv2.erode(free.reshape(1, -1), np.ones((1, 5), np.uint8)).ravel()
+        free = cv2.erode(free.reshape(1, -1), self._k_erode).ravel()
         return free
 
     def block_boxes(self, fs: FreeSpace, boxes) -> None:
