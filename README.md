@@ -8,7 +8,7 @@ Alles, was auf dem RiderPi läuft, in einem Repo:
 | `st7789/` | Display-Daemon `st7789_server` (FIFO `/tmp/lcd0`, RGB565 320×240), basiert auf [libdriver/st7789](https://github.com/libdriver/st7789) |
 | `xgonav/`, `tools/`, `tests/` | xgonav, die kamerabasierte Navigation (Python) |
 | `web/` | Weboberfläche (PHP) |
-| `deploy/` | Konfigs: xgonav, nginx, php-fpm, stunnel, sudoers, rc.local |
+| `deploy/` | Konfigs: xgonav, nginx (mit TLS), php-fpm, sudoers, rc.local |
 | `driver-test/` | Treibercode im Userspace gegen einen ESP32-Emulator testen |
 
 Nicht enthalten: die alte Fernsteuerung `rc_server` (Node), Zertifikate und Schlüssel.
@@ -18,7 +18,8 @@ Nicht enthalten: die alte Fernsteuerung `rc_server` (Node), Zertifikate und Schl
 In einem Schritt: `sudo ./deploy/install-all.sh [--no-driver] [--no-display] [--no-web]`.
 Das Skript führt die Befehle unten aus, sichert überschriebene Dateien in `/etc` als
 `*.bak-<Zeitstempel>`, übernimmt den nginx-Benutzer für den php-fpm-Socket und richtet
-stunnel nur ein, wenn Zertifikat und Schlüssel vorhanden sind. Es startet weder xgonav
+nginx auf 443 nur ein, wenn Zertifikat und Schlüssel vorhanden sind (ein laufendes
+stunnel wird dabei abgeschaltet). Es startet weder xgonav
 noch lädt es den Treiber neu; beides passiert erst nach dem Neustart bzw. von Hand.
 
 ```
@@ -26,14 +27,15 @@ sudo make -C kernel_module && sudo make -C kernel_module install    # Treiber
 make -C st7789/project/riderpi && sudo cp st7789/project/riderpi/st7789_server /usr/bin/
 sudo cp deploy/rc.local /etc/rc.local && sudo cp deploy/rc-local.service /etc/systemd/system/
 sudo ./deploy/install.sh                                            # xgonav nach /opt/xgonav
-# Web: nginx + php-fpm + stunnel (443 -> 127.0.0.1:1080)
-sudo apt-get install -y nginx php8.2-fpm stunnel4
+# Web: nginx (TLS auf 443) + php-fpm
+sudo apt-get install -y nginx php8.2-fpm
 sudo cp deploy/nginx-xgonav.conf /etc/nginx/sites-available/xgonav && sudo ln -s ../sites-available/xgonav /etc/nginx/sites-enabled/
+#   (ssl_certificate/ssl_certificate_key in der Datei ggf. anpassen)
 sudo cp deploy/php-fpm-xgonav.conf /etc/php/8.2/fpm/pool.d/xgonav.conf
-sudo cp deploy/stunnel.conf /etc/stunnel/stunnel.conf               # Pfade zu Zertifikat/Schlüssel anpassen
 sudo usermod -aG video www-data
 sudo install -m 0440 deploy/sudoers-xgonav-poweroff /etc/sudoers.d/xgonav-poweroff && sudo visudo -c
-sudo systemctl restart php8.2-fpm nginx stunnel4
+sudo systemctl disable --now stunnel4 2>/dev/null   # falls noch vorhanden: belegt sonst 443
+sudo nginx -t && sudo systemctl restart php8.2-fpm nginx
 ```
 
 `st7789/project/riderpi`: `make install` richtet zusätzlich `st7789_display.service` ein.
@@ -188,21 +190,24 @@ python -m xgonav --mode idle --record debug.mp4   # nur schauen, Overlay aufzeic
 
 Bedienoberfläche: PHP (`web/`) hinter nginx, `https://riderpi/xgonav/`: Live-Overlay,
 Status, Moduswechsel und **STOPP**. xgonav selbst liefert nur eine lokale Schnittstelle
-auf `127.0.0.1:8088` (`/status`, `/stream`, `POST /mode|/stop|/pipeline`); `api.php`
-nimmt nur bekannte Befehle per POST an und prüft die Parameter, das Live-Bild reicht
-nginx direkt von xgonav durch. Keine Authentifizierung, also nur im LAN betreiben.
-Einrichtung am RiderPi (SSL macht stunnel auf 443 → `127.0.0.1:1080`):
+auf `127.0.0.1:8088` (`/status`, `/stream`, `POST /mode|/stop|/pipeline|...`);
+`api.php` nimmt nur bekannte Befehle per POST an und prüft die Parameter, das Live-Bild
+reicht nginx direkt von xgonav durch. Keine Authentifizierung,
+also nur im LAN betreiben. Einrichtung am RiderPi (TLS macht nginx auf 443; früher
+stunnel, das nach jedem Start und alle 24 h DH-Parameter rechnete, ~15 % CPU):
 
 ```
 sudo apt-get install php8.2-fpm
 sudo cp deploy/php-fpm-xgonav.conf /etc/php/8.2/fpm/pool.d/xgonav.conf   # listen.owner = nginx-Benutzer
 sudo cp deploy/nginx-xgonav.conf /etc/nginx/sites-available/xgonav
 sudo ln -s /etc/nginx/sites-available/xgonav /etc/nginx/sites-enabled/
-# rc_server (Fernsteuerung) zieht von 1080 auf 1081 um: remote_control.js "const port = 1081"
-sudo nginx -t && sudo systemctl reload php8.2-fpm nginx
+sudo rm /etc/nginx/sites-enabled/default                # xgonav ist default_server auf 80 (-> https)
+sudo systemctl disable --now rc-control                 # alte Fernsteuerung (rc_server) ist abgelöst
+sudo systemctl disable --now stunnel4
+sudo nginx -t && sudo systemctl restart php8.2-fpm nginx
 ```
 
-Die Oberfläche enthält auch die Funktionen der früheren Fernsteuerung (`rc_server`):
+Die Oberfläche ersetzt die frühere Fernsteuerung (`rc_server`, Node; nicht mehr erreichbar, `/` leitet auf `/xgonav/`):
 **Handsteuerung** (Modus `manual`: gedrückt halten per Maus/Touch/Pfeiltasten, alle
 0,2 s ein Sollwert, nach 0,5 s ohne Sollwert Stillstand; begrenzt auf `max_v`/`max_w`;
 funktioniert auch bei gestoppter Bildverarbeitung, dann ohne Kamera und fast ohne CPU;

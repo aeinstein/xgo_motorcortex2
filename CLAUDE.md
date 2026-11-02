@@ -91,6 +91,6 @@ Hardware-nahe Teile haben je eine echte und eine Sim-Implementierung mit gleiche
 ## Stolperfallen
 
 - Der Detektor (`DetectorCfg.model`) wird still deaktiviert, wenn die ONNX-Datei fehlt; `models/*.onnx` ist gitignored.
-- Weboberfläche ist PHP (`web/index.php`, `web/api.php`) hinter nginx (`deploy/nginx-xgonav.conf`, eigener php-fpm-Pool `deploy/php-fpm-xgonav.conf`); der Nutzer bevorzugt PHP fürs Web. `web.py` ist nur noch die lokale Schnittstelle (`web_host = 127.0.0.1`), ohne Authentifizierung. Am RiderPi: stunnel 443 → nginx 127.0.0.1:1080 → `/xgonav/` bzw. rc_server (Node) auf 1081.
+- Weboberfläche ist PHP (`web/index.php`, `web/api.php`) hinter nginx (`deploy/nginx-xgonav.conf`, eigener php-fpm-Pool `deploy/php-fpm-xgonav.conf`); der Nutzer bevorzugt PHP fürs Web. `web.py` ist nur noch die lokale Schnittstelle (`web_host = 127.0.0.1`), ohne Authentifizierung. Am RiderPi: nginx mit TLS auf 443 → `/xgonav/` (PHP), Port 80 und `/` leiten dorthin um. stunnel und die alte Fernsteuerung rc_server (Node, 1081, `rc-control.service`) sind abgeschaltet; `api.php` liest nur noch die Emotionen aus `rc_server/emotions`.
 - `lcd.py` und `picamera2` existieren nur auf dem Pi; beide werden lazy importiert und nur bei `--robot proc` aktiviert.
 - Die Annahme „1 Firmware-Einheit = 1 m/s“ (`vx_limit`) fließt nur in die Merkkarte ein und ist unkalibriert.

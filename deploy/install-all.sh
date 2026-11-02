@@ -1,7 +1,7 @@
 #!/bin/bash
 # Gesamtinstallation auf dem Rider (Raspberry Pi OS Bookworm 64-bit, CM4).
 # Fasst README „Gesamtinstallation auf dem Rider“ zusammen: Treiber, Display-Daemon,
-# rc.local, xgonav (deploy/install.sh), Weboberfläche (nginx, php-fpm, stunnel, sudoers).
+# rc.local, xgonav (deploy/install.sh), Weboberfläche (nginx mit TLS, php-fpm, sudoers).
 #
 # Aufruf im Repo-Root:  sudo ./deploy/install-all.sh [--no-driver] [--no-display] [--no-web]
 #
@@ -87,8 +87,8 @@ schritt "xgonav nach /opt/xgonav (deploy/install.sh)"
 
 # ---------------------------------------------------------------- Web
 if [ "$DO_WEB" = 1 ]; then
-    schritt "Weboberfläche: nginx, php-fpm, stunnel"
-    apt-get install -y nginx php8.2-fpm stunnel4
+    schritt "Weboberfläche: nginx (TLS auf 443), php-fpm"
+    apt-get install -y nginx php8.2-fpm
 
     # php-fpm-Socket muss dem Benutzer gehören, unter dem nginx läuft.
     NGINX_USER=$(awk '$1 == "user" { sub(";", "", $2); print $2; exit }' /etc/nginx/nginx.conf)
@@ -101,23 +101,29 @@ if [ "$DO_WEB" = 1 ]; then
     installiere "$tmp" /etc/php/8.2/fpm/pool.d/xgonav.conf
     rm -f "$tmp"
 
+    # nginx macht TLS selbst; ohne Zertifikat/Schlüssel (Pfade in deploy/nginx-xgonav.conf)
+    # würde nginx nicht starten, deshalb dann die Seite nicht aktivieren.
+    CERT=$(awk '$1 == "ssl_certificate" { sub(";", "", $2); print $2 }' deploy/nginx-xgonav.conf)
+    KEY=$(awk '$1 == "ssl_certificate_key" { sub(";", "", $2); print $2 }' deploy/nginx-xgonav.conf)
     installiere deploy/nginx-xgonav.conf /etc/nginx/sites-available/xgonav
-    ln -sfn ../sites-available/xgonav /etc/nginx/sites-enabled/xgonav
-
-    # stunnel nur, wenn Zertifikat und Schlüssel aus deploy/stunnel.conf existieren.
-    CERT=$(tr -d '\r' < deploy/stunnel.conf | awk -F' *= *' '$1 == "cert" { print $2 }')
-    KEY=$(tr -d '\r' < deploy/stunnel.conf | awk -F' *= *' '$1 == "key" { print $2 }')
     if [ -f "$CERT" ] && [ -f "$KEY" ]; then
-        tmp=$(mktemp)
-        sed -e "s/^setuid = .*/setuid = $USER_NAME/" \
-            -e "s/^setgid = .*/setgid = $USER_NAME/" \
-            deploy/stunnel.conf | tr -d '\r' > "$tmp"
-        installiere "$tmp" /etc/stunnel/stunnel.conf
-        rm -f "$tmp"
-        STUNNEL=1
+        ln -sfn ../sites-available/xgonav /etc/nginx/sites-enabled/xgonav
+        # Die Seite ist default_server auf 80 (Weiterleitung auf https), die Debian-Default-Site
+        # (bzw. die alte rc_server-Seite) würde damit kollidieren.
+        if [ -e /etc/nginx/sites-enabled/default ]; then
+            cp -a /etc/nginx/sites-enabled/default "/etc/nginx/sites-enabled-default.bak-$STAMP"
+            rm /etc/nginx/sites-enabled/default
+            echo "  sites-enabled/default entfernt (Sicherung /etc/nginx/sites-enabled-default.bak-$STAMP)"
+        fi
+        # stunnel (früher TLS auf 443) und die alte Fernsteuerung (rc_server, 1081) sind abgelöst.
+        for dienst in stunnel4 rc-control; do
+            if systemctl is-enabled --quiet "$dienst" 2>/dev/null || systemctl is-active --quiet "$dienst" 2>/dev/null; then
+                systemctl disable --now "$dienst" >/dev/null 2>&1 && echo "  $dienst gestoppt und abgeschaltet"
+            fi
+        done
     else
-        warnung "stunnel nicht eingerichtet: Zertifikat/Schlüssel fehlen ($CERT, $KEY). Pfade in deploy/stunnel.conf anpassen und erneut aufrufen."
-        STUNNEL=0
+        rm -f /etc/nginx/sites-enabled/xgonav
+        warnung "Weboberfläche nicht aktiviert: Zertifikat/Schlüssel fehlen ($CERT, $KEY). Pfade in deploy/nginx-xgonav.conf anpassen und erneut aufrufen."
     fi
 
     # Rechte für www-data: Emotionen nach /tmp/lcd0, nur "systemctl poweroff".
@@ -131,7 +137,6 @@ if [ "$DO_WEB" = 1 ]; then
 
     nginx -t
     systemctl restart php8.2-fpm nginx
-    if [ "$STUNNEL" = 1 ]; then systemctl restart stunnel4; fi
 fi
 
 # ---------------------------------------------------------------- Ende
@@ -142,10 +147,8 @@ Installiert: $( [ "$DO_DRIVER" = 1 ] && echo -n "Treiber, " )$( [ "$DO_DISPLAY" 
 Nächste Schritte:
   1. Neustart (lädt Treiber und Display-Daemon über rc.local):  sudo reboot
   2. Kontrolle:  cat /proc/XGORider/serial_stats; cat /proc/XGORider/imu
-  3. rc_server (Fernsteuerung) muss auf Port 1081 lauschen (remote_control.js: const port = 1081).
-  4. Probelauf ohne Fahren:  cd /opt/xgonav && venv/bin/python -m xgonav --config config.toml --mode idle
-  5. Dienst erst nach dem Probelauf:  sudo systemctl enable --now xgonav
-     Solange xgonav fährt, rc-control.service stoppen.
+  3. Probelauf ohne Fahren:  cd /opt/xgonav && venv/bin/python -m xgonav --config config.toml --mode idle
+  4. Dienst erst nach dem Probelauf:  sudo systemctl enable --now xgonav
   Oberfläche: https://<rider>/xgonav/
 EOF
 if [ ${#WARN[@]} -gt 0 ]; then
