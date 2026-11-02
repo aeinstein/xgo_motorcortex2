@@ -15,6 +15,12 @@ Nicht enthalten: die alte Fernsteuerung `rc_server` (Node), Zertifikate und Schl
 
 ## Gesamtinstallation auf dem Rider
 
+In einem Schritt: `sudo ./deploy/install-all.sh [--no-driver] [--no-display] [--no-web]`.
+Das Skript führt die Befehle unten aus, sichert überschriebene Dateien in `/etc` als
+`*.bak-<Zeitstempel>`, übernimmt den nginx-Benutzer für den php-fpm-Socket und richtet
+stunnel nur ein, wenn Zertifikat und Schlüssel vorhanden sind. Es startet weder xgonav
+noch lädt es den Treiber neu; beides passiert erst nach dem Neustart bzw. von Hand.
+
 ```
 sudo make -C kernel_module && sudo make -C kernel_module install    # Treiber
 make -C st7789/project/riderpi && sudo cp st7789/project/riderpi/st7789_server /usr/bin/

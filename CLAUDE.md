@@ -32,6 +32,7 @@ python -m xgonav --mode idle --record debug.mp4  # auf dem Rider: nur schauen, O
 driver-test/run.sh kernel_module 6 50 --faults   # Treiberlogik im Userspace gegen ESP32-Emulator
 make -C kernel_module                            # auf dem Rider: Treiber bauen (Kernel-Header nötig)
 sudo ./deploy/install.sh                         # auf dem Rider: nach /opt/xgonav + systemd-Unit
+sudo ./deploy/install-all.sh                     # auf dem Rider: alles (Treiber, Display, rc.local, xgonav, Web)
 python tools/nudge.py turn 20 | move 1.0         # auf dem Rider: balancierenden Rider drehen (IMU-geregelt) / fahren
 python tools/calibrate.py shading                # auf dem Rider: Linsenabschattung aus Weißbild -> shading.json
 ```

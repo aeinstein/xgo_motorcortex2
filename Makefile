@@ -1,9 +1,11 @@
 MAKEFILES := $(wildcard */Makefile)
 
-# Treiber und Display-Daemon (xgonav selbst: deploy/install.sh)
+# Treiber und Display-Daemon (alles zusammen: sudo ./deploy/install-all.sh)
+# Achtung: "make install" aktiviert st7789_display.service; auf dem RiderPi startet
+# rc.local den Daemon, deshalb dort install-all.sh verwenden.
 DIRS := kernel_module st7789/project/riderpi
 
-.PHONY: all clean $(DIRS)
+.PHONY: all clean install $(DIRS)
 
 all: $(DIRS)
 

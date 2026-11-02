@@ -32,4 +32,4 @@ echo
 echo "Installiert nach $DEST."
 echo "Test:      $DEST/venv/bin/python -m xgonav --config $DEST/config.toml --mode idle   (im Verzeichnis $DEST)"
 echo "Dienst:    systemctl enable --now xgonav"
-echo "Debug-Web: http://riderpi:8088/"
+echo "Oberfläche: https://<rider>/xgonav/ (nginx + php-fpm, siehe README; xgonav selbst nur 127.0.0.1:8088)"
