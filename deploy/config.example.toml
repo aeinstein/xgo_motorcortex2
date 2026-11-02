@@ -47,6 +47,7 @@ conf = 0.35
 classes = ["person"]   # nur Personen; Hindernisse kommen vom Bodenmodell (leer = alle COCO-Klassen)
 
 [freespace]
+threaded = true          # Bodenmodell in eigenem Thread: Schleife p95 27 -> 17 ms (CM4, 2026-11-02)
 # [K] Linsenabschattung: tools/calibrate.py shading erzeugt shading.json. Fehlt die
 # Datei, läuft xgonav ohne Korrektur (Warnung im Log) – dann hält das Bodenmodell am
 # RiderPi die Bildränder für Hindernisse und die Bahnprüfung blockiert.
@@ -88,3 +89,4 @@ battery_low = 20        # %, Treiber schaltet bei 8 % ab
 main_cpus = [0, 1]          # Hauptschleife, Kamera, OpenCV-Worker, Rest des Systems
 detector_cpus = [2, 3]      # YOLO: Aufrufer-Thread auf 2, onnxruntime-Pool-Thread auf 3
 render_cpus = [0, 1, 2, 3]  # Bilder für die Oberfläche: alle Kerne (auf 2-3 ist neben YOLO Luft)
+freespace_cpus = [2, 3]     # Bodenmodell-Thread: neben YOLO ist dort Luft
