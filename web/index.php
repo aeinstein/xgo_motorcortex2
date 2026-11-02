@@ -25,7 +25,8 @@ function h(string $s): string { return htmlspecialchars($s, ENT_QUOTES); }
 <title>xgonav – <?= $host ?></title>
 <style>
 body{font:14px system-ui,sans-serif;background:#111;color:#ddd;margin:12px}
-img{max-width:100%;border:1px solid #333;background:#000;min-height:120px;display:block}
+/* feste 4:3-Fläche (Kamera 640x480), auch ohne Stream; Bild wird darin eingepasst */
+#bild{width:100%;height:auto;aspect-ratio:4/3;object-fit:contain;box-sizing:border-box;border:1px solid #333;background:#000;display:block}
 button{font-size:15px;margin:3px;padding:8px 14px;border-radius:4px;border:1px solid #555;background:#2a2a2a;color:#eee;touch-action:manipulation}
 button.aktiv{border-color:#4a4;background:#243}
 #stop{background:#c00;color:#fff;font-weight:bold;border-color:#c00}
@@ -50,7 +51,7 @@ pre{background:#1b1b1b;padding:8px;overflow:auto;max-height:40vh}
 <body>
 <div class="raster">
 <div>
-  <img id="bild" src="stream" alt="Kamerabild">
+  <img id="bild" src="stream" alt="Kamerabild" width="640" height="480">
   <div style="margin-top:6px">
     <button id="stop" onclick="befehl('stop')">STOPP</button>
     <button data-modus="idle" onclick="modus('idle')">Idle</button>
