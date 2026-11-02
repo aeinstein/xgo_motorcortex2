@@ -422,3 +422,33 @@ def test_reverse_gain():
     assert r._sent[0] == 128 - round(0.30 * 127)          # 90
     r._cur = (0.15, 0.0); r._send(time.monotonic() + 20)
     assert r._sent[0] == 128 + round(0.15 * 127)          # 147
+
+
+def test_emotion_trigger():
+    from xgonav.config import EmotionCfg
+    from xgonav.emotion import EmotionTrigger
+    played, busy = [], [False]
+    tr = EmotionTrigger(EmotionCfg(gap_s=5, lost_s=2, battery_low=20, battery_repeat_s=300),
+                        played.append, lambda: busy[0])
+    # Person erscheint -> surprised, bleibt sie, nichts mehr
+    assert tr.update(0.0, "idle", True, 80) == "surprised"
+    assert tr.update(1.0, "idle", True, 80) is None
+    # kurz weg (< gap_s) und wieder da: kein neues surprised
+    tr.update(2.0, "idle", False, 80)
+    assert tr.update(3.0, "idle", True, 80) is None
+    # follow ohne Person: doubt erst lost_s nach dem Moduswechsel, nur einmal
+    assert tr.update(4.0, "follow", False, 80) is None
+    assert tr.update(5.5, "follow", False, 80) is None
+    assert tr.update(6.1, "follow", False, 80) == "doubt"
+    assert tr.update(7.0, "follow", False, 80) is None
+    # nach > gap_s ohne Person: surprised; läuft gerade etwas, wird gewartet
+    busy[0] = True
+    assert tr.update(9.0, "follow", True, 80) is None
+    busy[0] = False
+    assert tr.update(9.1, "follow", True, 80) == "surprised"
+    # Akku: shy, dann erst nach battery_repeat_s wieder; 0/None = unbekannt
+    assert tr.update(10.0, "idle", None, 19) == "shy"
+    assert tr.update(11.0, "idle", None, 19) is None
+    assert tr.update(311.0, "idle", None, 19) == "shy"
+    assert tr.update(700.0, "idle", None, 0) is None
+    assert played == ["surprised", "doubt", "surprised", "shy", "shy"]

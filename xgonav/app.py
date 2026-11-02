@@ -91,6 +91,7 @@ class App:
         self._cmd = Command()
         self._det_count = 0
         self._loop_ms = 0.0
+        self.emotions = None           # emotion.Emotions, von __main__ gesetzt (nur am Rider)
 
     # ------------------------------------------------------------------
     # Diese Modi fahren auf Freiraum zu und verlassen sich auf Bodenmodell + Merkkarte.
@@ -212,6 +213,7 @@ class App:
             self.behavior = make_behavior("idle", self.cfg.behavior, self.cfg.robot)
         if self.behavior.name != "manual":
             self._cmd = Command(0.0, 0.0, None, "Bildverarbeitung gestoppt")
+            self._emotion_tick(None)
             time.sleep(0.1)
             return
         period = 1.0 / self.cfg.control_hz
@@ -285,6 +287,8 @@ class App:
                 self._last_height_t = now
             self._cmd = cmd
             self._free_ctrl = free
+            cls = self.cfg.behavior.target_class
+            self._emotion_tick(any(t.cls == cls and t.lost_s(f.t) < 0.5 for t in tracks))
 
         snap = Snapshot(frame=f.bgr, idx=f.idx, t=f.t, pitch_dev=pitch_dev, tracks=list(tracks),
                         tracks_all=list(self.tracker.tracks), cam_meta=f.meta,
@@ -305,6 +309,13 @@ class App:
             self.snapshot = snap
             self.snap_cond.notify_all()
 
+
+    def _emotion_tick(self, person: bool | None) -> None:
+        if self.emotions is not None:
+            try:
+                self.emotions.update(time.monotonic(), self.behavior.name, person, self.robot.state.battery)
+            except Exception as e:                  # Anzeige darf die Regelung nie stören
+                log.warning("Emotion: %s", e)
 
     def _pitch_dev(self, f, ego) -> float:
         """Nickabweichung der Kamera: absolut aus der IMU, wenn synchronisiert, sonst

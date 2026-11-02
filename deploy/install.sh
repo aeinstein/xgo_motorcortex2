@@ -15,6 +15,14 @@ mkdir -p "$DEST" "$DEST/models"
 cp -r xgonav tools web "$DEST/"
 [ -f "$DEST/config.toml" ] || cp deploy/config.example.toml "$DEST/config.toml"
 cp -n models/*.onnx "$DEST/models/" 2>/dev/null || echo "Hinweis: kein Modell in models/ – siehe tools/export_model.sh"
+# Emotionen einmalig nach RGB565 konvertieren (Abspielen dann ohne ffmpeg).
+EMOTIONS_SRC=${EMOTIONS_SRC:-/home/$USER_NAME/motorcortex/rc_server/emotions}
+if [ -d "$EMOTIONS_SRC" ]; then
+    echo "Konvertiere Emotionen aus $EMOTIONS_SRC (einmalig, dauert einige Minuten) ..."
+    tools/emotion.sh build "$EMOTIONS_SRC" "$DEST/emotions"
+else
+    echo "Hinweis: keine Emotionen unter $EMOTIONS_SRC – EMOTIONS_SRC=... setzen"
+fi
 chown -R "$USER_NAME":"$USER_NAME" "$DEST"
 usermod -aG video "$USER_NAME"
 

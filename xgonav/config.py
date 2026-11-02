@@ -161,6 +161,18 @@ class OutputCfg:
 
 
 @dataclass
+class EmotionCfg:
+    """Automatische Emotionen (xgonav/emotion.py); nur mit --robot proc."""
+    enabled: bool = True
+    dir: str = "/opt/xgonav/emotions"   # von tools/emotion.sh build (deploy/install.sh)
+    fifo: str = "/tmp/lcd0"         # unabhängig von output.lcd_fifo (Overlay)
+    gap_s: float = 5.0              # surprised erst, wenn so lange keine Person zu sehen war
+    lost_s: float = 2.0             # follow: doubt, wenn so lange keine Person
+    battery_low: int = 20           # % (Treiber schaltet bei 8 % ab); darunter shy
+    battery_repeat_s: float = 300.0
+
+
+@dataclass
 class Config:
     robot: RobotCfg = field(default_factory=RobotCfg)
     camera: CameraCfg = field(default_factory=CameraCfg)
@@ -172,6 +184,7 @@ class Config:
     map: MapCfg = field(default_factory=MapCfg)
     behavior: BehaviorCfg = field(default_factory=BehaviorCfg)
     output: OutputCfg = field(default_factory=OutputCfg)
+    emotion: EmotionCfg = field(default_factory=EmotionCfg)
     control_hz: float = 20.0
 
     @classmethod

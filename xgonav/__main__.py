@@ -76,6 +76,9 @@ def main(argv=None) -> int:
     if cfg.output.lcd_fifo and kind == "proc":
         from .lcd import LcdOut
         LcdOut(app, cfg.output.lcd_fifo, cfg.output.lcd_fps)
+    if cfg.emotion.enabled and kind == "proc":
+        from .emotion import Emotions
+        app.emotions = Emotions(cfg.emotion, cfg.emotion.fifo)
     recs = []
     if a.record:
         recs.append(threading.Thread(target=_recorder, args=(app, a.record, cfg.camera.fps), daemon=True))

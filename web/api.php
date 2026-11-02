@@ -27,6 +27,8 @@ const XGONAV = 'http://127.0.0.1:8088';
 const MODES = ['idle', 'manual', 'follow', 'explore', 'approach'];
 const PROC = '/proc/XGORider';
 const RC = '/home/aeinstein/motorcortex/rc_server';     // Emotionen der früheren Fernsteuerung
+const EMOTION = '/opt/xgonav/tools/emotion.sh';         // Player (RGB565-Rohbilder statt ffmpeg)
+const EMOTION_RAW = '/opt/xgonav/emotions';             // von deploy/install.sh vorkonvertiert
 const HEIGHT_MIN = 43;                                   // u8; ~10 mm über dem Minimum
 const HEIGHT_MAX = 255;                                 // volle Höhe (Firmware 0..255)
 
@@ -132,11 +134,21 @@ switch ($a) {
         if (!is_writable('/tmp/lcd0')) {    // FIFO des Display-Daemons, Gruppe video
             antwort(500, json_encode(['error' => 'Display nicht beschreibbar (www-data in Gruppe video?)']));
         }
-        exec('pkill -u www-data -f "ffmpeg.*/tmp/lcd0" 2>/dev/null');   // laufende Emotion abbrechen
-        exec(sprintf('%s %s > /dev/null 2>&1 &', escapeshellarg(RC . '/scripts/showEmotion'),
-                     escapeshellarg(RC . '/emotions/' . $name)));
+        // laufende Emotion abbrechen (Player und ggf. ffmpeg-Fallback bzw. altes showEmotion)
+        exec('pkill -u www-data -f "[e]motion.sh play|[f]fmpeg.*/tmp/lcd0" 2>/dev/null');
+        // Vorkonvertierte Bilder, sonst spielt der Player die PNGs mit ffmpeg ab.
+        $verz = is_dir(EMOTION_RAW . '/' . $name) ? EMOTION_RAW . '/' . $name : RC . '/emotions/' . $name;
+        exec(sprintf('%s play %s > /dev/null 2>&1 &', escapeshellarg(EMOTION), escapeshellarg($verz)));
         antwort(200, json_encode(['ok' => true]));
     case 'shutdown':
+        // Erst prüfen, ob poweroff erlaubt ist, dann "sleep" abspielen (blockiert ~4 s), dann aus.
+        exec('sudo -n -l /usr/bin/systemctl poweroff 2>&1', $out, $rc);
+        if ($rc === 0 && is_dir(EMOTION_RAW . '/sleep') && is_writable('/tmp/lcd0')) {
+            exec('pkill -u www-data -f "[e]motion.sh play|[f]fmpeg.*/tmp/lcd0" 2>/dev/null');
+            exec(sprintf('timeout 10 %s play %s > /dev/null 2>&1', escapeshellarg(EMOTION),
+                         escapeshellarg(EMOTION_RAW . '/sleep')));
+        }
+        $out = [];
         exec('sudo -n /usr/bin/systemctl poweroff 2>&1', $out, $rc);
         antwort($rc === 0 ? 200 : 500, json_encode($rc === 0 ? ['ok' => true] : ['error' => 'Herunterfahren nicht erlaubt: ' . implode(' ', $out)]));
     default:

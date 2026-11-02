@@ -203,6 +203,15 @@ funktioniert auch bei gestoppter Bildverarbeitung, dann ohne Kamera und fast ohn
 ohne Bodenmodell und Bahnprüfung, mit Sturz-Erkennung und Watchdogs), Höhe (u8 43–255,
 mit Abstand zum Minimum), Aktionen 1–6/Stopp, LEDs inkl. Strobe, Emotionen aufs
 Display, Roll (−20…20°, + = nach rechts, braucht Treiber-Patch 0004), Bein-Kalibrierung, Herunterfahren.
+Emotionen spielt `tools/emotion.sh` ab: `deploy/install.sh` konvertiert die PNGs aus
+`rc_server/emotions` einmalig nach `/opt/xgonav/emotions` (RGB565-Rohbilder, ~140 MB),
+beim Abspielen werden nur noch Bilder ins FIFO kopiert (25 fps) statt sie per ffmpeg
+zu dekodieren. Ohne Konvertierung spielt der Player die PNGs wie früher mit ffmpeg ab.
+Automatisch: `cute` beim Hochfahren (rc.local), `sleep` vor dem Herunterfahren aus der
+Oberfläche (api.php), aus xgonav (`[emotion]`, `xgonav/emotion.py`) `surprised`, wenn eine
+Person erscheint (nach `gap_s` ohne Person), `doubt` im Modus follow ohne Person (`lost_s`)
+und `shy` bei Akku ≤ `battery_low` % (alle 5 min). Der zuletzt gestartete Player gewinnt
+(`/tmp/lcd0.owner`, legt rc.local an); das LCD-Overlay pausiert, solange eine Emotion läuft.
 LEDs, Aktionen, Höhe, Roll und Kalibrierung schreibt PHP direkt nach `/proc/XGORider`.
 Zwei Rechte braucht `www-data` dafür:
 

@@ -7,6 +7,10 @@ modprobe xgo-drv
 st7789_server
 chgrp video /tmp/lcd0
 chmod g+w /tmp/lcd0
+# Besitzer-Datei der Emotions-Player (tools/emotion.sh): root-eigen wegen fs.protected_regular
+install -m 0664 -g video /dev/null /tmp/lcd0.owner
+# Hochgefahren: Emotion "cute"
+[ -x /opt/xgonav/tools/emotion.sh ] && /opt/xgonav/tools/emotion.sh play /opt/xgonav/emotions/cute >/dev/null 2>&1 &
 
 exit 0
 

@@ -71,3 +71,9 @@ web_host = "127.0.0.1"  # nur lokal; Oberfläche: PHP über nginx (deploy/nginx-
 web_port = 8088
 lcd_fifo = "/tmp/lcd0"
 lcd_fps = 15
+
+[emotion]               # automatisch aufs Display (xgonav/emotion.py), nur am Rider
+enabled = true          # surprised: Person erscheint; doubt: follow ohne Person; shy: Akku niedrig
+gap_s = 5.0             # surprised erst nach so langer Pause ohne Person
+lost_s = 2.0            # follow: doubt nach so langer Zeit ohne Person
+battery_low = 20        # %, Treiber schaltet bei 8 % ab

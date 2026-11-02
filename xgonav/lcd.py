@@ -12,6 +12,7 @@ import cv2
 import numpy as np
 
 from .app import App, render
+from .emotion import active as emotion_active
 
 log = logging.getLogger(__name__)
 
@@ -47,6 +48,14 @@ class LcdOut:
             time.sleep(0.1)
         while self.app.running:
             t0 = time.monotonic()
+            if emotion_active(self.fifo):
+                # Emotion läuft: FIFO freigeben. Erst wenn alle Schreiber zu sind, setzt
+                # der Daemon seinen Bildanfang zurück (falls ein Player mitten im Bild endete).
+                if self._fd is not None:
+                    os.close(self._fd)
+                    self._fd = None
+                time.sleep(0.2)
+                continue
             if self._fd is None and not self._open():
                 time.sleep(2.0)
                 continue
