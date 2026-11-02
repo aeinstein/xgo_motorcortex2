@@ -80,6 +80,19 @@ pre{background:#1b1b1b;padding:8px;overflow:auto;max-height:40vh}
     <div class="klein">Gedrückt halten (Maus, Touch, Pfeiltasten/WASD). Schaltet auf „Hand“; begrenzt auf max_v/max_w
       der Konfiguration. Ohne Bodenmodell/Bahnprüfung, Sturz-Erkennung und Watchdogs bleiben.</div>
   </fieldset>
+  <fieldset><legend>Kamera</legend>
+    Belichtung <input type="range" id="belicht" min="1" max="33" value="15" step="1"
+      oninput="belichtAnzeige(this.value * 1000)" onchange="belichtung(this.value * 1000)">
+    <span id="belicht-w">-</span>
+    <button id="belicht-auto" onclick="belichtung(0)">Auto</button>
+    <br>Verstärkung <input type="range" id="gain" min="1" max="16" value="8" step="0.5"
+      oninput="gainAnzeige(this.value)" onchange="verstaerkung(this.value)">
+    <span id="gain-w">-</span>
+    <button id="gain-auto" onclick="verstaerkung(0)">Auto</button>
+    <div class="klein">Ist: <span id="belicht-ist">-</span>. Kürzere Belichtung = weniger Bewegungsunschärfe, aber
+      dunkler; mehr Verstärkung = heller, aber mehr Rauschen (Automatik nur bis 8). Gilt bis zum Neustart
+      von xgonav; dauerhaft über <code>[camera] exposure_us</code> / <code>analogue_gain</code> in config.toml.</div>
+  </fieldset>
   <fieldset><legend>Haltung</legend>
     Höhe <input type="range" id="hoehe" min="43" max="255" value="128"
       oninput="document.getElementById('hoehe-w').textContent = this.value"
@@ -146,6 +159,8 @@ async function status() {
       .map(([k, f]) => '<tr><td>' + k + '</td><td>' + String(f(s) ?? '-').replace(/[<&]/g, c => c === '<' ? '&lt;' : '&amp;') + '</td></tr>').join('');
     document.getElementById('roh').textContent = JSON.stringify(s, null, 1);
     document.querySelectorAll('[data-modus]').forEach(b => b.classList.toggle('aktiv', b.dataset.modus === s.mode));
+    belichtStatus(s.exposure);
+    gainStatus(s.exposure);
     document.getElementById('pip-an').classList.toggle('aktiv', s.pipeline === 'läuft');
     document.getElementById('pip-aus').classList.toggle('aktiv', s.pipeline === 'gestoppt');
   } catch (e) { zeige('keine Verbindung zu xgonav'); }
@@ -190,6 +205,46 @@ const tasten = {ArrowUp: 'vor', w: 'vor', ArrowDown: 'zurück', s: 'zurück', Ar
 document.addEventListener('keydown', e => { const r = tasten[e.key]; if (r && e.target.tagName !== 'INPUT') { e.preventDefault(); fahrtStart(r); } });
 document.addEventListener('keyup', e => { const r = tasten[e.key]; if (r) fahrtEnde(r); });
 window.addEventListener('blur', () => [...gedrueckt].forEach(fahrtEnde));
+
+// --- Belichtung: Regler in ms, xgonav rechnet in µs (0 = Automatik)
+let belichtBewegt = false;      // Regler nicht überschreiben, solange er bedient wird
+const belichtRegler = document.getElementById('belicht');
+belichtRegler.addEventListener('pointerdown', () => belichtBewegt = true);
+belichtRegler.addEventListener('pointerup', () => belichtBewegt = false);
+function belichtAnzeige(us) {
+  document.getElementById('belicht-w').textContent = us ? (us / 1000).toFixed(0) + ' ms' : 'Auto';
+}
+function belichtStatus(e) {
+  if (!e) return;
+  belichtRegler.max = Math.floor(e.max_us / 1000);
+  if (!belichtBewegt && document.activeElement !== belichtRegler) {
+    if (e.soll_us) belichtRegler.value = Math.round(e.soll_us / 1000);
+    belichtAnzeige(e.soll_us);
+  }
+  document.getElementById('belicht-auto').classList.toggle('aktiv', e.soll_us === 0);
+  document.getElementById('belicht-ist').textContent =
+    (e.ist_us != null ? (e.ist_us / 1000).toFixed(1) + ' ms' : '-') + ', Verstärkung ' + (e.gain ?? '-');
+}
+function belichtung(us) { belichtBewegt = false; return befehl('exposure', {us}); }
+
+// --- Verstärkung (0 = Automatik)
+let gainBewegt = false;
+const gainRegler = document.getElementById('gain');
+gainRegler.addEventListener('pointerdown', () => gainBewegt = true);
+gainRegler.addEventListener('pointerup', () => gainBewegt = false);
+function gainAnzeige(g) {
+  document.getElementById('gain-w').textContent = Number(g) ? Number(g).toFixed(1) + '×' : 'Auto';
+}
+function gainStatus(e) {
+  if (!e || e.gain_soll == null) return;
+  if (e.gain_max) gainRegler.max = e.gain_max;
+  if (!gainBewegt && document.activeElement !== gainRegler) {
+    if (e.gain_soll) gainRegler.value = e.gain_soll;
+    gainAnzeige(e.gain_soll);
+  }
+  document.getElementById('gain-auto').classList.toggle('aktiv', e.gain_soll === 0);
+}
+function verstaerkung(g) { gainBewegt = false; return befehl('gain', {g}); }
 
 // --- LEDs
 function led(i, c) { document.getElementById('led' + i).value = c; return befehl('led', {i, c}, true); }

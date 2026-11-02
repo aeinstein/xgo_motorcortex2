@@ -23,6 +23,7 @@ hfov_deg = 91.0       # [K] gemessen; der Default 62,2 gilt für die RPi-Kamera 
 # 4 ms war bei Wohnraum-Licht (15–50 Lux) fast schwarz. 15 ms reichte bei Tages- und
 # Lampenlicht, kostet aber Schärfe bei schnellen Drehungen. 0 = Auto (Modus "short").
 exposure_us = 15000
+# analogue_gain = 0.0  # 1..16 fest, 0 = Automatik (geht nur bis 8); im Web zur Laufzeit einstellbar
 mount_offset_mm = 43.0   # [K] Kamerahöhe 128 mm über Boden bei Körperhöhe 85 mm
 tilt_deg = 1.39          # [K] gilt zusammen mit imu.pitch_ref_deg
 

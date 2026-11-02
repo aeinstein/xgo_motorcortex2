@@ -102,13 +102,53 @@ class FrameSource:
 
     def _open(self) -> None: ...
     def _close(self) -> None: ...
+    # Belichtung zur Laufzeit (Weboberfläche). 0 = Automatik (kurz), sonst feste Zeit in µs.
+    EXPOSURE_MIN_US = 100
+
+    @property
+    def exposure_max_us(self) -> int:
+        return int(1e6 / self.cfg.fps)       # länger als ein Bild geht bei fester Bildrate nicht
+
+    @property
+    def exposure_us(self) -> int:
+        return int(self.cfg.exposure_us)
+
+    def set_exposure(self, us: int) -> int:
+        """Belichtungszeit setzen (0 = Automatik). Wirkt nur zur Laufzeit, nicht in config.toml."""
+        us = int(us)
+        if us != 0 and not (self.EXPOSURE_MIN_US <= us <= self.exposure_max_us):
+            raise ValueError(f"Belichtung {us} µs außerhalb {self.EXPOSURE_MIN_US}..{self.exposure_max_us} (0 = Auto)")
+        self.cfg.exposure_us = us
+        self._apply_exposure(us)
+        log.info("Belichtung -> %s", f"{us} µs" if us else "Automatik")
+        return us
+
+    GAIN_MIN, GAIN_MAX = 1.0, 16.0           # OV5647 laut libcamera; die Automatik geht nur bis 8
+
+    @property
+    def gain(self) -> float:
+        return float(self.cfg.analogue_gain)
+
+    def set_gain(self, gain: float) -> float:
+        """Analoge Verstärkung setzen (0 = Automatik). Wirkt nur zur Laufzeit, nicht in config.toml."""
+        gain = round(float(gain), 2)
+        if gain != 0 and not (self.GAIN_MIN <= gain <= self.GAIN_MAX):
+            raise ValueError(f"Verstärkung {gain} außerhalb {self.GAIN_MIN:g}..{self.GAIN_MAX:g} (0 = Auto)")
+        self.cfg.analogue_gain = gain
+        self._apply_gain(gain)
+        log.info("Verstärkung -> %s", f"{gain:g}" if gain else "Automatik")
+        return gain
+
+    def _apply_exposure(self, us: int) -> None: ...   # Quellen ohne steuerbare Kamera
+    def _apply_gain(self, gain: float) -> None: ...
     def _suspend(self) -> None: ...          # Gerät anhalten (im Aufnahme-Thread)
     def _resume_device(self) -> None: ...
     def _grab(self) -> bool: raise NotImplementedError
 
 
 class PiCameraSource(FrameSource):
-    """OV5647 über libcamera/picamera2. Kurze feste Belichtung, AGC regelt nur Gain."""
+    """OV5647 über libcamera/picamera2. Kurze feste Belichtung, AGC regelt nur Gain
+    (beides zur Laufzeit umstellbar, siehe set_exposure/set_gain)."""
 
     def _open(self) -> None:
         from picamera2 import Picamera2  # nur auf dem Pi verfügbar
@@ -121,17 +161,23 @@ class PiCameraSource(FrameSource):
             controls={"FrameDurationLimits": (frame_us, frame_us)},
         )
         self.cam.configure(conf)
-        controls: dict = {}
-        if self.cfg.exposure_us > 0:
-            # Fixe Belichtungszeit; AnalogueGain bleibt automatisch
-            controls["ExposureTime"] = int(self.cfg.exposure_us)
-        else:
-            from libcamera import controls as lc
-            controls["AeExposureMode"] = lc.AeExposureModeEnum.Short
-        self.cam.set_controls(controls)
+        self._apply_exposure(int(self.cfg.exposure_us))
+        self._apply_gain(float(self.cfg.analogue_gain))
         self.cam.start()
-        log.info("PiCamera gestartet %dx%d@%d, Belichtung %s µs",
-                 self.cfg.width, self.cfg.height, self.cfg.fps, self.cfg.exposure_us or "auto/short")
+        log.info("PiCamera gestartet %dx%d@%d, Belichtung %s µs, Verstärkung %s",
+                 self.cfg.width, self.cfg.height, self.cfg.fps, self.cfg.exposure_us or "auto/short",
+                 self.cfg.analogue_gain or "auto")
+
+    def _apply_exposure(self, us: int) -> None:
+        # Fixe Belichtungszeit, AnalogueGain bleibt automatisch. ExposureTime = 0 gibt die
+        # Belichtung an die Automatik zurück (libcamera/rpi), dort im Modus "kurz".
+        from libcamera import controls as lc
+        self.cam.set_controls({"ExposureTime": max(0, int(us)),
+                               "AeExposureMode": lc.AeExposureModeEnum.Short})
+
+    def _apply_gain(self, gain: float) -> None:
+        # AnalogueGain = 0 gibt die Verstärkung an die Automatik zurück (libcamera/rpi).
+        self.cam.set_controls({"AnalogueGain": max(0.0, float(gain))})
 
     def _grab(self) -> bool:
         req = self.cam.capture_request()
@@ -145,7 +191,8 @@ class PiCameraSource(FrameSource):
         cg = md.get("ColourGains")
         self._publish(arr, t, md.get("ExposureTime"),
                       {"awb": [round(float(v), 3) for v in cg] if cg else None,
-                       "gain": round(float(md.get("AnalogueGain", 0.0)), 2)})
+                       "gain": round(float(md.get("AnalogueGain", 0.0)), 2),
+                       "exp_us": md.get("ExposureTime")})
         return True
 
     def _suspend(self) -> None:

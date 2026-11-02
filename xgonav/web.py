@@ -21,7 +21,8 @@ log = logging.getLogger(__name__)
 
 # Schnittstelle für die PHP-Oberfläche (web/) bzw. nginx. Keine HTML-Seite mehr hier.
 API = {"GET": ["/status", "/stream"],
-       "POST": ["/mode?name=..&target=..", "/stop", "/pipeline?on=0|1", "/drive?v=..&w=.. (nur Modus manual)"]}
+       "POST": ["/mode?name=..&target=..", "/stop", "/pipeline?on=0|1", "/drive?v=..&w=.. (nur Modus manual)",
+                "/exposure?us=0|100..33333 (0 = Automatik)", "/gain?g=0|1..16 (0 = Automatik)"]}
 
 
 def serve(app: App, host: str, port: int, fps: int) -> ThreadingHTTPServer:
@@ -52,6 +53,10 @@ def serve(app: App, host: str, port: int, fps: int) -> ThreadingHTTPServer:
                         "ttc": round(s.ego.ttc, 2) if s.ego and s.ego.ttc < 99 else None,
                         **s.stats}
                 body["mode"] = app.mode       # stats stammt vom letzten Bild und kann veraltet sein
+                meta = s.cam_meta or {}
+                body["exposure"] = {"soll_us": app.src.exposure_us, "max_us": app.src.exposure_max_us,
+                                    "ist_us": meta.get("exp_us"), "gain": meta.get("gain"),
+                                    "gain_soll": app.src.gain, "gain_max": app.src.GAIN_MAX}
                 if not app.pipeline_on:
                     # ohne Bildverarbeitung gibt es keine neuen Snapshots: Roboterwerte live
                     st = app.robot.state
@@ -83,6 +88,18 @@ def serve(app: App, host: str, port: int, fps: int) -> ThreadingHTTPServer:
                 except ValueError as e:   # ModeNotAllowed
                     return self._send(409, json.dumps({"error": str(e)}).encode())
                 return self._send(200, b'{"ok":true}')
+            if u.path == "/exposure":
+                try:
+                    us = app.src.set_exposure(int(q.get("us", [""])[0]))
+                except ValueError as e:
+                    return self._send(400, json.dumps({"error": str(e) or "us ungültig"}).encode())
+                return self._send(200, json.dumps({"ok": True, "exposure_us": us}).encode())
+            if u.path == "/gain":
+                try:
+                    g = app.src.set_gain(float(q.get("g", [""])[0]))
+                except ValueError as e:
+                    return self._send(400, json.dumps({"error": str(e) or "g ungültig"}).encode())
+                return self._send(200, json.dumps({"ok": True, "gain": g}).encode())
             if u.path == "/mode":
                 try:
                     app.set_mode(q.get("name", ["idle"])[0], (q.get("target") or [None])[0] or None)

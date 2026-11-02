@@ -462,3 +462,29 @@ def test_emotion_trigger():
     # Bildverarbeitung gestoppt (person=None): keine Personen-Emotionen
     assert tr.update(900.0, "idle", None, 80) is None
     assert played == ["surprised", "doubt", "surprised", "shy", "shy", "surprised", "embarrassed", "embarrassed"]
+
+
+def test_exposure_runtime_limits():
+    from xgonav.camera import FrameSource
+    from xgonav.config import CameraCfg
+    src = FrameSource(CameraCfg(fps=30, exposure_us=15000))
+    assert src.exposure_max_us == 33333
+    assert src.set_exposure(8000) == 8000 and src.exposure_us == 8000
+    assert src.set_exposure(0) == 0                     # Automatik
+    for bad in (50, 40000, -1):
+        with pytest.raises(ValueError):
+            src.set_exposure(bad)
+    assert src.exposure_us == 0                         # ungültige Werte ändern nichts
+
+
+def test_gain_runtime_limits():
+    from xgonav.camera import FrameSource
+    from xgonav.config import CameraCfg
+    src = FrameSource(CameraCfg())
+    assert src.gain == 0.0                              # Default: Automatik
+    assert src.set_gain(4) == 4.0 and src.gain == 4.0
+    assert src.set_gain(16) == 16.0
+    for bad in (0.5, 17, -1):
+        with pytest.raises(ValueError):
+            src.set_gain(bad)
+    assert src.set_gain(0) == 0.0

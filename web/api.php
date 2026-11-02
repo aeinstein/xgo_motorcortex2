@@ -11,6 +11,8 @@
  *   POST api.php?a=action&n=1..6|255
  *   POST api.php?a=height&h=43..255         (u8; unter 43 nicht, siehe Höhengrenzen)
  *   POST api.php?a=roll&deg=-20..20          (Grad, + = nach rechts; Treiber-Patch 0004: Register 0x36)
+ *   POST api.php?a=exposure&us=0|100..33333     (Belichtung in µs, 0 = Automatik; nur bis zum Neustart)
+ *   POST api.php?a=gain&g=0|1..16               (analoge Verstärkung, 0 = Automatik; nur bis zum Neustart)
  *   POST api.php?a=calibration&on=0|1       (Beinnullpunkte: 1 = Start, Motoren los; 0 = speichern)
  *   POST api.php?a=pitch_calibration         (Lage: Firmware balanciert im Stand aus und speichert den Trimm)
  *   POST api.php?a=emotion&name=...           (Bildfolge aufs Display)
@@ -108,6 +110,10 @@ switch ($a) {
         $v = zahl('v', -1, 1);
         $w = zahl('w', -1, 1);
         xgonav('POST', '/drive?' . http_build_query(['v' => $v, 'w' => $w]));
+    case 'exposure':
+        xgonav('POST', '/exposure?us=' . (int)zahl('us', 0, 1000000));   // Grenzen prüft xgonav
+    case 'gain':
+        xgonav('POST', '/gain?g=' . round(zahl('g', 0, 100), 2));          // Grenzen prüft xgonav
     case 'led':
         $i = (int)zahl('i', 0, 3);
         $c = $_GET['c'] ?? '';

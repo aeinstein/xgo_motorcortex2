@@ -36,6 +36,7 @@ class CameraCfg:
     height: int = 480
     fps: int = 30
     exposure_us: int = 4000        # kurze Belichtung gegen Bewegungsunschärfe; 0 = Auto
+    analogue_gain: float = 0.0     # feste Verstärkung 1..16 (OV5647); 0 = Auto
     hfov_deg: float = 62.2         # OV5647 Standardoptik (RPi Cam v1)
     # Geometrie für Entfernung per Bodenebene (KALIBRIEREN, siehe README)
     mount_offset_mm: float = 45.0  # Kamerahöhe über Boden = Körperhöhe + Offset
