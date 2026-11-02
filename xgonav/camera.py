@@ -32,6 +32,7 @@ class FrameSource:
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self.fps_measured = 0.0
+        self._dt_avg = 0.0
         self.eof = False
         self._paused = threading.Event()
         self._device_suspended = False
@@ -75,8 +76,11 @@ class FrameSource:
             self._latest = Frame(self._idx, t, bgr, exp, meta)
             self._idx += 1
             if prev is not None and t > prev.t:
-                inst = 1.0 / (t - prev.t)
-                self.fps_measured = 0.9 * self.fps_measured + 0.1 * inst if self.fps_measured else inst
+                # Bildabstand mitteln, nicht 1/dt: bei Zeitstempel-Jitter ist der Mittelwert von 1/dt
+                # zu hoch (am Rider 26,5 statt 25 fps bei FrameDuration 39969 µs).
+                dt = t - prev.t
+                self._dt_avg = 0.9 * self._dt_avg + 0.1 * dt if self._dt_avg else dt
+                self.fps_measured = 1.0 / self._dt_avg
             self._cond.notify_all()
 
     def _run(self) -> None:
@@ -108,6 +112,7 @@ class FrameSource:
     @property
     def exposure_max_us(self) -> int:
         return int(1e6 / self.cfg.fps)       # länger als ein Bild geht bei fester Bildrate nicht
+                                             # (bezogen auf die Sensor-Zeitbasis, also ohne Korrektur)
 
     @property
     def exposure_us(self) -> int:
@@ -154,19 +159,26 @@ class PiCameraSource(FrameSource):
         from picamera2 import Picamera2  # nur auf dem Pi verfügbar
 
         self.cam = Picamera2()
-        frame_us = int(1e6 / self.cfg.fps)
+        frame_us = int(1e6 / self.cfg.fps * self.cfg.frame_clock_corr)
+        controls = {"FrameDurationLimits": (frame_us, frame_us)}
+        if self.cfg.scaler_crop:
+            controls["ScalerCrop"] = tuple(int(v) for v in self.cfg.scaler_crop)
+        kw = {}
+        if self.cfg.sensor_mode:
+            w, h = (int(v) for v in self.cfg.sensor_mode.lower().split("x"))
+            kw["raw"] = {"size": (w, h)}
         conf = self.cam.create_video_configuration(
             main={"size": (self.cfg.width, self.cfg.height), "format": "RGB888"},  # = BGR im Speicher
-            buffer_count=4,
-            controls={"FrameDurationLimits": (frame_us, frame_us)},
+            buffer_count=4, controls=controls, **kw,
         )
         self.cam.configure(conf)
         self._apply_exposure(int(self.cfg.exposure_us))
         self._apply_gain(float(self.cfg.analogue_gain))
         self.cam.start()
-        log.info("PiCamera gestartet %dx%d@%d, Belichtung %s µs, Verstärkung %s",
-                 self.cfg.width, self.cfg.height, self.cfg.fps, self.cfg.exposure_us or "auto/short",
-                 self.cfg.analogue_gain or "auto")
+        log.info("PiCamera gestartet %dx%d@%d (Sensor %s), Belichtung %s µs, Verstärkung %s",
+                 self.cfg.width, self.cfg.height, self.cfg.fps,
+                 "x".join(map(str, self.cam.camera_configuration()["raw"]["size"])),
+                 self.cfg.exposure_us or "auto/short", self.cfg.analogue_gain or "auto")
 
     def _apply_exposure(self, us: int) -> None:
         # Fixe Belichtungszeit, AnalogueGain bleibt automatisch. ExposureTime = 0 gibt die
@@ -192,7 +204,8 @@ class PiCameraSource(FrameSource):
         self._publish(arr, t, md.get("ExposureTime"),
                       {"awb": [round(float(v), 3) for v in cg] if cg else None,
                        "gain": round(float(md.get("AnalogueGain", 0.0)), 2),
-                       "exp_us": md.get("ExposureTime")})
+                       "exp_us": md.get("ExposureTime"), "frame_us": md.get("FrameDuration"),
+                       "crop": md.get("ScalerCrop")})
         return True
 
     def _suspend(self) -> None:

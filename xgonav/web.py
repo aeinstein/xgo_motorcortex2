@@ -55,10 +55,13 @@ def serve(app: App, host: str, port: int, fps: int) -> ThreadingHTTPServer:
                         **s.stats}
                 body["mode"] = app.mode       # stats stammt vom letzten Bild und kann veraltet sein
                 body["start"] = START
+                body["frame"] = s.idx         # Bildzähler (Diagnose: tatsächliche Bildrate)
+                body["frame_t"] = round(s.t, 4)
                 meta = s.cam_meta or {}
                 body["exposure"] = {"soll_us": app.src.exposure_us, "max_us": app.src.exposure_max_us,
                                     "ist_us": meta.get("exp_us"), "gain": meta.get("gain"),
-                                    "gain_soll": app.src.gain, "gain_max": app.src.GAIN_MAX}
+                                    "gain_soll": app.src.gain, "gain_max": app.src.GAIN_MAX,
+                                    "frame_us": meta.get("frame_us"), "crop": meta.get("crop")}
                 if not app.pipeline_on:
                     # ohne Bildverarbeitung gibt es keine neuen Snapshots: Roboterwerte live
                     st = app.robot.state

@@ -18,7 +18,9 @@ kernel_watchdog_ms = 1000
 source = "picam"
 width = 640
 height = 480
-fps = 30
+fps = 25               # fest; max. Belichtung damit 40 ms
+sensor_mode = "1296x972"  # reines 2x2-Binning, richtige Zeitbasis (640x480: 26,5 statt 25 fps)
+scaler_crop = [16, 0, 2560, 1920]   # Ausschnitt wie im 640x480-Modus: hfov/tilt/shading bleiben gültig
 hfov_deg = 91.0       # [K] gemessen; der Default 62,2 gilt für die RPi-Kamera v1, nicht den RiderPi
 # 4 ms war bei Wohnraum-Licht (15–50 Lux) fast schwarz. 15 ms reichte bei Tages- und
 # Lampenlicht, kostet aber Schärfe bei schnellen Drehungen. 0 = Auto (Modus "short").

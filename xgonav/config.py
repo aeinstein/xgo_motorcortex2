@@ -35,6 +35,16 @@ class CameraCfg:
     width: int = 640
     height: int = 480
     fps: int = 30
+    # Sensormodus (Rohformat), z. B. "1296x972"; leer = libcamera wählt (beim OV5647 640x480).
+    # 640x480 ist 2x2 gebinnt + 2x2 übersprungen, und der Kernel-Treiber (6.6) gibt dafür eine
+    # ~6 % zu kleine Pixelrate an: der Sensor läuft dann 26,5 statt 25 fps. 1296x972 ist reines
+    # 2x2-Binning (weniger Rauschen), Zeitbasis stimmt; der ISP skaliert auf width x height.
+    sensor_mode: str = ""
+    # Sensorausschnitt [x, y, w, h] in Vollbild-Pixeln (ScalerCrop); leer = ganzer Modus.
+    # [16, 0, 2560, 1920] = Ausschnitt des 640x480-Modus, damit hfov/tilt/shading.json gültig bleiben.
+    scaler_crop: list = field(default_factory=list)
+    # Bilddauer-Korrektur, nur nötig im 640x480-Modus (dort ~1.061): angefragt = 1/fps * Faktor.
+    frame_clock_corr: float = 1.0
     exposure_us: int = 4000        # kurze Belichtung gegen Bewegungsunschärfe; 0 = Auto
     analogue_gain: float = 0.0     # feste Verstärkung 1..16 (OV5647); 0 = Auto
     hfov_deg: float = 62.2         # OV5647 Standardoptik (RPi Cam v1)
