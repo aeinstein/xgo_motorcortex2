@@ -107,7 +107,8 @@ pre{background:#1b1b1b;padding:8px;overflow:auto;max-height:40vh}
     <?php if (!$emotionen): ?><span class="klein">keine gefunden in <?= h(RC) ?>/emotions</span><?php endif; ?>
   </fieldset>
   <fieldset><legend>System</legend>
-    <button id="kalib" onclick="kalibrierung()">Kalibrierung</button>
+    <!-- Kalibrier-Knöpfe gesperrt (2026-11-02): Speichern bei schlaffen Beinen hat die
+         Beinnullpunkte im ESP32-Flash überschrieben. Erst mit geführtem Ablauf wieder freigeben. -->
     <button id="aus" onclick="herunterfahren()">Herunterfahren</button>
   </fieldset>
 </div>
@@ -211,8 +212,15 @@ let kalibAn = false;
 function kalibrierung() {
   kalibAn = !kalibAn;
   document.getElementById('kalib').classList.toggle('aktiv', kalibAn);
-  document.getElementById('kalib').textContent = kalibAn ? 'Kalibrierung beenden' : 'Kalibrierung';
+  document.getElementById('kalib').textContent = kalibAn ? 'Beine speichern' : 'Beine kalibrieren';
   befehl('calibration', {on: kalibAn ? 1 : 0});
+}
+// Nick-Trimm (Register 0x09): Firmware hält den Rider im Stand, bis er ruhig steht, und
+// speichert die nötige Haltekorrektur. Vorher xgonav auf idle, damit nichts dazwischenfährt.
+async function lageKalibrieren() {
+  if (!confirm('Lage kalibrieren? Der Rider muss balancieren und frei stehen; er regelt sich ein paar Sekunden auf der Stelle ein.')) return;
+  if (aktModus && aktModus !== 'idle' && !(await modus('idle'))) return;
+  befehl('pitch_calibration');
 }
 function herunterfahren() {
   if (confirm('Rider wirklich herunterfahren?')) befehl('shutdown');

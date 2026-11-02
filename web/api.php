@@ -11,7 +11,8 @@
  *   POST api.php?a=action&n=1..6|255
  *   POST api.php?a=height&h=43..255         (u8; unter 43 nicht, siehe Höhengrenzen)
  *   POST api.php?a=roll&deg=-20..20          (Grad, + = nach rechts; Treiber-Patch 0004: Register 0x36)
- *   POST api.php?a=calibration&on=0|1
+ *   POST api.php?a=calibration&on=0|1       (Beinnullpunkte: 1 = Start, Motoren los; 0 = speichern)
+ *   POST api.php?a=pitch_calibration         (Lage: Firmware balanciert im Stand aus und speichert den Trimm)
  *   POST api.php?a=emotion&name=...           (Bildfolge aufs Display)
  *   POST api.php?a=shutdown                   (sudo-Regel: www-data -> systemctl poweroff)
  *
@@ -126,6 +127,8 @@ switch ($a) {
         proc('roll', (string)(int)round(zahl('deg', -20, 20)));
     case 'calibration':
         proc('settings/calibration', ($_GET['on'] ?? '0') === '1' ? '1' : '0');
+    case 'pitch_calibration':
+        proc('settings/pitch_calibration', '1');
     case 'emotion':
         $name = $_GET['name'] ?? '';
         if (!preg_match('/^[A-Za-z]+$/', $name) || !is_dir(RC . '/emotions/' . $name)) {

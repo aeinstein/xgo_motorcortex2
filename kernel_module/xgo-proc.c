@@ -234,8 +234,21 @@ static ssize_t settings_write(struct file *file, const char __user *user_buf, si
         else XGO_SHUTDOWN_ON_LOW_BATT = false;
 
     } else if (strcmp(setting_name, "calibration") == 0) {
-    	if(buffer[0] != 0x30) write_serial_data(XGO_CALIBRATION, "0", 1);
-    	else  write_serial_data(XGO_CALIBRATION, "1", 1);
+    	// Beinkalibrierung (0x04): 1 = starten (Motoren los), 0 = Nullpunkte speichern.
+    	// Vorher gingen die Zeichen '0'/'1' (0x30/0x31) raus und an/aus war vertauscht;
+    	// die Firmware wertet nur die Bytes 0 und 1 aus.
+    	int v;
+    	char b;
+    	if (kstrtoint(strim(buffer), 10, &v) || (v != 0 && v != 1)) return -EINVAL;
+    	b = (char)v;
+    	write_serial_data(XGO_CALIBRATION, &b, 1);
+
+    } else if (strcmp(setting_name, "pitch_calibration") == 0) {
+    	// Nick-Trimm (0x09): nur "1". Die Firmware hält den Rider im Stand, wartet bis er
+    	// ruhig steht, und speichert die Haltekorrektur als Trimm. Rider muss balancieren.
+    	char b = 1;
+    	if (strcmp(strim(buffer), "1") != 0) return -EINVAL;
+    	write_serial_data(XGO_PITCH_CALIBRATION, &b, 1);
 
     } else if (strcmp(setting_name, "force_yaw") == 0) {
         bool on = buffer[0] != 0x30;
@@ -394,6 +407,7 @@ static int createFilesystem(){
     proc_create("force_yaw", 0666, proc_settings, &settings_ops);
     proc_create("sleep_ms_on_loop", 0666, proc_settings, &settings_ops);
 	proc_create("calibration", 0666, proc_settings, &settings_ops);
+	proc_create("pitch_calibration", 0666, proc_settings, &settings_ops);
 	proc_create("motion_timeout_ms", 0666, proc_settings, &settings_ops);
 	proc_create("imu_hz", 0666, proc_settings, &settings_ops);
 
@@ -453,6 +467,7 @@ static void destroyFilesystem(){
     remove_proc_entry("force_yaw", proc_settings);
     remove_proc_entry("sleep_ms_on_loop", proc_settings);
     remove_proc_entry("calibration", proc_settings);
+    remove_proc_entry("pitch_calibration", proc_settings);
     remove_proc_entry("motion_timeout_ms", proc_settings);
     remove_proc_entry("imu_hz", proc_settings);
     remove_proc_entry("settings", proc_imu);

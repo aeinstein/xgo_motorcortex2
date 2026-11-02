@@ -8,10 +8,11 @@
 #define XGO_BATTERY 0x01
 #define XGO_STATE 0x02
 #define XGO_PERFORM 0x03
-#define XGO_CALIBRATION 0x04
+#define XGO_CALIBRATION 0x04       // Beinnullpunkte: Byte 1 = Start (Motoren los), 0 = speichern
 #define XGO_UPGRADE 0x05
 #define XGO_SET_ORIGIN 0x06
 #define XGO_FIRMWARE_VERSION 0x07
+#define XGO_PITCH_CALIBRATION 0x09 // Nick-Trimm: Byte 1 = im Stand ausbalancieren und speichern
 #define XGO_RING_SWITCH 0x0a
 #define XGO_BT_NAME 0x13
 #define XGO_VX 0x30
