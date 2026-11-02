@@ -1,4 +1,4 @@
-"""Emotionen automatisch aufs Display: Person erkannt, Ziel verloren, Akku niedrig.
+"""Emotionen automatisch aufs Display: Person erkannt, keine Person, Akku niedrig.
 
 Abgespielt wird mit tools/emotion.sh (vorkonvertierte RGB565-Bilder aus
 EmotionCfg.dir). Der Player läuft als eigener Prozess; ein neuerer Player
@@ -36,6 +36,7 @@ class EmotionTrigger:
 
     - surprised: Person erscheint, nachdem gap_s lang keine zu sehen war
     - doubt:     Modus follow und seit lost_s keine Person (einmal je Verlust)
+    - embarrassed: anderer Modus und seit lost_s keine Person (einmal je Verlust)
     - shy:       Akku <= battery_low %, danach alle battery_repeat_s erneut
     Läuft schon eine Emotion, wird gewartet (Bedingung bleibt gemerkt) statt unterbrochen.
     """
@@ -54,7 +55,7 @@ class EmotionTrigger:
         if mode != self._mode:                       # neuer Modus: Verlust neu bewerten
             self._mode = mode
             self._doubt_armed = True
-            if mode == "follow" and not person:
+            if not person:
                 self._last_person = now              # lost_s ab Moduswechsel zählen
         want = None
         if person is not None:
@@ -69,15 +70,15 @@ class EmotionTrigger:
                 gone = now - self._last_person if self._last_person is not None else float("inf")
                 if gone >= c.gap_s:
                     self._surprise_armed = True
-                if mode == "follow" and self._doubt_armed and gone >= c.lost_s:
-                    want = "doubt"
+                if self._doubt_armed and gone >= c.lost_s:
+                    want = "doubt" if mode == "follow" else "embarrassed"
         if battery is not None and 0 < battery <= c.battery_low and now >= self._next_shy:
             want = "shy"                             # Akku hat Vorrang
         if want is None or self._busy():
             return None
         if want == "surprised":
             self._surprise_armed = False
-        elif want == "doubt":
+        elif want in ("doubt", "embarrassed"):
             self._doubt_armed = False
         else:
             self._next_shy = now + c.battery_repeat_s

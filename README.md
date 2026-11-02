@@ -209,8 +209,8 @@ beim Abspielen werden nur noch Bilder ins FIFO kopiert (25 fps) statt sie per ff
 zu dekodieren. Ohne Konvertierung spielt der Player die PNGs wie früher mit ffmpeg ab.
 Automatisch: `cute` beim Hochfahren (rc.local), `sleep` vor dem Herunterfahren aus der
 Oberfläche (api.php), aus xgonav (`[emotion]`, `xgonav/emotion.py`) `surprised`, wenn eine
-Person erscheint (nach `gap_s` ohne Person), `doubt` im Modus follow ohne Person (`lost_s`)
-und `shy` bei Akku ≤ `battery_low` % (alle 5 min). Der zuletzt gestartete Player gewinnt
+Person erscheint (nach `gap_s` ohne Person), nach `lost_s` ohne Person `doubt` im Modus
+follow bzw. `embarrassed` in den anderen Modi (einmal je Verlust), und `shy` bei Akku ≤ `battery_low` % (alle 5 min). Der zuletzt gestartete Player gewinnt
 (`/tmp/lcd0.owner`, legt rc.local an); das LCD-Overlay pausiert, solange eine Emotion läuft.
 LEDs, Aktionen, Höhe, Roll und Kalibrierung schreibt PHP direkt nach `/proc/XGORider`.
 Zwei Rechte braucht `www-data` dafür:

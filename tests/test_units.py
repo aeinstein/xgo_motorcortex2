@@ -451,4 +451,14 @@ def test_emotion_trigger():
     assert tr.update(11.0, "idle", None, 19) is None
     assert tr.update(311.0, "idle", None, 19) == "shy"
     assert tr.update(700.0, "idle", None, 0) is None
-    assert played == ["surprised", "doubt", "surprised", "shy", "shy"]
+    # anderer Modus ohne Person: embarrassed nach lost_s, einmal je Verlust; Person
+    # zurück (< gap_s, kein surprised) macht es wieder scharf
+    assert tr.update(800.0, "idle", True, 80) == "surprised"
+    assert tr.update(801.0, "idle", False, 80) is None
+    assert tr.update(802.1, "idle", False, 80) == "embarrassed"
+    assert tr.update(803.0, "idle", False, 80) is None
+    assert tr.update(804.0, "idle", True, 80) is None
+    assert tr.update(806.1, "idle", False, 80) == "embarrassed"
+    # Bildverarbeitung gestoppt (person=None): keine Personen-Emotionen
+    assert tr.update(900.0, "idle", None, 80) is None
+    assert played == ["surprised", "doubt", "surprised", "shy", "shy", "surprised", "embarrassed", "embarrassed"]

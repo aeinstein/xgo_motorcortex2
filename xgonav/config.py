@@ -167,7 +167,7 @@ class EmotionCfg:
     dir: str = "/opt/xgonav/emotions"   # von tools/emotion.sh build (deploy/install.sh)
     fifo: str = "/tmp/lcd0"         # unabhängig von output.lcd_fifo (Overlay)
     gap_s: float = 5.0              # surprised erst, wenn so lange keine Person zu sehen war
-    lost_s: float = 2.0             # follow: doubt, wenn so lange keine Person
+    lost_s: float = 2.0             # so lange keine Person: doubt (follow), sonst embarrassed
     battery_low: int = 20           # % (Treiber schaltet bei 8 % ab); darunter shy
     battery_repeat_s: float = 300.0
 
