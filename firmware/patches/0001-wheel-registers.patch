@@ -1,5 +1,5 @@
 diff --git a/firmware/src/command_protocol.cpp b/firmware/src/command_protocol.cpp
-index 660065a..87453a8 100644
+index 660065a..0de653c 100644
 --- a/firmware/src/command_protocol.cpp
 +++ b/firmware/src/command_protocol.cpp
 @@ -15,6 +15,8 @@ uint8_t readLength(uint8_t reg) {
@@ -11,47 +11,48 @@ index 660065a..87453a8 100644
      case 0x62: case 0x63: case 0x64:return 4;
      case 0x65:return 24;
      case 0x66: case 0x67: case 0x68:return 2;
-@@ -25,6 +27,9 @@ void putFloat(uint8_t *out, float value) {
+@@ -25,6 +27,10 @@ void putFloat(uint8_t *out, float value) {
      uint32_t bits;std::memcpy(&bits,&value,4);
      for (unsigned i=0;i<4;++i) out[i]=uint8_t(bits>>(i*8));
  }
-+void putI32(uint8_t *out, uint32_t value) {
-+    for (unsigned i=0;i<4;++i) out[i]=uint8_t(value>>(i*8));
++void putI32(uint8_t *out, int32_t value) {
++    const uint32_t bits=uint32_t(value);
++    for (unsigned i=0;i<4;++i) out[i]=uint8_t(bits>>(i*8));
 +}
  void putAngle(uint8_t *out, float value) {
      // Firmware trunc.s then sext16. Nonfinite inputs have no valid wire angle.
      int32_t v=0;
-@@ -146,6 +151,13 @@ size_t buildReadResponse(const CommandEvent &r,const Telemetry &t,uint8_t *out,s
-         }break;
-     case 0x07:std::memcpy(data,t.version,10);break;
-     case 0x0b:for(unsigned i=0;i<4;++i)putFloat(data+4*i,t.odometry[i]);break;
-+    case 0x0c:
-+        putI32(data,uint32_t(t.wheel11_ticks));putI32(data+4,uint32_t(t.wheel21_ticks));
-+        putI32(data+8,uint32_t(t.wheel11_pos));putI32(data+12,uint32_t(t.wheel21_pos));break;
-+    case 0x0d:  // one snapshot: attitude + wheel ticks + timestamp
+@@ -155,6 +161,13 @@ size_t buildReadResponse(const CommandEvent &r,const Telemetry &t,uint8_t *out,s
+     case 0x66:putAngle(data,t.roll_deg);break;
+     case 0x67:putAngle(data,t.pitch_deg);break;
+     case 0x68:putAngle(data,t.yaw_deg);break;
++    case 0x0c:  // custom: per-wheel encoder ticks + raw position (4x int32 LE)
++        putI32(data,t.wheel11_ticks);putI32(data+4,t.wheel21_ticks);
++        putI32(data+8,t.wheel11_pos);putI32(data+12,t.wheel21_pos);break;
++    case 0x0d:  // custom: roll/pitch/yaw (3x float) + w11/w21 ticks (2x int32) + t_ms (uint32) = 24B
 +        putFloat(data,t.roll_deg);putFloat(data+4,t.pitch_deg);putFloat(data+8,t.yaw_deg);
-+        putI32(data+12,uint32_t(t.wheel11_ticks));putI32(data+16,uint32_t(t.wheel21_ticks));
-+        putI32(data+20,t.t_ms);break;
-     case 0x62:putFloat(data,t.roll_deg);break;
-     case 0x63:putFloat(data,t.pitch_deg);break;
-     case 0x64:putFloat(data,t.yaw_deg);break;
++        putI32(data+12,t.wheel11_ticks);putI32(data+16,t.wheel21_ticks);
++        putI32(data+20,int32_t(t.t_ms));break;
+     default:return 0;
+     }
+     return buildFrame(0x12,r.reg,data,n,out,cap);
 diff --git a/firmware/src/command_protocol.h b/firmware/src/command_protocol.h
-index fbd36c6..7a79806 100644
+index fbd36c6..8883c52 100644
 --- a/firmware/src/command_protocol.h
 +++ b/firmware/src/command_protocol.h
-@@ -60,6 +60,10 @@ struct Telemetry {
-     uint8_t controller_kind=0,wheel_source=0,last_stop_reason=0;
-     uint32_t policy_calls=0,policy_failures=0,rl_output_ticks=0;
-     char version[10] = {'R','-','1','.','1','.','6',0,0,0};
-+    // xgo_motorcortex2: wheel encoders for the host (reads 0x0c, 0x0d).
-+    int32_t wheel11_ticks = 0, wheel21_ticks = 0;   // accumulated encoder ticks, 1024/rev
-+    int32_t wheel11_pos = 0, wheel21_pos = 0;       // raw angle 0..1023
-+    uint32_t t_ms = 0;                              // millis() of the snapshot
- };
- // Original read response: 55 00 length 12 reg payload checksum 00 AA.
- // Canonical lengths are used; malformed request lengths cannot expose memory.
+@@ -52,6 +52,10 @@ struct Telemetry {
+     float odometry[4] = {};  // x, y, heading, integrated distance
+     int32_t leg12_position = 512, leg22_position = 512;
+     uint16_t leg12_zero = 512, leg22_zero = 512;
++    // Custom reg 0x0c: per-wheel encoder ticks (continuous) and raw position (0..1023).
++    int32_t wheel11_ticks = 0, wheel21_ticks = 0, wheel11_pos = 0, wheel21_pos = 0;
++    // Custom reg 0x0d: firmware millis timestamp for the combined IMU+wheel sample.
++    uint32_t t_ms = 0;
+     uint8_t policy_mode=0,policy_action_space=0;
+     uint8_t policy_contract=6;
+     bool policy_trained=false,policy_valid=false;
 diff --git a/firmware/src/main.cpp b/firmware/src/main.cpp
-index c873370..dd71c8c 100644
+index c873370..e732720 100644
 --- a/firmware/src/main.cpp
 +++ b/firmware/src/main.cpp
 @@ -667,6 +667,9 @@ public:

@@ -1,13 +1,12 @@
 diff --git a/firmware/src/main.cpp b/firmware/src/main.cpp
-index c873370..35d9df6 100644
+index c873370..e732720 100644
 --- a/firmware/src/main.cpp
 +++ b/firmware/src/main.cpp
-@@ -305,7 +305,8 @@ public:
+@@ -305,7 +305,7 @@ public:
          case CommandKind::Roll:a.command.roll=value;break;
          case CommandKind::RollWave:a.command.roll_period=value;a.roll_phase=value?10:0;break;
          case CommandKind::HeightWave:a.command.height_period=value;a.height_phase=value?10:0;break;
 -        case CommandKind::Action:if(value==255)arm();else if(!leg_calibrating)actions.request(value,now);break;
-+        // xgo_motorcortex2: 254 = binary disarm, latched like !stop (0 is only "no action")
 +        case CommandKind::Action:if(value==255)arm();else if(value==254)emergencyStop();else if(!leg_calibrating)actions.request(value,now);break;
          case CommandKind::PositionHoldProtection:a.hold_protection=value!=0;break;
          case CommandKind::Leveling:a.leveling=value!=0;break;

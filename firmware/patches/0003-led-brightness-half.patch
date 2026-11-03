@@ -1,13 +1,14 @@
 diff --git a/firmware/src/board_support.cpp b/firmware/src/board_support.cpp
-index b2a9d38..4d84d29 100644
+index b2a9d38..773c428 100644
 --- a/firmware/src/board_support.cpp
 +++ b/firmware/src/board_support.cpp
-@@ -57,7 +57,9 @@ Rgb paletteColor(std::uint8_t index) {
+@@ -57,7 +57,10 @@ Rgb paletteColor(std::uint8_t index) {
      if(p<170){p-=85;return Rgb{0,std::uint8_t(p*3),std::uint8_t(255-p*3)};}
      p-=170;return Rgb{std::uint8_t(p*3),std::uint8_t(255-p*3),0};
  }
 -std::uint8_t brightnessScale(std::uint8_t channel) { return std::uint8_t((unsigned(channel)*129)>>8); }
-+// xgo_motorcortex2: half of the original brightness (129/256 -> 64/256)
++// LED-Helligkeit: 64/256 = Hälfte des bisherigen 129/256-Pegels (auf Wunsch, 2026-11-03).
++// Wert ist der Teiler über 256; 256 = voll, 129 = alt (~50%), 64 = halb davon (~25% voll).
 +constexpr unsigned kLedBrightness256 = 64;
 +std::uint8_t brightnessScale(std::uint8_t channel) { return std::uint8_t((unsigned(channel)*kLedBrightness256)>>8); }
  bool renderLeds(const LedControl &c,std::uint32_t now,const LedPixels &user,LedPixels &out) {
