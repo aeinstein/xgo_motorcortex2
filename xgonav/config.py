@@ -219,7 +219,9 @@ class GridCfg:
     min_range_m: float = 0.15          # davor sieht die Kamera den Boden nicht
     column_step: int = 2               # jede k-te Spalte des Bodenmodells (160 Spalten)
     l_free: float = -0.4               # Log-Odds je Beobachtung
-    l_occ: float = 0.9
+    l_occ: float = 1.2                 # Treffer zählen mehr: die Grenze trifft selten dieselbe Zelle
+    free_margin_m: float = 0.10        # Freistrahl endet so weit vor der Grenze (Messrauschen)
+    occ_free_factor: float = 0.5       # schon belegte Zellen baut ein Freistrahl nur so stark ab
     l_min: float = -3.0
     l_max: float = 3.5
     l_show: float = 0.7                # ab hier "belegt"/"frei" in Anzeige und Statistik

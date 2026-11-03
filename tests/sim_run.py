@@ -70,7 +70,22 @@ def run(mode="follow", secs=25.0, video=None, shake=1.0, quiet=True, imu=False, 
             prec = float("nan")
         ex = x0 + gm.x * c0 - gm.y * s0
         ey = y0 + gm.x * s0 + gm.y * c0
-        grid = {"belegt_zellen": int(len(occ)), "praezision_15cm": round(prec, 3),
+        # Abdeckung: Punkte auf Wänden/Kisten (alle 5 cm) in <= 2 m vom gefahrenen Weg,
+        # davon Anteil mit belegter Zelle in <= 10 cm
+        pts = []
+        for ax_, ay_, bx_, by_, _ in world.segs:
+            n_ = max(2, int(math.hypot(bx_ - ax_, by_ - ay_) / 0.05))
+            pts += [(ax_ + (bx_ - ax_) * k / n_, ay_ + (by_ - ay_) * k / n_) for k in range(n_ + 1)]
+        pts = np.array(pts)
+        path = np.array([(r["x"], r["y"]) for r in L[::5]])
+        near = np.hypot(pts[:, None, 0] - path[None, :, 0], pts[:, None, 1] - path[None, :, 1]).min(axis=1) <= 2.0
+        pts = pts[near]
+        if len(pts) and len(occ):
+            dd = np.hypot(pts[:, None, 0] - wx[None, :], pts[:, None, 1] - wy[None, :]).min(axis=1)
+            recall = float((dd <= 0.10).mean())
+        else:
+            recall = float("nan")
+        grid = {"belegt_zellen": int(len(occ)), "praezision_15cm": round(prec, 3), "abdeckung_10cm": round(recall, 3),
                 "pose_fehler_m": round(math.hypot(ex - world.x, ey - world.y), 3),
                 "kurs_fehler_deg": round(math.degrees((th0 + gm.th - world.th + math.pi) % (2 * math.pi) - math.pi), 1)}
     out = {"imu_sync": (app.imu_sync.reliable, app.imu_sync.sign, round(app.imu_sync.offset * 1000), round(app.imu_sync.corr, 2)) if imu else None,

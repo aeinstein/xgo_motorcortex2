@@ -90,7 +90,9 @@ class GridMap:
         with np.errstate(invalid="ignore"):
             hit = ~to_horizon & np.isfinite(dist) & (dist <= cfg.max_range_m)
             free_len = np.where(to_horizon, cfg.max_range_m, np.where(np.isfinite(dist), np.minimum(dist, cfg.max_range_m), np.nan))
-            free_len = np.where(hit, dist - self.res, free_len)          # Zelle vor der Grenze
+            # Freistrahl endet free_margin vor der Grenze: die gemessene Grenze schwankt um
+            # einige cm, sonst löscht jede etwas zu weite Messung die zuvor belegte Zelle
+            free_len = np.where(hit, dist - max(self.res, cfg.free_margin_m), free_len)
         x_full = (idx + 0.5) * sc
         bear = np.arctan2(self.geo.W / 2 - x_full, self.geo.f)          # Peilung, links +
         # ground_dist_np liefert den Abstand nach vorn (wie LocalMap: x = d, y = d*tan),
@@ -113,7 +115,10 @@ class GridMap:
                 r, c = self.cell(fx, fy)
                 m = (r >= 0) & (r < self.n) & (c >= 0) & (c < self.n)
                 lin = np.unique(r[m] * self.n + c[m])                     # je Zelle einmal pro Bild
-                self.lo.flat[lin] = np.maximum(self.lo.flat[lin] + cfg.l_free, cfg.l_min)
+                cur = self.lo.flat[lin]
+                # Hysterese: schon belegte Zellen nur abgeschwächt abbauen
+                step = np.where(cur > cfg.l_show, cfg.l_free * cfg.occ_free_factor, cfg.l_free)
+                self.lo.flat[lin] = np.maximum(cur + step, cfg.l_min)
             if hit.any():
                 ox = px + dist[hit] * ca[hit]
                 oy = py + dist[hit] * sa[hit]
