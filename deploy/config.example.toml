@@ -95,6 +95,7 @@ freespace_cpus = [2, 3]     # Bodenmodell-Thread: neben YOLO ist dort Luft
 
 [odom]
 # Rad-Odometrie (Firmware R-1.1.6+Patch). 60 mm / 1024 Ticks am Maßband bestätigt (29,5 cm).
-# Faktoren vorläufig aus 3 kurzen Fahrten (links misst ~2 % mehr), mit tools/calibrate_odom.py nachkalibrieren.
-scale_left = 0.99
-scale_right = 1.01
+# Faktoren aus tools/calibrate_odom.py (2026-11-03): 215 cm am Maßband, Räder 215,3 cm, Kursreferenz
+# Kamera+IMU (beide Referenzen einzeln: links 0,9902..0,9908, rechts 1,0065..1,0072).
+scale_left = 0.9905
+scale_right = 1.0068
