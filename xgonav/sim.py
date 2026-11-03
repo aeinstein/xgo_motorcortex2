@@ -109,6 +109,10 @@ class SimWorld(FrameSource):
         self.pitch = 0.0
         self._pitch_prev = 0.0
         self._rng = np.random.default_rng(7)
+        # Radwege (m) aus dem Fahrbefehl: drehen auch weiter, wenn der Rider an einer Wand
+        # hängt (Schlupf) – wie echte Encoder. Spurweite wie am RiderPi.
+        self.track_m = 0.090
+        self.wheel_l = self.wheel_r = 0.0
 
     # ------------------------------------------------------------------
     def _grab(self) -> bool:
@@ -137,6 +141,8 @@ class SimWorld(FrameSource):
         v = vn * self.vx_mps
         w = math.radians(wn * self.robot.cfg.vyaw_limit_dps)
         self.th += w * dt
+        self.wheel_l += (v - w * self.track_m / 2) * dt
+        self.wheel_r += (v + w * self.track_m / 2) * dt
         nx = self.x + v * math.cos(self.th) * dt
         ny = self.y + v * math.sin(self.th) * dt
         if self.scene.collides(nx, ny):
@@ -309,6 +315,36 @@ class SimImu:
                     self.rate_hz = self.hz
 
         return _SimImu(*a, **k)
+
+
+class SimWheels:
+    """Rad-Encoder des Simulators: 50 Hz, 1024 Ticks/U aus den Radwegen von SimWorld,
+    mit optionalem Maßstabsfehler (scale, z. B. 1.03 = Rad 3 % größer als angenommen)."""
+
+    def __new__(cls, *a, **k):
+        from .wheels import WheelOdom
+
+        class _SimWheels(WheelOdom):
+            def __init__(self, world, cfg, hz=50.0, scale=1.0):
+                super().__init__(cfg)
+                self.world, self.hz, self.scale = world, hz, scale
+                self._seq = 0
+
+            def _open(self) -> bool:
+                return True
+
+            def _run(self) -> None:
+                while not self._stop.wait(1.0 / self.hz):
+                    w = self.world
+                    if w._t0 is None:
+                        continue
+                    k = self.scale / self.m_per_tick
+                    self._seq += 1
+                    self.add(self._seq, time.monotonic(), int(w.wheel_l * k), int(w.wheel_r * k),
+                             int((time.monotonic() - w._t0) * 1000))
+                    self.rate_hz = self.hz
+
+        return _SimWheels(*a, **k)
 
 
 class FakeDetector:

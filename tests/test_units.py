@@ -585,3 +585,29 @@ def test_freespace_worker_matches_direct_update():
     finally:
         w.close()
     assert not w._thread.is_alive()
+
+
+def test_wheel_odometry_wrap_reset_and_signs():
+    import math
+    from xgonav.config import OdomCfg
+    from xgonav.wheels import WheelOdom
+    cfg = OdomCfg()
+    w = WheelOdom(cfg)
+    mpt = math.pi * 0.060 / 1024
+    w.add(1, 0.00, 2**31 - 100, -50, 1000)              # kurz vor dem int32-Überlauf
+    a = w.latest()
+    w.add(2, 0.02, -(2**31) + 100, 150, 1020)           # +200 Ticks über den Überlauf, rechts +200
+    b = w.latest()
+    ds, dth = w.motion(a, b)
+    assert abs(ds - 200 * mpt) < 1e-9 and abs(dth) < 1e-9    # geradeaus vorwärts
+    w.add(3, 0.04, -(2**31) + 100, 250, 1040)           # nur rechts +100 -> Linksdrehung
+    ds, dth = w.motion(b, w.latest())
+    assert abs(ds - 50 * mpt) < 1e-9 and dth > 0 and abs(dth - 100 * mpt / 0.090) < 1e-9
+    c = w.latest()
+    w.add(4, 0.06, 5, 7, 30)                             # ESP32-Neustart: fw_ms springt zurück
+    assert w.resets == 1 and w.motion(c, w.latest()) == (0.0, 0.0)
+    w.add(5, 0.08, 5 + 3000, 7, 50)                      # unplausibler Sprung > max_jump_ticks
+    assert w.resets == 2
+    w.add(5, 0.10, 9999, 9999, 70)                       # gleiche seq: ignoriert
+    assert w.latest()[0] == 0.08
+    assert w.fresh(0.3) and not w.fresh(0.5)

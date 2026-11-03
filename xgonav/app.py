@@ -19,6 +19,7 @@ from .detector import Detection, DetectorWorker
 from .egomotion import EgoMotion, EgoResult, warp_box
 from .freespace import FreeSpace, FreeSpaceEstimator, FreeSpaceWorker
 from .geometry import CamGeometry
+from .wheels import WheelOdom, make_wheels
 from .imu import ImuSource, ImuSync, make_imu
 from .localmap import LocalMap, mask_movable
 from .robot import Robot
@@ -86,9 +87,13 @@ class _Marks:
 
 class App:
     def __init__(self, cfg: Config, robot: Robot, source: FrameSource | None = None,
-                 imu: ImuSource | None = None):
+                 imu: ImuSource | None = None, wheels: WheelOdom | None = None):
         self.cfg = cfg
         self.imu = imu if imu is not None else make_imu(cfg.imu)
+        self.wheels = wheels if wheels is not None else make_wheels(cfg.odom)
+        self._wheel_at_ctrl = None         # Radprobe beim letzten Regelschritt
+        self.odom_src = "befehl"
+        self.odom_m = 0.0                  # gefahrene Strecke laut Odometrie (Betrag, seit Start)
         self.imu_sync = ImuSync(cfg.imu)
         self._imu_lp: float | None = None
         self.pitch_src = "bild"
@@ -193,10 +198,12 @@ class App:
         has_det = self.det.start()
         if self.fs_worker is not None:
             self.fs_worker.start()
+        if self.wheels is not None and not self.wheels.start():
+            self.wheels = None
         if self.imu is not None and not self.imu.start():
             self.imu = None
-        log.info("läuft: Modus=%s, Detektor=%s, IMU=%s", self.behavior.name,
-                 "an" if has_det else "aus", "an" if self.imu else "aus")
+        log.info("läuft: Modus=%s, Detektor=%s, IMU=%s, Räder=%s", self.behavior.name,
+                 "an" if has_det else "aus", "an" if self.imu else "aus", "an" if self.wheels else "aus")
         t_end = time.monotonic() + duration if duration else None
         last = -1
         try:
@@ -232,6 +239,8 @@ class App:
             self.det.close()
             if self.fs_worker is not None:
                 self.fs_worker.close()
+            if self.wheels is not None:
+                self.wheels.close()
             self.src.close()
             self.robot.close()
             log.info("beendet")
@@ -328,7 +337,7 @@ class App:
                       geo=self.geo, pitch_dev=pitch_dev)
             if self.lmap is not None:
                 # Eigenbewegung seit letztem Regelschritt (Strecke: Fahrbefehl, Annahme 1 Einheit = 1 m/s)
-                ds = self.robot.command[0] * self.cfg.robot.vx_limit * dt
+                ds = self._odom_ds(now, dt)
                 self.lmap.move(ds, self.vis_yaw - self._yaw_at_ctrl)
                 self._yaw_at_ctrl = self.vis_yaw
                 if free is not None and self._free is not self._fs_in_map:
@@ -359,6 +368,8 @@ class App:
                                **self._loop_spread(),
                                "det_ms": round(self.det.infer_ms, 1), "det_batches": self._det_count,
                                "fs_ms": round(self.fs_worker.ms, 1) if self.fs_worker is not None else None,
+                               "odom": {"src": self.odom_src, "m": round(self.odom_m, 2),
+                                        "hz": round(self.wheels.rate_hz, 1) if self.wheels else None},
                                "mode": self.behavior.name, "yaw_vis_deg": round(math.degrees(self.vis_yaw), 1),
                                "yaw_drv": self.robot.state.yaw_deg, "battery": self.robot.state.battery,
                                "balancing": self.robot.state.balancing,
@@ -373,6 +384,22 @@ class App:
         tm.mark("snap")
         self._seg_hist.append(tm.done())
 
+
+    def _odom_ds(self, now: float, dt: float) -> float:
+        """Strecke seit dem letzten Regelschritt (m): aus den Rad-Encodern, wenn frisch;
+        sonst wie früher Fahrbefehl x vx_limit (unkalibriert). Den Kurs liefert weiter vis_yaw."""
+        w = self.wheels
+        if w is not None and self.cfg.odom.source != "command" and w.fresh(now):
+            cur = w.latest()
+            prev, self._wheel_at_ctrl = self._wheel_at_ctrl, cur
+            self.odom_src = "räder"
+            ds = w.motion(prev, cur)[0] if prev is not None else 0.0
+        else:
+            self._wheel_at_ctrl = None
+            self.odom_src = "befehl"
+            ds = self.robot.command[0] * self.cfg.robot.vx_limit * dt
+        self.odom_m += abs(ds)
+        return ds
 
     def loop_breakdown(self) -> dict:
         """Wo die Schleifenzeit hingeht (letzte ~250 Bilder): je Abschnitt Mittel und p95 der

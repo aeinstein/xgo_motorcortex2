@@ -1,14 +1,14 @@
-"""Closed-Loop-Szenarien im Simulator. python3 tests/sim_run.py follow|explore [sekunden] [video.mp4] [--imu] [--fs-thread]"""
+"""Closed-Loop-Szenarien im Simulator. python3 tests/sim_run.py follow|explore [sekunden] [video.mp4] [--imu] [--fs-thread] [--wheels]"""
 import logging, math, sys, threading, time
 sys.path.insert(0, ".")
 import numpy as np
 from xgonav.app import App, render
 from xgonav.config import Config
 from xgonav.robot import SimRobot
-from xgonav.sim import FakeDetector, Person, SimImu, SimWorld
+from xgonav.sim import FakeDetector, Person, SimImu, SimWheels, SimWorld
 
 
-def run(mode="follow", secs=25.0, video=None, shake=1.0, quiet=True, imu=False, fs_thread=False):
+def run(mode="follow", secs=25.0, video=None, shake=1.0, quiet=True, imu=False, fs_thread=False, wheels=False, vx_true=None):
     logging.basicConfig(level=logging.WARNING if quiet else logging.INFO)
     cfg = Config()
     cfg.behavior.mode = mode
@@ -17,10 +17,14 @@ def run(mode="follow", secs=25.0, video=None, shake=1.0, quiet=True, imu=False, 
     robot = SimRobot(cfg.robot)
     person = Person([(3.2, 1.3), (4.8, 4.6), (1.4, 5.0), (1.2, 3.0)], speed=0.3) if mode != "explore" else None
     world = SimWorld(cfg.camera, robot, person, start=(1.0, 1.2, 0.2), shake=shake,
-                     mount_offset_mm=cfg.camera.mount_offset_mm, vx_mps=cfg.robot.vx_limit)
+                     mount_offset_mm=cfg.camera.mount_offset_mm,
+                     vx_mps=vx_true if vx_true is not None else cfg.robot.vx_limit)  # vx_true: echte m/s je Einheit
     if imu:
         cfg.imu.pitch_ref_deg = 2.5   # wie nach calibrate.py wall
-    app = App(cfg, robot, world, imu=SimImu(world, cfg.imu) if imu else None)
+    if not wheels:
+        cfg.odom.source = "command"          # sonst sucht App die Raddaten in /proc
+    app = App(cfg, robot, world, imu=SimImu(world, cfg.imu) if imu else None,
+              wheels=SimWheels(world, cfg.odom) if wheels else None)
     if not imu:
         app.imu = None
     app.det = FakeDetector(world)
@@ -48,7 +52,7 @@ def run(mode="follow", secs=25.0, video=None, shake=1.0, quiet=True, imu=False, 
     L = world.log
     out = {"imu_sync": (app.imu_sync.reliable, app.imu_sync.sign, round(app.imu_sync.offset * 1000), round(app.imu_sync.corr, 2)) if imu else None,
            "collisions": world.collisions, "coll_frames": world.coll_frames, "dist_m": round(world.dist_travelled, 2), "frames": len(L),
-           "loop_ms": round(app._loop_ms, 1)}
+           "loop_ms": round(app._loop_ms, 1), "odom": app.odom_src, "odom_m": round(app.odom_m, 2)}
     if person:
         d = np.array([math.hypot(r["px"] - r["x"], r["py"] - r["y"]) for r in L])
         b = np.array([math.degrees((math.atan2(r["py"] - r["y"], r["px"] - r["x"]) - r["th"] + math.pi) % (2 * math.pi) - math.pi) for r in L])
@@ -64,4 +68,5 @@ if __name__ == "__main__":
     mode = sys.argv[1] if len(sys.argv) > 1 else "follow"
     secs = float(sys.argv[2]) if len(sys.argv) > 2 and not sys.argv[2].startswith("--") else 25
     args = [a for a in sys.argv[3:] if not a.startswith("--")]
-    print(run(mode, secs, args[0] if args else None, imu="--imu" in sys.argv, fs_thread="--fs-thread" in sys.argv))
+    print(run(mode, secs, args[0] if args else None, imu="--imu" in sys.argv, fs_thread="--fs-thread" in sys.argv,
+              wheels="--wheels" in sys.argv))

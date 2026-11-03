@@ -190,6 +190,22 @@ class EmotionCfg:
 
 
 @dataclass
+class OdomCfg:
+    # Rad-Odometrie aus /proc/XGORider/wheels_log (Firmware R-1.1.6+Patch, Treiber mit 0x0d/0x0c).
+    # source: "auto" = Räder, wenn vorhanden und frisch, sonst Fahrbefehl x vx_limit;
+    # "command" = immer Fahrbefehl (wie früher).
+    enabled: bool = True
+    source: str = "auto"
+    proc_dir: str = "/proc/XGORider"
+    wheel_diameter_m: float = 0.060    # RiderPi, Angabe des Nutzers
+    track_m: float = 0.090             # Spurweite (Abstand der Radaufstandspunkte)
+    ticks_per_rev: int = 1024          # am Rider gemessen (1 U von Hand: 1029 / 1043)
+    poll_hz: float = 25.0              # wheels_log lesen (Treiber puffert 64 Proben)
+    max_age_s: float = 0.3             # älter -> Rückfall auf den Fahrbefehl
+    max_jump_ticks: int = 2048         # größerer Sprung zwischen zwei Proben = Neustart/Fehler
+
+
+@dataclass
 class CpuCfg:
     # CPU-Pinning (Linux). Leer = nicht pinnen. Am RiderPi: Hauptschleife samt Kamera,
     # OpenCV-Workern und Rest des Systems auf 0-1, YOLO auf 2-3 (Aufrufer + Pool-Thread).
@@ -217,6 +233,7 @@ class Config:
     output: OutputCfg = field(default_factory=OutputCfg)
     emotion: EmotionCfg = field(default_factory=EmotionCfg)
     cpu: CpuCfg = field(default_factory=CpuCfg)
+    odom: OdomCfg = field(default_factory=OdomCfg)
     control_hz: float = 20.0
 
     @classmethod
