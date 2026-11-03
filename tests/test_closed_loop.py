@@ -30,3 +30,12 @@ def test_follow_with_imu_autosync():
     ok, sign, off_ms, corr = r["imu_sync"]
     assert ok and sign == -1 and abs(off_ms + 8) <= 4   # Simulator: Vorzeichen -1, Versatz -8 ms
     assert r["collisions"] == 0
+
+
+@pytest.mark.slow
+def test_home_returns_to_start():
+    # 30 s erkunden, dann zum Start; mit Rad-Odometrie (sonst driftet der Kamerakurs)
+    r = run("home", 60.0, wheels=True)
+    assert r["collisions"] == 0
+    assert r["home_weg_m"] > 1.0        # war tatsächlich weg
+    assert r["home_end_m"] < 0.35       # echte Endpose nahe der echten Startpose

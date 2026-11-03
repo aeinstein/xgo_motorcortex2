@@ -58,11 +58,14 @@ shading_max_gain = 5.0   # Nahbereich mit verrauschtem Rot gilt als unbekannt st
 sample_rows = 0.34       # Bodenprobe vom unteren Rand bis ~0,6 m (naher und ferner Boden)
 sample_cols = 0.5
 
+[grid]
+file = "/opt/xgonav/raumkarte.npz"   # Raumkarte speichern/laden; beim Laden muss der Rider am Startpunkt stehen
+
 [map]
 confirm = 3              # Kartenpunkt blockiert die Bahn erst nach 3 Beobachtungen
 
 [behavior]
-mode = "idle"         # idle | follow | explore | approach
+mode = "idle"         # idle | follow | explore | approach | home
 target_class = "person"
 follow_dist_m = 0.9
 dist_deadband = 0.10

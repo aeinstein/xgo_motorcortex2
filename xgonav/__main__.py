@@ -4,6 +4,7 @@ Beispiele:
   python3 -m xgonav --mode follow                     # echter Rider, Person folgen
   python3 -m xgonav --mode explore
   python3 -m xgonav --mode approach --target chair
+  python3 -m xgonav --mode home                        # zum Startpunkt der Raumkarte
   python3 -m xgonav --source test.mp4 --robot sim --mode follow   # Replay am PC
 """
 from __future__ import annotations
@@ -25,7 +26,7 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="xgonav", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--config", help="TOML-Datei mit Overrides")
-    ap.add_argument("--mode", choices=["idle", "follow", "explore", "approach"])
+    ap.add_argument("--mode", choices=["idle", "follow", "explore", "approach", "home"])
     ap.add_argument("--target", help="COCO-Klasse für follow/approach (z. B. person, chair, dog)")
     ap.add_argument("--source", help="picam | Kameraindex | Videodatei")
     ap.add_argument("--robot", choices=["proc", "sim"], default=None,

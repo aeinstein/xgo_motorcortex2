@@ -1,4 +1,4 @@
-"""Verhalten: Folgen, Erkunden, Anfahren – plus Sicherheitsschicht.
+"""Verhalten: Folgen, Erkunden, Anfahren, Heimfahrt – plus Sicherheitsschicht.
 
 Alle Verhalten arbeiten auf einem gemeinsamen Weltzustand und liefern einen
 normierten Fahrbefehl (v, w) und eine gewünschte Körperhöhe. Die
@@ -10,7 +10,7 @@ import math
 import random
 from dataclasses import dataclass, field
 
-from .config import BehaviorCfg, RobotCfg
+from .config import BehaviorCfg, HomeCfg, RobotCfg
 from .egomotion import EgoResult
 from .freespace import FreeSpace
 from .geometry import CamGeometry
@@ -32,6 +32,8 @@ class World:
     cmd_v: float                      # aktuell gefahrener Befehl (nach Rampe)
     geo: CamGeometry | None = None
     pitch_dev: float = 0.0            # hochfrequentes Nicken in rad (aus Ego-Motion)
+    pose: tuple | None = None         # (x, y, th) in der Raumkarte (m, rad), None = keine Karte
+    goal: tuple | None = None         # Startpunkt (x, y, th) in der Raumkarte
 
     def bearing(self, x: float) -> float:
         """Bildspalte -> Winkel rad (links positiv)."""
@@ -326,12 +328,124 @@ class Approach(Behavior):
         return c
 
 
-def make_behavior(name: str, cfg: BehaviorCfg, rcfg: RobotCfg, target: str | None = None) -> Behavior:
+def _wrap(a: float) -> float:
+    return (a + math.pi) % (2 * math.pi) - math.pi
+
+
+class Home(Behavior):
+    """Zurück zum Startpunkt der Raumkarte: Weg plant planner.py (App stößt an, sobald
+    want_plan() es verlangt), gefahren wird per Pure Pursuit. Sicherheitsschicht und
+    Bahnprüfung gelten wie bei explore. Am Ziel optional auf den Startkurs drehen."""
+    name = "home"
+    STUCK_S = 3.0          # so lange ohne 5 cm Annäherung -> neu planen
+
+    def __init__(self, cfg, rcfg, hcfg: HomeCfg | None = None):
+        super().__init__(cfg, rcfg)
+        self.h = hcfg or HomeCfg()
+        self.path: list[tuple[float, float]] | None = None
+        self.pending = False
+        self.t_plan = -1e9
+        self.fails = 0
+        self.done = False
+        self.gave_up = False
+        self._best = math.inf
+        self._t_best: float | None = None
+        self._stuck = False
+
+    # --- Planung (von App bedient) ---
+    def want_plan(self, t: float) -> bool:
+        if self.pending or self.done or self.gave_up:
+            return False
+        if self.path is None or t - self.t_plan > self.h.replan_s or self._stuck:
+            self.pending, self.t_plan, self._stuck = True, t, False
+            return True
+        return False
+
+    def set_path(self, path: list[tuple[float, float]] | None) -> None:
+        self.pending = False
+        if path is None:
+            self.fails += 1
+            if self.fails >= self.h.max_fail:
+                self.gave_up = True
+            return                                  # alten Weg behalten, falls vorhanden
+        self.fails = 0
+        self.path = list(path)
+
+    def _target(self, x: float, y: float) -> tuple[float, float]:
+        """Punkt lookahead_m entlang des Wegs ab der Projektion der Pose."""
+        p = self.path
+        if len(p) == 1:
+            return p[0]
+        best, bi, bt = math.inf, 0, 0.0
+        for i in range(len(p) - 1):
+            ax, ay = p[i]
+            bx, by = p[i + 1]
+            dx, dy = bx - ax, by - ay
+            L2 = dx * dx + dy * dy
+            t = clamp(((x - ax) * dx + (y - ay) * dy) / L2, 0.0, 1.0) if L2 > 1e-12 else 0.0
+            d = math.hypot(ax + t * dx - x, ay + t * dy - y)
+            if d < best:
+                best, bi, bt = d, i, t
+        rest = self.h.lookahead_m
+        i, t = bi, bt
+        while i < len(p) - 1:
+            ax, ay = p[i]
+            bx, by = p[i + 1]
+            L = math.hypot(bx - ax, by - ay)
+            left = (1.0 - t) * L
+            if left >= rest and L > 1e-9:
+                t += rest / L
+                return ax + t * (bx - ax), ay + t * (by - ay)
+            rest -= left
+            i, t = i + 1, 0.0
+        return p[-1]
+
+    def step(self, w: World) -> Command:
+        hmm = self.cfg.height_cruise_mm
+        if w.pose is None or w.goal is None:
+            return Command(0, 0, hmm, "keine Raumkarte – stopp")
+        x, y, th = w.pose
+        gx, gy, gth = w.goal
+        dist = math.hypot(gx - x, gy - y)
+        if self.done:
+            return Command(0, 0, hmm, "am Start angekommen")
+        if dist < self.h.arrive_m:
+            err = _wrap(gth - th)
+            if self.h.align_heading and abs(err) > math.radians(self.h.align_tol_deg):
+                wc = clamp(yaw_rate_to_w(self.cfg.kp_turn * err, self.rcfg), -1.0, 1.0)
+                if abs(wc) < self.cfg.search_w:      # kleine Werte ignoriert die Firmware
+                    wc = math.copysign(self.cfg.search_w, err)
+                return Command(0.0, wc, hmm, "am Start – richte aus (%+.0f°)" % math.degrees(err))
+            self.done = True
+            return Command(0, 0, hmm, "am Start angekommen")
+        if self.gave_up:
+            return Command(0, 0, hmm, "kein Weg zum Start – stopp")
+        # Fortschritt beobachten: Sicherheitsschicht bremst -> nach STUCK_S neu planen
+        if dist < self._best - 0.05 or self._t_best is None:
+            self._best, self._t_best = dist, w.t
+        elif w.t - self._t_best > self.STUCK_S:
+            self._stuck, self._best, self._t_best = True, dist, w.t
+        if self.path is None:
+            return Command(0, 0, hmm, "plane Weg zum Start")
+        tx, ty = self._target(x, y)
+        err = _wrap(math.atan2(ty - y, tx - x) - th)
+        wc = clamp(yaw_rate_to_w(self.cfg.kp_turn * err, self.rcfg), -1.0, 1.0)
+        v = 0.0
+        if abs(err) < math.radians(60):
+            v = self.h.v * clamp(1.0 - abs(err) / math.radians(40), 0.0, 1.0)
+        elif abs(wc) < self.cfg.search_w:
+            wc = math.copysign(self.cfg.search_w, err)
+        return Command(v, wc, hmm, "zum Start %.2f m (%+.0f°)" % (dist, math.degrees(err)))
+
+
+def make_behavior(name: str, cfg: BehaviorCfg, rcfg: RobotCfg, target: str | None = None,
+                  hcfg: HomeCfg | None = None) -> Behavior:
     return {"idle": lambda: Idle(cfg, rcfg),
             "manual": lambda: Manual(cfg, rcfg),
             "follow": lambda: Follow(cfg, rcfg, target),
             "explore": lambda: Explore(cfg, rcfg),
-            "approach": lambda: Approach(cfg, rcfg, target)}[name]()
+            "approach": lambda: Approach(cfg, rcfg, target),
+            "home": lambda: Home(cfg, rcfg, hcfg)}[name]()
 
 
 # ---------------------------------------------------------------------------

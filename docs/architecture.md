@@ -40,8 +40,9 @@ camera.FrameSource ─► egomotion.EgoMotion ─► tracker.Tracker ◄── d
 | `freespace.py`, `shading.py` | Floor colour model → free/blocked per image column; lens-shading correction |
 | `localmap.py` | Short-term obstacle memory in robot frame (`map.max_age_s` = 4 s) |
 | `wheels.py` | Wheel odometry from `wheels_log` |
-| `gridmap.py` | Room occupancy grid in world frame (display only) |
-| `behaviors.py` | `idle`, `manual`, `follow`, `explore`, `approach`; `safety()` |
+| `gridmap.py` | Room occupancy grid in world frame, start point, save/load |
+| `planner.py` | A* on the room map for `home`, own thread (`PlannerWorker`) |
+| `behaviors.py` | `idle`, `manual`, `follow`, `explore`, `approach`, `home`; `safety()` |
 | `robot.py` | `ProcRobot` (`/proc/XGORider`), `SimRobot`; ramp, keepalive, watchdog |
 | `web.py` | Local HTTP/WebSocket API (`127.0.0.1:8088`) |
 | `lcd.py` | Overlay to `/tmp/lcd0` (Pi only, lazy import) |

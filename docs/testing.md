@@ -8,11 +8,12 @@ python3 -m venv .venv && .venv/bin/pip install "opencv-python-headless>=4.6" "nu
 
 | Command | What | Time |
 |---|---|---|
-| `python -m pytest -q tests/` | 34 unit tests (`tests/test_units.py`); `slow` excluded via `pytest.ini` | ~2 s |
-| `python -m pytest -q -m slow tests/` | 3 closed-loop simulator tests (`tests/test_closed_loop.py`) | ~90 s |
+| `python -m pytest -q tests/` | 38 unit tests (`tests/test_units.py`); `slow` excluded via `pytest.ini` | ~2 s |
+| `python -m pytest -q -m slow tests/` | 4 closed-loop simulator tests (`tests/test_closed_loop.py`) | ~150 s |
 | `python -m pytest -q tests/test_units.py -k imu_sync` | single test | |
 | `python tests/sim_run.py follow 40 [out.mp4]` | scenario, optional overlay video | |
 | `python tests/sim_run.py explore 40` | explore scenario, prints collisions and map quality | |
+| `python tests/sim_run.py home 60 [--wheels]` | 30 s explore, then `home`; prints true distance to start (`home_end_m`) | |
 | `python tests/sim_run.py follow 40 --imu` | simulated IMU, sign −1 and −8 ms offset (deliberately wrong) | |
 | `python -m xgonav --source video.mp4 --robot sim --mode follow [--fast]` | replay own video | |
 | `python tools/replay_raw.py DIR --config rider.toml [--set k=v] [--video out.mp4]` | replay `--record-raw` capture through floor model, local map, arc check; reports false-alarm rate | |
@@ -37,6 +38,7 @@ python3 -m venv .venv && .venv/bin/pip install "opencv-python-headless>=4.6" "nu
 |---|---|
 | Explore | 7/7 runs without collision after fixes (before: 1 stuck in 11, cause: reverse not arc-checked) |
 | Follow, person 0.3 m/s, target 1.2 m | mean 1.8 m, min 1.4 m, no collision |
+| Home, 60 s, simulated wheels | end 0.14 m from true start, no collision, plan 2 ms (PC); without wheels camera heading drifts (pose error 0.5–1.8 m) |
 | Pitch from image only | 0.56° spread |
 | Pitch IMU + image | 0.13° spread |
 | Person distance, image only | −16 cm bias, ±23 cm |

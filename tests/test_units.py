@@ -693,3 +693,97 @@ def test_gridworker_uses_pose_of_observation():
     w.close()
     # Wand dort, wo sie aus der Startpose gesehen wurde – nicht verschoben zur neuen Pose
     assert np.array_equal(np.sort(m.occupied_cells(), axis=0), np.sort(direct.occupied_cells(), axis=0))
+
+
+# ---------------------------------------------------------------- Startpunkt, Speichern, Heimfahrt
+def _grid():
+    from xgonav.gridmap import GridMap
+    cfg = Config()
+    return cfg, GridMap(cfg.grid, CamGeometry(640, 480, 91.0, 1.39, 43.0, 85.0), 160, 120)
+
+
+def test_gridmap_start_save_load(tmp_path):
+    cfg, m = _grid()
+    m.lo[100:110, 50:60] = 2.5
+    m.move(1.0, 0.0)
+    m.move(0.0, math.radians(30))
+    m.set_start()
+    m.move(0.5, math.radians(45))
+    st = m.stats()
+    assert st["start"][:2] == pytest.approx([1.0, 0.0], abs=1e-6) and st["zum_start_m"] > 0.3
+    f = str(tmp_path / "karte.npz")
+    assert m.save(f)
+    _, m2 = _grid()
+    assert m2.load(f)
+    assert np.allclose(m2.lo, m.lo, atol=0.01)
+    assert m2.pose() == pytest.approx(m.start)                 # Pose = Startpunkt
+    assert m2.stats()["zum_start_m"] == 0.0
+    cfg.grid.resolution_m = 0.1                                # andere Auflösung -> ignoriert
+    from xgonav.gridmap import GridMap
+    m3 = GridMap(cfg.grid, m.geo, 160, 120)
+    assert not m3.load(f) and not m3.lo.any()
+    m2.maybe_save(f, 0.0)                                      # unverändert -> kein Schreiben nötig
+    assert not (tmp_path / "karte.npz.tmp").exists()
+
+
+def test_planner_avoids_wall_and_reports_no_path():
+    from xgonav.planner import cost_map, plan
+    cfg, m = _grid()
+    hc = cfg.home
+    # Wand bei x = 1 m von y = -1,5 .. +0,5 m; Ziel dahinter
+    r0, c = m.cell(1.0, -1.5)                                  # Zeile = y, Spalte = x
+    r1, _ = m.cell(1.0, 0.5)
+    m.lo[r0:r1 + 1, c] = 3.0
+    p = plan(m, (0.0, 0.0), (2.0, 0.0), hc)
+    assert p is not None and p[0] == (0.0, 0.0) and p[-1] == (2.0, 0.0)
+    assert max(y for _, y in p) > 0.5                          # oben um das Wandende herum
+    blocked, _ = cost_map(m.lo, m.res, cfg.grid.l_show, hc)
+    for (ax, ay), (bx, by) in zip(p, p[1:]):                   # kein Abschnitt durch gesperrte Zellen
+        for t in np.linspace(0, 1, 50):
+            r, cc = m.cell(ax + t * (bx - ax), ay + t * (by - ay))
+            near_end = min(math.hypot(ax + t * (bx - ax) - q[0], ay + t * (by - ay) - q[1])
+                           for q in ((0.0, 0.0), (2.0, 0.0))) < hc.inflate_m + m.res
+            assert near_end or not blocked[r, cc]
+    # Ziel ringsum eingemauert -> kein Weg
+    gr, gc = m.cell(2.0, 0.0)
+    k = 12
+    m.lo[gr - k, gc - k:gc + k + 1] = m.lo[gr + k, gc - k:gc + k + 1] = 3.0
+    m.lo[gr - k:gr + k + 1, gc - k] = m.lo[gr - k:gr + k + 1, gc + k] = 3.0
+    assert plan(m, (0.0, 0.0), (2.0, 0.0), hc) is None
+
+
+def test_home_behavior_steers_and_arrives():
+    from xgonav.behaviors import Home, World
+    from xgonav.egomotion import EgoResult
+    cfg = Config()
+    b = Home(cfg.behavior, cfg.robot, cfg.home)
+
+    def world(pose, t=0.0):
+        return World(t=t, dt=0.05, W=640, H=480, hfov=1.6, ego=EgoResult(0, t, 0.05), tracks=[], free=None,
+                     balancing=True, vis_yaw=0.0, cmd_v=0.0, pose=pose, goal=(0.0, 0.0, 0.0))
+    assert b.want_plan(0.0) and not b.want_plan(0.1)           # ein Auftrag zur Zeit
+    c = b.step(world((1.0, -1.0, math.pi / 2)))
+    assert c.v == 0 and "plane" in c.status
+    b.set_path([(1.0, -1.0), (0.0, 0.0)])
+    c = b.step(world((1.0, -1.0, math.radians(135))))         # Ziel genau voraus -> fahren
+    assert c.v > 0 and abs(c.w) < 0.05
+    c = b.step(world((1.0, -1.0, math.radians(90))))          # Ziel 45° links
+    assert c.w > 0
+    c = b.step(world((0.05, 0.0, math.radians(40))))          # angekommen, aber verdreht
+    assert c.v == 0 and c.w < 0
+    c = b.step(world((0.05, 0.0, 0.0)))
+    assert c.v == 0 and c.w == 0 and b.done
+    b2 = Home(cfg.behavior, cfg.robot, cfg.home)
+    for _ in range(cfg.home.max_fail):
+        b2.want_plan(0.0)
+        b2.set_path(None)
+    assert b2.gave_up and b2.step(world((1.0, 1.0, 0.0))).v == 0
+
+
+def test_home_needs_gridmap():
+    from xgonav.app import ModeNotAllowed
+    app = _app(freespace=True)
+    app.set_mode("home")
+    app.gridmap = None
+    with pytest.raises(ModeNotAllowed):
+        app.set_mode("home")

@@ -160,6 +160,16 @@ def serve(app: App, host: str, port: int, fps: int, render_cpus=None) -> Threadi
                     return self._send(404, b'{"error":"keine Raumkarte"}')
                 app.gridmap.reset()
                 return self._send(200, b'{"ok":true}')
+            if u.path == "/map/start":
+                if app.gridmap is None:
+                    return self._send(404, b'{"error":"keine Raumkarte"}')
+                app.gridmap.set_start()
+                return self._send(200, b'{"ok":true}')
+            if u.path == "/map/save":
+                if app.gridmap is None or not app.cfg.grid.file:
+                    return self._send(404, b'{"error":"keine Raumkarte oder [grid] file leer"}')
+                ok = app.gridmap.save(app.cfg.grid.file)
+                return self._send(200 if ok else 500, json.dumps({"ok": ok, "file": app.cfg.grid.file}).encode())
             if u.path == "/exposure":
                 try:
                     us = app.src.set_exposure(int(q.get("us", [""])[0]))

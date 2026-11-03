@@ -5,7 +5,7 @@ Kernel driver, display daemon, camera navigation (xgonav) and web UI for the XGO
 
 **Status:** single device, firmware R-1.1.6. Tested on the RiderPi: driver, IMU/wheel readout,
 CPU time, camera geometry, manual driving (web UI), `follow` (runs 2026-11-02, `max_v` 0.15 ≈ 23 cm/s).
-**Not tested on hardware:** `explore`, `approach`. Details: [docs/limitations.md](docs/limitations.md).
+**Not tested on hardware:** `explore`, `approach`, `home`. Details: [docs/limitations.md](docs/limitations.md).
 
 ![Web UI](docs/screenshots/frontend.PNG)
 
@@ -41,6 +41,7 @@ Web UI: `https://<rider>/xgonav/`. No authentication; LAN only.
 python -m xgonav --mode follow                    # follow a person
 python -m xgonav --mode approach --target chair   # find and approach a chair
 python -m xgonav --mode explore
+python -m xgonav --mode home                      # back to the room-map start point
 python -m xgonav --mode idle --record debug.mp4   # watch only, record overlay
 ```
 

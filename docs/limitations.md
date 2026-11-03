@@ -11,10 +11,10 @@ Single device: RiderPi, CM4 2 GB, kernel 6.6.74+rpt-rpi-v8, OV5647 wide-angle, f
 | Camera geometry, lens shading | measured |
 | Manual driving (web UI) | tested |
 | `follow` | tested 2026-11-02 (runs 3–8, `max_v` 0.10–0.15); works, path check blocked in some runs |
-| `explore`, `approach` | **not tested** |
+| `explore`, `approach`, `home` | **not tested** |
 | IMU sync while balancing | not verified |
 | Patch 0003 (`force_yaw`) | not tested |
-| Room map | display only, no driving decisions |
+| Room map | used only by `home`; drifts (no markers); loading assumes the Rider stands at the start point |
 
 ## Camera
 

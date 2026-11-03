@@ -13,7 +13,9 @@ die Karte (noch) nicht benutzt, nur angezeigt.
 """
 from __future__ import annotations
 
+import logging
 import math
+import os
 import threading
 import time
 
@@ -23,6 +25,8 @@ import numpy as np
 from .config import GridCfg
 from .freespace import FreeSpace
 from .geometry import CamGeometry
+
+log = logging.getLogger("xgonav.gridmap")
 
 
 class GridMap:
@@ -42,6 +46,74 @@ class GridMap:
             self.path: list[tuple[float, float]] = [(0.0, 0.0)]
             self.updates = 0
             self._stats, self._stats_t = None, 0.0
+            self.start = (0.0, 0.0, 0.0)                        # Startpunkt (x, y, th) im Karten-KS
+            self.plan: list[tuple[float, float]] = []             # geplanter Weg (nur Anzeige, von App)
+            self._saved_key = None                                # (updates, start) beim letzten Speichern
+            self._saved_t = time.monotonic()
+
+    def set_start(self) -> None:
+        """Startpunkt = aktuelle Pose (Knopf „Start hier“)."""
+        with self._lock:
+            self.start = (self.x, self.y, self.th)
+        log.info("Startpunkt gesetzt: x %.2f m, y %.2f m, %.0f°", self.x, self.y, math.degrees(self.th))
+
+    # ---- Speichern / Laden ------------------------------------------
+    def save(self, path: str) -> bool:
+        """Karte, Startpunkt und Weg atomar speichern (erst .tmp, dann umbenennen)."""
+        with self._lock:
+            lo = self.lo.copy()
+            start = np.array(self.start, np.float64)
+            path_pts = np.array(self.path, np.float64).reshape(-1, 2)
+            key = (self.updates, self.start)
+        tmp = path + ".tmp"
+        try:
+            with open(tmp, "wb") as f:
+                np.savez_compressed(f, lo=lo.astype(np.float16), res=self.res, n=self.n,
+                                    start=start, path=path_pts)
+            os.replace(tmp, path)
+        except OSError as e:
+            log.warning("Raumkarte nicht gespeichert (%s): %s", path, e)
+            return False
+        self._saved_key, self._saved_t = key, time.monotonic()
+        log.debug("Raumkarte gespeichert: %s", path)
+        return True
+
+    def maybe_save(self, path: str, every_s: float) -> None:
+        """Speichern, wenn sich seit dem letzten Mal etwas geändert hat und every_s vorbei ist."""
+        if not path or time.monotonic() - self._saved_t < every_s:
+            return
+        with self._lock:
+            key = (self.updates, self.start)
+        if key != self._saved_key:
+            self.save(path)
+        else:
+            self._saved_t = time.monotonic()
+
+    def load(self, path: str) -> bool:
+        """Gespeicherte Karte laden. Ohne Marker kann sich der Rider nicht wiederfinden:
+        die Pose wird auf den Startpunkt gesetzt, er muss also dort stehen."""
+        try:
+            with np.load(path) as d:
+                res, n = float(d["res"]), int(d["n"])
+                if abs(res - self.res) > 1e-9 or n != self.n:
+                    log.warning("Raumkarte %s passt nicht (%.3f m / %d Zellen statt %.3f m / %d) – ignoriert",
+                                path, res, n, self.res, self.n)
+                    return False
+                lo = d["lo"].astype(np.float32)
+                start = tuple(float(v) for v in d["start"])
+        except (OSError, KeyError, ValueError) as e:
+            log.warning("Raumkarte %s nicht geladen: %s", path, e)
+            return False
+        with self._lock:
+            self.lo = lo
+            self.start = start
+            self.x, self.y, self.th = start
+            self.path = [(start[0], start[1])]
+            self.plan = []
+            self._stats = None
+            self._saved_key = (self.updates, self.start)
+        log.info("Raumkarte geladen (%s) – Rider muss am Startpunkt stehen", path)
+        return True
 
     # ---- Pose ---------------------------------------------------------
     def move(self, ds: float, dyaw: float) -> None:
@@ -143,9 +215,12 @@ class GridMap:
         now = time.monotonic()
         with self._lock:
             pose = [round(self.x, 3), round(self.y, 3), round(math.degrees(self.th), 1)]
+            sx, sy, sth = self.start
+            home = math.hypot(self.x - sx, self.y - sy)
         if self._stats is None or now - self._stats_t > max_age_s:
             self._stats, self._stats_t = self._count(), now
-        return {"pose": pose, **self._stats}
+        return {"pose": pose, "start": [round(sx, 3), round(sy, 3), round(math.degrees(sth), 1)],
+                "zum_start_m": round(home, 2), **self._stats}
 
     def _count(self) -> dict:
         with self._lock:
@@ -158,12 +233,14 @@ class GridMap:
     def image(self, px: int = 480, view_m: float | None = None) -> np.ndarray:
         """Karte als BGR-Bild, Ausschnitt view_m x view_m um die aktuelle Pose. Oben = Karten-x
         (vorn beim Start), links = Karten-y (links beim Start). Grau unbekannt, hell frei,
-        dunkel belegt; Weg grün, Pose als rotes Dreieck, Maßstab 1 m."""
+        dunkel belegt; Weg grün, Plan cyan, Start blau, Pose als rotes Dreieck, Maßstab 1 m."""
         view_m = view_m or self.cfg.view_m
         with self._lock:
             lo = self.lo.copy()
             x, y, th = self.x, self.y, self.th
             path = list(self.path)
+            plan = list(self.plan)
+            sx, sy, sth = self.start
         n_px = int(round(view_m / self.res))                           # Zellen je Bildkante
         k = px / n_px
         v, u = np.mgrid[0:n_px, 0:n_px]
@@ -183,6 +260,11 @@ class GridMap:
 
         if len(path) > 1:
             cv2.polylines(img, [np.array([to_px(a, b) for a, b in path], np.int32)], False, (60, 170, 60), 2)
+        if len(plan) > 1:
+            cv2.polylines(img, [np.array([to_px(a, b) for a, b in plan], np.int32)], False, (230, 210, 0), 2)
+        sp = to_px(sx, sy)
+        cv2.circle(img, sp, max(4, int(round(0.08 / self.res * k))), (230, 110, 30), 2)
+        cv2.line(img, sp, to_px(sx + 0.16 * math.cos(sth), sy + 0.16 * math.sin(sth)), (230, 110, 30), 2)
         tip = to_px(x + 0.18 * math.cos(th), y + 0.18 * math.sin(th))
         lft = to_px(x + 0.08 * math.cos(th + 2.4), y + 0.08 * math.sin(th + 2.4))
         rgt = to_px(x + 0.08 * math.cos(th - 2.4), y + 0.08 * math.sin(th - 2.4))
@@ -197,7 +279,8 @@ class GridWorker:
     7,7 ms p95 je Bild – in der Hauptschleife zu teuer). Jede Beobachtung trägt die Pose
     zum Zeitpunkt der Aufnahme; die Pose selbst führt weiter die Hauptschleife (move())."""
 
-    def __init__(self, grid: GridMap, cpus=None, max_pending: int = 8):
+    def __init__(self, grid: GridMap, cpus=None, max_pending: int = 8, save_path: str = "",
+                 save_every_s: float = 60.0):
         from collections import deque
         self.grid = grid
         self.cpus = list(cpus or [])
@@ -207,6 +290,7 @@ class GridWorker:
         self._thread: threading.Thread | None = None
         self.ms = 0.0
         self.dropped = 0
+        self.save_path, self.save_every_s = save_path, save_every_s
 
     def start(self) -> None:
         self._thread = threading.Thread(target=self._run, name="gridmap", daemon=True)
@@ -237,11 +321,16 @@ class GridWorker:
             pin_thread(self.cpus, "Raumkarte")
         while not self._stop.is_set():
             with self._cond:
-                while not self._q and not self._stop.is_set():
+                if not self._q and not self._stop.is_set():
                     self._cond.wait(0.2)
                 if self._stop.is_set():
                     return
-                fs, pd, pose = self._q.popleft()
+                job = self._q.popleft() if self._q else None
+            # Speichern hier statt in der Hauptschleife (komprimieren kostet einige 10 ms)
+            self.grid.maybe_save(self.save_path, self.save_every_s)
+            if job is None:
+                continue
+            fs, pd, pose = job
             t0 = time.perf_counter()
             self.grid.add_freespace(fs, pd, pose)
             ms = (time.perf_counter() - t0) * 1000

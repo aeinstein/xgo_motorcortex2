@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Das Repo `xgo_motorcortex2` enthält Treiber (`kernel_module/`), Display-Daemon (`st7789/`), Weboberfläche (`web/`, `deploy/`) und xgonav. xgonav ist eine kamerabasierte Navigations-Pipeline (Python 3.11+, OpenCV, numpy, optional onnxruntime) für den XGO Rider, einen selbstbalancierenden Zweiradroboter mit Raspberry Pi CM4 (2 GB RAM). Sie spricht die Hardware ausschließlich über das Kernelmodul `xgo-drv` aus `kernel_module/` (`/proc/XGORider/...`) an. Code, Kommentare, Logs und Statusmeldungen sind durchgehend auf Deutsch; so beibehalten.
 
-Maßgebliche Doku: README.md (Überblick) und je Thema eine Datei in `docs/` (Architektur, Installation, Konfiguration, Kalibrierung, Treiber, Weboberfläche, Karten, Display, Tests, Grenzen, LEDs). README und `docs/` sind **englisch** und knapp (Fakten, Tabellen, keine Prosa); Code, Kommentare und Logs bleiben deutsch. Wichtigste Randbedingung: `explore` und `approach` sind nicht auf echter Hardware getestet; `follow` und Handsteuerung wurden am RiderPi gefahren (`docs/limitations.md`). Der Simulator rendert noch mit 62,2° Öffnungswinkel, die echte Kamera hat ~91°.
+Maßgebliche Doku: README.md (Überblick) und je Thema eine Datei in `docs/` (Architektur, Installation, Konfiguration, Kalibrierung, Treiber, Weboberfläche, Karten, Display, Tests, Grenzen, LEDs). README und `docs/` sind **englisch** und knapp (Fakten, Tabellen, keine Prosa); Code, Kommentare und Logs bleiben deutsch. Wichtigste Randbedingung: `explore`, `approach` und `home` sind nicht auf echter Hardware getestet; `follow` und Handsteuerung wurden am RiderPi gefahren (`docs/limitations.md`). Der Simulator rendert noch mit 62,2° Öffnungswinkel, die echte Kamera hat ~91°.
 
 ## Befehle
 
@@ -17,12 +17,13 @@ python3 -m venv .venv && .venv/bin/pip install "opencv-python-headless>=4.6" "nu
 ```
 
 ```bash
-python -m pytest -q tests/                       # Unit-Tests (34 Tests, ~2 s); slow ist per pytest.ini ausgeschlossen
-python -m pytest -q -m slow tests/               # Closed-Loop im Simulator (3 Tests, ~90 s gesamt); -m überschreibt addopts
+python -m pytest -q tests/                       # Unit-Tests (38 Tests, ~2 s); slow ist per pytest.ini ausgeschlossen
+python -m pytest -q -m slow tests/               # Closed-Loop im Simulator (4 Tests, ~150 s gesamt); -m überschreibt addopts
 python -m pytest -q tests/test_units.py -k imu_sync   # einzelner Test
 
 python tests/sim_run.py follow 40 out.mp4        # Szenario im Simulator, optional mit Overlay-Video
 python tests/sim_run.py explore 40
+python tests/sim_run.py home 60 --wheels         # 30 s erkunden, dann zurück zum Start
 python tests/sim_run.py follow 40 --imu          # mit simulierter IMU (Vorzeichen -1, Versatz -8 ms absichtlich falsch)
 
 python -m xgonav --source video.mp4 --robot sim --mode follow --fast   # Replay eines eigenen Videos

@@ -150,7 +150,7 @@ class MapCfg:
 
 @dataclass
 class BehaviorCfg:
-    mode: str = "idle"             # idle | follow | explore | approach
+    mode: str = "idle"             # idle | follow | explore | approach | home
     target_class: str = "person"
     follow_dist_m: float = 1.2
     approach_dist_m: float = 0.5
@@ -235,6 +235,26 @@ class GridCfg:
     yaw_source: str = "räder"
     # Eintragen in eigenem Thread (GridWorker, Kerne wie [cpu] freespace_cpus); False = im Regelschritt
     threaded: bool = True
+    # Speichern/Laden (npz). Leer = aus. Beim Laden gilt Pose = Startpunkt: der Rider muss
+    # vor dem Start von xgonav wieder dort stehen (ohne Marker findet er sich nicht wieder).
+    file: str = ""
+    save_every_s: float = 60.0         # höchstens so oft, und nur bei Änderungen; dazu beim Beenden
+
+
+@dataclass
+class HomeCfg:
+    # Modus home: Pfad über die Raumkarte zum Startpunkt (planner.py), Pure Pursuit
+    inflate_m: float = 0.18            # belegte Zellen um so viel aufblasen (Rider-Radius + Rand)
+    clear_cost: float = 4.0            # Zusatzkosten nahe an Hindernissen (fällt bis 2*inflate_m ab)
+    unknown_cost: float = 3.0          # unbekannte Zellen kosten so viel mehr als freie
+    margin_m: float = 1.5              # Suchgebiet = Pose, Start, gefahrener Weg + Rand
+    lookahead_m: float = 0.35
+    arrive_m: float = 0.15
+    replan_s: float = 2.0
+    v: float = 0.15                    # normiert, wie behavior.cruise_v
+    align_heading: bool = True         # am Ziel auf den Startkurs drehen
+    align_tol_deg: float = 10.0
+    max_fail: int = 3                  # so oft kein Weg -> aufgeben
 
 
 @dataclass
@@ -267,6 +287,7 @@ class Config:
     cpu: CpuCfg = field(default_factory=CpuCfg)
     odom: OdomCfg = field(default_factory=OdomCfg)
     grid: GridCfg = field(default_factory=GridCfg)
+    home: HomeCfg = field(default_factory=HomeCfg)
     control_hz: float = 20.0
 
     @classmethod

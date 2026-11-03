@@ -13,7 +13,7 @@ Unknown section or key in TOML → `KeyError` at load. New parameters go into th
 | Flag | Effect |
 |---|---|
 | `--config FILE` | TOML overrides |
-| `--mode idle\|follow\|explore\|approach` | `behavior.mode` |
+| `--mode idle\|follow\|explore\|approach\|home` | `behavior.mode` |
 | `--target CLASS` | `behavior.target_class` (COCO, e.g. `person`, `chair`) |
 | `--source picam\|<index>\|<file>` | `camera.source` |
 | `--robot proc\|sim` | default: `proc` if source is `picam`, else `sim` |
@@ -165,6 +165,22 @@ Default = `config.py`. RiderPi = `deploy/config.example.toml` (blank = default).
 | `view_m` | 6.0 |
 | `yaw_source` | `räder` (wheels) or `kamera` |
 | `threaded` | true |
+| `file` | `""` (off); RiderPi example: `/opt/xgonav/raumkarte.npz` |
+| `save_every_s` | 60.0 (only if changed; also on exit) |
+
+### `[home]` (return to start)
+| Key | Default | Meaning |
+|---|---|---|
+| `inflate_m` | 0.18 | occupied cells inflated, blocked for planning |
+| `clear_cost` | 4.0 | extra cost near obstacles (fades out at 2 × `inflate_m`) |
+| `unknown_cost` | 3.0 | extra cost for unknown cells |
+| `margin_m` | 1.5 | search area = pose, start, driven path + margin |
+| `lookahead_m` | 0.35 | pure pursuit |
+| `arrive_m` | 0.15 | goal radius |
+| `replan_s` | 2.0 | replan interval (also after 3 s without progress) |
+| `v` | 0.15 | normalised speed |
+| `align_heading` / `align_tol_deg` | true / 10 | turn to start heading at goal |
+| `max_fail` | 3 | consecutive failed plans → stop |
 
 ### `[cpu]`
 Empty = no pinning. RiderPi: `main_cpus [0,1]`, `detector_cpus [2,3]`, `render_cpus [0,1,2,3]`, `freespace_cpus [2,3]`.

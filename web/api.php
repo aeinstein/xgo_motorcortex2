@@ -4,7 +4,9 @@
  *
  *   GET  api.php?a=status
  *   POST api.php?a=mode&name=follow&target=person
- *   POST api.php?a=map_reset                  (Raumkarte leeren, Pose auf 0)
+ *   POST api.php?a=map_reset                  (Raumkarte leeren, Pose und Start auf 0)
+ *   POST api.php?a=map_start                  (Startpunkt = aktuelle Pose)
+ *   POST api.php?a=map_save                   (Raumkarte sofort speichern, [grid] file)
  *   POST api.php?a=stop
  *   POST api.php?a=pipeline&on=0|1
  *   POST api.php?a=drive&v=-1..1&w=-1..1      (nur Modus manual, alle 0,2 s senden)
@@ -28,7 +30,7 @@
 declare(strict_types=1);
 
 const XGONAV = 'http://127.0.0.1:8088';
-const MODES = ['idle', 'manual', 'follow', 'explore', 'approach'];
+const MODES = ['idle', 'manual', 'follow', 'explore', 'approach', 'home'];
 const PROC = '/proc/XGORider';
 const RC = '/home/aeinstein/motorcortex/rc_server';     // Emotionen der früheren Fernsteuerung
 const EMOTION = '/opt/xgonav/tools/emotion.sh';         // Player (RGB565-Rohbilder statt ffmpeg)
@@ -104,6 +106,10 @@ switch ($a) {
         xgonav('POST', '/mode?' . http_build_query(['name' => $name, 'target' => $target]));
     case 'map_reset':
         xgonav('POST', '/map/reset');
+    case 'map_start':
+        xgonav('POST', '/map/start');
+    case 'map_save':
+        xgonav('POST', '/map/save');
     case 'stop':
         xgonav('POST', '/stop');
     case 'pipeline':

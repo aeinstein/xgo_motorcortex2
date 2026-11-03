@@ -93,7 +93,7 @@ main{display:grid;grid-template-columns:minmax(320px,640px) minmax(300px,1fr);ga
 
 /* --- Karten */
 .karte{background:var(--karte);border:1px solid var(--rand);border-radius:var(--r);padding:10px 12px}
-.kopf{display:flex;align-items:center;gap:8px;margin:0 0 8px;min-height:28px}
+.kopf{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:0 0 8px;min-height:28px}
 .kopf h2{font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#a9b4c2;margin:0;flex:1}
 .leise{color:var(--leise);font-size:12px}
 details.hilfe{margin-top:8px;font-size:12px;color:var(--leise)}
@@ -113,7 +113,7 @@ details.hilfe p{margin:4px 0 0}
 .segment button.aktiv{background:var(--akzent);color:#04121f;font-weight:600}
 #ziel{width:96px}
 @media (max-width:640px){
-  .segment{display:grid;grid-template-columns:repeat(5,1fr);width:100%}
+  .segment{display:grid;grid-template-columns:repeat(3,1fr);width:100%}
   .segment button{padding:7px 2px;font-size:13px}
   #ziel{flex:1}
 }
@@ -182,6 +182,7 @@ details.extras[open]>summary{margin-bottom:8px}
         <button data-modus="follow" onclick="modus('follow')">Folgen</button>
         <button data-modus="explore" onclick="modus('explore')">Erkunden</button>
         <button data-modus="approach" onclick="modus('approach')">Anfahren</button>
+        <button data-modus="home" onclick="modus('home')" title="Weg über die Raumkarte zum Startpunkt">Zum Start</button>
       </div>
       <input id="ziel" value="person" title="Ziel für Folgen/Anfahren (COCO-Klasse)" aria-label="Ziel">
     </div>
@@ -235,13 +236,17 @@ details.extras[open]>summary{margin-bottom:8px}
   <section class="karte">
     <div class="kopf"><h2>Raumkarte</h2>
       <select id="karte-view" aria-label="Ausschnitt"><option value="3">3 m</option><option value="6" selected>6 m</option><option value="10">10 m</option><option value="16">16 m</option></select>
+      <button onclick="befehl('map_start')" title="Startpunkt = aktuelle Pose">Start hier</button>
+      <button onclick="befehl('map_save')" title="Raumkarte jetzt speichern ([grid] file)">Speichern</button>
       <button onclick="befehl('map_reset')">Zurücksetzen</button>
     </div>
     <img id="karte" alt="Raumkarte" width="320" height="320">
     <div class="leise" style="margin-top:6px" id="karte-pose">-</div>
-    <details class="hilfe"><summary>grau unbekannt · hell frei · dunkel belegt · grün Weg · rot Rider</summary>
+    <details class="hilfe"><summary>grau unbekannt · hell frei · dunkel belegt · grün Weg · cyan Plan · blau Start · rot Rider</summary>
       <p>Ursprung = Startpose (oben = vorn beim Start). Strecke aus den Rädern, Drehung aus der Kamera;
         ohne Marker driftet die Karte mit der Zeit.</p>
+      <p>„Zum Start“ plant einen Weg über die Karte und fährt ihn ab. Die Karte wird regelmäßig gespeichert
+        und beim Start von xgonav geladen; der Rider muss dann wieder am Startpunkt stehen.</p>
     </details>
   </section>
 
@@ -312,7 +317,7 @@ const felder = [
   ['Gier / Nick', s => s.ego ? s.ego.yaw_dps.toFixed(0) + ' / ' + s.ego.pitch_dps.toFixed(0) + ' °/s' : '-'],
   ['TTC / Schärfe', s => (s.ttc != null ? s.ttc.toFixed(1) + ' s' : '-') + ' / ' + (s.ego ? s.ego.sharp : '-')],
 ];
-const MODI = {idle: 'Idle', manual: 'Hand', follow: 'Folgen', explore: 'Erkunden', approach: 'Anfahren'};
+const MODI = {idle: 'Idle', manual: 'Hand', follow: 'Folgen', explore: 'Erkunden', approach: 'Anfahren', home: 'Zum Start'};
 const esc = t => String(t ?? '-').replace(/[<&]/g, c => c === '<' ? '&lt;' : '&amp;');
 const $ = id => document.getElementById(id);
 let aktModus = null, aktPipeline = null;
@@ -381,7 +386,7 @@ async function status() {
     pip.textContent = s.pipeline === 'läuft' ? 'Stoppen' : 'Starten';
     pip.classList.toggle('aktiv', s.pipeline !== 'läuft');
     if (s.grid) $('karte-pose').textContent =
-      'x ' + s.grid.pose[0].toFixed(2) + ' m · y ' + s.grid.pose[1].toFixed(2) + ' m · ' + s.grid.pose[2].toFixed(0) + '° · belegt ' + s.grid.belegt_m2 + ' m²';
+      'x ' + s.grid.pose[0].toFixed(2) + ' m · y ' + s.grid.pose[1].toFixed(2) + ' m · ' + s.grid.pose[2].toFixed(0) + '° · Start ' + s.grid.zum_start_m.toFixed(2) + ' m · belegt ' + s.grid.belegt_m2 + ' m²';
     belichtStatus(s.exposure);
     gainStatus(s.exposure);
   } catch (e) { zeige('keine Verbindung zu xgonav'); verbindungWeg(); }

@@ -39,7 +39,7 @@ Status JSON: `odom.src` = `räder` | `befehl`, `odom.m` = total distance.
 | Range | 0.15–2.5 m; "free to horizon" columns mark free up to 2.5 m only |
 | Unknown | columns without measurable floor (lens shading) stay unknown |
 | Thread | `GridWorker` (cores = `cpu.freespace_cpus`), pose at capture time passed along |
-| Use | **display only**, not used for driving decisions |
+| Use | display; path planning for mode `home` (not for other modes) |
 | Drift | no correction (no markers); drifts over time |
 
 ### Rendering (`/map.png`)
@@ -50,12 +50,47 @@ Status JSON: `odom.src` = `räder` | `befehl`, `odom.m` = total distance.
 | light | free |
 | dark | occupied |
 | green line | path |
+| cyan line | planned path (`home`) |
+| blue circle + line | start point and start heading |
 | red triangle | Rider pose |
 | blue bar | 1 m scale |
 
 Parameters: `px` 120..960 (default 480), `view` 1..16 m (default `grid.view_m` 6).
-Reset: web „Zurücksetzen“ or `POST /map/reset` (empty map, pose 0).
-Status JSON `grid`: `pose [x m, y m, yaw °]`, `belegt_m2`, `frei_m2`, `updates`, `ms`, `verworfen`.
+Reset: web „Zurücksetzen“ or `POST /map/reset` (empty map, pose 0, start 0).
+Status JSON `grid`: `pose [x m, y m, yaw °]`, `start [x m, y m, yaw °]`, `zum_start_m`, `belegt_m2`, `frei_m2`, `updates`, `ms`, `verworfen`; top level `plan_ms`.
+
+### Start point
+
+| Item | Value |
+|---|---|
+| Default | map origin (pose at xgonav start) |
+| Set | web „Start hier“ or `POST /map/start` → start = current pose (x, y, heading) |
+| Reset | `/map/reset` → 0 |
+
+### Persistence
+
+| Item | Value |
+|---|---|
+| File | `grid.file` (npz: log-odds float16, resolution, size, start, driven path); empty = off |
+| Save | every `grid.save_every_s` (60 s) if changed, in the `GridWorker` thread; on exit; web „Speichern“ / `POST /map/save` |
+| Write | `<file>.tmp` + rename (atomic) |
+| Load | at xgonav start if the file exists; resolution/size mismatch → ignored with warning |
+| Pose after load | **= start point**. No relocalisation: place the Rider on the start point (same heading) before starting xgonav |
+
+### Return to start (`--mode home`, `xgonav/planner.py`)
+
+| Item | Value |
+|---|---|
+| Planner | A* (8-neighbour) on map cells, search area = pose, start, driven path + `home.margin_m` |
+| Blocked | occupied cells (`> l_show`) inflated by `home.inflate_m` 0.18 m; cleared within that radius around pose and goal (drift) |
+| Cost | 1 + `clear_cost` near obstacles + `unknown_cost` for unknown cells; line-of-sight shortcut only if not more expensive |
+| Thread | `PlannerWorker` (cores = `cpu.freespace_cpus`); replan every `replan_s` 2 s and after 3 s without 5 cm progress |
+| Following | pure pursuit, lookahead 0.35 m; turn in place if error > 60°, speed reduced up to 40° |
+| Goal | within `arrive_m` 0.15 m, then turn to start heading (`align_heading`), status „am Start angekommen“, stands |
+| Failure | `max_fail` 3 consecutive plans without path → stop, „kein Weg zum Start“ |
+| Safety | `safety()` and `_arc_check()` apply as in `explore` |
+| Requires | `freespace.enabled`, `grid.enabled`, running pipeline |
+| Accuracy | limited by map drift: arrives at the *map* start; real error = pose error |
 
 ### Simulator quality (`tests/sim_run.py explore`)
 

@@ -5,6 +5,7 @@ import collections
 import gc
 import logging
 import math
+import os
 import threading
 import time
 from dataclasses import dataclass, field
@@ -19,6 +20,7 @@ from .detector import Detection, DetectorWorker
 from .egomotion import EgoMotion, EgoResult, warp_box
 from .freespace import FreeSpace, FreeSpaceEstimator, FreeSpaceWorker, column_runs
 from .gridmap import GridMap, GridWorker
+from .planner import PlannerWorker
 from .geometry import CamGeometry
 from .wheels import WheelOdom, make_wheels
 from .imu import ImuSource, ImuSync, make_imu
@@ -119,8 +121,15 @@ class App:
         # Raumkarte (Welt-KS ab Startpose), nur Anzeige
         self.gridmap = GridMap(cfg.grid, self.geo, self.fse.W, self.fse.H) \
             if self.fse is not None and cfg.grid.enabled else None
-        self.grid_worker = GridWorker(self.gridmap, cfg.cpu.freespace_cpus) \
+        if self.gridmap is not None and cfg.grid.file and os.path.exists(cfg.grid.file):
+            self.gridmap.load(cfg.grid.file)
+        self.grid_worker = GridWorker(self.gridmap, cfg.cpu.freespace_cpus, save_path=cfg.grid.file,
+                                      save_every_s=cfg.grid.save_every_s) \
             if self.gridmap is not None and cfg.grid.threaded else None
+        # Planer für den Modus home (Thread startet erst beim ersten Auftrag)
+        self.planner = PlannerWorker(self.gridmap, cfg.home, cfg.cpu.freespace_cpus) \
+            if self.gridmap is not None else None
+        self._plan_seq = 0
         self._yaw_at_ctrl = 0.0
         mode = cfg.behavior.mode
         try:
@@ -128,7 +137,7 @@ class App:
         except ModeNotAllowed as e:
             log.error("%s – starte stattdessen im Modus idle", e)
             mode = "idle"
-        self.behavior: Behavior = make_behavior(mode, cfg.behavior, cfg.robot)
+        self.behavior: Behavior = self._make(mode)
         self._mode_lock = threading.Lock()
         self._pending_mode: tuple[str, str | None] | None = None
         self.snapshot = Snapshot()
@@ -149,11 +158,16 @@ class App:
     # ------------------------------------------------------------------
     # Diese Modi fahren auf Freiraum zu und verlassen sich auf Bodenmodell + Merkkarte.
     # Ohne Freiraum-Erkennung hielten sie alles für frei und stoppten nur per TTC.
-    NEEDS_FREESPACE = {"explore", "approach"}
+    NEEDS_FREESPACE = {"explore", "approach", "home"}
 
     def _check_mode(self, name: str) -> None:
         if name in self.NEEDS_FREESPACE and self.fse is None:
             raise ModeNotAllowed(f"Modus {name} braucht die Freiraum-Erkennung (freespace.enabled)")
+        if name == "home" and getattr(self, "gridmap", None) is None:
+            raise ModeNotAllowed("Modus home braucht die Raumkarte ([grid] enabled)")
+
+    def _make(self, name: str, target: str | None = None) -> Behavior:
+        return make_behavior(name, self.cfg.behavior, self.cfg.robot, target, self.cfg.home)
 
     @property
     def pipeline_on(self) -> bool:
@@ -184,7 +198,7 @@ class App:
     NO_CAMERA = {"idle", "manual"}
 
     def set_mode(self, name: str, target: str | None = None) -> None:
-        make_behavior(name, self.cfg.behavior, self.cfg.robot, target)  # validiert (KeyError)
+        self._make(name, target)  # validiert (KeyError)
         self._check_mode(name)
         if not self.pipeline_on and name not in self.NO_CAMERA:
             raise ModeNotAllowed(f"Modus {name} braucht laufende Bildverarbeitung")
@@ -252,6 +266,10 @@ class App:
                 self.wheels.close()
             if self.grid_worker is not None:
                 self.grid_worker.close()
+            if self.planner is not None:
+                self.planner.close()
+            if self.gridmap is not None and self.cfg.grid.file:
+                self.gridmap.save(self.cfg.grid.file)
             self.src.close()
             self.robot.close()
             log.info("beendet")
@@ -262,7 +280,9 @@ class App:
             if self._pending_mode:
                 name, target = self._pending_mode
                 self._pending_mode = None
-                self.behavior = make_behavior(name, self.cfg.behavior, self.cfg.robot, target)
+                self.behavior = self._make(name, target)
+                if self.gridmap is not None:
+                    self.gridmap.plan = []
                 log.info("Modus -> %s %s", name, target or "")
 
     def _manual_cmd(self) -> Command:
@@ -277,7 +297,7 @@ class App:
         im Modus manual mit control_hz regeln (ohne Kamera), sonst Stillstand."""
         self._apply_pending_mode()
         if self.behavior.name not in self.NO_CAMERA:
-            self.behavior = make_behavior("idle", self.cfg.behavior, self.cfg.robot)
+            self.behavior = self._make("idle")
         if self.behavior.name != "manual":
             self._cmd = Command(0.0, 0.0, None, "Bildverarbeitung gestoppt")
             self._emotion_tick(None)
@@ -365,6 +385,12 @@ class App:
                         self.grid_worker.offer(view, pitch_dev)
                     elif self.gridmap is not None:
                         self.gridmap.add_freespace(view, pitch_dev)
+            if self.gridmap is not None:
+                if self.grid_worker is None:
+                    self.gridmap.maybe_save(self.cfg.grid.file, self.cfg.grid.save_every_s)
+                w.pose, w.goal = self.gridmap.pose(), self.gridmap.start
+                if self.behavior.name == "home":
+                    self._home_plan(w)
             if self.behavior.name == "manual":
                 cmd = self._manual_cmd()
             else:
@@ -389,6 +415,7 @@ class App:
                         stats={"fps": round(self.src.fps_measured, 1), "loop_ms": round(self._loop_ms, 1),
                                **self._loop_spread(),
                                "det_ms": round(self.det.infer_ms, 1), "det_batches": self._det_count,
+                               "plan_ms": round(self.planner.ms, 1) if self.planner is not None else None,
                                "fs_ms": round(self.fs_worker.ms, 1) if self.fs_worker is not None else None,
                                "grid": None if self.gridmap is None else {
                                    **self.gridmap.stats(),
@@ -498,6 +525,18 @@ class App:
         self.pitch_src = "bild"
         self.geo.pitch_sigma_deg = 1.5
         return ego.pitch_dev
+
+    def _home_plan(self, w: World) -> None:
+        """Modus home: fertigen Weg übernehmen, bei Bedarf neu planen lassen (eigener Thread)."""
+        b = self.behavior
+        r = self.planner.poll()
+        if r is not None and r[0] == self._plan_seq and b.pending:
+            b.set_path(r[1])
+            if r[1] is None:
+                log.info("kein Weg zum Start gefunden (%d.)", b.fails)
+        if b.want_plan(w.t):
+            self._plan_seq = self.planner.request(w.pose[:2], w.goal[:2])
+        self.gridmap.plan = list(b.path) if b.path else []
 
     def _map_view(self, free: FreeSpace, tracks, now: float) -> FreeSpace:
         return mask_movable(free, [(t.cls, t.box) for t in tracks], self.cfg.camera.width, self.cfg.camera.height)

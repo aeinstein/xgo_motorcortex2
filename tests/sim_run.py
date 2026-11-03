@@ -1,4 +1,6 @@
-"""Closed-Loop-Szenarien im Simulator. python3 tests/sim_run.py follow|explore [sekunden] [video.mp4] [--imu] [--fs-thread] [--wheels]"""
+"""Closed-Loop-Szenarien im Simulator. python3 tests/sim_run.py follow|explore|home [sekunden] [video.mp4] [--imu] [--fs-thread] [--wheels]
+
+home: erste Hälfte explore, dann Modus home (zurück zum Startpunkt der Raumkarte)."""
 import logging, math, sys, threading, time
 sys.path.insert(0, ".")
 import numpy as np
@@ -11,11 +13,12 @@ from xgonav.sim import FakeDetector, Person, SimImu, SimWheels, SimWorld
 def run(mode="follow", secs=25.0, video=None, shake=1.0, quiet=True, imu=False, fs_thread=False, wheels=False, vx_true=None):
     logging.basicConfig(level=logging.WARNING if quiet else logging.INFO)
     cfg = Config()
-    cfg.behavior.mode = mode
+    home = mode == "home"
+    cfg.behavior.mode = "explore" if home else mode
     cfg.output.web_port = 0
     cfg.freespace.threaded = fs_thread
     robot = SimRobot(cfg.robot)
-    person = Person([(3.2, 1.3), (4.8, 4.6), (1.4, 5.0), (1.2, 3.0)], speed=0.3) if mode != "explore" else None
+    person = Person([(3.2, 1.3), (4.8, 4.6), (1.4, 5.0), (1.2, 3.0)], speed=0.3) if mode not in ("explore", "home") else None
     world = SimWorld(cfg.camera, robot, person, start=(1.0, 1.2, 0.2), shake=shake,
                      mount_offset_mm=cfg.camera.mount_offset_mm,
                      vx_mps=vx_true if vx_true is not None else cfg.robot.vx_limit)  # vx_true: echte m/s je Einheit
@@ -45,6 +48,15 @@ def run(mode="follow", secs=25.0, video=None, shake=1.0, quiet=True, imu=False, 
                 vw.write(img)
             vw and vw.release()
         th = threading.Thread(target=rec, daemon=True); th.start()
+    switch = {}
+    if home:
+        def to_home():
+            t_sw = time.monotonic() + secs / 2
+            while not app.running: time.sleep(0.02)
+            while app.running and time.monotonic() < t_sw: time.sleep(0.05)
+            switch["frame"] = len(world.log)
+            app.set_mode("home")
+        threading.Thread(target=to_home, daemon=True).start()
     app.run(duration=secs)
     if video:
         with app.snap_cond: app.snap_cond.notify_all()
@@ -92,6 +104,12 @@ def run(mode="follow", secs=25.0, video=None, shake=1.0, quiet=True, imu=False, 
            "collisions": world.collisions, "coll_frames": world.coll_frames, "dist_m": round(world.dist_travelled, 2), "frames": len(L),
            "loop_ms": round(app._loop_ms, 1), "odom": app.odom_src, "odom_m": round(app.odom_m, 2),
            "grid": grid}
+    if home:
+        x0, y0 = L[0]["x"], L[0]["y"]
+        k = min(switch.get("frame", len(L)) , len(L)) - 1
+        out.update(home_weg_m=round(math.hypot(L[k]["x"] - x0, L[k]["y"] - y0), 2),
+                   home_end_m=round(math.hypot(world.x - x0, world.y - y0), 2),
+                   home_status=app._cmd.status, plan_ms=round(app.planner.ms, 1))
     if person:
         d = np.array([math.hypot(r["px"] - r["x"], r["py"] - r["y"]) for r in L])
         b = np.array([math.degrees((math.atan2(r["py"] - r["y"], r["px"] - r["x"]) - r["th"] + math.pi) % (2 * math.pi) - math.pi) for r in L])
