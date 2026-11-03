@@ -28,9 +28,11 @@ log = logging.getLogger(__name__)
 START = time.time()      # Startzeit des Prozesses: Oberfläche verbindet den Stream nach Neustart neu
 
 # Schnittstelle für die PHP-Oberfläche (web/) bzw. nginx. Keine HTML-Seite mehr hier.
-API = {"GET": ["/status", "/ws (WebSocket: Bilder, Bestätigung je Bild)", "/frame?after=<idx>", "/stream"],
+API = {"GET": ["/status", "/ws (WebSocket: Bilder, Bestätigung je Bild)", "/frame?after=<idx>", "/stream",
+               "/map.png?px=480&view=6 (Raumkarte)"],
        "POST": ["/mode?name=..&target=..", "/stop", "/pipeline?on=0|1", "/drive?v=..&w=.. (nur Modus manual)",
-                "/exposure?us=0|100..33333 (0 = Automatik)", "/gain?g=0|1..16 (0 = Automatik)"]}
+                "/exposure?us=0|100..33333 (0 = Automatik)", "/gain?g=0|1..16 (0 = Automatik)",
+                "/map/reset (Raumkarte leeren, Pose auf 0)"]}
 
 
 WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
@@ -123,6 +125,8 @@ def serve(app: App, host: str, port: int, fps: int, render_cpus=None) -> Threadi
                                  "battery": st.battery, "balancing": st.balancing, "yaw_drv": st.yaw_deg,
                                  "tracks": [], "free": [], "ttc": None})
                 return self._send(200, json.dumps(body).encode())
+            if u.path == "/map.png":
+                return self._map_png(parse_qs(u.query))
             if u.path == "/ws":
                 return self._ws()
             if u.path == "/frame":
@@ -151,6 +155,11 @@ def serve(app: App, host: str, port: int, fps: int, render_cpus=None) -> Threadi
                 except ValueError as e:   # ModeNotAllowed
                     return self._send(409, json.dumps({"error": str(e)}).encode())
                 return self._send(200, b'{"ok":true}')
+            if u.path == "/map/reset":
+                if app.gridmap is None:
+                    return self._send(404, b'{"error":"keine Raumkarte"}')
+                app.gridmap.reset()
+                return self._send(200, b'{"ok":true}')
             if u.path == "/exposure":
                 try:
                     us = app.src.set_exposure(int(q.get("us", [""])[0]))
@@ -172,6 +181,21 @@ def serve(app: App, host: str, port: int, fps: int, render_cpus=None) -> Threadi
                     return self._send(409, json.dumps({"error": str(e)}).encode())
                 return self._send(200, b'{"ok":true}')
             self._send(404, b"{}")
+
+        def _map_png(self, q):
+            gm = app.gridmap
+            if gm is None:
+                return self._send(404, b'{"error":"keine Raumkarte (Bodenmodell oder [grid] aus)"}')
+            try:
+                px = min(960, max(120, int(q.get("px", ["480"])[0])))
+                view = min(gm.cfg.size_m, max(1.0, float(q.get("view", [str(gm.cfg.view_m)])[0])))
+            except ValueError:
+                return self._send(400, b'{"error":"px/view ungueltig"}')
+            pin_thread(render_cpus, "Bild-Thread", quiet=True)
+            ok, png = cv2.imencode(".png", gm.image(px, view))
+            if not ok:
+                return self._send(500, b'{"error":"PNG"}')
+            return self._send(200, png.tobytes(), "image/png")
 
         def _ws(self):
             """Bilder als WebSocket-Stream. Nach jedem Bild wartet der Server auf eine

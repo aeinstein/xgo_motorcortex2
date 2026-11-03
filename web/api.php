@@ -4,6 +4,7 @@
  *
  *   GET  api.php?a=status
  *   POST api.php?a=mode&name=follow&target=person
+ *   POST api.php?a=map_reset                  (Raumkarte leeren, Pose auf 0)
  *   POST api.php?a=stop
  *   POST api.php?a=pipeline&on=0|1
  *   POST api.php?a=drive&v=-1..1&w=-1..1      (nur Modus manual, alle 0,2 s senden)
@@ -101,6 +102,8 @@ switch ($a) {
             antwort(400, json_encode(['error' => 'ungültiges Ziel']));
         }
         xgonav('POST', '/mode?' . http_build_query(['name' => $name, 'target' => $target]));
+    case 'map_reset':
+        xgonav('POST', '/map/reset');
     case 'stop':
         xgonav('POST', '/stop');
     case 'pipeline':

@@ -93,6 +93,14 @@ pre{background:#1b1b1b;padding:8px;overflow:auto;max-height:40vh}
     <div class="klein">Gedrückt halten (Maus, Touch, Pfeiltasten/WASD). Schaltet auf „Hand“; begrenzt auf max_v/max_w
       der Konfiguration. Ohne Bodenmodell/Bahnprüfung, Sturz-Erkennung und Watchdogs bleiben.</div>
   </fieldset>
+  <fieldset><legend>Raumkarte</legend>
+    <img id="karte" alt="Raumkarte" width="320" height="320" style="width:100%;max-width:480px;height:auto;aspect-ratio:1;background:#808080;display:block">
+    <div class="klein">Ausschnitt <select id="karte-view"><option>3</option><option selected>6</option><option>10</option><option>16</option></select> m ·
+      grau unbekannt, hell frei, dunkel belegt, grün Weg, rot Rider. Pose: <span id="karte-pose">-</span></div>
+    <button onclick="befehl('map_reset')">Karte zurücksetzen</button>
+    <div class="klein">Ursprung = Startpose (oben = vorn beim Start). Strecke aus den Rädern, Drehung aus
+      der Kamera; ohne Marker driftet die Karte mit der Zeit.</div>
+  </fieldset>
   <fieldset><legend>Kamera</legend>
     Belichtung <input type="range" id="belicht" min="1" max="33" value="15" step="1"
       oninput="belichtAnzeige(this.value * 1000)" onchange="belichtung(this.value * 1000)">
@@ -204,6 +212,8 @@ async function status() {
       .map(([k, f]) => '<tr><td>' + k + '</td><td>' + String(f(s) ?? '-').replace(/[<&]/g, c => c === '<' ? '&lt;' : '&amp;') + '</td></tr>').join('');
     document.getElementById('roh').textContent = JSON.stringify(s, null, 1);
     document.querySelectorAll('[data-modus]').forEach(b => b.classList.toggle('aktiv', b.dataset.modus === s.mode));
+    if (s.grid) document.getElementById('karte-pose').textContent =
+      'x ' + s.grid.pose[0].toFixed(2) + ' m, y ' + s.grid.pose[1].toFixed(2) + ' m, ' + s.grid.pose[2].toFixed(0) + '°, belegt ' + s.grid.belegt_m2 + ' m²';
     belichtStatus(s.exposure);
     gainStatus(s.exposure);
     document.getElementById('pip-an').classList.toggle('aktiv', s.pipeline === 'läuft');
@@ -331,7 +341,23 @@ function herunterfahren() {
   if (confirm('Rider wirklich herunterfahren?')) befehl('shutdown');
 }
 
+// Raumkarte: einmal pro Sekunde neu laden, nächstes Bild erst nach dem vorigen
+let karteUrl = null;
+async function karteHolen() {
+  try {
+    const v = document.getElementById('karte-view').value;
+    const r = await fetch('map.png?px=480&view=' + v, {cache: 'no-store'});
+    if (r.ok) {
+      const url = URL.createObjectURL(await r.blob());
+      document.getElementById('karte').src = url;
+      if (karteUrl) URL.revokeObjectURL(karteUrl);
+      karteUrl = url;
+    }
+  } catch (e) { /* xgonav weg */ }
+  setTimeout(karteHolen, 1000);
+}
 bildVerbinden();
+karteHolen();
 status();
 setInterval(status, 700);
 </script>
