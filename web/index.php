@@ -27,10 +27,23 @@ function h(string $s): string { return htmlspecialchars($s, ENT_QUOTES); }
 body{font:14px system-ui,sans-serif;background:#111;color:#ddd;margin:12px}
 /* feste 4:3-Fläche (Kamera 640x480), auch ohne Stream; Bild wird darin eingepasst */
 #bild{width:100%;height:auto;aspect-ratio:4/3;object-fit:contain;box-sizing:border-box;border:1px solid #333;background:#000;display:block}
-button{font-size:15px;margin:3px;padding:8px 14px;border-radius:4px;border:1px solid #555;background:#2a2a2a;color:#eee;touch-action:manipulation}
+button{font-size:15px;margin:3px;padding:8px 14px;border-radius:4px;border:1px solid #555;background:#2a2a2a;color:#eee;
+  touch-action:manipulation;cursor:pointer;transition:background-color .12s,border-color .12s,transform .05s}
+/* Hover nur bei echter Maus: auf Touch-Geräten bliebe der Effekt sonst nach dem Tippen hängen */
+@media (hover:hover){
+  button:hover{background:#3a3a3a;border-color:#888}
+  button.aktiv:hover{background:#2f5a3a;border-color:#6c6}
+  #stop:hover{background:#e00;border-color:#f44}
+  #aus:hover{background:#633;border-color:#a66}
+}
+button:active{transform:translateY(1px);background:#4a4a4a}
+button:focus-visible{outline:2px solid #6af;outline-offset:1px}
+button:disabled{cursor:not-allowed;opacity:.5}
 button.aktiv{border-color:#4a4;background:#243}
 #stop{background:#c00;color:#fff;font-weight:bold;border-color:#c00}
+#stop:active{background:#a00}
 #aus{background:#422;border-color:#844}
+input[type=range],input[type=color],select{cursor:pointer}
 .raster{display:grid;grid-template-columns:minmax(320px,640px) minmax(260px,1fr);gap:14px;align-items:start}
 @media (max-width:900px){.raster{grid-template-columns:1fr}}
 fieldset{border:1px solid #333;border-radius:6px;margin:0 0 10px;padding:6px 10px}
