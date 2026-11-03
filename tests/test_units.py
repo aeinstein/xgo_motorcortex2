@@ -663,3 +663,33 @@ def test_gridmap_wall_and_turn():
     assert img.shape == (200, 200, 3)
     m.reset()
     assert len(m.occupied_cells()) == 0 and m.stats()["pose"] == [0.0, 0.0, 0.0]
+
+
+def test_gridworker_uses_pose_of_observation():
+    import math
+    from xgonav.config import Config
+    from xgonav.freespace import FreeSpace
+    from xgonav.geometry import CamGeometry
+    from xgonav.gridmap import GridMap, GridWorker
+    cfg = Config()
+    g = CamGeometry(640, 480, 91.0, 1.39, 43.0, 85.0)
+    hz = g.horizon_row(0) / 4
+    ys = np.arange(int(hz * 4) + 1, 480)
+    y1 = ys[np.nanargmin(np.abs(g.ground_dist_np(ys) - 1.0))]
+    col = (120 - y1 / 4) / (120 - hz)
+    fs = FreeSpace([col] * 5, np.full(160, col), hz, np.zeros((120, 160), np.uint8), True, None)
+    direct = GridMap(cfg.grid, g, 160, 120)
+    m = GridMap(cfg.grid, g, 160, 120)
+    w = GridWorker(m)
+    for _ in range(3):
+        direct.add_freespace(fs, 0.0)
+        w.offer(fs, 0.0)
+    m.move(2.0, math.radians(90))          # Pose ändert sich, bevor der Worker rechnet
+    w.start()
+    t_end = time.monotonic() + 5
+    while not w.idle() and time.monotonic() < t_end:
+        time.sleep(0.01)
+    time.sleep(0.05)
+    w.close()
+    # Wand dort, wo sie aus der Startpose gesehen wurde – nicht verschoben zur neuen Pose
+    assert np.array_equal(np.sort(m.occupied_cells(), axis=0), np.sort(direct.occupied_cells(), axis=0))

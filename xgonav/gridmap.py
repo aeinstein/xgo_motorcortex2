@@ -64,7 +64,14 @@ class GridMap:
         return r, c
 
     # ---- Eintragen ----------------------------------------------------
-    def add_freespace(self, fs: FreeSpace, pitch_dev: float) -> None:
+    def pose(self) -> tuple[float, float, float]:
+        with self._lock:
+            return self.x, self.y, self.th
+
+    def add_freespace(self, fs: FreeSpace, pitch_dev: float,
+                      pose: tuple[float, float, float] | None = None) -> None:
+        """Beobachtung eintragen. pose = (x, y, th) zum Zeitpunkt der Aufnahme (GridWorker
+        rechnet später, der Rider ist dann schon weiter); None = aktuelle Pose."""
         if fs is None or fs.columns is None:
             return
         cfg = self.cfg
@@ -92,7 +99,8 @@ class GridMap:
         dist, free_len, start = dist * rad, free_len * rad, start * rad
         ok = np.isfinite(free_len) & (free_len > start)
         with self._lock:
-            ang = self.th + bear
+            px, py, pth = pose if pose is not None else (self.x, self.y, self.th)
+            ang = pth + bear
             ca, sa = np.cos(ang), np.sin(ang)
             # freie Strecken: Stützstellen alle res/2 von start bis free_len
             if ok.any():
@@ -100,15 +108,15 @@ class GridMap:
                 ray = np.repeat(np.arange(ok.sum()), steps)
                 k = np.arange(steps.sum()) - np.repeat(np.cumsum(steps) - steps, steps)
                 s = start[ok][ray] + k * (self.res / 2)
-                fx = self.x + s * ca[ok][ray]
-                fy = self.y + s * sa[ok][ray]
+                fx = px + s * ca[ok][ray]
+                fy = py + s * sa[ok][ray]
                 r, c = self.cell(fx, fy)
                 m = (r >= 0) & (r < self.n) & (c >= 0) & (c < self.n)
                 lin = np.unique(r[m] * self.n + c[m])                     # je Zelle einmal pro Bild
                 self.lo.flat[lin] = np.maximum(self.lo.flat[lin] + cfg.l_free, cfg.l_min)
             if hit.any():
-                ox = self.x + dist[hit] * ca[hit]
-                oy = self.y + dist[hit] * sa[hit]
+                ox = px + dist[hit] * ca[hit]
+                oy = py + dist[hit] * sa[hit]
                 r, c = self.cell(ox, oy)
                 m = (r >= 0) & (r < self.n) & (c >= 0) & (c < self.n)
                 lin = np.unique(r[m] * self.n + c[m])
@@ -177,3 +185,59 @@ class GridMap:
         cv2.line(img, (10, px - 12), (10 + int(round(1.0 / self.res * k)), px - 12), (220, 120, 0), 3)
         cv2.putText(img, "1 m", (12, px - 18), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (220, 120, 0), 1, cv2.LINE_AA)
         return img
+
+
+class GridWorker:
+    """Trägt Beobachtungen in eigenem Thread in die GridMap ein (am CM4 2,7 ms Median,
+    7,7 ms p95 je Bild – in der Hauptschleife zu teuer). Jede Beobachtung trägt die Pose
+    zum Zeitpunkt der Aufnahme; die Pose selbst führt weiter die Hauptschleife (move())."""
+
+    def __init__(self, grid: GridMap, cpus=None, max_pending: int = 8):
+        from collections import deque
+        self.grid = grid
+        self.cpus = list(cpus or [])
+        self._q = deque(maxlen=max_pending)      # voll: älteste Beobachtung fällt weg
+        self._cond = threading.Condition()
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+        self.ms = 0.0
+        self.dropped = 0
+
+    def start(self) -> None:
+        self._thread = threading.Thread(target=self._run, name="gridmap", daemon=True)
+        self._thread.start()
+
+    def close(self) -> None:
+        self._stop.set()
+        with self._cond:
+            self._cond.notify_all()
+        if self._thread:
+            self._thread.join(timeout=2)
+
+    def offer(self, fs: FreeSpace, pitch_dev: float) -> None:
+        job = (fs, pitch_dev, self.grid.pose())
+        with self._cond:
+            if len(self._q) == self._q.maxlen:
+                self.dropped += 1
+            self._q.append(job)
+            self._cond.notify()
+
+    def idle(self) -> bool:
+        with self._cond:
+            return not self._q
+
+    def _run(self) -> None:
+        if self.cpus:
+            from .affinity import pin_thread
+            pin_thread(self.cpus, "Raumkarte")
+        while not self._stop.is_set():
+            with self._cond:
+                while not self._q and not self._stop.is_set():
+                    self._cond.wait(0.2)
+                if self._stop.is_set():
+                    return
+                fs, pd, pose = self._q.popleft()
+            t0 = time.perf_counter()
+            self.grid.add_freespace(fs, pd, pose)
+            ms = (time.perf_counter() - t0) * 1000
+            self.ms = 0.8 * self.ms + 0.2 * ms if self.ms else ms

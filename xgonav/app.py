@@ -18,7 +18,7 @@ from .config import Config
 from .detector import Detection, DetectorWorker
 from .egomotion import EgoMotion, EgoResult, warp_box
 from .freespace import FreeSpace, FreeSpaceEstimator, FreeSpaceWorker
-from .gridmap import GridMap
+from .gridmap import GridMap, GridWorker
 from .geometry import CamGeometry
 from .wheels import WheelOdom, make_wheels
 from .imu import ImuSource, ImuSync, make_imu
@@ -119,6 +119,8 @@ class App:
         # Raumkarte (Welt-KS ab Startpose), nur Anzeige
         self.gridmap = GridMap(cfg.grid, self.geo, self.fse.W, self.fse.H) \
             if self.fse is not None and cfg.grid.enabled else None
+        self.grid_worker = GridWorker(self.gridmap, cfg.cpu.freespace_cpus) \
+            if self.gridmap is not None and cfg.grid.threaded else None
         self._yaw_at_ctrl = 0.0
         mode = cfg.behavior.mode
         try:
@@ -205,6 +207,8 @@ class App:
             self.fs_worker.start()
         if self.wheels is not None and not self.wheels.start():
             self.wheels = None
+        if self.grid_worker is not None:
+            self.grid_worker.start()
         if self.imu is not None and not self.imu.start():
             self.imu = None
         log.info("läuft: Modus=%s, Detektor=%s, IMU=%s, Räder=%s", self.behavior.name,
@@ -246,6 +250,8 @@ class App:
                 self.fs_worker.close()
             if self.wheels is not None:
                 self.wheels.close()
+            if self.grid_worker is not None:
+                self.grid_worker.close()
             self.src.close()
             self.robot.close()
             log.info("beendet")
@@ -355,7 +361,9 @@ class App:
                     self._fs_in_map = self._free
                     view = self._map_view(free, tracks, f.t)
                     self.lmap.add_freespace(view, f.t, pitch_dev)
-                    if self.gridmap is not None:
+                    if self.grid_worker is not None:
+                        self.grid_worker.offer(view, pitch_dev)
+                    elif self.gridmap is not None:
                         self.gridmap.add_freespace(view, pitch_dev)
             if self.behavior.name == "manual":
                 cmd = self._manual_cmd()
@@ -382,7 +390,10 @@ class App:
                                **self._loop_spread(),
                                "det_ms": round(self.det.infer_ms, 1), "det_batches": self._det_count,
                                "fs_ms": round(self.fs_worker.ms, 1) if self.fs_worker is not None else None,
-                               "grid": self.gridmap.stats() if self.gridmap is not None else None,
+                               "grid": None if self.gridmap is None else {
+                                   **self.gridmap.stats(),
+                                   "ms": round(self.grid_worker.ms, 1) if self.grid_worker else None,
+                                   "verworfen": self.grid_worker.dropped if self.grid_worker else 0},
                                "odom": {"src": self.odom_src, "m": round(self.odom_m, 2),
                                         "hz": round(self.wheels.rate_hz, 1) if self.wheels else None},
                                "mode": self.behavior.name, "yaw_vis_deg": round(math.degrees(self.vis_yaw), 1),

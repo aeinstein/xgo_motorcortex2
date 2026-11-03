@@ -226,6 +226,8 @@ class GridCfg:
     view_m: float = 6.0                # Bildausschnitt für die Anzeige
     # Drehung der Kartenpose: "räder" (Rad-Odometrie, sonst Kamera) oder "kamera" (Ego-Motion)
     yaw_source: str = "räder"
+    # Eintragen in eigenem Thread (GridWorker, Kerne wie [cpu] freespace_cpus); False = im Regelschritt
+    threaded: bool = True
 
 
 @dataclass
