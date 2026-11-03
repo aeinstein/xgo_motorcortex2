@@ -28,7 +28,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from xgonav.camera import make_source  # noqa: E402
 from xgonav.config import Config  # noqa: E402
 from xgonav.egomotion import EgoMotion  # noqa: E402
-from xgonav.freespace import FreeSpaceEstimator  # noqa: E402
+from xgonav.freespace import FreeSpaceEstimator, column_runs  # noqa: E402
 from xgonav.imu import ProcImu  # noqa: E402
 from xgonav.robot import ProcRobot, norm_to_u8, u8_to_norm  # noqa: E402
 
@@ -101,7 +101,7 @@ def wall(cfg: Config, frames: int = 40, cols: tuple[float, float] = (0.4, 0.6), 
             n = len(fs.columns)
             c = fs.columns[int(n * cols[0]): int(n * cols[1])]
             span = fs.mask.shape[0] - fs.horizon_row
-            y = (fs.mask.shape[0] - float(np.median(c)) * span) * fse.scale
+            y = (fs.mask.shape[0] - float(np.nanmedian(c)) * span) * fse.scale
             rows.append(y)
     finally:
         src.close()
@@ -112,8 +112,9 @@ def wall(cfg: Config, frames: int = 40, cols: tuple[float, float] = (0.4, 0.6), 
         H, W = img.shape[:2]
         span = fs.mask.shape[0] - fs.horizon_row
         sc = W / len(fs.columns)
-        pts = [(int((i + 0.5) * sc), int((fs.mask.shape[0] - v * span) * fse.scale)) for i, v in enumerate(fs.columns)]
-        cv2.polylines(img, [np.array(pts, np.int32)], False, (0, 255, 255), 1)
+        for a, b in column_runs(fs.columns):
+            pts = [(int((i + 0.5) * sc), int((fs.mask.shape[0] - fs.columns[i] * span) * fse.scale)) for i in range(a, b)]
+            cv2.polylines(img, [np.array(pts, np.int32)], False, (0, 255, 255), 1)
         y = int(round(np.median(rows)))
         cv2.line(img, (int(W * cols[0]), y), (int(W * cols[1]), y), (0, 0, 255), 2)
         cv2.rectangle(img, (int(W * cols[0]), 0), (int(W * cols[1]), H - 1), (0, 0, 255), 1)

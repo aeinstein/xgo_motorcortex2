@@ -132,6 +132,11 @@ class FreespaceCfg:
     # und nie als Hindernis (RiderPi: untere Ecken, äußere Ränder).
     shading_file: str = ""
     shading_max_gain: float = 8.0
+    # Spalten, in denen zwischen Horizont und unterem Rand weniger als dieser Anteil messbar ist
+    # (Linsenabschattung: am RiderPi je ~32 von 160 Spalten am Rand gar nicht), gelten als
+    # unbekannt (NaN) statt "frei bis Horizont". Den nicht messbaren Streifen unten in den
+    # übrigen Spalten behandelt known_from.
+    min_known_frac: float = 0.2
 
 
 @dataclass

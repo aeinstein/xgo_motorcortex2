@@ -78,7 +78,7 @@ class GridMap:
         sc = self.geo.W / self.fw
         span = self.fh - fs.horizon_row
         cols = np.asarray(fs.columns, float)
-        idx = np.arange(0, len(cols), max(1, cfg.column_step))
+        idx = np.arange(0, len(cols), max(1, cfg.column_step))     # NaN-Spalten = unbekannt
         v = cols[idx]
         dist = self.geo.ground_dist_np((self.fh - v * span) * sc, pitch_dev)
         start = np.full(len(idx), cfg.min_range_m)

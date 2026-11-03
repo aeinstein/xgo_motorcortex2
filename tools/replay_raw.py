@@ -27,7 +27,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from xgonav.config import Config  # noqa: E402
-from xgonav.freespace import FreeSpace, FreeSpaceEstimator  # noqa: E402
+from xgonav.freespace import FreeSpace, FreeSpaceEstimator, column_runs  # noqa: E402
 from xgonav.geometry import CamGeometry  # noqa: E402
 from xgonav.localmap import LocalMap, mask_movable  # noqa: E402
 
@@ -102,8 +102,9 @@ def replay(d: str, cfg: Config, objects: bool = True, person_min: float = 1.2, v
             vis = img.copy()
             sc = W / len(free.columns)
             span = fse.H - free.horizon_row
-            pts = [(int((i + .5) * sc), int((fse.H - c * span) * fse.scale)) for i, c in enumerate(free.columns)]
-            cv2.polylines(vis, [np.array(pts, np.int32)], False, (0, 255, 255), 2)
+            for a, b in column_runs(free.columns):
+                pts = [(int((i + .5) * sc), int((fse.H - free.columns[i] * span) * fse.scale)) for i in range(a, b)]
+                cv2.polylines(vis, [np.array(pts, np.int32)], False, (0, 255, 255), 2)
             for x, y in lmap.pts:                      # Kartenpunkte von oben (unten rechts)
                 px, py = int(W - 90 - y * 120), int(H - 10 - x * 120)
                 if 0 <= px < W and 0 <= py < H:

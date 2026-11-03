@@ -17,7 +17,7 @@ from .camera import FrameSource, OpenCVSource, make_source
 from .config import Config
 from .detector import Detection, DetectorWorker
 from .egomotion import EgoMotion, EgoResult, warp_box
-from .freespace import FreeSpace, FreeSpaceEstimator, FreeSpaceWorker
+from .freespace import FreeSpace, FreeSpaceEstimator, FreeSpaceWorker, column_runs
 from .gridmap import GridMap, GridWorker
 from .geometry import CamGeometry
 from .wheels import WheelOdom, make_wheels
@@ -540,8 +540,9 @@ def render(snap: Snapshot, text: bool = True) -> np.ndarray | None:
         sc = W / len(fs.columns)
         span = (fs.mask.shape[0] - fs.horizon_row)
         fh = fs.mask.shape[0]
-        pts = [(int(i * sc), int((fh - c * span) * H / fh)) for i, c in enumerate(fs.columns)]
-        cv2.polylines(img, [np.array(pts, np.int32)], False, (0, 255, 255), 2)
+        for a, b in column_runs(fs.columns):         # unbekannte Spalten (NaN): Lücke
+            pts = [(int(i * sc), int((fh - fs.columns[i] * span) * H / fh)) for i in range(a, b)]
+            cv2.polylines(img, [np.array(pts, np.int32)], False, (0, 255, 255), 2)
         hy = int(fs.horizon_row * H / fh)
         cv2.line(img, (0, hy), (W, hy), (255, 255, 0), 1)
         n = len(fs.sectors)

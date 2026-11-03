@@ -48,12 +48,33 @@ class FreeSpace:
 
 
 def _p20(a: np.ndarray) -> float:
-    """20-%-Quantil mit linearer Interpolation (wie np.percentile, aber ohne dessen Overhead)."""
+    """20-%-Quantil mit linearer Interpolation (wie np.percentile, aber ohne dessen Overhead).
+    NaN-Spalten (unbekannt) zählen nicht; ganz unbekannt = 0.0 (nicht als frei melden)."""
+    a = a[np.isfinite(a)]
+    if not len(a):
+        return 0.0
     s = np.sort(a)
     pos = 0.2 * (len(s) - 1)
     lo = int(pos)
     hi = min(lo + 1, len(s) - 1)
     return float(s[lo] + (s[hi] - s[lo]) * (pos - lo))
+
+
+def column_runs(columns) -> list[tuple[int, int]]:
+    """Zusammenhängende Bereiche bekannter Spalten (Start, Ende exklusiv) – zum Zeichnen der
+    Bodengrenze, die an unbekannten (NaN-)Spalten unterbrochen wird."""
+    ok = np.isfinite(np.asarray(columns, float))
+    runs, i, n = [], 0, len(ok)
+    while i < n:
+        if ok[i]:
+            j = i
+            while j < n and ok[j]:
+                j += 1
+            runs.append((i, j))
+            i = j
+        else:
+            i += 1
+    return runs
 
 
 class FreeSpaceEstimator:
@@ -178,10 +199,19 @@ class FreeSpaceEstimator:
         horizon = hz_full / self.scale
         horizon = min(max(float(horizon), self.H * 0.2), self.H * 0.8)
         cols = self._column_free(floor, horizon, pitch_dev)
+        hz_i = int(horizon)
+        n_unknown = 0
+        if self._srel is not None:
+            # Spalten mit zu wenig messbarem Boden unter dem Horizont: unbekannt statt frei
+            frac = self._srel[hz_i:].mean(axis=0)
+            unknown = frac < self.cfg.min_known_frac
+            n_unknown = int(unknown.sum())
+            if n_unknown:
+                cols = cols.copy()
+                cols[unknown] = np.nan
         n = self.cfg.sectors
         edges_x = np.linspace(0, self.W, n + 1).astype(int)
         sectors = [_p20(cols[edges_x[i]:edges_x[i + 1]]) for i in range(n)]
-        hz_i = int(horizon)
         if self._srel is not None:
             rel_b = self._srel[hz_i:]
             n_b = int(np.count_nonzero(rel_b))
@@ -191,10 +221,12 @@ class FreeSpaceEstimator:
             ff = float((below > 0).mean()) if below.size else None
         self.diag = {"updated": updated, "match": None if bpm is None else round(bpm / 255.0, 3),
                      "occupied": round(occupied, 2), "sample_px": int((smask > 0).sum()) if smask is not None else int(sample.shape[0] * sample.shape[1]),
-                     "floor_frac": None if ff is None else round(float(ff), 3)}
+                     "floor_frac": None if ff is None else round(float(ff), 3), "unknown_cols": n_unknown}
         known = None
         if self._srel is not None:
             known = np.clip(self._unknown_rows / max(1.0, self.H - horizon), 0.0, 1.0)
+            if n_unknown:
+                known = np.where(np.isnan(cols), 1.0, known)
         return FreeSpace(sectors, cols, horizon, floor, True, known)
 
     def _column_free(self, floor: np.ndarray, horizon: float, pitch_dev: float = 0.0) -> np.ndarray:
