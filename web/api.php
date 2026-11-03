@@ -3,6 +3,8 @@
  * xgonav – Status und Befehle an die lokale xgonav-Schnittstelle weiterreichen.
  *
  *   GET  api.php?a=status
+ *   GET  api.php?a=sys&since=<seq>            (Verlauf: IMU-Proben nach seq, CPU je Kern roh, Temperatur, Akku;
+ *                                              direkt aus /proc, läuft auch ohne xgonav)
  *   POST api.php?a=mode&name=follow&target=person
  *   POST api.php?a=map_reset                  (Raumkarte leeren, Pose und Start auf 0)
  *   POST api.php?a=map_start                  (Startpunkt = aktuelle Pose)
@@ -84,11 +86,55 @@ function xgonav(string $method, string $path): never
     antwort($code, $body);
 }
 
+// Messwerte für die Verlaufsanzeige. CPU-Zeiten roh (Jiffies), die Auslastung rechnet der
+// Browser aus der Differenz zweier Abfragen – so bleibt PHP zustandslos.
+function sys(int $since): array
+{
+    $imu = [];
+    $seq = 0;                                               // neueste seq; < since = Treiber neu geladen
+    // imu_log: "seq t_ns roll pitch yaw" (Milligrad), letzte 128 Proben (~2,5 s bei 50 Hz)
+    foreach (@file(PROC . '/imu_log', FILE_IGNORE_NEW_LINES) ?: [] as $z) {
+        $p = explode(' ', $z);
+        if (count($p) !== 5) {
+            continue;
+        }
+        $seq = max($seq, (int)$p[0]);
+        if ((int)$p[0] <= $since) {
+            continue;
+        }
+        $imu[] = [(int)$p[0], round((int)$p[1] / 1e6, 1),
+                  round((int)$p[2] / 1000, 1), round((int)$p[3] / 1000, 1), round((int)$p[4] / 1000, 1)];
+    }
+    $cpu = [];
+    foreach (@file('/proc/stat', FILE_IGNORE_NEW_LINES) ?: [] as $z) {
+        if (!preg_match('/^cpu\d+\s/', $z)) {
+            continue;
+        }
+        $f = array_map('intval', array_slice(preg_split('/\s+/', trim($z)), 1, 8));
+        $cpu[] = [array_sum($f), $f[3] + $f[4]];             // [gesamt, idle + iowait]
+    }
+    $temp = @file_get_contents('/sys/class/thermal/thermal_zone0/temp');
+    $load = @file_get_contents('/proc/loadavg');
+    $akku = @file_get_contents(PROC . '/battery');
+    return [
+        't' => (int)round(microtime(true) * 1000),
+        'seq' => $seq,
+        'imu' => $imu,
+        'cpu' => $cpu,
+        'temp_c' => is_numeric(trim((string)$temp)) ? round((int)$temp / 1000, 1) : null,
+        'load' => $load ? (float)explode(' ', $load)[0] : null,
+        'battery' => is_numeric(trim((string)$akku)) ? (int)$akku : null,
+    ];
+}
+
 $a = $_GET['a'] ?? '';
 $post = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST';
 
 if ($a === 'status') {
     xgonav('GET', '/status');
+}
+if ($a === 'sys') {
+    antwort(200, json_encode(sys((int)($_GET['since'] ?? 0))));
 }
 if (!$post) {
     antwort(405, json_encode(['error' => 'Befehle nur per POST']));

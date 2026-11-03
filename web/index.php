@@ -6,7 +6,7 @@
  * Keine Authentifizierung.
  *
  * Aufbau: Kopfleiste (immer sichtbar, mit STOPP) – links Bild, Modus, Kennzahlen –
- * rechts Karten (Fahren, Raumkarte, Kamera, Extras eingeklappt, System).
+ * rechts Karten (Fahren, Raumkarte, Kamera, Extras und Verlauf eingeklappt, System).
  */
 declare(strict_types=1);
 header('Cache-Control: no-store');
@@ -155,6 +155,14 @@ details.extras[open]>summary{margin-bottom:8px}
 .unter:first-of-type{margin-top:0}
 .leds{display:grid;grid-template-columns:repeat(2,52px);gap:6px}
 .ledzeile{display:flex;gap:12px;align-items:center}
+
+/* --- Verlauf (Canvas-Diagramme, Höhe aus data-h in CSS-Pixeln) */
+.diag{display:block;width:100%;background:var(--karte2);border-radius:6px;touch-action:pan-y;cursor:crosshair}
+.legende{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px;color:var(--leise);margin:2px 0 4px;font-variant-numeric:tabular-nums}
+.legende i{display:inline-block;width:10px;height:3px;border-radius:2px;vertical-align:middle;margin-right:4px}
+.legende b{color:var(--text);font-weight:500}
+.unter .rechts{float:right}
+.unter button{padding:1px 7px;font-size:12px;margin-left:6px}
 </style>
 </head>
 <body>
@@ -271,6 +279,21 @@ details.extras[open]>summary{margin-bottom:8px}
     </details>
   </section>
 
+  <details class="karte extras" id="verlauf" ontoggle="verlaufUmschalten()">
+    <summary><h2>Verlauf</h2><span class="leise">Lage · CPU · Akku</span></summary>
+    <div class="unter">Lage, letzte 60 s (IMU, 50 Hz)</div>
+    <div class="legende" id="l-lage"></div>
+    <canvas class="diag" id="d-lage" data-h="150"></canvas>
+    <div class="unter">Gier relativ zum Fensteranfang</div>
+    <div class="legende" id="l-gier"></div>
+    <canvas class="diag" id="d-gier" data-h="80"></canvas>
+    <div class="unter">CPU je Kern, letzte 10 min <span class="rechts" id="v-temp"></span></div>
+    <div class="legende" id="l-cpu"></div>
+    <canvas class="diag" id="d-cpu" data-h="140"></canvas>
+    <div class="unter">Akku, 120 min (im Browser gespeichert) <span class="rechts"><span id="v-akku"></span><button onclick="akkuLeeren()">Leeren</button></span></div>
+    <canvas class="diag" id="d-akku" data-h="100"></canvas>
+  </details>
+
   <details class="karte extras">
     <summary><h2>Extras</h2><span class="leise">Aktionen · LEDs · Emotionen</span></summary>
     <div class="unter">Aktionen</div>
@@ -379,6 +402,7 @@ async function status() {
     pille('p-modus', MODI[s.mode] || s.mode || '-', s.mode && s.mode !== 'idle' ? 'warn' : '');
     pille('p-zustand', s.balancing == null ? '-' : (s.balancing ? 'balanciert' : 'liegt'),
           s.balancing == null ? '' : (s.balancing ? 'gut' : 'warn'));
+    akkuMerken(s.battery);
     pille('p-akku', s.battery != null ? s.battery + ' %' : '-',
           s.battery == null ? '' : (s.battery < 20 ? 'schlecht' : s.battery < 40 ? 'warn' : 'gut'));
     pille('p-pip', s.pipeline ?? '-', s.pipeline === 'läuft' ? 'gut' : (s.pipeline ? 'warn' : ''));
@@ -529,9 +553,206 @@ async function karteHolen() {
   } catch (e) { /* xgonav weg */ }
   setTimeout(karteHolen, 1000);
 }
+// --- Verlauf: Lage (IMU), CPU je Kern, Akku. Abfrage nur bei offener Karte, Akku immer
+// (aus status()) und im localStorage, damit er ein Neuladen der Seite übersteht.
+const FARBEN = ['#3987e5', '#d95926', '#199e70', '#c98500'];   // Kategorien, dunkel, geprüft (CVD)
+const LAGE_MS = 60e3, CPU_MS = 600e3, AKKU_MS = 120 * 60e3, AKKU_TAKT_MS = 30e3, AKKU_KEY = 'xgonav.akku';
+const lage = [];            // [t_ms (Treiberzeit), roll, pitch, gier]
+const cpu = [];             // [t_ms, [Kern0 %, Kern1 %, …]]
+let imuSeq = 0, cpuVorher = null;
+
+function akkuLesen() {
+  try { return JSON.parse(localStorage.getItem(AKKU_KEY)) || []; } catch (e) { return []; }
+}
+// Höchstens ein Punkt je 30 s; jedes Mal frisch lesen, damit mehrere Tabs sich nicht überschreiben
+function akkuMerken(pct) {
+  if (pct == null) return;
+  const jetzt = Date.now(), a = akkuLesen().filter(p => p[0] > jetzt - AKKU_MS);
+  if (a.length && jetzt - a[a.length - 1][0] < AKKU_TAKT_MS) return;
+  a.push([jetzt, pct]);
+  try { localStorage.setItem(AKKU_KEY, JSON.stringify(a)); } catch (e) { /* voll oder gesperrt */ }
+}
+function akkuLeeren() { localStorage.removeItem(AKKU_KEY); verlaufZeichnen(); }
+
+function abschneiden(arr, grenze) {
+  let i = 0;
+  while (i < arr.length && arr[i][0] < grenze) i++;
+  if (i) arr.splice(0, i);
+}
+// "schöne" Schrittweite für etwa n Teilstriche
+function schritt(spanne, n) {
+  const roh = spanne / n, p = Math.pow(10, Math.floor(Math.log10(roh))), f = roh / p;
+  return (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * p;
+}
+// Erster Punkt mit t >= x (binäre Suche)
+function suche(pkt, x) {
+  let lo = 0, hi = pkt.length;
+  while (lo < hi) { const m = (lo + hi) >> 1; if (pkt[m][0] < x) lo = m + 1; else hi = m; }
+  return lo;
+}
+// Liniendiagramm. serien: [{name, farbe, pkt: [[t, y], …]}]; o: von, bis, ymin, ymax, minSpanne,
+// einheit, luecke (ms, größere Abstände unterbrechen die Linie), xText(t), xs (Abstand der Zeitstriche,
+// ms; ab bis rückwärts, wenn anker gesetzt, sonst auf Vielfache), nk (Nachkommastellen)
+function linien(cv, serien, o) {
+  const dpr = window.devicePixelRatio || 1, B = cv.clientWidth, H = Number(cv.dataset.h);
+  if (!B) return;
+  if (cv.width !== Math.round(B * dpr) || cv.height !== Math.round(H * dpr)) {
+    cv.width = Math.round(B * dpr); cv.height = Math.round(H * dpr); cv.style.height = H + 'px';
+  }
+  const g = cv.getContext('2d');
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.clearRect(0, 0, B, H);
+  const L = 38, R = 8, O = 6, U = 18, w = B - L - R, h = H - O - U;
+  // y-Bereich: fest oder aus den sichtbaren Werten, mindestens minSpanne
+  let lo = o.ymin ?? Infinity, hi = o.ymax ?? -Infinity;
+  if (o.ymin == null || o.ymax == null)
+    for (const s of serien) for (let i = suche(s.pkt, o.von); i < s.pkt.length; i++) {
+      const y = s.pkt[i][1];
+      if (o.ymin == null && y < lo) lo = y;
+      if (o.ymax == null && y > hi) hi = y;
+    }
+  if (!isFinite(lo) || !isFinite(hi)) { lo = 0; hi = 1; }
+  const fehlt = (o.minSpanne || 0) - (hi - lo);
+  if (fehlt > 0) { if (o.ymin == null) lo -= fehlt / 2; if (o.ymax == null) hi += fehlt / 2; }
+  const st = schritt(hi - lo || 1, h < 80 ? 2 : 3);
+  if (o.ymin == null) lo = Math.floor(lo / st) * st;
+  if (o.ymax == null) hi = Math.ceil(hi / st) * st;
+  const X = t => L + (t - o.von) / (o.bis - o.von) * w, Y = y => O + (hi - y) / (hi - lo || 1) * h;
+  const css = getComputedStyle(document.body);
+  g.font = '11px system-ui,sans-serif';
+  g.lineWidth = 1;
+  // Raster und Achsen zurückhaltend
+  g.strokeStyle = '#2b3038'; g.fillStyle = '#8b94a1'; g.textAlign = 'right'; g.textBaseline = 'middle';
+  for (let y = lo; y <= hi + st / 1e6; y += st) {
+    const py = Math.round(Y(y)) + .5;
+    g.beginPath(); g.moveTo(L, py); g.lineTo(L + w, py); g.stroke();
+    g.fillText((+y.toFixed(6)) + (o.einheit || ''), L - 4, py);
+  }
+  const xs = o.xs, t0 = o.anker ? o.bis - Math.floor((o.bis - o.von) / xs) * xs : Math.ceil(o.von / xs) * xs;
+  g.textAlign = 'center'; g.textBaseline = 'top';
+  for (let t = t0; t <= o.bis; t += xs) {
+    const px = Math.round(X(t)) + .5;
+    g.beginPath(); g.moveTo(px, O); g.lineTo(px, O + h); g.stroke();
+    g.fillText(o.xText(t), Math.min(Math.max(px, L + 14), L + w - 14), O + h + 4);
+  }
+  // Linien, 2 px, an Lücken unterbrochen
+  g.save(); g.beginPath(); g.rect(L, O, w, h); g.clip();
+  g.lineWidth = 2; g.lineJoin = 'round'; g.lineCap = 'round';
+  for (const s of serien) {
+    g.strokeStyle = s.farbe; g.beginPath();
+    let tv = null;
+    for (let i = Math.max(0, suche(s.pkt, o.von) - 1); i < s.pkt.length; i++) {
+      const [t, y] = s.pkt[i];
+      if (tv == null || t - tv > o.luecke) g.moveTo(X(t), Y(y)); else g.lineTo(X(t), Y(y));
+      tv = t;
+    }
+    g.stroke();
+  }
+  g.restore();
+  // Fadenkreuz mit Werten am nächsten Punkt
+  if (cv._hx != null && serien.some(s => s.pkt.length)) {
+    const t = o.von + (cv._hx * B - L) / w * (o.bis - o.von);
+    const zeilen = [o.xText(t)];
+    for (const s of serien) {
+      const i = Math.min(suche(s.pkt, t), s.pkt.length - 1);
+      const p = i > 0 && Math.abs(s.pkt[i - 1][0] - t) < Math.abs(s.pkt[i][0] - t) ? s.pkt[i - 1] : s.pkt[i];
+      if (p && Math.abs(p[0] - t) <= o.luecke) zeilen.push([s, p[1].toFixed(o.nk ?? 1) + (o.einheit || '')]);
+    }
+    const px = Math.round(Math.min(Math.max(X(t), L), L + w)) + .5;
+    g.strokeStyle = '#8b94a1'; g.lineWidth = 1;
+    g.beginPath(); g.moveTo(px, O); g.lineTo(px, O + h); g.stroke();
+    const bw = 118, bh = 8 + zeilen.length * 15, bx = px + 8 + bw > B ? px - 8 - bw : px + 8;
+    g.fillStyle = 'rgba(15,17,20,.92)'; g.strokeStyle = '#3a414c';
+    g.beginPath(); g.roundRect(bx, O + 2, bw, bh, 5); g.fill(); g.stroke();
+    g.textAlign = 'left'; g.textBaseline = 'top';
+    zeilen.forEach((z, k) => {
+      const ty = O + 6 + k * 15;
+      if (typeof z === 'string') { g.fillStyle = '#8b94a1'; g.fillText(z, bx + 7, ty); return; }
+      g.fillStyle = z[0].farbe; g.fillRect(bx + 7, ty + 5, 10, 3);
+      g.fillStyle = css.getPropertyValue('--text') || '#e3e6ea';
+      g.fillText(z[0].name + '  ' + z[1], bx + 22, ty);
+    });
+  }
+}
+// Legende mit Farbe und letztem Wert: Identität nie nur über die Farbe
+function legende(id, serien, einheit, nk = 1) {
+  $(id).innerHTML = serien.map(s => {
+    const p = s.pkt[s.pkt.length - 1];
+    return '<span><i style="background:' + s.farbe + '"></i>' + esc(s.name) + ' <b>' +
+           (p ? p[1].toFixed(nk) + einheit : '-') + '</b></span>';
+  }).join('');
+}
+const uhr = t => new Date(t).toLocaleTimeString('de-DE', {hour: '2-digit', minute: '2-digit'});
+function verlaufZeichnen() {
+  if (!$('verlauf').open) return;
+  // Lage: Zeitachse = Treiberzeit, rechts der neueste Wert
+  const bis = lage.length ? lage[lage.length - 1][0] : 0, von = bis - LAGE_MS;
+  const rel = t => Math.round((t - bis) / 1000) + ' s';
+  const ls = [{name: 'Roll', farbe: FARBEN[0], pkt: lage.map(p => [p[0], p[1]])},
+              {name: 'Pitch', farbe: FARBEN[1], pkt: lage.map(p => [p[0], p[2]])}];
+  legende('l-lage', ls, '°');
+  linien($('d-lage'), ls, {von, bis, minSpanne: 10, einheit: '°', luecke: 300, xText: rel, xs: 15e3, anker: true});
+  const i0 = suche(lage, von), g0 = lage.length ? lage[Math.min(i0, lage.length - 1)][3] : 0;
+  const gs = [{name: 'Gier', farbe: FARBEN[0], pkt: lage.map(p => [p[0], p[3] - g0])}];
+  legende('l-gier', gs, '°');
+  linien($('d-gier'), gs, {von, bis, minSpanne: 10, einheit: '°', luecke: 300, xText: rel, xs: 15e3, anker: true,
+                           nk: 0});
+  // CPU: Browserzeit
+  const jetzt = Date.now(), n = cpu.length ? cpu[cpu.length - 1][1].length : 0;
+  const cs = Array.from({length: n}, (_, k) =>
+    ({name: 'Kern ' + k, farbe: FARBEN[k % FARBEN.length], pkt: cpu.map(p => [p[0], p[1][k]])}));
+  legende('l-cpu', cs, ' %', 0);
+  linien($('d-cpu'), cs, {von: jetzt - CPU_MS, bis: jetzt, ymin: 0, ymax: 100, einheit: '%', luecke: 5e3,
+                          xText: uhr, xs: 120e3, nk: 0});
+  const a = akkuLesen().filter(p => p[0] > jetzt - AKKU_MS);
+  $('v-akku').textContent = a.length ? a[a.length - 1][1] + ' %' : '';
+  linien($('d-akku'), [{name: 'Akku', farbe: FARBEN[0], pkt: a}],
+         {von: jetzt - AKKU_MS, bis: jetzt, ymin: 0, ymax: 100, einheit: '%', luecke: 5 * 60e3, xText: uhr,
+          xs: 30 * 60e3, nk: 0});
+}
+let sysTimer = null;
+// Offen/zu merken, damit der Verlauf nach dem Neuladen gleich weiterläuft
+function verlaufUmschalten() {
+  try { localStorage.setItem('xgonav.verlauf', $('verlauf').open ? '1' : '0'); } catch (e) {}
+  if ($('verlauf').open) sysHolen();
+}
+async function sysHolen() {
+  clearTimeout(sysTimer);
+  if (!$('verlauf').open) return;                         // zugeklappt: nichts abfragen
+  try {
+    const r = await fetch('api.php?a=sys&since=' + imuSeq, {cache: 'no-store'});
+    const s = await r.json();
+    if (r.ok) {
+      if (s.seq < imuSeq) { lage.length = 0; imuSeq = 0; }  // Treiber neu geladen
+      for (const p of s.imu) { lage.push([p[1], p[2], p[3], p[4]]); imuSeq = p[0]; }
+      if (lage.length) abschneiden(lage, lage[lage.length - 1][0] - LAGE_MS);
+      const jetzt = Date.now();
+      if (cpuVorher && cpuVorher.length === s.cpu.length)
+        cpu.push([jetzt, s.cpu.map((c, k) => {
+          const dt = c[0] - cpuVorher[k][0];
+          return dt > 0 ? Math.max(0, Math.min(100, 100 * (1 - (c[1] - cpuVorher[k][1]) / dt))) : 0;
+        })]);
+      cpuVorher = s.cpu;
+      abschneiden(cpu, jetzt - CPU_MS);
+      $('v-temp').textContent = (s.temp_c != null ? s.temp_c.toFixed(1) + ' °C' : '') +
+                                (s.load != null ? ' · Last ' + s.load.toFixed(2) : '');
+      akkuMerken(s.battery);
+      verlaufZeichnen();
+    }
+  } catch (e) { /* Rider weg: beim nächsten Mal wieder */ }
+  sysTimer = setTimeout(sysHolen, 1000);
+}
+// Fadenkreuz: Maus und Touch
+document.querySelectorAll('.diag').forEach(cv => {
+  cv.addEventListener('pointermove', e => { cv._hx = e.offsetX / cv.clientWidth; verlaufZeichnen(); });
+  cv.addEventListener('pointerleave', () => { cv._hx = null; verlaufZeichnen(); });
+});
+window.addEventListener('resize', verlaufZeichnen);
 bildVerbinden();
 karteHolen();
 status();
+if (localStorage.getItem('xgonav.verlauf') === '1') $('verlauf').open = true;
+sysHolen();
 setInterval(status, 700);
 </script>
 </body>

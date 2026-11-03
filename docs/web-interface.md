@@ -19,10 +19,28 @@
 | Fahren | D-pad, speed 5–100 %, height 43–255, roll −20..20°, Aufstehen (arm, 255), Absetzen (disarm, 254) |
 | Raumkarte | room map PNG, view 3/6/10/16 m, Start hier (start = pose), Speichern, reset, pose line with distance to start |
 | Kamera | exposure (ms, auto), gain (1–16×, auto), actual values |
+| Verlauf (collapsed) | history charts, see below |
 | Extras (collapsed) | actions 1–6, 4 LEDs + all off + strobe, display emotions |
 | System | shutdown (confirm dialog) |
 
-Polling: status every 700 ms, map every 1 s (next request after previous finished).
+Polling: status every 700 ms, map every 1 s (next request after previous finished), `a=sys` every 1 s
+only while Verlauf is open.
+
+## History (Verlauf)
+
+Canvas charts, no library; crosshair + values on hover/touch. Data comes from `/proc` via PHP and
+works without xgonav.
+
+| Chart | Data | Window | Storage |
+|---|---|---|---|
+| Lage | roll, pitch (°) from `imu_log`, all samples (50 Hz) | 60 s | memory |
+| Gier | yaw relative to window start (driver yaw is cumulative) | 60 s | memory |
+| CPU | load per core (%), from `/proc/stat` deltas; temperature + loadavg in heading | 10 min | memory |
+| Akku | battery % (from status, or `a=sys`), ≤ 1 point / 30 s | 120 min | `localStorage` `xgonav.akku`; button Leeren |
+
+- Battery is recorded while the page is open, also with the card collapsed. A second open tab merges into the same key.
+- Open/closed state is kept in `localStorage` (`xgonav.verlauf`).
+- IMU gap > 300 ms (card closed) breaks the line. When seq goes backwards (driver reloaded), the chart is cleared.
 
 ## Manual driving
 
@@ -35,11 +53,12 @@ Polling: status every 700 ms, map every 1 s (next request after previous finishe
 
 ## `api.php`
 
-GET only for `status`; all commands POST. Parameters are validated; invalid → HTTP 400.
+GET only for `status` and `sys`; all commands POST. Parameters are validated; invalid → HTTP 400.
 
 | Request | Target | Range |
 |---|---|---|
 | `GET ?a=status` | xgonav `/status` | |
+| `GET ?a=sys&since=<seq>` | `/proc` direct | JSON `t`, `seq` (newest IMU seq), `imu` `[[seq, t_ms, roll, pitch, yaw], …]` (° , only seq > since), `cpu` `[[total, idle+iowait], …]` per core (jiffies), `temp_c`, `load`, `battery` |
 | `POST ?a=mode&name=..&target=..` | xgonav `/mode` | name ∈ idle, manual, follow, explore, approach, home; target `[a-z ]{1,30}` |
 | `POST ?a=stop` | xgonav `/stop` | |
 | `POST ?a=pipeline&on=0\|1` | xgonav `/pipeline` | |
