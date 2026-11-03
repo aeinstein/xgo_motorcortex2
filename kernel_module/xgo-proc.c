@@ -65,16 +65,57 @@ static int imu_log_show(struct seq_file *m, void *v) {
 	return 0;
 }
 
+// /proc/XGORider/wheels: "seq t_ns ticks11 ticks21 fw_ms" (neueste Probe, leer ohne 0x0c).
+// fw_ms = Firmware-millis() des Snapshots (nur mit 0x0d, sonst 0).
+static int wheels_show(struct seq_file *m, void *v) {
+	struct wheel_sample w;
+	unsigned long flags;
+
+	spin_lock_irqsave(&imu_lock, flags);
+	w = wheel_log[wheel_seq % WHEEL_LOG_LEN];
+	spin_unlock_irqrestore(&imu_lock, flags);
+	if (w.seq == 0) return 0;
+	seq_printf(m, "%u %llu %d %d %u\n", w.seq, w.t_ns, w.t11, w.t21, w.fw_ms);
+	return 0;
+}
+
+// /proc/XGORider/wheels_log: die letzten WHEEL_LOG_LEN Proben, älteste zuerst
+static int wheels_log_show(struct seq_file *m, void *v) {
+	static struct wheel_sample copy[WHEEL_LOG_LEN];
+	static DEFINE_MUTEX(copy_lock);
+	unsigned long flags;
+	u32 last, first, i;
+
+	mutex_lock(&copy_lock);
+	spin_lock_irqsave(&imu_lock, flags);
+	memcpy(copy, wheel_log, sizeof(copy));
+	last = wheel_seq;
+	spin_unlock_irqrestore(&imu_lock, flags);
+
+	first = last > WHEEL_LOG_LEN - 1 ? last - (WHEEL_LOG_LEN - 1) : 1;
+	for (i = first; last && i <= last; i++) {
+		struct wheel_sample *p = &copy[i % WHEEL_LOG_LEN];
+		if (p->seq != i) continue;
+		seq_printf(m, "%u %llu %d %d %u\n", p->seq, p->t_ns, p->t11, p->t21, p->fw_ms);
+	}
+	mutex_unlock(&copy_lock);
+	return 0;
+}
+
 static int serial_stats_show(struct seq_file *m, void *v) {
-	seq_printf(m, "frames %d\nbad %d\ntimeouts %d\nunsolicited %d\nimu_seq %u\nimu_hz %u\nimu_block %d\n",
+	seq_printf(m, "frames %d\nbad %d\ntimeouts %d\nunsolicited %d\nimu_seq %u\nimu_hz %u\nimu_block %d\n"
+		"wheels %d\nwheel_seq %u\nwheel_hz %u\n",
 		atomic_read(&stat_frames), atomic_read(&stat_bad), atomic_read(&stat_timeouts),
-		atomic_read(&stat_unsolicited), READ_ONCE(imu_seq), XGO_IMU_HZ, imu_block_mode);
+		atomic_read(&stat_unsolicited), READ_ONCE(imu_seq), XGO_IMU_HZ, imu_block_mode,
+		wheels_supported, READ_ONCE(wheel_seq), XGO_WHEEL_HZ);
 	return 0;
 }
 
 static int imu_open(struct inode *inode, struct file *file) { return single_open(file, imu_show, NULL); }
 static int imu_log_open(struct inode *inode, struct file *file) { return single_open_size(file, imu_log_show, NULL, IMU_LOG_LEN * 64); }
 static int serial_stats_open(struct inode *inode, struct file *file) { return single_open(file, serial_stats_show, NULL); }
+static int wheels_open(struct inode *inode, struct file *file) { return single_open(file, wheels_show, NULL); }
+static int wheels_log_open(struct inode *inode, struct file *file) { return single_open_size(file, wheels_log_show, NULL, WHEEL_LOG_LEN * 64); }
 
 /*
  * raw_reg (Diagnose, nur root): beliebiges Register des ESP32 *lesen*, nichts schreiben.
@@ -125,7 +166,12 @@ static const struct proc_ops imu_log_ops = {
 static const struct proc_ops serial_stats_ops = {
 	.proc_open = serial_stats_open, .proc_read = seq_read, .proc_lseek = seq_lseek, .proc_release = single_release,
 };
-
+static const struct proc_ops wheels_ops = {
+	.proc_open = wheels_open, .proc_read = seq_read, .proc_lseek = seq_lseek, .proc_release = single_release,
+};
+static const struct proc_ops wheels_log_ops = {
+	.proc_open = wheels_log_open, .proc_read = seq_read, .proc_lseek = seq_lseek, .proc_release = single_release,
+};
 static const struct proc_ops raw_reg_ops = {
 	.proc_open = raw_reg_open, .proc_read = seq_read, .proc_lseek = seq_lseek, .proc_release = single_release,
 	.proc_write = raw_reg_write,
@@ -182,6 +228,9 @@ static ssize_t settings_read(struct file *file, char __user *user_buf, size_t co
 
     } else if (strcmp(setting_name, "motion_timeout_ms") == 0) {
     	len = snprintf(buffer, sizeof(buffer), "%u\n", XGO_MOTION_TIMEOUT_MS);
+
+    } else if (strcmp(setting_name, "wheel_hz") == 0) {
+    	len = snprintf(buffer, sizeof(buffer), "%u\n", XGO_WHEEL_HZ);
 
     } else if (strcmp(setting_name, "imu_hz") == 0) {
     	len = snprintf(buffer, sizeof(buffer), "%u\n", XGO_IMU_HZ);
@@ -324,6 +373,12 @@ static ssize_t settings_write(struct file *file, const char __user *user_buf, si
     	WRITE_ONCE(XGO_IMU_HZ, v);
     	pr_info("XGORider: IMU %u Hz\n", v);
 
+    } else if (strcmp(setting_name, "wheel_hz") == 0) {
+    	unsigned int v;
+    	if (kstrtouint(strim(buffer), 10, &v) || v > 200) return -EINVAL;
+    	WRITE_ONCE(XGO_WHEEL_HZ, v);
+    	pr_info("XGORider: Räder %u Hz\n", v);
+
     } else {
         return -EINVAL; // Ungültiger Zugriff
     }
@@ -455,6 +510,7 @@ static int createFilesystem(){
 	proc_create("pitch_calibration", 0666, proc_settings, &settings_ops);
 	proc_create("motion_timeout_ms", 0666, proc_settings, &settings_ops);
 	proc_create("imu_hz", 0666, proc_settings, &settings_ops);
+	proc_create("wheel_hz", 0666, proc_settings, &settings_ops);
 
 
 	proc_yaw = proc_create("yaw", 0444, proc_imu, &yaw_ops);
@@ -471,6 +527,8 @@ static int createFilesystem(){
 	proc_create("imu_log", 0444, proc_imu, &imu_log_ops);
 	proc_create("serial_stats", 0444, proc_imu, &serial_stats_ops);
 	proc_create("raw_reg", 0600, proc_imu, &raw_reg_ops);
+	proc_create("wheels", 0444, proc_imu, &wheels_ops);
+	proc_create("wheels_log", 0444, proc_imu, &wheels_log_ops);
 
 	if (!proc_yaw || !proc_state || !proc_battery || !proc_buttons) return -ENOMEM;
 
@@ -501,6 +559,8 @@ static void destroyFilesystem(){
 	remove_proc_entry("imu_log", proc_imu);
 	remove_proc_entry("serial_stats", proc_imu);
 	remove_proc_entry("raw_reg", proc_imu);
+	remove_proc_entry("wheels", proc_imu);
+	remove_proc_entry("wheels_log", proc_imu);
 
 	remove_proc_entry("0", proc_leds);
 	remove_proc_entry("1", proc_leds);
@@ -517,6 +577,7 @@ static void destroyFilesystem(){
     remove_proc_entry("pitch_calibration", proc_settings);
     remove_proc_entry("motion_timeout_ms", proc_settings);
     remove_proc_entry("imu_hz", proc_settings);
+    remove_proc_entry("wheel_hz", proc_settings);
     remove_proc_entry("settings", proc_imu);
 
 	remove_proc_entry(PROC_DIR, NULL);

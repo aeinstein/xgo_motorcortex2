@@ -23,6 +23,9 @@
 #define XGO_ROLL_ANGLE 0x36      // Roll-Sollwinkel, 0..255 -> -20..+20 Grad
 #define XGO_ROLL_MAX_DEG 20
 #define XGO_IMU 0x61
+#define XGO_IMU_ALL 0x65        // R-1.1.6: accel[3] + roll/pitch/yaw, 6 Floats (24 Byte) in einer Antwort
+#define XGO_WHEELS 0x0c         // R-1.1.6+Patch: w11_ticks, w21_ticks, w11_pos, w21_pos (int32 LE)
+#define XGO_COMBO 0x0d          // R-1.1.6+Patch: roll, pitch, yaw (float) + w11/w21_ticks (int32) + t_ms (uint32), 24 Byte
 #define XGO_ROLL 0x62
 #define XGO_PITCH 0x63
 #define XGO_YAW 0x64

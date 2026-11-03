@@ -59,6 +59,7 @@ int main(int argc, char **argv) {
 	printf("FW %d '%.10s'\n", r, fw);
 	imu_detect_block_mode();
 	printf("BLOCK %d\n", imu_block_mode);
+	printf("WHEELS %d\n", wheels_supported);
 
 	imu_thread = kthread_run(imu_loop, NULL, "imu");
 	pthread_t tm, tw;
@@ -66,7 +67,7 @@ int main(int argc, char **argv) {
 	pthread_create(&tw, NULL, writer, NULL);
 
 	/* wie Userspace: imu_log periodisch lesen, neue Proben ausgeben */
-	u32 last = 0;
+	u32 last = 0, wlast = 0;
 	u64 t_end = ktime_get_ns() + (u64)(secs * 1e9);
 	while (ktime_get_ns() < t_end) {
 		msleep(100);
@@ -78,6 +79,16 @@ int main(int argc, char **argv) {
 			struct imu_sample *p = &copy[i % IMU_LOG_LEN];
 			if (p->seq == i) printf("S %u %llu %d %d %d\n", p->seq, (unsigned long long)p->t_ns, p->roll, p->pitch, p->yaw);
 		}
+		/* Räder genauso (wheel_log) */
+		struct wheel_sample wc[WHEEL_LOG_LEN]; u32 ws;
+		spin_lock(&imu_lock); memcpy(wc, wheel_log, sizeof(wc)); ws = wheel_seq; spin_unlock(&imu_lock);
+		u32 wf = ws > WHEEL_LOG_LEN - 1 ? ws - (WHEEL_LOG_LEN - 1) : 1;
+		if (wlast + 1 > wf) wf = wlast + 1;
+		for (u32 i = wf; ws && i <= ws; i++) {
+			struct wheel_sample *p = &wc[i % WHEEL_LOG_LEN];
+			if (p->seq == i) printf("W %u %llu %d %d %u\n", p->seq, (unsigned long long)p->t_ns, p->t11, p->t21, p->fw_ms);
+		}
+		wlast = ws;
 		last = seq;
 	}
 

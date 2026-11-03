@@ -1,6 +1,10 @@
 """ESP32-Emulator am PTY: beantwortet XGO-Lesebefehle mit 115200-Baud-Timing und Fehlern.
 
-python3 esp32_emu.py <harness> <sekunden> <imu_hz> [--block] [--faults]
+python3 esp32_emu.py <harness> <sekunden> <imu_hz> [--block] [--faults] [--imu65] [--wheels]
+
+--imu65: Register 0x65 (R-1.1.6: accel + roll/pitch/yaw, 24 Byte); --wheels: 0x0c (Rad-Encoder);
+--combo: 0x0d (roll/pitch/yaw + Rad-Ticks + t_ms, 24 Byte; nur zusammen mit --wheels sinnvoll).
+Ohne diese Schalter antwortet der Emulator auf 0x65/0x0c gar nicht (wie R-1.1.3).
 """
 import math
 import os
@@ -17,6 +21,15 @@ args = sys.argv[1:]
 harness, secs, hz = args[0], args[1], args[2]
 BLOCK = "--block" in args
 FAULTS = "--faults" in args
+IMU65 = "--imu65" in args
+WHEELS = "--wheels" in args
+COMBO = "--combo" in args
+T0 = time.monotonic()
+TPS11, TPS21 = 400.0, -250.0     # Rad-Ticks/s (rechts rückwärts, damit das Vorzeichen geprüft wird)
+
+
+def wheels_truth(t):
+    return int(TPS11 * t) & 0xFFFFFFFF, int(TPS21 * t) & 0xFFFFFFFF
 rng = random.Random(4)
 
 
@@ -35,6 +48,20 @@ def frame(addr, data):
 def payload(addr, n, t):
     r, p, y = truth(t)
     f = lambda v: struct.pack("<f", v)
+    if addr == 0x65:
+        if not IMU65:
+            return None
+        return (f(0.1) + f(-0.2) + f(9.81) + f(r) + f(p) + f(y))[:n]
+    if addr == 0x0d:
+        if not COMBO:
+            return None
+        a, b = wheels_truth(t)
+        return (f(r) + f(p) + f(y) + struct.pack("<III", a, b, int((t - T0) * 1000) & 0xFFFFFFFF))[:n]
+    if addr == 0x0c:
+        if not WHEELS:
+            return None
+        a, b = wheels_truth(t)
+        return struct.pack("<IIii", a, b, a % 1024, (b & 0xFFFFFFFF) % 1024)[:n]
     if addr == 0x62 and n == 12:
         return (f(r) + f(p) + f(y)) if BLOCK else f(r)   # ohne Block-Support: nur 4 Byte
     table = {0x62: f(r), 0x63: f(p), 0x64: f(y), 0x01: bytes([87]), 0x02: bytes([1]),
@@ -75,6 +102,8 @@ def serve():
             stats["req"] += 1
             t = time.monotonic()
             data = payload(addr, n, t)
+            if data is None:                    # Register gibt es nicht: keine Antwort
+                continue
             out = frame(addr, data)
             time.sleep((9 + len(out)) * BYTE_S + 0.0003)  # Übertragung + Verarbeitung
             if FAULTS:
@@ -101,9 +130,19 @@ p = subprocess.run([harness, name, secs, hz], capture_output=True, text=True, ti
 stop = True
 lines = p.stdout.splitlines()
 samples = [tuple(map(int, l.split()[1:])) for l in lines if l.startswith("S ")]
+wheels = [tuple(map(int, l.split()[1:])) for l in lines if l.startswith("W ")]
 for l in lines:
-    if not l.startswith("S "):
+    if not l.startswith(("S ", "W ")):
         print(l)
+if wheels:
+    wd = (wheels[-1][1] - wheels[0][1]) / 1e9
+    wgaps = sum(1 for a, b in zip(wheels, wheels[1:]) if b[0] != a[0] + 1)
+    # Ticks gegen die Wahrheit zum Zeitstempel (Mitte der Anfrage): Abweichung in Ticks
+    wrap = lambda d: (d + 2**31) % 2**32 - 2**31          # Ticks laufen über (int32)
+    e = sorted(max(abs(wrap(t11 - int(TPS11 * t / 1e9))), abs(wrap(t21 - int(TPS21 * t / 1e9))))
+               for _, t, t11, t21, *_ in wheels)
+    print("WHEELRATE %.1f Hz (%d Proben, %d Lücken), Abweichung median %d p95 %d max %d Ticks"
+          % ((len(wheels) - 1) / wd if wd > 0 else 0, len(wheels), wgaps, e[len(e) // 2], e[int(len(e) * .95)], e[-1]))
 print("EMU", stats)
 if samples:
     ts = [s[1] for s in samples]

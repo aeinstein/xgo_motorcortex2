@@ -15,7 +15,7 @@ H
 python3 - "$KM/xgo-drv.c" "$HERE/km/imu_extract.c" <<'PY'
 import sys
 src = open(sys.argv[1]).read()
-a = src.index("static bool imu_read(struct imu_sample *s) {")
+a = src.index("static u64 sample_time(") if "static u64 sample_time(" in src else src.index("static bool imu_read(struct imu_sample *s) {")
 b = src.index("// Wird bei jedem speed_x/speed_z-Write")
 open(sys.argv[2], "w").write(src[a:b].replace("abs(", "abs_s32("))
 PY

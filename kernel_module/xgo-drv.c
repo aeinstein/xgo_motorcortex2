@@ -34,42 +34,85 @@ static int loop(void *data) {
 }
 
 /*
- * IMU-Thread: Roll/Pitch/Yaw (Float-Register 0x62..0x64) mit XGO_IMU_HZ.
- * Jede Probe bekommt einen CLOCK_MONOTONIC-Zeitstempel (Mitte der Pitch-Abfrage),
+ * IMU-Thread: Roll/Pitch/Yaw mit XGO_IMU_HZ. Je nach Firmware eine Anfrage an 0x65
+ * (R-1.1.6, 24 Byte), ein 12-Byte-Block ab 0x62 oder drei Einzelregister 0x62..0x64.
+ * Jede Probe bekommt einen CLOCK_MONOTONIC-Zeitstempel (Mitte der Anfrage für Pitch),
  * damit Userspace sie den Kamerabildern zuordnen kann.
+ * Dazu, falls die Firmware es kann, die Rad-Encoder (0x0c) mit XGO_WHEEL_HZ.
  */
-static bool imu_read(struct imu_sample *s) {
-	uint8_t b[12];
-	u64 t0, t1;
+// Zeitpunkt, zu dem die Firmware den Wert erfasst hat: kurz bevor sie antwortet, also
+// Ende der Antwort minus deren Übertragungsdauer (n Nutzbytes + 8 Rahmenbytes, 115200 Baud 8N1).
+static u64 sample_time(u64 t_end, unsigned int n) {
+	return t_end - div_u64((u64)(n + 8) * 10 * NSEC_PER_SEC, 115200);
+}
 
-	if (imu_block_mode) {
-		t0 = ktime_get_ns();
+static s32 s32le(const uint8_t *b) {
+	return (s32)((u32)b[0] | ((u32)b[1] << 8) | ((u32)b[2] << 16) | ((u32)b[3] << 24));
+}
+
+// Modus 3 liefert die Räder gleich mit: hier abgelegt, imu_loop übernimmt sie ins wheel_log
+static struct wheel_sample combo_wheels;
+static bool combo_wheels_new;
+
+static bool imu_read(struct imu_sample *s) {
+	uint8_t b[24];
+	u64 t;
+
+	if (imu_block_mode == 3) {
+		if (read_addr_sync(XGO_COMBO, 24, b, 20) < 24) return false;
+		t = sample_time(ktime_get_ns(), 24);
+		s->roll = f32le_to_milli(b);
+		s->pitch = f32le_to_milli(b + 4);
+		s->yaw = f32le_to_milli(b + 8);
+		combo_wheels.t_ns = t;
+		combo_wheels.t11 = s32le(b + 12);
+		combo_wheels.t21 = s32le(b + 16);
+		combo_wheels.fw_ms = (u32)s32le(b + 20);
+		combo_wheels_new = true;
+	} else if (imu_block_mode == 2) {
+		if (read_addr_sync(XGO_IMU_ALL, 24, b, 20) < 24) return false;
+		t = sample_time(ktime_get_ns(), 24);
+		s->roll = f32le_to_milli(b + 12);
+		s->pitch = f32le_to_milli(b + 16);
+		s->yaw = f32le_to_milli(b + 20);
+	} else if (imu_block_mode == 1) {
 		if (read_addr_sync(XGO_ROLL, 12, b, 20) < 12) return false;
-		t1 = ktime_get_ns();
+		t = sample_time(ktime_get_ns(), 12);
 		s->roll = f32le_to_milli(b);
 		s->pitch = f32le_to_milli(b + 4);
 		s->yaw = f32le_to_milli(b + 8);
 	} else {
-		// Pitch zuerst und mit eigenem Zeitstempel (Mitte Anfrage/Antwort): die wichtigste Größe
-		t0 = ktime_get_ns();
+		// Pitch zuerst und mit eigenem Zeitstempel: die wichtigste Größe
 		if (read_addr_sync(XGO_PITCH, 4, b, 20) < 4) return false;
-		t1 = ktime_get_ns();
+		t = sample_time(ktime_get_ns(), 4);
 		s->pitch = f32le_to_milli(b);
 		if (read_addr_sync(XGO_ROLL, 4, b, 20) < 4) return false;
 		s->roll = f32le_to_milli(b);
 		if (read_addr_sync(XGO_YAW, 4, b, 20) < 4) return false;
 		s->yaw = f32le_to_milli(b);
 	}
-	s->t_ns = t0 / 2 + t1 / 2;
+	s->t_ns = t;
+	return true;
+}
+
+static bool wheel_read(struct wheel_sample *w) {
+	uint8_t b[16];
+	if (read_addr_sync(XGO_WHEELS, 16, b, 30) < 16) return false;
+	w->t_ns = sample_time(ktime_get_ns(), 16);
+	w->t11 = s32le(b);
+	w->t21 = s32le(b + 4);
+	w->fw_ms = 0;
 	return true;
 }
 
 static int imu_loop(void *data) {
 	struct imu_sample s;
+	struct wheel_sample w;
 	unsigned long flags;
+	unsigned int n = 0;
 
 	while (!kthread_should_stop()) {
-		unsigned int hz = READ_ONCE(XGO_IMU_HZ);
+		unsigned int hz = READ_ONCE(XGO_IMU_HZ), whz = READ_ONCE(XGO_WHEEL_HZ);
 		u64 start = ktime_get_ns(), period, used;
 
 		if (hz == 0) {
@@ -84,6 +127,22 @@ static int imu_loop(void *data) {
 			imu_log[s.seq % IMU_LOG_LEN] = s;
 			spin_unlock_irqrestore(&imu_lock, flags);
 		}
+		// Räder: in Modus 3 aus derselben Antwort (jeder Takt), sonst eigene Abfrage von
+		// 0x0c in jedem k-ten Takt (k = imu_hz / wheel_hz, mindestens 1)
+		if (imu_block_mode == 3) {
+			if (combo_wheels_new) {
+				combo_wheels_new = false;
+				spin_lock_irqsave(&imu_lock, flags);
+				combo_wheels.seq = ++wheel_seq;
+				wheel_log[combo_wheels.seq % WHEEL_LOG_LEN] = combo_wheels;
+				spin_unlock_irqrestore(&imu_lock, flags);
+			}
+		} else if (wheels_supported && whz && n++ % (hz > whz ? hz / whz : 1) == 0 && wheel_read(&w)) {
+			spin_lock_irqsave(&imu_lock, flags);
+			w.seq = ++wheel_seq;
+			wheel_log[w.seq % WHEEL_LOG_LEN] = w;
+			spin_unlock_irqrestore(&imu_lock, flags);
+		}
 
 		used = ktime_get_ns() - start;
 		if (used < period) {
@@ -94,26 +153,55 @@ static int imu_loop(void *data) {
 	return 0;
 }
 
-// Prüfen, ob die Firmware roll/pitch/yaw als einen 12-Byte-Block liefert (spart 2/3 der Buszeit)
+// Welche Lesewege die Firmware kann: 0x0d (Winkel + Räder) > 0x65 (24 Byte) > 12-Byte-Block ab 0x62
+// > Einzelregister.
+// Geprüft wird gegen frisch gelesene Einzelregister, damit eine Firmware, die bei unbekannter
+// Länge Pufferreste schickt, nicht falsch erkannt wird: Roll/Nick auf 2° gleich, Gier auf 10°
+// (über ±180° hinweg; der Kurs darf sich zwischen den Abfragen etwas drehen). Dazu: gibt es 0x0c?
+static bool imu_singles(s32 *r, s32 *p, s32 *y) {
+	uint8_t b[4];
+	if (read_addr_sync(XGO_ROLL, 4, b, 50) < 4) return false;
+	*r = f32le_to_milli(b);
+	if (read_addr_sync(XGO_PITCH, 4, b, 50) < 4) return false;
+	*p = f32le_to_milli(b);
+	if (read_addr_sync(XGO_YAW, 4, b, 50) < 4) return false;
+	*y = f32le_to_milli(b);
+	return (*r | *p | *y) != 0;
+}
+
+static bool imu_same(const uint8_t *b, s32 r, s32 p, s32 y) {
+	s32 dy = abs(f32le_to_milli(b + 8) - y) % 360000;
+	if (dy > 180000) dy = 360000 - dy;
+	return abs(f32le_to_milli(b) - r) < 2000 && abs(f32le_to_milli(b + 4) - p) < 2000 && dy < 10000;
+}
+
 static void imu_detect_block_mode(void) {
-	uint8_t b[12];
+	uint8_t b[24];
 	s32 r, p, y;
 
-	if (read_addr_sync(XGO_ROLL, 4, b, 50) < 4) goto single;
-	r = f32le_to_milli(b);
-	if (read_addr_sync(XGO_PITCH, 4, b, 50) < 4) goto single;
-	p = f32le_to_milli(b);
-	if (read_addr_sync(XGO_YAW, 4, b, 50) < 4) goto single;
-	y = f32le_to_milli(b);
-	if (read_addr_sync(XGO_ROLL, 12, b, 50) < 12) goto single;
-	if (abs(f32le_to_milli(b) - r) < 2000 && abs(f32le_to_milli(b + 4) - p) < 2000 &&
-	    abs(f32le_to_milli(b + 8) - y) < 2000 && (r | p | y) != 0) {
-		imu_block_mode = true;
+	wheels_supported = read_addr_sync(XGO_WHEELS, 16, b, 50) >= 16;
+	pr_info("XGORider: Rad-Encoder (0x0c) %s\n", wheels_supported ? "vorhanden" : "nicht vorhanden");
+
+	if (!imu_singles(&r, &p, &y)) goto single;
+	if (wheels_supported && read_addr_sync(XGO_COMBO, 24, b, 50) >= 24 && imu_same(b, r, p, y)) {
+		imu_block_mode = 3;
+		pr_info("XGORider: IMU + Räder über 0x0d (24 Byte) aktiv\n");
+		return;
+	}
+	if (!imu_singles(&r, &p, &y)) goto single;      // frisch, nach evtl. Timeout oben
+	if (read_addr_sync(XGO_IMU_ALL, 24, b, 50) >= 24 && imu_same(b + 12, r, p, y)) {
+		imu_block_mode = 2;
+		pr_info("XGORider: IMU über 0x65 (24 Byte) aktiv\n");
+		return;
+	}
+	if (!imu_singles(&r, &p, &y)) goto single;      // frisch, nach evtl. Timeout oben
+	if (read_addr_sync(XGO_ROLL, 12, b, 50) >= 12 && imu_same(b, r, p, y)) {
+		imu_block_mode = 1;
 		pr_info("XGORider: IMU block read (12 Byte) aktiv\n");
 		return;
 	}
 single:
-	imu_block_mode = false;
+	imu_block_mode = 0;
 	pr_info("XGORider: IMU Einzelregister-Modus\n");
 }
 

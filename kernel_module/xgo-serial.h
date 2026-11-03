@@ -73,7 +73,25 @@ static struct imu_sample imu_log[IMU_LOG_LEN];
 static u32 imu_seq = 0;
 static DEFINE_SPINLOCK(imu_lock);
 static unsigned int XGO_IMU_HZ = 50;   // 0 = aus
-static bool imu_block_mode = false;     // roll/pitch/yaw in einem 12-Byte-Read
+// IMU-Lesemodus: 0 = drei Einzelregister, 1 = roll/pitch/yaw als 12-Byte-Block ab 0x62,
+// 2 = 0x65 (R-1.1.6: accel + Winkel in einer 24-Byte-Antwort),
+// 3 = 0x0d (R-1.1.6+Patch: Winkel + Rad-Ticks + Firmware-Zeit aus einem Snapshot)
+static int imu_block_mode = 0;
+
+// Rad-Encoder (Register 0x0c, R-1.1.6+Patch): fortlaufende Ticks, 1024 je Umdrehung,
+// beide Räder vorwärts positiv (11 = links, 21 = rechts). Zeitstempel CLOCK_MONOTONIC (CM4).
+struct wheel_sample {
+	u32 seq;
+	u64 t_ns;
+	s32 t11;
+	s32 t21;
+	u32 fw_ms;      // Firmware-millis() des Snapshots (nur Modus 3, sonst 0)
+};
+#define WHEEL_LOG_LEN 64
+static struct wheel_sample wheel_log[WHEEL_LOG_LEN];
+static u32 wheel_seq = 0;
+static bool wheels_supported = false;
+static unsigned int XGO_WHEEL_HZ = 25;  // 0 = aus; tatsächlich höchstens imu_hz, als Teiler davon
 static struct task_struct *imu_thread;
 
 static struct task_struct *reader_thread;
