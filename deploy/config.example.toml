@@ -33,7 +33,9 @@ tilt_deg = 1.39          # [K] gilt zusammen mit imu.pitch_ref_deg
 # braucht Treiber-Patch 0002 (/proc/XGORider/imu_log)
 enabled = true
 imu_hz = 50
-pitch_ref_deg = -2.7     # [K] IMU-Rohpitch in typischer Balance-Lage, Paar mit camera.tilt_deg
+pitch_ref_deg = -0.5     # [K] IMU-Rohpitch in typischer Balance-Lage, Paar mit camera.tilt_deg.
+                         # R-1.1.6: visuell an der Horizontlinie nachgestellt (2026-11-03);
+                         # unter R-1.1.3 waren es -2,7 (Wandmessung). Wandmessung für R-1.1.6 offen.
 # Vorzeichen und Zeitversatz werden automatisch aus dem Bild bestimmt (RiderPi: -1, +4..+8 ms).
 # Optional fest eintragen:
 # pitch_sign = -1
@@ -90,3 +92,9 @@ main_cpus = [0, 1]          # Hauptschleife, Kamera, OpenCV-Worker, Rest des Sys
 detector_cpus = [2, 3]      # YOLO: Aufrufer-Thread auf 2, onnxruntime-Pool-Thread auf 3
 render_cpus = [0, 1, 2, 3]  # Bilder für die Oberfläche: alle Kerne (auf 2-3 ist neben YOLO Luft)
 freespace_cpus = [2, 3]     # Bodenmodell-Thread: neben YOLO ist dort Luft
+
+[odom]
+# Rad-Odometrie (Firmware R-1.1.6+Patch). 60 mm / 1024 Ticks am Maßband bestätigt (29,5 cm).
+# Faktoren vorläufig aus 3 kurzen Fahrten (links misst ~2 % mehr), mit tools/calibrate_odom.py nachkalibrieren.
+scale_left = 0.99
+scale_right = 1.01
