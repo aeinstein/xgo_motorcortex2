@@ -126,9 +126,10 @@ pre{background:#1b1b1b;padding:8px;overflow:auto;max-height:40vh}
   </fieldset>
   <fieldset><legend>Balancieren (Firmware R-1.1.6)</legend>
     <button onclick="arm()">Aufstehen (Arm)</button>
-    <button onclick="befehl('action', {n: 0})">Absetzen (Disarm)</button>
+    <button onclick="befehl('action', {n: 254})">Absetzen (Disarm)</button>
     <div class="klein">Nach einem ESP32-Neustart balanciert der Rider erst nach „Aufstehen“. Liegt er,
-      wartet die Firmware, bis er aufrecht steht – dann laufen die Räder sofort an.</div>
+      wartet die Firmware, bis er aufrecht steht – dann laufen die Räder sofort an. „Absetzen“ ist ein
+      Not-Stopp (Aktion 254, wie <code>!stop</code>): er setzt sich kontrolliert ab und bleibt aus bis zum nächsten Aufstehen.</div>
   </fieldset>
   <fieldset><legend>Aktionen</legend>
     <?php for ($i = 1; $i <= 6; $i++): ?><button onclick="befehl('action', {n: <?= $i ?>})"><?= $i ?></button><?php endfor; ?>
