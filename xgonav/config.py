@@ -200,6 +200,10 @@ class OdomCfg:
     wheel_diameter_m: float = 0.060    # RiderPi, Angabe des Nutzers
     track_m: float = 0.090             # Spurweite (Abstand der Radaufstandspunkte)
     ticks_per_rev: int = 1024          # am Rider gemessen (1 U von Hand: 1029 / 1043)
+    # Faktor je Rad auf den Weg (tools/calibrate_odom.py): ungleiche Reifen/Schlupf. Für die
+    # Strecke zählt der Mittelwert, für den Kurs der Unterschied (2 % = ~1,3° je 10 cm).
+    scale_left: float = 1.0
+    scale_right: float = 1.0
     poll_hz: float = 25.0              # wheels_log lesen (Treiber puffert 64 Proben)
     max_age_s: float = 0.3             # älter -> Rückfall auf den Fahrbefehl
     max_jump_ticks: int = 2048         # größerer Sprung zwischen zwei Proben = Neustart/Fehler

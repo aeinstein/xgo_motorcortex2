@@ -89,8 +89,8 @@ class WheelOdom:
                     self.resets += 1
                     log.info("Raddaten: Sprung/Neustart erkannt (Δ %d/%d Ticks), Delta verworfen", dl, dr)
                 else:
-                    self._sl += dl * self.m_per_tick
-                    self._sr += dr * self.m_per_tick
+                    self._sl += dl * self.m_per_tick * self.cfg.scale_left
+                    self._sr += dr * self.m_per_tick * self.cfg.scale_right
             self._last = (ticks_l, ticks_r, fw_ms)
             self._hist.append((t, self._sl, self._sr))
             while self._hist and self._hist[0][0] < t - self._history:
@@ -109,6 +109,20 @@ class WheelOdom:
         """Strecke der Radmitte (m, vorwärts +) und Drehung (rad, links +) von Probe a nach b."""
         dl, dr = b[1] - a[1], b[2] - a[2]
         return (dl + dr) / 2.0, (dr - dl) / self.cfg.track_m
+
+
+def calibrate_scales(sl: float, sr: float, theta_ref: float, track_m: float,
+                     dist_true: float | None = None) -> tuple[float, float]:
+    """Faktoren je Rad aus einer Fahrt: sl/sr = gemessene Radwege (m, ohne Faktor),
+    theta_ref = wahre Drehung (rad, links +; Kamera/IMU), dist_true = wahre Strecke der
+    Mitte (m, Maßband) oder None = Mittelwert der Räder gilt als richtig. Löst
+      (kl*sl + kr*sr) / 2 = D   und   (kr*sr - kl*sl) / track = theta_ref."""
+    D = dist_true if dist_true is not None else (sl + sr) / 2
+    if abs(sl) < 1e-6 or abs(sr) < 1e-6:
+        raise ValueError("beide Räder müssen sich bewegt haben")
+    kl = (D - theta_ref * track_m / 2) / sl
+    kr = (D + theta_ref * track_m / 2) / sr
+    return kl, kr
 
 
 class ProcWheels(WheelOdom):

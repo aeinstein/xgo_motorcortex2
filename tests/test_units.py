@@ -611,3 +611,24 @@ def test_wheel_odometry_wrap_reset_and_signs():
     w.add(5, 0.10, 9999, 9999, 70)                       # gleiche seq: ignoriert
     assert w.latest()[0] == 0.08
     assert w.fresh(0.3) and not w.fresh(0.5)
+
+
+def test_wheel_scale_calibration():
+    import math
+    from xgonav.config import OdomCfg
+    from xgonav.wheels import WheelOdom, calibrate_scales
+    # Fahrt wie am Rider: links 30,3 cm, rechts 28,7 cm gemessen, wahr 29,5 cm und -5,3°
+    sl, sr, th, track = 0.303, 0.287, math.radians(-5.3), 0.090
+    kl, kr = calibrate_scales(sl, sr, th, track, 0.295)
+    assert abs((kl * sl + kr * sr) / 2 - 0.295) < 1e-12
+    assert abs((kr * sr - kl * sl) / track - th) < 1e-12
+    assert 0.97 < kl < 1.0 < kr < 1.03                      # links misst zu viel
+    kl2, kr2 = calibrate_scales(sl, sr, th, track)           # ohne Maßband: Mittel bleibt
+    assert abs((kl2 * sl + kr2 * sr) / 2 - (sl + sr) / 2) < 1e-12
+    # Faktoren wirken in WheelOdom
+    w = WheelOdom(OdomCfg(scale_left=kl, scale_right=kr))
+    mpt = w.m_per_tick
+    w.add(1, 0.0, 0, 0); a = w.latest()
+    w.add(2, 0.1, round(sl / mpt), round(sr / mpt)); b = w.latest()
+    ds, dth = w.motion(a, b)
+    assert abs(ds - 0.295) < 0.001 and abs(dth - th) < math.radians(0.3)
