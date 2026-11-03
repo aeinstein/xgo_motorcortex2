@@ -1,0 +1,104 @@
+# Installation
+
+Target: Raspberry Pi OS Bookworm 64-bit on the RiderPi CM4. Run from the repo root.
+
+## One step
+
+```
+sudo ./deploy/install-all.sh [--no-driver] [--no-display] [--no-web]
+```
+
+| Step | Action |
+|---|---|
+| Driver | builds `kernel_module/` as the calling user, installs `xgo-drv`; needs `/lib/modules/$(uname -r)/build` (`linux-headers-rpi-v8`) |
+| Display | builds `st7789/project/riderpi`, installs `/usr/bin/st7789_server`; warns if `st7789_display.service` is enabled |
+| rc.local | installs `/etc/rc.local` and `rc-local.service` |
+| xgonav | runs `deploy/install.sh` |
+| Web | `apt-get install nginx php8.2-fpm`, php-fpm pool, nginx site, `www-data` → group `video`, sudoers rule, restarts php-fpm and nginx |
+
+Behaviour:
+- Files in `/etc` that differ are backed up as `*.bak-<timestamp>`.
+- The nginx site is enabled only if certificate and key exist (paths in `deploy/nginx-xgonav.conf`, `ssl_certificate*`). Then `sites-enabled/default` is removed and `stunnel4`, `rc-control` are disabled.
+- Does **not** start xgonav, does **not** reload the driver. Both take effect after reboot / manual start.
+
+## Manual steps
+
+```
+sudo make -C kernel_module && sudo make -C kernel_module install
+make -C st7789/project/riderpi && sudo cp st7789/project/riderpi/st7789_server /usr/bin/
+sudo cp deploy/rc.local /etc/rc.local && sudo cp deploy/rc-local.service /etc/systemd/system/
+sudo ./deploy/install.sh
+sudo apt-get install -y nginx php8.2-fpm
+sudo cp deploy/php-fpm-xgonav.conf /etc/php/8.2/fpm/pool.d/xgonav.conf    # listen.owner = nginx user
+sudo cp deploy/nginx-xgonav.conf /etc/nginx/sites-available/xgonav
+sudo ln -s ../sites-available/xgonav /etc/nginx/sites-enabled/
+sudo rm /etc/nginx/sites-enabled/default
+sudo usermod -aG video www-data
+sudo install -m 0440 deploy/sudoers-xgonav-poweroff /etc/sudoers.d/xgonav-poweroff && sudo visudo -c
+sudo systemctl disable --now stunnel4 rc-control
+sudo nginx -t && sudo systemctl restart php8.2-fpm nginx
+```
+
+Reload driver without reboot (set UART flags first, see [driver.md](driver.md)):
+```
+sudo rmmod xgo-drv; sudo modprobe xgo-drv
+cat /proc/XGORider/serial_stats
+```
+
+## `deploy/install.sh`
+
+| Item | Value |
+|---|---|
+| apt packages | `python3-opencv python3-numpy python3-picamera2 python3-venv` |
+| venv | `/opt/xgonav/venv`, `--system-site-packages`, `onnxruntime>=1.16` |
+| Copied | `xgonav/`, `tools/`, `web/` → `/opt/xgonav/`; `models/*.onnx` (no overwrite) |
+| Config | `deploy/config.example.toml` → `/opt/xgonav/config.toml` only if missing |
+| Emotions | `tools/emotion.sh build $EMOTIONS_SRC /opt/xgonav/emotions` (default source `/home/$SUDO_USER/motorcortex/rc_server/emotions`) |
+| User | `$SUDO_USER` (default `pi`) owns `/opt/xgonav`, added to group `video` |
+| Unit | `/etc/systemd/system/xgonav.service` (not enabled) |
+
+## systemd unit `xgonav.service`
+
+| Key | Value |
+|---|---|
+| ExecStart | `/opt/xgonav/venv/bin/python -m xgonav --config /opt/xgonav/config.toml` |
+| User / Group | install user / `video` |
+| Requires | `rc-local.service` |
+| Restart | `on-failure`, 3 s |
+| MemoryMax | 1200M |
+| Nice | -5 |
+
+```
+sudo systemctl enable --now xgonav
+```
+
+## Web permissions (`www-data`)
+
+| Need | Grant |
+|---|---|
+| Emotions → `/tmp/lcd0` | group `video` |
+| Shutdown | `/etc/sudoers.d/xgonav-poweroff`: `www-data ALL=(root) NOPASSWD: /usr/bin/systemctl poweroff` |
+| LEDs, actions, height, roll | `/proc/XGORider/*` is mode 0666 |
+
+## nginx (`deploy/nginx-xgonav.conf`)
+
+| Location | Target |
+|---|---|
+| `:80` | redirect to https |
+| `/` | redirect to `/xgonav/` |
+| `/xgonav/` | `/opt/xgonav/web/` (PHP via php-fpm) |
+| `/xgonav/ws`, `/xgonav/frame`, `/xgonav/stream`, `/xgonav/map.png` | proxied to xgonav `127.0.0.1:8088` |
+
+## YOLO model (PC/GPU server only, not on the Pi)
+
+```
+./tools/export_model.sh [yolo11n] [256]    # -> models/yolo11n_256.onnx (ultralytics, opset 12)
+scp models/yolo11n_256.onnx root@<rider>:/opt/xgonav/models/
+```
+
+Missing model file → detector disabled silently.
+
+## Before driving
+
+- `sudo systemctl stop rc-control` (otherwise two processes write drive commands).
+- Body height ≥ minimum + 10 mm (web UI: u8 ≥ 43).

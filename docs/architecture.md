@@ -1,0 +1,88 @@
+# Architecture
+
+## Per-frame data flow (`App._step()`, `xgonav/app.py`)
+
+```
+camera.FrameSource ─► egomotion.EgoMotion ─► tracker.Tracker ◄── detector.DetectorWorker (thread)
+                            │                       │
+                            ├─► imu.ImuSync (complementary filter IMU + image → pitch_dev)
+                            ├─► freespace.FreeSpaceEstimator (opt. thread) ─► localmap.LocalMap
+                            ├─► wheels (odometry) ─► gridmap.GridMap (thread, display only)
+                            ▼
+              behaviors.World ─► Behavior.step() ─► behaviors.safety() ─► App._arc_check() ─► robot.Robot.drive()
+```
+
+## Clock rates
+
+| Loop | Rate | Does |
+|---|---|---|
+| Image loop | camera fps (RiderPi config: 25) | ego-motion, tracker update, free space, snapshot |
+| Control step | `control_hz` = 20 Hz | build `World`, run behaviour, safety, `drive()` |
+| Detector | `detector.max_hz` (RiderPi: 5 Hz) | YOLO on sharp frames, own thread |
+| IMU / wheels | 50 Hz (`imu.imu_hz`) / `wheel_hz` | kernel thread, read from `/proc/XGORider/imu_log`, `wheels_log` |
+
+## Rules
+
+- Only the newest frame counts. `FrameSource.get()` drops old frames. No queues.
+- Ego-motion is removed everywhere: per frame a homography `A = K·Rᵀ·K⁻¹` (rotation model: yaw/pitch/roll + expansion), applied to all tracks; delayed detections are shifted with `EgoMotion.transform_between(a, b)`; horizon line and ground-point distance use `pitch_dev`.
+- Display reads snapshots only: `App.snapshot` is replaced per frame (never mutated), signalled via `snap_cond`. Web, LCD and recorders (`--record`, `--record-raw`) read from it; `render()` draws the overlay on demand.
+
+## Modules
+
+| Module | Role |
+|---|---|
+| `camera.py` | `PiCameraSource` (picamera2), `OpenCVSource` (index/file) |
+| `egomotion.py` | LK optical flow + RANSAC → rotation model, sharpness, time-to-contact |
+| `imu.py` | `ProcImu`, `ImuSync`: sign/time offset by correlation, complementary filter |
+| `detector.py` | `DetectorWorker`: YOLO ONNX via onnxruntime; disabled silently if model file missing |
+| `tracker.py` | Tracks, ego-motion compensation, latency compensation, Kalman distance/velocity |
+| `geometry.py` | Camera geometry, ground-plane distance |
+| `freespace.py`, `shading.py` | Floor colour model → free/blocked per image column; lens-shading correction |
+| `localmap.py` | Short-term obstacle memory in robot frame (`map.max_age_s` = 4 s) |
+| `wheels.py` | Wheel odometry from `wheels_log` |
+| `gridmap.py` | Room occupancy grid in world frame (display only) |
+| `behaviors.py` | `idle`, `manual`, `follow`, `explore`, `approach`; `safety()` |
+| `robot.py` | `ProcRobot` (`/proc/XGORider`), `SimRobot`; ramp, keepalive, watchdog |
+| `web.py` | Local HTTP/WebSocket API (`127.0.0.1:8088`) |
+| `lcd.py` | Overlay to `/tmp/lcd0` (Pi only, lazy import) |
+| `emotion.py` | Automatic emotions on the display |
+| `affinity.py` | CPU pinning |
+| `sim.py` | Simulator (`SimWorld`, `FakeDetector`, `SimImu`) |
+
+## Swappable backends
+
+| Role | Real | Simulator/test |
+|---|---|---|
+| Image source | `camera.PiCameraSource`, `camera.OpenCVSource` | `sim.SimWorld` |
+| Robot | `robot.ProcRobot` | `robot.SimRobot` |
+| Detector | `detector.DetectorWorker` | `sim.FakeDetector` (ground truth, 180 ms latency, 5 Hz) |
+| IMU | `imu.ProcImu` | `sim.SimImu` |
+
+`--robot` default: `proc` if `camera.source = "picam"`, else `sim`. LCD and emotions only with `proc`.
+
+## Safety layers (in order, last word wins)
+
+| Layer | Action |
+|---|---|
+| `behaviors.safety()` | not balancing → stop; centre free space < `blocked_free`·0.6 → no forward; < `slow_free` → scale v (≥ 0.25); TTC < `ttc_stop_s` (0.8 s) → no forward |
+| `App._arc_check()` | planned arc (forward and reverse) checked against local map |
+| `Robot` | clamp to `max_v`/`max_w`, ramp (`accel_v`, `accel_w`), keepalive 0.3 s, userspace watchdog `stall_timeout_s` 0.5 s |
+| Kernel | `settings/motion_timeout_ms` (xgonav sets `robot.kernel_watchdog_ms` = 1000) |
+
+`manual` mode skips floor model and arc check; fall detection and watchdogs stay active.
+
+## Robot convention
+
+- `drive(v, w)`: normalised [-1, 1]; v > 0 forward, w > 0 turn left.
+- `robot.norm_to_u8`: `u8 = 255/(2L)·(v + L)`, 128 = standstill.
+- Firmware **holds** setpoints; stops must be written explicitly.
+- `robot.reverse_gain` multiplies negative v before sending (RiderPi: 2.0).
+
+## CPU (RiderPi config, `[cpu]`)
+
+| Thread | Cores |
+|---|---|
+| Main loop, camera, OpenCV workers | 0–1 |
+| YOLO (caller + onnxruntime pool) | 2–3 |
+| Free-space worker, grid worker | 2–3 |
+| Web/LCD rendering | 0–3 |

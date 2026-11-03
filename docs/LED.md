@@ -1,73 +1,71 @@
-# XGO Rider — LED-Bedeutung (aus Firmware-Sicht)
+# XGO Rider — LED meaning (firmware view)
 
-Gilt für die laufende Firmware **R-1.1.6** (`Rider2-recovered-full`). Quelle: `board_support.cpp`
-(`renderLeds`/`renderFaultLeds`), `led_status.h` (`ledFaultFor`), Modus-Zuordnung in `main.cpp`.
-Die Stock-Firmware R-1.1.3 kann abweichen (nicht analysiert).
+Applies to firmware **R-1.1.6** (`Rider2-recovered-full`). Sources: `board_support.cpp`
+(`renderLeds`/`renderFaultLeds`), `led_status.h` (`ledFaultFor`), mode mapping in `main.cpp`.
+Stock firmware R-1.1.3 may differ (not analysed).
 
 ## Hardware
-- **4 RGB-LEDs** (WS2812/NeoPixel) an **GPIO27** (RMT-Kanal 0). Index 0..3.
-- Helligkeit intern ~0,5 skaliert; „voll" ist meist Wert 200–255.
+- **4 RGB LEDs** (WS2812/NeoPixel) on **GPIO27** (RMT channel 0), index 0..3.
+- Brightness scaled internally by ~0.5; "full" is usually 200–255.
 
-## Prioritäts-Logik
-Pro Frame wird zuerst `renderFaultLeds` versucht, sonst `renderLeds`:
+## Priority
+Per frame `renderFaultLeds` is tried first, otherwise `renderLeds`:
 
-1. **Fault-Farbe** wird gezeigt, **außer** wenn `robot_mode==1` (balanciert) oder `robot_mode==250`
-   (Low-Batt) — oder kein Fault vorliegt.
-2. Sonst normale Darstellung (Fahrtrichtung, Wellen-Animationen, Benutzer-LEDs, Low-Batt-Blinken).
+1. **Fault colour** is shown **unless** `robot_mode==1` (balancing) or `robot_mode==250` (low battery), or there is no fault.
+2. Otherwise normal display (driving direction, wave animations, user LEDs, low-battery blink).
 
-Die Fault-Farbe hängt von `last_stop_reason` ab (`ledFaultFor(driving,last_stop)`), die normale
-Darstellung von `mode` und den Fahr-/Aktionswerten. Beide Felder stehen in `!status`
-(`mode`, `reason`, `last_stop_reason`, `driving`).
+Fault colour depends on `last_stop_reason` (`ledFaultFor(driving,last_stop)`), normal display on
+`mode` and drive/action values. All fields are in `!status` (`mode`, `reason`, `last_stop_reason`, `driving`).
 
-## Fehler-/Stopp-Farben (Rider steht NICHT, Servos i. d. R. freigegeben)
+## Fault / stop colours (Rider NOT standing, servos usually released)
 
-| Farbe | Muster | Bedeutung (LedFault ← Stopp-Grund) |
-|------|--------|-------------------------------------|
-| **Rot, dauerhaft** | konstant | **Umgefallen / Kippfehler** (Tilt). Auch `mode 0`. |
-| **Rot, schnell blinkend** (~5 Hz) | 100 ms an/aus | **Freier Fall erkannt** (Fall) — gestoppt + Servos freigegeben *vor* dem Aufprall. |
-| **Rot, langsam blinkend** (~1 Hz) | 500 ms an/aus | **Sonstiger Fehler** (Other): IMU-, Aktuator-, Timing-, ungültige-Regelausgabe-, Policy- oder Kalibrier-Fehler. Servos freigegeben. |
-| **Bernstein/Orange** (R200 G70 B0), konstant | konstant | **Manuell gestoppt** (Manual) — per `!stop`, Action 0x3e=254, Schalter oder App. |
+| Colour | Pattern | Meaning (LedFault ← stop reason) |
+|---|---|---|
+| **Red, steady** | constant | **Tipped over / tilt fault**. Also `mode 0`. |
+| **Red, fast blink** (~5 Hz) | 100 ms on/off | **Free fall detected** — stopped and servos released *before* impact. |
+| **Red, slow blink** (~1 Hz) | 500 ms on/off | **Other fault**: IMU, actuator, timing, invalid control output, policy or calibration fault. Servos released. |
+| **Amber** (R200 G70 B0), steady | constant | **Manually stopped** — `!stop`, action 0x3e=254, switch or app. |
 
-## Low-Battery
+## Low battery
 
-| Farbe | Muster | Bedeutung |
-|------|--------|-----------|
-| **Rot, blinkend** (Batterie-Takt) | an/aus mit `low_blink` | **Akku leer / Abschaltung steht bevor** (`mode 250`, `stop_required`). Eigener Blink-Takt, nicht die Fault-Rot-Muster oben. |
+| Colour | Pattern | Meaning |
+|---|---|---|
+| **Red, blinking** (battery timing) | on/off with `low_blink` | **Battery empty / shutdown imminent** (`mode 250`, `stop_required`). Own blink timing, not the fault patterns above. |
 
-## Normalbetrieb (balancierend, `mode 1`)
+## Normal operation (balancing, `mode 1`)
 
-| Farbe | Wann | Bedeutung |
-|------|------|-----------|
-| **Benutzer-LEDs** (Default: Regenbogen-Palette) | steht/balanciert, keine Fahrt | Ruhezustand. Farben per `!rgb`/Register 0x69–0x6c frei setzbar. |
-| **Grün, richtungsabhängig** | fährt (|forward|>5 oder |turn|>5) | Fahrtrichtung: vorwärts → LEDs 0&3, rückwärts → 1&2, links/rechts-Drehung → jeweils zwei LEDs grün. |
+| Colour | When | Meaning |
+|---|---|---|
+| **User LEDs** (default: rainbow palette) | standing/balancing, not driving | Idle. Colours via `!rgb` / registers 0x69–0x6c. |
+| **Green, direction-dependent** | driving (\|forward\|>5 or \|turn\|>5) | Forward → LEDs 0&3, backward → 1&2, left/right turn → two LEDs each. |
 
-## Aktions-Animationen (während laufender Aktion, `mode 1`)
+## Action animations (during an action, `mode 1`)
 
-| Farbe | Wann | Bedeutung |
-|------|------|-----------|
-| **Blau blinkend** (~1 Hz) | `pitch_trim_stage==2` | **Pitch-Trimmung** läuft (im Stand ausbalancieren). |
-| **Blau↔Cyan-Verlauf** (animiert) | Roll-Welle aktiv | Roll-„Welle"-Aktion; Farbton folgt dem Roll-Sollwert. |
-| **Grün↔Blau-Ton** | Höhen-Welle aktiv | Height-„Welle"-Aktion; Ton folgt der Höhe. |
+| Colour | When | Meaning |
+|---|---|---|
+| **Blue blinking** (~1 Hz) | `pitch_trim_stage==2` | **Pitch trim** running (balancing in place). |
+| **Blue↔cyan gradient** (animated) | roll wave active | Roll "wave" action; hue follows roll setpoint. |
+| **Green↔blue tone** | height wave active | Height "wave" action; hue follows height. |
 
-## Modus → Situation (für `!status.mode`)
+## Mode → situation (`!status.mode`)
 
 | mode | Situation | LED |
-|-----:|-----------|-----|
-| 1 | balanciert / fährt | Benutzer-LEDs bzw. grüne Richtung / Wellen-Animation |
-| 0 | Kipp-/Sturz-Fehler, „gestrandet", Weglauf-Schutz | rot (Tilt=dauer, Fall=schnell blinkend) |
-| 250 | Akku leer / Abschaltung | rot blinkend (Batterie-Takt) |
-| 251 | Aktuator-Fehler / Flash-Stopp | rot langsam blinkend (Other) |
-| 252 | Policy-/Regel-/Control-Fehler | rot langsam blinkend (Other) |
-| 253 | nach Flash / bereit-aber-disarmed / neutral | keine Fault-Farbe (LEDs bleiben wie zuletzt / Benutzer-LEDs) |
-| 254 | manueller Stopp | bernstein/orange |
-| 255 | Beinkalibrierung läuft | (Kalibriermodus) |
+|---:|---|---|
+| 1 | balancing / driving | user LEDs, green direction, or wave animation |
+| 0 | tilt/fall fault, "stranded", runaway protection | red (tilt = steady, fall = fast blink) |
+| 250 | battery empty / shutdown | red blinking (battery timing) |
+| 251 | actuator fault / flash stop | red slow blink (Other) |
+| 252 | policy/control fault | red slow blink (Other) |
+| 253 | after flash / ready but disarmed / neutral | no fault colour (LEDs unchanged / user LEDs) |
+| 254 | manual stop | amber |
+| 255 | leg calibration running | (calibration mode) |
 
-## Kurzmerker
-- **Rot** = Problem/gestoppt (Muster unterscheidet Ursache: dauer=Kippen, schnell=Fall, langsam=Fehler, Batterie-Takt=Akku).
-- **Orange** = bewusst gestoppt (manuell).
-- **Grün** = fährt (Richtung).
-- **Blau** = Trimmung/Roll-Welle.
-- **Bunt/ruhig** = steht entspannt (Benutzer-LEDs).
+## Cheat sheet
+- **Red** = problem/stopped (pattern gives cause: steady = tip, fast = fall, slow = fault, battery timing = battery).
+- **Amber** = deliberately stopped.
+- **Green** = driving (direction).
+- **Blue** = trim / roll wave.
+- **Colourful, steady** = idle (user LEDs).
 
-Zustand live ablesen: `!status` → `mode`, `driving`, `reason`, `last_stop_reason`. LEDs selbst
-setzen (nur im Ruhezustand sichtbar): `!rgb <index 0..3> <r> <g> <b>` bzw. Register 0x69–0x6c.
+Read state live: `!status` → `mode`, `driving`, `reason`, `last_stop_reason`. Set LEDs (visible only when idle):
+`!rgb <index 0..3> <r> <g> <b>` or registers 0x69–0x6c (`/proc/XGORider/leds/0..3`).
