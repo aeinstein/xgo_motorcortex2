@@ -76,6 +76,46 @@ static int imu_open(struct inode *inode, struct file *file) { return single_open
 static int imu_log_open(struct inode *inode, struct file *file) { return single_open_size(file, imu_log_show, NULL, IMU_LOG_LEN * 64); }
 static int serial_stats_open(struct inode *inode, struct file *file) { return single_open(file, serial_stats_show, NULL); }
 
+/*
+ * raw_reg (Diagnose, nur root): beliebiges Register des ESP32 *lesen*, nichts schreiben.
+ *   echo "0x0b 16" > /proc/XGORider/raw_reg   (Adresse, Länge 1..MAX_DATA_LEN)
+ *   cat /proc/XGORider/raw_reg                -> "0x0b 16: 00 11 22 ..." bzw. "0x0b 16: Fehler -110"
+ * Gedacht für Versuche wie die Odometrie in 0x0b (Rider2-Referenzfirmware: 4 Floats
+ * x, y, Kurs, Strecke); ob die Original-Firmware ein Register kennt, zeigt die Antwort.
+ */
+static u8 raw_addr = XGO_FIRMWARE_VERSION, raw_len = 10;
+
+static int raw_reg_show(struct seq_file *m, void *v) {
+	u8 b[MAX_DATA_LEN];
+	u8 addr = READ_ONCE(raw_addr), len = READ_ONCE(raw_len);
+	int r = read_addr_sync(addr, len, b, 100);
+	seq_printf(m, "0x%02x %u:", addr, len);
+	if (r < 0) {
+		seq_printf(m, " Fehler %d\n", r);
+		return 0;
+	}
+	for (int i = 0; i < len; i++) seq_printf(m, " %02x", b[i]);
+	seq_putc(m, '\n');
+	return 0;
+}
+static int raw_reg_open(struct inode *inode, struct file *file) { return single_open(file, raw_reg_show, NULL); }
+
+static ssize_t raw_reg_write(struct file *file, const char __user *user_buf, size_t count, loff_t *ppos) {
+	char buf[16], *p, *a;
+	u8 addr, len;
+	if (count == 0 || count >= sizeof(buf)) return -EINVAL;
+	if (copy_from_user(buf, user_buf, count)) return -EFAULT;
+	buf[count] = '\0';
+	p = strim(buf);
+	a = strsep(&p, " \t");
+	if (!a || !p) return -EINVAL;
+	p = skip_spaces(p);
+	if (kstrtou8(a, 0, &addr) || kstrtou8(strim(p), 0, &len) || len == 0 || len > MAX_DATA_LEN) return -EINVAL;
+	WRITE_ONCE(raw_addr, addr);
+	WRITE_ONCE(raw_len, len);
+	return count;
+}
+
 static const struct proc_ops imu_ops = {
 	.proc_open = imu_open, .proc_read = seq_read, .proc_lseek = seq_lseek, .proc_release = single_release,
 };
@@ -84,6 +124,11 @@ static const struct proc_ops imu_log_ops = {
 };
 static const struct proc_ops serial_stats_ops = {
 	.proc_open = serial_stats_open, .proc_read = seq_read, .proc_lseek = seq_lseek, .proc_release = single_release,
+};
+
+static const struct proc_ops raw_reg_ops = {
+	.proc_open = raw_reg_open, .proc_read = seq_read, .proc_lseek = seq_lseek, .proc_release = single_release,
+	.proc_write = raw_reg_write,
 };
 
 static ssize_t buttons_read(struct file *file, char __user *user_buf, size_t count, loff_t *ppos) {
@@ -425,6 +470,7 @@ static int createFilesystem(){
 	proc_create("imu", 0444, proc_imu, &imu_ops);
 	proc_create("imu_log", 0444, proc_imu, &imu_log_ops);
 	proc_create("serial_stats", 0444, proc_imu, &serial_stats_ops);
+	proc_create("raw_reg", 0600, proc_imu, &raw_reg_ops);
 
 	if (!proc_yaw || !proc_state || !proc_battery || !proc_buttons) return -ENOMEM;
 
@@ -454,6 +500,7 @@ static void destroyFilesystem(){
 	remove_proc_entry("imu", proc_imu);
 	remove_proc_entry("imu_log", proc_imu);
 	remove_proc_entry("serial_stats", proc_imu);
+	remove_proc_entry("raw_reg", proc_imu);
 
 	remove_proc_entry("0", proc_leds);
 	remove_proc_entry("1", proc_leds);
