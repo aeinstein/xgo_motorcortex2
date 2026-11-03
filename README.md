@@ -21,6 +21,7 @@ CPU time, camera geometry, manual driving (web UI), `follow` (runs 2026-11-02, `
 | `web/` | Web UI (PHP, served by nginx) |
 | `deploy/` | Install scripts, systemd units, nginx/php-fpm/sudoers config, `config.example.toml`, `rc.local` |
 | `driver-test/` | Driver code compiled in userspace against an ESP32 emulator |
+| `firmware/` | ESP32 firmware: fetch reference (xgorider2_rl), apply patches, build (`firmware/build.sh`) |
 | `docs/` | Per-topic documentation |
 
 Not included: legacy remote control `rc_server` (Node), TLS certificates/keys, ONNX models (`models/*.onnx`, gitignored).
@@ -68,6 +69,7 @@ python3 -m venv .venv && .venv/bin/pip install "opencv-python-headless>=4.6" "nu
 | [display-emotions.md](docs/display-emotions.md) | LCD daemon, overlay, emotion player and triggers |
 | [testing.md](docs/testing.md) | Unit/slow tests, simulator, replay, results |
 | [limitations.md](docs/limitations.md) | Hardware test status, measured values, known issues |
+| [firmware/README.md](firmware/README.md) | ESP32 firmware build, patches, flashing rules |
 | [LED.md](docs/LED.md) | LED colours and patterns of firmware R-1.1.6 |
 
 Upstream driver: [aeinstein/xgo_motorcortex](https://github.com/aeinstein/xgo_motorcortex) (`c3c888c`).
