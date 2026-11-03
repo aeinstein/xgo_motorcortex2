@@ -216,7 +216,7 @@ Die Oberfläche ersetzt die frühere Fernsteuerung (`rc_server`, Node; nicht meh
 0,2 s ein Sollwert, nach 0,5 s ohne Sollwert Stillstand; begrenzt auf `max_v`/`max_w`;
 funktioniert auch bei gestoppter Bildverarbeitung, dann ohne Kamera und fast ohne CPU;
 ohne Bodenmodell und Bahnprüfung, mit Sturz-Erkennung und Watchdogs), Höhe (u8 43–255,
-mit Abstand zum Minimum), Aktionen 1–6/Stopp, LEDs inkl. Strobe, Emotionen aufs
+mit Abstand zum Minimum), Aktionen 1–6, Aufstehen/Absetzen (Arm = Aktion 255, Disarm = 0; Firmware R-1.1.6), LEDs inkl. Strobe, Emotionen aufs
 Display, Roll (−20…20°, + = nach rechts, braucht Treiber-Patch 0004), Bein-Kalibrierung, Herunterfahren.
 Emotionen spielt `tools/emotion.sh` ab: `deploy/install.sh` konvertiert die PNGs aus
 `rc_server/emotions` einmalig nach `/opt/xgonav/emotions` (RGB565-Rohbilder, ~140 MB),

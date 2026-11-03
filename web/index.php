@@ -103,9 +103,14 @@ pre{background:#1b1b1b;padding:8px;overflow:auto;max-height:40vh}
       onchange="befehl('roll', {deg: this.value})"> <span id="roll-w">0°</span> <span class="klein">(+ = rechts)</span>
     <button onclick="rollNull()">0°</button>
   </fieldset>
+  <fieldset><legend>Balancieren (Firmware R-1.1.6)</legend>
+    <button onclick="arm()">Aufstehen (Arm)</button>
+    <button onclick="befehl('action', {n: 0})">Absetzen (Disarm)</button>
+    <div class="klein">Nach einem ESP32-Neustart balanciert der Rider erst nach „Aufstehen“. Liegt er,
+      wartet die Firmware, bis er aufrecht steht – dann laufen die Räder sofort an.</div>
+  </fieldset>
   <fieldset><legend>Aktionen</legend>
     <?php for ($i = 1; $i <= 6; $i++): ?><button onclick="befehl('action', {n: <?= $i ?>})"><?= $i ?></button><?php endfor; ?>
-    <button onclick="befehl('action', {n: 255})">Stopp</button>
   </fieldset>
   <fieldset><legend>LEDs</legend>
     <div class="leds">
@@ -303,6 +308,11 @@ async function lageKalibrieren() {
   if (!confirm('Lage kalibrieren? Der Rider muss balancieren und frei stehen; er regelt sich ein paar Sekunden auf der Stelle ein.')) return;
   if (aktModus && aktModus !== 'idle' && !(await modus('idle'))) return;
   befehl('pitch_calibration');
+}
+// Aktion 255 = Arm (R-1.1.6): Räder laufen an, sobald der Rider aufrecht steht
+function arm() {
+  if (confirm('Aufstehen (Arm)? Steht der Rider aufrecht, laufen die Räder sofort an. Nur mit Platz drumherum.'))
+    befehl('action', {n: 255});
 }
 function herunterfahren() {
   if (confirm('Rider wirklich herunterfahren?')) befehl('shutdown');
