@@ -210,6 +210,25 @@ class OdomCfg:
 
 
 @dataclass
+class GridCfg:
+    # Belegungskarte (gridmap.py): Welt-KS ab Startpose, nur Anzeige
+    enabled: bool = True
+    resolution_m: float = 0.05
+    size_m: float = 16.0               # Kantenlänge, Start in der Mitte
+    max_range_m: float = 2.5           # weiter ist die Fußpunkt-Entfernung zu ungenau
+    min_range_m: float = 0.15          # davor sieht die Kamera den Boden nicht
+    column_step: int = 2               # jede k-te Spalte des Bodenmodells (160 Spalten)
+    l_free: float = -0.4               # Log-Odds je Beobachtung
+    l_occ: float = 0.9
+    l_min: float = -3.0
+    l_max: float = 3.5
+    l_show: float = 0.7                # ab hier "belegt"/"frei" in Anzeige und Statistik
+    view_m: float = 6.0                # Bildausschnitt für die Anzeige
+    # Drehung der Kartenpose: "räder" (Rad-Odometrie, sonst Kamera) oder "kamera" (Ego-Motion)
+    yaw_source: str = "räder"
+
+
+@dataclass
 class CpuCfg:
     # CPU-Pinning (Linux). Leer = nicht pinnen. Am RiderPi: Hauptschleife samt Kamera,
     # OpenCV-Workern und Rest des Systems auf 0-1, YOLO auf 2-3 (Aufrufer + Pool-Thread).
@@ -238,6 +257,7 @@ class Config:
     emotion: EmotionCfg = field(default_factory=EmotionCfg)
     cpu: CpuCfg = field(default_factory=CpuCfg)
     odom: OdomCfg = field(default_factory=OdomCfg)
+    grid: GridCfg = field(default_factory=GridCfg)
     control_hz: float = 20.0
 
     @classmethod

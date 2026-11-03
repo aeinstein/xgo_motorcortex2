@@ -50,9 +50,33 @@ def run(mode="follow", secs=25.0, video=None, shake=1.0, quiet=True, imu=False, 
         with app.snap_cond: app.snap_cond.notify_all()
         th.join(timeout=3)
     L = world.log
+    gm = getattr(app, "gridmap", None)
+    grid = None
+    if gm is not None:
+        # Karten-KS = Startpose -> Welt; Abstand jeder belegten Zelle zur nächsten Wand/Kiste
+        x0, y0, th0 = L[0]["x"], L[0]["y"], L[0]["th"]
+        c0, s0 = math.cos(th0), math.sin(th0)
+        occ = gm.occupied_cells()
+        if len(occ):
+            wx = x0 + occ[:, 0] * c0 - occ[:, 1] * s0
+            wy = y0 + occ[:, 0] * s0 + occ[:, 1] * c0
+            seg = world.segs
+            ax, ay, bx, by = seg[:, 0], seg[:, 1], seg[:, 2], seg[:, 3]
+            dx, dy = bx - ax, by - ay
+            t = np.clip(((wx[:, None] - ax) * dx + (wy[:, None] - ay) * dy) / (dx * dx + dy * dy), 0, 1)
+            d = np.hypot(ax + t * dx - wx[:, None], ay + t * dy - wy[:, None]).min(axis=1)
+            prec = float((d < 0.15).mean())
+        else:
+            prec = float("nan")
+        ex = x0 + gm.x * c0 - gm.y * s0
+        ey = y0 + gm.x * s0 + gm.y * c0
+        grid = {"belegt_zellen": int(len(occ)), "praezision_15cm": round(prec, 3),
+                "pose_fehler_m": round(math.hypot(ex - world.x, ey - world.y), 3),
+                "kurs_fehler_deg": round(math.degrees((th0 + gm.th - world.th + math.pi) % (2 * math.pi) - math.pi), 1)}
     out = {"imu_sync": (app.imu_sync.reliable, app.imu_sync.sign, round(app.imu_sync.offset * 1000), round(app.imu_sync.corr, 2)) if imu else None,
            "collisions": world.collisions, "coll_frames": world.coll_frames, "dist_m": round(world.dist_travelled, 2), "frames": len(L),
-           "loop_ms": round(app._loop_ms, 1), "odom": app.odom_src, "odom_m": round(app.odom_m, 2)}
+           "loop_ms": round(app._loop_ms, 1), "odom": app.odom_src, "odom_m": round(app.odom_m, 2),
+           "grid": grid}
     if person:
         d = np.array([math.hypot(r["px"] - r["x"], r["py"] - r["y"]) for r in L])
         b = np.array([math.degrees((math.atan2(r["py"] - r["y"], r["px"] - r["x"]) - r["th"] + math.pi) % (2 * math.pi) - math.pi) for r in L])

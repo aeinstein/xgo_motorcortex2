@@ -632,3 +632,34 @@ def test_wheel_scale_calibration():
     w.add(2, 0.1, round(sl / mpt), round(sr / mpt)); b = w.latest()
     ds, dth = w.motion(a, b)
     assert abs(ds - 0.295) < 0.001 and abs(dth - th) < math.radians(0.3)
+
+
+def test_gridmap_wall_and_turn():
+    import math
+    from xgonav.config import Config
+    from xgonav.freespace import FreeSpace
+    from xgonav.geometry import CamGeometry
+    from xgonav.gridmap import GridMap
+    cfg = Config()
+    g = CamGeometry(640, 480, 91.0, 1.39, 43.0, 85.0)
+    m = GridMap(cfg.grid, g, 160, 120)
+    hz = g.horizon_row(0) / 4
+    ys = np.arange(int(hz * 4) + 1, 480)
+    y1 = ys[np.nanargmin(np.abs(g.ground_dist_np(ys) - 1.0))]
+    col = (120 - y1 / 4) / (120 - hz)
+    fs = FreeSpace([col] * 5, np.full(160, col), hz, np.zeros((120, 160), np.uint8), True, None)
+    for _ in range(3):
+        m.add_freespace(fs, 0.0)
+    occ = m.occupied_cells()
+    assert np.all(np.abs(occ[:, 0] - 1.0) < 0.06)              # gerade Wand 1 m vor dem Start
+    assert occ[:, 1].max() > 0.9 and occ[:, 1].min() < -0.9     # über die Bildbreite (91°)
+    m.move(0.0, math.radians(90))                               # links drehen: Wand bei y = +1
+    for _ in range(3):
+        m.add_freespace(fs, 0.0)
+    new = m.occupied_cells()
+    assert (np.abs(new[:, 1] - 1.0) < 0.06).sum() > 30
+    assert m.stats()["frei_m2"] > 1.0
+    img = m.image(200)
+    assert img.shape == (200, 200, 3)
+    m.reset()
+    assert len(m.occupied_cells()) == 0 and m.stats()["pose"] == [0.0, 0.0, 0.0]

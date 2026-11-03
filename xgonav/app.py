@@ -18,6 +18,7 @@ from .config import Config
 from .detector import Detection, DetectorWorker
 from .egomotion import EgoMotion, EgoResult, warp_box
 from .freespace import FreeSpace, FreeSpaceEstimator, FreeSpaceWorker
+from .gridmap import GridMap
 from .geometry import CamGeometry
 from .wheels import WheelOdom, make_wheels
 from .imu import ImuSource, ImuSync, make_imu
@@ -93,6 +94,7 @@ class App:
         self.wheels = wheels if wheels is not None else make_wheels(cfg.odom)
         self._wheel_at_ctrl = None         # Radprobe beim letzten Regelschritt
         self.odom_src = "befehl"
+        self._wheel_dyaw: float | None = None   # Drehung laut Rädern im letzten Regelschritt
         self.odom_m = 0.0                  # gefahrene Strecke laut Odometrie (Betrag, seit Start)
         self.imu_sync = ImuSync(cfg.imu)
         self._imu_lp: float | None = None
@@ -114,6 +116,9 @@ class App:
         self.lmap = LocalMap(self.geo, self.fse.W, self.fse.H, max_age_s=m.max_age_s, confirm=m.confirm,
                              confirm_radius_m=m.confirm_radius_m) if self.fse else None
         self._fs_in_map = None
+        # Raumkarte (Welt-KS ab Startpose), nur Anzeige
+        self.gridmap = GridMap(cfg.grid, self.geo, self.fse.W, self.fse.H) \
+            if self.fse is not None and cfg.grid.enabled else None
         self._yaw_at_ctrl = 0.0
         mode = cfg.behavior.mode
         try:
@@ -338,11 +343,20 @@ class App:
             if self.lmap is not None:
                 # Eigenbewegung seit letztem Regelschritt (Strecke: Fahrbefehl, Annahme 1 Einheit = 1 m/s)
                 ds = self._odom_ds(now, dt)
-                self.lmap.move(ds, self.vis_yaw - self._yaw_at_ctrl)
+                dyaw = self.vis_yaw - self._yaw_at_ctrl
+                self.lmap.move(ds, dyaw)
+                if self.gridmap is not None:
+                    # Kartenkurs: Räder driften bei Drehungen weniger als die Ego-Motion
+                    gyaw = self._wheel_dyaw if (self.cfg.grid.yaw_source == "räder"
+                                                and self._wheel_dyaw is not None) else dyaw
+                    self.gridmap.move(ds, gyaw)
                 self._yaw_at_ctrl = self.vis_yaw
                 if free is not None and self._free is not self._fs_in_map:
                     self._fs_in_map = self._free
-                    self.lmap.add_freespace(self._map_view(free, tracks, f.t), f.t, pitch_dev)
+                    view = self._map_view(free, tracks, f.t)
+                    self.lmap.add_freespace(view, f.t, pitch_dev)
+                    if self.gridmap is not None:
+                        self.gridmap.add_freespace(view, pitch_dev)
             if self.behavior.name == "manual":
                 cmd = self._manual_cmd()
             else:
@@ -368,6 +382,7 @@ class App:
                                **self._loop_spread(),
                                "det_ms": round(self.det.infer_ms, 1), "det_batches": self._det_count,
                                "fs_ms": round(self.fs_worker.ms, 1) if self.fs_worker is not None else None,
+                               "grid": self.gridmap.stats() if self.gridmap is not None else None,
                                "odom": {"src": self.odom_src, "m": round(self.odom_m, 2),
                                         "hz": round(self.wheels.rate_hz, 1) if self.wheels else None},
                                "mode": self.behavior.name, "yaw_vis_deg": round(math.degrees(self.vis_yaw), 1),
@@ -393,9 +408,10 @@ class App:
             cur = w.latest()
             prev, self._wheel_at_ctrl = self._wheel_at_ctrl, cur
             self.odom_src = "räder"
-            ds = w.motion(prev, cur)[0] if prev is not None else 0.0
+            ds, self._wheel_dyaw = w.motion(prev, cur) if prev is not None else (0.0, 0.0)
         else:
             self._wheel_at_ctrl = None
+            self._wheel_dyaw = None
             self.odom_src = "befehl"
             ds = self.robot.command[0] * self.cfg.robot.vx_limit * dt
         self.odom_m += abs(ds)
