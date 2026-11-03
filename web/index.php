@@ -5,8 +5,8 @@
  * Fernsteuerung (rc_server): Handsteuerung, Höhe, Aktionen, LEDs, Emotionen, Herunterfahren.
  * Keine Authentifizierung.
  *
- * Aufbau: Kopfleiste (immer sichtbar, mit STOPP) – links Bild, Modus, Kennzahlen –
- * rechts Karten (Fahren, Raumkarte, Kamera, Extras und Verlauf eingeklappt, System).
+ * Aufbau: Kopfleiste (immer sichtbar, mit STOPP) – links Bild, Modus, Kennzahlen, Kamera,
+ * Verlauf (eingeklappt) – rechts Karten (Fahren, Raumkarte, Extras eingeklappt, System).
  */
 declare(strict_types=1);
 header('Cache-Control: no-store');
@@ -200,6 +200,40 @@ details.extras[open]>summary{margin-bottom:8px}
     <div class="kacheln" id="kurz"></div>
     <details class="roh"><summary>Status (roh)</summary><pre id="roh"></pre></details>
   </div>
+  <section class="karte">
+    <div class="kopf"><h2>Kamera</h2><span class="leise" id="belicht-ist">-</span></div>
+    <div class="regler">
+      <label for="belicht">Belichtung</label>
+      <input type="range" id="belicht" min="1" max="33" value="15" step="1"
+        oninput="belichtAnzeige(this.value * 1000)" onchange="belichtung(this.value * 1000)">
+      <span class="w" id="belicht-w">-</span>
+      <button id="belicht-auto" onclick="belichtung(0)">Auto</button>
+      <label for="gain">Verstärkung</label>
+      <input type="range" id="gain" min="1" max="16" value="8" step="0.5"
+        oninput="gainAnzeige(this.value)" onchange="verstaerkung(this.value)">
+      <span class="w" id="gain-w">-</span>
+      <button id="gain-auto" onclick="verstaerkung(0)">Auto</button>
+    </div>
+    <details class="hilfe"><summary>Gilt bis zum Neustart von xgonav</summary>
+      <p>Kürzere Belichtung = weniger Bewegungsunschärfe, aber dunkler; mehr Verstärkung = heller, aber mehr
+        Rauschen (Automatik nur bis 8). Dauerhaft über <code>[camera] exposure_us</code> /
+        <code>analogue_gain</code> in config.toml.</p>
+    </details>
+  </section>
+  <details class="karte extras" id="verlauf" ontoggle="verlaufUmschalten()">
+    <summary><h2>Verlauf</h2><span class="leise">Lage · CPU · Akku</span></summary>
+    <div class="unter">Lage, letzte 60 s (IMU, 50 Hz)</div>
+    <div class="legende" id="l-lage"></div>
+    <canvas class="diag" id="d-lage" data-h="150"></canvas>
+    <div class="unter">Gier relativ zum Fensteranfang</div>
+    <div class="legende" id="l-gier"></div>
+    <canvas class="diag" id="d-gier" data-h="80"></canvas>
+    <div class="unter">CPU je Kern, letzte 10 min <span class="rechts" id="v-temp"></span></div>
+    <div class="legende" id="l-cpu"></div>
+    <canvas class="diag" id="d-cpu" data-h="140"></canvas>
+    <div class="unter">Akku, 120 min (im Browser gespeichert) <span class="rechts"><span id="v-akku"></span><button onclick="akkuLeeren()">Leeren</button></span></div>
+    <canvas class="diag" id="d-akku" data-h="100"></canvas>
+  </details>
 </div>
 
 <div class="spalte">
@@ -257,42 +291,6 @@ details.extras[open]>summary{margin-bottom:8px}
         und beim Start von xgonav geladen; der Rider muss dann wieder am Startpunkt stehen.</p>
     </details>
   </section>
-
-  <section class="karte">
-    <div class="kopf"><h2>Kamera</h2><span class="leise" id="belicht-ist">-</span></div>
-    <div class="regler">
-      <label for="belicht">Belichtung</label>
-      <input type="range" id="belicht" min="1" max="33" value="15" step="1"
-        oninput="belichtAnzeige(this.value * 1000)" onchange="belichtung(this.value * 1000)">
-      <span class="w" id="belicht-w">-</span>
-      <button id="belicht-auto" onclick="belichtung(0)">Auto</button>
-      <label for="gain">Verstärkung</label>
-      <input type="range" id="gain" min="1" max="16" value="8" step="0.5"
-        oninput="gainAnzeige(this.value)" onchange="verstaerkung(this.value)">
-      <span class="w" id="gain-w">-</span>
-      <button id="gain-auto" onclick="verstaerkung(0)">Auto</button>
-    </div>
-    <details class="hilfe"><summary>Gilt bis zum Neustart von xgonav</summary>
-      <p>Kürzere Belichtung = weniger Bewegungsunschärfe, aber dunkler; mehr Verstärkung = heller, aber mehr
-        Rauschen (Automatik nur bis 8). Dauerhaft über <code>[camera] exposure_us</code> /
-        <code>analogue_gain</code> in config.toml.</p>
-    </details>
-  </section>
-
-  <details class="karte extras" id="verlauf" ontoggle="verlaufUmschalten()">
-    <summary><h2>Verlauf</h2><span class="leise">Lage · CPU · Akku</span></summary>
-    <div class="unter">Lage, letzte 60 s (IMU, 50 Hz)</div>
-    <div class="legende" id="l-lage"></div>
-    <canvas class="diag" id="d-lage" data-h="150"></canvas>
-    <div class="unter">Gier relativ zum Fensteranfang</div>
-    <div class="legende" id="l-gier"></div>
-    <canvas class="diag" id="d-gier" data-h="80"></canvas>
-    <div class="unter">CPU je Kern, letzte 10 min <span class="rechts" id="v-temp"></span></div>
-    <div class="legende" id="l-cpu"></div>
-    <canvas class="diag" id="d-cpu" data-h="140"></canvas>
-    <div class="unter">Akku, 120 min (im Browser gespeichert) <span class="rechts"><span id="v-akku"></span><button onclick="akkuLeeren()">Leeren</button></span></div>
-    <canvas class="diag" id="d-akku" data-h="100"></canvas>
-  </details>
 
   <details class="karte extras">
     <summary><h2>Extras</h2><span class="leise">Aktionen · LEDs · Emotionen</span></summary>
