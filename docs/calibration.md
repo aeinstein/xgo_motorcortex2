@@ -13,8 +13,8 @@ python tools/nudge.py move <s>       # open loop, + = forward
 
 | Item | Value |
 |---|---|
-| Default | 62.2° (RPi camera v1) — wrong for RiderPi |
-| RiderPi measured | ~91° (f ≈ 314 px at 640 px; board ~300 px, 16 checkerboard images 297–316 px) |
+| Default | 88.5° (RiderPi); RPi camera v1 would be 62.2° |
+| RiderPi measured | 88.5° (f = 328.3 px at 640 px) from folding-rule measurement (section 2a); ±1 mm camera height ≈ ±0.55°. Earlier checkerboard on a display (297–316 px) was disturbed by reflections |
 | Method | board of known width at known distance, or checkerboard + `cv2.calibrateCamera` |
 | Wrong FOV effect | `solve` returned 54 mm camera height instead of measured 128 mm |
 
@@ -43,6 +43,17 @@ python tools/calibrate.py solve <row1>:<m1> <row2>:<m2>
 - Check the debug image: shadow at the wall base → floor model measures the shadow edge.
 - `tilt_deg` and `pitch_ref_deg` are a pair; enter both.
 - Long exposure allowed for this (`exposure_us = 33000`).
+
+## 2a. Folding-rule method (2026-11-04, no wall, no display)
+
+| Item | Value |
+|---|---|
+| Setup | rule A along the camera axis, rule B across (2 m, centred) at 0.5 / 1.0 / 1.5 / 2.0 m; distance wheel contact point → front edge of B |
+| Per position | 40 raw frames (`/frame?raw=1`) averaged + IMU pitch; Rider resting still (disarmed, leaning back) is ideal — no sway |
+| Model | row(D) = cy + f·tan(atan(h / (D + 8 mm + e)) − τ), cy = 240; fit e, τ and f (with measured h) |
+| Degeneracy | rows alone only fix f·h → measure camera height h directly |
+| RiderPi | h = 100 mm (measured), rows 338.2 / 303.3 / 292.3 / 286.3 → f = 328.3 px (hfov 88.5°), horizon row 269.8 = 5.18° up at IMU pitch −4.43°, residuals ≤ 0.24 px |
+| Result | `hfov_deg = 88.5`, `tilt_deg = 5.18`, `pitch_ref_deg = -4.43`; `mount_offset_mm` needs camera height while balancing at known body height (still 43) |
 
 ## 3. Lens shading — `[freespace] shading_file`
 

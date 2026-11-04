@@ -28,7 +28,7 @@ log = logging.getLogger(__name__)
 START = time.time()      # Startzeit des Prozesses: Oberfläche verbindet den Stream nach Neustart neu
 
 # Schnittstelle für die PHP-Oberfläche (web/) bzw. nginx. Keine HTML-Seite mehr hier.
-API = {"GET": ["/status", "/ws (WebSocket: Bilder, Bestätigung je Bild)", "/frame?after=<idx>", "/stream",
+API = {"GET": ["/status", "/ws (WebSocket: Bilder, Bestätigung je Bild)", "/frame?after=<idx>&raw=1", "/stream",
                "/map.png?px=480&view=6 (Raumkarte)"],
        "POST": ["/mode?name=..&target=..", "/stop", "/pipeline?on=0|1", "/drive?v=..&w=.. (nur Modus manual)",
                 "/exposure?us=0|100..33333 (0 = Automatik)", "/gain?g=0|1..16 (0 = Automatik)",
@@ -271,10 +271,11 @@ def serve(app: App, host: str, port: int, fps: int, render_cpus=None) -> Threadi
             with app.snap_cond:
                 app.snap_cond.wait_for(lambda: app.snapshot.idx != after or not app.running, timeout=1.0)
                 snap = app.snapshot
-            img = render(snap, text=False)   # Statuszeilen zeigt die Oberfläche
+            raw = q.get("raw", ["0"])[0] == "1"     # Rohbild ohne Overlay (Kalibrierung)
+            img = snap.frame if raw else render(snap, text=False)   # Statuszeilen zeigt die Oberfläche
             if img is None:
                 return self._send(503, b'{"error":"kein Bild"}')
-            ok, jpg = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 70])
+            ok, jpg = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 95 if raw else 70])
             if not ok:
                 return self._send(500, b'{"error":"JPEG"}')
             body = jpg.tobytes()
@@ -284,6 +285,7 @@ def serve(app: App, host: str, port: int, fps: int, render_cpus=None) -> Threadi
                 self.send_header("Content-Length", str(len(body)))
                 self.send_header("Cache-Control", "no-store")
                 self.send_header("X-Frame", str(snap.idx))
+                self.send_header("X-Frame-T", "%.6f" % snap.t)
                 self.end_headers()
                 self.wfile.write(body)
             except (BrokenPipeError, ConnectionResetError):

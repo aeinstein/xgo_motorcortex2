@@ -27,7 +27,7 @@ python3 -m venv .venv && .venv/bin/pip install "opencv-python-headless>=4.6" "nu
 |---|---|
 | Rendering | raycasting, room with boxes, walking person |
 | Camera motion | pitch oscillation 2.5 Hz + acceleration tilt, heading jitter, motion blur |
-| FOV | 62.2° (real RiderPi camera: ~91°) |
+| FOV | 88.5° (default, = real RiderPi camera) |
 | Detector | `FakeDetector`: ground-truth boxes, 180 ms latency, 5 Hz |
 | Robot | `SimRobot`: integrates heading, logs writes; drive commands move the camera |
 | Ground truth | `SimWorld.log`, `collisions` |
