@@ -115,6 +115,9 @@ Default = `config.py`. RiderPi = `deploy/config.example.toml` (blank = default).
 | `shading_file` | `""` | `shading.json` [K] | |
 | `shading_max_gain` | 8.0 | 5.0 | |
 | `min_known_frac` | 0.2 | | columns below → unknown |
+| `bg_model` / `shading_max_gain_bg` | false / 8.0 | false | edge model from blue+green where red is unmeasurable; full width, but false obstacles in dark lower corners |
+| `min_learn_v` | 12 | | no learning from (nearly) black samples |
+| `restart_hold_s` | 1.0 | | relearn after pipeline start, standing up, exposure/gain change |
 
 ### `[map]` (short-term local map)
 `max_age_s` 4.0, `confirm` 1 (RiderPi 3), `confirm_radius_m` 0.08.
