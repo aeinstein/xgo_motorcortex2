@@ -4,20 +4,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Projekt
 
-Das Repo `xgo_motorcortex2` enthält Treiber (`kernel_module/`), Display-Daemon (`st7789/`), Weboberfläche (`web/`, `deploy/`) und xgonav. xgonav ist eine kamerabasierte Navigations-Pipeline (Python 3.11+, OpenCV, numpy, optional onnxruntime) für den XGO Rider, einen selbstbalancierenden Zweiradroboter mit Raspberry Pi CM4 (2 GB RAM). Sie spricht die Hardware ausschließlich über das Kernelmodul `xgo-drv` aus `kernel_module/` (`/proc/XGORider/...`) an. Code, Kommentare, Logs und Statusmeldungen sind durchgehend auf Deutsch; so beibehalten.
+Das Repo `xgo_motorcortex2` enthält Treiber (`kernel_module/`), Display-Daemon (`st7789/`), ESP32-Firmware-Build (`firmware/`), Weboberfläche (`web/`, `deploy/`) und xgonav. Offene Punkte stehen in `TODO.md`. xgonav ist eine kamerabasierte Navigations-Pipeline (Python 3.11+, OpenCV, numpy, optional onnxruntime) für den XGO Rider, einen selbstbalancierenden Zweiradroboter mit Raspberry Pi CM4 (2 GB RAM). Sie spricht die Hardware ausschließlich über das Kernelmodul `xgo-drv` aus `kernel_module/` (`/proc/XGORider/...`) an. Code, Kommentare, Logs und Statusmeldungen sind durchgehend auf Deutsch; so beibehalten.
 
 Maßgebliche Doku: README.md (Überblick) und je Thema eine Datei in `docs/` (Architektur, Installation, Konfiguration, Kalibrierung, Treiber, Weboberfläche, Karten, Display, Tests, Grenzen, LEDs). README und `docs/` sind **englisch** und knapp (Fakten, Tabellen, keine Prosa); Code, Kommentare und Logs bleiben deutsch. Wichtigste Randbedingung: `explore`, `approach` und `home` sind nicht auf echter Hardware getestet; `follow` und Handsteuerung wurden am RiderPi gefahren (`docs/limitations.md`). Simulator und Default nutzen 88,5° Öffnungswinkel wie die echte Kamera (Zollstock-Messung).
 
 ## Befehle
 
-Entwicklung findet am PC statt (kein Pi nötig). Die Umgebung liegt im venv `.venv` (gitignored) mit `opencv-python-headless`, `numpy`, `pytest` und `onnxruntime`. Vor allen Befehlen `source .venv/bin/activate` oder direkt `.venv/bin/python` nutzen. Neu anlegen mit:
+Entwicklung findet am PC statt (kein Pi nötig). Die Umgebung liegt im venv `.venv` (gitignored) mit `opencv-python-headless`, `numpy`, `pytest` und `onnxruntime`. Vor allen Befehlen `source .venv/bin/activate` oder direkt `.venv/bin/python` nutzen (unter Windows `.venv\Scripts\python`). Neu anlegen mit:
 
 ```bash
 python3 -m venv .venv && .venv/bin/pip install "opencv-python-headless>=4.6" "numpy>=1.24" pytest "onnxruntime>=1.16"
 ```
 
 ```bash
-python -m pytest -q tests/                       # Unit-Tests (39 Tests, ~2 s); slow ist per pytest.ini ausgeschlossen
+python -m pytest -q tests/                       # Unit-Tests (40 Tests, ~2 s); slow ist per pytest.ini ausgeschlossen
 python -m pytest -q -m slow tests/               # Closed-Loop im Simulator (4 Tests, ~150 s gesamt); -m überschreibt addopts
 python -m pytest -q tests/test_units.py -k imu_sync   # einzelner Test
 
@@ -32,13 +32,15 @@ python -m xgonav --mode idle --record debug.mp4  # auf dem Rider: nur schauen, O
 ./tools/export_model.sh [yolo11n] [256]          # ONNX-Export, nur auf PC/GPU-Server, NICHT auf dem Pi
 driver-test/run.sh kernel_module 6 50 --faults   # Treiberlogik im Userspace gegen ESP32-Emulator
 make -C kernel_module                            # auf dem Rider: Treiber bauen (Kernel-Header nötig)
+make                                             # Root-Makefile: Treiber + Display-Daemon (st7789/project/riderpi)
+firmware/build.sh [rider2-firmware]              # ESP32-Firmware bauen (PlatformIO, flasht NICHT) -> firmware/out/app0.bin
 sudo ./deploy/install.sh                         # auf dem Rider: nach /opt/xgonav + systemd-Unit
 sudo ./deploy/install-all.sh                     # auf dem Rider: alles (Treiber, Display, rc.local, xgonav, Web)
 python tools/nudge.py turn 20 | move 1.0         # auf dem Rider: balancierenden Rider drehen (IMU-geregelt) / fahren
 python tools/calibrate.py shading                # auf dem Rider: Linsenabschattung aus Weißbild -> shading.json
 ```
 
-Am echten Rider gilt: Bewegungen nur mit Zustimmung und Beobachtung durch den Nutzer, Körperhöhe nie unter Minimum + 10 mm, `rc-control.service` stoppen, solange xgonav fährt.
+Am echten Rider gilt: Bewegungen nur mit Zustimmung und Beobachtung durch den Nutzer, Körperhöhe nie unter Minimum + 10 mm, `rc-control.service` stoppen, solange xgonav fährt. Firmware nie selbst flashen; nur app0 (`0x10000`), niemals `0x310000–0x32ffff` (Beinnullpunkte, BLE-Name, Pitch-Trim) oder spiffs, vorher Vollbackup (`firmware/README.md`).
 
 Es gibt keinen Linter, kein Build-System und kein `pyproject.toml`; das Paket wird direkt aus dem Repo-Root per `python -m xgonav` gestartet. Tests und Tools fügen den Repo-Root selbst zu `sys.path` hinzu.
 
@@ -88,6 +90,8 @@ Hardware-nahe Teile haben je eine echte und eine Sim-Implementierung mit gleiche
 ### Treiber und Display
 
 `kernel_module/` (mit `../constants.h`) ist der Treiber aus `xgo_motorcortex` (github.com/aeinstein/xgo_motorcortex, Stand `c3c888c`) plus die früheren Patches: 0001 Speicherfehler in proc-Handlern + `settings/motion_timeout_ms`; 0002 synchrone Serial-Reads, IMU-Thread mit `/proc/XGORider/imu`, `imu_log`, `serial_stats` (Format `seq t_ns roll pitch yaw`, Milligrad, CLOCK_MONOTONIC); 0003 `force_yaw` hält den Kurs per Impulsen; 0004 `roll` = Roll-Winkel in Grad (0x36), `roll_balance` = 0x61. Im Code wird weiter von „Treiber-Patch 000x“ gesprochen, gemeint ist dieser Stand. `driver-test/run.sh` kompiliert den echten Treibercode gegen `kshim.h` im Userspace und testet ihn mit `esp32_emu.py`. Ohne 0002 ist `imu.py` wirkungslos und `pitch_src` bleibt `"bild"`. `st7789/` ist der Display-Daemon (libdriver, Build in `st7789/project/riderpi`), `deploy/rc.local` startet ihn.
+
+`firmware/` baut die ESP32-Firmware R-1.1.6 aus der Referenz `LuwuDynamics/xgorider2_rl` plus Patches in `firmware/patches/` (0001 Rad-Register 0x0c/0x0d, 0002 Aktion 254 = Not-Aus, 0003 LED-Helligkeit). Der Treiber erkennt 0x0d/0x0c automatisch und liefert dann `/proc/XGORider/wheels` (Encoder, 1024 Ticks/Umdrehung, Rad 11 = links); `xgonav/wheels.py` liest das (`sim_run.py --wheels`).
 
 ## Stolperfallen
 
