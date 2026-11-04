@@ -150,14 +150,29 @@ def solve(cfg: Config, meas: list[tuple[float, float]]) -> None:
           f"  (bei Körperhöhe {cfg.behavior.height_cruise_mm:.0f} mm während der Messung)")
 
 
-def shading(out: str = "shading.json", frames: int = 15) -> None:
+def shading(cfg: Config, out: str = "shading.json", frames: int = 15) -> None:
     import cv2
     from picamera2 import Picamera2
     from xgonav.shading import ShadingModel
+    # Kamera genau wie im Betrieb (PiCameraSource) öffnen: Sensormodus, Ausschnitt und Bildrate
+    # bestimmen die Abschattung. Früher lief die Kalibrierung im 640x480-Sensormodus ohne
+    # Ausschnitt, xgonav aber mit 1296x972 + ScalerCrop -> shading.json passte nicht.
+    cc = cfg.camera
+    frame_us = int(1e6 / cc.fps * cc.frame_clock_corr)
+    controls = {"FrameDurationLimits": (frame_us, frame_us)}
+    if cc.scaler_crop:
+        controls["ScalerCrop"] = tuple(int(v) for v in cc.scaler_crop)
+    kw = {}
+    if cc.sensor_mode:
+        w, h = (int(v) for v in cc.sensor_mode.lower().split("x"))
+        kw["raw"] = {"size": (w, h)}
     cam = Picamera2()
-    cam.configure(cam.create_video_configuration(main={"size": (640, 480), "format": "RGB888"},
-                                                 controls={"FrameRate": 30}))
+    cam.configure(cam.create_video_configuration(main={"size": (cc.width, cc.height), "format": "RGB888"},
+                                                 controls=controls, **kw))
     cam.start()                       # automatische Belichtung: die Fläche leuchtet selbst
+    cc_ist = cam.camera_configuration()
+    print(f"Kamera: Sensor {'x'.join(map(str, cc_ist['raw']['size']))}, Ausschnitt {cc.scaler_crop}, "
+          f"{cc.fps} fps (wie xgonav laut config.toml)")
     time.sleep(3)
     f = np.median(np.stack([cam.capture_array() for _ in range(frames)]), 0).astype(np.float32)
     cam.stop()
@@ -183,8 +198,8 @@ def shading(out: str = "shading.json", frames: int = 15) -> None:
         if sel.sum() > 50:
             b, g, rr = F[sel].mean(0)
             print(f"  {a:3d}-{a + 80:3d} | {b:.2f} {g:.2f} {rr:.3f}")
-    _, rel = m.gain_and_reliable(640, 480, Config().freespace.shading_max_gain)
-    print(f"bei max. Verstärkung {Config().freespace.shading_max_gain:g}: {100 * rel.mean():.0f} % des Bildes messbar")
+    _, rel = m.gain_and_reliable(640, 480, cfg.freespace.shading_max_gain)
+    print(f"bei max. Verstärkung {cfg.freespace.shading_max_gain:g}: {100 * rel.mean():.0f} % des Bildes messbar")
     m.save(out)
     print(f"-> {out}; in config.toml: [freespace] shading_file = \"{out}\"")
 
@@ -201,6 +216,6 @@ if __name__ == "__main__":
     elif cmd == "solve":
         solve(cfg, [tuple(map(float, a.split(":"))) for a in sys.argv[2:]])
     elif cmd == "shading":
-        shading(sys.argv[2] if len(sys.argv) > 2 else "shading.json")
+        shading(cfg, sys.argv[2] if len(sys.argv) > 2 else "shading.json")
     else:
         print(__doc__)
