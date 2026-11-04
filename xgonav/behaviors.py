@@ -28,7 +28,7 @@ class World:
     tracks: list[Track]               # bestätigte Tracks
     free: FreeSpace | None
     balancing: bool
-    vis_yaw: float                    # integrierter Kurs aus dem Bild (rad, links +)
+    yaw: float                        # Kurs (rad, links +): Räder, sonst Bild ([odom] yaw_source)
     cmd_v: float                      # aktuell gefahrener Befehl (nach Rampe)
     geo: CamGeometry | None = None
     pitch_dev: float = 0.0            # hochfrequentes Nicken in rad (aus Ego-Motion)
@@ -281,11 +281,11 @@ class Explore(Behavior):
                 self.turn_dir = 1.0 if left >= right else -1.0
             else:
                 self.turn_dir = self.rng.choice((-1.0, 1.0))
-            self.turn_goal = w.vis_yaw + self.turn_dir * math.radians(self.rng.uniform(60, 140))
+            self.turn_goal = w.yaw + self.turn_dir * math.radians(self.rng.uniform(60, 140))
             self._enter("turn", w.t)
 
         if self.state == "turn":
-            rem = (self.turn_goal - w.vis_yaw) * self.turn_dir
+            rem = (self.turn_goal - w.yaw) * self.turn_dir
             if (rem <= 0 and center > self.cfg.slow_free) or w.t - self.t_state > 6.0:
                 self._enter("cruise", w.t)
                 return Command(0, 0, hmm, "weiter")

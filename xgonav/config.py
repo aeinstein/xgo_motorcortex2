@@ -212,6 +212,9 @@ class OdomCfg:
     poll_hz: float = 25.0              # wheels_log lesen (Treiber puffert 64 Proben)
     max_age_s: float = 0.3             # älter -> Rückfall auf den Fahrbefehl
     max_jump_ticks: int = 2048         # größerer Sprung zwischen zwei Proben = Neustart/Fehler
+    # Kurs für Verhalten (explore) und Merkkarte: "räder" (wenn frisch, sonst Kamera) oder "kamera".
+    # Der Bild-Kurs verfälscht bei Vorwärtsfahrt (2026-11-04: −8,9° auf 2 m geradeaus).
+    yaw_source: str = "räder"
 
 
 @dataclass

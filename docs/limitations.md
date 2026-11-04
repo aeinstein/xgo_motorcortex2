@@ -45,7 +45,8 @@ Largest cost: optical flow (`ego.lk_*`); prebuilt LK pyramids cannot be passed v
 
 | Item | Value |
 |---|---|
-| IMU heading | firmware integrates yaw only at \|rate\| > 2°/s; 60 s balancing idle: IMU +2.5°, image −2.6°. Firmware heading hold (reg 0x0A) and `force_yaw` cannot see this drift. xgonav uses `vis_yaw` |
+| Camera heading | `vis_yaw` drifts during forward drive: depth differences leak into the rotation model (2 m straight: −8.9° / +3°; left vs right image half −0.1° / −7.9°). Analysis: `tools/ego_debug.py` |
+| IMU heading | firmware integrates yaw only at \|rate\| > 2°/s; 60 s balancing idle: IMU +2.5°, image −2.6°. Firmware heading hold (reg 0x0A) and `force_yaw` cannot see this drift. xgonav uses wheel heading (`odom.yaw_source`) |
 | Turn overshoot | after stop command 10–17° further; commands within u8 128 ± 6 ignored. `tools/nudge.py` turns in two stages |
 | Reverse | much weaker than forward (u8 109: 4 cm vs u8 147: 86 cm in 2 s) → `reverse_gain = 2.0` |
 | Balancing drift | slow drift in position and heading |

@@ -143,7 +143,9 @@ class App:
         self.snapshot = Snapshot()
         self.snap_cond = threading.Condition()
         self.running = False
-        self.vis_yaw = 0.0
+        self.vis_yaw = 0.0               # Kurs nur aus dem Bild (rad, links +)
+        self.yaw = 0.0                   # Kurs für Verhalten und Merkkarte (Räder, sonst Bild)
+        self.yaw_src = "kamera"
         self._free: FreeSpace | None = None
         self._free_ctrl: FreeSpace | None = None
         self._last_ctrl = 0.0
@@ -362,21 +364,27 @@ class App:
                 free = FreeSpace(list(free.sectors), free.columns.copy(), free.horizon_row, free.mask, free.valid,
                                  free.known_from)
                 self.fse.block_boxes(free, [t.box for t in tracks if t.id != tgt and t.lost_s(f.t) < 0.5])
+            # Eigenbewegung seit dem letzten Regelschritt. Kurs aus den Rädern, wenn vorhanden:
+            # Der Bild-Kurs verfälscht bei Vorwärtsfahrt (Tiefenunterschiede landen im
+            # Drehmodell, gemessen 2026-11-04: −8,9° bzw. +3° auf 2 m geradeaus).
+            ds = self._odom_ds(now, dt)
+            dyaw_vis = self.vis_yaw - self._yaw_at_ctrl
+            self._yaw_at_ctrl = self.vis_yaw
+            use_wheels = self.cfg.odom.yaw_source == "räder" and self._wheel_dyaw is not None
+            dyaw = self._wheel_dyaw if use_wheels else dyaw_vis
+            self.yaw += dyaw
+            self.yaw_src = "räder" if use_wheels else "kamera"
             w = World(t=f.t, dt=dt, W=self.cfg.camera.width, H=self.cfg.camera.height, hfov=self.hfov,
                       ego=ego, tracks=tracks, free=free, balancing=self.robot.state.balancing,
-                      vis_yaw=self.vis_yaw, cmd_v=self.robot.command[0],
+                      yaw=self.yaw, cmd_v=self.robot.command[0],
                       geo=self.geo, pitch_dev=pitch_dev)
             if self.lmap is not None:
-                # Eigenbewegung seit letztem Regelschritt (Strecke: Fahrbefehl, Annahme 1 Einheit = 1 m/s)
-                ds = self._odom_ds(now, dt)
-                dyaw = self.vis_yaw - self._yaw_at_ctrl
                 self.lmap.move(ds, dyaw)
                 if self.gridmap is not None:
                     # Kartenkurs: Räder driften bei Drehungen weniger als die Ego-Motion
                     gyaw = self._wheel_dyaw if (self.cfg.grid.yaw_source == "räder"
-                                                and self._wheel_dyaw is not None) else dyaw
+                                                and self._wheel_dyaw is not None) else dyaw_vis
                     self.gridmap.move(ds, gyaw)
-                self._yaw_at_ctrl = self.vis_yaw
                 if free is not None and self._free is not self._fs_in_map:
                     self._fs_in_map = self._free
                     view = self._map_view(free, tracks, f.t)
@@ -424,6 +432,7 @@ class App:
                                "odom": {"src": self.odom_src, "m": round(self.odom_m, 2),
                                         "hz": round(self.wheels.rate_hz, 1) if self.wheels else None},
                                "mode": self.behavior.name, "yaw_vis_deg": round(math.degrees(self.vis_yaw), 1),
+                               "yaw_deg": round(math.degrees(self.yaw), 1), "yaw_src": self.yaw_src,
                                "yaw_drv": self.robot.state.yaw_deg, "battery": self.robot.state.battery,
                                "balancing": self.robot.state.balancing,
                                "pitch_src": self.pitch_src, "pitch_deg": round(math.degrees(pitch_dev), 2),
@@ -440,7 +449,7 @@ class App:
 
     def _odom_ds(self, now: float, dt: float) -> float:
         """Strecke seit dem letzten Regelschritt (m): aus den Rad-Encodern, wenn frisch;
-        sonst wie früher Fahrbefehl x vx_limit (unkalibriert). Den Kurs liefert weiter vis_yaw."""
+        sonst wie früher Fahrbefehl x vx_limit (unkalibriert). Setzt nebenbei _wheel_dyaw."""
         w = self.wheels
         if w is not None and self.cfg.odom.source != "command" and w.fresh(now):
             cur = w.latest()

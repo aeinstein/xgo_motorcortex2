@@ -5,7 +5,7 @@
 | Quantity | Source |
 |---|---|
 | Distance | wheel encoders (`/proc/XGORider/wheels_log`) if fresh (`odom.max_age_s` 0.3 s), else command × `robot.vx_limit` × dt |
-| Heading (local map, safety) | ego-motion (`vis_yaw`) |
+| Heading (local map, safety, explore) | `odom.yaw_source`: `räder` (wheels, fallback camera) or `kamera`; camera heading is biased during forward drive |
 | Heading (room map) | `grid.yaw_source`: `räder` (wheels, fallback camera) or `kamera` |
 
 Encoders: 1024 ticks/rev, 60 mm wheel, track 90 mm, left = 11, right = 21, both positive forward.

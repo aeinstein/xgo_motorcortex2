@@ -149,8 +149,9 @@ Default = `config.py`. RiderPi = `deploy/config.example.toml` (blank = default).
 | `wheel_diameter_m` | 0.060 | |
 | `track_m` | 0.090 | |
 | `ticks_per_rev` | 1024 | |
-| `scale_left` / `scale_right` | 1.0 / 1.0 | 0.9905 / 1.0068 [K] |
+| `scale_left` / `scale_right` | 1.0 / 1.0 | 1.0073 / 1.0087 [K] |
 | `poll_hz` / `max_age_s` / `max_jump_ticks` | 25 / 0.3 / 2048 | |
+| `yaw_source` | `räder` | heading for explore + local map; `kamera` = ego-motion only |
 
 ### `[grid]` (room map)
 | Key | Default |

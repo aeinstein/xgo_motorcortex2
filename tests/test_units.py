@@ -784,7 +784,7 @@ def test_home_behavior_steers_and_arrives():
 
     def world(pose, t=0.0):
         return World(t=t, dt=0.05, W=640, H=480, hfov=1.6, ego=EgoResult(0, t, 0.05), tracks=[], free=None,
-                     balancing=True, vis_yaw=0.0, cmd_v=0.0, pose=pose, goal=(0.0, 0.0, 0.0))
+                     balancing=True, yaw=0.0, cmd_v=0.0, pose=pose, goal=(0.0, 0.0, 0.0))
     assert b.want_plan(0.0) and not b.want_plan(0.1)           # ein Auftrag zur Zeit
     c = b.step(world((1.0, -1.0, math.pi / 2)))
     assert c.v == 0 and "plane" in c.status
