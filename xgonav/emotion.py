@@ -1,4 +1,6 @@
 """Emotionen automatisch aufs Display: Person erkannt, keine Person, Akku niedrig.
+Dazu Geräusche über den Lautsprecher (aplay): freudig, wenn eine Person auftaucht,
+traurig, wenn sie lost_s lang verschwunden ist (unabhängig vom Display).
 
 Abgespielt wird mit tools/emotion.sh (vorkonvertierte RGB565-Bilder aus
 EmotionCfg.dir). Der Player läuft als eigener Prozess; ein neuerer Player
@@ -9,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import os
+import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -41,8 +44,10 @@ class EmotionTrigger:
     Läuft schon eine Emotion, wird gewartet (Bedingung bleibt gemerkt) statt unterbrochen.
     """
 
-    def __init__(self, cfg: EmotionCfg, play: Callable[[str], None], busy: Callable[[], bool]):
-        self.cfg, self._play, self._busy = cfg, play, busy
+    def __init__(self, cfg: EmotionCfg, play: Callable[[str], None], busy: Callable[[], bool],
+                 sound: Callable[[str], None] | None = None):
+        self.cfg, self._play, self._busy, self._sound = cfg, play, busy, sound
+        self._present = False                        # für die Geräusche: Person gilt als da
         self._last_person: float | None = None
         self._surprise_armed = True
         self._doubt_armed = True
@@ -58,6 +63,15 @@ class EmotionTrigger:
             if not person:
                 self._last_person = now              # lost_s ab Moduswechsel zählen
         want = None
+        if person is not None and self._sound is not None:
+            # Geräusche: "gefunden" beim Auftauchen, "verloren" nach lost_s ohne Person.
+            # Unabhängig vom Display (dort kann gerade etwas laufen) und vom Modus.
+            if person and not self._present:
+                self._present = True
+                self._sound("gefunden")
+            elif not person and self._present and self._last_person is not None                     and now - self._last_person >= c.lost_s:
+                self._present = False
+                self._sound("verloren")
         if person is not None:
             if person:
                 if self._last_person is None or now - self._last_person >= c.gap_s:
@@ -93,11 +107,32 @@ class Emotions:
         self.cfg, self.fifo = cfg, fifo
         self.enabled = bool(cfg.enabled and fifo and os.path.isdir(cfg.dir) and PLAYER.exists())
         self._proc: subprocess.Popen | None = None
-        self.trigger = EmotionTrigger(cfg, self.play, lambda: active(self.fifo))
+        self._snd_proc: subprocess.Popen | None = None
+        self._aplay = shutil.which("aplay")
+        self.sounds = {"gefunden": os.path.join(cfg.sound_dir, cfg.sound_found),
+                       "verloren": os.path.join(cfg.sound_dir, cfg.sound_lost)}
+        self.sound_enabled = bool(cfg.sound and self._aplay
+                                  and all(os.path.isfile(f) for f in self.sounds.values()))
+        self.trigger = EmotionTrigger(cfg, self.play, lambda: active(self.fifo),
+                                      self.sound if self.sound_enabled else None)
         if cfg.enabled and not self.enabled:
             log.info("Emotionen aus (%s oder %s fehlt)", cfg.dir, PLAYER)
+        if cfg.sound and not self.sound_enabled:
+            log.info("Geräusche aus (aplay oder %s fehlt)", " / ".join(self.sounds.values()))
 
-    def play(self, name: str) -> None:
+    def sound(self, event: str) -> None:
+        """Geräusch im eigenen Prozess; ein noch laufendes wird abgebrochen."""
+        f = self.sounds.get(event)
+        if not f:
+            return
+        if self._snd_proc is not None and self._snd_proc.poll() is None:
+            self._snd_proc.terminate()
+        log.info("Geräusch %s", event)
+        cmd = [self._aplay, "-q"] + (["-D", self.cfg.sound_device] if self.cfg.sound_device else []) + [f]
+        self._snd_proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                                          stderr=subprocess.DEVNULL)
+
+    def _play_display(self, name: str) -> None:
         d = os.path.join(self.cfg.dir, name)
         if not os.path.isdir(d):
             log.warning("Emotion %s fehlt in %s", name, self.cfg.dir)
@@ -109,6 +144,10 @@ class Emotions:
         self._proc = subprocess.Popen([str(PLAYER), "play", d], env=env, stdin=subprocess.DEVNULL,
                                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-    def update(self, now: float, mode: str, person: bool | None, battery: int | None) -> None:
+    def play(self, name: str) -> None:
         if self.enabled:
+            self._play_display(name)
+
+    def update(self, now: float, mode: str, person: bool | None, battery: int | None) -> None:
+        if self.enabled or self.sound_enabled:
             self.trigger.update(now, mode, person, battery)

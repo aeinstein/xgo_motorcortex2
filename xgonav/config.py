@@ -226,6 +226,13 @@ class EmotionCfg:
     lost_s: float = 2.0             # so lange keine Person: doubt (follow), sonst embarrassed
     battery_low: int = 20           # % (Treiber schaltet bei 8 % ab); darunter shy
     battery_repeat_s: float = 300.0
+    # Geräusche (aplay, Lautsprecher am WM8960): freudig bei Person erkannt, traurig bei Verlust
+    # (nach lost_s). WAVs aus tools/sounds.py (deploy/install.sh). "" = Standardgerät von ALSA.
+    sound: bool = True
+    sound_dir: str = "/opt/xgonav/sounds"
+    sound_found: str = "freude.wav"
+    sound_lost: str = "trauer.wav"
+    sound_device: str = ""
 
 
 @dataclass

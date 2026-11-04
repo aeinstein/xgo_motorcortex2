@@ -51,7 +51,7 @@ Stop `rc-control.service` while xgonav drives. Never set body height below minim
 
 ```
 python3 -m venv .venv && .venv/bin/pip install "opencv-python-headless>=4.6" "numpy>=1.24" pytest "onnxruntime>=1.16"
-.venv/bin/python -m pytest -q tests/                # 34 unit tests, ~2 s
+.venv/bin/python -m pytest -q tests/                # 42 unit tests, ~2 s
 .venv/bin/python -m pytest -q -m slow tests/        # 3 closed-loop tests, ~90 s
 .venv/bin/python tests/sim_run.py follow 40 out.mp4
 ```

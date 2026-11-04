@@ -23,8 +23,10 @@ if [ -d "$EMOTIONS_SRC" ]; then
 else
     echo "Hinweis: keine Emotionen unter $EMOTIONS_SRC – EMOTIONS_SRC=... setzen"
 fi
+# Geräusche (freudig/traurig bei Person erkannt/verloren), Wiedergabe per aplay
+"$DEST/venv/bin/python" tools/sounds.py "$DEST/sounds"
 chown -R "$USER_NAME":"$USER_NAME" "$DEST"
-usermod -aG video "$USER_NAME"
+usermod -aG video,audio "$USER_NAME"
 
 sed "s/__USER__/$USER_NAME/" deploy/xgonav.service > /etc/systemd/system/xgonav.service
 systemctl daemon-reload

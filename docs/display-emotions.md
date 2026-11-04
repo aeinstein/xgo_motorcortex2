@@ -87,6 +87,17 @@ python tools/eyes.py --list
 | `shy` | battery ≤ `battery_low` (20 %), repeated every 300 s | `xgonav/emotion.py` |
 
 - xgonav emotions only with `--robot proc` and `emotion.enabled`.
+
+## Sounds
+
+| Item | Value |
+|---|---|
+| Found | `freude.wav` (3 rising chirps, 0.5 s) when a person appears |
+| Lost | `trauer.wav` (2 falling "wah", 1.1 s) after `lost_s` (2 s) without person |
+| Independent of | display (plays even while an emotion runs), mode |
+| Files | `tools/sounds.py DIR` (numpy only); `deploy/install.sh` → `/opt/xgonav/sounds` |
+| Playback | `aplay` (ALSA default, `emotion.sound_device`), WM8960 speaker; volume `amixer -c 0 sset Speaker 82%` |
+| Off | `[emotion] sound = false` |
 - Pipeline stopped → person unknown → battery trigger only.
 - Emotion already playing → trigger waits (not interrupted).
 - Manual: web UI → Extras → Emotionen (`POST api.php?a=emotion&name=..`).

@@ -464,6 +464,36 @@ def test_emotion_trigger():
     assert played == ["surprised", "doubt", "surprised", "shy", "shy", "surprised", "embarrassed", "embarrassed"]
 
 
+def test_emotion_sounds():
+    """Geräusche: freudig beim Auftauchen, traurig nach lost_s; unabhängig vom Display."""
+    from xgonav.config import EmotionCfg
+    from xgonav.emotion import EmotionTrigger
+    snd, busy = [], [True]                      # Display belegt: Geräusche kommen trotzdem
+    tr = EmotionTrigger(EmotionCfg(gap_s=5, lost_s=2), lambda n: None, lambda: busy[0], snd.append)
+    tr.update(0.0, "follow", True, 80)          # Person da -> gefunden
+    tr.update(0.5, "follow", True, 80)
+    tr.update(1.0, "follow", False, 80)         # kurz weg (< lost_s): nichts
+    tr.update(1.5, "follow", True, 80)
+    tr.update(2.0, "follow", False, 80)
+    tr.update(3.6, "follow", False, 80)         # 2,1 s weg -> verloren
+    tr.update(5.0, "follow", False, 80)         # nur einmal
+    tr.update(6.0, "follow", None, 80)          # Bildverarbeitung aus: nichts
+    tr.update(7.0, "idle", True, 80)            # wieder da -> gefunden
+    assert snd == ["gefunden", "verloren", "gefunden"]
+
+
+def test_sounds_tool(tmp_path):
+    import importlib.util, wave
+    spec = importlib.util.spec_from_file_location("sounds", Path(__file__).resolve().parents[1] / "tools" / "sounds.py")
+    m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+    for name, fn in (("freude.wav", m.freude), ("trauer.wav", m.trauer)):
+        p = str(tmp_path / name)
+        m.write(p, fn())
+        with wave.open(p) as w:
+            assert w.getframerate() == m.RATE and w.getnchannels() == 1
+            assert 0.3 < w.getnframes() / m.RATE < 1.5
+
+
 def test_exposure_runtime_limits():
     from xgonav.camera import FrameSource
     from xgonav.config import CameraCfg

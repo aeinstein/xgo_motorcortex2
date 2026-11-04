@@ -153,6 +153,7 @@ Replay of three evening drives (`tools/replay_raw.py`, 2026-11-04), false alarms
 
 ### `[emotion]`
 `enabled` true, `dir` `/opt/xgonav/emotions`, `fifo` `/tmp/lcd0`, `gap_s` 5, `lost_s` 2, `battery_low` 20 %, `battery_repeat_s` 300.
+Sounds: `sound` true, `sound_dir` `/opt/xgonav/sounds`, `sound_found` `freude.wav`, `sound_lost` `trauer.wav`, `sound_device` `""` (ALSA default).
 
 ### `[odom]`
 | Key | Default | RiderPi |
