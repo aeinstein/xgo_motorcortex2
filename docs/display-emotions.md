@@ -39,6 +39,42 @@ tools/emotion.sh play DIR [FPS]     # plays DIR/*.raw once, default 25 fps
 | Ownership | newest player writes its PID to `/tmp/lcd0.owner`; older players exit before next frame (works across users) |
 | `/tmp/lcd0.owner` | created by `rc.local`: root, group `video`, 0664 (`fs.protected_regular`) |
 
+## Eye animations (`tools/eyes.py`)
+
+Generated alternative to the rc_server PNGs: stylized eyes only, one color on black (antialiased), same names and output format as `emotion.sh build`.
+
+```
+python tools/eyes.py OUTDIR [--color R,G,B] [--only NAME]... [--png] [--preview DIR]
+python tools/eyes.py --list
+```
+
+| Item | Value |
+|---|---|
+| Output | `OUTDIR/<Name>/0001.raw ...`, 320×240 RGB565 LE, 153 600 bytes (same as `emotion.sh build`) |
+| Length | 55–100 frames at 25 fps (2.2–4.0 s), 915 frames / 139 MB in total |
+| Loop | first and last frame = neutral eyes (except `sleep`: ends closed) |
+| Color | default turquoise `0,225,210` |
+| `--png` | also writes `<Name><n>.png` (rc_server source layout) |
+| `--preview DIR` | contact sheet `<Name>.png` and `<Name>.mp4` per emotion |
+| Runtime | ~7 s on a PC for all 13; needs only numpy + OpenCV |
+| Install | e.g. `python3 tools/eyes.py /opt/xgonav/emotions` (replaces the converted rc_server emotions; `rc_server/emotions/<Name>/` must still exist for the web UI list) |
+
+| Emotion | Eyes |
+|---|---|
+| `Angry` | lids slanted down toward the center, trembling, two pulses |
+| `cute` | round eyes with big pupils and highlights, head tilt, short `^ ^` squint |
+| `doubt` | one eye raised, other squinted, glance right then left |
+| `embarrassed` | darting glances left/right, then trembling `> <` |
+| `grievance` | round pleading eyes looking up, sad lids, quivering lower lid, tear |
+| `hate` | eye roll upward, then narrowed frowning slits, side glance |
+| `laugh` | `^ ^` arcs bouncing |
+| `like` | heart eyes beating |
+| `sad` | lids drooping outward, eyes sink, slow blink |
+| `shy` | smaller half-closed eyes looking down/aside, one glance back |
+| `sleep` | lids get heavy, two jerks awake, closed `‿ ‿`, breathing |
+| `surprised` | eyes pop to large circles (overshoot), double blink |
+| `vertigo` | rotating spirals circling in opposite phase |
+
 ## Automatic emotions
 
 | Emotion | Trigger | Source |
