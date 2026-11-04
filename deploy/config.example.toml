@@ -49,6 +49,7 @@ conf = 0.35
 classes = ["person"]   # nur Personen; Hindernisse kommen vom Bodenmodell (leer = alle COCO-Klassen)
 
 [freespace]
+method = "kanten"        # Bodengrenze aus Stufenkanten; replay 2026-11-04: Fehlalarme 0,2–16 % statt 25–53 % (Farbe)
 threaded = true          # Bodenmodell in eigenem Thread: Schleife p95 27 -> 17 ms (CM4, 2026-11-02)
 # [K] Linsenabschattung: tools/calibrate.py shading erzeugt shading.json. Fehlt die
 # Datei, läuft xgonav ohne Korrektur (Warnung im Log) – dann hält das Bodenmodell am

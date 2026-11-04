@@ -150,6 +150,7 @@ class FreeSpaceEstimator:
             self.model = self.model_bg = None
             log.info("Bodenmodell zurückgesetzt, lernt neu")
         small = cv2.resize(bgr, (self.W, self.H), interpolation=cv2.INTER_AREA)
+        small0 = small                    # unkorrigiert: fürs Kantenverfahren (Verlauf hat keine Kante)
         if self._sgain is not None:
             # = clip(small * gain, 0, 255) -> uint8; Verstärkung >= 0, also nur oben begrenzen
             # (np.clip hat in der numpy-Version am Rider viel Overhead)
@@ -210,7 +211,8 @@ class FreeSpaceEstimator:
         prob *= fac
         if self._bgonly is not None:
             self._apply_bg_model(small, prob, (x0, y0, x1, y1), smask, updated)
-        edges = cv2.Canny(cv2.cvtColor(small, cv2.COLOR_BGR2GRAY), 40, 120)
+        gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
+        edges = cv2.Canny(gray, 40, 120)
         edges = cv2.dilate(edges, self._k3)
         np.multiply(prob, np.float32(self.cfg.edge_weight), out=prob, where=edges > 0)
         floor = (prob > self.cfg.floor_thresh).astype(np.uint8) * 255
@@ -222,10 +224,28 @@ class FreeSpaceEstimator:
         hz_full = self.geo.horizon_row(pitch_dev) if self.geo else self.H * self.scale / 2
         horizon = hz_full / self.scale
         horizon = min(max(float(horizon), self.H * 0.2), self.H * 0.8)
-        cols = self._column_free(floor, horizon, pitch_dev)
+        n_wall = 0
+        kanten = self.cfg.method in ("kanten", "beide")
+        n_fb = 0
+        if kanten:
+            cols = self._edge_columns(small0, floor, horizon, pitch_dev)
+        if self.cfg.method != "kanten":
+            cf = self._column_free(floor, horizon, pitch_dev)
+            if self.cfg.horizon_wall:
+                cf, n_wall = self._horizon_walls(floor, gray, cf, horizon)
+            if not kanten:
+                cols = cf
+            else:
+                # "beide": Wo die Kanten nichts finden (frei bis zum Horizont, z. B. bei
+                # schwachem Kontrast im Dunkeln), entscheidet das Farbmodell.
+                nothing = cols >= self.cfg.edge_fallback_free
+                if self._srel is not None:
+                    nothing &= self._srel[min(int(horizon) + 1, self.H - 1):].mean(axis=0) >= self.cfg.min_known_frac
+                n_fb = int(np.count_nonzero(nothing & (cf < cols)))
+                cols = np.where(nothing, np.minimum(cols, cf), cols).astype(np.float32)
         hz_i = int(horizon)
         n_unknown = 0
-        if self._srel is not None:
+        if self._srel is not None and not kanten:
             # Spalten mit zu wenig messbarem Boden unter dem Horizont: unbekannt statt frei
             frac = self._srel[hz_i:].mean(axis=0)
             unknown = frac < self.cfg.min_known_frac
@@ -245,9 +265,10 @@ class FreeSpaceEstimator:
             ff = float((below > 0).mean()) if below.size else None
         self.diag = {"updated": updated, "match": None if bpm is None else round(bpm / 255.0, 3),
                      "occupied": round(occupied, 2), "sample_px": int((smask > 0).sum()) if smask is not None else int(sample.shape[0] * sample.shape[1]),
-                     "floor_frac": None if ff is None else round(float(ff), 3), "unknown_cols": n_unknown}
+                     "floor_frac": None if ff is None else round(float(ff), 3), "unknown_cols": n_unknown,
+                     "wall_cols": n_wall, "fallback_cols": n_fb}
         known = None
-        if self._srel is not None:
+        if self._srel is not None and not kanten:
             known = np.clip(self._unknown_rows / max(1.0, self.H - horizon), 0.0, 1.0)
             if n_unknown:
                 known = np.where(np.isnan(cols), 1.0, known)
@@ -296,17 +317,7 @@ class FreeSpaceEstimator:
         run[~ob] = 0
         start = ob.copy()
         start[1:] &= ~ob[:-1]
-        need = np.full(R, float(self.cfg.min_obst_rows), np.float32)
-        h = self.cfg.min_obst_height_m
-        if h > 0 and self.geo is not None:
-            g = self.geo
-            y_base = self._y_base[:R]                     # Unterkante der Zeile, Vollbild
-            d = g.ground_dist_np(y_base, pitch_dev)
-            off = math.radians(g.tilt_deg) + pitch_dev
-            with np.errstate(invalid="ignore"):
-                y_top = g.H / 2 + g.f * np.tan(np.arctan2(g.cam_h - h, d) + off)
-                rows_h = (y_base - y_top) / self.scale
-            need = np.maximum(need, np.where(np.isfinite(rows_h), rows_h, 0.0)).astype(np.float32)
+        need = self._need_rows(R, pitch_dev)
         # gültig: Lauf hoch genug (need) oder bis zum oberen Bildrand (Zeile + Lauf >= H);
         # beides als eine Schwelle: run >= min(need, H - Zeile)
         thr = np.minimum(need[:, None], self._thr_reach[:R])
@@ -319,6 +330,119 @@ class FreeSpaceEstimator:
         # glätten (einzelne Ausreißerspalten)
         free = cv2.erode(free.reshape(1, -1), self._k_erode).ravel()
         return free
+
+    def _need_rows(self, R: int, pitch_dev: float) -> np.ndarray:
+        """Je Zeile (Index 0 = unterste): Mindesthöhe eines Hindernisses in Zeilen der
+        Arbeitsauflösung – min_obst_rows bzw. so hoch wie ein min_obst_height_m hoher
+        aufrechter Gegenstand mit Fußpunkt in dieser Zeile."""
+        need = np.full(R, float(self.cfg.min_obst_rows), np.float32)
+        h = self.cfg.min_obst_height_m
+        if h > 0 and self.geo is not None:
+            g = self.geo
+            y_base = self._y_base[:R]                     # Unterkante der Zeile, Vollbild
+            d = g.ground_dist_np(y_base, pitch_dev)
+            off = math.radians(g.tilt_deg) + pitch_dev
+            with np.errstate(invalid="ignore"):
+                y_top = g.H / 2 + g.f * np.tan(np.arctan2(g.cam_h - h, d) + off)
+                rows_h = (y_base - y_top) / self.scale
+            need = np.maximum(need, np.where(np.isfinite(rows_h), rows_h, 0.0)).astype(np.float32)
+        return need
+
+    def _edge_columns(self, small: np.ndarray, floor: np.ndarray, horizon: float,
+                      pitch_dev: float) -> np.ndarray:
+        """Kantenverfahren: je Spalte von unten nach oben die erste Stufe, über der es
+        anders aussieht als darunter. Grundlage ist das unkorrigierte Bild (Abschattung und
+        Lichtverläufe sind weich und erzeugen keine Stufe).
+          1. LAB, dünne helle/dunkle Linien (Fugen, Kabel) per Öffnen/Schließen entfernen.
+          2. Stufe in Zeile r: Mittel der edge_k Zeilen darüber gegen die edge_k darunter.
+          3. Hindernis, wenn die Stufe >= edge_step_thr ist und das Stück darüber über die
+             Mindesthöhe (_need_rows) im Mittel >= edge_seg_thr vom Boden darunter abweicht
+             (flache Flecken und Fugen sind kürzer).
+        Zusätzlich: Ist schon der unterste Streifen laut Farbmodell kein Boden, steht das
+        Hindernis direkt vor dem Rider (dort gibt es keine Stufe vom Boden aus)."""
+        c = self.cfg
+        H, W = self.H, self.W
+        k = c.edge_k
+        lab = cv2.cvtColor(small, cv2.COLOR_BGR2LAB)
+        if c.edge_thin:
+            lab = cv2.morphologyEx(lab, cv2.MORPH_OPEN, self._k3)
+            lab = cv2.morphologyEx(lab, cv2.MORPH_CLOSE, self._k3)
+        # Kumulative Ganzzahl-Summen entlang der Zeilen: Summe beliebiger Zeilenfenster in O(1).
+        # Gewichtung der Farbkanäle erst beim Vergleich (spart die Gleitkomma-Kopie, CM4 ~1 ms).
+        cs = np.zeros((H + 1, W, 3), np.int32)
+        np.cumsum(lab, axis=0, dtype=np.int32, out=cs[1:])
+        wv = np.array([1.0, c.edge_chroma_w, c.edge_chroma_w], np.float32)
+        hz = int(np.ceil(horizon))
+        r = np.arange(max(hz, k), H - k)                 # Kandidatenzeilen (Fußpunkt unter Horizont)
+        span = max(1.0, H - horizon)
+        free = np.ones(W, np.float32)
+        if r.size:
+            sb = cs[r + k] - cs[r]                       # k Zeilen Boden unmittelbar unter der Stufe
+            # Stufe (als k-fache Summe): |oben - unten| je Kanal, gewichtet
+            step = np.abs((cs[r] - cs[r - k]) - sb).dot(wv)
+            ri, ci = np.nonzero(step >= c.edge_step_thr * k)
+            if ri.size:
+                # Stück darüber nur an den (seltenen) Stufen prüfen: Mittel über die
+                # Mindesthöhe (bis höchstens zum oberen Bildrand) gegen den Boden darunter
+                need = self._need_rows(H, pitch_dev)[H - 1 - r]
+                n = np.clip(np.ceil(need).astype(np.int32), k, None)
+                rr = r[ri]
+                top = np.maximum(rr - n[ri], 0)
+                seg = (cs[rr, ci] - cs[top, ci]) / (rr - top)[:, None].astype(np.float32)
+                segd = np.abs(seg - sb[ri, ci] / np.float32(k)).dot(wv)
+                ok = segd >= c.edge_seg_thr
+                if ok.any():
+                    # unterste Treffer-Zeile je Spalte (größtes r)
+                    best = np.full(W, -1, np.int32)
+                    np.maximum.at(best, ci[ok], rr[ok])
+                    has = best >= 0
+                    free = np.where(has, (H - 1 - best) / span, 1.0).astype(np.float32)
+        # Hindernis schon am unteren Rand (Farbmodell, nur messbare Pixel)
+        nb = max(2, k)
+        bot = floor[H - nb:] == 0
+        if self._srel is not None:
+            bot &= self._srel[H - nb:]
+        free[bot.mean(axis=0) >= 0.6] = 0.0
+        np.clip(free, 0.0, 1.0, out=free)
+        return cv2.erode(free.reshape(1, -1), self._k_erode).ravel()
+
+    def _horizon_walls(self, floor: np.ndarray, gray: np.ndarray, cols: np.ndarray,
+                       horizon: float) -> tuple[np.ndarray, int]:
+        """Horizontregel: Echter Boden liegt nie über dem Horizont. Läuft eine als Boden
+        erkannte Fläche in einer bis zum Horizont freien Spalte über den Horizont hinaus nach
+        oben weiter, ist es eine Wand in Bodenfarbe (graue Wand über grauem Boden, RiderPi
+        2026-11-04). Deren Fußpunkt ist die erste kräftige waagrechte Kante unterhalb des
+        Horizonts (Sockelleiste); gesucht wird vom Horizont nach unten, also die entfernteste
+        Kante zuerst – Fugen zwischen Rider und Wand liegen tiefer im Bild."""
+        c = self.cfg
+        H = self.H
+        hz = int(np.floor(horizon))
+        top = hz - c.horizon_margin_rows
+        bot = max(0, top - c.horizon_band_rows)
+        if top <= bot or hz >= H - 1:
+            return cols, 0
+        band = floor[bot:top] > 0                      # Streifen knapp über dem Horizont
+        if self._srel is not None:
+            band &= self._srel[bot:top]                # nicht messbar zählt dort nicht als Boden
+        cand = (band.mean(axis=0) >= c.horizon_floor_frac) & (cols >= 0.98)
+        if not cand.any():
+            return cols, 0
+        # Senkrechter Helligkeitssprung je Spalte, waagrecht leicht geglättet
+        g = gray.astype(np.int16)
+        gy = np.zeros((H, self.W), np.float32)
+        gy[1:-1] = np.abs(g[2:] - g[:-2]) * 0.5
+        gy = cv2.blur(gy, (3, 1))
+        strong = gy[hz:] >= c.wall_edge_thr            # Zeilen ab dem Horizont abwärts
+        has = strong.any(axis=0)
+        row = hz + strong.argmax(axis=0)               # erste kräftige Kante unter dem Horizont
+        hit = cand & has
+        if not hit.any():
+            return cols, 0
+        span = max(1.0, H - horizon)
+        val = np.clip((H - 1 - row) / span, 0.0, 1.0).astype(np.float32)
+        out = cols.copy()
+        out[hit] = np.minimum(out[hit], val[hit])
+        return out, int(hit.sum())
 
     def block_boxes(self, fs: FreeSpace, boxes) -> None:
         """Erkannte Objekte als Hindernisse eintragen (Unterkante = Fußpunkt)."""

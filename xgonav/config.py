@@ -150,6 +150,27 @@ class FreespaceCfg:
     # anderer Lage passte nie mehr (Nachführung nur bei passender Probe) -> alles blockiert.
     restart_hold_s: float = 1.0
     shading_max_gain_bg: float = 8.0
+    # Horizontregel: Boden liegt nie über dem Horizont. Ist der Streifen knapp darüber
+    # (horizon_band_rows Zeilen, horizon_margin_rows Abstand gegen Nickfehler; Arbeitsauflösung)
+    # zu horizon_floor_frac "Boden", ist die Spalte eine Wand in Bodenfarbe; Fußpunkt = erste
+    # senkrechte Helligkeitsstufe >= wall_edge_thr (Grauwerte je Zeile) unter dem Horizont.
+    horizon_wall: bool = False     # aus: im Simulator Fehlalarme durch Nickfehler (Boden knapp über dem Horizont)
+    # Verfahren für die Bodengrenze: "farbe" (Histogramm der Bodenfarbe, bisher) oder "kanten"
+    # (erste Stufe von unten, über der es anders aussieht; unempfindlich gegen Abschattung und
+    # graue Wand über grauem Boden). Das Farbmodell lernt in beiden Fällen weiter (Rand unten).
+    # "beide": Kanten, und wo diese in einer Spalte nichts finden (frei bis edge_fallback_free),
+    # das Farbmodell (Nutzer: Farbe im Dunkeln besser, Kanten im Hellen).
+    method: str = "farbe"
+    edge_fallback_free: float = 0.98
+    edge_thin: bool = True         # dünne Linien vorher entfernen (Fugen – aber auch Kontaktschatten)
+    edge_k: int = 3                # Zeilen je Seite für den Stufenvergleich (Arbeitsauflösung)
+    edge_chroma_w: float = 2.0     # Gewicht der LAB-Farbkanäle a/b gegenüber der Helligkeit L
+    edge_step_thr: float = 35.0    # Mindest-Stufe (Summe |ΔL| + w·(|Δa|+|Δb|), 0..255-Skala)
+    edge_seg_thr: float = 28.0     # Mindest-Abweichung des Stücks über der Stufe vom Boden darunter
+    horizon_margin_rows: int = 2
+    horizon_band_rows: int = 6
+    horizon_floor_frac: float = 0.6
+    wall_edge_thr: float = 8.0
 
 
 @dataclass

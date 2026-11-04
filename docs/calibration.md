@@ -65,8 +65,11 @@ python tools/calibrate.py shading [shading.json]
 | Target | uniformly white self-luminous surface filling the frame (laptop, white fullscreen, max brightness; focus irrelevant) |
 | Browser page | `data:text/html,<body style="background:#fff;cursor:none">` |
 | Rejected if | coverage < 75 % of frame, or overexposed |
+| Camera setup | same as xgonav from `config.toml`: `sensor_mode`, `scaler_crop`, `fps` (auto exposure). Before 2026-11-04 the tool used the 640x480 sensor mode without crop → mismatched file |
 | Config | `shading_file = "shading.json"`, `shading_max_gain` (RiderPi 5.0) |
-| Missing file | runs uncorrected (log warning); RiderPi then sees edges as obstacles |
+| Missing file | runs uncorrected (log warning); with `method = "farbe"` the RiderPi then sees dark lower corners as obstacles |
+| `method = "kanten"` | boundary from the uncorrected image; shading only affects the color model (bottom strip, `beide`) |
+| RiderPi status | ISP (libcamera ALSC) already corrects most shading. 2026-11-04 recalibrations (`shading-neu*.json`, last one centered) helped the color model less than the old file in dark scenes → old `shading.json` kept |
 
 ## 4. Wheel odometry — `[odom] scale_left`, `scale_right`, `track_m`
 

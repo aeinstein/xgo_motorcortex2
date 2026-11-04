@@ -118,6 +118,15 @@ Default = `config.py`. RiderPi = `deploy/config.example.toml` (blank = default).
 | `bg_model` / `shading_max_gain_bg` | false / 8.0 | false | edge model from blue+green where red is unmeasurable; full width, but false obstacles in dark lower corners |
 | `min_learn_v` | 12 | | no learning from (nearly) black samples |
 | `restart_hold_s` | 1.0 | | relearn after pipeline start, standing up, exposure/gain change |
+| `method` | `farbe` | `kanten` | floor boundary: `farbe` = color histogram; `kanten` = first step edge from the bottom with a differing patch above (uncorrected image, insensitive to shading and gray-on-gray walls); `beide` = `kanten`, color model where no edge is found |
+| `edge_thin` / `edge_k` | true / 3 | | remove thin lines (joints) first; rows per side of the step |
+| `edge_chroma_w` | 2.0 | | weight of LAB a/b vs. L |
+| `edge_step_thr` / `edge_seg_thr` | 35 / 28 | | min step; min deviation of the patch above (min obstacle height) from the floor below |
+| `edge_fallback_free` | 0.98 | | `beide`: column counts as "nothing found" from this free fraction |
+| `horizon_wall` | false | | `farbe` only: floor color continuing above the horizon = wall, base at first strong edge (false alarms in the simulator from pitch errors) |
+| `horizon_margin_rows` / `horizon_band_rows` / `horizon_floor_frac` / `wall_edge_thr` | 2 / 6 / 0.6 / 8 | | horizon rule band and edge threshold |
+
+Replay of three evening drives (`tools/replay_raw.py`, 2026-11-04), false alarms: `farbe` 25 / 35 / 53 %, `kanten` 0.2 / 2.4 / 16 %.
 
 ### `[map]` (short-term local map)
 `max_age_s` 4.0, `confirm` 1 (RiderPi 3), `confirm_radius_m` 0.08.
