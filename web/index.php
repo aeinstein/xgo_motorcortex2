@@ -240,6 +240,7 @@ details.extras[open]>summary{margin-bottom:8px}
   <section class="karte">
     <div class="kopf"><h2>Fahren</h2>
       <button onclick="arm()" title="Aktion 255">Aufstehen</button>
+      <button onclick="befehl('action', {n: 253})" title="Aktion 253 (!standup): springt aus dem Liegen auf">Aufspringen</button>
       <button class="gefahr" onclick="befehl('action', {n: 254})" title="Aktion 254, Not-Stopp">Absetzen</button>
     </div>
     <div class="fahren">
@@ -270,6 +271,7 @@ details.extras[open]>summary{margin-bottom:8px}
         Minimum; in Folgen/Erkunden setzt xgonav die Höhe selbst. Roll: + = rechts.</p>
       <p>Balancieren (Firmware R-1.1.6): Nach einem ESP32-Neustart balanciert der Rider erst nach
         „Aufstehen“. Liegt er, wartet die Firmware, bis er aufrecht steht – dann laufen die Räder sofort an.
+        „Aufspringen“ (Aktion 253, wie <code>!standup</code>) richtet ihn aus dem Liegen selbst auf – Platz lassen.
         „Absetzen“ ist ein Not-Stopp (Aktion 254, wie <code>!stop</code>): er setzt sich kontrolliert ab und
         bleibt aus bis zum nächsten Aufstehen.</p>
     </details>

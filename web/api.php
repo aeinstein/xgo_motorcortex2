@@ -13,7 +13,8 @@
  *   POST api.php?a=pipeline&on=0|1
  *   POST api.php?a=drive&v=-1..1&w=-1..1      (nur Modus manual, alle 0,2 s senden)
  *   POST api.php?a=led&i=0..3&c=%23rrggbb
- *   POST api.php?a=action&n=1..6|254|255     (R-1.1.6+Patch: 255 = Arm/aufstehen, 254 = Disarm/Not-Stopp; 1..6 Aktionen)
+ *   POST api.php?a=action&n=1..6|253|254|255 (R-1.1.6+Patch: 255 = Arm/aufstehen, 254 = Disarm/Not-Stopp,
+ *                                            253 = Aufspringen aus dem Liegen (!standup); 1..6 Aktionen)
  *   POST api.php?a=height&h=43..255         (u8; unter 43 nicht, siehe Höhengrenzen)
  *   POST api.php?a=roll&deg=-20..20          (Grad, + = nach rechts; Treiber-Patch 0004: Register 0x36)
  *   POST api.php?a=exposure&us=0|100..33333     (Belichtung in µs, 0 = Automatik; nur bis zum Neustart)
@@ -179,7 +180,7 @@ switch ($a) {
     case 'action':
         $n = (int)zahl('n', 1, 255);
         // 0 ist bei R-1.1.6 nur "keine Aktion" (kein Stopp) – nicht anbieten, sonst verwechselbar
-        if ($n > 6 && $n !== 254 && $n !== 255) {
+        if ($n > 6 && $n !== 253 && $n !== 254 && $n !== 255) {
             antwort(400, json_encode(['error' => 'Aktion ungültig']));
         }
         proc('action', (string)$n);
