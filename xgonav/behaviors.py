@@ -34,6 +34,10 @@ class World:
     pitch_dev: float = 0.0            # hochfrequentes Nicken in rad (aus Ego-Motion)
     pose: tuple | None = None         # (x, y, th) in der Raumkarte (m, rad), None = keine Karte
     goal: tuple | None = None         # Startpunkt (x, y, th) in der Raumkarte
+    # Geradeaus mit cruise_v laut Merkkarte blockiert (gleiche Prüfung wie App._arc_check).
+    # Erkunden braucht das: sonst will es weiter vorwärts, die Bahnprüfung setzt v auf 0 und
+    # der Rider steht vor dem Hindernis, ohne wegzudrehen (RiderPi 2026-11-04).
+    path_blocked: bool = False
 
     def bearing(self, x: float) -> float:
         """Bildspalte -> Winkel rad (links positiv)."""
@@ -253,7 +257,8 @@ class Explore(Behavior):
     def step(self, w: World) -> Command:
         fs = w.free
         center = fs.center if fs and fs.valid else 1.0
-        blocked = center < self.cfg.blocked_free or (w.ego.ttc < self.cfg.ttc_avoid_s and w.cmd_v > 0.03)
+        blocked = (center < self.cfg.blocked_free or w.path_blocked
+                   or (w.ego.ttc < self.cfg.ttc_avoid_s and w.cmd_v > 0.03))
         hmm = self.cfg.height_cruise_mm
 
         if self.state == "cruise":
@@ -286,7 +291,7 @@ class Explore(Behavior):
 
         if self.state == "turn":
             rem = (self.turn_goal - w.yaw) * self.turn_dir
-            if (rem <= 0 and center > self.cfg.slow_free) or w.t - self.t_state > 6.0:
+            if (rem <= 0 and center > self.cfg.slow_free and not w.path_blocked) or w.t - self.t_state > 6.0:
                 self._enter("cruise", w.t)
                 return Command(0, 0, hmm, "weiter")
             return Command(0.0, self.turn_dir * self.cfg.search_w * 1.5, hmm,

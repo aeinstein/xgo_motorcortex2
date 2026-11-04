@@ -421,6 +421,9 @@ class App:
                 w.pose, w.goal = self.gridmap.pose(), self.gridmap.start
                 if self.behavior.name == "home":
                     self._home_plan(w)
+            if self.lmap is not None and self.behavior.name == "explore":
+                vg = self.cfg.behavior.cruise_v * self.cfg.robot.vx_limit
+                w.path_blocked = self.lmap.arc_clearance(vg, 0.0, horizon_s=1.2) < 0.6 * vg + 0.08
             if self.behavior.name == "manual":
                 cmd = self._manual_cmd()
             else:
