@@ -98,7 +98,8 @@ freespace_cpus = [2, 3]     # Bodenmodell-Thread: neben YOLO ist dort Luft
 
 [odom]
 # Rad-Odometrie (Firmware R-1.1.6+Patch). 60 mm / 1024 Ticks am Maßband bestätigt (29,5 cm).
-# Faktoren aus tools/calibrate_odom.py (2026-11-03): 215 cm am Maßband, Räder 215,3 cm, Kursreferenz
-# Kamera+IMU (beide Referenzen einzeln: links 0,9902..0,9908, rechts 1,0065..1,0072).
-scale_left = 0.9905
-scale_right = 1.0068
+# Faktoren aus tools/calibrate_odom.py (2026-11-04, nach ESP-Neustart): 212,5 cm am Maßband,
+# Räder roh 210,95 / 210,68 cm, Fahrt sichtbar geradeaus (Kurs = 0). Der Kamera-Kurs zeigte dabei
+# −8,9° und taugt nicht als Referenz. Früher 0,9905/1,0068: Reifen saß falsch.
+scale_left = 1.0073
+scale_right = 1.0087

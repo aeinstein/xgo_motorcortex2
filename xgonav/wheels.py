@@ -125,6 +125,40 @@ def calibrate_scales(sl: float, sr: float, theta_ref: float, track_m: float,
     return kl, kr
 
 
+def calibrate_odom(segs: list[tuple[float, float, float]], track_m: float, mean_scale: float = 1.0,
+                   tape: tuple[int, float] | None = None,
+                   fit_track: bool = True) -> tuple[float, float, float]:
+    """Faktoren je Rad und Spurweite aus beliebig vielen Abschnitten (gerade, krumm, hin und
+    zurück, auf der Stelle gedreht). segs = [(sl, sr, theta_ref)] mit Radwegen ohne Faktor (m)
+    und wahrer Drehung (rad, links +). Je Abschnitt gilt exakt (Differentialantrieb)
+      kr*sr - kl*sl = track * theta_ref,
+    unabhängig davon, ob die Bahn gerade war. Die Gesamtskala legt entweder das Maßband fest
+    (tape = (Index des Abschnitts, Strecke der Mitte in m), nur bei gerader Fahrt sinnvoll) oder
+    (kl + kr) / 2 = mean_scale (z. B. aus einer früheren Maßbandfahrt). Fahrten (sl ≈ sr)
+    bestimmen den Unterschied der Räder, Drehungen auf der Stelle die Spurweite.
+    fit_track=False hält track_m fest. Kleinste Quadrate, Ergebnis (kl, kr, track)."""
+    import numpy as np
+    rows, rhs = [], []
+    for sl, sr, th in segs:
+        rows.append([-sl, sr, -th] if fit_track else [-sl, sr, 0.0])
+        rhs.append(0.0 if fit_track else track_m * th)
+    W = 10.0                                          # Skalenbedingung praktisch hart
+    if tape is not None:
+        sl, sr, _ = segs[tape[0]]
+        rows.append([W * sl / 2, W * sr / 2, 0.0])
+        rhs.append(W * tape[1])
+    else:
+        rows.append([W * 0.5, W * 0.5, 0.0])
+        rhs.append(W * mean_scale)
+    A, b = np.array(rows), np.array(rhs)
+    if not fit_track:
+        A = A[:, :2]
+    if np.linalg.matrix_rank(A) < A.shape[1]:
+        raise ValueError("Abschnitte reichen nicht (Fahrt UND Drehung nötig, um die Spurweite zu bestimmen)")
+    x = np.linalg.lstsq(A, b, rcond=None)[0]
+    return float(x[0]), float(x[1]), float(x[2]) if fit_track else track_m
+
+
 class ProcWheels(WheelOdom):
     def _open(self) -> bool:
         self.path = os.path.join(self.cfg.proc_dir, "wheels_log")

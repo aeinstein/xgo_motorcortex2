@@ -634,6 +634,30 @@ def test_wheel_scale_calibration():
     assert abs(ds - 0.295) < 0.001 and abs(dth - th) < math.radians(0.3)
 
 
+def test_odom_calibration_segments():
+    import math
+    from xgonav.wheels import calibrate_odom
+    kl, kr, track = 0.99, 1.01, 0.160                       # Wahrheit
+    def seg(dl, dr):                                         # wahre Radwege -> (gemessen, Drehung)
+        return (dl / kl, dr / kr, (dr - dl) / track)
+    segs = [seg(0.40, 0.41), seg(-0.38, -0.40),              # hin und zurück, leicht krumm
+            seg(-0.5, 0.5), seg(0.49, -0.5)]                  # links und rechts auf der Stelle
+    a, b, t = calibrate_odom(segs, 0.090, mean_scale=1.0)
+    assert abs(a - kl) < 1e-6 and abs(b - kr) < 1e-6 and abs(t - track) < 1e-6
+    # Maßband statt Mittelwert
+    a, b, t = calibrate_odom(segs, 0.090, mean_scale=0.5, tape=(0, 0.405))
+    assert abs(a - kl) < 1e-6 and abs(b - kr) < 1e-6 and abs(t - track) < 1e-6
+    # nur Fahrten: Spurweite fest, Unterschied der Räder trotzdem bestimmbar
+    a, b, t = calibrate_odom(segs[:2], track, mean_scale=1.0, fit_track=False)
+    assert abs(a - kl) < 1e-6 and abs(b - kr) < 1e-6 and t == track
+    try:                                                     # nur Fahrten, Spurweite frei: unterbestimmt
+        calibrate_odom([seg(0.4, 0.4), seg(-0.4, -0.4)], 0.09)
+        assert False
+    except ValueError:
+        pass
+    assert math.isfinite(t)
+
+
 def test_gridmap_wall_and_turn():
     import math
     from xgonav.config import Config

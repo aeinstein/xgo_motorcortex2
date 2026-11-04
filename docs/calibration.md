@@ -57,20 +57,26 @@ python tools/calibrate.py shading [shading.json]
 | Config | `shading_file = "shading.json"`, `shading_max_gain` (RiderPi 5.0) |
 | Missing file | runs uncorrected (log warning); RiderPi then sees edges as obstacles |
 
-## 4. Wheel odometry — `[odom] scale_left`, `scale_right`
+## 4. Wheel odometry — `[odom] scale_left`, `scale_right`, `track_m`
 
 ```
-python3 tools/calibrate_odom.py fahrt [--v 0.12] [--secs 8] [--out /tmp/odomcal.json]
-python3 tools/calibrate_odom.py rechne --dist-cm <tape> [--ref kamera|imu|mittel]
+python3 tools/calibrate_odom.py messen [--dreh-grad 360] [--strecke-cm 30] [--hin-her 2] [--nur-vor]
+python3 tools/calibrate_odom.py rechne [--ref gerade|kamera|imu|mittel] [--dist-cm <tape>] [--spur-fest]
 ```
 | Item | Value |
 |---|---|
-| Precondition | xgonav running, pipeline on, mode idle, Rider balancing, free space ahead (distance + 30 cm) |
-| Drive | ~1 m at v = 0.12 via manual mode |
-| Reference | heading from camera (ego-motion) and IMU; distance from tape measure |
-| RiderPi (2026-11-03) | 215 cm tape, wheels 215.3 cm → `scale_left = 0.9905`, `scale_right = 1.0068` |
+| Precondition | xgonav running, pipeline on, mode idle, Rider balancing |
+| Start | tool waits; align Rider, then press „Hand“ in the web UI (no drive key). Heading is held by IMU from then on |
+| Sequence | turn +360° / −360° in place → back to start heading → 2× 30 cm forward and back (distance by wheel odometry) |
+| Space | strecke + ~15 cm ahead, turning room only |
+| Abort | web „Idle“/stop (tool watches mode) or Ctrl+C; always writes standstill and mode idle |
+| Model | per segment `kr·sr − kl·sl = track·θ_ref` (path need not be straight); turns fix `track_m`, drives fix kl/kr difference |
+| Scale | mean of current kl/kr from config, or `--dist-cm` for the first forward segment (straight drive only, `--nur-vor`) |
+| Heading ref | drives: `gerade` (θ = 0, confirm straight by eye; default), or camera/IMU; turns: IMU |
+| RiderPi (2026-11-04) | 212.5 cm tape, straight by eye (θ = 0), raw 210.95/210.68 cm → `scale_left = 1.0073`, `scale_right = 1.0087` |
+| RiderPi (2026-11-03) | 0.9905/1.0068 — tire was seated wrong, superseded |
+| Pitfalls | camera heading biased during forward drive (−8.9° on 2 m straight); firmware yaw has 2°/s dead zone; ESP gyro bias measured only at boot — restart ESP lying still if Rider rotates while standing |
 | Base values | 60 mm wheel, 1024 ticks/rev (hand-measured 1029/1043), confirmed 29.5 cm on tape |
-| Ctrl+C | always writes standstill and mode idle |
 
 ## 5. Forward scale (command fallback)
 
