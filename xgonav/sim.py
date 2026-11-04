@@ -78,7 +78,10 @@ class SimScene:
     def collides(self, x: float, y: float, r: float = 0.12) -> bool:
         if x < r or y < r or x > self.size - r or y > self.size - r:
             return True
-        return any(x1 - r < x < x2 + r and y1 - r < y < y2 + r for (x1, y1, x2, y2) in self.boxes)
+        # runder Roboter: Abstand zum nächsten Punkt der Kiste (an den Ecken nicht quadratisch,
+        # sonst zählt ein Vorbeifahren mit 3 cm Luft an einer Ecke als Kollision)
+        return any(math.hypot(x - min(max(x, x1), x2), y - min(max(y, y1), y2)) < r
+                   for (x1, y1, x2, y2) in self.boxes)
 
 
 class SimWorld(FrameSource):
