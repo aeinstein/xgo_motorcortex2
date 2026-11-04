@@ -137,6 +137,19 @@ class FreespaceCfg:
     # unbekannt (NaN) statt "frei bis Horizont". Den nicht messbaren Streifen unten in den
     # übrigen Spalten behandelt known_from.
     min_known_frac: float = 0.2
+    # Zweites Bodenmodell ohne Rotkanal für den Rand: Wo Rot nicht mehr messbar ist (Abschattung),
+    # Blau und Grün aber bis shading_max_gain_bg korrigierbar sind, entscheidet ein Histogramm aus
+    # Grünanteil G/(B+G) und Helligkeit (B+G)/2, gelernt aus derselben Probe. Am RiderPi sind mit
+    # allen Kanälen nur ~46 % der Pixel messbar, mit Blau+Grün bis Faktor 8 alle.
+    bg_model: bool = False         # aus: Fehlalarme in den unteren Ecken bei dunklem Bild (RiderPi 2026-11-04)
+    # Probe mit mittlerer Helligkeit (V, nach Abschattungs-Korrektur) darunter wird nicht nachgelernt
+    # (z. B. erste Bilder nach dem Kamerastart).
+    min_learn_v: float = 12.0
+    # Neu lernen nach Start der Bildverarbeitung, Aufstehen und geänderter Belichtung; so lange
+    # vorher kein Bodenmodell rechnen (Belichtung/Lage regeln sich ein). Anlass: Ein Modell aus
+    # anderer Lage passte nie mehr (Nachführung nur bei passender Probe) -> alles blockiert.
+    restart_hold_s: float = 1.0
+    shading_max_gain_bg: float = 8.0
 
 
 @dataclass

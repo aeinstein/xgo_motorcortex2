@@ -147,6 +147,8 @@ class App:
         self.yaw = 0.0                   # Kurs für Verhalten und Merkkarte (Räder, sonst Bild)
         self.yaw_src = "kamera"
         self._free: FreeSpace | None = None
+        self._fs_hold_until = 0.0
+        self._was_balancing: bool | None = None
         self._free_ctrl: FreeSpace | None = None
         self._last_ctrl = 0.0
         self._last_height_t = 0.0
@@ -180,6 +182,7 @@ class App:
         nach dem Starten bleibt der Rider stehen, bis ein Modus gewählt wird."""
         if on:
             self.src.resume()
+            self.reset_floor(hold_s=self.cfg.freespace.restart_hold_s)
             log.info("Bildverarbeitung gestartet")
         else:
             with self._mode_lock:
@@ -187,6 +190,15 @@ class App:
             self.src.pause()
             self.robot.stop()
             log.info("Bildverarbeitung gestoppt")
+
+    def reset_floor(self, hold_s: float = 0.0) -> None:
+        """Bodenmodell neu lernen lassen; hold_s: so lange vorher kein Bodenmodell rechnen
+        (nach Kamerastart sind die ersten Bilder dunkel). Bis dahin kein Freiraum-Ergebnis."""
+        if self.fse is None:
+            return
+        self._fs_hold_until = time.monotonic() + hold_s
+        self._free = None
+        self.fse.reset()
 
     def set_manual(self, v: float, w: float) -> None:
         """Sollwert der Handsteuerung (normiert, v > 0 vor, w > 0 links). Nur im Modus manual;
@@ -340,7 +352,17 @@ class App:
         self.det.offer(f, ego.sharpness, self.ego.sharpness_median())
         tm.mark("det")
 
-        if self.fs_worker is not None:
+        bal = self.robot.state.balancing
+        if bal and self._was_balancing is False:
+            # aufgestanden: Kamera sieht den Boden jetzt aus anderer Höhe/Lage. Ein im Liegen
+            # gelerntes Modell passte am RiderPi danach nie mehr (Nachführung nur bei passender
+            # Probe) und meldete überall "blockiert" (2026-11-04).
+            log.info("Rider steht auf: Bodenmodell lernt neu")
+            self.reset_floor(hold_s=self.cfg.freespace.restart_hold_s)
+        self._was_balancing = bal
+        if time.monotonic() < self._fs_hold_until:
+            pass                          # nach Kamerastart: Belichtung abwarten, nichts lernen
+        elif self.fs_worker is not None:
             # eigener Thread: neuestes Ergebnis übernehmen, jedes 2. Bild einen Auftrag geben
             r = self.fs_worker.poll()
             if r is not None:

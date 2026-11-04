@@ -90,13 +90,25 @@ class FreeSpaceEstimator:
         self._ranges = [0, 180, 0, 256]
         self.diag: dict = {}                        # Diagnose des letzten update() (Rohaufzeichnung)
         self._sgain: np.ndarray | None = None      # Korrektur der Linsenabschattung (H, W, 3)
-        self._srel: np.ndarray | None = None       # zuverlässige Pixel (bool)
+        self._srel: np.ndarray | None = None       # zuverlässige Pixel (bool), alle Kanäle
+        self._bgonly: np.ndarray | None = None     # nur Blau+Grün messbar -> Modell ohne Rot
+        self.model_bg: np.ndarray | None = None
+        self._reset_req = False                    # reset(): beim nächsten update() neu lernen
         if cfg.shading_file and not os.path.exists(cfg.shading_file):
             log.warning("Abschattungs-Korrektur %s fehlt – ohne Korrektur (tools/calibrate.py shading)",
                         cfg.shading_file)
         elif cfg.shading_file:
             m = ShadingModel.load(cfg.shading_file)
             self._sgain, self._srel = m.gain_and_reliable(self.W, self.H, cfg.shading_max_gain)
+            if cfg.bg_model:
+                # Blau/Grün bis shading_max_gain_bg korrigieren (Rot bleibt bei shading_max_gain)
+                g_bg, _ = m.gain_and_reliable(self.W, self.H, cfg.shading_max_gain_bg)
+                self._sgain[..., :2] = g_bg[..., :2]
+                rel_bg = (1.0 / m.falloff(self.W, self.H)[..., :2] <= cfg.shading_max_gain_bg).all(axis=-1)
+                self._bgonly = rel_bg & ~self._srel
+                self._rel_all = self._srel        # für die Probe des Farbmodells
+                self._srel = rel_bg               # ab hier: messbar mit einem der beiden Modelle
+                self._bg_bins = [32, 4]       # Helligkeit grob: Boden wird zum Rand hin real dunkler
             # je Spalte: Zeilen von unten bis zum ersten zuverlässigen Pixel (H = keines)
             inv = self._srel[::-1]
             self._unknown_rows = np.where(inv.any(axis=0), inv.argmax(axis=0), self.H).astype(np.float32)
@@ -105,7 +117,7 @@ class FreeSpaceEstimator:
         x0, y0, x1, y1 = self._sample_rect()
         self._smask_rel = None
         if self._srel is not None:
-            rel = self._srel[y0:y1, x0:x1]
+            rel = (self._rel_all if self._bgonly is not None else self._srel)[y0:y1, x0:x1]
             if rel.mean() > 0.2:          # sonst lieber die ganze Probe als fast keine
                 self._smask_rel = rel.astype(np.uint8) * 255
         self._fbuf = np.empty((self.H, self.W, 3), np.float32)
@@ -116,6 +128,11 @@ class FreeSpaceEstimator:
         self._k_erode = np.ones((1, 5), np.uint8)
         self._k3 = np.ones((3, 3), np.uint8)
         self._k5 = np.ones((5, 5), np.uint8)
+
+    def reset(self) -> None:
+        """Bodenmodell verwerfen und beim nächsten update() neu lernen (z. B. nach Neustart
+        der Kamera oder geänderter Belichtung). Darf aus jedem Thread aufgerufen werden."""
+        self._reset_req = True
 
     def _sample_rect(self):
         y1 = int(round(self.H * (1 - self.cfg.sample_bottom)))
@@ -128,6 +145,10 @@ class FreeSpaceEstimator:
         """exclude_boxes: Boxen erkannter Objekte (Vollbild-Pixel). Dort wird die Bodenfarbe
         nicht gelernt; sonst lernt das Modell z. B. die Kleidung einer Person im
         Probenbereich als Boden und erkennt danach den echten Boden nicht mehr."""
+        if self._reset_req:
+            self._reset_req = False
+            self.model = self.model_bg = None
+            log.info("Bodenmodell zurückgesetzt, lernt neu")
         small = cv2.resize(bgr, (self.W, self.H), interpolation=cv2.INTER_AREA)
         if self._sgain is not None:
             # = clip(small * gain, 0, 255) -> uint8; Verstärkung >= 0, also nur oben begrenzen
@@ -159,8 +180,9 @@ class FreeSpaceEstimator:
         cv2.normalize(hist, hist, 0, 255, cv2.NORM_MINMAX)
 
         updated, bpm = False, None
-        if occupied > 0.8 and self.model is not None:
-            pass                          # Probe fast ganz verdeckt: Modell nicht anfassen
+        dark = float(sample[..., 2].mean()) < self.cfg.min_learn_v
+        if (occupied > 0.8 or dark) and self.model is not None:
+            pass                          # Probe verdeckt oder (fast) schwarz: Modell nicht anfassen
         elif self.model is None:
             self.model = hist
             updated = True
@@ -186,6 +208,8 @@ class FreeSpaceEstimator:
         np.maximum(fac, 0.2, out=fac)
         np.minimum(fac, 1.0, out=fac)
         prob *= fac
+        if self._bgonly is not None:
+            self._apply_bg_model(small, prob, (x0, y0, x1, y1), smask, updated)
         edges = cv2.Canny(cv2.cvtColor(small, cv2.COLOR_BGR2GRAY), 40, 120)
         edges = cv2.dilate(edges, self._k3)
         np.multiply(prob, np.float32(self.cfg.edge_weight), out=prob, where=edges > 0)
@@ -228,6 +252,28 @@ class FreeSpaceEstimator:
             if n_unknown:
                 known = np.where(np.isnan(cols), 1.0, known)
         return FreeSpace(sectors, cols, horizon, floor, True, known)
+
+    def _apply_bg_model(self, small: np.ndarray, prob: np.ndarray, rect, smask, updated: bool) -> None:
+        """Boden-Wahrscheinlichkeit ohne Rotkanal für die Pixel, wo nur Blau+Grün messbar sind
+        (schreibt in prob). Merkmale: Grünanteil G/(B+G) und Helligkeit (B+G)/2. Probe und
+        Nachführung wie beim Farbmodell: gelernt nur, wenn dieses gerade gelernt hat."""
+        b = small[..., 0].astype(np.float32)
+        g = small[..., 1].astype(np.float32)
+        s_ = b + g
+        chroma = (g * 255.0 / np.maximum(s_, 1.0)).astype(np.uint8)
+        light = (s_ * 0.5).astype(np.uint8)
+        feat = cv2.merge([chroma, light])
+        x0, y0, x1, y1 = rect
+        hist = cv2.calcHist([feat[y0:y1, x0:x1]], [0, 1], smask, self._bg_bins, [0, 256, 0, 256])
+        hist = cv2.GaussianBlur(hist, (3, 3), 0)
+        cv2.normalize(hist, hist, 0, 255, cv2.NORM_MINMAX)
+        if self.model_bg is None:
+            self.model_bg = hist
+        elif updated:
+            self.model_bg = cv2.addWeighted(self.model_bg, 0.9, hist, 0.1, 0)
+        pb = cv2.calcBackProject([feat], [0, 1], self.model_bg, [0, 256, 0, 256], 1)
+        m = self._bgonly
+        prob[m] = pb[m].astype(np.float32) / 255.0
 
     def _column_free(self, floor: np.ndarray, horizon: float, pitch_dev: float = 0.0) -> np.ndarray:
         """Je Spalte: Anteil der Strecke bis zum Horizont, der vom unteren Rand aus frei ist.

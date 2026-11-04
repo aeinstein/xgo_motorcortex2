@@ -173,12 +173,14 @@ def serve(app: App, host: str, port: int, fps: int, render_cpus=None) -> Threadi
             if u.path == "/exposure":
                 try:
                     us = app.src.set_exposure(int(q.get("us", [""])[0]))
+                    app.reset_floor()      # andere Belichtung: Bodenfarbe neu lernen
                 except ValueError as e:
                     return self._send(400, json.dumps({"error": str(e) or "us ungültig"}).encode())
                 return self._send(200, json.dumps({"ok": True, "exposure_us": us}).encode())
             if u.path == "/gain":
                 try:
                     g = app.src.set_gain(float(q.get("g", [""])[0]))
+                    app.reset_floor()
                 except ValueError as e:
                     return self._send(400, json.dumps({"error": str(e) or "g ungültig"}).encode())
                 return self._send(200, json.dumps({"ok": True, "gain": g}).encode())

@@ -811,3 +811,28 @@ def test_home_needs_gridmap():
     app.gridmap = None
     with pytest.raises(ModeNotAllowed):
         app.set_mode("home")
+
+
+def test_freespace_reset_and_dark_sample():
+    """Dunkle Probe (Kamerastart) darf das Modell nicht verderben; reset() lernt neu."""
+    import numpy as np
+    from xgonav.config import FreespaceCfg
+    from xgonav.freespace import FreeSpaceEstimator
+    cfg = FreespaceCfg()
+    est = FreeSpaceEstimator(cfg, (640, 480))
+    floor = np.full((480, 640, 3), (90, 110, 130), np.uint8)       # gleichmäßiger Boden
+    floor[:200] = (200, 60, 40)                                     # Wand oben, andere Farbe
+    for _ in range(3):
+        fs = est.update(floor)
+    good = list(fs.sectors)
+    assert min(good) > 0.5
+    dark = np.full_like(floor, 3)
+    for _ in range(20):                                             # schwarze Bilder: nicht lernen
+        est.update(dark)
+    assert min(est.update(floor).sectors) > 0.5
+    # verdorbenes Modell (z. B. von früher): reset() lernt aus dem nächsten Bild neu
+    est.model = est.model * 0
+    est.model[0, 0] = 255
+    assert max(est.update(floor).sectors) < 0.5                      # alles "blockiert"
+    est.reset()
+    assert min(est.update(floor).sectors) > 0.5
