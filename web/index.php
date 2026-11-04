@@ -529,8 +529,7 @@ async function lageKalibrieren() {
 }
 // Aktion 255 = Arm (R-1.1.6): Räder laufen an, sobald der Rider aufrecht steht
 function arm() {
-  if (confirm('Aufstehen (Arm)? Steht der Rider aufrecht, laufen die Räder sofort an. Nur mit Platz drumherum.'))
-    befehl('action', {n: 255});
+  befehl('action', {n: 255});
 }
 function herunterfahren() {
   if (confirm('Rider wirklich herunterfahren?')) befehl('shutdown');
