@@ -26,9 +26,13 @@ _NB = [(-1, 0, 1.0), (1, 0, 1.0), (0, -1, 1.0), (0, 1, 1.0),
        (-1, -1, math.sqrt(2)), (-1, 1, math.sqrt(2)), (1, -1, math.sqrt(2)), (1, 1, math.sqrt(2))]
 
 
-def cost_map(lo: np.ndarray, res: float, l_show: float, cfg: HomeCfg) -> tuple[np.ndarray, np.ndarray]:
-    """(gesperrt, Kosten je Zelle) aus Log-Odds. Kosten >= 1."""
+def cost_map(lo: np.ndarray, res: float, l_show: float, cfg: HomeCfg,
+             extra_occ: np.ndarray | None = None) -> tuple[np.ndarray, np.ndarray]:
+    """(gesperrt, Kosten je Zelle) aus Log-Odds. Kosten >= 1. extra_occ: zusätzlich belegte
+    Zellen (bool, gleiche Form), z. B. Hindernisse der Merkkarte."""
     occ = lo > l_show
+    if extra_occ is not None:
+        occ |= extra_occ
     # Abstand jeder Zelle (m) zur nächsten belegten Zelle
     dist = cv2.distanceTransform((~occ).astype(np.uint8), cv2.DIST_L2, 5) * res if occ.any() \
         else np.full(lo.shape, np.inf, np.float32)
@@ -104,11 +108,40 @@ def shortcut(cells: list[tuple[int, int]], blocked: np.ndarray, cost: np.ndarray
     return out
 
 
-def plan(grid: GridMap, start_xy: tuple[float, float], goal_xy: tuple[float, float], cfg: HomeCfg) -> list[tuple[float, float]] | None:
-    """Weg (Weltpunkte, m) von start_xy nach goal_xy über die Raumkarte; None = kein Weg."""
+def path_length(p: list[tuple[float, float]]) -> float:
+    return sum(math.hypot(b[0] - a[0], b[1] - a[1]) for a, b in zip(p, p[1:]))
+
+
+def remaining(path: list[tuple[float, float]], xy: tuple[float, float]) -> list[tuple[float, float]]:
+    """Rest des Wegs ab der Pose: xy, dann alle Punkte nach dem nächstgelegenen Abschnitt."""
+    if len(path) < 2:
+        return [tuple(xy)] + list(path[-1:])
+    best, bi = math.inf, 0
+    for i, (a, b) in enumerate(zip(path, path[1:])):
+        dx, dy = b[0] - a[0], b[1] - a[1]
+        L2 = dx * dx + dy * dy
+        t = min(1.0, max(0.0, ((xy[0] - a[0]) * dx + (xy[1] - a[1]) * dy) / L2)) if L2 > 1e-12 else 0.0
+        d = math.hypot(a[0] + t * dx - xy[0], a[1] + t * dy - xy[1])
+        if d < best:
+            best, bi = d, i
+    return [tuple(xy)] + [tuple(p) for p in path[bi + 1:]]
+
+
+def plan(grid: GridMap, start_xy: tuple[float, float], goal_xy: tuple[float, float], cfg: HomeCfg,
+         keep: list[tuple[float, float]] | None = None,
+         obstacles: np.ndarray | None = None) -> list[tuple[float, float]] | None:
+    """Weg (Weltpunkte, m) von start_xy nach goal_xy über die Raumkarte; None = kein Weg.
+
+    keep: bisheriger Weg. Er bleibt (ab der Pose), solange er frei ist und höchstens
+    keep_factor x Länge + 0,3 m des neuen kostet: ein bei jedem Neuplanen anders gewählter Weg
+    ließ am RiderPi die Zielrichtung um bis zu 50° springen (2026-11-05).
+    obstacles: zusätzliche Hindernispunkte (N x 2, Welt-m), z. B. aus der Merkkarte der
+    Bahnprüfung. Sonst plante der Planer durch eine Lücke, die die Bahnprüfung für zu eng
+    hält, und der Rider drehte davor auf der Stelle."""
     res, n = grid.res, grid.n
+    keep = [tuple(p) for p in keep] if keep else None
     with grid._lock:
-        pts = np.array(grid.path + [tuple(start_xy), tuple(goal_xy)], np.float64)
+        pts = np.array(grid.path + [tuple(start_xy), tuple(goal_xy)] + (keep or []), np.float64)
     lo_xy = pts.min(axis=0) - cfg.margin_m
     hi_xy = pts.max(axis=0) + cfg.margin_m
     r0, c0 = (int(v) for v in grid.cell(lo_xy[0], lo_xy[1]))
@@ -117,7 +150,14 @@ def plan(grid: GridMap, start_xy: tuple[float, float], goal_xy: tuple[float, flo
     r1, c1 = min(n - 1, r1), min(n - 1, c1)
     with grid._lock:
         lo = grid.lo[r0:r1 + 1, c0:c1 + 1].copy()
-    blocked, cost = cost_map(lo, res, grid.cfg.l_show, cfg)
+    extra = None
+    if obstacles is not None and len(obstacles):
+        rr, cc = grid.cell(obstacles[:, 0], obstacles[:, 1])
+        rr, cc = rr - r0, cc - c0
+        ok = (rr >= 0) & (rr < lo.shape[0]) & (cc >= 0) & (cc < lo.shape[1])
+        extra = np.zeros(lo.shape, bool)
+        extra[rr[ok], cc[ok]] = True
+    blocked, cost = cost_map(lo, res, grid.cfg.l_show, cfg, extra)
 
     def local(xy):
         r, c = grid.cell(xy[0], xy[1])
@@ -130,12 +170,20 @@ def plan(grid: GridMap, start_xy: tuple[float, float], goal_xy: tuple[float, flo
         disk = np.zeros_like(blocked, np.uint8)
         cv2.circle(disk, (c, r), rad, 1, -1)
         blocked[disk.astype(bool)] = False
+    kept = None
+    if keep and len(keep) >= 2 and math.hypot(keep[-1][0] - goal_xy[0], keep[-1][1] - goal_xy[1]) < 0.05:
+        rest = remaining(keep, start_xy)
+        cells_rest = [local(p) for p in rest]
+        if all(_line_free(blocked, a, b) for a, b in zip(cells_rest, cells_rest[1:])):
+            kept = rest
     cells = astar(blocked, cost, s, g)
     if cells is None:
-        return None
+        return kept
     cells = shortcut(cells, blocked, cost)
     out = [((c + c0 + 0.5 - n / 2) * res, (r + r0 + 0.5 - n / 2) * res) for r, c in cells]
     out[0], out[-1] = tuple(start_xy), tuple(goal_xy)
+    if kept is not None and path_length(kept) <= cfg.keep_factor * path_length(out) + 0.3:
+        return kept
     return out
 
 
@@ -166,11 +214,12 @@ class PlannerWorker:
         if self._thread:
             self._thread.join(timeout=2)
 
-    def request(self, start_xy, goal_xy) -> int:
+    def request(self, start_xy, goal_xy, keep=None, obstacles=None) -> int:
+        """keep: bisheriger Weg, obstacles: zusätzliche Hindernispunkte (siehe plan())."""
         self.start()
         with self._cond:
             self._seq += 1
-            self._job = (self._seq, tuple(start_xy), tuple(goal_xy))
+            self._job = (self._seq, tuple(start_xy), tuple(goal_xy), keep, obstacles)
             self._cond.notify()
             return self._seq
 
@@ -189,11 +238,11 @@ class PlannerWorker:
                     self._cond.wait(0.5)
                 if self._stop.is_set():
                     return
-                seq, s, g = self._job
+                seq, s, g, keep, obstacles = self._job
                 self._job = None
             t0 = time.perf_counter()
             try:
-                path = plan(self.grid, s, g, self.cfg)
+                path = plan(self.grid, s, g, self.cfg, keep, obstacles)
             except Exception:                       # Planer darf die Fahrt nicht mitreißen
                 log.exception("Planung fehlgeschlagen")
                 path = None

@@ -1,0 +1,22 @@
+diff --git a/firmware/src/control/rider_leg_imu.cpp b/firmware/src/control/rider_leg_imu.cpp
+--- a/firmware/src/control/rider_leg_imu.cpp
++++ b/firmware/src/control/rider_leg_imu.cpp
+@@ -140,8 +140,16 @@
+     // Firmware uses atanf(y/z), not atan2. Keep the float intermediate.
+     const float accel_pitch = float(double(std::atan(s.acceleration[1] / s.acceleration[2])) * 57.2958);
+     const float accel_roll = float(double(std::atan(s.acceleration[0] / s.acceleration[2])) * 57.2958);
+-    s.accel_pitch_filtered = float(double(s.accel_pitch_filtered) * 0.97 + double(accel_pitch) * 0.03);
+-    s.accel_roll_filtered = float(double(s.accel_roll_filtered) * 0.92 + double(accel_roll) * 0.08);
++    // Patch 0006: Bei schneller Drehung sieht der Beschleunigungssensor die Fliehkraft (IMU nicht
++    // auf der Drehachse; RiderPi: ~1,4° Scheinneigung bei 85 °/s) und die Fusion zieht die
++    // Lage dorthin -> Rider rollte bei schnellen Drehungen in beide Richtungen vorwärts
++    // (2026-11-05). Solange |Gierrate| > 25 °/s bleiben die gefilterten Beschleunigungswinkel
++    // stehen; die Fusion zieht weiter zur Lage vor der Drehung. Im Stand und beim Geradeausfahren
++    // unverändert (auch der Gleichgewichtspunkt, der den unkalibrierten Nick-Gyro-Nullpunkt enthält).
++    if (std::fabs(yaw_rate) <= 25.0f) {
++        s.accel_pitch_filtered = float(double(s.accel_pitch_filtered) * 0.97 + double(accel_pitch) * 0.03);
++        s.accel_roll_filtered = float(double(s.accel_roll_filtered) * 0.92 + double(accel_roll) * 0.08);
++    }
+     const double dt = double(std::uint32_t(now_us - s.last_us)) * 0.000001;
+     s.last_us = now_us;
+     const double pitch_weight = s.calibrated ? 1.0 / (double(std::fabs(s.gyro_pitch_filtered)) + 500.0) : 0.05;

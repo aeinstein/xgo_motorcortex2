@@ -217,6 +217,7 @@ class BehaviorCfg:
     cruise_v: float = 0.15
     backup_v: float = 0.10
     search_w: float = 0.12
+    turn_w: float = 0.18           # Erkunden: Drehrate beim Wegdrehen (früher fest 1,5 x search_w)
     lost_search_s: float = 1.0
     search_timeout_s: float = 20.0
     blocked_free: float = 0.22     # Freiraum im Zentrum darunter = blockiert
@@ -315,10 +316,18 @@ class HomeCfg:
     clear_cost: float = 4.0            # Zusatzkosten nahe an Hindernissen (fällt bis 2*inflate_m ab)
     unknown_cost: float = 3.0          # unbekannte Zellen kosten so viel mehr als freie
     margin_m: float = 1.5              # Suchgebiet = Pose, Start, gefahrener Weg + Rand
-    lookahead_m: float = 0.35
+    lookahead_m: float = 0.5
     arrive_m: float = 0.15
     replan_s: float = 2.0
+    keep_factor: float = 1.2           # alter Weg bleibt, solange frei und <= Faktor x neuer + 0,3 m
+    use_localmap: bool = True          # Hindernisse der Bahnprüfung (Merkkarte) mit einplanen
     v: float = 0.15                    # normiert, wie behavior.cruise_v
+    # Lenkung: am RiderPi rollt der Rider bei jedem Anfahren erst zurück und eine Drehung läuft
+    # ~15° nach; ständiges Wechseln zwischen Drehen und Fahren brachte ihn nicht vom Fleck
+    # (2026-11-05). Deshalb in Kurven weiterfahren, auf der Stelle nur bei großem Fehler drehen.
+    kp_turn: float = 1.5               # 1/s (Folgen: behavior.kp_turn)
+    turn_enter_deg: float = 75.0       # ab diesem Winkelfehler auf der Stelle drehen ...
+    turn_exit_deg: float = 25.0        # ... bis er darunter ist
     align_heading: bool = True         # am Ziel auf den Startkurs drehen
     align_tol_deg: float = 10.0
     max_fail: int = 3                  # so oft kein Weg -> aufgeben

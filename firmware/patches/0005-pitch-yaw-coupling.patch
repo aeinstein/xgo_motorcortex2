@@ -1,0 +1,30 @@
+diff --git a/firmware/src/control/rider_leg_imu.cpp b/firmware/src/control/rider_leg_imu.cpp
+index 694584c..d9cf74a 100644
+--- a/firmware/src/control/rider_leg_imu.cpp
++++ b/firmware/src/control/rider_leg_imu.cpp
+@@ -118,11 +118,23 @@ bool updateImu(ImuState &s, const std::uint8_t *raw, std::size_t size,
+         }
+     }
+     const float yaw_rate = s.gyro_deg_s[2] - s.gyro_bias[2];
++    // Patch 0005: Drehung um die Senkrechte aus Nick- und Rollrate herausrechnen. Ist der Sensor
++    // gekippt (RiderPi balanciert mit ~2° Roll und ~1° Nick), sehen die Kippachsen bei einer
++    // Drehung mit Rate gz einen Anteil davon: Nick gx = -tan(roll) * gz, Roll -gy = tan(pitch) * gz.
++    // Ohne Abzug wird das als Kippen integriert (40 °/s -> ~1,5 °/s Scheinnicken, 2-9° Fehler),
++    // der Regler hält den falschen Winkel, und der Rider rollt beim Drehen links rückwärts /
++    // rechts vorwärts (gemessen bis 0,3 m/s, 2026-11-05). Nur Nick zu korrigieren reicht nicht:
++    // bei 80 °/s läuft dann die Rollschätzung um ±2,5° weg und verdirbt die Nickkorrektur.
++    // Ohne Drehung unverändert. Winkel auf ±30° begrenzt (liegend ginge tan gegen unendlich).
++    const float tan_roll = std::tan(clamp(s.roll_deg, -30.0f, 30.0f) * 0.017453292f);
++    const float tan_pitch = std::tan(clamp(s.pitch_deg, -30.0f, 30.0f) * 0.017453292f);
++    const float pitch_gyro = s.gyro_deg_s[1] - s.gyro_bias[1] + yaw_rate * tan_roll;
++    const float roll_gyro = s.gyro_deg_s[0] - s.gyro_bias[0] - yaw_rate * tan_pitch;
+     if (std::fabs(s.gyro_pitch_filtered - s.gyro_deg_s[1]) < 1400.0f)
+-        s.gyro_pitch_filtered = float(double(s.gyro_deg_s[1] - s.gyro_bias[1]) * 0.7 +
++        s.gyro_pitch_filtered = float(double(pitch_gyro) * 0.7 +
+                                       double(s.gyro_pitch_filtered) * 0.3);
+     if (std::fabs(s.gyro_roll_filtered - s.gyro_deg_s[0]) < 1800.0f)
+-        s.gyro_roll_filtered = float(double(s.gyro_deg_s[0] - s.gyro_bias[0]) * 0.93 +
++        s.gyro_roll_filtered = float(double(roll_gyro) * 0.93 +
+                                      double(s.gyro_roll_filtered) * 0.07);
+     s.pitch_rate_rad_s = float(double(s.gyro_pitch_filtered) / 57.3);
+     // Firmware uses atanf(y/z), not atan2. Keep the float intermediate.

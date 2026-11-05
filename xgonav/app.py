@@ -310,6 +310,7 @@ class App:
         """Hauptschleife bei gestoppter Bildverarbeitung: Moduswechsel sofort übernehmen;
         im Modus manual mit control_hz regeln (ohne Kamera), sonst Stillstand."""
         self._apply_pending_mode()
+        self._paused_odom()
         if self.behavior.name not in self.NO_CAMERA:
             self.behavior = self._make("idle")
         if self.behavior.name != "manual":
@@ -421,7 +422,8 @@ class App:
                 w.pose, w.goal = self.gridmap.pose(), self.gridmap.start
                 if self.behavior.name == "home":
                     self._home_plan(w)
-            if self.lmap is not None and self.behavior.name == "explore":
+            # approach erkundet mit derselben Logik, bis das Ziel in Sicht ist
+            if self.lmap is not None and self.behavior.name in ("explore", "approach"):
                 vg = self.cfg.behavior.cruise_v * self.cfg.robot.vx_limit
                 w.path_blocked = self.lmap.arc_clearance(vg, 0.0, horizon_s=1.2) < 0.6 * vg + 0.08
             if self.behavior.name == "manual":
@@ -471,6 +473,23 @@ class App:
         tm.mark("snap")
         self._seg_hist.append(tm.done())
 
+
+    def _paused_odom(self) -> None:
+        """Pose auch bei gestoppter Bildverarbeitung mitführen (Handsteuerung, Balancier-Drift).
+        Sonst stand die Raumkarte still, während der Rider per Hand fuhr, und „Zum Start“
+        zielte danach daneben. Nur mit frischen Raddaten: ohne Kamera gibt es sonst keinen Kurs."""
+        now = time.monotonic()
+        w = self.wheels
+        if w is None or self.cfg.odom.source == "command" or not w.fresh(now):
+            self._wheel_at_ctrl = None
+            return
+        ds = self._odom_ds(now, 0.0)
+        dyaw = self._wheel_dyaw or 0.0
+        self.yaw += dyaw
+        if self.lmap is not None:
+            self.lmap.move(ds, dyaw)
+        if self.gridmap is not None:
+            self.gridmap.move(ds, dyaw)
 
     def _odom_ds(self, now: float, dt: float) -> float:
         """Strecke seit dem letzten Regelschritt (m): aus den Rad-Encodern, wenn frisch;
@@ -574,8 +593,20 @@ class App:
             if r[1] is None:
                 log.info("kein Weg zum Start gefunden (%d.)", b.fails)
         if b.want_plan(w.t):
-            self._plan_seq = self.planner.request(w.pose[:2], w.goal[:2])
+            self._plan_seq = self.planner.request(w.pose[:2], w.goal[:2], keep=b.path if b.keep_ok else None,
+                                                  obstacles=self._lmap_world(w.pose))
         self.gridmap.plan = list(b.path) if b.path else []
+
+    def _lmap_world(self, pose) -> np.ndarray | None:
+        """Bestätigte Punkte der Merkkarte (dieselben, die die Bahnprüfung bremsen) in Welt-m."""
+        if self.lmap is None or not self.cfg.home.use_localmap:
+            return None
+        p = self.lmap.confirmed_points(1.5)
+        if not len(p):
+            return None
+        x, y, th = pose
+        c, s = math.cos(th), math.sin(th)
+        return np.column_stack([x + p[:, 0] * c - p[:, 1] * s, y + p[:, 0] * s + p[:, 1] * c])
 
     def _map_view(self, free: FreeSpace, tracks, now: float) -> FreeSpace:
         return mask_movable(free, [(t.cls, t.box) for t in tracks], self.cfg.camera.width, self.cfg.camera.height)

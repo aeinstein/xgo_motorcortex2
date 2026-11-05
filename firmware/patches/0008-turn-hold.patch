@@ -1,0 +1,134 @@
+diff --git a/firmware/src/control/rider_motion.cpp b/firmware/src/control/rider_motion.cpp
+index d134060..3dc3b79 100644
+--- a/firmware/src/control/rider_motion.cpp
++++ b/firmware/src/control/rider_motion.cpp
+@@ -57,14 +57,14 @@ void updateCommandTargets(CommandState &s,const MotionCommand &c) {
+ 
+ void updatePositionHold(HoldState &s,std::uint32_t now,std::uint8_t mode,
+                         float forward,std::uint8_t turn,float position,
+-                        float pitch,bool protection) {
++                        float pitch,bool protection,bool allow_turn,float gain) {
+     if(std::uint32_t(now-s.last_disabled_ms)<750)s.correction=0;
+     if(mode!=1){s.correction=0;return;} // firmware leaves hold mode untouched here
+-    if(std::fabs(forward)<1 && now>2000 && turn>=113 && turn<=143) {
++    if(std::fabs(forward)<1 && now>2000 && (allow_turn || (turn>=113 && turn<=143))) {
+         if(s.mode==0){s.mode=1;s.began_ms=now;}
+     } else s.mode=0;
+     if(std::uint32_t(now-s.began_ms)>500 && s.mode==1)s.mode=2;
+-    if(s.mode==2)s.correction=(s.position-position)*1350.0f;
++    if(s.mode==2)s.correction=(s.position-position)*gain;
+     else {s.position=position;s.correction=0;}
+     if(protection && (static_cast<double>(std::fabs(s.position-position))>.2 || std::fabs(pitch)>20) && s.mode==2)
+         s.mode=0; // correction is intentionally retained until next call
+diff --git a/firmware/src/control/rider_motion.h b/firmware/src/control/rider_motion.h
+index 208c368..fbc89d1 100644
+--- a/firmware/src/control/rider_motion.h
++++ b/firmware/src/control/rider_motion.h
+@@ -27,10 +27,13 @@ struct HoldState {
+     float position=0, correction=0;
+ };
+ // 0x400d5288. Feedback position uses wheelDistance(), in metres.
++// Patch 0008: allow_turn keeps holding while turning on the spot (turn byte outside
++// 113..143); gain is the correction per metre (original 1350 on half the travel).
+ void updatePositionHold(HoldState &, std::uint32_t now_ms,
+                         std::uint8_t robot_mode, float forward_request,
+                         std::uint8_t turn_byte, float position_m,
+-                        float pitch_deg, bool protection=true);
++                        float pitch_deg, bool protection=true,
++                        bool allow_turn=false, float gain=1350.0f);
+ 
+ struct BalanceState { Pid speed=speedPid(), pitch=pitchPid(); };
+ struct Wheels { std::int16_t id11=0, id21=0; };
+diff --git a/firmware/src/main.cpp b/firmware/src/main.cpp
+index 526abaf..e6c1b7c 100644
+--- a/firmware/src/main.cpp
++++ b/firmware/src/main.cpp
+@@ -97,6 +97,8 @@ volatile uint32_t dz_reset_request=0;
+ constexpr const char* kBuildId="rider2-rl-only | rider_balance_v6 | lift guard v4 | dead-zone preload v3 | free-fall guard 60 ms + low-g = fall (v3) + LED fault codes | servo-dropout auto re-arm | 2026-10-24";
+ volatile uint32_t wheel_smooth_ms=0;
+ volatile float yaw_slew_per_second=20000.0f;
++// Patch 0008: hold the wheel centre also while turning on the spot (action 241 on / 240 off, !turnhold on|off).
++volatile bool turn_hold_enabled=false;
+ float yaw_command_filtered=0;
+ bool yaw_filter_init=false;
+ uint32_t last_filter_us=0;
+@@ -179,7 +181,7 @@ public:
+     uint8_t sensor_loops=0,trim_stage=0;
+     rider2::lift::State lift_state;rider2::lift::Config lift_config;bool lift_acting=false;uint32_t control_dt_us=0;
+     int16_t diag_ctrl11=0,diag_ctrl21=0;   // patch 0007: classic controller output before gain/smoothing/slew
+-    bool turnHoldFlag() const {return false;}   // patch 0008 ersetzt das
++    bool turnHoldFlag() const {return turn_hold_enabled;}
+     rider2::fall::State fall_state,fall_deep_state;rider2::fall::Config fall_config,fall_deep_config=rider2::fall::deepConfig();uint32_t fall_last_us=0;
+     double trim_to_save=0;
+     bool save_trim_pending=false;
+@@ -337,7 +339,10 @@ public:
+         case CommandKind::Roll:a.command.roll=value;break;
+         case CommandKind::RollWave:a.command.roll_period=value;a.roll_phase=value?10:0;break;
+         case CommandKind::HeightWave:a.command.height_period=value;a.height_phase=value?10:0;break;
+-        case CommandKind::Action:if(value==255)arm();else if(value==254)emergencyStop();else if(value==253)standup();else if(!leg_calibrating)actions.request(value,now);break;
++        case CommandKind::Action:if(value==255)arm();else if(value==254)emergencyStop();else if(value==253)standup();
++            else if(value==241||value==240){turn_hold_enabled=value==241;result(value==241?"turn hold on":"turn hold off");}
++            else if(!leg_calibrating)actions.request(value,now);
++            break;
+         case CommandKind::PositionHoldProtection:a.hold_protection=value!=0;break;
+         case CommandKind::Leveling:a.leveling=value!=0;break;
+         case CommandKind::MaxForward:a.command.max_forward=float(double(value)/255.0*210.0);break;
+@@ -629,7 +634,7 @@ public:
+         else if(request.command.height>200)request.command.height=200;
+ #endif
+         request.roll_phase=a.roll_phase;request.height_phase=a.height_phase;
+-        request.leveling=a.leveling;request.heading_hold=a.heading_hold;request.hold_protection=a.hold_protection;request.heading_term_limit=heading_limit;
++        request.leveling=a.leveling;request.heading_hold=a.heading_hold;request.hold_protection=a.hold_protection;request.turn_hold=turn_hold_enabled;request.heading_term_limit=heading_limit;
+         s.motion=controller.step(in,request);a.roll_phase=request.roll_phase;a.height_phase=request.height_phase;
+         diag_ctrl11=s.motion.wheels.id11;diag_ctrl21=s.motion.wheels.id21;
+         if(!s.motion.valid){actions.requestMode(252,true);stop(StopReason::InvalidControl,true);result("invalid control output; stop latched");}
+@@ -880,6 +885,8 @@ void console(const char* line) {
+     Event e;
+     if(!strcmp(line,"!arm")){e.kind=EventKind::Arm;enqueue(e);return;}
+     if(!strcmp(line,"!standup")){valueCommand(CommandKind::Action,253);return;}
++    if(!strcmp(line,"!turnhold on")){valueCommand(CommandKind::Action,241);return;}
++    if(!strcmp(line,"!turnhold off")){valueCommand(CommandKind::Action,240);return;}
+     if(!strcmp(line,"!neutral")){e.kind=EventKind::Neutral;enqueue(e);return;}
+     if(!strcmp(line,"!odom reset")){e.kind=EventKind::ResetOdometry;enqueue(e);return;}
+     if(!strcmp(line,"!cal begin")){valueCommand(CommandKind::LegCalibration,1);return;}
+diff --git a/firmware/src/motion_controller.cpp b/firmware/src/motion_controller.cpp
+index 37da298..b202a01 100644
+--- a/firmware/src/motion_controller.cpp
++++ b/firmware/src/motion_controller.cpp
+@@ -40,8 +40,12 @@ MotionResult MotionController::step(const MotionInput& i,MotionRequest& request)
+               i.pitch_deg,o.bias,i.pitch_rate_rad_s,command_.filtered_height,hold_.mode==2,o.wheels);
+     control::addWheelSpeedCorrection(o.wheels,command_.filtered_forward,command_.filtered_turn,i.speed11,i.speed21);
+     control::updateCommandTargets(command_,command);
+-    control::updatePositionHold(hold_,i.now_ms,i.mode,command_.forward,command.turn,o.position,
+-                                i.pitch_deg,request.hold_protection);
++    // Patch 0008: switching the feedback changes the units of hold_.position -> start over.
++    if(request.turn_hold!=previous_turn_hold_){hold_.mode=0;hold_.correction=0;previous_turn_hold_=request.turn_hold;}
++    control::updatePositionHold(hold_,i.now_ms,i.mode,command_.forward,command.turn,
++                                request.turn_hold?o.physical_position:o.position,
++                                i.pitch_deg,request.hold_protection,
++                                request.turn_hold,request.turn_hold?675.0f:1350.0f);
+     next_forward_=command_.filtered_forward+hold_.correction;
+     float roll_increment=0;
+     if(request.leveling){roll_pid_.target=0;roll_pid_.measurement=i.roll_deg;roll_increment=control::updatePid(roll_pid_);}
+diff --git a/firmware/src/motion_controller.h b/firmware/src/motion_controller.h
+index 773675c..fb6b8fe 100644
+--- a/firmware/src/motion_controller.h
++++ b/firmware/src/motion_controller.h
+@@ -11,6 +11,10 @@ struct MotionRequest {
+     // The original 0x400d58fc uses leg12.position, not wheel21.encoder.
+     // Keep the known instruction behavior explicit instead of silently fixing it.
+     bool original_position_feedback=true;
++    // Patch 0008: hold the wheel centre (both encoders) also while turning on the spot, so the
++    // Rider turns in place instead of drifting (RiderPi 2026-11-05: up to 27 cm per 3 s turn).
++    // Effective gain unchanged: 675 per metre of real travel = original 1350 on half the travel.
++    bool turn_hold=false;
+ };
+ struct MotionInput {
+     uint32_t now_ms=0;
+@@ -58,5 +62,6 @@ private:
+     control::Pid roll_pid_=control::rollPid();
+     float next_forward_=0;
+     uint8_t previous_mode_=0;
++    bool previous_turn_hold_=false;
+ };
+ }}

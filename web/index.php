@@ -162,6 +162,8 @@ details.extras[open]>summary{margin-bottom:8px}
 .legende i{display:inline-block;width:10px;height:3px;border-radius:2px;vertical-align:middle;margin-right:4px}
 .legende b{color:var(--text);font-weight:500}
 .unter .rechts{float:right}
+.lage3d{display:block;width:100%;background:var(--karte2);border-radius:6px;cursor:grab;touch-action:none}
+.lage3d.zieht{cursor:grabbing}
 .unter button{padding:1px 7px;font-size:12px;margin-left:6px}
 </style>
 </head>
@@ -222,12 +224,9 @@ details.extras[open]>summary{margin-bottom:8px}
   </section>
   <details class="karte extras" id="verlauf" ontoggle="verlaufUmschalten()">
     <summary><h2>Verlauf</h2><span class="leise">Lage · CPU · Akku</span></summary>
-    <div class="unter">Lage, letzte 60 s (IMU, 50 Hz)</div>
-    <div class="legende" id="l-lage"></div>
-    <canvas class="diag" id="d-lage" data-h="150"></canvas>
-    <div class="unter">Gier relativ zum Fensteranfang</div>
-    <div class="legende" id="l-gier"></div>
-    <canvas class="diag" id="d-gier" data-h="80"></canvas>
+    <div class="unter">Lage (IMU, live, ~0,3 s verzögert) <span class="rechts">ziehen: Ansicht drehen · Doppelklick: zurück</span></div>
+    <canvas class="lage3d" id="d-lage" data-h="230" role="img" aria-label="Lage des Riders als 3D-Modell"></canvas>
+    <div class="legende" id="l-lage" title="Gier 0° = Kurs beim Start des ESP32; + = links. Roll + = rechts tief, Nick + = vorn tief"></div>
     <div class="unter">CPU je Kern, letzte 10 min <span class="rechts" id="v-temp"></span></div>
     <div class="legende" id="l-cpu"></div>
     <canvas class="diag" id="d-cpu" data-h="140"></canvas>
@@ -287,8 +286,8 @@ details.extras[open]>summary{margin-bottom:8px}
     <img id="karte" alt="Raumkarte" width="320" height="320">
     <div class="leise" style="margin-top:6px" id="karte-pose">-</div>
     <details class="hilfe"><summary>grau unbekannt · hell frei · dunkel belegt · grün Weg · cyan Plan · blau Start · rot Rider</summary>
-      <p>Ursprung = Startpose (oben = vorn beim Start). Strecke aus den Rädern, Drehung aus der Kamera;
-        ohne Marker driftet die Karte mit der Zeit.</p>
+      <p>Ursprung = Startpose (oben = vorn beim Start). Strecke und Drehung aus den Rädern (auch bei
+        gestoppter Bildverarbeitung); ohne Marker driftet die Karte mit der Zeit.</p>
       <p>„Zum Start“ plant einen Weg über die Karte und fährt ihn ab. Die Karte wird regelmäßig gespeichert
         und beim Start von xgonav geladen; der Rider muss dann wieder am Startpunkt stehen.</p>
     </details>
@@ -559,10 +558,170 @@ async function karteHolen() {
 // --- Verlauf: Lage (IMU), CPU je Kern, Akku. Abfrage nur bei offener Karte, Akku immer
 // (aus status()) und im localStorage, damit er ein Neuladen der Seite übersteht.
 const FARBEN = ['#3987e5', '#d95926', '#199e70', '#c98500'];   // Kategorien, dunkel, geprüft (CVD)
-const LAGE_MS = 60e3, CPU_MS = 600e3, AKKU_MS = 120 * 60e3, AKKU_TAKT_MS = 30e3, AKKU_KEY = 'xgonav.akku';
-const lage = [];            // [t_ms (Treiberzeit), roll, pitch, gier]
+const LAGE_MS = 5e3, CPU_MS = 600e3, AKKU_MS = 120 * 60e3, AKKU_TAKT_MS = 30e3, AKKU_KEY = 'xgonav.akku';
+const lage = [];            // [t_ms (Treiberzeit), roll, pitch, gier] – Puffer zum Abspielen der 50-Hz-Proben
 const cpu = [];             // [t_ms, [Kern0 %, Kern1 %, …]]
-let imuSeq = 0, cpuVorher = null;
+let imuSeq = 0, cpuVorher = null, cpuZeit = 0;
+
+// --- Lage als 3D-Modell (Canvas 2D, eigene Projektion, keine Bibliothek). Körper-KS: x vorn,
+// y links, z hoch (cm). Firmware: Roll + = rechts tief, Nick + = vorn tief, Gier + = links.
+const LAGE_VERZUG = 300;    // ms hinter der neuesten Probe abspielen (Abfrage alle 250 ms)
+const ACHSE = [0, 0, 3.2];  // um die Radachse drehen: Räder bleiben am Boden
+function quader(c, l, farbe) {
+  const [x, y, z] = c, [a, b, h] = l.map(v => v / 2);
+  const P = (i, j, k) => [x + i * a, y + j * b, z + k * h];
+  return [
+    {p: [P(1, -1, -1), P(1, 1, -1), P(1, 1, 1), P(1, -1, 1)], n: [1, 0, 0], farbe},
+    {p: [P(-1, 1, -1), P(-1, -1, -1), P(-1, -1, 1), P(-1, 1, 1)], n: [-1, 0, 0], farbe},
+    {p: [P(1, 1, -1), P(-1, 1, -1), P(-1, 1, 1), P(1, 1, 1)], n: [0, 1, 0], farbe},
+    {p: [P(-1, -1, -1), P(1, -1, -1), P(1, -1, 1), P(-1, -1, 1)], n: [0, -1, 0], farbe},
+    {p: [P(-1, -1, 1), P(1, -1, 1), P(1, 1, 1), P(-1, 1, 1)], n: [0, 0, 1], farbe},
+    {p: [P(-1, 1, -1), P(1, 1, -1), P(1, -1, -1), P(-1, -1, -1)], n: [0, 0, -1], farbe},
+  ];
+}
+function rad(c, r, breite, farbe, n = 18) {   // Zylinder, Achse y
+  const [x, y, z] = c, f = [], au = [], in_ = [];
+  for (let k = 0; k < n; k++) {
+    const w = 2 * Math.PI * k / n;
+    au.push([x + r * Math.cos(w), y + breite / 2, z + r * Math.sin(w)]);
+    in_.push([x + r * Math.cos(w), y - breite / 2, z + r * Math.sin(w)]);
+  }
+  f.push({p: au.slice().reverse(), n: [0, 1, 0], farbe: '#3a414c'});
+  f.push({p: in_, n: [0, -1, 0], farbe: '#3a414c'});
+  for (let k = 0; k < n; k++) {
+    const k2 = (k + 1) % n, w = 2 * Math.PI * (k + .5) / n;
+    f.push({p: [au[k], au[k2], in_[k2], in_[k]], n: [Math.cos(w), 0, Math.sin(w)], farbe});
+  }
+  return f;
+}
+const MODELL = [
+  ...quader([0, 0, 12], [9, 7, 7], '#6b7683'),           // Kopf/Körper, zwischen den Beinen
+  ...quader([4.7, 0, 12.6], [0.5, 5.4, 4.6], '#3987e5'),  // Front (Display)
+  ...quader([5.1, 0, 14.6], [0.6, 1.6, 1.1], '#e3e6ea'),  // Kamera
+  ...quader([0, 4.2, 8.2], [1.4, 1.0, 10], '#4a535e'),    // Bein links (Radachse bis Kopfhöhe)
+  ...quader([0, -4.2, 8.2], [1.4, 1.0, 10], '#4a535e'),   // Bein rechts
+  ...rad([0, 6.2, 3.2], 3.2, 1.8, '#23272d'),             // Rad links (11)
+  ...rad([0, -6.2, 3.2], 3.2, 1.8, '#23272d'),            // Rad rechts (21)
+];
+function drehmatrix(roll, pitch, gier) {      // R = Rz(gier) · Ry(nick) · Rx(roll), Grad
+  const g = Math.PI / 180, [cr, sr] = [Math.cos(roll * g), Math.sin(roll * g)];
+  const [cp, sp] = [Math.cos(pitch * g), Math.sin(pitch * g)], [cy, sy] = [Math.cos(gier * g), Math.sin(gier * g)];
+  return [[cy * cp, cy * sp * sr - sy * cr, cy * sp * cr + sy * sr],
+          [sy * cp, sy * sp * sr + cy * cr, sy * sp * cr - cy * sr],
+          [-sp, cp * sr, cp * cr]];
+}
+const mal = (R, v) => [0, 1, 2].map(i => R[i][0] * v[0] + R[i][1] * v[1] + R[i][2] * v[2]);
+const skal = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+// Kamera auf einer Kugel um die Modellmitte; Azimut/Elevation mit der Maus (Standard: vorn links oben)
+const LAGE_SICHT = [40, 28];
+let lageSicht = LAGE_SICHT.slice();
+try { const v = JSON.parse(localStorage.getItem('xgonav.lage3d')); if (Array.isArray(v) && v.length === 2) lageSicht = v.map(Number); } catch (e) {}
+function kamera(B, H) {
+  const az = lageSicht[0] * Math.PI / 180, el = lageSicht[1] * Math.PI / 180, dist = 70, ziel = [0, 0, 6];
+  const d = [Math.cos(el) * Math.cos(az), Math.cos(el) * Math.sin(az), Math.sin(el)];
+  const pos = d.map((v, i) => ziel[i] + v * dist), f = d.map(v => -v);
+  const r = [f[1], -f[0], 0], rl = Math.hypot(r[0], r[1]); r[0] /= rl; r[1] /= rl;   // f × z
+  const u = [r[1] * f[2] - r[2] * f[1], r[2] * f[0] - r[0] * f[2], r[0] * f[1] - r[1] * f[0]];
+  const norm = p => {                                   // ohne Maßstab: [rechts, unten] / Tiefe
+    const q = [p[0] - pos[0], p[1] - pos[1], p[2] - pos[2]], z = skal(q, f);
+    return [skal(q, r) / z, -skal(q, u) / z, z];
+  };
+  // Rahmen für jeden Blickwinkel aus Ring (r 22) und einem Kasten um alle Lagen des Modells
+  // (±13 cm um die Achse, 0..17 cm hoch): 90 % der Fläche, mittig
+  const rand = [];
+  for (let k = 0; k < 36; k++) { const w = Math.PI * k / 18; rand.push(norm([22 * Math.cos(w), 22 * Math.sin(w), 0])); }
+  for (const x of [-13, 13]) for (const y of [-13, 13]) for (const z of [0, 17]) rand.push(norm([x, y, z]));
+  const xs = rand.map(v => v[0]), ys = rand.map(v => v[1]);
+  const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+  const k = 0.9 * Math.min(B / (x1 - x0), H / (y1 - y0)), cx = B / 2 - k * (x0 + x1) / 2, cy = H / 2 - k * (y0 + y1) / 2;
+  return {pos, f, proj: p => { const v = norm(p); return [cx + k * v[0], cy + k * v[1], v[2]]; }};
+}
+// Lage zur Treiberzeit t, linear zwischen den Proben (Gier ist fortlaufend, nicht gewickelt)
+function lageBei(t) {
+  if (!lage.length) return null;
+  const i = suche(lage, t);
+  if (i <= 0) return lage[0].slice(1);
+  if (i >= lage.length) return lage[lage.length - 1].slice(1);
+  const a = lage[i - 1], b = lage[i], f = (t - a[0]) / ((b[0] - a[0]) || 1);
+  return [1, 2, 3].map(k => a[k] + (b[k] - a[k]) * f);
+}
+function farbe(hex, s) {
+  const v = parseInt(hex.slice(1), 16);
+  return 'rgb(' + [v >> 16, (v >> 8) & 255, v & 255].map(c => Math.round(c * s)).join(',') + ')';
+}
+const LICHT = (v => v.map(x => x / Math.hypot(...v)))([0.5, 0.35, 1]);
+function lageZeichnen(w) {
+  const cv = $('d-lage'), dpr = window.devicePixelRatio || 1, B = cv.clientWidth, H = Number(cv.dataset.h);
+  if (!B) return;
+  if (cv.width !== Math.round(B * dpr) || cv.height !== Math.round(H * dpr)) {
+    cv.width = Math.round(B * dpr); cv.height = Math.round(H * dpr); cv.style.height = H + 'px';
+  }
+  const g = cv.getContext('2d'), K = kamera(B, H);
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.clearRect(0, 0, B, H);
+  g.font = '11px system-ui,sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  // Boden: Kompassring, fest in der Welt (Gier dreht das Modell dagegen); 0° = Kurs beim ESP32-Start
+  const ring = (r, n = 72) => Array.from({length: n + 1}, (_, k) => K.proj([r * Math.cos(2 * Math.PI * k / n), r * Math.sin(2 * Math.PI * k / n), 0]));
+  g.strokeStyle = '#2b3038'; g.lineWidth = 1;
+  for (const r of [9, 18]) { g.beginPath(); ring(r).forEach((p, k) => k ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1])); g.stroke(); }
+  for (let a = 0; a < 360; a += 30) {
+    const c = Math.cos(a * Math.PI / 180), s = Math.sin(a * Math.PI / 180);
+    const p1 = K.proj([16.5 * c, 16.5 * s, 0]), p2 = K.proj([18 * c, 18 * s, 0]), pt = K.proj([20.5 * c, 20.5 * s, 0]);
+    g.strokeStyle = a % 90 ? '#2b3038' : '#4a535e'; g.beginPath(); g.moveTo(p1[0], p1[1]); g.lineTo(p2[0], p2[1]); g.stroke();
+    if (a % 90 === 0) { g.fillStyle = '#8b94a1'; g.fillText(a > 180 ? (a - 360) + '°' : a + '°', pt[0], pt[1]); }
+  }
+  if (!w) { g.fillStyle = '#8b94a1'; g.fillText('keine IMU-Daten', B / 2, 16); return; }
+  const R = drehmatrix(w[0], w[1], w[2]);
+  const welt = p => { const q = mal(R, [p[0] - ACHSE[0], p[1] - ACHSE[1], p[2] - ACHSE[2]]); return [q[0] + ACHSE[0], q[1] + ACHSE[1], q[2] + ACHSE[2]]; };
+  // Schatten/Kursanzeiger am Boden: Vorwärtsrichtung des Körpers, auf den Boden projiziert
+  const vor = mal(R, [1, 0, 0]), vl = Math.hypot(vor[0], vor[1]) || 1;
+  const a0 = K.proj([0, 0, 0]), a1 = K.proj([14 * vor[0] / vl, 14 * vor[1] / vl, 0]);
+  g.strokeStyle = '#3987e5'; g.lineWidth = 2; g.beginPath(); g.moveTo(a0[0], a0[1]); g.lineTo(a1[0], a1[1]); g.stroke();
+  // Flächen: drehen, Rückseiten weg, von hinten nach vorn zeichnen, Lambert-Schattierung
+  const flaechen = [];
+  for (const f of MODELL) {
+    const p = f.p.map(welt), n = mal(R, f.n);
+    if (skal([p[0][0] - K.pos[0], p[0][1] - K.pos[1], p[0][2] - K.pos[2]], n) >= 0) continue;
+    const q = p.map(K.proj);
+    flaechen.push({q, z: q.reduce((s, v) => s + v[2], 0) / q.length, s: 0.42 + 0.58 * Math.max(0, skal(n, LICHT)), farbe: f.farbe});
+  }
+  flaechen.sort((a, b) => b.z - a.z);
+  g.lineJoin = 'round'; g.lineWidth = 0.6;
+  for (const f of flaechen) {
+    g.fillStyle = farbe(f.farbe, f.s); g.strokeStyle = farbe(f.farbe, f.s * 0.8);
+    g.beginPath(); f.q.forEach((v, k) => k ? g.lineTo(v[0], v[1]) : g.moveTo(v[0], v[1])); g.closePath(); g.fill(); g.stroke();
+  }
+}
+let lageOff = null, lageRaf = 0, lageN = 0;
+function lageSchleife() {
+  lageRaf = 0;
+  if (!$('verlauf').open || document.hidden) return;
+  const t = lageOff == null ? null : performance.now() - lageOff - LAGE_VERZUG;
+  const w = t == null ? null : lageBei(t);
+  lageZeichnen(w);
+  if (w && lageN++ % 10 === 0) {
+    const gier = ((w[2] + 180) % 360 + 360) % 360 - 180;
+    $('l-lage').innerHTML = [['Roll', w[0], 1], ['Nick', w[1], 1], ['Gier', gier, 0]]
+      .map(([n, v, nk]) => '<span>' + n + ' <b>' + (v >= 0 ? '+' : '−') + Math.abs(v).toFixed(nk) + '°</b></span>').join('');
+  }
+  lageRaf = requestAnimationFrame(lageSchleife);
+}
+function lageStarten() { if (!lageRaf) lageRaf = requestAnimationFrame(lageSchleife); }
+// Ansicht drehen: ziehen (Maus/Touch), Doppelklick = Standard; gemerkt im localStorage
+(() => {
+  const cv = $('d-lage'), merken = () => { try { localStorage.setItem('xgonav.lage3d', JSON.stringify(lageSicht.map(v => Math.round(v)))); } catch (e) {} };
+  let start = null;
+  cv.addEventListener('pointerdown', e => { start = [e.clientX, e.clientY, ...lageSicht]; cv.setPointerCapture(e.pointerId); cv.classList.add('zieht'); });
+  cv.addEventListener('pointermove', e => {
+    if (!start) return;
+    lageSicht = [((start[2] - (e.clientX - start[0]) * 0.5) % 360 + 360) % 360,
+                 Math.max(5, Math.min(85, start[3] + (e.clientY - start[1]) * 0.4))];
+  });
+  const ende = () => { if (start) { start = null; cv.classList.remove('zieht'); merken(); } };
+  cv.addEventListener('pointerup', ende); cv.addEventListener('pointercancel', ende);
+  cv.addEventListener('dblclick', () => { lageSicht = LAGE_SICHT.slice(); merken(); });
+})();
+document.addEventListener('visibilitychange', lageStarten);
 
 function akkuLesen() {
   try { return JSON.parse(localStorage.getItem(AKKU_KEY)) || []; } catch (e) { return []; }
@@ -688,19 +847,7 @@ function legende(id, serien, einheit, nk = 1) {
 const uhr = t => new Date(t).toLocaleTimeString('de-DE', {hour: '2-digit', minute: '2-digit'});
 function verlaufZeichnen() {
   if (!$('verlauf').open) return;
-  // Lage: Zeitachse = Treiberzeit, rechts der neueste Wert
-  const bis = lage.length ? lage[lage.length - 1][0] : 0, von = bis - LAGE_MS;
-  const rel = t => Math.round((t - bis) / 1000) + ' s';
-  const ls = [{name: 'Roll', farbe: FARBEN[0], pkt: lage.map(p => [p[0], p[1]])},
-              {name: 'Pitch', farbe: FARBEN[1], pkt: lage.map(p => [p[0], p[2]])}];
-  legende('l-lage', ls, '°');
-  linien($('d-lage'), ls, {von, bis, minSpanne: 10, einheit: '°', luecke: 300, xText: rel, xs: 15e3, anker: true});
-  const i0 = suche(lage, von), g0 = lage.length ? lage[Math.min(i0, lage.length - 1)][3] : 0;
-  const gs = [{name: 'Gier', farbe: FARBEN[0], pkt: lage.map(p => [p[0], p[3] - g0])}];
-  legende('l-gier', gs, '°');
-  linien($('d-gier'), gs, {von, bis, minSpanne: 10, einheit: '°', luecke: 300, xText: rel, xs: 15e3, anker: true,
-                           nk: 0});
-  // CPU: Browserzeit
+  // Lage: eigene Schleife (lageSchleife). CPU: Browserzeit
   const jetzt = Date.now(), n = cpu.length ? cpu[cpu.length - 1][1].length : 0;
   const cs = Array.from({length: n}, (_, k) =>
     ({name: 'Kern ' + k, farbe: FARBEN[k % FARBEN.length], pkt: cpu.map(p => [p[0], p[1][k]])}));
@@ -717,7 +864,7 @@ let sysTimer = null;
 // Offen/zu merken, damit der Verlauf nach dem Neuladen gleich weiterläuft
 function verlaufUmschalten() {
   try { localStorage.setItem('xgonav.verlauf', $('verlauf').open ? '1' : '0'); } catch (e) {}
-  if ($('verlauf').open) sysHolen();
+  if ($('verlauf').open) { sysHolen(); lageStarten(); }
 }
 async function sysHolen() {
   clearTimeout(sysTimer);
@@ -726,24 +873,31 @@ async function sysHolen() {
     const r = await fetch('api.php?a=sys&since=' + imuSeq, {cache: 'no-store'});
     const s = await r.json();
     if (r.ok) {
-      if (s.seq < imuSeq) { lage.length = 0; imuSeq = 0; }  // Treiber neu geladen
+      if (s.seq < imuSeq) { lage.length = 0; imuSeq = 0; lageOff = null; }  // Treiber neu geladen
       for (const p of s.imu) { lage.push([p[1], p[2], p[3], p[4]]); imuSeq = p[0]; }
-      if (lage.length) abschneiden(lage, lage[lage.length - 1][0] - LAGE_MS);
+      if (lage.length) {
+        abschneiden(lage, lage[lage.length - 1][0] - LAGE_MS);
+        // Treiberzeit -> Browserzeit: kleinster Abstand (frischeste Probe), langsam nachführen
+        const off = performance.now() - lage[lage.length - 1][0];
+        lageOff = lageOff == null || off < lageOff || Math.abs(off - lageOff) > 2000 ? off : lageOff + (off - lageOff) * 0.02;
+      }
       const jetzt = Date.now();
-      if (cpuVorher && cpuVorher.length === s.cpu.length)
-        cpu.push([jetzt, s.cpu.map((c, k) => {
-          const dt = c[0] - cpuVorher[k][0];
-          return dt > 0 ? Math.max(0, Math.min(100, 100 * (1 - (c[1] - cpuVorher[k][1]) / dt))) : 0;
-        })]);
-      cpuVorher = s.cpu;
-      abschneiden(cpu, jetzt - CPU_MS);
-      $('v-temp').textContent = (s.temp_c != null ? s.temp_c.toFixed(1) + ' °C' : '') +
-                                (s.load != null ? ' · Last ' + s.load.toFixed(2) : '');
-      akkuMerken(s.battery);
-      verlaufZeichnen();
+      if (!cpuVorher || jetzt - cpuZeit >= 1000) {         // CPU, Temperatur, Akku: 1 Hz
+        if (cpuVorher && cpuVorher.length === s.cpu.length)
+          cpu.push([jetzt, s.cpu.map((c, k) => {
+            const dt = c[0] - cpuVorher[k][0];
+            return dt > 0 ? Math.max(0, Math.min(100, 100 * (1 - (c[1] - cpuVorher[k][1]) / dt))) : 0;
+          })]);
+        cpuVorher = s.cpu; cpuZeit = jetzt;
+        abschneiden(cpu, jetzt - CPU_MS);
+        $('v-temp').textContent = (s.temp_c != null ? s.temp_c.toFixed(1) + ' °C' : '') +
+                                  (s.load != null ? ' · Last ' + s.load.toFixed(2) : '');
+        akkuMerken(s.battery);
+        verlaufZeichnen();
+      }
     }
   } catch (e) { /* Rider weg: beim nächsten Mal wieder */ }
-  sysTimer = setTimeout(sysHolen, 1000);
+  sysTimer = setTimeout(sysHolen, 250);                    // Lage live; IMU-Ring hält ~2,5 s
 }
 // Fadenkreuz: Maus und Touch
 document.querySelectorAll('.diag').forEach(cv => {
@@ -756,6 +910,7 @@ karteHolen();
 status();
 if (localStorage.getItem('xgonav.verlauf') === '1') $('verlauf').open = true;
 sysHolen();
+lageStarten();
 setInterval(status, 700);
 </script>
 </body>

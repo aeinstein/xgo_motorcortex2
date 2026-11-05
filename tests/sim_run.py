@@ -1,6 +1,7 @@
-"""Closed-Loop-Szenarien im Simulator. python3 tests/sim_run.py follow|explore|home [sekunden] [video.mp4] [--imu] [--fs-thread] [--wheels] [--kanten]
+"""Closed-Loop-Szenarien im Simulator. python3 tests/sim_run.py follow|explore|home [sekunden] [video.mp4] [--imu] [--fs-thread] [--wheels] [--kanten] [--dyn]
 
-home: erste Hälfte explore, dann Modus home (zurück zum Startpunkt der Raumkarte)."""
+home: erste Hälfte explore, dann Modus home (zurück zum Startpunkt der Raumkarte).
+--dyn: Trägheit wie am RiderPi (Totzone, Nachlaufen der Drehung, Rückrollen beim Anfahren)."""
 import logging, math, sys, threading, time
 sys.path.insert(0, ".")
 import numpy as np
@@ -10,7 +11,7 @@ from xgonav.robot import SimRobot
 from xgonav.sim import FakeDetector, Person, SimImu, SimWheels, SimWorld
 
 
-def run(mode="follow", secs=25.0, video=None, shake=1.0, quiet=True, imu=False, fs_thread=False, wheels=False, vx_true=None, method=None):
+def run(mode="follow", secs=25.0, video=None, shake=1.0, quiet=True, imu=False, fs_thread=False, wheels=False, vx_true=None, method=None, dyn=False):
     logging.basicConfig(level=logging.WARNING if quiet else logging.INFO)
     cfg = Config()
     home = mode == "home"
@@ -23,7 +24,8 @@ def run(mode="follow", secs=25.0, video=None, shake=1.0, quiet=True, imu=False, 
     person = Person([(3.2, 1.3), (4.8, 4.6), (1.4, 5.0), (1.2, 3.0)], speed=0.3) if mode not in ("explore", "home") else None
     world = SimWorld(cfg.camera, robot, person, start=(1.0, 1.2, 0.2), shake=shake,
                      mount_offset_mm=cfg.camera.mount_offset_mm,
-                     vx_mps=vx_true if vx_true is not None else cfg.robot.vx_limit)  # vx_true: echte m/s je Einheit
+                     vx_mps=vx_true if vx_true is not None else cfg.robot.vx_limit,  # vx_true: echte m/s je Einheit
+                     dynamics=dyn)
     if imu:
         cfg.imu.pitch_ref_deg = 2.5   # wie nach calibrate.py wall
     if not wheels:
@@ -128,4 +130,5 @@ if __name__ == "__main__":
     secs = float(sys.argv[2]) if len(sys.argv) > 2 and not sys.argv[2].startswith("--") else 25
     args = [a for a in sys.argv[3:] if not a.startswith("--")]
     print(run(mode, secs, args[0] if args else None, imu="--imu" in sys.argv, fs_thread="--fs-thread" in sys.argv,
-              wheels="--wheels" in sys.argv, method="kanten" if "--kanten" in sys.argv else None))
+              wheels="--wheels" in sys.argv, method="kanten" if "--kanten" in sys.argv else None,
+              dyn="--dyn" in sys.argv))

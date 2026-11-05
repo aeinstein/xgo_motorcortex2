@@ -1,6 +1,6 @@
 # Limitations and measured facts
 
-Single device: RiderPi, CM4 2 GB, kernel 6.6.74+rpt-rpi-v8, OV5647 wide-angle, firmware R-1.1.3 → R-1.1.6.
+Single device: RiderPi, CM4 2 GB, kernel 6.6.74+rpt-rpi-v8, OV5647 wide-angle, firmware R-1.1.3 → R-1.1.6 (+ patches 0001–0005 since 2026-11-05).
 
 ## Hardware test status
 
@@ -8,10 +8,13 @@ Single device: RiderPi, CM4 2 GB, kernel 6.6.74+rpt-rpi-v8, OV5647 wide-angle, f
 |---|---|
 | Driver patches 0001/0002, IMU ~49 Hz, kernel watchdog | tested |
 | Wheel encoders (0x0d/0x0c), odometry scale | tested (tape measure, 215 cm) |
+| Wheel heading vs IMU | 2026-11-05, 184 s / 15 m / 25 turns: slope 1.000, 3° apart at the end (track 0.090 m fits) |
 | Camera geometry, lens shading | measured |
 | Manual driving (web UI) | tested |
 | `follow` | tested 2026-11-02 (runs 3–8, `max_v` 0.10–0.15); works, path check blocked in some runs |
-| `explore`, `approach`, `home` | **not tested** |
+| `explore` | short manual tries 2026-11-04/05, no recording; stood in front of obstacles without turning away (fixed, `path_blocked`) |
+| `home` | 2026-11-05, 3 tries: did not reach the start. Stop/turn/start cycles and changing plans (45 s without progress), then stuck 1.3 m before the start at a gap the path check considers too narrow; afterwards changed (path keeping, `LocalMap` obstacles in planning, curve driving), **not retested** |
+| `approach` | **not tested** |
 | IMU sync while balancing | not verified |
 | Patch 0003 (`force_yaw`) | not tested |
 | Room map | used only by `home`; drifts (no markers); loading assumes the Rider stands at the start point |
@@ -56,6 +59,7 @@ Largest cost: optical flow (`ego.lk_*`). The Python binding does not accept preb
 | Balancing drift | slow drift in position and heading |
 | Firmware units | 1 unit ≈ 1 m/s assumed (`vx_limit`), map fallback only |
 | Stand-up | Rider rolls ~20 cm forward |
+| Rolling while turning | R-1.1.6 integrates the tilt gyros only; balancing with ~2° roll / ~1° pitch, turning leaks into them → pitch estimate +2–3° (left) / −5–9° (right) → rolled back on left turns, forward on right turns (up to 0.3 m/s, 20–40 cm per 3 s turn). Firmware patch 0005 (flashed 2026-11-05) removes the rotation about the vertical from pitch and roll rate. Turn test (3 s on the spot, centre displacement): 0.15 (~37 °/s) −4 / +9 cm; 0.30 (~85 °/s) +6 cm left, +26 cm right (first pitch-only version +16 / +40 cm). Remaining at fast turns: pitch estimate sinks 1–3° in both directions, consistent with centripetal acceleration on the accelerometer (IMU ~11 cm from the turning axis) plus ~0.3 % gyro cross-coupling. Patch 0006 (flashed 2026-11-05 19:28, holds the accelerometer angles while |yaw rate| > 25 °/s) changed nothing measurable: 0.15 −1 / +11 cm, 0.30 +11 / +27 cm (left / right) – centripetal acceleration is not the main cause; right turns still push forward (cause open: per-wheel motor/speed asymmetry or gyro cross-coupling, needs firmware trace). Turning also lags (~0.3 s, 10–17° overshoot); `sim_run.py --dyn` models lag, dead band and a short roll-back |
 
 ## Perception
 

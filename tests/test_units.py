@@ -660,6 +660,37 @@ def test_manual_without_pipeline():
     app.stop(); th.join(timeout=5)
 
 
+def test_paused_pipeline_keeps_pose_from_wheels():
+    """Handfahrt bei gestoppter Bildverarbeitung: Raumkarte und Kurs folgen den Rädern
+    (sonst stand die Pose still und „Zum Start“ zielte danach daneben)."""
+    import math
+    from xgonav.app import App
+    from xgonav.wheels import WheelOdom
+    cfg = Config(); cfg.output.web_port = 0; cfg.detector.enabled = False
+    robot = SimRobot(cfg.robot)
+    wh = WheelOdom(cfg.odom)
+    app = App(cfg, robot, SimWorld(cfg.camera, robot, None), imu=None, wheels=wh)
+    k = 1.0 / wh.m_per_tick
+    seq = [1]
+
+    def drive(l0, r0, l1, r1, n=50):                     # kleine Schritte (große gelten als Sprung)
+        for i in range(1, n + 1):
+            seq[0] += 1
+            wh.add(seq[0], time.monotonic(), round((l0 + (l1 - l0) * i / n) * k), round((r0 + (r1 - r0) * i / n) * k))
+            app._paused_odom()
+
+    wh.add(1, time.monotonic(), 0, 0)
+    app._paused_odom()                                   # erste Probe: Bezug
+    drive(0, 0, 0.5, 0.5)                                # 0,5 m geradeaus
+    x, y, th = app.gridmap.pose()
+    assert x == pytest.approx(0.5, abs=0.005) and abs(y) < 1e-6 and abs(th) < 1e-6
+    d = math.pi / 2 * cfg.odom.track_m / 2                # 90° links auf der Stelle
+    drive(0.5, 0.5, 0.5 - d, 0.5 + d)
+    assert app.gridmap.pose()[2] == pytest.approx(math.pi / 2, abs=0.01)
+    assert app.yaw == pytest.approx(math.pi / 2, abs=0.01)
+    assert app.gridmap.pose()[0] == pytest.approx(0.5, abs=0.005)
+
+
 def test_reverse_gain():
     """Rückwärts wird beim Senden mit reverse_gain verstärkt, vorwärts nicht."""
     cfg = Config(); cfg.robot.reverse_gain = 2.0; cfg.robot.max_v = 0.15
@@ -1083,6 +1114,49 @@ def test_planner_avoids_wall_and_reports_no_path():
     m.lo[gr - k, gc - k:gc + k + 1] = m.lo[gr + k, gc - k:gc + k + 1] = 3.0
     m.lo[gr - k:gr + k + 1, gc - k] = m.lo[gr - k:gr + k + 1, gc + k] = 3.0
     assert plan(m, (0.0, 0.0), (2.0, 0.0), hc) is None
+
+
+def test_planner_keeps_path_and_plans_around_obstacles():
+    """Bisheriger Weg bleibt, solange frei und nicht viel länger (sonst sprang am RiderPi die
+    Zielrichtung); Merkkarten-Punkte sperren wie belegte Zellen."""
+    import numpy as np
+    from xgonav.planner import path_length, plan
+    cfg, m = _grid()
+    hc = cfg.home
+    s, g = (0.0, 0.0), (2.0, 0.0)
+    straight = plan(m, s, g, hc)
+    assert straight is not None and max(abs(y) for _, y in straight) < 0.06
+    small = [(0.0, 0.0), (1.0, 0.5), (2.0, 0.0)]               # 2,24 m <= 1,2 x 2 + 0,3
+    assert plan(m, (0.1, 0.05), g, hc, keep=small) == [(0.1, 0.05), (1.0, 0.5), (2.0, 0.0)]
+    big = [(0.0, 0.0), (1.0, 1.5), (2.0, 0.0)]                 # 3,6 m: neuer Weg ist viel kürzer
+    assert path_length(plan(m, s, g, hc, keep=big)) < 2.1
+    other_goal = [(0.0, 0.0), (1.0, 0.5), (2.0, 0.5)]          # anderes Ziel -> nicht behalten
+    assert plan(m, s, g, hc, keep=other_goal)[-1] == g
+    # Hindernispunkte quer über die Gerade: Weg geht außen herum, gerader Weg wird nicht behalten
+    obst = np.array([(1.0, y) for y in np.arange(-0.4, 0.41, 0.03)])
+    p = plan(m, s, g, hc, keep=straight, obstacles=obst)
+    assert p is not None and max(abs(y) for _, y in p) > 0.5
+
+
+def test_home_turns_in_place_only_for_large_errors():
+    """Lenkung mit Hysterese: bei mittlerem Fehler in der Kurve weiterfahren, auf der Stelle
+    drehen erst ab turn_enter_deg und dann bis unter turn_exit_deg."""
+    from xgonav.behaviors import Home, World
+    from xgonav.egomotion import EgoResult
+    cfg = Config()
+    b = Home(cfg.behavior, cfg.robot, cfg.home)
+    b.set_path([(0.0, 0.0), (3.0, 0.0)])
+
+    def step(err_deg):
+        w = World(t=0.0, dt=0.05, W=640, H=480, hfov=1.6, ego=EgoResult(0, 0.0, 0.05), tracks=[], free=None,
+                  balancing=True, yaw=0.0, cmd_v=0.0, pose=(0.0, 0.0, -math.radians(err_deg)), goal=(3.0, 0.0, 0.0))
+        return b.step(w)
+    c = step(50)
+    assert c.v > 0 and c.w > 0                                  # Kurve, nicht anhalten
+    assert step(100).v == 0                                     # großer Fehler: auf der Stelle
+    c = step(40)
+    assert c.v == 0 and c.w > 0                                 # dreht weiter bis unter 25°
+    assert step(20).v > 0
 
 
 def test_home_behavior_steers_and_arrives():

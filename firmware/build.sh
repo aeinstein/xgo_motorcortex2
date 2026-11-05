@@ -15,6 +15,10 @@
 #   0002 Aktion 0x3e = 254: binäres Disarm/Not-Stopp wie !stop
 #   0003 LED-Helligkeit halbiert (129 -> 64 von 256)
 #   0004 Aktion 0x3e = 253 / !standup: Aufstehen aus der Liegelage auf Befehl
+#   0005 Kippraten ohne Gier-Anteil (Gierrate x tan(Roll/Nick)): sonst rollt der Rider beim Drehen weg
+#   0006 Beschleunigungswinkel bei > 25 °/s Gierrate einfrieren (Fliehkraft verfälscht die Lage)
+#   0007 Diagnose-Register 0x0e (32 Byte Reglergrößen, am Pi über raw_reg lesbar)
+#   0008 Positionshalten auch beim Drehen auf der Stelle (Radmitte), Aktion 241 an / 240 aus
 # Braucht: git, python3 (venv), Internet beim ersten Lauf (PlatformIO lädt Toolchain ~1 GB).
 set -euo pipefail
 

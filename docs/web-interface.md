@@ -19,28 +19,27 @@
 | Fahren | D-pad, speed 5–100 %, height 43–255, roll −20..20°, Aufstehen (arm, 255), Absetzen (disarm, 254) |
 | Raumkarte | room map PNG, view 3/6/10/16 m, Start hier (start = pose), Speichern, reset, pose line with distance to start |
 | Kamera | exposure (ms, auto), gain (1–16×, auto), actual values |
-| Verlauf (collapsed) | history charts, see below |
+| Verlauf (collapsed) | 3D attitude, history charts, see below |
 | Extras (collapsed) | actions 1–6, 4 LEDs + all off + strobe, display emotions |
 | System | shutdown (confirm dialog) |
 
-Polling: status every 700 ms, map every 1 s (next request after previous finished), `a=sys` every 1 s
-only while Verlauf is open.
+Polling: status every 700 ms, map every 1 s (next request after previous finished), `a=sys` every 250 ms
+only while Verlauf is open (CPU, temperature, battery taken at most once per second).
 
 ## History (Verlauf)
 
-Canvas charts, no library; crosshair + values on hover/touch. Data comes from `/proc` via PHP and
+Canvas, no library; crosshair + values on hover/touch (charts). Data comes from `/proc` via PHP and
 works without xgonav.
 
 | Chart | Data | Window | Storage |
 |---|---|---|---|
-| Lage | roll, pitch (°) from `imu_log`, all samples (50 Hz) | 60 s | memory |
-| Gier | yaw relative to window start (driver yaw is cumulative) | 60 s | memory |
+| Lage | 3D model of the Rider (body, front/camera, legs, wheels) rotated by roll, pitch, yaw from `imu_log`; fixed compass ring on the ground (0° = heading at ESP32 start, + = left), blue line = body forward direction; values below. Samples (50 Hz) replayed smoothly ~0.3 s behind; rotation about the wheel axle. Drag (mouse/touch) to orbit the view (elevation 5–85°), double-click resets; view kept in `localStorage` `xgonav.lage3d` | live (5 s buffer) | memory |
 | CPU | load per core (%), from `/proc/stat` deltas; temperature + loadavg in heading | 10 min | memory |
 | Akku | battery % (from status, or `a=sys`), ≤ 1 point / 30 s | 120 min | `localStorage` `xgonav.akku`; button Leeren |
 
 - Battery is recorded while the page is open, also with the card collapsed. A second open tab merges into the same key.
 - Open/closed state is kept in `localStorage` (`xgonav.verlauf`).
-- IMU gap > 300 ms (card closed) breaks the line. When seq goes backwards (driver reloaded), the chart is cleared.
+- Sign convention as firmware: roll + = right side down, pitch + = nose down, yaw + = left. When seq goes backwards (driver reloaded), the buffer is cleared. Animation runs only while the card is open and the tab is visible.
 
 ## Manual driving
 

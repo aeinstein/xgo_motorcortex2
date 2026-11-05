@@ -85,7 +85,9 @@ Status JSON `grid`: `pose [x m, y m, yaw °]`, `start [x m, y m, yaw °]`, `zum_
 | Blocked | occupied cells (`> l_show`) inflated by `home.inflate_m` 0.18 m; cleared within that radius around pose and goal (drift) |
 | Cost | 1 + `clear_cost` near obstacles + `unknown_cost` for unknown cells; line-of-sight shortcut only if not more expensive |
 | Thread | `PlannerWorker` (cores = `cpu.freespace_cpus`); replan every `replan_s` 2 s and after 3 s without 5 cm progress |
-| Following | pure pursuit, lookahead 0.35 m; turn in place if error > 60°, speed reduced up to 40° |
+| Path keeping | current path kept while free and ≤ `keep_factor` × new + 0.3 m; dropped after getting stuck |
+| Local obstacles | confirmed `LocalMap` points within 1.5 m (what `_arc_check` brakes for) are blocked for planning (`use_localmap`) |
+| Following | pure pursuit, lookahead 0.5 m, `home.kp_turn` 1.5/s; turn in place only above 75° error until below 25°, otherwise drive the curve at ≥ 30 % speed |
 | Goal | within `arrive_m` 0.15 m, then turn to start heading (`align_heading`), status „am Start angekommen“, stands |
 | Failure | `max_fail` 3 consecutive plans without path → stop, „kein Weg zum Start“ |
 | Safety | `safety()` and `_arc_check()` apply as in `explore` |

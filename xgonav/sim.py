@@ -87,9 +87,11 @@ class SimScene:
 class SimWorld(FrameSource):
     def __init__(self, cfg: CameraCfg, robot: SimRobot, person: Person | None = None,
                  start=(1.0, 1.0, 0.0), shake: float = 1.0, render_scale: int = 2, fps: int = 20,
-                 vx_mps: float = 1.0, mount_offset_mm: float = 45.0):
+                 vx_mps: float = 1.0, mount_offset_mm: float = 45.0, dynamics: bool = False):
         super().__init__(cfg)
         self.robot = robot
+        self.dynamics = dynamics
+        self._vf = self._wf = 0.0
         self.scene = SimScene()
         self.segs = self.scene.segments()
         self.person = person
@@ -143,6 +145,8 @@ class SimWorld(FrameSource):
         vn, wn = self.robot.command
         v = vn * self.vx_mps
         w = math.radians(wn * self.robot.cfg.vyaw_limit_dps)
+        if self.dynamics:
+            v, w = self._dyn(v, w, wn, dt)
         self.th += w * dt
         self.wheel_l += (v - w * self.track_m / 2) * dt
         self.wheel_r += (v + w * self.track_m / 2) * dt
@@ -169,6 +173,21 @@ class SimWorld(FrameSource):
         self.log.append({"t": t, "x": self.x, "y": self.y, "th": self.th, "v": v, "w": w,
                          "px": self.person.x if self.person else None,
                          "py": self.person.y if self.person else None})
+
+    # Trägheit wie am RiderPi (dynamics=True; Messfahrt 2026-11-05, docs/limitations.md):
+    # Drehbefehle unter 6/127,5 ignoriert die Firmware, die Drehung läuft ~0,3 s nach
+    # (10–17° Überschwingen nach dem Stopp), Fahrt folgt mit ~0,5 s, und beim Anfahren
+    # rollt der balancierende Rider erst kurz zurück (nichtminimalphasig).
+    DYN_TAU_V, DYN_TAU_W, DYN_NMP_S, DYN_W_DEAD = 0.5, 0.3, 0.4, 6 / 127.5
+
+    def _dyn(self, v: float, w: float, wn: float, dt: float) -> tuple[float, float]:
+        if abs(wn) < self.DYN_W_DEAD:
+            w = 0.0
+        prev = self._vf
+        self._vf += (v - self._vf) * (1.0 - math.exp(-dt / self.DYN_TAU_V))
+        v_eff = self._vf - self.DYN_NMP_S * (self._vf - prev) / max(dt, 1e-3)
+        self._wf += (w - self._wf) * (1.0 - math.exp(-dt / self.DYN_TAU_W))
+        return v_eff, self._wf
 
     def pitch_truth(self, t: float) -> float:
         """Kameranicken (rad, + = hoch) zur Zeit t (s seit Start), zeitkontinuierlich:

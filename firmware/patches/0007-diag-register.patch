@@ -1,0 +1,118 @@
+diff --git a/firmware/src/command_protocol.cpp b/firmware/src/command_protocol.cpp
+index 0de653c..79d8dc7 100644
+--- a/firmware/src/command_protocol.cpp
++++ b/firmware/src/command_protocol.cpp
+@@ -17,6 +17,7 @@ uint8_t readLength(uint8_t reg) {
+     case 0x0b:return 16;
+     case 0x0c:return 16;
+     case 0x0d:return 24;
++    case 0x0e:return 32;
+     case 0x62: case 0x63: case 0x64:return 4;
+     case 0x65:return 24;
+     case 0x66: case 0x67: case 0x68:return 2;
+@@ -136,7 +137,7 @@ size_t buildFrame(uint8_t type,uint8_t reg,const uint8_t *payload,size_t length,
+ }
+ size_t buildReadResponse(const CommandEvent &r,const Telemetry &t,uint8_t *out,size_t cap) {
+     if(!r.isRead() || !validCommand(r))return 0;
+-    uint8_t data[24]={};const uint8_t n=readLength(r.reg);
++    uint8_t data[32]={};const uint8_t n=readLength(r.reg);
+     switch(r.reg) {
+     case 0x01:data[0]=std::isfinite(t.battery_percent)?uint8_t(t.battery_percent<0?0:t.battery_percent>255?255:t.battery_percent):0;break;
+     case 0x02:data[0]=t.mode;break;
+@@ -168,6 +169,8 @@ size_t buildReadResponse(const CommandEvent &r,const Telemetry &t,uint8_t *out,s
+         putFloat(data,t.roll_deg);putFloat(data+4,t.pitch_deg);putFloat(data+8,t.yaw_deg);
+         putI32(data+12,t.wheel11_ticks);putI32(data+16,t.wheel21_ticks);
+         putI32(data+20,int32_t(t.t_ms));break;
++    case 0x0e:  // custom (patch 0007): controller diagnostics, layout in main.cpp fillDiag()
++        std::memcpy(data,t.diag,32);break;
+     default:return 0;
+     }
+     return buildFrame(0x12,r.reg,data,n,out,cap);
+diff --git a/firmware/src/command_protocol.h b/firmware/src/command_protocol.h
+index 8883c52..c62a87b 100644
+--- a/firmware/src/command_protocol.h
++++ b/firmware/src/command_protocol.h
+@@ -56,6 +56,8 @@ struct Telemetry {
+     int32_t wheel11_ticks = 0, wheel21_ticks = 0, wheel11_pos = 0, wheel21_pos = 0;
+     // Custom reg 0x0d: firmware millis timestamp for the combined IMU+wheel sample.
+     uint32_t t_ms = 0;
++    // Custom reg 0x0e (patch 0007): 32-byte controller diagnostics, filled by main.cpp publish().
++    uint8_t diag[32] = {};
+     uint8_t policy_mode=0,policy_action_space=0;
+     uint8_t policy_contract=6;
+     bool policy_trained=false,policy_valid=false;
+diff --git a/firmware/src/main.cpp b/firmware/src/main.cpp
+index eeacb77..526abaf 100644
+--- a/firmware/src/main.cpp
++++ b/firmware/src/main.cpp
+@@ -178,6 +178,8 @@ public:
+     uint32_t save_started=0,last_imu_us=0,last_control_us=0,last_publish_ms=0;
+     uint8_t sensor_loops=0,trim_stage=0;
+     rider2::lift::State lift_state;rider2::lift::Config lift_config;bool lift_acting=false;uint32_t control_dt_us=0;
++    int16_t diag_ctrl11=0,diag_ctrl21=0;   // patch 0007: classic controller output before gain/smoothing/slew
++    bool turnHoldFlag() const {return false;}   // patch 0008 ersetzt das
+     rider2::fall::State fall_state,fall_deep_state;rider2::fall::Config fall_config,fall_deep_config=rider2::fall::deepConfig();uint32_t fall_last_us=0;
+     double trim_to_save=0;
+     bool save_trim_pending=false;
+@@ -629,6 +631,7 @@ public:
+         request.roll_phase=a.roll_phase;request.height_phase=a.height_phase;
+         request.leveling=a.leveling;request.heading_hold=a.heading_hold;request.hold_protection=a.hold_protection;request.heading_term_limit=heading_limit;
+         s.motion=controller.step(in,request);a.roll_phase=request.roll_phase;a.height_phase=request.height_phase;
++        diag_ctrl11=s.motion.wheels.id11;diag_ctrl21=s.motion.wheels.id21;
+         if(!s.motion.valid){actions.requestMode(252,true);stop(StopReason::InvalidControl,true);result("invalid control output; stop latched");}
+         else {
+             const auto decision=runPolicy(us,true);
+@@ -715,6 +718,29 @@ public:
+         }
+         s.control_timing.end(micros());
+     }
++    // Patch 0007: Register 0x0e, 32 Byte little endian, für die Analyse der Fahrt am Pi
++    // (raw_reg). Inhalt: 0 u16 ms | 2/4 i16 Raddrehzahl 11/21 (mm/s, gefiltert, Reglereingang) |
++    // 6/8 i16 Reglerausgang 11/21 | 10/12 i16 an den Bus 11/21 | 14 i16 Balance-Ausgang |
++    // 16 i16 Soll-Neigung x100 (°) | 18 i16 gemessene Neigung + Bias x100 (°) |
++    // 20 i16 Positionshalten-Korrektur x10 | 22 u8 Haltemodus | 23 u8 Flags (bit0 fährt,
++    // bit1 Hebeschutz greift, bit2 Halten beim Drehen an) | 24 i16 Position Radmitte (mm, läuft über) |
++    // 26 i16 Halteposition (mm, läuft über) | 28 i16 gefiltert vorwärts x10 | 30 i16 gefiltert Drehung x10
++    void fillDiag(uint8_t* d) {
++        auto i16=[](float v){return int16_t(std::max(-32768.0f,std::min(32767.0f,std::isfinite(v)?std::round(v):0.0f)));};
++        auto put=[&](int at,int16_t v){d[at]=uint8_t(uint16_t(v));d[at+1]=uint8_t(uint16_t(v)>>8);};
++        auto wrap_mm=[](float m){return int16_t(int32_t(std::lround(double(m)*1000.0)));};
++        const uint16_t ms=uint16_t(millis());d[0]=uint8_t(ms);d[1]=uint8_t(ms>>8);
++        put(2,i16(bus.sample(11).filtered_speed_mm_s));put(4,i16(bus.sample(21).filtered_speed_mm_s));
++        put(6,diag_ctrl11);put(8,diag_ctrl21);
++        put(10,s.motion.wheels.id11);put(12,s.motion.wheels.id21);
++        put(14,i16(s.motion.balance));
++        put(16,i16(controller.pitchTarget()*100.0f));put(18,i16(controller.pitchMeasured()*100.0f));
++        put(20,i16(s.motion.hold.correction*10.0f));
++        d[22]=s.motion.hold.mode;
++        d[23]=uint8_t((driving?1:0)|(lift_acting?2:0)|(turnHoldFlag()?4:0));
++        put(24,wrap_mm(s.motion.physical_position));put(26,wrap_mm(controller.holdPosition()));
++        put(28,i16(s.motion.command.filtered_forward*10.0f));put(30,i16(s.motion.command.filtered_turn*10.0f));
++    }
+     void publish() {
+         s.standup=standup_phase?2:(standup_requested?1:0);
+         s.ms=millis();s.driving=driving;s.manual_stop=manual_stop;s.leg_calibrating=leg_calibrating;s.imu_valid=imu_valid;
+@@ -729,6 +755,7 @@ public:
+         t.wheel11_ticks=bus.sample(11).encoder_ticks;t.wheel21_ticks=bus.sample(21).encoder_ticks;
+         t.wheel11_pos=bus.sample(11).position_ticks;t.wheel21_pos=bus.sample(21).position_ticks;
+         t.t_ms=s.ms;
++        fillDiag(t.diag);
+         t.leg12_zero=s.calibration.zero_a;t.leg22_zero=s.calibration.zero_b;
+         t.policy_mode=uint8_t(s.policy.mode);t.policy_model_id=policy.model().id;
+         t.policy_trained=s.policy.trained;t.policy_valid=s.policy.model_valid;
+diff --git a/firmware/src/motion_controller.h b/firmware/src/motion_controller.h
+index a3643fb..773675c 100644
+--- a/firmware/src/motion_controller.h
++++ b/firmware/src/motion_controller.h
+@@ -43,6 +43,11 @@ public:
+     void resetStoppedPid();
+     float holdCorrection() const {return hold_.correction;}
+     uint8_t holdMode() const {return hold_.mode;}
++    // Patch 0007 (Diagnose-Register 0x0e): Soll-Neigung = Ausgang des Geschwindigkeitsreglers (°)
++    // und gemessene Neigung + Bias, die der Neigungsregler sieht.
++    float pitchTarget() const {return balance_.speed.output;}
++    float pitchMeasured() const {return balance_.pitch.measurement;}
++    float holdPosition() const {return hold_.position;}
+ private:
+     control::BalanceState balance_{};
+     control::CommandState command_{};

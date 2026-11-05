@@ -40,7 +40,7 @@ Default = `config.py`. RiderPi = `deploy/config.example.toml` (blank = default).
 | Key | Default | RiderPi | Unit / note |
 |---|---|---|---|
 | `max_v` | 0.25 | 0.15 | normalised; 0.15 ≈ 23 cm/s |
-| `max_w` | 0.25 | 0.15 | normalised; 0.25 ≈ 90 °/s |
+| `max_w` | 0.25 | 0.30 | normalised; 0.25 ≈ 90 °/s (firmware scale assumed); RiderPi 0.15 → 0.30 on 2026-11-05 |
 | `reverse_gain` | 1.0 | 2.0 [K] | multiplier for negative v |
 | `vx_limit` | 1.5 | | firmware units at u8 0/255 (used for map only, uncalibrated) |
 | `vyaw_limit_dps` | 360 | | °/s at u8 0/255 |
@@ -151,6 +151,7 @@ Replay of three evening drives (`tools/replay_raw.py`, 2026-11-04), false alarms
 | `kp_dist` / `ff_dist` | 0.35 / 0.8 | |
 | `cruise_v` / `backup_v` | 0.15 / 0.10 | 0.15 / |
 | `search_w` | 0.12 | 0.07 |
+| `turn_w` (explore: turn away) | 0.18 | 0.21 |
 | `search_timeout_s` | 20 | 10 |
 | `blocked_free` / `slow_free` | 0.22 / 0.55 | |
 | `ttc_avoid_s` / `ttc_stop_s` | 1.2 / 0.8 | |
@@ -198,10 +199,14 @@ Sounds: `sound` true, `sound_dir` `/opt/xgonav/sounds`, `sound_found` `freude.wa
 | `clear_cost` | 4.0 | extra cost near obstacles (fades out at 2 × `inflate_m`) |
 | `unknown_cost` | 3.0 | extra cost for unknown cells |
 | `margin_m` | 1.5 | search area = pose, start, driven path + margin |
-| `lookahead_m` | 0.35 | pure pursuit |
+| `lookahead_m` | 0.5 | pure pursuit |
 | `arrive_m` | 0.15 | goal radius |
 | `replan_s` | 2.0 | replan interval (also after 3 s without progress) |
+| `keep_factor` | 1.2 | keep the current path while free and ≤ factor × new path + 0.3 m (not after getting stuck) |
+| `use_localmap` | true | confirmed `LocalMap` points (same as the path check) are obstacles for planning |
 | `v` | 0.15 | normalised speed |
+| `kp_turn` | 1.5 | 1/s, turn rate per heading error (follow uses `behavior.kp_turn`) |
+| `turn_enter_deg` / `turn_exit_deg` | 75 / 25 | turn in place above enter until below exit; otherwise drive the curve (speed ≥ 30 %) |
 | `align_heading` / `align_tol_deg` | true / 10 | turn to start heading at goal |
 | `max_fail` | 3 | consecutive failed plans → stop |
 

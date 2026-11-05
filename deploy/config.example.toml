@@ -10,7 +10,7 @@ control_hz = 20.0
 
 [robot]
 max_v = 0.15          # ~23 cm/s (gemessen: v=0,08 -> ~12,5 cm/s); höher nicht getestet
-max_w = 0.15          # höher nicht getestet
+max_w = 0.30          # ~108 °/s; Nutzer 2026-11-05: Drehen x2 (vorher 0.15)
 reverse_gain = 2.0    # [K] rückwärts schwächer: v=-0,15 -> u8 90 statt 109 (Fahrtest 2026-11-02)
 kernel_watchdog_ms = 1000
 
@@ -80,6 +80,7 @@ dist_deadband = 0.10
 approach_dist_m = 0.5
 cruise_v = 0.15
 search_w = 0.07          # langsam suchen; kleinere Werte ignoriert die Firmware
+turn_w = 0.21            # Erkunden: Wegdrehen (vorher 1,5 x search_w = 0,105; x2 am 2026-11-05)
 search_timeout_s = 10.0
 height_fast_mm = 80.0    # Abstand zu den Höhengrenzen (nie ganz nach unten)
 height_search_mm = 100.0

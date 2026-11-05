@@ -294,7 +294,7 @@ class Explore(Behavior):
             if (rem <= 0 and center > self.cfg.slow_free and not w.path_blocked) or w.t - self.t_state > 6.0:
                 self._enter("cruise", w.t)
                 return Command(0, 0, hmm, "weiter")
-            return Command(0.0, self.turn_dir * self.cfg.search_w * 1.5, hmm,
+            return Command(0.0, self.turn_dir * self.cfg.turn_w, hmm,
                            "drehe weg (%+.0f° offen)" % math.degrees(rem * self.turn_dir))
         return Command(0, 0, hmm, self.state)
 
@@ -356,12 +356,15 @@ class Home(Behavior):
         self._best = math.inf
         self._t_best: float | None = None
         self._stuck = False
+        self.keep_ok = False          # darf der Planer den bisherigen Weg behalten? (nicht nach Festfahren)
+        self._turning = False
 
     # --- Planung (von App bedient) ---
     def want_plan(self, t: float) -> bool:
         if self.pending or self.done or self.gave_up:
             return False
         if self.path is None or t - self.t_plan > self.h.replan_s or self._stuck:
+            self.keep_ok = self.path is not None and not self._stuck
             self.pending, self.t_plan, self._stuck = True, t, False
             return True
         return False
@@ -417,7 +420,7 @@ class Home(Behavior):
         if dist < self.h.arrive_m:
             err = _wrap(gth - th)
             if self.h.align_heading and abs(err) > math.radians(self.h.align_tol_deg):
-                wc = clamp(yaw_rate_to_w(self.cfg.kp_turn * err, self.rcfg), -1.0, 1.0)
+                wc = clamp(yaw_rate_to_w(self.h.kp_turn * err, self.rcfg), -1.0, 1.0)
                 if abs(wc) < self.cfg.search_w:      # kleine Werte ignoriert die Firmware
                     wc = math.copysign(self.cfg.search_w, err)
                 return Command(0.0, wc, hmm, "am Start – richte aus (%+.0f°)" % math.degrees(err))
@@ -434,12 +437,18 @@ class Home(Behavior):
             return Command(0, 0, hmm, "plane Weg zum Start")
         tx, ty = self._target(x, y)
         err = _wrap(math.atan2(ty - y, tx - x) - th)
-        wc = clamp(yaw_rate_to_w(self.cfg.kp_turn * err, self.rcfg), -1.0, 1.0)
-        v = 0.0
-        if abs(err) < math.radians(60):
-            v = self.h.v * clamp(1.0 - abs(err) / math.radians(40), 0.0, 1.0)
-        elif abs(wc) < self.cfg.search_w:
-            wc = math.copysign(self.cfg.search_w, err)
+        # Auf der Stelle drehen nur bei großem Fehler (Hysterese), sonst in der Kurve weiterfahren
+        if self._turning:
+            self._turning = abs(err) > math.radians(self.h.turn_exit_deg)
+        else:
+            self._turning = abs(err) > math.radians(self.h.turn_enter_deg)
+        wc = clamp(yaw_rate_to_w(self.h.kp_turn * err, self.rcfg), -1.0, 1.0)
+        if self._turning:
+            v = 0.0
+            if abs(wc) < self.cfg.search_w:          # kleine Werte ignoriert die Firmware
+                wc = math.copysign(self.cfg.search_w, err)
+            return Command(v, wc, hmm, "zum Start %.2f m – drehe (%+.0f°)" % (dist, math.degrees(err)))
+        v = self.h.v * clamp(1.0 - abs(err) / math.radians(90), 0.3, 1.0)
         return Command(v, wc, hmm, "zum Start %.2f m (%+.0f°)" % (dist, math.degrees(err)))
 
 

@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Das Repo `xgo_motorcortex2` enthält Treiber (`kernel_module/`), Display-Daemon (`st7789/`), ESP32-Firmware-Build (`firmware/`), Weboberfläche (`web/`, `deploy/`) und xgonav. Offene Punkte stehen in `TODO.md`. xgonav ist eine kamerabasierte Navigations-Pipeline (Python 3.11+, OpenCV, numpy, optional ncnn/onnxruntime) für den XGO Rider, einen selbstbalancierenden Zweiradroboter mit Raspberry Pi CM4 (2 GB RAM). Sie spricht die Hardware ausschließlich über das Kernelmodul `xgo-drv` aus `kernel_module/` (`/proc/XGORider/...`) an. Code, Kommentare, Logs und Statusmeldungen sind durchgehend auf Deutsch; so beibehalten.
 
-Maßgebliche Doku: README.md (Überblick) und je Thema eine Datei in `docs/` (Architektur, Installation, Konfiguration, Kalibrierung, Treiber, Weboberfläche, Karten, Display, Tests, Grenzen, LEDs). README und `docs/` sind **englisch** und knapp (Fakten, Tabellen, keine Prosa); Code, Kommentare und Logs bleiben deutsch. Wichtigste Randbedingung: `explore`, `approach` und `home` sind nicht auf echter Hardware getestet; `follow` und Handsteuerung wurden am RiderPi gefahren (`docs/limitations.md`). Simulator und Default nutzen 88,5° Öffnungswinkel wie die echte Kamera (Zollstock-Messung).
+Maßgebliche Doku: README.md (Überblick) und je Thema eine Datei in `docs/` (Architektur, Installation, Konfiguration, Kalibrierung, Treiber, Weboberfläche, Karten, Display, Tests, Grenzen, LEDs). README und `docs/` sind **englisch** und knapp (Fakten, Tabellen, keine Prosa); Code, Kommentare und Logs bleiben deutsch. Wichtigste Randbedingung: `follow` und Handsteuerung wurden am RiderPi gefahren; `home` kam dort am 2026-11-05 nicht ans Ziel (danach geändert, nicht erneut gefahren), `explore` nur kurz ohne Aufzeichnung, `approach` gar nicht (`docs/limitations.md`). Der Simulator kennt die Trägheit des balancierenden Riders nur mit `--dyn` und keine Fehlalarme des Bodenmodells; was dort klappt, kann am Rider an engen Stellen hängen. Simulator und Default nutzen 88,5° Öffnungswinkel wie die echte Kamera (Zollstock-Messung).
 
 ## Befehle
 
@@ -17,13 +17,13 @@ python3 -m venv .venv && .venv/bin/pip install "opencv-python-headless>=4.6" "nu
 ```
 
 ```bash
-python -m pytest -q tests/                       # Unit-Tests (53 Tests, ~2 s; 5 ohne C++-Kern übersprungen); slow ist per pytest.ini ausgeschlossen
+python -m pytest -q tests/                       # Unit-Tests (56 Tests, ~2 s; 5 ohne C++-Kern übersprungen); slow ist per pytest.ini ausgeschlossen
 python -m pytest -q -m slow tests/               # Closed-Loop im Simulator (4 Tests, ~150 s gesamt); -m überschreibt addopts
 python -m pytest -q tests/test_units.py -k imu_sync   # einzelner Test
 
 python tests/sim_run.py follow 40 out.mp4        # Szenario im Simulator, optional mit Overlay-Video
 python tests/sim_run.py explore 40
-python tests/sim_run.py home 60 --wheels         # 30 s erkunden, dann zurück zum Start
+python tests/sim_run.py home 60 --wheels         # 30 s erkunden, dann zurück zum Start (--dyn: Trägheit wie am Rider)
 python tests/sim_run.py follow 40 --imu          # mit simulierter IMU (Vorzeichen -1, Versatz -8 ms absichtlich falsch)
 
 python -m xgonav --source video.mp4 --robot sim --mode follow --fast   # Replay eines eigenen Videos
@@ -92,7 +92,7 @@ Hardware-nahe Teile haben je eine echte und eine Sim-Implementierung mit gleiche
 
 `kernel_module/` (mit `../constants.h`) ist der Treiber aus `xgo_motorcortex` (github.com/aeinstein/xgo_motorcortex, Stand `c3c888c`) plus die früheren Patches: 0001 Speicherfehler in proc-Handlern + `settings/motion_timeout_ms`; 0002 synchrone Serial-Reads, IMU-Thread mit `/proc/XGORider/imu`, `imu_log`, `serial_stats` (Format `seq t_ns roll pitch yaw`, Milligrad, CLOCK_MONOTONIC); 0003 `force_yaw` hält den Kurs per Impulsen; 0004 `roll` = Roll-Winkel in Grad (0x36), `roll_balance` = 0x61. Im Code wird weiter von „Treiber-Patch 000x“ gesprochen, gemeint ist dieser Stand. `driver-test/run.sh` kompiliert den echten Treibercode gegen `kshim.h` im Userspace und testet ihn mit `esp32_emu.py`. Ohne 0002 ist `imu.py` wirkungslos und `pitch_src` bleibt `"bild"`. `st7789/` ist der Display-Daemon (libdriver, Build in `st7789/project/riderpi`), `deploy/rc.local` startet ihn.
 
-`firmware/` baut die ESP32-Firmware R-1.1.6 aus der Referenz `LuwuDynamics/xgorider2_rl` plus Patches in `firmware/patches/` (0001 Rad-Register 0x0c/0x0d, 0002 Aktion 254 = Not-Aus, 0003 LED-Helligkeit, 0004 Aktion 253 = Aufstehen aus der Liegelage; Build bitgleich mit der seit 2026-11-04 geflashten Firmware). Der Treiber erkennt 0x0d/0x0c automatisch und liefert dann `/proc/XGORider/wheels` (Encoder, 1024 Ticks/Umdrehung, Rad 11 = links); `xgonav/wheels.py` liest das (`sim_run.py --wheels`).
+`firmware/` baut die ESP32-Firmware R-1.1.6 aus der Referenz `LuwuDynamics/xgorider2_rl` plus Patches in `firmware/patches/` (0001 Rad-Register 0x0c/0x0d, 0002 Aktion 254 = Not-Aus, 0003 LED-Helligkeit, 0004 Aktion 253 = Aufstehen aus der Liegelage; 0005 Drehung um die Senkrechte aus Nick- und Rollrate herausrechnen, 0006 Beschleunigungswinkel bei schneller Drehung einfrieren (Fliehkraft), sonst rollt der Rider beim Drehen weg, Host-Test `firmware/tests/test_imu_yaw_coupling.cpp`; 0007 Diagnose-Register 0x0e (Reglergrößen, am Pi über `raw_reg`); 0008 Positionshalten auch beim Drehen auf der Stelle, Aktion 241 an / 240 aus, Host-Test `firmware/tests/test_turn_hold.cpp`; 0001–0008 seit 2026-11-05 geflasht, siehe `firmware/README.md`). Der Treiber erkennt 0x0d/0x0c automatisch und liefert dann `/proc/XGORider/wheels` (Encoder, 1024 Ticks/Umdrehung, Rad 11 = links); `xgonav/wheels.py` liest das (`sim_run.py --wheels`).
 
 ## Stolperfallen
 
