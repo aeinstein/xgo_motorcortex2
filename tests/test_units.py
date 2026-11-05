@@ -300,6 +300,61 @@ def test_freespace_flat_spot_vs_upright_object():
     assert c[102:108].max() < 0.5
 
 
+def _kanten_est(**kw):
+    from xgonav.freespace import FreeSpaceEstimator
+    cfg = Config()
+    cfg.freespace.method = "kanten"
+    cfg.freespace.shading_file = ""
+    for k, v in kw.items():
+        setattr(cfg.freespace, k, v)
+    geo = CamGeometry(640, 480, 88.5, 5.18, 43.0, 85.0)      # Horizont bei Zeile ~270
+    return FreeSpaceEstimator(cfg.freespace, (640, 480), geo), geo
+
+
+def test_kanten_glare_is_unknown_but_lit_wall_at_border_stays():
+    """Lampenschein auf glänzendem Boden: unbekannt (NaN) statt Hindernis weit vor der Lampe.
+    Gleich aussehender heller Streifen am Bildrand (angestrahlte Wand): bleibt Hindernis."""
+    img = np.full((480, 640, 3), 90, np.uint8)
+    img[:270] = 40                                            # dunkle Wand über dem Horizont
+    img[200:268, 300:340] = 255                               # Lampe (übersteuert)
+    rows = np.arange(270, 330)
+    img[270:330, 296:344] = np.linspace(250, 170, len(rows)).astype(np.uint8)[:, None, None]
+    img[200:268, 0:24] = 255                                  # dasselbe am linken Rand
+    img[270:330, 0:28] = np.linspace(250, 170, len(rows)).astype(np.uint8)[:, None, None]
+    est, _ = _kanten_est()
+    fs = est.update(img, 0.0)
+    c = fs.columns
+    assert np.isnan(c[78:83]).all()                           # Mitte des Scheins
+    assert np.isfinite(c[0:4]).all() and c[0:4].max() < 0.9  # Rand: Hindernis
+    assert np.isfinite(c[20:60]).all() and np.isfinite(c[100:160]).all()
+    est2, _ = _kanten_est(edge_glare=False)
+    c2 = est2.update(img, 0.0).columns
+    assert np.isfinite(c2).all() and c2[78:83].max() < 0.9   # ohne Regel: Hindernis
+
+
+def test_kanten_log_finds_dark_wall_in_dark_scene():
+    """Dunkle Szene: Boden 25, Wand 11 (Grauwerte). Linear ist die Stufe zu klein, als
+    Helligkeitsverhältnis (edge_log_s) wird die Wand erkannt."""
+    img = np.full((480, 640, 3), 25, np.uint8)
+    img[:330] = 11                                            # Wand, Fuß in Zeile 330
+    img[:270] = 9
+    lin, _ = _kanten_est(edge_log_s=0.0)
+    log, _ = _kanten_est(edge_log_s=16.0)
+    assert lin.update(img, 0.0).columns[20:140].min() >= 0.98
+    c = log.update(img, 0.0).columns
+    assert c[20:140].max() < 0.9
+
+
+def test_arc_clearance_escape_from_point_inside_radius():
+    """Punkt schon im Sicherheitsradius (neben dem Rider): Wegfahren geht, Hinfahren nicht."""
+    from xgonav.localmap import LocalMap
+    lm = LocalMap(CamGeometry(640, 480, 91.0, 0.0, 43.0, 85.0), 160, 120, confirm=1)
+    lm.pts = np.array([[0.0, 0.15], [-0.05, 0.15]]); lm.t = np.zeros(2); lm.obs = np.array([1, 2])
+    assert lm.arc_clearance(0.15, -0.3, 1.2) == math.inf          # nach rechts weg
+    assert lm.arc_clearance(0.15, 0.0, 1.2) == math.inf           # geradeaus: Abstand wächst
+    assert lm.arc_clearance(0.15, 1.5, 1.2) < 0.1                 # scharf nach links: hin
+
+
 def test_localmap_confirm_counts_on_insert():
     """Bestätigung über echte Beobachtungen: derselbe Fleck dreimal gesehen -> blockiert."""
     from xgonav.freespace import FreeSpace

@@ -59,6 +59,10 @@ Largest cost: optical flow (`ego.lk_*`); prebuilt LK pyramids cannot be passed v
 |---|---|
 | Floor model | needs fairly uniform floor; patterned carpet / hard tile joints → phantom obstacles. Laminate OK with `edge_weight 0.4`, `min_obst_rows 6` (0 false blocks in 40 raw images). Fails on some floors / at desk (open) |
 | Follow false alarms | replay `raw_follow8`: path blocked in ~49 % of control steps without real obstacle |
+| `kanten` remaining errors (2026-11-05, 36 frames reviewed) | reflections of furniture in glossy floor put the boundary 10–20 cm too close; diffuse light pool edge in a dark room (follow9 304) seen as obstacle; thin chair/table legs invisible (use detector `classes`) |
+| Carpet | the carpet edge is a real obstacle (Rider cannot climb it); `kanten` detects it |
+| Path check radius | `LocalMap` radius 0.18 m: a wall 0.16 m beside the path blocks driving along it (follow11 kitchen), although the Rider passed there without contact. Points already inside the radius only block when the path gets closer (escape rule) |
+| Monocular depth (YOLO26n-depth, offline test) | ~0.7 s/frame on CM4 at 320 px (estimated), sees carpet as flat, fooled by glossy floor, no wall/floor separation beyond ~0.7 m at 12.8 cm camera height |
 | Without IMU / sync | slow pitch unobservable: 1° ≈ 40 % distance error at 2 m; size fusion compensates. Status `pitch_src` shows source |
 | Follow distance (sim) | ~1.5 m without / ~1.4 m with IMU at target 1.2 m (deadband + lag) |
 | Explore (sim) | occasional contact in 40 s runs (2 of 5); 30 s slow test passes; cause not analysed |

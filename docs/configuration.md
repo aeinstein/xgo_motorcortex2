@@ -94,7 +94,7 @@ Default = `config.py`. RiderPi = `deploy/config.example.toml` (blank = default).
 | `conf` / `iou` | 0.35 / 0.45 | |
 | `threads` | 2 | 2 |
 | `max_hz` | 0 (no limit) | 5.0 |
-| `classes` | `[]` (all COCO) | `["person"]` |
+| `classes` | `[]` (all COCO) | `["person"]`; example config adds floor furniture: `chair`, `couch`, `dining table`, `potted plant`, `bed`, `dog`, `cat` — non-target boxes block their columns (thin chair legs are invisible to `kanten`) |
 | `sharpness_rel` / `max_wait_s` | 0.6 / 0.25 | |
 
 ### `[tracker]`
@@ -122,11 +122,16 @@ Default = `config.py`. RiderPi = `deploy/config.example.toml` (blank = default).
 | `edge_thin` / `edge_k` | true / 3 | | remove thin lines (joints) first; rows per side of the step |
 | `edge_chroma_w` | 2.0 | | weight of LAB a/b vs. L |
 | `edge_step_thr` / `edge_seg_thr` | 35 / 28 | | min step; min deviation of the patch above (min obstacle height) from the floor below |
+| `edge_log_s` | 16 | | step on log brightness `ln(1+L/s)` (ratio instead of difference): dark walls/furniture in dark scenes; 0 = linear |
+| `edge_glare` | true | | lamp glare on glossy floor → column unknown (NaN) instead of obstacle |
+| `glare_v` / `glare_px` / `glare_dl` / `glare_spread` | 250 / 2 / 8 / 8 | | glare = brighter above the step (≥ `glare_dl`, linear L) and ≥ `glare_px` saturated pixels between step and horizon−12 rows; grown to bright neighbours with similar step row; not at the image border (lamp-lit wall looks the same) |
 | `edge_fallback_free` | 0.98 | | `beide`: column counts as "nothing found" from this free fraction |
 | `horizon_wall` | false | | `farbe` only: floor color continuing above the horizon = wall, base at first strong edge (false alarms in the simulator from pitch errors) |
 | `horizon_margin_rows` / `horizon_band_rows` / `horizon_floor_frac` / `wall_edge_thr` | 2 / 6 / 0.6 / 8 | | horizon rule band and edge threshold |
 
 Replay of three evening drives (`tools/replay_raw.py`, 2026-11-04), false alarms: `farbe` 25 / 35 / 53 %, `kanten` 0.2 / 2.4 / 16 %.
+
+2026-11-05 (`edge_log_s` 16, `edge_glare`): replay 0 / 0 / 54 % — follow11 now sees the kitchen cabinet side 0.16 m beside the path and the 0.33 m gray wall it missed before; the replay counts these as false alarms (person far). Manual test cases (19 frames): 17 OK (before 13). Cost +0.2 ms per call on a PC.
 
 ### `[map]` (short-term local map)
 `max_age_s` 4.0, `confirm` 1 (RiderPi 3), `confirm_radius_m` 0.08.

@@ -158,12 +158,15 @@ class LocalMap:
         return C[self._distinct(near, O) >= self.confirm]
 
     def arc_clearance(self, v_mps: float, w_rads: float, horizon_s: float = 1.0, steps: int = 10) -> float:
-        """Freie Strecke (m) entlang des Bogens, bevor ein (bestätigter) Punkt näher als radius kommt."""
+        """Freie Strecke (m) entlang des Bogens, bevor ein (bestätigter) Punkt näher als radius kommt.
+        Punkte, die schon jetzt innerhalb von radius liegen (z. B. Schrankseite neben dem Rider),
+        blockieren nur, wenn die Bahn ihnen noch näher kommt – sonst käme der Rider nie wieder weg."""
         if abs(v_mps) < 1e-3:
             return math.inf
         pts = self.confirmed_points(abs(v_mps) * horizon_s + self.radius)
         if not len(pts):
             return math.inf
+        lim = np.minimum(self.radius, np.hypot(pts[:, 0], pts[:, 1]) - ESCAPE_TOL_M)
         x = y = th = 0.0
         dt = horizon_s / steps
         s = 0.0
@@ -172,8 +175,7 @@ class LocalMap:
             x += v_mps * math.cos(th) * dt
             y += v_mps * math.sin(th) * dt
             s += abs(v_mps) * dt
-            d = np.hypot(pts[:, 0] - x, pts[:, 1] - y).min()
-            if d < self.radius:
+            if (np.hypot(pts[:, 0] - x, pts[:, 1] - y) < lim).any():
                 return s
         return math.inf
 
@@ -188,6 +190,7 @@ class LocalMap:
 
 
 MOVABLE = {"person", "dog", "cat", "bird", "horse", "sports ball", "bicycle", "car"}
+ESCAPE_TOL_M = 0.01   # arc_clearance: Punkt im Radius blockiert erst, wenn die Bahn ihm >1 cm näher kommt
 
 
 def mask_movable(free: FreeSpace, objects, W: int, H: int) -> FreeSpace:

@@ -167,6 +167,18 @@ class FreespaceCfg:
     edge_chroma_w: float = 2.0     # Gewicht der LAB-Farbkanäle a/b gegenüber der Helligkeit L
     edge_step_thr: float = 35.0    # Mindest-Stufe (Summe |ΔL| + w·(|Δa|+|Δb|), 0..255-Skala)
     edge_seg_thr: float = 28.0     # Mindest-Abweichung des Stücks über der Stufe vom Boden darunter
+    # Lichtschein: Spiegelung einer Lampe im glänzenden Boden erzeugt eine Stufe weit vor der Lampe
+    # (bei 12,8 cm Kamerahöhe etwa ein Viertel ihrer Entfernung). Erkennung: über der Stufe heller
+    # als darunter (>= glare_dl) und zwischen Stufe und Horizont >= glare_px übersteuerte Pixel
+    # (Maximum der Kanäle >= glare_v). Solche Spalten gelten als unbekannt (NaN), nicht als frei.
+    # Helligkeit für die Stufe logarithmisch (Verhältnis statt Differenz): L' = 255·ln(1+L/s)/ln(1+255/s).
+    # Hebt dunkle Szenen an (graue Wand im Dunkeln: L 25 gegen 11), dämpft helle. 0 = linear.
+    edge_log_s: float = 16.0
+    edge_glare: bool = True
+    glare_v: int = 250
+    glare_px: int = 2
+    glare_dl: float = 8.0
+    glare_spread: int = 8          # Schein auf helle Nachbarspalten mit ähnlicher Stufenzeile ausdehnen
     horizon_margin_rows: int = 2
     horizon_band_rows: int = 6
     horizon_floor_frac: float = 0.6

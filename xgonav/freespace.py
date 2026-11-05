@@ -266,7 +266,8 @@ class FreeSpaceEstimator:
         self.diag = {"updated": updated, "match": None if bpm is None else round(bpm / 255.0, 3),
                      "occupied": round(occupied, 2), "sample_px": int((smask > 0).sum()) if smask is not None else int(sample.shape[0] * sample.shape[1]),
                      "floor_frac": None if ff is None else round(float(ff), 3), "unknown_cols": n_unknown,
-                     "wall_cols": n_wall, "fallback_cols": n_fb}
+                     "wall_cols": n_wall, "fallback_cols": n_fb,
+                     "glare_cols": getattr(self, "_n_glare", 0) if kanten else 0}
         known = None
         if self._srel is not None and not kanten:
             known = np.clip(self._unknown_rows / max(1.0, self.H - horizon), 0.0, 1.0)
@@ -367,6 +368,15 @@ class FreeSpaceEstimator:
         if c.edge_thin:
             lab = cv2.morphologyEx(lab, cv2.MORPH_OPEN, self._k3)
             lab = cv2.morphologyEx(lab, cv2.MORPH_CLOSE, self._k3)
+        l_lin = lab[..., 0]                               # lineare Helligkeit (Lichtschein-Prüfung)
+        if c.edge_log_s > 0:
+            if getattr(self, "_log_lut_s", None) != c.edge_log_s:
+                s = float(c.edge_log_s)
+                x = np.arange(256, dtype=np.float64)
+                self._log_lut = np.round(255.0 * np.log1p(x / s) / np.log1p(255.0 / s)).astype(np.uint8)
+                self._log_lut_s = c.edge_log_s
+            lab = lab.copy()
+            lab[..., 0] = cv2.LUT(np.ascontiguousarray(l_lin), self._log_lut)
         # Kumulative Ganzzahl-Summen entlang der Zeilen: Summe beliebiger Zeilenfenster in O(1).
         # Gewichtung der Farbkanäle erst beim Vergleich (spart die Gleitkomma-Kopie, CM4 ~1 ms).
         cs = np.zeros((H + 1, W, 3), np.int32)
@@ -376,6 +386,7 @@ class FreeSpaceEstimator:
         r = np.arange(max(hz, k), H - k)                 # Kandidatenzeilen (Fußpunkt unter Horizont)
         span = max(1.0, H - horizon)
         free = np.ones(W, np.float32)
+        glare = None
         if r.size:
             sb = cs[r + k] - cs[r]                       # k Zeilen Boden unmittelbar unter der Stufe
             # Stufe (als k-fache Summe): |oben - unten| je Kanal, gewichtet
@@ -397,14 +408,81 @@ class FreeSpaceEstimator:
                     np.maximum.at(best, ci[ok], rr[ok])
                     has = best >= 0
                     free = np.where(has, (H - 1 - best) / span, 1.0).astype(np.float32)
+                    if c.edge_glare:
+                        glare = self._glare_cols(small, l_lin, best, has, hz, k)
         # Hindernis schon am unteren Rand (Farbmodell, nur messbare Pixel)
         nb = max(2, k)
         bot = floor[H - nb:] == 0
         if self._srel is not None:
             bot &= self._srel[H - nb:]
-        free[bot.mean(axis=0) >= 0.6] = 0.0
+        bot_hit = bot.mean(axis=0) >= 0.6
+        free[bot_hit] = 0.0
         np.clip(free, 0.0, 1.0, out=free)
-        return cv2.erode(free.reshape(1, -1), self._k_erode).ravel()
+        self._n_glare = 0
+        if glare is not None:
+            glare &= ~bot_hit
+            self._n_glare = int(np.count_nonzero(glare))
+            if self._n_glare:
+                free[glare] = 1.0                    # vor dem Glätten: nicht auf Nachbarn übertragen
+        free = cv2.erode(free.reshape(1, -1), self._k_erode).ravel()
+        if self._n_glare:
+            free[glare] = np.nan                     # Lichtschein: unbekannt (weder Hindernis noch frei)
+        return free
+
+    def _glare_cols(self, small: np.ndarray, l_lin: np.ndarray, best: np.ndarray, has: np.ndarray,
+                    hz: int, k: int) -> np.ndarray:
+        """Spalten, deren unterste Stufe ein Lichtschein ist (Spiegelung einer Lampe im Boden):
+        über der Stufe heller als darunter und übersteuerte Pixel zwischen Stufe und knapp über
+        dem Horizont (dort steht die Lampe)."""
+        c = self.cfg
+        W = self.W
+        glare = np.zeros(W, bool)
+        cols = np.nonzero(has & (best >= k))[0]
+        if not cols.size:
+            return glare
+        b = best[cols]
+        cl = np.zeros((self.H + 1, W), np.int32)
+        np.cumsum(l_lin, axis=0, dtype=np.int32, out=cl[1:])
+        l_above = (cl[b, cols] - cl[b - k, cols]) / k   # L in OpenCV-LAB 0..255, linear
+        l_below = (cl[np.minimum(b + k, self.H), cols] - cl[b, cols]) / k
+        brighter = l_above - l_below >= c.glare_dl
+        if not brighter.any():
+            return glare
+        ch = cv2.split(small)
+        vmax = cv2.max(cv2.max(ch[0], ch[1]), ch[2])     # numpy max(axis=2) ist ~10x langsamer
+        sat = (vmax >= c.glare_v).astype(np.int32)
+        csat = np.zeros((self.H + 1, W), np.int32)
+        np.cumsum(sat, axis=0, out=csat[1:])
+        top = max(0, hz - 12)
+        n_sat = csat[b, cols] - csat[np.minimum(top, b), cols]
+        glare[cols] = brighter & (n_sat >= c.glare_px)
+        if glare.any() and c.glare_spread > 0:
+            # Ränder des Scheins (dort nicht übersteuert): Nachbarspalten, die ebenfalls über der
+            # Stufe heller sind und ihre Stufe auf ähnlicher Höhe haben, gehören dazu.
+            bright = np.zeros(W, bool)
+            bright[cols] = brighter
+            rowv = np.full(W, -1000, np.int32)
+            rowv[cols] = b
+            for _ in range(c.glare_spread):
+                grow = np.zeros(W, bool)
+                grow[1:] |= glare[:-1] & (np.abs(rowv[1:] - rowv[:-1]) <= 3)
+                grow[:-1] |= glare[1:] & (np.abs(rowv[:-1] - rowv[1:]) <= 3)
+                grow &= bright & ~glare
+                if not grow.any():
+                    break
+                glare |= grow
+        # Nur Streifen, die beidseitig von anderen Spalten eingerahmt sind: Am Bildrand sieht eine
+        # von einer Lampe außerhalb des Bildes angestrahlte Wand genauso aus (Sockelleiste = echtes
+        # Hindernis), dort bleibt es beim Hindernis.
+        if glare[0] or glare[-1]:
+            d = np.diff(glare.astype(np.int8))
+            if glare[0]:
+                end = np.argmax(d == -1) + 1 if (d == -1).any() else W
+                glare[:end] = False
+            if glare[-1]:
+                start = W - 1 - np.argmax((d == 1)[::-1]) if (d == 1).any() else 0
+                glare[start:] = False
+        return glare
 
     def _horizon_walls(self, floor: np.ndarray, gray: np.ndarray, cols: np.ndarray,
                        horizon: float) -> tuple[np.ndarray, int]:
