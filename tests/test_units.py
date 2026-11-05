@@ -612,7 +612,8 @@ def test_detector_max_hz_limits_rate():
         time.sleep(0.01)
     w.close()
     assert 4 <= len(calls) <= 6                # ~5 Hz statt ~100 Hz
-    assert min(b - a for a, b in zip(calls, calls[1:])) >= 0.19
+    # 0,2 s Soll; Windows-Timer (~15,6 ms Auflösung) lieferte 0,188 s -> Spielraum
+    assert min(b - a for a, b in zip(calls, calls[1:])) >= 0.18
 
 
 def test_cpu_pinning_helpers(tmp_path):
