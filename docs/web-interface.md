@@ -16,7 +16,7 @@
 |---|---|
 | Header (sticky) | host, connection, mode, state (balancing/lying), battery (green ≥ 40 %, yellow ≥ 20 %, red < 20 %), pipeline, **STOPP** |
 | Left | camera image (WebSocket), mode selector (Idle · Hand · Follow · Explore · Approach · Zum Start) + target class, pipeline card with start/stop and status tiles, raw status JSON |
-| Fahren | D-pad, speed 5–100 %, height 43–255, roll −20..20°, Aufstehen (arm, 255), Absetzen (disarm, 254) |
+| Fahren | D-pad, speed 5–100 %, height 61–255, roll −20..20°, Aufstehen (arm, 255), Neu ausrichten (leveling pulse), Absetzen (disarm, 254) |
 | Raumkarte | room map PNG, view 3/6/10/16 m, Start hier (start = pose), Speichern, reset, pose line with distance to start |
 | Kamera | exposure (ms, auto), gain (1–16×, auto), actual values |
 | Verlauf (collapsed) | 3D attitude, history charts, see below |
@@ -61,6 +61,7 @@ GET only for `status` and `sys`; all commands POST. Parameters are validated; in
 | `POST ?a=mode&name=..&target=..` | xgonav `/mode` | name ∈ idle, manual, follow, explore, approach, home; target `[a-z ]{1,30}` |
 | `POST ?a=stop` | xgonav `/stop` | |
 | `POST ?a=pipeline&on=0\|1` | xgonav `/pipeline` | |
+| `POST ?a=ausrichten` | xgonav `/level` | 409 if not balancing |
 | `POST ?a=drive&v=..&w=..` | xgonav `/drive` | −1..1; mode `manual` only |
 | `POST ?a=exposure&us=..` | xgonav `/exposure` | 0 = auto, 100..33333 (checked by xgonav) |
 | `POST ?a=gain&g=..` | xgonav `/gain` | 0 = auto, 1..16 |
@@ -69,7 +70,7 @@ GET only for `status` and `sys`; all commands POST. Parameters are validated; in
 | `POST ?a=map_save` | xgonav `/map/save` | |
 | `POST ?a=led&i=0..3&c=%23rrggbb` | `/proc/XGORider/leds/<i>` | |
 | `POST ?a=action&n=..` | `/proc/XGORider/action` | 1..6, 254, 255 |
-| `POST ?a=height&h=..` | `/proc/XGORider/height` | 43..255 |
+| `POST ?a=height&h=..` | `/proc/XGORider/height` | 61..255 |
 | `POST ?a=roll&deg=..` | `/proc/XGORider/roll` | −20..20 |
 | `POST ?a=calibration&on=0\|1` | `settings/calibration` | API only, no UI button |
 | `POST ?a=pitch_calibration` | `settings/pitch_calibration` | API only, no UI button |
@@ -90,6 +91,7 @@ xgonav unreachable → HTTP 502 `xgonav nicht erreichbar`. Exposure/gain changes
 | POST | `/mode?name=..&target=..` | 400 unknown mode, 409 not allowed |
 | POST | `/stop` | standstill, mode idle |
 | POST | `/pipeline?on=0\|1` | stop/start image processing |
+| POST | `/level` | leveling pulse (roll 0, 3 s `roll_balance`); 409 if not balancing |
 | POST | `/drive?v=..&w=..` | 409 if not mode `manual` |
 | POST | `/exposure?us=..`, `/gain?g=..` | 400 if out of range |
 | POST | `/map/reset` | clear room map, pose = start = 0 |

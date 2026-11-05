@@ -299,6 +299,11 @@ class App:
                     self.gridmap.plan = []
                 log.info("Modus -> %s %s", name, target or "")
 
+    def _drive(self, cmd: Command) -> None:
+        """Fahrbefehl an den Roboter; der Vorwärtsfaktor gilt nur in der Handsteuerung."""
+        self.robot.forward_gain = self.cfg.robot.manual_forward_gain if self.behavior.name == "manual" else 1.0
+        self.robot.drive(cmd.v, cmd.w)
+
     def _manual_cmd(self) -> Command:
         """Handsteuerung: nur Sturz-Erkennung, kein Bodenmodell/keine Bahnprüfung."""
         cmd = self.behavior.step(None)
@@ -323,7 +328,7 @@ class App:
         if now - self._last_ctrl >= period:
             self._last_ctrl = now
             cmd = self._manual_cmd()
-            self.robot.drive(cmd.v, cmd.w)
+            self._drive(cmd)
             self._cmd = Command(cmd.v, cmd.w, None, cmd.status + " (ohne Bildverarbeitung)")
         time.sleep(max(0.0, self._last_ctrl + period - time.monotonic()))
 
@@ -431,7 +436,7 @@ class App:
             else:
                 cmd = safety(self.behavior.step(w), w, self.cfg.behavior)
                 cmd = self._arc_check(cmd)
-            self.robot.drive(cmd.v, cmd.w)
+            self._drive(cmd)
             if cmd.height_mm is not None and now - self._last_height_t > 1.0:
                 self.robot.set_height(cmd.height_mm)
                 self.geo.body_height_mm = self.robot.height_mm or self.geo.body_height_mm

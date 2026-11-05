@@ -691,14 +691,73 @@ def test_paused_pipeline_keeps_pose_from_wheels():
     assert app.gridmap.pose()[0] == pytest.approx(0.5, abs=0.005)
 
 
-def test_reverse_gain():
-    """Rückwärts wird beim Senden mit reverse_gain verstärkt, vorwärts nicht."""
-    cfg = Config(); cfg.robot.reverse_gain = 2.0; cfg.robot.max_v = 0.15
+def test_drive_gains():
+    """reverse_gain gilt immer, der Vorwärtsfaktor nur in der Handsteuerung."""
+    from types import SimpleNamespace as NS
+    from xgonav.app import App
+    from xgonav.behaviors import Command
+    cfg = Config(); cfg.robot.reverse_gain = 2.0; cfg.robot.manual_forward_gain = 2.0; cfg.robot.max_v = 0.15
     r = SimRobot(cfg.robot)
     r._cur = (-0.15, 0.0); r._send(time.monotonic() + 10)
     assert r._sent[0] == 128 - round(0.30 * 127)          # 90
+    app = NS(cfg=cfg, robot=r, behavior=NS(name="explore"))
+    App._drive(app, Command(0.15, 0.0))
     r._cur = (0.15, 0.0); r._send(time.monotonic() + 20)
-    assert r._sent[0] == 128 + round(0.15 * 127)          # 147
+    assert r._sent[0] == 128 + round(0.15 * 127)          # 147: autonom ohne Faktor
+    app.behavior.name = "manual"
+    App._drive(app, Command(0.15, 0.0))
+    r._cur = (0.15, 0.0); r._send(time.monotonic() + 30)
+    assert r._sent[0] == 128 + round(0.30 * 127)          # 166: Handsteuerung wie rückwärts
+    assert r._target[0] == pytest.approx(0.15)            # max_v begrenzt den Sollwert davor
+
+
+def test_level_pulse():
+    """Impuls einmal je Aufstehen, nach dem Aufschwung und auf Knopfdruck; liegend nicht."""
+    cfg = Config(); cfg.robot.level_after_standup = True; cfg.robot.level_pulse_s = 3.0
+    r = SimRobot(cfg.robot)
+    sent = lambda: [(w[1], w[2]) for w in r.writes if w[1] in ("roll", "roll_balance")]
+    puls = [("roll", 0), ("roll_balance", 1), ("roll_balance", 0)]
+    r.state.balancing = True
+    r._level_tick(0.0)
+    r._level_tick(10.0)
+    assert sent() == []                                   # xgonav startet, er steht schon: nichts
+    r.state.balancing = False
+    r._level_tick(11.0)
+    assert not r.request_level()                          # liegt: Knopf tut nichts
+    r.state.balancing = True
+    r._level_tick(12.0)
+    r._level_tick(14.0)
+    assert sent() == []                                   # noch im Aufschwung
+    r._level_tick(14.6)
+    assert sent() == puls[:2]
+    r._level_tick(17.0)
+    assert sent() == puls[:2]                             # 3 s noch nicht um
+    r._level_tick(17.7)
+    r._level_tick(60.0)
+    assert sent() == puls                                 # aus, und danach nicht wieder
+    assert r.request_level()                              # Knopf: gleicher Impuls noch einmal
+    r._level_tick(61.0)
+    assert r.request_level()                              # zweiter Druck während des Impulses zählt nicht
+    r._level_tick(64.1)
+    r._level_tick(70.0)
+    assert sent() == puls * 2
+    r.state.balancing = False
+    r._level_tick(71.0)
+    r.state.balancing = True
+    r._level_tick(72.0)
+    r._level_tick(74.6)
+    r._level_tick(77.7)
+    assert sent() == puls * 3                             # nächstes Aufstehen wieder einmal
+    r0 = SimRobot(Config().robot)                         # Default: automatisch nie, Knopf geht
+    r0.state.balancing = False
+    r0._level_tick(0.0)
+    r0.state.balancing = True
+    r0._level_tick(1.0)
+    r0._level_tick(9.0)
+    assert not [w for w in r0.writes if w[1] == "roll_balance"]
+    assert r0.request_level()
+    r0._level_tick(10.0)
+    assert [w[2] for w in r0.writes if w[1] == "roll_balance"] == [1]
 
 
 def test_emotion_trigger():

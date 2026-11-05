@@ -1,0 +1,14 @@
+diff --git a/firmware/src/main.cpp b/firmware/src/main.cpp
+index c8ab69b..7d698cc 100644
+--- a/firmware/src/main.cpp
++++ b/firmware/src/main.cpp
+@@ -98,7 +98,8 @@ constexpr const char* kBuildId="rider2-rl-only | rider_balance_v6 | lift guard v
+ volatile uint32_t wheel_smooth_ms=0;
+ volatile float yaw_slew_per_second=20000.0f;
+ // Patch 0008: hold the wheel centre also while turning on the spot (action 241 on / 240 off, !turnhold on|off).
+-volatile bool turn_hold_enabled=false;
++// Patch 0010: on by default (RiderPi 2026-11-05: wheel centre <= 2.3 cm per turn instead of up to 29 cm).
++volatile bool turn_hold_enabled=true;
+ float yaw_command_filtered=0;
+ bool yaw_filter_init=false;
+ uint32_t last_filter_us=0;

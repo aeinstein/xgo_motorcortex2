@@ -16,10 +16,21 @@ class RobotCfg:
     # Sicherheitsgrenzen für den Autonomiebetrieb (Anteil des Vollausschlags)
     max_v: float = 0.25            # ~0.37 Firmware-Einheiten
     max_w: float = 0.25            # ~90 °/s
-    # Rückwärts setzt die Firmware schwächer um (am Rider: 2 s mit u8 109 ~4 cm, mit 147
-    # vorwärts 86 cm). Negative v werden beim Senden damit multipliziert; max_v begrenzt
-    # davor den Sollwert. 1.0 = symmetrisch.
+    # Rückwärts war 2026-11-02 viel schwächer (2 s mit u8 109 ~4 cm, mit 147 vorwärts 86 cm), daher
+    # werden negative v beim Senden mit reverse_gain multipliziert; max_v begrenzt davor den
+    # Sollwert. 1.0 = symmetrisch. Mit den Firmware-Patches vom 2026-11-05 setzt die Firmware beide
+    # Richtungen gleich um (Sollwert -> Raddrehzahl 2,67 vorwärts, 2,65 rückwärts).
     reverse_gain: float = 1.0
+    # Derselbe Faktor vorwärts, nur in der Handsteuerung. Die autonomen Modi bleiben bei 1: im
+    # Simulator (--dyn, 2026-11-05) gab Faktor 2 dort 1 Kollision in 8 Läufen und Zum Start kam nur
+    # noch 1 von 4 Mal an (Faktor 1: 0 Kollisionen, 4 von 4); die Freiraum-Schwellen passen nicht dazu.
+    manual_forward_gain: float = 1.0
+    # Die Beine haben eine Totzone: bei gleichem Befehl steht der Rider je nach Vorgeschichte bei
+    # +0,7..+3,4° Roll (2026-11-05). Ein kurzer Impuls der Nivellierung in der Firmware richtet ihn
+    # aus, danach bleibt er so stehen (dauerhaft an schwankt er mehr). Auslöser: einmal nach jedem
+    # Aufstehen (level_after_standup) und der Knopf im Web (POST /level).
+    level_pulse_s: float = 3.0
+    level_after_standup: bool = False
     accel_v: float = 0.8           # max. Änderung von v pro Sekunde (normiert)
     accel_w: float = 2.0
     keepalive_s: float = 0.3       # Sollwert periodisch neu schreiben

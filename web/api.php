@@ -15,7 +15,8 @@
  *   POST api.php?a=led&i=0..3&c=%23rrggbb
  *   POST api.php?a=action&n=1..6|253|254|255 (R-1.1.6+Patch: 255 = Arm/aufstehen, 254 = Disarm/Not-Stopp,
  *                                            253 = Aufspringen aus dem Liegen (!standup); 1..6 Aktionen)
- *   POST api.php?a=height&h=43..255         (u8; unter 43 nicht, siehe Höhengrenzen)
+ *   POST api.php?a=height&h=61..255         (u8; darunter nicht, siehe Höhengrenzen)
+ *   POST api.php?a=ausrichten               (Beine neu ausrichten, xgonav /level)
  *   POST api.php?a=roll&deg=-20..20          (Grad, + = nach rechts; Treiber-Patch 0004: Register 0x36)
  *   POST api.php?a=exposure&us=0|100..33333     (Belichtung in µs, 0 = Automatik; nur bis zum Neustart)
  *   POST api.php?a=gain&g=0|1..16               (analoge Verstärkung, 0 = Automatik; nur bis zum Neustart)
@@ -38,7 +39,7 @@ const PROC = '/proc/XGORider';
 const RC = '/home/aeinstein/motorcortex/rc_server';     // Emotionen der früheren Fernsteuerung
 const EMOTION = '/opt/xgonav/tools/emotion.sh';         // Player (RGB565-Rohbilder statt ffmpeg)
 const EMOTION_RAW = '/opt/xgonav/emotions';             // von deploy/install.sh vorkonvertiert
-const HEIGHT_MIN = 43;                                   // u8; ~10 mm über dem Minimum
+const HEIGHT_MIN = 61;                                   // u8; ~10 mm über dem Minimum, dazu ~4 mm fürs Ausrichten (ein Bein tiefer)
 const HEIGHT_MAX = 255;                                 // volle Höhe (Firmware 0..255)
 
 header('Content-Type: application/json; charset=utf-8');
@@ -159,6 +160,8 @@ switch ($a) {
         xgonav('POST', '/map/save');
     case 'stop':
         xgonav('POST', '/stop');
+    case 'ausrichten':
+        xgonav('POST', '/level');
     case 'pipeline':
         $on = ($_GET['on'] ?? '1') === '0' ? '0' : '1';
         xgonav('POST', '/pipeline?on=' . $on);

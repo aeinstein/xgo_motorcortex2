@@ -39,9 +39,12 @@ Default = `config.py`. RiderPi = `deploy/config.example.toml` (blank = default).
 ### `[robot]`
 | Key | Default | RiderPi | Unit / note |
 |---|---|---|---|
-| `max_v` | 0.25 | 0.15 | normalised; 0.15 ≈ 23 cm/s |
+| `max_v` | 0.25 | 0.15 | normalised, before the gains; sent 0.12 ≈ 26 cm/s, 0.24 ≈ 50 cm/s |
 | `max_w` | 0.25 | 0.30 | normalised; 0.25 ≈ 90 °/s (firmware scale assumed); RiderPi 0.15 → 0.30 on 2026-11-05 |
-| `reverse_gain` | 1.0 | 2.0 [K] | multiplier for negative v |
+| `manual_forward_gain` | 1.0 | 2.0 | multiplier for positive v, manual mode only (applied after `max_v`) |
+| `reverse_gain` | 1.0 | 2.0 [K] | multiplier for negative v (applied after `max_v`) |
+| `level_pulse_s` | 3.0 | | length of one leveling pulse (roll command 0, firmware `roll_balance` on, then off) |
+| `level_after_standup` | false | true | one pulse after each stand-up, 2.5 s after it; web button „Neu ausrichten“ triggers the same pulse |
 | `vx_limit` | 1.5 | | firmware units at u8 0/255 (used for map only, uncalibrated) |
 | `vyaw_limit_dps` | 360 | | °/s at u8 0/255 |
 | `accel_v` / `accel_w` | 0.8 / 2.0 | | per second |

@@ -1,0 +1,195 @@
+diff --git a/firmware/src/command_protocol.cpp b/firmware/src/command_protocol.cpp
+index 79d8dc7..4110cd4 100644
+--- a/firmware/src/command_protocol.cpp
++++ b/firmware/src/command_protocol.cpp
+@@ -18,6 +18,7 @@ uint8_t readLength(uint8_t reg) {
+     case 0x0c:return 16;
+     case 0x0d:return 24;
+     case 0x0e:return 32;
++    case 0x0f:return 12;
+     case 0x62: case 0x63: case 0x64:return 4;
+     case 0x65:return 24;
+     case 0x66: case 0x67: case 0x68:return 2;
+@@ -171,6 +172,8 @@ size_t buildReadResponse(const CommandEvent &r,const Telemetry &t,uint8_t *out,s
+         putI32(data+20,int32_t(t.t_ms));break;
+     case 0x0e:  // custom (patch 0007): controller diagnostics, layout in main.cpp fillDiag()
+         std::memcpy(data,t.diag,32);break;
++    case 0x0f:  // custom (patch 0009): yaw-bias diagnostics, layout in main.cpp fillYawDiag()
++        std::memcpy(data,t.yawdiag,12);break;
+     default:return 0;
+     }
+     return buildFrame(0x12,r.reg,data,n,out,cap);
+diff --git a/firmware/src/command_protocol.h b/firmware/src/command_protocol.h
+index c62a87b..e60a4c1 100644
+--- a/firmware/src/command_protocol.h
++++ b/firmware/src/command_protocol.h
+@@ -58,6 +58,8 @@ struct Telemetry {
+     uint32_t t_ms = 0;
+     // Custom reg 0x0e (patch 0007): 32-byte controller diagnostics, filled by main.cpp publish().
+     uint8_t diag[32] = {};
++    // Custom reg 0x0f (patch 0009): 12-byte yaw-bias diagnostics, filled by main.cpp publish().
++    uint8_t yawdiag[12] = {};
+     uint8_t policy_mode=0,policy_action_space=0;
+     uint8_t policy_contract=6;
+     bool policy_trained=false,policy_valid=false;
+diff --git a/firmware/src/control/rider_leg_imu.cpp b/firmware/src/control/rider_leg_imu.cpp
+index 1a5f353..3595d01 100644
+--- a/firmware/src/control/rider_leg_imu.cpp
++++ b/firmware/src/control/rider_leg_imu.cpp
+@@ -159,7 +159,9 @@ bool updateImu(ImuState &s, const std::uint8_t *raw, std::size_t size,
+     s.pitch_rad = float(double(s.pitch_deg) / 57.3);
+     s.roll_deg = float((double(s.roll_deg) - double(s.gyro_roll_filtered) * dt) * (1.0 - roll_weight) +
+                        double(s.accel_roll_filtered) * roll_weight);
+-    if (std::fabs(yaw_rate) > 2.0f) s.yaw_deg = float(double(s.yaw_deg) + double(yaw_rate) * dt);
++    // Patch 0009: Totband 2 -> 0,3 °/s; der Nullpunkt wird jetzt laufend nachgeführt (trackYawBias).
++    // Mit 2 °/s fehlte jedes langsame Wegdrehen im Kurs, und ein Nullpunktfehler blieb im Stand unsichtbar.
++    if (std::fabs(yaw_rate) > kYawDeadbandDegS) s.yaw_deg = float(double(s.yaw_deg) + double(yaw_rate) * dt);
+ 
+     // 0x400d37b1..3839: preserve the firmware's AND between pitch and roll tests.
+     // Calling code changes mode to 1 immediately on calibration completion.
+@@ -172,4 +174,56 @@ bool updateImu(ImuState &s, const std::uint8_t *raw, std::size_t size,
+     s.tilt_fault = s.tilt_count > 165;
+     return true;
+ }
++
++// Patch 0009 (Kommentar in rider_leg_imu.h). Fenster von 1 s: mittlere Abweichung Gyro - Referenz,
++// Nullpunkt mit Zeitkonstante 5 s (Still) bzw. 15 s (Räder) nachziehen. Schnelle Drehungen
++// (Räder rutschen) und unruhige Lage (getragen) verwerfen das Fenster.
++void trackYawBias(ImuState &s, YawBiasTracker &t, YawReference ref,
++                  std::int32_t e11, std::int32_t e21, std::uint32_t now_us) {
++    const double dt = double(std::uint32_t(now_us - t.last_us)) * 0.000001;
++    t.last_us = now_us;
++    if (!s.calibrated) t.boot_seen = false;
++    else if (!t.boot_seen) { t.boot_seen = true; t.boot_bias = s.gyro_bias[2]; }
++    const float rate = s.gyro_deg_s[2] - s.gyro_bias[2];
++    bool calm = s.calibrated && ref != YawReference::None && std::fabs(rate) < 6.0f && dt > 0.0 && dt < 0.02;
++    // Still: nur kleine Restdrehung zulassen (Nullpunktfehler durch Erwärmung ~0,5 °/s); getragen
++    // oder bewegt erkennt die Beschleunigungsspanne im Fenster (0,5 m/s^2 ~ 3° Kippen).
++    if (calm && ref == YawReference::Still) calm = std::fabs(rate) < 1.5f;
++    if (!calm || !t.open || ref != t.ref) {
++        t.open = calm;
++        t.ref = ref;
++        t.gyro_deg = t.window_s = 0;
++        t.e11 = e11; t.e21 = e21;
++        for (int n = 0; n < 3; ++n) t.accel_min[n] = t.accel_max[n] = s.acceleration[n];
++        return;
++    }
++    t.gyro_deg += double(rate) * dt;
++    t.window_s += dt;
++    for (int n = 0; n < 3; ++n) {
++        if (s.acceleration[n] < t.accel_min[n]) t.accel_min[n] = s.acceleration[n];
++        if (s.acceleration[n] > t.accel_max[n]) t.accel_max[n] = s.acceleration[n];
++    }
++    if (t.window_s < 1.0) return;
++    double ref_deg = 0, tau_s = 5.0;
++    bool use = true;
++    if (ref == YawReference::Wheels) {
++        const std::int32_t d11 = std::int32_t(std::uint32_t(e11) - std::uint32_t(t.e11));
++        const std::int32_t d21 = std::int32_t(std::uint32_t(e21) - std::uint32_t(t.e21));
++        ref_deg = double(d21 - d11) * kWheelYawDegPerTick;
++        tau_s = 15.0;
++        use = std::fabs(ref_deg) < 5.0 * t.window_s;
++    } else {
++        for (int n = 0; n < 3; ++n) use = use && t.accel_max[n] - t.accel_min[n] < 0.5f;
++    }
++    if (use) {
++        const double err = (t.gyro_deg - ref_deg) / t.window_s;
++        const double step = (err > 2.0 ? 2.0 : err < -2.0 ? -2.0 : err) * t.window_s / tau_s;
++        s.gyro_bias[2] = float(double(s.gyro_bias[2]) + step);
++        t.last_error_deg_s = float(err);
++        ++t.updates;
++    }
++    t.gyro_deg = t.window_s = 0;
++    t.e11 = e11; t.e21 = e21;
++    for (int n = 0; n < 3; ++n) t.accel_min[n] = t.accel_max[n] = s.acceleration[n];
++}
+ }} // namespace rider::control
+diff --git a/firmware/src/control/rider_leg_imu.h b/firmware/src/control/rider_leg_imu.h
+index 3f671f5..8ad38f1 100644
+--- a/firmware/src/control/rider_leg_imu.h
++++ b/firmware/src/control/rider_leg_imu.h
+@@ -56,4 +56,28 @@ bool updateImu(ImuState &state, const std::uint8_t *raw, std::size_t size,
+                std::uint32_t now_us, std::uint32_t uptime_ms,
+                std::uint8_t robot_mode);
+ 
++// Patch 0009: Gyro-z-Nullpunkt laufend nachführen. R-1.1.6 misst ihn nur einmal 0,5 s nach dem
++// Start und integriert die Gier erst ab 2 °/s; erwärmt sich der Sensor, liegt der Nullpunkt
++// daneben (RiderPi 2026-11-05: 0,48 °/s, nach 75 s Drehprobe 31° Kursfehler). Referenz je
++// IMU-Probe: Wheels = balanciert, Drehung aus der Encoder-Differenz; Still = liegt/steht still
++// (Drehung 0, nur wenn Gyro und Beschleunigung ruhig sind); None = keine (Fenster verwerfen).
++enum class YawReference : std::uint8_t { None = 0, Wheels = 1, Still = 2 };
++struct YawBiasTracker {
++    double gyro_deg = 0, window_s = 0;   // Integral (gz - Nullpunkt) im laufenden Fenster, ohne Totband
++    std::int32_t e11 = 0, e21 = 0;       // Encoder bei Fensterbeginn
++    float accel_min[3]{}, accel_max[3]{};
++    std::uint32_t last_us = 0;
++    YawReference ref = YawReference::None;
++    bool open = false;
++    std::uint16_t updates = 0;           // Zahl der Nachführungen (Register 0x0f)
++    float last_error_deg_s = 0;          // letzte Abweichung Gyro - Referenz (Register 0x0f)
++    float boot_bias = 0;                 // Nullpunkt der Startkalibrierung (Register 0x0f)
++    bool boot_seen = false;
++};
++constexpr float kYawDeadbandDegS = 0.3f;        // Original 2 °/s
++constexpr double kWheelYawDegPerTick = 0.1170;  // (pi*0,060 m/1024)/0,090 m in Grad, am Rider gegen IMU gemessen
++// Nach updateImu je Probe aufrufen; encoder11/21 vorwärts positiv (11 = links), Drehung links +.
++void trackYawBias(ImuState &state, YawBiasTracker &tracker, YawReference ref,
++                  std::int32_t encoder11, std::int32_t encoder21, std::uint32_t now_us);
++
+ }} // namespace rider::control
+diff --git a/firmware/src/main.cpp b/firmware/src/main.cpp
+index e6c1b7c..c8ab69b 100644
+--- a/firmware/src/main.cpp
++++ b/firmware/src/main.cpp
+@@ -181,6 +181,7 @@ public:
+     uint8_t sensor_loops=0,trim_stage=0;
+     rider2::lift::State lift_state;rider2::lift::Config lift_config;bool lift_acting=false;uint32_t control_dt_us=0;
+     int16_t diag_ctrl11=0,diag_ctrl21=0;   // patch 0007: classic controller output before gain/smoothing/slew
++    rider::control::YawBiasTracker yaw_bias_tracker;   // patch 0009: gyro-z bias tracking
+     bool turnHoldFlag() const {return turn_hold_enabled;}
+     rider2::fall::State fall_state,fall_deep_state;rider2::fall::Config fall_config,fall_deep_config=rider2::fall::deepConfig();uint32_t fall_last_us=0;
+     double trim_to_save=0;
+@@ -413,6 +414,16 @@ public:
+                 rider::control::updateImu(s.imu,raw,12,sample_us,now,actions.state().mode)&&
+                 std::isfinite(s.imu.pitch_deg)&&std::isfinite(s.imu.roll_deg)&&std::isfinite(s.imu.yaw_deg)&&std::isfinite(s.imu.pitch_rate_rad_s);
+             imu_low_g_only=!imu_valid&&low_g_read;
++            // Patch 0009: Gyro-z-Nullpunkt nachführen. Referenz beim Balancieren die Encoder-Differenz
++            // (beide Räder frisch), sonst Stillstand (liegt/sitzt; Bewegung verwirft trackYawBias selbst).
++            if(imu_valid) {
++                using rider::control::YawReference;
++                const auto& w11=bus.sample(11);const auto& w21=bus.sample(21);
++                YawReference ref=YawReference::None;
++                if(driving&&actions.state().mode==1&&!standup_phase&&!lift_acting&&w11.fresh(now,40)&&w21.fresh(now,40))ref=YawReference::Wheels;
++                else if(!driving&&!leg_calibrating)ref=YawReference::Still;
++                rider::control::trackYawBias(s.imu,yaw_bias_tracker,ref,w11.encoder_ticks,w21.encoder_ticks,sample_us);
++            }
+             if(imu_valid)s.imu_ms=now;else ++s.imu_rejected;
+             // A tilt while already stopped is only the operator handling the
+             // robot. Requesting mode 0 here would strand it (no arm button in
+@@ -746,6 +757,18 @@ public:
+         put(24,wrap_mm(s.motion.physical_position));put(26,wrap_mm(controller.holdPosition()));
+         put(28,i16(s.motion.command.filtered_forward*10.0f));put(30,i16(s.motion.command.filtered_turn*10.0f));
+     }
++    // Patch 0009: Register 0x0f, 12 Byte little endian: 0 i16 Gyro-z-Nullpunkt (m°/s) | 2 i16 Nullpunkt
++    // der Startkalibrierung (m°/s) | 4 i16 letzte Abweichung Gyro - Referenz (m°/s) | 6 u16 Zahl der
++    // Nachführungen | 8 u8 Referenz (0 keine, 1 Räder, 2 Stillstand) | 9 u8 Fenster offen |
++    // 10 i16 Gierrate nach Abzug des Nullpunkts (x100, °/s)
++    void fillYawDiag(uint8_t* d) {
++        auto put=[&](int at,float v){const float r=std::isfinite(v)?std::round(v):0.0f;
++            const int16_t q=int16_t(std::max(-32768.0f,std::min(32767.0f,r)));d[at]=uint8_t(uint16_t(q));d[at+1]=uint8_t(uint16_t(q)>>8);};
++        const auto& t=yaw_bias_tracker;
++        put(0,s.imu.gyro_bias[2]*1000.0f);put(2,t.boot_bias*1000.0f);put(4,t.last_error_deg_s*1000.0f);
++        d[6]=uint8_t(t.updates);d[7]=uint8_t(t.updates>>8);d[8]=uint8_t(t.ref);d[9]=t.open?1:0;
++        put(10,(s.imu.gyro_deg_s[2]-s.imu.gyro_bias[2])*100.0f);
++    }
+     void publish() {
+         s.standup=standup_phase?2:(standup_requested?1:0);
+         s.ms=millis();s.driving=driving;s.manual_stop=manual_stop;s.leg_calibrating=leg_calibrating;s.imu_valid=imu_valid;
+@@ -761,6 +784,7 @@ public:
+         t.wheel11_pos=bus.sample(11).position_ticks;t.wheel21_pos=bus.sample(21).position_ticks;
+         t.t_ms=s.ms;
+         fillDiag(t.diag);
++        fillYawDiag(t.yawdiag);
+         t.leg12_zero=s.calibration.zero_a;t.leg22_zero=s.calibration.zero_b;
+         t.policy_mode=uint8_t(s.policy.mode);t.policy_model_id=policy.model().id;
+         t.policy_trained=s.policy.trained;t.policy_valid=s.policy.model_valid;

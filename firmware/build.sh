@@ -19,6 +19,8 @@
 #   0006 Beschleunigungswinkel bei > 25 °/s Gierrate einfrieren (Fliehkraft verfälscht die Lage)
 #   0007 Diagnose-Register 0x0e (32 Byte Reglergrößen, am Pi über raw_reg lesbar)
 #   0008 Positionshalten auch beim Drehen auf der Stelle (Radmitte), Aktion 241 an / 240 aus
+#   0009 Gyro-z-Nullpunkt laufend nachführen (Räder/Stillstand), Gier-Totband 2 -> 0,3 °/s, Register 0x0f
+#   0010 Positionshalten beim Drehen per Default an
 # Braucht: git, python3 (venv), Internet beim ersten Lauf (PlatformIO lädt Toolchain ~1 GB).
 set -euo pipefail
 

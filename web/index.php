@@ -240,6 +240,7 @@ details.extras[open]>summary{margin-bottom:8px}
     <div class="kopf"><h2>Fahren</h2>
       <button onclick="arm()" title="Aktion 255">Aufstehen</button>
       <button onclick="aufspringen()" title="Aktion 253 (!standup): Rider muss stehen und Platz haben">Aufspringen</button>
+      <button onclick="ausrichten()" title="Roll auf 0° und die Beine 3 s nivellieren (nur wenn er steht)">Neu ausrichten</button>
       <button class="gefahr" onclick="befehl('action', {n: 254})" title="Aktion 254, Not-Stopp">Absetzen</button>
     </div>
     <div class="fahren">
@@ -253,7 +254,7 @@ details.extras[open]>summary{margin-bottom:8px}
         <input type="range" id="tempo" min="5" max="100" value="60">
         <span class="w" id="tempo-w"></span><span class="leer"></span>
         <label for="hoehe">Höhe</label>
-        <input type="range" id="hoehe" min="43" max="255" value="128"
+        <input type="range" id="hoehe" min="61" max="255" value="128"
           oninput="document.getElementById('hoehe-w').textContent = this.value"
           onchange="befehl('height', {h: this.value})">
         <span class="w" id="hoehe-w">128</span><span class="leer"></span>
@@ -273,6 +274,9 @@ details.extras[open]>summary{margin-bottom:8px}
         „Aufspringen“ (Aktion 253, wie <code>!standup</code>) lässt ihn aufspringen – <b>Rider muss stehen und Platz haben</b>.
         „Absetzen“ ist ein Not-Stopp (Aktion 254, wie <code>!stop</code>): er setzt sich kontrolliert ab und
         bleibt aus bis zum nächsten Aufstehen.</p>
+      <p>„Neu ausrichten“: Die Beine haben eine Totzone, bei gleichem Befehl steht er bis zu 2,6° unterschiedlich
+        schief. Der Knopf setzt Roll auf 0° und lässt die Firmware 3 s nivellieren; danach bleibt er so stehen. Das
+        passiert auch einmal nach jedem Aufstehen. Beim Fahren kann er langsam wieder schief werden.</p>
     </details>
   </section>
 
@@ -506,6 +510,12 @@ function strobe() {
   if (strobeTimer) { clearInterval(strobeTimer); strobeTimer = null; b.classList.remove('aktiv'); ledsAus(); return; }
   b.classList.add('aktiv');
   strobeTimer = setInterval(() => { led(strobeLed, '#000000'); strobeLed = (strobeLed + 1) % 4; led(strobeLed, '#0000ff'); }, 100);
+}
+
+function ausrichten() {
+  const r = $('roll');
+  r.value = 0; r.oninput();          // xgonav setzt den Rollbefehl selbst auf 0
+  return befehl('ausrichten');
 }
 
 function rollNull() {

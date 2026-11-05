@@ -32,7 +32,7 @@ API = {"GET": ["/status", "/ws (WebSocket: Bilder, Bestätigung je Bild)", "/fra
                "/map.png?px=480&view=6 (Raumkarte)"],
        "POST": ["/mode?name=..&target=..", "/stop", "/pipeline?on=0|1", "/drive?v=..&w=.. (nur Modus manual)",
                 "/exposure?us=0|100..33333 (0 = Automatik)", "/gain?g=0|1..16 (0 = Automatik)",
-                "/map/reset (Raumkarte leeren, Pose auf 0)"]}
+                "/map/reset (Raumkarte leeren, Pose auf 0)", "/level (Beine neu ausrichten, 3 s)"]}
 
 
 WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
@@ -141,6 +141,10 @@ def serve(app: App, host: str, port: int, fps: int, render_cpus=None) -> Threadi
             if u.path == "/stop":
                 app.set_mode("idle")
                 app.robot.stop()
+                return self._send(200, b'{"ok":true}')
+            if u.path == "/level":
+                if not app.robot.request_level():
+                    return self._send(409, b'{"error":"Rider balanciert nicht"}')
                 return self._send(200, b'{"ok":true}')
             if u.path == "/pipeline":
                 app.set_pipeline(q.get("on", ["1"])[0] not in ("0", "false", "aus"))

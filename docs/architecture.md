@@ -78,7 +78,7 @@ camera.FrameSource ─► egomotion.EgoMotion ─► tracker.Tracker ◄── d
 - `drive(v, w)`: normalised [-1, 1]; v > 0 forward, w > 0 turn left.
 - `robot.norm_to_u8`: `u8 = 255/(2L)·(v + L)`, 128 = standstill.
 - Firmware **holds** setpoints; stops must be written explicitly.
-- `robot.reverse_gain` multiplies negative v before sending (RiderPi: 2.0).
+- `robot.reverse_gain` multiplies negative v before sending, `robot.manual_forward_gain` positive v in manual mode only (RiderPi: 2.0 each).
 
 ## CPU (RiderPi config, `[cpu]`)
 

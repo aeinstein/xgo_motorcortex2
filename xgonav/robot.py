@@ -49,6 +49,7 @@ class Robot:
 
     def __init__(self, cfg: RobotCfg):
         self.cfg = cfg
+        self.forward_gain = 1.0              # App: manual_forward_gain in der Handsteuerung, sonst 1
         self._lock = threading.Lock()
         self._target = (0.0, 0.0)
         self._cur = (0.0, 0.0)
@@ -57,6 +58,11 @@ class Robot:
         self._last_send_t = 0.0
         self._last_ramp_t = time.monotonic()
         self._height_mm: float | None = None
+        self._seen_down = False              # erst nach einer Liegephase zählt Balancieren als Aufstehen
+        self._balancing_since: float | None = None
+        self._level_on_t: float | None = None
+        self._standup_levelled = False
+        self._level_request = False
         self._stop_evt = threading.Event()
         self._thread: threading.Thread | None = None
         self.state = RobotState()
@@ -114,11 +120,48 @@ class Robot:
                 target = (0.0, 0.0)
             if now >= next_poll:
                 self._poll_state()
+                self._level_tick(now)
                 next_poll = now + 0.2
             if not self.state.balancing:
                 target = (0.0, 0.0)
             self._ramp(target, now)
             self._send(now)
+
+    def request_level(self) -> bool:
+        """Neu ausrichten (Knopf im Web); False, wenn er nicht balanciert."""
+        if not self.state.balancing:
+            return False
+        if self._level_on_t is None:
+            self._level_request = True
+        return True
+
+    def _level_tick(self, now: float) -> None:
+        """Nivellier-Impuls: Rollbefehl auf 0, Nivellierung level_pulse_s lang an, wieder aus.
+        Auslöser sind request_level und (einmal je Aufstehen) level_after_standup; nie während des
+        Aufschwungs, der höchstens 2 s dauert. Startet xgonav, während er schon steht, ist das
+        kein Aufstehen."""
+        if not self.state.balancing:
+            self._seen_down = True
+            self._balancing_since = self._level_on_t = None
+            self._standup_levelled = self._level_request = False
+            return
+        if self._balancing_since is None:
+            self._balancing_since = now
+        try:
+            if self._level_on_t is not None:
+                if now - self._level_on_t >= self.cfg.level_pulse_s:
+                    self._write("roll_balance", 0)
+                    self._level_on_t = None
+                return
+            standup = self.cfg.level_after_standup and self._seen_down and not self._standup_levelled
+            if (standup or self._level_request) and now - self._balancing_since >= 2.5:
+                self._write("roll", 0)
+                self._write("roll_balance", 1)
+                self._level_on_t = now
+                self._level_request = False
+                self._standup_levelled = True
+        except OSError as e:
+            log.error("Nivellierung fehlgeschlagen: %s", e)
 
     def _ramp(self, target: tuple[float, float], now: float) -> None:
         dt = max(1e-3, now - self._last_ramp_t)
@@ -133,8 +176,7 @@ class Robot:
 
     def _send(self, now: float) -> None:
         v = self._cur[0]
-        if v < 0:
-            v *= self.cfg.reverse_gain           # Rückwärtsschwäche der Firmware ausgleichen
+        v *= self.cfg.reverse_gain if v < 0 else self.forward_gain
         u = (norm_to_u8(v), norm_to_u8(self._cur[1]))
         keepalive = now - self._last_send_t > self.cfg.keepalive_s
         prev = self._sent

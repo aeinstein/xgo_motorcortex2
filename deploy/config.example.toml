@@ -9,9 +9,11 @@
 control_hz = 20.0
 
 [robot]
-max_v = 0.15          # ~23 cm/s (gemessen: v=0,08 -> ~12,5 cm/s); höher nicht getestet
+max_v = 0.15          # Sollwert vor den Faktoren unten; gesendet 0,12 -> 26 cm/s, 0,24 -> 50 cm/s (2026-11-05)
 max_w = 0.30          # ~108 °/s; Nutzer 2026-11-05: Drehen x2 (vorher 0.15)
-reverse_gain = 2.0    # [K] rückwärts schwächer: v=-0,15 -> u8 90 statt 109 (Fahrtest 2026-11-02)
+manual_forward_gain = 2.0   # Nutzer 2026-11-05: Handsteuerung vorwärts wie rückwärts; v=0,12 -> 49 cm/s gefahren, v=0,15 -> u8 166 noch nicht
+level_after_standup = true   # Nutzer 2026-11-05: einmal nach jedem Aufstehen nivellieren (Totzone der Beine)
+reverse_gain = 2.0    # [K] v=-0,15 -> u8 90 (Fahrtest 2026-11-02); seit den Patches vom 2026-11-05 ist die Firmware symmetrisch
 kernel_watchdog_ms = 1000
 
 [camera]
