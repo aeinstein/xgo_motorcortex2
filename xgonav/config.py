@@ -186,6 +186,8 @@ class FreespaceCfg:
     glare_px: int = 2
     glare_dl: float = 8.0
     glare_spread: int = 8          # Schein auf helle Nachbarspalten mit ähnlicher Stufenzeile ausdehnen
+    # Kantenverfahren im C++-Kern (xgonav/native, make -C xgonav/native), sonst numpy; gleiches Ergebnis
+    native: bool = True
     horizon_margin_rows: int = 2
     horizon_band_rows: int = 6
     horizon_floor_frac: float = 0.6
@@ -298,6 +300,8 @@ class GridCfg:
     yaw_source: str = "räder"
     # Eintragen in eigenem Thread (GridWorker, Kerne wie [cpu] freespace_cpus); False = im Regelschritt
     threaded: bool = True
+    # Strahlen im C++-Kern eintragen (xgonav/native/gridfast.cpp), wenn gebaut; gleiches Ergebnis wie numpy
+    native: bool = True
     # Speichern/Laden (npz). Leer = aus. Beim Laden gilt Pose = Startpunkt: der Rider muss
     # vor dem Start von xgonav wieder dort stehen (ohne Marker findet er sich nicht wieder).
     file: str = ""

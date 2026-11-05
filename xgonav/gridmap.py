@@ -13,6 +13,7 @@ die Karte (noch) nicht benutzt, nur angezeigt.
 """
 from __future__ import annotations
 
+import ctypes
 import logging
 import math
 import os
@@ -22,11 +23,32 @@ import time
 import cv2
 import numpy as np
 
+from . import fastlib
 from .config import GridCfg
 from .freespace import FreeSpace
 from .geometry import CamGeometry
 
 log = logging.getLogger("xgonav.gridmap")
+
+# ------------------------------------------------------------------ C++-Kern (optional)
+_GRID_ABI = 1
+
+
+class _GridParams(ctypes.Structure):         # = GridParams in native/gridfast.cpp
+    _fields_ = [(n, ctypes.c_int) for n in ("n", "nrays", "pad0", "pad1")] + \
+               [(n, ctypes.c_double) for n in ("res", "half", "px", "py", "l_show", "l_free_occ", "l_free",
+                                               "l_min", "l_occ", "l_max")]
+
+
+def _grid_lib():
+    """C++-Kern mit passender Raumkarten-ABI, sonst None (siehe fastlib.py)."""
+    lib = fastlib.load()
+    if not fastlib.check_abi(lib, "grid_abi", _GRID_ABI):
+        return None
+    p = ctypes.c_void_p
+    lib.grid_add.restype = ctypes.c_long
+    lib.grid_add.argtypes = [ctypes.POINTER(_GridParams), p, p, ctypes.c_uint32, p, p, p, p, p, p, p]
+    return lib
 
 
 class GridMap:
@@ -37,6 +59,17 @@ class GridMap:
         self.res = cfg.resolution_m
         self.n = int(round(cfg.size_m / self.res))
         self._lock = threading.Lock()
+        self._bear: dict = {}                     # Peilung und 1/cos je Spaltenzahl (konstant)
+        self._lib = _grid_lib() if getattr(cfg, "native", False) else None
+        if self._lib is not None:
+            self._stamp = np.zeros(self.n * self.n, np.uint32)   # Markierung "Zelle schon eingetragen"
+            self._gen = 0
+            c = cfg
+            self._gp = _GridParams(n=self.n, res=self.res, half=self.res / 2, l_show=c.l_show,
+                                   l_free_occ=c.l_free * c.occ_free_factor, l_free=c.l_free, l_min=c.l_min,
+                                   l_occ=c.l_occ, l_max=c.l_max)
+            log.info("Raumkarte: C++-Kern %s", fastlib.PATH)
+        self.backend = "c++" if self._lib is not None else "python"
         self.reset()
 
     def reset(self) -> None:
@@ -165,17 +198,35 @@ class GridMap:
             # Freistrahl endet free_margin vor der Grenze: die gemessene Grenze schwankt um
             # einige cm, sonst löscht jede etwas zu weite Messung die zuvor belegte Zelle
             free_len = np.where(hit, dist - max(self.res, cfg.free_margin_m), free_len)
-        x_full = (idx + 0.5) * sc
-        bear = np.arctan2(self.geo.W / 2 - x_full, self.geo.f)          # Peilung, links +
-        # ground_dist_np liefert den Abstand nach vorn (wie LocalMap: x = d, y = d*tan),
-        # die Strahlen brauchen die Länge entlang der Peilung
-        rad = 1.0 / np.cos(bear)
+        key = (len(idx), sc, self.geo.W, self.geo.f)
+        if key not in self._bear:
+            x_full = (idx + 0.5) * sc
+            bear = np.arctan2(self.geo.W / 2 - x_full, self.geo.f)      # Peilung, links +
+            # ground_dist_np liefert den Abstand nach vorn (wie LocalMap: x = d, y = d*tan),
+            # die Strahlen brauchen die Länge entlang der Peilung
+            self._bear = {key: (bear, 1.0 / np.cos(bear))}
+        bear, rad = self._bear[key]
         dist, free_len, start = dist * rad, free_len * rad, start * rad
         ok = np.isfinite(free_len) & (free_len > start)
         with self._lock:
             px, py, pth = pose if pose is not None else (self.x, self.y, self.th)
             ang = pth + bear
             ca, sa = np.cos(ang), np.sin(ang)
+            lo = self.lo
+            if self._lib is not None and lo.dtype == np.float32 and lo.flags.c_contiguous:
+                # Eintragen im C++-Kern (gleiches Ergebnis wie unten)
+                self._gen += 2
+                if self._gen >= 0xFFFFFFF0:
+                    self._stamp[:] = 0
+                    self._gen = 2
+                g = self._gp
+                g.nrays, g.px, g.py = len(idx), px, py
+                ok8, hit8 = ok.view(np.uint8), np.ascontiguousarray(hit).view(np.uint8)
+                self._lib.grid_add(ctypes.byref(g), lo.ctypes.data, self._stamp.ctypes.data, self._gen,
+                                   start.ctypes.data, free_len.ctypes.data, dist.ctypes.data, ca.ctypes.data,
+                                   sa.ctypes.data, ok8.ctypes.data, hit8.ctypes.data)
+                self.updates += 1
+                return
             # freie Strecken: Stützstellen alle res/2 von start bis free_len
             if ok.any():
                 steps = np.ceil((free_len[ok] - start[ok]) / (self.res / 2)).astype(np.int64) + 1

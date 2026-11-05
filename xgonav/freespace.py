@@ -17,9 +17,12 @@ import os
 import threading
 from dataclasses import dataclass, field
 
+import ctypes
+
 import cv2
 import numpy as np
 
+from . import fastlib
 from .affinity import pin_thread
 from .config import FreespaceCfg
 from .geometry import CamGeometry
@@ -77,6 +80,60 @@ def column_runs(columns) -> list[tuple[int, int]]:
     return runs
 
 
+_EDGE_ABI = 2
+
+
+class _EdgeParams(ctypes.Structure):         # = EdgeParams in native/floorfast.cpp
+    _fields_ = [(n, ctypes.c_int) for n in ("H", "W", "k", "edge_thin", "use_log", "edge_glare", "glare_v",
+                                            "glare_px", "glare_spread", "pad0", "pad1", "pad2")] + \
+               [(n, ctypes.c_double) for n in ("step_thr", "seg_thr", "chroma_w", "glare_dl")] + \
+               [("lut", ctypes.c_uint8 * 256)]
+
+
+def _edge_lib():
+    """C++-Kern mit passender Kanten-ABI, sonst None."""
+    lib = fastlib.load()
+    if not fastlib.check_abi(lib, "edge_abi", _EDGE_ABI):
+        return None
+    lib.edge_columns.restype = ctypes.c_int
+    lib.edge_columns.argtypes = [ctypes.POINTER(_EdgeParams), ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p,
+                                 ctypes.c_void_p, ctypes.c_double, ctypes.c_void_p, ctypes.POINTER(ctypes.c_int)]
+    lib.area_down.restype = ctypes.c_int
+    lib.area_down.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+                              ctypes.c_int, ctypes.c_void_p]
+    return lib
+
+
+_area_mode_cache: dict = {}
+
+
+def _area_mode(lib, w: int, h: int, f: int):
+    """Rundungsvariante von area_down, die am Gerät bitgleich zu cv2.resize(INTER_AREA) ist
+    (Rauschbild + glattes Bild), sonst None. Einmal je Größe."""
+    key = (w, h, f)
+    if key not in _area_mode_cache:
+        rng = np.random.default_rng(7)
+        tests = [rng.integers(0, 256, (h, w, 3), dtype=np.uint8)]
+        tests.append(cv2.GaussianBlur(tests[0], (0, 0), 3))
+        mode = None
+        for m in (0, 1):
+            ok = True
+            for img in tests:
+                ref = cv2.resize(img, (w // f, h // f), interpolation=cv2.INTER_AREA)
+                out = np.empty_like(ref)
+                if lib.area_down(img.ctypes.data, w, h, img.strides[0], 3, f, m, out.ctypes.data) != 0 or \
+                        not np.array_equal(out, ref):
+                    ok = False
+                    break
+            if ok:
+                mode = m
+                break
+        if mode is None:
+            log.info("area_down weicht von cv2.resize ab – Bodenmodell verkleinert mit OpenCV")
+        _area_mode_cache[key] = mode
+    return _area_mode_cache[key]
+
+
 class FreeSpaceEstimator:
     def __init__(self, cfg: FreespaceCfg, full_size: tuple[int, int], geo: CamGeometry | None = None):
         self.cfg = cfg
@@ -128,6 +185,54 @@ class FreeSpaceEstimator:
         self._k_erode = np.ones((1, 5), np.uint8)
         self._k3 = np.ones((3, 3), np.uint8)
         self._k5 = np.ones((5, 5), np.uint8)
+        fast = _edge_lib() if cfg.native else None
+        self._edge_nat = fast if cfg.method in ("kanten", "beide") else None
+        # Verkleinern im C++-Kern, nur wenn am Gerät bitgleich zu cv2.resize (Prüfung beim Start)
+        self._area = None
+        fw, fh = int(full_size[0]), int(full_size[1])
+        if fast is not None and fw % self.W == 0 and fw // self.W * self.H == fh:
+            f = fw // self.W
+            mode = _area_mode(fast, fw, fh, f)
+            if mode is not None:
+                self._area = (fast, fw, fh, f, mode)
+        self._edges_x: dict[int, np.ndarray] = {}
+        self._atan_rows = None                     # arctan2 je Zeile für _need_rows (unabhängig vom Nicken)
+        self._srel_u8 = None if self._srel is None else np.ascontiguousarray(self._srel, dtype=np.uint8)
+        self._edge_out = np.empty(self.W, np.float32)
+        self._edge_ng = ctypes.c_int(0)
+        self.edge_backend = "c++" if self._edge_nat is not None else "python"
+        if fast is not None:
+            log.info("Bodenmodell: C++-Kern %s (Kantenverfahren %s, Verkleinern %s)", fastlib.PATH,
+                     "ja" if self._edge_nat is not None else "nein", "ja" if self._area is not None else "nein")
+
+    def _downscale(self, bgr: np.ndarray) -> np.ndarray:
+        """= cv2.resize(bgr, (W, H), INTER_AREA); im C++-Kern, wenn beim Start als bitgleich geprüft."""
+        a = self._area
+        if a is not None and bgr.dtype == np.uint8 and bgr.shape == (a[2], a[1], 3) and bgr.strides[1:] == (3, 1):
+            out = np.empty((self.H, self.W, 3), np.uint8)
+            if a[0].area_down(bgr.ctypes.data, a[1], a[2], bgr.strides[0], 3, a[3], a[4], out.ctypes.data) == 0:
+                return out
+        return cv2.resize(bgr, (self.W, self.H), interpolation=cv2.INTER_AREA)
+
+    def _edge_params(self) -> _EdgeParams:
+        """Parameter für den C++-Kern; je Aufruf neu (cfg kann sich zur Laufzeit ändern, ~10 µs)."""
+        c = self.cfg
+        p = _EdgeParams(H=self.H, W=self.W, k=c.edge_k, edge_thin=int(bool(c.edge_thin)),
+                        use_log=int(c.edge_log_s > 0), edge_glare=int(bool(c.edge_glare)), glare_v=int(c.glare_v),
+                        glare_px=int(c.glare_px), glare_spread=int(c.glare_spread),
+                        step_thr=float(c.edge_step_thr), seg_thr=float(c.edge_seg_thr),
+                        chroma_w=float(np.float32(c.edge_chroma_w)), glare_dl=float(c.glare_dl))
+        if c.edge_log_s > 0:
+            ctypes.memmove(p.lut, self._log_lut_for(c.edge_log_s).ctypes.data, 256)
+        return p
+
+    def _log_lut_for(self, s_val: float) -> np.ndarray:
+        if getattr(self, "_log_lut_s", None) != s_val:
+            s = float(s_val)
+            x = np.arange(256, dtype=np.float64)
+            self._log_lut = np.round(255.0 * np.log1p(x / s) / np.log1p(255.0 / s)).astype(np.uint8)
+            self._log_lut_s = s_val
+        return self._log_lut
 
     def reset(self) -> None:
         """Bodenmodell verwerfen und beim nächsten update() neu lernen (z. B. nach Neustart
@@ -149,7 +254,7 @@ class FreeSpaceEstimator:
             self._reset_req = False
             self.model = self.model_bg = None
             log.info("Bodenmodell zurückgesetzt, lernt neu")
-        small = cv2.resize(bgr, (self.W, self.H), interpolation=cv2.INTER_AREA)
+        small = self._downscale(bgr)
         small0 = small                    # unkorrigiert: fürs Kantenverfahren (Verlauf hat keine Kante)
         x0, y0, x1, y1 = self._sample_rect()
         # Kantenverfahren: das Farbmodell braucht nur die Probe (unteres Bilddrittel) und den
@@ -264,7 +369,9 @@ class FreeSpaceEstimator:
                 cols = cols.copy()
                 cols[unknown] = np.nan
         n = self.cfg.sectors
-        edges_x = np.linspace(0, self.W, n + 1).astype(int)
+        edges_x = self._edges_x.get(n)
+        if edges_x is None:                      # konstant je Sektorzahl (linspace kostete ~0,2 ms je Bild)
+            edges_x = self._edges_x[n] = np.linspace(0, self.W, n + 1).astype(int)
         sectors = [_p20(cols[edges_x[i]:edges_x[i + 1]]) for i in range(n)]
         r_ff = max(hz_i, ry0)                     # Diagnose: nur berechnete Zeilen
         if self._srel is not None:
@@ -352,7 +459,14 @@ class FreeSpaceEstimator:
         if h > 0 and self.geo is not None:
             g = self.geo
             y_base = self._y_base[:R]                     # Unterkante der Zeile, Vollbild
-            d = g.ground_dist_np(y_base, pitch_dev)
+            # = g.ground_dist_np(y_base, pitch_dev); arctan2 je Zeile hängt nicht vom Nicken ab
+            key = (g.H, g.f)
+            if self._atan_rows is None or self._atan_rows[0] != key:
+                self._atan_rows = (key, np.arctan2(np.asarray(self._y_base, float) - g.H / 2, g.f))
+            beta = self._atan_rows[1][:R] - math.radians(g.tilt_deg) - pitch_dev
+            with np.errstate(divide="ignore", invalid="ignore"):
+                d = g.cam_h / np.tan(beta)
+            d[beta <= math.radians(0.5)] = np.nan
             off = math.radians(g.tilt_deg) + pitch_dev
             with np.errstate(invalid="ignore"):
                 y_top = g.H / 2 + g.f * np.tan(np.arctan2(g.cam_h - h, d) + off)
@@ -375,19 +489,16 @@ class FreeSpaceEstimator:
         c = self.cfg
         H, W = self.H, self.W
         k = c.edge_k
+        if self._edge_nat is not None:
+            return self._edge_columns_native(small, floor, horizon, pitch_dev)
         lab = cv2.cvtColor(small, cv2.COLOR_BGR2LAB)
         if c.edge_thin:
             lab = cv2.morphologyEx(lab, cv2.MORPH_OPEN, self._k3)
             lab = cv2.morphologyEx(lab, cv2.MORPH_CLOSE, self._k3)
         l_lin = lab[..., 0]                               # lineare Helligkeit (Lichtschein-Prüfung)
         if c.edge_log_s > 0:
-            if getattr(self, "_log_lut_s", None) != c.edge_log_s:
-                s = float(c.edge_log_s)
-                x = np.arange(256, dtype=np.float64)
-                self._log_lut = np.round(255.0 * np.log1p(x / s) / np.log1p(255.0 / s)).astype(np.uint8)
-                self._log_lut_s = c.edge_log_s
             lab = lab.copy()
-            lab[..., 0] = cv2.LUT(np.ascontiguousarray(l_lin), self._log_lut)
+            lab[..., 0] = cv2.LUT(np.ascontiguousarray(l_lin), self._log_lut_for(c.edge_log_s))
         # Kumulative Ganzzahl-Summen entlang der Zeilen: Summe beliebiger Zeilenfenster in O(1).
         # Gewichtung der Farbkanäle erst beim Vergleich (spart die Gleitkomma-Kopie, CM4 ~1 ms).
         cs = np.zeros((H + 1, W, 3), np.int32)
@@ -439,6 +550,24 @@ class FreeSpaceEstimator:
         if self._n_glare:
             free[glare] = np.nan                     # Lichtschein: unbekannt (weder Hindernis noch frei)
         return free
+
+    def _edge_columns_native(self, small: np.ndarray, floor: np.ndarray, horizon: float,
+                             pitch_dev: float) -> np.ndarray:
+        """_edge_columns im C++-Kern (native/floorfast.cpp), gleiche Rechnung."""
+        small = np.ascontiguousarray(small)
+        floor = np.ascontiguousarray(floor)
+        need = np.ascontiguousarray(self._need_rows(self.H, pitch_dev), dtype=np.float32)
+        out = self._edge_out
+        rc = self._edge_nat.edge_columns(ctypes.byref(self._edge_params()), small.ctypes.data, floor.ctypes.data,
+                                         None if self._srel_u8 is None else self._srel_u8.ctypes.data,
+                                         need.ctypes.data, float(horizon), out.ctypes.data, ctypes.byref(self._edge_ng))
+        if rc != 0:
+            log.warning("Kantenverfahren (C++) fehlgeschlagen – weiter mit numpy")
+            self._edge_nat = None
+            self.edge_backend = "python"
+            return self._edge_columns(small, floor, horizon, pitch_dev)
+        self._n_glare = int(self._edge_ng.value)
+        return out.copy()
 
     def _glare_cols(self, small: np.ndarray, l_lin: np.ndarray, best: np.ndarray, has: np.ndarray,
                     hz: int, k: int) -> np.ndarray:

@@ -14,13 +14,13 @@ from __future__ import annotations
 import ctypes
 import logging
 import math
-import os
 from collections import deque
 from dataclasses import dataclass, field
 
 import cv2
 import numpy as np
 
+from . import fastlib
 from .config import EgoCfg
 
 log = logging.getLogger(__name__)
@@ -28,8 +28,9 @@ log = logging.getLogger(__name__)
 I3 = np.eye(3, dtype=np.float64)
 
 # ------------------------------------------------------------------ C++-Kern (optional)
-NATIVE_PATH = os.path.join(os.path.dirname(__file__), "native", "libxgofast.so")
-_NATIVE_ABI = 1
+NATIVE_PATH = fastlib.PATH
+_NATIVE_ABI = 2
+_FAST_NAMES = ("Grau", "Schärfe", "Merkmale")   # Bits von ego_fast_mask()
 
 
 class _EgoParams(ctypes.Structure):          # = EgoParams in native/egofast.cpp
@@ -45,32 +46,24 @@ class _EgoOut(ctypes.Structure):             # = EgoOut in native/egofast.cpp
                [("A", ctypes.c_double * 9)]
 
 
-_lib_cache: list = []
-
-
 def _native_lib():
-    """libxgofast.so laden (einmal). None, wenn nicht gebaut oder unpassend."""
-    if _lib_cache:
-        return _lib_cache[0]
-    lib = None
-    if os.path.exists(NATIVE_PATH):
-        try:
-            cand = ctypes.CDLL(NATIVE_PATH)          # CDLL gibt das GIL während des Aufrufs frei
-            cand.ego_abi.restype = ctypes.c_int
-            if cand.ego_abi() != _NATIVE_ABI:
-                log.warning("%s passt nicht (ABI %d statt %d) – neu bauen: make -C xgonav/native",
-                            NATIVE_PATH, cand.ego_abi(), _NATIVE_ABI)
-            else:
-                cand.ego_new.restype = ctypes.c_void_p
-                cand.ego_new.argtypes = [ctypes.POINTER(_EgoParams)]
-                cand.ego_free.argtypes = [ctypes.c_void_p]
-                cand.ego_step.restype = ctypes.c_int
-                cand.ego_step.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_int,
-                                          ctypes.c_double, ctypes.c_void_p, ctypes.c_int, ctypes.POINTER(_EgoOut)]
-                lib = cand
-        except OSError as e:
-            log.warning("%s nicht ladbar: %s", NATIVE_PATH, e)
-    _lib_cache.append(lib)
+    """C++-Kern mit passender Ego-ABI, sonst None (siehe fastlib.py)."""
+    lib = fastlib.load()
+    if not fastlib.check_abi(lib, "ego_abi", _NATIVE_ABI):
+        return None
+    lib.ego_new.restype = ctypes.c_void_p
+    lib.ego_new.argtypes = [ctypes.POINTER(_EgoParams)]
+    lib.ego_free.argtypes = [ctypes.c_void_p]
+    lib.ego_step.restype = ctypes.c_int
+    lib.ego_step.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+                             ctypes.c_double, ctypes.c_void_p, ctypes.c_int, ctypes.POINTER(_EgoOut)]
+    lib.ego_fast_mask.restype = ctypes.c_int
+    lib.ego_fast_mask.argtypes = [ctypes.c_int, ctypes.c_int]
+    i, p, d = ctypes.c_int, ctypes.c_void_p, ctypes.c_double
+    lib.xg_gray_half.restype = lib.xg_sharpness.restype = lib.xg_good_features.restype = i
+    lib.xg_gray_half.argtypes = [p, i, i, i, p]
+    lib.xg_sharpness.argtypes = [p, i, i, i, ctypes.POINTER(d)]
+    lib.xg_good_features.argtypes = [p, i, i, i, p, i, d, d, p, i]
     return lib
 
 
@@ -160,7 +153,10 @@ class EgoMotion:
             self._out = _EgoOut()
         self.backend = "c++" if self._nat else "python"
         if self._nat:
-            log.info("Ego-Motion: C++-Kern %s", NATIVE_PATH)
+            # Abkürzungen nur, wenn beim Start bitgleich zu OpenCV geprüft (sonst rechnet dort OpenCV)
+            fm = self._lib.ego_fast_mask(self.pw, self.ph)
+            fast = [n for k, n in enumerate(_FAST_NAMES) if fm >= 0 and fm >> k & 1]
+            log.info("Ego-Motion: C++-Kern %s (Abkürzungen: %s)", NATIVE_PATH, ", ".join(fast) or "keine")
         elif getattr(cfg, "native", False):
             log.info("Ego-Motion in Python (C++-Kern nicht gebaut: make -C xgonav/native)")
 

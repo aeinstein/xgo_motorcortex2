@@ -85,7 +85,7 @@ Default = `config.py`. RiderPi = `deploy/config.example.toml` (blank = default).
 | `lk_win` / `lk_levels` / `lk_iters` | 11 / 3 / 10 |
 | `lk_fb_check` | true |
 | `ransac_px` | 2.0 |
-| `native` | true | use C++ core `xgonav/native/libxgofast.so` if built (`make -C xgonav/native`): same result (max. difference 1e-13°, 6227 frames), one image pyramid per frame instead of four; CM4 offline 7.5 → 5.0 ms/frame, live 9.9 → 6.6 ms. Missing/stale `.so` → Python |
+| `native` | true | use C++ core `xgonav/native/libxgofast.so` if built (`make -C xgonav/native`): same result (max. difference 1e-13°, 6227 frames), one image pyramid per frame instead of four; gray+downscale, sharpness and `goodFeaturesToTrack` re-implemented bit-identically (checked against OpenCV at startup, else OpenCV); CM4 offline 7.5 → 4.2 ms/frame (p95 6.1 ms), live 9.9 → 6.6 ms before the re-implementations. Missing/stale `.so` → Python |
 
 ### `[detector]`
 | Key | Default | RiderPi |
@@ -127,6 +127,7 @@ Default = `config.py`. RiderPi = `deploy/config.example.toml` (blank = default).
 | `edge_log_s` | 16 | | step on log brightness `ln(1+L/s)` (ratio instead of difference): dark walls/furniture in dark scenes; 0 = linear |
 | `edge_glare` | true | | lamp glare on glossy floor → column unknown (NaN) instead of obstacle |
 | `glare_v` / `glare_px` / `glare_dl` / `glare_spread` | 250 / 2 / 8 / 8 | | glare = brighter above the step (≥ `glare_dl`, linear L) and ≥ `glare_px` saturated pixels between step and horizon−12 rows; grown to bright neighbours with similar step row; not at the image border (lamp-lit wall looks the same) |
+| `native` | true | | C++ core (`xgonav/native/floorfast.cpp`) if built: `kanten`/`beide` edge scan and the 4:1 downscale (NEON, only if bit-identical to `cv2.resize` at startup); same result as numpy |
 | `edge_fallback_free` | 0.98 | | `beide`: column counts as "nothing found" from this free fraction |
 | `horizon_wall` | false | | `farbe` only: floor color continuing above the horizon = wall, base at first strong edge (false alarms in the simulator from pitch errors) |
 | `horizon_margin_rows` / `horizon_band_rows` / `horizon_floor_frac` / `wall_edge_thr` | 2 / 6 / 0.6 / 8 | | horizon rule band and edge threshold |
@@ -186,6 +187,7 @@ Sounds: `sound` true, `sound_dir` `/opt/xgonav/sounds`, `sound_found` `freude.wa
 | `view_m` | 6.0 |
 | `yaw_source` | `räder` (wheels) or `kamera` |
 | `threaded` | true |
+| `native` | true: enter rays in the C++ core (`xgonav/native/gridfast.cpp`) if built; same map as numpy (CM4 1.5 → 0.1 ms per observation) |
 | `file` | `""` (off); RiderPi example: `/opt/xgonav/raumkarte.npz` |
 | `save_every_s` | 60.0 (only if changed; also on exit) |
 

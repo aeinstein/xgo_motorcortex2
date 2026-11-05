@@ -110,6 +110,49 @@ def test_egomotion_native_matches_python():
         assert np.allclose(a.A, b.A, atol=1e-9)
 
 
+def test_ego_fast_paths_match_opencv():
+    """Abkürzungen im C++-Kern (Grau + 2:1, Schärfe, goodFeaturesToTrack) bitgleich zu den
+    OpenCV-Aufrufen in egomotion.py; Pfade, die die Selbstprüfung abgeschaltet hat (-1), entfallen."""
+    import ctypes
+    import cv2
+    from xgonav.egomotion import _native_lib
+    lib = _native_lib()
+    if lib is None:
+        pytest.skip("C++-Kern nicht gebaut (make -C xgonav/native)")
+    rng = np.random.default_rng(5)
+    cfg = Config()
+    r = SimRobot(cfg.robot)
+    r._cur = (0.1, 0.05)
+    r._height_mm = 85
+    w = SimWorld(cfg.camera, r, None, start=(1.0, 1.5, 0.1), shake=1.0, vx_mps=1.5)
+    imgs = []
+    for k in range(8):
+        w._integrate(k / 10, 0.1)
+        imgs.append(w._render(k / 10, 0.1)[0])
+    n = rng.integers(0, 256, (480, 640, 3), dtype=np.uint8)
+    imgs += [n, cv2.GaussianBlur(n, (0, 0), 3)]
+    for img in imgs:
+        g = cv2.resize(cv2.cvtColor(img, cv2.COLOR_BGR2GRAY), (320, 240), interpolation=cv2.INTER_AREA)
+        out = np.empty((240, 320), np.uint8)
+        if lib.xg_gray_half(img.ctypes.data, 640, 480, img.strides[0], out.ctypes.data) == 0:
+            assert np.array_equal(out, g)
+        s = ctypes.c_double()
+        if lib.xg_sharpness(g.ctypes.data, 320, 240, 320, ctypes.byref(s)) == 0:
+            assert s.value == float(cv2.meanStdDev(cv2.Laplacian(g, cv2.CV_32F))[1][0, 0] ** 2)
+        mask = np.full(g.shape, 255, np.uint8)
+        for x, y in rng.integers(0, 240, (40, 2)):
+            cv2.circle(mask, (int(x), int(y)), 8, 0, -1)
+        cv2.rectangle(mask, (100, 50), (180, 200), 0, -1)
+        for mk, maxc in ((mask, 90), (None, 150), (mask, 7)):
+            ref = cv2.goodFeaturesToTrack(g, maxCorners=maxc, qualityLevel=0.01, minDistance=8, mask=mk, blockSize=5)
+            ref = np.zeros((0, 2), np.float32) if ref is None else ref.reshape(-1, 2)
+            pts = np.empty((maxc, 2), np.float32)
+            k = lib.xg_good_features(g.ctypes.data, 320, 240, 320, None if mk is None else mk.ctypes.data, maxc,
+                                     0.01, 8.0, pts.ctypes.data, maxc)
+            if k >= 0:
+                assert np.array_equal(pts[:k], ref)
+
+
 def test_warp_box_identity_and_shift():
     A = np.eye(3)
     assert warp_box(A, (10, 20, 30, 40)) == pytest.approx((10, 20, 30, 40))
@@ -433,6 +476,64 @@ def test_kanten_log_finds_dark_wall_in_dark_scene():
     assert lin.update(img, 0.0).columns[20:140].min() >= 0.98
     c = log.update(img, 0.0).columns
     assert c[20:140].max() < 0.9
+
+
+def test_kanten_native_matches_numpy():
+    """C++-Kantenverfahren (nur wenn gebaut) gleich der numpy-Fassung: Simulator-Bilder,
+    Lampenschein (auch am Rand), dunkle Szene, Rauschen; mit und ohne Log/Schein-Regel."""
+    import cv2
+    from xgonav.freespace import _edge_lib
+    if _edge_lib() is None:
+        pytest.skip("C++-Kern nicht gebaut (make -C xgonav/native)")
+    rng = np.random.default_rng(3)
+    imgs = []
+    g = np.full((480, 640, 3), 90, np.uint8)
+    g[:270] = 40
+    g[200:268, 300:340] = 255
+    g[270:330, 296:344] = np.linspace(250, 170, 60).astype(np.uint8)[:, None, None]
+    g[200:268, 0:24] = 255
+    g[270:330, 0:28] = np.linspace(250, 170, 60).astype(np.uint8)[:, None, None]
+    imgs.append(g)
+    d = np.full((480, 640, 3), 25, np.uint8)
+    d[:330] = 11
+    d[:270] = 9
+    imgs.append(d)
+    for _ in range(4):
+        n = rng.integers(0, 256, (480, 640, 3), dtype=np.uint8)
+        imgs.append(cv2.GaussianBlur(n, (0, 0), 6) if _ % 2 else n)
+    cfg = Config()
+    r = SimRobot(cfg.robot)
+    r._cur = (0.1, 0.05)
+    r._height_mm = 85
+    w = SimWorld(cfg.camera, r, None, start=(1.0, 1.5, 0.1), shake=1.0, vx_mps=1.5)
+    for k in range(10):
+        w._integrate(k / 10, 0.1)
+        imgs.append(w._render(k / 10, 0.1)[0])
+    for kw in ({}, {"edge_log_s": 0.0}, {"edge_glare": False}, {"edge_thin": False}, {"glare_spread": 0}):
+        en, _ = _kanten_est(**kw)
+        ep, _ = _kanten_est(native=False, **kw)
+        assert (en.edge_backend, ep.edge_backend) == ("c++", "python")
+        for i, img in enumerate(imgs):
+            for pd in (0.0, 0.02):
+                a, b = ep.update(img, pd), en.update(img, pd)
+                assert np.array_equal(a.columns, b.columns, equal_nan=True), (kw, i, pd)
+                assert ep.diag["glare_cols"] == en.diag["glare_cols"]
+
+
+def test_floor_downscale_native_equals_cv2():
+    """Verkleinern im C++-Kern (nur wenn gebaut und beim Start bitgleich) = cv2.resize(INTER_AREA)."""
+    import cv2
+    from xgonav.freespace import _edge_lib
+    if _edge_lib() is None:
+        pytest.skip("C++-Kern nicht gebaut (make -C xgonav/native)")
+    est, _ = _kanten_est()
+    assert est._area is not None, "area_down nicht bitgleich zu cv2.resize"
+    rng = np.random.default_rng(11)
+    img = rng.integers(0, 256, (480, 640, 3), dtype=np.uint8)
+    big = np.zeros((480, 700, 3), np.uint8)          # Zeilenabstand größer als die Breite
+    big[:, :640] = img
+    for x in (img, big[:, :640], cv2.GaussianBlur(img, (0, 0), 2)):
+        assert np.array_equal(est._downscale(x), cv2.resize(x, (160, 120), interpolation=cv2.INTER_AREA))
 
 
 def test_arc_clearance_escape_from_point_inside_radius():
@@ -893,6 +994,38 @@ def test_gridworker_uses_pose_of_observation():
     w.close()
     # Wand dort, wo sie aus der Startpose gesehen wurde – nicht verschoben zur neuen Pose
     assert np.array_equal(np.sort(m.occupied_cells(), axis=0), np.sort(direct.occupied_cells(), axis=0))
+
+
+def test_gridmap_native_matches_numpy():
+    """Eintragen im C++-Kern (nur wenn gebaut) bitgleich zu numpy: zufällige Bodengrenzen mit
+    NaN-Spalten, bekanntem Bereich, Strahlen bis Horizont, wechselnde Posen und Nicken."""
+    from dataclasses import replace
+    from xgonav.freespace import FreeSpace
+    from xgonav.gridmap import GridMap, _grid_lib
+    if _grid_lib() is None:
+        pytest.skip("C++-Kern nicht gebaut (make -C xgonav/native)")
+    cfg = Config()
+    g = CamGeometry(640, 480, 91.0, 1.39, 43.0, 85.0)
+    mn = GridMap(cfg.grid, g, 160, 120)
+    mp = GridMap(replace(cfg.grid, native=False), g, 160, 120)
+    assert (mn.backend, mp.backend) == ("c++", "python")
+    rng = np.random.default_rng(11)
+    hz = g.horizon_row(0) / 4
+    pose = np.zeros(3)
+    for k in range(300):
+        cols = rng.uniform(0.0, 1.0, 160)
+        cols[rng.random(160) < 0.1] = np.nan
+        cols[rng.random(160) < 0.15] = 1.0                       # frei bis Horizont
+        kf = None if k % 3 == 0 else np.clip(rng.uniform(-0.1, 0.3, 160), 0, 1)
+        fs = FreeSpace([0.5] * 5, cols, hz, np.zeros((120, 160), np.uint8), True, kf)
+        pose += (rng.normal(0, 0.05), rng.normal(0, 0.05), rng.normal(0, 0.2))
+        if k == 150:
+            pose[:] = (7.9, -7.95, 1.0)                          # Kartenrand: Strahlen laufen hinaus
+        pd = float(rng.normal(0, 0.01))
+        mn.add_freespace(fs, pd, tuple(pose))
+        mp.add_freespace(fs, pd, tuple(pose))
+    assert np.array_equal(mn.lo, mp.lo)
+    assert np.abs(mn.lo).max() > 1.0 and mn.updates == mp.updates == 300
 
 
 # ---------------------------------------------------------------- Startpunkt, Speichern, Heimfahrt
