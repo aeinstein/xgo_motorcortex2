@@ -5,12 +5,16 @@
 #   firmware/build.sh [env]          # env: rider2-firmware (Default, klassischer PID-Regler)
 #                                    #      rider2-trained | rider2-rl-only
 #   REF_COMMIT=<sha> firmware/build.sh   # andere Referenz-Version (Patches müssen passen)
+#   PIO=~/.platformio/penv/Scripts/platformio.exe firmware/build.sh   # vorhandenes PlatformIO
+#
+# Läuft unter Linux/macOS und unter Windows in Git-Bash (Python 3.8+ als python3 oder python).
 #
 # Referenz: github.com/LuwuDynamics/xgorider2_rl (R-1.1.6-Reimplementierung, PlatformIO).
 # Patches (firmware/patches/, in Reihenfolge):
 #   0001 Register 0x0c (Rad-Encoder) und 0x0d (Lage + Räder + Zeit in einem Snapshot)
 #   0002 Aktion 0x3e = 254: binäres Disarm/Not-Stopp wie !stop
 #   0003 LED-Helligkeit halbiert (129 -> 64 von 256)
+#   0004 Aktion 0x3e = 253 / !standup: Aufstehen aus der Liegelage auf Befehl
 # Braucht: git, python3 (venv), Internet beim ersten Lauf (PlatformIO lädt Toolchain ~1 GB).
 set -euo pipefail
 
@@ -45,16 +49,41 @@ for p in "$HERE"/patches/*.patch; do
     git -C "$SRC" apply --whitespace=nowarn "$p"
 done
 
-# PlatformIO in eigenem venv (nicht im Repo-venv)
-VENV=$WORK/venv
-if [ ! -x "$VENV/bin/platformio" ]; then
-    echo "== PlatformIO installieren"
-    python3 -m venv "$VENV"
-    "$VENV/bin/pip" install -q "platformio==6.1.*"
+# PlatformIO: PIO=<pfad> nimmt eine vorhandene Installation, sonst eigenes venv (nicht das
+# Repo-venv). venv-Layout: Linux/macOS bin/, Windows (Git-Bash) Scripts/*.exe.
+venv_exe() {   # venv_exe <name>: Pfad des Programms im venv, leer wenn nicht vorhanden
+    local c
+    for c in "$VENV/bin/$1" "$VENV/Scripts/$1.exe"; do
+        [ -x "$c" ] && { echo "$c"; return 0; }
+    done
+    return 0   # nichts gefunden: leere Ausgabe (set -e darf hier nicht abbrechen)
+}
+if [ -n "${PIO:-}" ]; then
+    [ -x "$PIO" ] || { echo "PIO nicht ausführbar: $PIO" >&2; exit 2; }
+else
+    VENV=$WORK/venv
+    PIO=$(venv_exe platformio)
+    if [ -z "$PIO" ]; then
+        # python3 bzw. python (Windows); der Store-Platzhalter python3.exe läuft nicht -> testen
+        PY=${PYTHON:-}
+        if [ -z "$PY" ]; then
+            for c in python3 python; do
+                if command -v "$c" >/dev/null && "$c" -c 'import sys; assert sys.version_info >= (3, 8)' 2>/dev/null; then
+                    PY=$c; break
+                fi
+            done
+        fi
+        [ -n "$PY" ] || { echo "Kein Python >= 3.8 gefunden (PYTHON=<pfad> setzen)" >&2; exit 2; }
+        echo "== PlatformIO installieren ($PY)"
+        "$PY" -m venv "$VENV"
+        "$(venv_exe python)" -m pip install -q "platformio==6.1.*"
+        PIO=$(venv_exe platformio)
+        [ -n "$PIO" ] || { echo "platformio fehlt nach Installation in $VENV" >&2; exit 1; }
+    fi
 fi
 
-echo "== Bauen: $ENV"
-(cd "$SRC/firmware" && "$VENV/bin/platformio" run -e "$ENV")
+echo "== Bauen: $ENV ($("$PIO" --version))"
+(cd "$SRC/firmware" && "$PIO" run -e "$ENV")
 
 BIN=$SRC/firmware/.pio/build/$ENV/firmware.bin
 cp "$BIN" "$OUT/app0.bin"
@@ -63,6 +92,7 @@ cp "$BIN" "$OUT/app0.bin"
     echo "ref $(git -C "$SRC" rev-parse HEAD)"
     echo "env $ENV"
     for p in "$HERE"/patches/*.patch; do echo "patch $(basename "$p") $(sha256sum "$p" | cut -d' ' -f1)"; done
+    echo "pio $("$PIO" --version)"
     echo "built $(date -Iseconds)"
 } > "$OUT/app0.build.txt"
 

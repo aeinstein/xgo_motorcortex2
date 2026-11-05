@@ -1,0 +1,212 @@
+Subject: [PATCH] Rider2: Aufstehen aus Liegelage per Befehl (Action 0x3e = 253 / !standup)
+
+Host-/treibergesteuertes Aufstehen, nachgebaut nach Stock-FW R-1.1.3 (dort nach
+dem Boot automatisch). Nicht beim Boot, nur auf Befehl:
+
+- Action 0x3e = 253 (binaer, z.B. echo 253 > /proc/XGORider/action) oder !standup
+- wirkt wie Arm (255) + 3 s Startfenster mit |pitch|<40, |roll|<10 (statt 8/5)
+- Aufstehphase: roher klassischer Rad-PID, ohne RL/Gain/Glaettung/Yaw-Slew,
+  Lift-Guard und Runaway-Zaehler ausgesetzt; Filter werden fuer die Uebergabe vorbelegt
+- fertig nach ~160 ms aufrecht (|pitch|<8, |roll|<5); nach 2 s nicht aufrecht ->
+  gelatchter Stop reason=tilt; Fenster abgelaufen -> bleibt armed wie nach 255
+- !stop / 254 / Kalibrierung brechen ab; Kippschutz >45 Grad bleibt aktiv
+- !status: "standup":"idle|requested|active"
+
+Basis: xgorider2_rl f534986 + Custom-Register 0x0c/0x0d, Action 254, LED-Dimmung
+(siehe rider2-custom-all.patch). Anwenden in firmware/.. :  git apply rider2-standup.patch
+Build: pio run -e rider2-firmware (getestet, auch rider2-rl-only baut).
+Auf dem Geraet geflasht und verifiziert 2026-11-04.
+---
+--- a/firmware/src/main.cpp
++++ b/firmware/src/main.cpp
+@@ -47,6 +47,18 @@
+ // Consecutive 4 ms control ticks the robot must remain plausibly upright and
+ // still before a protective stop may re-select the learned controller.
+ constexpr uint16_t kAutoRearmTicks=250;
++// Host-triggered stand-up (Action 0x3e = 253, console !standup). Stock R-1.1.3
++// switched the wheel PID on right after boot regardless of tilt, and the PID
++// swung the body up from its resting angle. Here the host decides when: the
++// request arms like 255, but for kStandupWindowMs the start also accepts a
++// tilted (lying) robot. Until it is upright the classic wheel PID drives the
++// wheels directly (no RL, no lift guard, no runaway count); if it is not
++// upright within kStandupTimeoutMs the stand-up ends in a latched tilt stop.
++constexpr uint32_t kStandupWindowMs=3000;
++constexpr uint32_t kStandupTimeoutMs=2000;
++constexpr float kStandupMaxPitch=40.0f;      // tilt guard stops at 45 deg anyway
++constexpr float kStandupMaxRoll=10.0f;
++constexpr uint16_t kStandupUprightTicks=40;  // ~160 ms with |pitch|<8, |roll|<5 = done
+ constexpr uint8_t kIds[]={11,21,12,22};
+ // Diagnostic trace: 28-byte samples, about 55 Hz for 20 seconds. The control
+ // task fills the ring (sample + USB-only companion record); the application
+@@ -122,6 +134,7 @@
+     bool fall_low=false,fall_falling=false;
+     uint32_t fall_trips=0,fall_deep_trips=0;
+     float fall_min_g=0,fall_longest_low_ms=0;
++    uint8_t standup=0;   // 0 idle, 1 requested (waiting for start), 2 standing up
+     char last_result[64]="booting";
+ };
+ Snapshot shared;
+@@ -158,6 +171,9 @@
+     bool save_legs_pending=false,stop_sent=false,tilt_fault_stop=false;
+     uint16_t save_a=0,save_b=0,trim_stable=0,runaway_count=0;
+     uint16_t auto_rearm_ticks=0;
++    bool standup_requested=false,standup_phase=false;
++    uint32_t standup_request_ms=0,standup_started_ms=0;
++    uint16_t standup_upright_ticks=0;
+     uint32_t dz_reset_seen=0;
+     uint32_t save_started=0,last_imu_us=0,last_control_us=0,last_publish_ms=0;
+     uint8_t sensor_loops=0,trim_stage=0;
+@@ -206,6 +222,8 @@
+     }
+     void stop(StopReason reason,bool latch) {
+         if(!manual_stop||latch)s.last_stop_reason=reason;
++        if(driving)standup_phase=false;
++        if(latch)standup_requested=false;
+         if(driving){policy.resetHistory();if(policy.status().mode==rl::Mode::Active)policy.setMode(rl::Mode::Off);}
+         tilt_fault_stop=false;lift_state=rider2::lift::State();lift_acting=false;
+         if(driving||!stop_sent){bus.stop(true);stop_sent=true;}
+@@ -237,6 +255,7 @@
+     void enterCalibration() {
+         policy.setMode(rl::Mode::Off);
+         cancelTrim();
++        standup_requested=false;
+         actions.cancel(millis());actions.requestMode(255,true);leg_calibrating=true;
+         save_legs_pending=false;
+         stop(StopReason::Calibration,false);result("leg calibration entered; torque released");
+@@ -261,6 +280,17 @@
+         auto_rearm_ticks=0;
+         result("arm requested; waiting for valid upright sensor state");
+     }
++    void standup() {
++        if(driving){result("stand-up ignored: already balancing");return;}
++        if(leg_calibrating||save_legs_pending||save_trim_pending){result("stand-up refused during calibration");++s.rejected_commands;return;}
++        arm();
++        if(manual_stop)return;   // arm refused (RL model unavailable)
++        standup_requested=true;standup_phase=false;standup_upright_ticks=0;standup_request_ms=millis();
++        result("stand-up requested; starts within 3 s if |pitch|<40");
++    }
++    bool standupStartOk(const GuardInput& g) const {
++        return outputGuard(g)==StopReason::None&&std::fabs(g.pitch)<kStandupMaxPitch&&std::fabs(g.roll)<kStandupMaxRoll;
++    }
+     void dispatch(const CommandEvent& e) {
+         auto& a=actions.state();const uint8_t value=e.data[0];const uint32_t now=millis();
+         const auto kind=commandKind(e);
+@@ -305,7 +335,7 @@
+         case CommandKind::Roll:a.command.roll=value;break;
+         case CommandKind::RollWave:a.command.roll_period=value;a.roll_phase=value?10:0;break;
+         case CommandKind::HeightWave:a.command.height_period=value;a.height_phase=value?10:0;break;
+-        case CommandKind::Action:if(value==255)arm();else if(value==254)emergencyStop();else if(!leg_calibrating)actions.request(value,now);break;
++        case CommandKind::Action:if(value==255)arm();else if(value==254)emergencyStop();else if(value==253)standup();else if(!leg_calibrating)actions.request(value,now);break;
+         case CommandKind::PositionHoldProtection:a.hold_protection=value!=0;break;
+         case CommandKind::Leveling:a.leveling=value!=0;break;
+         case CommandKind::MaxForward:a.command.max_forward=float(double(value)/255.0*210.0);break;
+@@ -324,7 +354,7 @@
+         portENTER_CRITICAL(&stateLock);emergency=emergencyRequested;emergencyRequested=false;portEXIT_CRITICAL(&stateLock);
+         if(emergency) {
+             policy.setMode(rl::Mode::Off);
+-            xQueueReset(commands);manual_stop=true;leg_calibrating=false;
++            xQueueReset(commands);manual_stop=true;leg_calibrating=false;standup_requested=false;standup_phase=false;
+             save_legs_pending=false;cancelTrim();
+             actions.cancel(millis());actions.requestMode(254,true);stop(StopReason::Manual,true);result("manual stop latched");
+         }
+@@ -397,7 +427,7 @@
+         if(power.stop_required)actions.requestMode(250,true);
+         if(imu_valid)odometry.update(millis(),bus.sample(21).encoder_ticks,bus.sample(11).filtered_speed_mm_s,s.imu.yaw_deg);
+         // Original runaway criterion is count based and uses wheel11.
+-        if(actions.state().mode==1&&std::fabs(bus.sample(11).filtered_speed_mm_s)>300&&
++        if(actions.state().mode==1&&!standup_phase&&std::fabs(bus.sample(11).filtered_speed_mm_s)>300&&
+            std::abs(int(s.motion.wheels.id11))>=701&&std::fabs(s.motion.command.forward)<20)++runaway_count;
+         else runaway_count=0;
+         if(runaway_count>350)actions.requestMode(0);
+@@ -522,14 +552,18 @@
+         if(driving&&tilt_fault_stop&&reason==StopReason::None)reason=StopReason::Tilt;
+ #endif
+         if(reason!=StopReason::None)a.upright_control_ticks=0;
+-        if(a.mode==253&&!manual_stop&&!leg_calibrating&&board.state().battery_valid&&uprightForStart(g)){
++        const bool standup_window=standup_requested&&uint32_t(now-standup_request_ms)<kStandupWindowMs;
++        if(standup_requested&&!standup_window){standup_requested=false;result("stand-up window expired; waiting for upright start");}
++        if(a.mode==253&&!manual_stop&&!leg_calibrating&&board.state().battery_valid&&
++           (uprightForStart(g)||(standup_window&&standupStartOk(g)))){
++            if(standup_window){standup_requested=false;standup_phase=true;standup_started_ms=now;standup_upright_ticks=0;}
+             actions.cancel(now);actions.requestMode(1,true);
+ #if RIDER2_RL_ONLY
+             // ActionEngine::controlTick neutralises height while the robot is
+             // waiting to start; restore the trained leg-height centre here.
+             if(a.command.height==0)a.command.height=128;
+ #endif
+-            controller.reset(now,s.imu.yaw_deg);result("balance enabled");
++            controller.reset(now,s.imu.yaw_deg);result(standup_phase?"stand-up started":"balance enabled");
+         }
+ #if RIDER2_RL_ONLY
+         // A protective stop clears the actor and latches manual_stop. For stops
+@@ -619,6 +653,20 @@
+                 lift_in.pitch_rate_deg_s=s.imu.pitch_rate_rad_s*57.2957795f;lift_in.roll_rate_deg_s=s.imu.gyro_roll_filtered;
+                 lift_state=rider2::lift::update(lift_state,lift_config,lift_in);
+             }
++            bool standup_now=false;
++            if(standup_phase) {
++                if(std::fabs(s.imu.pitch_deg)<8&&std::fabs(s.imu.roll_deg)<5) {
++                    if(++standup_upright_ticks>=kStandupUprightTicks){standup_phase=false;policy.resetHistory();result("stand-up complete; balancing");}
++                } else standup_upright_ticks=0;
++                if(standup_phase&&uint32_t(now-standup_started_ms)>kStandupTimeoutMs) {
++                    standup_phase=false;actions.requestMode(0,true);stop(StopReason::Tilt,true);
++                    result("stand-up failed: not upright in time; stop latched");
++                    s.control_timing.end(micros());return;
++                }
++                standup_now=standup_phase;
++                // The swing-up is fast wheel motion by design; the lift guard must not hold it at zero.
++                if(standup_now)lift_state=rider2::lift::State();
++            }
+             float wheel11=float(decision.wheel11),wheel21=float(decision.wheel21);
+             wheel11*=wheel_gain;wheel21*=wheel_gain;
+             const uint32_t filter_dt=uint32_t(us-last_filter_us);last_filter_us=us;
+@@ -639,6 +687,16 @@
+             wheel11=forward_command+yaw_command_filtered;wheel21=forward_command-yaw_command_filtered;
+             wheel11=std::max(-1023.0f,std::min(1023.0f,wheel11));
+             wheel21=std::max(-1023.0f,std::min(1023.0f,wheel21));
++#if !RIDER2_RL_ONLY
++            if(standup_now) {
++                // Swing-up: raw classic wheel PID as in stock R-1.1.3 (no RL, gain, smoothing or yaw slew).
++                // The filters are seeded with it so the hand-over after the stand-up is continuous.
++                wheel11=float(s.motion.wheels.id11);wheel21=float(s.motion.wheels.id21);
++                wheel_filtered[0]=wheel11;wheel_filtered[1]=wheel21;wheel_filter_init=true;
++                yaw_command_filtered=(wheel11-wheel21)*.5f;yaw_filter_init=true;
++                policy.resetHistory();
++            }
++#endif
+             s.motion.wheels.id11=int16_t(std::lround(wheel11));s.motion.wheels.id21=int16_t(std::lround(wheel21));
+             // Wheels free in the air: the speed feedback has no ground to push against and runs away (see lift_guard.h).
+             // Hold the wheel command at zero and keep the policy's history clean so nothing winds up meanwhile.
+@@ -658,6 +716,7 @@
+         s.control_timing.end(micros());
+     }
+     void publish() {
++        s.standup=standup_phase?2:(standup_requested?1:0);
+         s.ms=millis();s.driving=driving;s.manual_stop=manual_stop;s.leg_calibrating=leg_calibrating;s.imu_valid=imu_valid;
+         s.pitch_calibrating=trim_stage;s.mode=actions.state().mode;s.action=actions.state().action_id;
+         s.battery=board.state();s.bus=bus.stats();for(size_t n=0;n<4;++n)s.actuators[n]=bus.sample(kIds[n]);
+@@ -767,6 +826,7 @@
+     Serial.printf(",\"dzcomp\":{\"max\":%.1f,\"hysteresis\":%.1f,\"ramp\":%.2f,\"initial\":%.1f,\"grow_mean\":%.1f,\"preload\":%.2f,\"sign\":%d,\"flip_rate\":%.2f,\"trips\":%u,\"locked\":%s}",
+         printable(dz_max_units),printable(dz_hysteresis),printable(dz_ramp),printable(dz_initial),printable(dz_grow_mean),printable(s.policy.dz_preload),int(s.policy.dz_sign),
+         printable(s.policy.dz_flip_rate),s.policy.dz_trips,s.policy.dz_locked?"true":"false");
++    {static const char* const kStandupNames[]={"idle","requested","active"};Serial.printf(",\"standup\":\"%s\"",kStandupNames[s.standup<3?s.standup:0]);}
+     Serial.printf(",\"policy\":{\"mode\":\"%s\",\"error\":\"%s\",\"model\":\"%s\",\"model_id\":%u,\"trained\":%s,\"model_valid\":%s,\"action_space\":\"%s\",\"action_scale\":%.3f,\"calls\":%u,\"failures\":%u,\"last_us\":%u,\"max_us\":%u,\"last_interval_us\":%u,\"action\":[%.6f,%.6f],\"command\":[%.3f,%.3f],\"yaw_integral\":%.6f,\"yaw_integral_gain\":%.6f,\"observation\":[",
+         rl::modeName(p.mode),rl::errorName(p.error),p.model_valid?model.name:"invalid",model.id,
+         p.trained?"true":"false",p.model_valid?"true":"false",rl::actionSpaceName(model.action_space),printable(model.action_scale),
+@@ -792,6 +852,7 @@
+     if(!strcmp(line,"!stop")){emergencyStop();Serial.println("stop requested");return;}
+     Event e;
+     if(!strcmp(line,"!arm")){e.kind=EventKind::Arm;enqueue(e);return;}
++    if(!strcmp(line,"!standup")){valueCommand(CommandKind::Action,253);return;}
+     if(!strcmp(line,"!neutral")){e.kind=EventKind::Neutral;enqueue(e);return;}
+     if(!strcmp(line,"!odom reset")){e.kind=EventKind::ResetOdometry;enqueue(e);return;}
+     if(!strcmp(line,"!cal begin")){valueCommand(CommandKind::LegCalibration,1);return;}
+@@ -855,7 +916,7 @@
+             {"!maxforward",CommandKind::MaxForward},{"!maxturn",CommandKind::MaxTurn}};
+         for(const auto& m:maps)if(!strcmp(cmd,m.text)){valueCommand(m.kind,a);return;}
+     }
+-    Serial.println("!status | !policy off/shadow/active/status | !stop | !arm | !neutral | !move FORWARD TURN (bytes,128 neutral) | !height BYTE | !roll BYTE | !action 0..6/255 | !loop 0/1 | !level 0/1 | !heading 0/1 | !heightwave BYTE | !rollwave BYTE | !maxforward BYTE | !maxturn BYTE | !rgb INDEX R G B | !cal begin | !cal save | !trim | !name SUFFIX | !odom reset | !trace dump | !trace usb on/off | !liftguard on/off/status | !fallguard on/off/status/clear/ms N | !dzcomp [off|on|reset|MAX [HYST [RAMP [START [GROW]]]]]");
++    Serial.println("!status | !policy off/shadow/active/status | !stop | !arm | !standup | !neutral | !move FORWARD TURN (bytes,128 neutral) | !height BYTE | !roll BYTE | !action 0..6/255 | !loop 0/1 | !level 0/1 | !heading 0/1 | !heightwave BYTE | !rollwave BYTE | !maxforward BYTE | !maxturn BYTE | !rgb INDEX R G B | !cal begin | !cal save | !trim | !name SUFFIX | !odom reset | !trace dump | !trace usb on/off | !liftguard on/off/status | !fallguard on/off/status/clear/ms N | !dzcomp [off|on|reset|MAX [HYST [RAMP [START [GROW]]]]]");
+ }
+ }
+ void setup() {
