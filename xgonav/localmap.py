@@ -134,11 +134,16 @@ class LocalMap:
         Sicherheitsradius genügt ein Abstand von MIN_SPACING. Reihenfolge = Bildspalten."""
         if len(pts) < 2:
             return pts
+        # Python-Floats statt numpy-Einzelzugriffe (gleiche Schleife, ~10x schneller)
+        xs, ys = pts[:, 0].tolist(), pts[:, 1].tolist()
+        lim = cls.MIN_SPACING ** 2
         keep = [0]
-        for i in range(1, len(pts)):
-            q = pts[keep[-1]]
-            if (pts[i, 0] - q[0]) ** 2 + (pts[i, 1] - q[1]) ** 2 >= cls.MIN_SPACING ** 2:
+        qx, qy = xs[0], ys[0]
+        for i in range(1, len(xs)):
+            x, y = xs[i], ys[i]
+            if (x - qx) ** 2 + (y - qy) ** 2 >= lim:
                 keep.append(i)
+                qx, qy = x, y
         return pts[keep]
 
     def confirmed_points(self, reach: float = math.inf) -> np.ndarray:

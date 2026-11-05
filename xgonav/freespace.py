@@ -151,17 +151,23 @@ class FreeSpaceEstimator:
             log.info("Bodenmodell zurückgesetzt, lernt neu")
         small = cv2.resize(bgr, (self.W, self.H), interpolation=cv2.INTER_AREA)
         small0 = small                    # unkorrigiert: fürs Kantenverfahren (Verlauf hat keine Kante)
+        x0, y0, x1, y1 = self._sample_rect()
+        # Kantenverfahren: das Farbmodell braucht nur die Probe (unteres Bilddrittel) und den
+        # untersten Streifen -> nur ab knapp über der Probe rechnen (4 Zeilen Rand für Weich-
+        # zeichner, Probe bleibt exakt gleich). Zeilen darüber gelten in der Maske als Boden.
+        ry0 = max(0, y0 - 4) if (self.cfg.method == "kanten" and self._bgonly is None) else 0
+        if ry0:
+            small = small[ry0:]
         if self._sgain is not None:
             # = clip(small * gain, 0, 255) -> uint8; Verstärkung >= 0, also nur oben begrenzen
             # (np.clip hat in der numpy-Version am Rider viel Overhead)
-            buf = self._fbuf
-            np.multiply(small, self._sgain, out=buf)
+            buf = self._fbuf[ry0:]
+            np.multiply(small, self._sgain[ry0:], out=buf)
             np.minimum(buf, 255, out=buf)
             small = buf.astype(np.uint8)
         small = cv2.GaussianBlur(small, (5, 5), 0)
         hsv = cv2.cvtColor(small, cv2.COLOR_BGR2HSV)
-        x0, y0, x1, y1 = self._sample_rect()
-        sample = hsv[y0:y1, x0:x1]
+        sample = hsv[y0 - ry0:y1 - ry0, x0:x1]
         smask = self._smask_rel           # konstant, in __init__ berechnet; nicht verändern
         occupied = 0.0
         if len(exclude_boxes):
@@ -217,9 +223,13 @@ class FreeSpaceEstimator:
         np.multiply(prob, np.float32(self.cfg.edge_weight), out=prob, where=edges > 0)
         floor = (prob > self.cfg.floor_thresh).astype(np.uint8) * 255
         if self._srel is not None:
-            floor[~self._srel] = 255      # Farbe nicht messbar: unbekannt, nie Hindernis
+            floor[~self._srel[ry0:]] = 255      # Farbe nicht messbar: unbekannt, nie Hindernis
         floor = cv2.morphologyEx(floor, cv2.MORPH_OPEN, self._k3)
         floor = cv2.morphologyEx(floor, cv2.MORPH_CLOSE, self._k5)
+        if ry0:
+            full = np.full((self.H, self.W), 255, np.uint8)
+            full[ry0:] = floor
+            floor = full
 
         hz_full = self.geo.horizon_row(pitch_dev) if self.geo else self.H * self.scale / 2
         horizon = hz_full / self.scale
@@ -256,12 +266,13 @@ class FreeSpaceEstimator:
         n = self.cfg.sectors
         edges_x = np.linspace(0, self.W, n + 1).astype(int)
         sectors = [_p20(cols[edges_x[i]:edges_x[i + 1]]) for i in range(n)]
+        r_ff = max(hz_i, ry0)                     # Diagnose: nur berechnete Zeilen
         if self._srel is not None:
-            rel_b = self._srel[hz_i:]
+            rel_b = self._srel[r_ff:]
             n_b = int(np.count_nonzero(rel_b))
-            ff = np.count_nonzero(np.logical_and(floor[hz_i:] > 0, rel_b)) / n_b if n_b else None
+            ff = np.count_nonzero(np.logical_and(floor[r_ff:] > 0, rel_b)) / n_b if n_b else None
         else:
-            below = floor[hz_i:]
+            below = floor[r_ff:]
             ff = float((below > 0).mean()) if below.size else None
         self.diag = {"updated": updated, "match": None if bpm is None else round(bpm / 255.0, 3),
                      "occupied": round(occupied, 2), "sample_px": int((smask > 0).sum()) if smask is not None else int(sample.shape[0] * sample.shape[1]),

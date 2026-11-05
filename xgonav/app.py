@@ -528,8 +528,13 @@ class App:
         h = self._loop_hist
         if len(h) < 10:
             return {}
-        v = sorted(h)
-        return {"loop_p95": round(v[int(0.95 * (len(v) - 1))], 1), "loop_max": round(v[-1], 1)}
+        # nur für die Anzeige: alle 12 Bilder (~0,5 s) neu sortieren statt bei jedem Bild
+        n = getattr(self, "_spread_n", 0)
+        self._spread_n = n + 1
+        if n % 12 == 0 or not getattr(self, "_spread", None):
+            v = sorted(h)
+            self._spread = {"loop_p95": round(v[int(0.95 * (len(v) - 1))], 1), "loop_max": round(v[-1], 1)}
+        return self._spread
 
     def _emotion_tick(self, person: bool | None) -> None:
         if self.emotions is not None:
