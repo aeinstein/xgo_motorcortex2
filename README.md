@@ -15,7 +15,7 @@ CPU time, camera geometry, manual driving (web UI), `follow` (runs 2026-11-02, `
 |---|---|
 | `kernel_module/`, `constants.h` | Kernel module `xgo-drv`, `/proc/XGORider/*` |
 | `st7789/` | Display daemon `st7789_server` (FIFO `/tmp/lcd0`, RGB565 320×240), based on libdriver/st7789 |
-| `xgonav/` | Navigation pipeline (Python 3.11+, OpenCV, numpy, onnxruntime) |
+| `xgonav/` | Navigation pipeline (Python 3.11+, OpenCV, numpy, ncnn/onnxruntime) |
 | `tools/` | Calibration, model export, emotion player, raw replay, nudge |
 | `tests/` | Unit tests, closed-loop simulator tests, `sim_run.py` |
 | `web/` | Web UI (PHP, served by nginx) |
@@ -24,7 +24,7 @@ CPU time, camera geometry, manual driving (web UI), `follow` (runs 2026-11-02, `
 | `firmware/` | ESP32 firmware: fetch reference (xgorider2_rl), apply patches, build (`firmware/build.sh`) |
 | `docs/` | Per-topic documentation |
 
-Not included: legacy remote control `rc_server` (Node), TLS certificates/keys, ONNX models (`models/*.onnx`, gitignored).
+Not included: legacy remote control `rc_server` (Node), TLS certificates/keys, YOLO models (`models/*_ncnn/`, `models/*.onnx`, gitignored).
 
 ## Quick start (on the Rider)
 
@@ -51,7 +51,7 @@ Stop `rc-control.service` while xgonav drives. Never set body height below minim
 
 ```
 python3 -m venv .venv && .venv/bin/pip install "opencv-python-headless>=4.6" "numpy>=1.24" pytest "onnxruntime>=1.16"
-.venv/bin/python -m pytest -q tests/                # 45 unit tests, ~2 s
+.venv/bin/python -m pytest -q tests/                # 48 unit tests, ~2 s
 .venv/bin/python -m pytest -q -m slow tests/        # 3 closed-loop tests, ~90 s
 .venv/bin/python tests/sim_run.py follow 40 out.mp4
 ```

@@ -162,6 +162,69 @@ def test_yolo_v8_postprocess_letterbox_and_nms():
     assert p.box == pytest.approx((270, 140, 370, 340), abs=1)
 
 
+def _post_reference(y, out, r, px, py, w0, h0):
+    """Nachbearbeitung wie bis 2026-11-05 (argmax über alle Klassen, dann Filter)."""
+    import cv2
+    o = np.squeeze(out, 0).T
+    boxes, scores = o[:, :4], o[:, 4:]
+    cls = scores.argmax(1)
+    conf = scores[np.arange(len(cls)), cls]
+    m = conf >= y.cfg.conf
+    if y.allowed is not None:
+        m &= np.isin(cls, list(y.allowed))
+    boxes, cls, conf = boxes[m], cls[m], conf[m]
+    if not len(conf):
+        return []
+    xy = np.empty_like(boxes)
+    xy[:, 0] = (boxes[:, 0] - boxes[:, 2] / 2 - px) / r
+    xy[:, 1] = (boxes[:, 1] - boxes[:, 3] / 2 - py) / r
+    xy[:, 2] = boxes[:, 2] / r
+    xy[:, 3] = boxes[:, 3] / r
+    off = xy.copy()
+    off[:, :2] += cls[:, None] * 4096.0
+    keep = cv2.dnn.NMSBoxes(off.tolist(), conf.tolist(), y.cfg.conf, y.cfg.iou)
+    return [(y.names[int(cls[i])], float(conf[i])) + tuple(float(v) for v in xy[i])
+            for i in np.array(keep).reshape(-1)]
+
+
+@pytest.mark.parametrize("classes", [[], ["person", "chair", "couch", "dining table", "potted plant"]])
+def test_yolo_post_fast_path_equals_reference(classes):
+    from xgonav.detector import COCO
+    rng = np.random.default_rng(1)
+    y = _fake_yolo()
+    y.cfg = DetectorCfg(conf=0.35, classes=classes)
+    y._set_names(COCO)
+    for _ in range(30):
+        out = np.zeros((1, 84, 1344), np.float32)
+        out[0, :2] = rng.uniform(20, 236, (2, 1344))
+        out[0, 2:4] = rng.uniform(5, 80, (2, 1344))
+        out[0, 4:] = rng.uniform(0, 0.3, (80, 1344))
+        hot = rng.choice(1344, 40, replace=False)          # Treffer, teils mit stärkerer fremder Klasse
+        out[0, 4 + rng.integers(0, 80, 40), hot] = rng.uniform(0.3, 0.95, 40)
+        out[0, 4 + rng.integers(0, 80, 40), hot] = rng.uniform(0.3, 0.95, 40)
+        got = [(d.cls, d.conf, d.box) for d in y._post(out, 0.4, 0, 32, 640, 480)]
+        ref = _post_reference(y, out, 0.4, 0, 32, 640, 480)
+        assert len(got) == len(ref)
+        for (c, cf, b), (rc, rcf, x, yy, w, h) in zip(got, ref):
+            assert c == rc and cf == pytest.approx(rcf)
+            assert b == pytest.approx((max(0.0, x), max(0.0, yy), min(640, x + w), min(480, yy + h)))
+
+
+def test_ncnn_metadata_and_model_fallback(tmp_path):
+    from xgonav.detector import DetectorWorker, _read_ultralytics_meta, is_ncnn_model, model_exists
+    d = tmp_path / "yolo11n_256_ncnn"
+    d.mkdir()
+    (d / "metadata.yaml").write_text("task: detect\nbatch: 1\nimgsz:\n- 256\n- 256\nnames:\n  0: person\n"
+                                     "  1: bicycle\n  2: 'dining table'\nargs:\n  half: false\n")
+    names, size = _read_ultralytics_meta(str(d / "metadata.yaml"))
+    assert names == ["person", "bicycle", "dining table"] and size == 256
+    (d / "model.ncnn.param").write_text("kaputt")
+    assert is_ncnn_model(str(d)) and not model_exists(str(d))   # .bin fehlt
+    # weder Haupt- noch Rückfallmodell vorhanden -> Detektor aus, kein Absturz
+    w = DetectorWorker(DetectorCfg(model=str(d), fallback_model=str(tmp_path / "fehlt.onnx")))
+    assert w.start() is False and w.model is None
+
+
 # ---------------------------------------------------------------- IMU-Synchronisation
 def _sync_scenario(sign, off_ms, noise_deg=0.05, still=False):
     from xgonav.config import ImuCfg

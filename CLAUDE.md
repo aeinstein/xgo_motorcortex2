@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Projekt
 
-Das Repo `xgo_motorcortex2` enthält Treiber (`kernel_module/`), Display-Daemon (`st7789/`), ESP32-Firmware-Build (`firmware/`), Weboberfläche (`web/`, `deploy/`) und xgonav. Offene Punkte stehen in `TODO.md`. xgonav ist eine kamerabasierte Navigations-Pipeline (Python 3.11+, OpenCV, numpy, optional onnxruntime) für den XGO Rider, einen selbstbalancierenden Zweiradroboter mit Raspberry Pi CM4 (2 GB RAM). Sie spricht die Hardware ausschließlich über das Kernelmodul `xgo-drv` aus `kernel_module/` (`/proc/XGORider/...`) an. Code, Kommentare, Logs und Statusmeldungen sind durchgehend auf Deutsch; so beibehalten.
+Das Repo `xgo_motorcortex2` enthält Treiber (`kernel_module/`), Display-Daemon (`st7789/`), ESP32-Firmware-Build (`firmware/`), Weboberfläche (`web/`, `deploy/`) und xgonav. Offene Punkte stehen in `TODO.md`. xgonav ist eine kamerabasierte Navigations-Pipeline (Python 3.11+, OpenCV, numpy, optional ncnn/onnxruntime) für den XGO Rider, einen selbstbalancierenden Zweiradroboter mit Raspberry Pi CM4 (2 GB RAM). Sie spricht die Hardware ausschließlich über das Kernelmodul `xgo-drv` aus `kernel_module/` (`/proc/XGORider/...`) an. Code, Kommentare, Logs und Statusmeldungen sind durchgehend auf Deutsch; so beibehalten.
 
 Maßgebliche Doku: README.md (Überblick) und je Thema eine Datei in `docs/` (Architektur, Installation, Konfiguration, Kalibrierung, Treiber, Weboberfläche, Karten, Display, Tests, Grenzen, LEDs). README und `docs/` sind **englisch** und knapp (Fakten, Tabellen, keine Prosa); Code, Kommentare und Logs bleiben deutsch. Wichtigste Randbedingung: `explore`, `approach` und `home` sind nicht auf echter Hardware getestet; `follow` und Handsteuerung wurden am RiderPi gefahren (`docs/limitations.md`). Simulator und Default nutzen 88,5° Öffnungswinkel wie die echte Kamera (Zollstock-Messung).
 
@@ -17,7 +17,7 @@ python3 -m venv .venv && .venv/bin/pip install "opencv-python-headless>=4.6" "nu
 ```
 
 ```bash
-python -m pytest -q tests/                       # Unit-Tests (45 Tests, ~2 s); slow ist per pytest.ini ausgeschlossen
+python -m pytest -q tests/                       # Unit-Tests (48 Tests, ~2 s); slow ist per pytest.ini ausgeschlossen
 python -m pytest -q -m slow tests/               # Closed-Loop im Simulator (4 Tests, ~150 s gesamt); -m überschreibt addopts
 python -m pytest -q tests/test_units.py -k imu_sync   # einzelner Test
 
@@ -95,7 +95,7 @@ Hardware-nahe Teile haben je eine echte und eine Sim-Implementierung mit gleiche
 
 ## Stolperfallen
 
-- Der Detektor (`DetectorCfg.model`) wird still deaktiviert, wenn die ONNX-Datei fehlt; `models/*.onnx` ist gitignored.
+- Detektor: `DetectorCfg.model` ist ein NCNN-Exportordner (`models/yolo11n_256_ncnn`); fehlen Modell oder Paket `ncnn`, greift `fallback_model` (ONNX); fehlen beide, ist die Objekterkennung aus (Warnung im Log). Modelle sind gitignored, Export per `tools/export_model.sh`.
 - Weboberfläche ist PHP (`web/index.php`, `web/api.php`) hinter nginx (`deploy/nginx-xgonav.conf`, eigener php-fpm-Pool `deploy/php-fpm-xgonav.conf`); der Nutzer bevorzugt PHP fürs Web. `web.py` ist nur noch die lokale Schnittstelle (`web_host = 127.0.0.1`), ohne Authentifizierung. Am RiderPi: nginx mit TLS auf 443 → `/xgonav/` (PHP, Bilder per WebSocket `/xgonav/ws` direkt von xgonav, mit Bestätigung je Bild), Port 80 und `/` leiten dorthin um. stunnel und die alte Fernsteuerung rc_server (Node, 1081, `rc-control.service`) sind abgeschaltet; `api.php` liest nur noch die Emotionen aus `rc_server/emotions`.
 - `lcd.py` und `picamera2` existieren nur auf dem Pi; beide werden lazy importiert und nur bei `--robot proc` aktiviert.
 - Die Annahme „1 Firmware-Einheit = 1 m/s“ (`vx_limit`) fließt nur in die Merkkarte ein und ist unkalibriert.

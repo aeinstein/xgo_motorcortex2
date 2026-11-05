@@ -50,8 +50,8 @@ cat /proc/XGORider/serial_stats
 | Item | Value |
 |---|---|
 | apt packages | `python3-opencv python3-numpy python3-picamera2 python3-venv` |
-| venv | `/opt/xgonav/venv`, `--system-site-packages`, `onnxruntime>=1.16` |
-| Copied | `xgonav/`, `tools/`, `web/` → `/opt/xgonav/`; `models/*.onnx` (no overwrite) |
+| venv | `/opt/xgonav/venv`, `--system-site-packages`, `onnxruntime>=1.16`, `ncnn` |
+| Copied | `xgonav/`, `tools/`, `web/` → `/opt/xgonav/`; `models/*.onnx`, `models/*_ncnn/` (no overwrite) |
 | Config | `deploy/config.example.toml` → `/opt/xgonav/config.toml` only if missing |
 | Emotions | `tools/emotion.sh build $EMOTIONS_SRC /opt/xgonav/emotions` (default source `/home/$SUDO_USER/motorcortex/rc_server/emotions`) |
 | User | `$SUDO_USER` (default `pi`) owns `/opt/xgonav`, added to group `video` |
@@ -92,11 +92,12 @@ sudo systemctl enable --now xgonav
 ## YOLO model (PC/GPU server only, not on the Pi)
 
 ```
-./tools/export_model.sh [yolo11n] [256]    # -> models/yolo11n_256.onnx (ultralytics, opset 12)
-scp models/yolo11n_256.onnx root@<rider>:/opt/xgonav/models/
+./tools/export_model.sh [yolo11n] [256]    # -> models/yolo11n_256_ncnn/ + models/yolo11n_256.onnx (opset 12)
+scp -r models/yolo11n_256_ncnn models/yolo11n_256.onnx root@<rider>:/opt/xgonav/models/
 ```
 
-Missing model file → detector disabled silently.
+`VENV=<dir>` reuses an existing venv with ultralytics; on Windows/Git Bash set `PYTHON=python`.
+Missing `model` → `fallback_model`; both missing → detector disabled (warning in log).
 
 ## Before driving
 

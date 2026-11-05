@@ -42,7 +42,8 @@ pitch_ref_deg = -4.43    # [K] IMU-Rohnick bei der Zollstock-Messung (angelehnt,
 # time_offset_ms = 8
 
 [detector]
-model = "models/yolo11n_256.onnx"
+model = "models/yolo11n_256_ncnn"        # NCNN: CM4 96 ms statt 117 ms (onnxruntime), gleiche Boxen
+fallback_model = "models/yolo11n_256.onnx"  # falls NCNN-Modell oder Paket ncnn fehlt
 threads = 2            # 2 lassen der Hauptschleife genug Kerne (CM4 gemessen)
 max_hz = 5.0           # Detektion höchstens 5x/s (ohne Pause ~7 Hz, ~2 Kerne); spart ~60 % CPU
 conf = 0.35
@@ -99,7 +100,7 @@ battery_low = 20        # %, Treiber schaltet bei 8 % ab
 # CPU-Pinning (CM4, 4 Kerne), gemessen 2026-11-02: CPU 282 -> 249 %, Detektor 149 -> 129 ms,
 # Schleife p95 38 -> 35 ms; mit Bild-Client 286 -> 263 %, p95 39 -> 36 ms.
 main_cpus = [0, 1]          # Hauptschleife, Kamera, OpenCV-Worker, Rest des Systems
-detector_cpus = [2, 3]      # YOLO: Aufrufer-Thread auf 2, onnxruntime-Pool-Thread auf 3
+detector_cpus = [2, 3]      # YOLO: NCNN-Thread + OpenMP auf 2-3 (onnxruntime: Aufrufer 2, Pool 3)
 render_cpus = [0, 1, 2, 3]  # Bilder für die Oberfläche: alle Kerne (auf 2-3 ist neben YOLO Luft)
 freespace_cpus = [2, 3]     # Bodenmodell-Thread: neben YOLO ist dort Luft
 

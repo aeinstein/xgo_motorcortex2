@@ -10,11 +10,13 @@ apt-get install -y python3-opencv python3-numpy python3-picamera2 python3-venv
 # venv mit Systempaketen (picamera2/libcamera kommen nur aus apt)
 python3 -m venv --system-site-packages "$DEST/venv"
 "$DEST/venv/bin/pip" install -q "onnxruntime>=1.16"
+"$DEST/venv/bin/pip" install -q --no-deps ncnn   # Detektor-Backend (schneller als onnxruntime am CM4)
 
 mkdir -p "$DEST" "$DEST/models"
 cp -r xgonav tools web "$DEST/"
 [ -f "$DEST/config.toml" ] || cp deploy/config.example.toml "$DEST/config.toml"
-cp -n models/*.onnx "$DEST/models/" 2>/dev/null || echo "Hinweis: kein Modell in models/ – siehe tools/export_model.sh"
+cp -n models/*.onnx "$DEST/models/" 2>/dev/null || echo "Hinweis: kein ONNX-Modell in models/ – siehe tools/export_model.sh"
+for d in models/*_ncnn; do [ -d "$d" ] && [ ! -e "$DEST/$d" ] && cp -r "$d" "$DEST/models/"; done
 # Emotionen einmalig nach RGB565 konvertieren (Abspielen dann ohne ffmpeg).
 EMOTIONS_SRC=${EMOTIONS_SRC:-/home/$USER_NAME/motorcortex/rc_server/emotions}
 if [ -d "$EMOTIONS_SRC" ]; then

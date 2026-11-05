@@ -88,7 +88,11 @@ class EgoCfg:
 @dataclass
 class DetectorCfg:
     enabled: bool = True
-    model: str = "models/yolo11n_256.onnx"
+    # NCNN-Exportordner (model.ncnn.param/.bin, metadata.yaml) oder .onnx. CM4 2026-11-05:
+    # NCNN 93 ms statt 112 ms (onnxruntime), gleiche Boxen. Fehlt das Modell oder das Paket
+    # ncnn, wird fallback_model genommen.
+    model: str = "models/yolo11n_256_ncnn"
+    fallback_model: str = "models/yolo11n_256.onnx"
     input_size: int = 256
     conf: float = 0.35
     iou: float = 0.45

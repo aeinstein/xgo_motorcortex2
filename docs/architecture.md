@@ -34,7 +34,7 @@ camera.FrameSource ─► egomotion.EgoMotion ─► tracker.Tracker ◄── d
 | `camera.py` | `PiCameraSource` (picamera2), `OpenCVSource` (index/file) |
 | `egomotion.py` | LK optical flow + RANSAC → rotation model, sharpness, time-to-contact |
 | `imu.py` | `ProcImu`, `ImuSync`: sign/time offset by correlation, complementary filter |
-| `detector.py` | `DetectorWorker`: YOLO ONNX via onnxruntime; disabled silently if model file missing |
+| `detector.py` | `DetectorWorker`: YOLO via NCNN (`YoloNcnn`) or onnxruntime (`YoloOnnx`), fallback model; disabled if none is usable |
 | `tracker.py` | Tracks, ego-motion compensation, latency compensation, Kalman distance/velocity |
 | `geometry.py` | Camera geometry, ground-plane distance |
 | `freespace.py`, `shading.py` | Floor colour model → free/blocked per image column; lens-shading correction |
@@ -84,6 +84,6 @@ camera.FrameSource ─► egomotion.EgoMotion ─► tracker.Tracker ◄── d
 | Thread | Cores |
 |---|---|
 | Main loop, camera, OpenCV workers | 0–1 |
-| YOLO (caller + onnxruntime pool) | 2–3 |
+| YOLO (NCNN: thread + OpenMP pool on 2–3; onnxruntime: caller on 2, pool on 3) | 2–3 |
 | Free-space worker, grid worker | 2–3 |
 | Web/LCD rendering | 0–3 |

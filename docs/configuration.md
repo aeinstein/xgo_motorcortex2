@@ -89,12 +89,13 @@ Default = `config.py`. RiderPi = `deploy/config.example.toml` (blank = default).
 ### `[detector]`
 | Key | Default | RiderPi |
 |---|---|---|
-| `model` | `models/yolo11n_256.onnx` | |
+| `model` | `models/yolo11n_256_ncnn` | NCNN export dir (`model.ncnn.param/.bin`, `metadata.yaml`) or `.onnx`; CM4: NCNN 96 ms vs onnxruntime 117 ms per frame, identical boxes |
+| `fallback_model` | `models/yolo11n_256.onnx` | used if `model` or the `ncnn` package is missing |
 | `input_size` | 256 | |
 | `conf` / `iou` | 0.35 / 0.45 | |
 | `threads` | 2 | 2 |
 | `max_hz` | 0 (no limit) | 5.0 |
-| `classes` | `[]` (all COCO) | `["person"]`; example config adds floor furniture: `chair`, `couch`, `dining table`, `potted plant`, `bed`, `dog`, `cat` — non-target boxes block their columns (thin chair legs are invisible to `kanten`) |
+| `classes` | `[]` (all COCO) | `person` + floor furniture (2026-11-05, as example config): `chair`, `couch`, `dining table`, `potted plant`, `bed`, `dog`, `cat` — non-target boxes block their columns (thin chair legs are invisible to `kanten`) |
 | `sharpness_rel` / `max_wait_s` | 0.6 / 0.25 | |
 
 ### `[tracker]`
