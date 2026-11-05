@@ -6,6 +6,8 @@ DEST=/opt/xgonav
 USER_NAME=${SUDO_USER:-pi}
 
 apt-get install -y python3-opencv python3-numpy python3-picamera2 python3-venv
+# Bau des C++-Kerns (xgonav/native): gleiche OpenCV-Version wie python3-opencv
+apt-get install -y g++ make pkg-config libopencv-dev
 
 # venv mit Systempaketen (picamera2/libcamera kommen nur aus apt)
 python3 -m venv --system-site-packages "$DEST/venv"
@@ -17,6 +19,8 @@ cp -r xgonav tools web "$DEST/"
 [ -f "$DEST/config.toml" ] || cp deploy/config.example.toml "$DEST/config.toml"
 cp -n models/*.onnx "$DEST/models/" 2>/dev/null || echo "Hinweis: kein ONNX-Modell in models/ – siehe tools/export_model.sh"
 for d in models/*_ncnn; do [ -d "$d" ] && [ ! -e "$DEST/$d" ] && cp -r "$d" "$DEST/models/"; done
+# C++-Kern der Ego-Motion bauen; scheitert das, rechnet xgonav in Python (langsamer)
+make -C "$DEST/xgonav/native" || echo "Hinweis: C++-Kern nicht gebaut – Ego-Motion läuft in Python"
 # Emotionen einmalig nach RGB565 konvertieren (Abspielen dann ohne ffmpeg).
 EMOTIONS_SRC=${EMOTIONS_SRC:-/home/$USER_NAME/motorcortex/rc_server/emotions}
 if [ -d "$EMOTIONS_SRC" ]; then

@@ -83,6 +83,33 @@ def test_egomotion_rotation_vs_sim():
     assert abs(math.degrees(np.mean(ey))) < 0.05
 
 
+def test_egomotion_native_matches_python():
+    """C++-Kern (xgonav/native, nur wenn gebaut) rechnet wie Python, bis auf Rundung."""
+    from dataclasses import replace
+    from xgonav.egomotion import _native_lib
+    if _native_lib() is None:
+        pytest.skip("C++-Kern nicht gebaut (make -C xgonav/native)")
+    cfg = Config()
+    r = SimRobot(cfg.robot)
+    r._cur = (0.1, 0.05)
+    r._height_mm = 85
+    w = SimWorld(cfg.camera, r, None, start=(1.0, 1.5, 0.1), shake=1.0, vx_mps=1.5)
+    ep = EgoMotion(replace(cfg.ego, native=False), (640, 480), cfg.camera.hfov_deg)
+    en = EgoMotion(cfg.ego, (640, 480), cfg.camera.hfov_deg)
+    assert (ep.backend, en.backend) == ("python", "c++")
+    for k in range(60):
+        t = k / 20
+        w._integrate(t, 0.05)
+        img, _ = w._render(t, 0.05)
+        box = [(200.0, 100.0, 300.0, 400.0)]
+        a, b = ep.update(k, t, img, box), en.update(k, t, img, box)
+        assert (a.ok, a.inliers) == (b.ok, b.inliers)
+        assert b.yaw == pytest.approx(a.yaw, abs=1e-12) and b.pitch == pytest.approx(a.pitch, abs=1e-12)
+        assert b.sharpness == pytest.approx(a.sharpness, rel=1e-12)
+        assert b.expansion == pytest.approx(a.expansion, abs=1e-12)
+        assert np.allclose(a.A, b.A, atol=1e-9)
+
+
 def test_warp_box_identity_and_shift():
     A = np.eye(3)
     assert warp_box(A, (10, 20, 30, 40)) == pytest.approx((10, 20, 30, 40))

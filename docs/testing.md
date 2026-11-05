@@ -8,7 +8,7 @@ python3 -m venv .venv && .venv/bin/pip install "opencv-python-headless>=4.6" "nu
 
 | Command | What | Time |
 |---|---|---|
-| `python -m pytest -q tests/` | 48 unit tests (`tests/test_units.py`); `slow` excluded via `pytest.ini` | ~2 s |
+| `python -m pytest -q tests/` | 49 unit tests (`tests/test_units.py`); `slow` excluded via `pytest.ini` | ~2 s |
 | `python -m pytest -q -m slow tests/` | 4 closed-loop simulator tests (`tests/test_closed_loop.py`) | ~150 s |
 | `python -m pytest -q tests/test_units.py -k imu_sync` | single test | |
 | `python tests/sim_run.py follow 40 [out.mp4]` | scenario, optional overlay video | |

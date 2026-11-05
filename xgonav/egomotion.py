@@ -11,7 +11,10 @@ Shutter-Effekte) – genau das braucht der Tracker.
 """
 from __future__ import annotations
 
+import ctypes
+import logging
 import math
+import os
 from collections import deque
 from dataclasses import dataclass, field
 
@@ -20,7 +23,55 @@ import numpy as np
 
 from .config import EgoCfg
 
+log = logging.getLogger(__name__)
+
 I3 = np.eye(3, dtype=np.float64)
+
+# ------------------------------------------------------------------ C++-Kern (optional)
+NATIVE_PATH = os.path.join(os.path.dirname(__file__), "native", "libxgofast.so")
+_NATIVE_ABI = 1
+
+
+class _EgoParams(ctypes.Structure):          # = EgoParams in native/egofast.cpp
+    _fields_ = [(n, ctypes.c_int) for n in ("pw", "ph", "full_w", "full_h", "lk_win", "lk_levels", "lk_iters",
+                                            "lk_fb_check", "max_features", "min_features", "min_distance", "pad0")] + \
+               [(n, ctypes.c_double) for n in ("s", "ransac_px", "quality", "eps")] + \
+               [("K", ctypes.c_double * 9), ("Ki", ctypes.c_double * 9), ("Hd", ctypes.c_double * 27)]
+
+
+class _EgoOut(ctypes.Structure):             # = EgoOut in native/egofast.cpp
+    _fields_ = [(n, ctypes.c_int) for n in ("tracked", "inliers", "npts", "pad0")] + \
+               [(n, ctypes.c_double) for n in ("sharp", "yaw", "pitch", "roll", "sc", "dx", "dy", "exp_inst")] + \
+               [("A", ctypes.c_double * 9)]
+
+
+_lib_cache: list = []
+
+
+def _native_lib():
+    """libxgofast.so laden (einmal). None, wenn nicht gebaut oder unpassend."""
+    if _lib_cache:
+        return _lib_cache[0]
+    lib = None
+    if os.path.exists(NATIVE_PATH):
+        try:
+            cand = ctypes.CDLL(NATIVE_PATH)          # CDLL gibt das GIL während des Aufrufs frei
+            cand.ego_abi.restype = ctypes.c_int
+            if cand.ego_abi() != _NATIVE_ABI:
+                log.warning("%s passt nicht (ABI %d statt %d) – neu bauen: make -C xgonav/native",
+                            NATIVE_PATH, cand.ego_abi(), _NATIVE_ABI)
+            else:
+                cand.ego_new.restype = ctypes.c_void_p
+                cand.ego_new.argtypes = [ctypes.POINTER(_EgoParams)]
+                cand.ego_free.argtypes = [ctypes.c_void_p]
+                cand.ego_step.restype = ctypes.c_int
+                cand.ego_step.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+                                          ctypes.c_double, ctypes.c_void_p, ctypes.c_int, ctypes.POINTER(_EgoOut)]
+                lib = cand
+        except OSError as e:
+            log.warning("%s nicht ladbar: %s", NATIVE_PATH, e)
+    _lib_cache.append(lib)
+    return lib
 
 
 @dataclass
@@ -93,9 +144,35 @@ class EgoMotion:
         self._eps = 1e-3
         self._Hd = [self._model_h(*[self._eps if j == k else 0.0 for j in range(3)], 0.0) for k in range(3)]
         self._center = np.array([[self.pw / 2], [self.ph / 2]])
+        self._nat = None
+        self._lib = _native_lib() if getattr(cfg, "native", False) else None
+        if self._lib is not None:
+            c = cfg
+            p = _EgoParams(pw=self.pw, ph=self.ph, full_w=int(self.full_w), full_h=int(self.full_h),
+                           lk_win=c.lk_win, lk_levels=c.lk_levels, lk_iters=c.lk_iters,
+                           lk_fb_check=int(bool(c.lk_fb_check)), max_features=c.max_features,
+                           min_features=c.min_features, min_distance=c.min_distance,
+                           s=self.s, ransac_px=c.ransac_px, quality=c.quality, eps=self._eps)
+            p.K[:] = self.K.ravel().tolist()
+            p.Ki[:] = self.Ki.ravel().tolist()
+            p.Hd[:] = np.concatenate([h.ravel() for h in self._Hd]).tolist()
+            self._nat = self._lib.ego_new(ctypes.byref(p))
+            self._out = _EgoOut()
+        self.backend = "c++" if self._nat else "python"
+        if self._nat:
+            log.info("Ego-Motion: C++-Kern %s", NATIVE_PATH)
+        elif getattr(cfg, "native", False):
+            log.info("Ego-Motion in Python (C++-Kern nicht gebaut: make -C xgonav/native)")
+
+    def __del__(self):
+        if getattr(self, "_nat", None):
+            self._lib.ego_free(self._nat)
+            self._nat = None
 
     # ---------------------------------------------------------------------
     def update(self, idx: int, t: float, bgr: np.ndarray, exclude_boxes=()) -> EgoResult:
+        if self._nat:
+            return self._update_native(idx, t, bgr, exclude_boxes)
         # Erst grau, dann verkleinern (1 statt 3 Kanäle; CM4 0,83 statt 1,21 ms) und Varianz
         # per meanStdDev statt numpy (0,9 statt 1,4 ms). Werte gleich bis auf Rundung.
         gray = cv2.resize(cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY), (self.pw, self.ph),
@@ -112,6 +189,40 @@ class EgoMotion:
         self._update_traj(res)
         self._replenish(gray, exclude_boxes)
         self.prev_gray = gray
+        self.prev_t = t
+        self.last = res
+        return res
+
+    def _update_native(self, idx: int, t: float, bgr: np.ndarray, exclude_boxes) -> EgoResult:
+        """Wie update(), Fluss/Modell/Merkmale im C++-Kern (eine Pyramide je Bild)."""
+        if bgr.dtype != np.uint8 or bgr.ndim != 3 or bgr.shape[2] != 3 or bgr.strides[1:] != (3, 1):
+            bgr = np.ascontiguousarray(bgr, dtype=np.uint8)
+        boxes = np.ascontiguousarray(np.asarray(list(exclude_boxes), np.float64).reshape(-1, 4))
+        dt = (t - self.prev_t) if self.prev_t is not None else 0.0
+        o = self._out
+        rc = self._lib.ego_step(self._nat, bgr.ctypes.data, bgr.shape[1], bgr.shape[0], bgr.strides[0], dt,
+                                boxes.ctypes.data if len(boxes) else None, len(boxes), ctypes.byref(o))
+        if rc != 0:
+            log.warning("Ego-Motion (C++) fehlgeschlagen – weiter in Python")
+            self._lib.ego_free(self._nat)
+            self._nat = None
+            self.backend = "python"
+            return self.update(idx, t, bgr, exclude_boxes)
+        res = EgoResult(idx=idx, t=t, dt=dt, sharpness=o.sharp)
+        self._sharp_hist.append(o.sharp)
+        if o.tracked:
+            res.A = np.array(o.A, np.float64).reshape(3, 3)
+            res.inliers = o.inliers
+            res.ok = o.inliers >= 10
+            res.yaw, res.pitch, res.roll, res.rot = o.yaw, o.pitch, o.roll, o.roll
+            res.scale = 1.0 + o.sc
+            res.dx, res.dy = o.dx, o.dy
+            res.yaw_rate = o.yaw / dt
+            res.pitch_rate = o.pitch / dt
+            self._exp = 0.7 * self._exp + 0.3 * min(o.exp_inst, 5.0)
+            res.expansion = self._exp
+        self.history.append((idx, res.A))
+        self._update_traj(res)
         self.prev_t = t
         self.last = res
         return res

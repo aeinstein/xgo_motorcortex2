@@ -85,6 +85,7 @@ Default = `config.py`. RiderPi = `deploy/config.example.toml` (blank = default).
 | `lk_win` / `lk_levels` / `lk_iters` | 11 / 3 / 10 |
 | `lk_fb_check` | true |
 | `ransac_px` | 2.0 |
+| `native` | true | use C++ core `xgonav/native/libxgofast.so` if built (`make -C xgonav/native`): same result (max. difference 1e-13°, 6227 frames), one image pyramid per frame instead of four; CM4 offline 7.5 → 5.0 ms/frame, live 9.9 → 6.6 ms. Missing/stale `.so` → Python |
 
 ### `[detector]`
 | Key | Default | RiderPi |

@@ -83,6 +83,9 @@ class EgoCfg:
     lk_iters: int = 10             # max. Iterationen je Stufe
     lk_fb_check: bool = True       # Vorwärts-Rückwärts-Prüfung (zweiter Flussaufruf)
     smooth_alpha: float = 0.15     # Tiefpass für Stabilisierungsanzeige
+    # C++-Kern xgonav/native/libxgofast.so nutzen, wenn gebaut (make -C xgonav/native): gleiche
+    # Rechnung, aber eine Bildpyramide je Bild statt vier. Fehlt er, rechnet Python.
+    native: bool = True
 
 
 @dataclass

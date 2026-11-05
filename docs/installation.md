@@ -49,9 +49,10 @@ cat /proc/XGORider/serial_stats
 
 | Item | Value |
 |---|---|
-| apt packages | `python3-opencv python3-numpy python3-picamera2 python3-venv` |
+| apt packages | `python3-opencv python3-numpy python3-picamera2 python3-venv`; for the C++ core `g++ make pkg-config libopencv-dev` |
 | venv | `/opt/xgonav/venv`, `--system-site-packages`, `onnxruntime>=1.16`, `ncnn` |
 | Copied | `xgonav/`, `tools/`, `web/` → `/opt/xgonav/`; `models/*.onnx`, `models/*_ncnn/` (no overwrite) |
+| C++ core | `make -C /opt/xgonav/xgonav/native` → `libxgofast.so` (failure → Python ego-motion, warning) |
 | Config | `deploy/config.example.toml` → `/opt/xgonav/config.toml` only if missing |
 | Emotions | `tools/emotion.sh build $EMOTIONS_SRC /opt/xgonav/emotions` (default source `/home/$SUDO_USER/motorcortex/rc_server/emotions`) |
 | User | `$SUDO_USER` (default `pi`) owns `/opt/xgonav`, added to group `video` |

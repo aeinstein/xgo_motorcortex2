@@ -27,3 +27,4 @@ firmware/build/
 firmware/out/
 firmware-src/
 debug_firmware/
+xgonav/native/*.so

@@ -38,9 +38,10 @@ Single device: RiderPi, CM4 2 GB, kernel 6.6.74+rpt-rpi-v8, OV5647 wide-angle, f
 | 3 threads or 320 px | exceeds 33 ms budget |
 | floor model threaded, pinning (2026-11-02) | mean 12.6 ms, p95 17.1 ms, CPU 232–243 % |
 | `kanten` + NCNN detector + ego/floor optimisations (2026-11-05, idle, Rider lying) | mean ~12 ms, p95 ~20 ms; ego 9.9 ms/frame (was 12.0); detector ~133 ms (onnxruntime ~170); floor model ~17 ms; CPU ~182 % |
+| + ego-motion C++ core (2026-11-05) | mean ~9.4 ms, p95 ~15 ms; ego 6.6 ms/frame; CPU ~167 % |
 | pipeline stopped | service CPU ~4 % |
 
-Largest cost: optical flow (`ego.lk_*`); prebuilt LK pyramids cannot be passed via the Python binding.
+Largest cost: optical flow (`ego.lk_*`). The Python binding does not accept prebuilt LK pyramids (also OpenCV 5); the C++ core (`xgonav/native`) builds one pyramid per frame and reuses it.
 
 ## Firmware behaviour
 

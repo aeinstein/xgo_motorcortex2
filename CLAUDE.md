@@ -17,7 +17,7 @@ python3 -m venv .venv && .venv/bin/pip install "opencv-python-headless>=4.6" "nu
 ```
 
 ```bash
-python -m pytest -q tests/                       # Unit-Tests (48 Tests, ~2 s); slow ist per pytest.ini ausgeschlossen
+python -m pytest -q tests/                       # Unit-Tests (49 Tests, ~2 s; 1 ohne C++-Kern übersprungen); slow ist per pytest.ini ausgeschlossen
 python -m pytest -q -m slow tests/               # Closed-Loop im Simulator (4 Tests, ~150 s gesamt); -m überschreibt addopts
 python -m pytest -q tests/test_units.py -k imu_sync   # einzelner Test
 
@@ -32,6 +32,7 @@ python -m xgonav --mode idle --record debug.mp4  # auf dem Rider: nur schauen, O
 ./tools/export_model.sh [yolo11n] [256]          # ONNX-Export, nur auf PC/GPU-Server, NICHT auf dem Pi
 driver-test/run.sh kernel_module 6 50 --faults   # Treiberlogik im Userspace gegen ESP32-Emulator
 make -C kernel_module                            # auf dem Rider: Treiber bauen (Kernel-Header nötig)
+make -C xgonav/native                            # auf dem Rider: C++-Kern der Ego-Motion (libopencv-dev); ohne ihn rechnet Python
 make                                             # Root-Makefile: Treiber + Display-Daemon (st7789/project/riderpi)
 firmware/build.sh [rider2-firmware]              # ESP32-Firmware bauen (PlatformIO, flasht NICHT) -> firmware/out/app0.bin
 sudo ./deploy/install.sh                         # auf dem Rider: nach /opt/xgonav + systemd-Unit
@@ -97,5 +98,6 @@ Hardware-nahe Teile haben je eine echte und eine Sim-Implementierung mit gleiche
 
 - Detektor: `DetectorCfg.model` ist ein NCNN-Exportordner (`models/yolo11n_256_ncnn`); fehlen Modell oder Paket `ncnn`, greift `fallback_model` (ONNX); fehlen beide, ist die Objekterkennung aus (Warnung im Log). Modelle sind gitignored, Export per `tools/export_model.sh`.
 - Weboberfläche ist PHP (`web/index.php`, `web/api.php`) hinter nginx (`deploy/nginx-xgonav.conf`, eigener php-fpm-Pool `deploy/php-fpm-xgonav.conf`); der Nutzer bevorzugt PHP fürs Web. `web.py` ist nur noch die lokale Schnittstelle (`web_host = 127.0.0.1`), ohne Authentifizierung. Am RiderPi: nginx mit TLS auf 443 → `/xgonav/` (PHP, Bilder per WebSocket `/xgonav/ws` direkt von xgonav, mit Bestätigung je Bild), Port 80 und `/` leiten dorthin um. stunnel und die alte Fernsteuerung rc_server (Node, 1081, `rc-control.service`) sind abgeschaltet; `api.php` liest nur noch die Emotionen aus `rc_server/emotions`.
+- `xgonav/native/egofast.cpp` (ctypes, `[ego] native`) rechnet dasselbe wie `EgoMotion` in Python, nur mit einer Pyramide je Bild. Änderungen an der Ego-Motion immer in beiden Wegen machen und am Rider vergleichen (`test_egomotion_native_matches_python`, am PC übersprungen); bei geänderten Strukturen `_NATIVE_ABI`/`kAbi` erhöhen.
 - `lcd.py` und `picamera2` existieren nur auf dem Pi; beide werden lazy importiert und nur bei `--robot proc` aktiviert.
 - Die Annahme „1 Firmware-Einheit = 1 m/s“ (`vx_limit`) fließt nur in die Merkkarte ein und ist unkalibriert.
