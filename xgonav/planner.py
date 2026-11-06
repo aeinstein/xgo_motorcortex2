@@ -44,36 +44,49 @@ def cost_map(lo: np.ndarray, res: float, l_show: float, cfg: HomeCfg,
 
 
 def astar(blocked: np.ndarray, cost: np.ndarray, s: tuple[int, int], g: tuple[int, int]) -> list[tuple[int, int]] | None:
-    """A* (8er-Nachbarschaft) von Zelle s nach g (Zeile, Spalte). None = kein Weg."""
+    """A* (8er-Nachbarschaft) von Zelle s nach g (Zeile, Spalte). None = kein Weg. Auf Listen statt
+    numpy-Skalaren, und gibt die GIL regelmäßig ab: Reines Python hält sie sonst bis zu 5 ms am Stück,
+    und die Hauptschleife, die sie nach jedem OpenCV-Aufruf neu braucht, bleibt jedes Mal hängen."""
     h, w = blocked.shape
     if blocked[s] or blocked[g]:
         return None
     gr, gc = g
-    best = np.full((h, w), np.inf, np.float64)
-    prev = np.full((h, w), -1, np.int64)
-    best[s] = 0.0
-    heap = [(math.hypot(s[0] - gr, s[1] - gc), 0.0, s[0], s[1])]
+    blk = blocked.ravel().tolist()
+    cst = cost.ravel().tolist()
+    best = [math.inf] * (h * w)
+    prev = [-1] * (h * w)
+    si = s[0] * w + s[1]
+    gi = gr * w + gc
+    best[si] = 0.0
+    heap = [(math.hypot(s[0] - gr, s[1] - gc), 0.0, si)]
+    pops = 0
     while heap:
-        _, d, r, c = heapq.heappop(heap)
-        if (r, c) == g:
-            out = [(r, c)]
-            i = prev[r, c]
+        _, d, i = heapq.heappop(heap)
+        if i == gi:
+            out = []
             while i >= 0:
-                r, c = divmod(int(i), w)
-                out.append((r, c))
-                i = prev[r, c]
+                out.append(divmod(i, w))
+                i = prev[i]
             return out[::-1]
-        if d > best[r, c]:
+        if d > best[i]:
             continue
+        pops += 1
+        if pops % 128 == 0:
+            time.sleep(0)
+        r, c = divmod(i, w)
+        ci = cst[i]
         for dr, dc, step in _NB:
             rr, cc = r + dr, c + dc
-            if rr < 0 or rr >= h or cc < 0 or cc >= w or blocked[rr, cc]:
+            if rr < 0 or rr >= h or cc < 0 or cc >= w:
                 continue
-            nd = d + step * 0.5 * (cost[r, c] + cost[rr, cc])
-            if nd < best[rr, cc]:
-                best[rr, cc] = nd
-                prev[rr, cc] = r * w + c
-                heapq.heappush(heap, (nd + math.hypot(rr - gr, cc - gc), nd, rr, cc))
+            j = rr * w + cc
+            if blk[j]:
+                continue
+            nd = d + step * 0.5 * (ci + cst[j])
+            if nd < best[j]:
+                best[j] = nd
+                prev[j] = i
+                heapq.heappush(heap, (nd + math.hypot(rr - gr, cc - gc), nd, j))
     return None
 
 
@@ -127,9 +140,46 @@ def remaining(path: list[tuple[float, float]], xy: tuple[float, float]) -> list[
     return [tuple(xy)] + [tuple(p) for p in path[bi + 1:]]
 
 
+def known_area(grid: GridMap, pts, margin_m: float) -> tuple[int, int, int, int]:
+    """Suchgebiet (r0, c0, r1, c1): alle bekannten Zellen und die Punkte pts, mit Rand. Nur aus dem
+    gefahrenen Weg reichte nicht: nach dem Laden einer Karte ist der Weg leer."""
+    n = grid.n
+    with grid._lock:
+        lo = grid.lo
+        rows = np.flatnonzero((np.abs(lo) > grid.cfg.l_show).any(axis=1))
+        cols = np.flatnonzero((np.abs(lo) > grid.cfg.l_show).any(axis=0))
+    p = np.asarray(pts, np.float64).reshape(-1, 2)
+    rr, cc = grid.cell(p[:, 0], p[:, 1])
+    m = int(math.ceil(margin_m / grid.res))
+    r0 = min(int(rr.min()), int(rows[0]) if len(rows) else n) - m
+    r1 = max(int(rr.max()), int(rows[-1]) if len(rows) else -1) + m
+    c0 = min(int(cc.min()), int(cols[0]) if len(cols) else n) - m
+    c1 = max(int(cc.max()), int(cols[-1]) if len(cols) else -1) + m
+    return max(0, r0), max(0, c0), min(n - 1, r1), min(n - 1, c1)
+
+
+def kept_path(keep, start_xy, blocked, local) -> list | None:
+    """Rest des bisherigen Wegs ab der Pose, wenn er noch frei ist; sonst None."""
+    if not keep or len(keep) < 2:
+        return None
+    rest = remaining(keep, start_xy)
+    cells = [local(p) for p in rest]
+    return rest if all(_line_free(blocked, a, b) for a, b in zip(cells, cells[1:])) else None
+
+
+def route(blocked, cost, s, g, to_world, start_xy, goal_xy) -> list | None:
+    """Weg von Zelle s nach g auf fertigen Kostenkarten, in Weltpunkten; None = kein Weg."""
+    cells = astar(blocked, cost, s, g)
+    if cells is None:
+        return None
+    out = [to_world(r, c) for r, c in shortcut(cells, blocked, cost)]
+    out[0], out[-1] = tuple(start_xy), tuple(goal_xy)
+    return out
+
+
 def plan(grid: GridMap, start_xy: tuple[float, float], goal_xy: tuple[float, float], cfg: HomeCfg,
          keep: list[tuple[float, float]] | None = None,
-         obstacles: np.ndarray | None = None) -> list[tuple[float, float]] | None:
+         obstacles: np.ndarray | None = None, clear_goal: bool = True) -> list[tuple[float, float]] | None:
     """Weg (Weltpunkte, m) von start_xy nach goal_xy über die Raumkarte; None = kein Weg.
 
     keep: bisheriger Weg. Er bleibt (ab der Pose), solange er frei ist und höchstens
@@ -137,17 +187,12 @@ def plan(grid: GridMap, start_xy: tuple[float, float], goal_xy: tuple[float, flo
     ließ am RiderPi die Zielrichtung um bis zu 50° springen (2026-11-05).
     obstacles: zusätzliche Hindernispunkte (N x 2, Welt-m), z. B. aus der Merkkarte der
     Bahnprüfung. Sonst plante der Planer durch eine Lücke, die die Bahnprüfung für zu eng
-    hält, und der Rider drehte davor auf der Stelle."""
+    hält, und der Rider drehte davor auf der Stelle.
+    clear_goal: Umgebung des Ziels freiräumen (der Startpunkt driftet). False für frei gewählte
+    Ziele wie Wegpunkte: ein Punkt in der Wand soll auffallen, nicht angefahren werden."""
     res, n = grid.res, grid.n
     keep = [tuple(p) for p in keep] if keep else None
-    with grid._lock:
-        pts = np.array(grid.path + [tuple(start_xy), tuple(goal_xy)] + (keep or []), np.float64)
-    lo_xy = pts.min(axis=0) - cfg.margin_m
-    hi_xy = pts.max(axis=0) + cfg.margin_m
-    r0, c0 = (int(v) for v in grid.cell(lo_xy[0], lo_xy[1]))
-    r1, c1 = (int(v) for v in grid.cell(hi_xy[0], hi_xy[1]))
-    r0, c0 = max(0, r0), max(0, c0)
-    r1, c1 = min(n - 1, r1), min(n - 1, c1)
+    r0, c0, r1, c1 = known_area(grid, [tuple(start_xy), tuple(goal_xy)] + (keep or []), cfg.margin_m)
     with grid._lock:
         lo = grid.lo[r0:r1 + 1, c0:c1 + 1].copy()
     extra = None
@@ -164,24 +209,22 @@ def plan(grid: GridMap, start_xy: tuple[float, float], goal_xy: tuple[float, flo
         return int(np.clip(r - r0, 0, lo.shape[0] - 1)), int(np.clip(c - c0, 0, lo.shape[1] - 1))
 
     s, g = local(start_xy), local(goal_xy)
-    # Um Pose und Ziel freigeben: die Pose driftet, sonst sperrt sie eine Wand neben dem Rider ein
+    # Um die Pose freigeben: sie driftet, sonst sperrt eine Wand neben dem Rider ihn ein
     rad = int(math.ceil(cfg.inflate_m / res))
-    for (r, c) in (s, g):
+    for (r, c) in ((s, g) if clear_goal else (s,)):
         disk = np.zeros_like(blocked, np.uint8)
         cv2.circle(disk, (c, r), rad, 1, -1)
         blocked[disk.astype(bool)] = False
+
+    def to_world(r, c):
+        return (c + c0 + 0.5 - n / 2) * res, (r + r0 + 0.5 - n / 2) * res
+
     kept = None
-    if keep and len(keep) >= 2 and math.hypot(keep[-1][0] - goal_xy[0], keep[-1][1] - goal_xy[1]) < 0.05:
-        rest = remaining(keep, start_xy)
-        cells_rest = [local(p) for p in rest]
-        if all(_line_free(blocked, a, b) for a, b in zip(cells_rest, cells_rest[1:])):
-            kept = rest
-    cells = astar(blocked, cost, s, g)
-    if cells is None:
+    if keep and math.hypot(keep[-1][0] - goal_xy[0], keep[-1][1] - goal_xy[1]) < 0.05:
+        kept = kept_path(keep, start_xy, blocked, local)
+    out = route(blocked, cost, s, g, to_world, start_xy, goal_xy)
+    if out is None:
         return kept
-    cells = shortcut(cells, blocked, cost)
-    out = [((c + c0 + 0.5 - n / 2) * res, (r + r0 + 0.5 - n / 2) * res) for r, c in cells]
-    out[0], out[-1] = tuple(start_xy), tuple(goal_xy)
     if kept is not None and path_length(kept) <= cfg.keep_factor * path_length(out) + 0.3:
         return kept
     return out
@@ -214,12 +257,16 @@ class PlannerWorker:
         if self._thread:
             self._thread.join(timeout=2)
 
-    def request(self, start_xy, goal_xy, keep=None, obstacles=None) -> int:
+    def request(self, start_xy, goal_xy, keep=None, obstacles=None, **kw) -> int:
         """keep: bisheriger Weg, obstacles: zusätzliche Hindernispunkte (siehe plan())."""
+        return self.request_fn(plan, self.grid, tuple(start_xy), tuple(goal_xy), self.cfg, keep, obstacles, **kw)
+
+    def request_fn(self, fn, *args, **kw) -> int:
+        """Beliebiger Auftrag im Planer-Thread; poll() liefert (Nummer, Rückgabewert oder None)."""
         self.start()
         with self._cond:
             self._seq += 1
-            self._job = (self._seq, tuple(start_xy), tuple(goal_xy), keep, obstacles)
+            self._job = (self._seq, fn, args, kw)
             self._cond.notify()
             return self._seq
 
@@ -238,15 +285,15 @@ class PlannerWorker:
                     self._cond.wait(0.5)
                 if self._stop.is_set():
                     return
-                seq, s, g, keep, obstacles = self._job
+                seq, fn, args, kw = self._job
                 self._job = None
             t0 = time.perf_counter()
             try:
-                path = plan(self.grid, s, g, self.cfg, keep, obstacles)
+                path = fn(*args, **kw)
             except Exception:                       # Planer darf die Fahrt nicht mitreißen
                 log.exception("Planung fehlgeschlagen")
                 path = None
             self.ms = (time.perf_counter() - t0) * 1000
-            log.debug("Plan #%d: %s in %.0f ms", seq, "%d Punkte" % len(path) if path else "kein Weg", self.ms)
+            log.debug("Plan #%d: %s in %.0f ms", seq, "Ergebnis" if path else "kein Weg", self.ms)
             with self._cond:
                 self._result = (seq, path)

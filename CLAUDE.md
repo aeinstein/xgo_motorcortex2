@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Das Repo `xgo_motorcortex2` enthält Treiber (`kernel_module/`), Display-Daemon (`st7789/`), ESP32-Firmware-Build (`firmware/`), Weboberfläche (`web/`, `deploy/`) und xgonav. Offene Punkte stehen in `TODO.md`. xgonav ist eine kamerabasierte Navigations-Pipeline (Python 3.11+, OpenCV, numpy, optional ncnn/onnxruntime) für den XGO Rider, einen selbstbalancierenden Zweiradroboter mit Raspberry Pi CM4 (2 GB RAM). Sie spricht die Hardware ausschließlich über das Kernelmodul `xgo-drv` aus `kernel_module/` (`/proc/XGORider/...`) an. Code, Kommentare, Logs und Statusmeldungen sind durchgehend auf Deutsch; so beibehalten.
 
-Maßgebliche Doku: README.md (Überblick) und je Thema eine Datei in `docs/` (Architektur, Installation, Konfiguration, Kalibrierung, Treiber, Weboberfläche, Karten, Display, Tests, Grenzen, LEDs). README und `docs/` sind **englisch** und knapp (Fakten, Tabellen, keine Prosa); Code, Kommentare und Logs bleiben deutsch. Wichtigste Randbedingung: `follow` und Handsteuerung wurden am RiderPi gefahren; `home` kam dort am 2026-11-05 nicht ans Ziel (danach geändert, nicht erneut gefahren), `explore` nur kurz ohne Aufzeichnung, `approach` gar nicht (`docs/limitations.md`). Der Simulator kennt die Trägheit des balancierenden Riders nur mit `--dyn` und keine Fehlalarme des Bodenmodells; was dort klappt, kann am Rider an engen Stellen hängen. Simulator und Default nutzen 88,5° Öffnungswinkel wie die echte Kamera (Zollstock-Messung).
+Maßgebliche Doku: README.md (Überblick) und je Thema eine Datei in `docs/` (Architektur, Installation, Konfiguration, Kalibrierung, Treiber, Weboberfläche, Karten, Display, Tests, Grenzen, LEDs). README und `docs/` sind **englisch** und knapp (Fakten, Tabellen, keine Prosa); Code, Kommentare und Logs bleiben deutsch. Wichtigste Randbedingung: `follow` und Handsteuerung wurden am RiderPi gefahren; `home` kam dort am 2026-11-05 nicht ans Ziel (danach geändert, nicht erneut gefahren), das gezielte `explore` (Frontiers) am 2026-11-06 in drei Testfahrten, noch ohne brauchbare Karte und **ohne Absturzschutz: wäre fast eine Stufe hinuntergefahren**, `approach` gar nicht (`docs/limitations.md`). Der Simulator kennt die Trägheit des balancierenden Riders nur mit `--dyn` und keine Fehlalarme des Bodenmodells; was dort klappt, kann am Rider an engen Stellen hängen. Simulator und Default nutzen 88,5° Öffnungswinkel wie die echte Kamera (Zollstock-Messung).
 
 ## Befehle
 
@@ -17,12 +17,13 @@ python3 -m venv .venv && .venv/bin/pip install "opencv-python-headless>=4.6" "nu
 ```
 
 ```bash
-python -m pytest -q tests/                       # Unit-Tests (57 Tests, ~2 s; 5 ohne C++-Kern übersprungen); slow ist per pytest.ini ausgeschlossen
-python -m pytest -q -m slow tests/               # Closed-Loop im Simulator (4 Tests, ~150 s gesamt); -m überschreibt addopts
+python -m pytest -q tests/                       # Unit-Tests (81 Tests, ~2 s; 5 ohne C++-Kern übersprungen); slow ist per pytest.ini ausgeschlossen
+python -m pytest -q -m slow tests/               # Closed-Loop im Simulator (5 Tests, ~6 min gesamt); -m überschreibt addopts
 python -m pytest -q tests/test_units.py -k imu_sync   # einzelner Test
 
 python tests/sim_run.py follow 40 out.mp4        # Szenario im Simulator, optional mit Overlay-Video
-python tests/sim_run.py explore 40
+python tests/sim_run.py explore 300 --wheels --kanten --fs-thread --dyn --rider [--scene zwei] [--phantoms 8]   # Raum kartieren wie am Rider
+python tools/map_eval.py record a.pkl; python tools/map_eval.py eval a.pkl --set grid.max_range_m=1.0,1.5 --rays   # Karte offline messen
 python tests/sim_run.py home 60 --wheels         # 30 s erkunden, dann zurück zum Start (--dyn: Trägheit wie am Rider)
 python tests/sim_run.py follow 40 --imu          # mit simulierter IMU (Vorzeichen -1, Versatz -8 ms absichtlich falsch)
 
@@ -100,4 +101,5 @@ Hardware-nahe Teile haben je eine echte und eine Sim-Implementierung mit gleiche
 - Weboberfläche ist PHP (`web/index.php`, `web/api.php`) hinter nginx (`deploy/nginx-xgonav.conf`, eigener php-fpm-Pool `deploy/php-fpm-xgonav.conf`); der Nutzer bevorzugt PHP fürs Web. `web.py` ist nur noch die lokale Schnittstelle (`web_host = 127.0.0.1`), ohne Authentifizierung. Am RiderPi: nginx mit TLS auf 443 → `/xgonav/` (PHP, Bilder per WebSocket `/xgonav/ws` direkt von xgonav, mit Bestätigung je Bild), Port 80 und `/` leiten dorthin um. stunnel und die alte Fernsteuerung rc_server (Node, 1081, `rc-control.service`) sind abgeschaltet; `api.php` liest nur noch die Emotionen aus `rc_server/emotions`.
 - C++-Kern `xgonav/native/libxgofast.so` (ctypes, geladen in `fastlib.py`): `egofast.cpp` rechnet dasselbe wie `EgoMotion` (`[ego] native`, eine Pyramide je Bild; Grau + 2:1, Schärfe und `goodFeaturesToTrack` bitgleich nachgebaut, nur aktiv nach Selbstprüfung gegen OpenCV beim ersten `ego_new`, siehe `ego_fast_mask`), `floorfast.cpp` dasselbe wie `FreeSpaceEstimator._edge_columns` und das Verkleinern 4:1 (`area_down`, NEON; nur aktiv, wenn es beim Start bitgleich zu `cv2.resize` INTER_AREA ist) (`[freespace] native`), `gridfast.cpp` das Eintragen in `GridMap.add_freespace` (`[grid] native`). Änderungen daran immer in beiden Wegen machen und am Rider vergleichen (`test_egomotion_native_matches_python`, `test_ego_fast_paths_match_opencv`, `test_kanten_native_matches_numpy`, `test_floor_downscale_native_equals_cv2`, `test_gridmap_native_matches_numpy`, am PC übersprungen); bei geänderten Strukturen die ABI-Nummern (`_NATIVE_ABI`/`kAbi`, `_EDGE_ABI`/`kEdgeAbi`, `_GRID_ABI`/`kGridAbi`) erhöhen. Bitgleich nachbauen heißt: OpenCV-Quelle 4.6 lesen (FMA in NEON-Pfaden, Summationsreihenfolge) und an echten Aufnahmen prüfen; synthetische Prüfbilder allein trennen Rundungsvarianten oft nicht.
 - `lcd.py` und `picamera2` existieren nur auf dem Pi; beide werden lazy importiert und nur bei `--robot proc` aktiviert.
-- Die Annahme „1 Firmware-Einheit = 1 m/s“ (`vx_limit`) fließt nur in die Merkkarte ein und ist unkalibriert.
+- Am Rider bleibt der Kernel auf 6.6.74 (Pin `deploy/apt-pin-kernel`): Unter 6.12 baut der Soundtreiber nicht, `xgo-drv` ist dort weder gebaut noch getestet. Der Dienst läuft als `aeinstein` und nimmt OpenCV 4.10 und numpy 1.26 aus `~/.local`, root sieht andere Versionen; Importe nach Upgrades als dieser Nutzer prüfen.
+- `robot.vx_limit` (m/s je Firmware-Einheit): am RiderPi 1,8 (gemessen 2026-11-05), Default 1,5; rechnen damit Bahnprüfung und Folgen.

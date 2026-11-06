@@ -1,17 +1,38 @@
-"""Closed-Loop-Szenarien im Simulator. python3 tests/sim_run.py follow|explore|home [sekunden] [video.mp4] [--imu] [--fs-thread] [--wheels] [--kanten] [--dyn]
+"""Closed-Loop-Szenarien im Simulator. python3 tests/sim_run.py follow|explore|home [sekunden] [video.mp4] [--imu] [--fs-thread] [--wheels] [--kanten] [--dyn] [--rider] [--scene raum|zwei] [--set a.b=wert]
 
 home: erste Hälfte explore, dann Modus home (zurück zum Startpunkt der Raumkarte).
---dyn: Trägheit wie am RiderPi (Totzone, Nachlaufen der Drehung, Rückrollen beim Anfahren)."""
+--dyn: Trägheit wie am RiderPi (Totzone, Nachlaufen der Drehung, Rückrollen beim Anfahren).
+--rider: Einstellungen des RiderPi statt der Defaults (RIDER), Tempo wie gemessen."""
 import logging, math, sys, threading, time
 sys.path.insert(0, ".")
 import numpy as np
 from xgonav.app import App, render
 from xgonav.config import Config
 from xgonav.robot import SimRobot
-from xgonav.sim import FakeDetector, Person, SimImu, SimWheels, SimWorld
+from xgonav.sim import FakeDetector, Person, Phantoms, SCENES, SimImu, SimWheels, SimWorld, map_quality
+
+# Fahrrelevante Abweichungen in deploy/config.example.toml; echtes Tempo 1,8 m/s je Firmware-Einheit
+# (gemessen 2026-11-05: ~27 cm/s bei 0,15)
+RIDER = {"robot.vx_limit": 1.8, "robot.max_v": 0.15, "robot.max_w": 0.30, "robot.reverse_gain": 2.0, "behavior.turn_w": 0.21,
+         "behavior.search_w": 0.07, "behavior.search_timeout_s": 10.0, "behavior.height_fast_mm": 80.0,
+         "behavior.height_search_mm": 100.0, "map.confirm": 3}
+RIDER_VX = 1.8
 
 
-def run(mode="follow", secs=25.0, video=None, shake=1.0, quiet=True, imu=False, fs_thread=False, wheels=False, vx_true=None, method=None, dyn=False):
+def apply_overrides(cfg, overrides) -> None:
+    """{"grid.l_occ": 0.6, ...} in die verschachtelte Konfiguration; Tippfehler fallen auf."""
+    for key, val in (overrides or {}).items():
+        sec, name = key.split(".")
+        part = getattr(cfg, sec)
+        if not hasattr(part, name):
+            raise KeyError(key)
+        setattr(part, name, val)
+
+
+def run(mode="follow", secs=25.0, video=None, shake=1.0, quiet=True, imu=False, fs_thread=False, wheels=False, vx_true=None, method=None, dyn=False,
+        overrides=None, scene="raum", record=None, phantoms=0):
+    """overrides: siehe apply_overrides. record: Liste, bekommt je Eintrag in die Raumkarte die Beobachtung
+    (tools/map_eval.py spielt sie offline ab); dafür trägt die Karte im Regelschritt ein."""
     logging.basicConfig(level=logging.WARNING if quiet else logging.INFO)
     cfg = Config()
     home = mode == "home"
@@ -20,12 +41,15 @@ def run(mode="follow", secs=25.0, video=None, shake=1.0, quiet=True, imu=False, 
     cfg.freespace.threaded = fs_thread
     if method:
         cfg.freespace.method = method
+    apply_overrides(cfg, overrides)
+    if record is not None:
+        cfg.grid.threaded = False
     robot = SimRobot(cfg.robot)
     person = Person([(3.2, 1.3), (4.8, 4.6), (1.4, 5.0), (1.2, 3.0)], speed=0.3) if mode not in ("explore", "home") else None
     world = SimWorld(cfg.camera, robot, person, start=(1.0, 1.2, 0.2), shake=shake,
                      mount_offset_mm=cfg.camera.mount_offset_mm,
                      vx_mps=vx_true if vx_true is not None else cfg.robot.vx_limit,  # vx_true: echte m/s je Einheit
-                     dynamics=dyn)
+                     dynamics=dyn, scene=SCENES[scene]())
     if imu:
         cfg.imu.pitch_ref_deg = 2.5   # wie nach calibrate.py wall
     if not wheels:
@@ -35,6 +59,18 @@ def run(mode="follow", secs=25.0, video=None, shake=1.0, quiet=True, imu=False, 
     if not imu:
         app.imu = None
     app.det = FakeDetector(world)
+    ph = Phantoms(world, app.fse, phantoms) if phantoms else None
+    if record is not None and app.gridmap is not None:
+        add = app.gridmap.add_freespace
+        def add_rec(fs, pd, pose=None):
+            record.append({"columns": np.array(fs.columns, np.float32), "horizon_row": fs.horizon_row,
+                           "known_from": None if fs.known_from is None else np.array(fs.known_from, np.float32),
+                           "pitch_cap": pd, "pitch_ins": app.last_pitch_dev,
+                           "pose_cap": pose, "pose_ins": app.gridmap.pose(),
+                           "balancing": robot.state.balancing, "v": robot.command[0], "w": robot.command[1],
+                           "body_h": app.geo.body_height_mm, "truth": (world.x, world.y, world.th)})
+            add(fs, pd, pose)
+        app.gridmap.add_freespace = add_rec
     if video:
         import cv2
         def rec():
@@ -61,6 +97,18 @@ def run(mode="follow", secs=25.0, video=None, shake=1.0, quiet=True, imu=False, 
             switch["frame"] = len(world.log)
             app.set_mode("home")
         threading.Thread(target=to_home, daemon=True).start()
+    done_t = {}
+    if mode == "explore":
+        def watch():
+            while not app.running: time.sleep(0.02)
+            t0 = time.monotonic()
+            while app.running:
+                if getattr(app.behavior, "done", False):
+                    done_t["s"] = round(time.monotonic() - t0, 1)
+                    time.sleep(1.0)                  # Speichern und letzten Status abwarten
+                    app.stop()
+                time.sleep(0.2)
+        threading.Thread(target=watch, daemon=True).start()
     app.run(duration=secs)
     if video:
         with app.snap_cond: app.snap_cond.notify_all()
@@ -69,51 +117,30 @@ def run(mode="follow", secs=25.0, video=None, shake=1.0, quiet=True, imu=False, 
     gm = getattr(app, "gridmap", None)
     grid = None
     if gm is not None:
-        # Karten-KS = Startpose -> Welt; Abstand jeder belegten Zelle zur nächsten Wand/Kiste
+        # Karten-KS = Startpose -> Welt
         x0, y0, th0 = L[0]["x"], L[0]["y"], L[0]["th"]
         c0, s0 = math.cos(th0), math.sin(th0)
-        occ = gm.occupied_cells()
-        if len(occ):
-            wx = x0 + occ[:, 0] * c0 - occ[:, 1] * s0
-            wy = y0 + occ[:, 0] * s0 + occ[:, 1] * c0
-            seg = world.segs
-            ax, ay, bx, by = seg[:, 0], seg[:, 1], seg[:, 2], seg[:, 3]
-            dx, dy = bx - ax, by - ay
-            t = np.clip(((wx[:, None] - ax) * dx + (wy[:, None] - ay) * dy) / (dx * dx + dy * dy), 0, 1)
-            d = np.hypot(ax + t * dx - wx[:, None], ay + t * dy - wy[:, None]).min(axis=1)
-            prec = float((d < 0.15).mean())
-        else:
-            prec = float("nan")
         ex = x0 + gm.x * c0 - gm.y * s0
         ey = y0 + gm.x * s0 + gm.y * c0
-        # Abdeckung: Punkte auf Wänden/Kisten (alle 5 cm) in <= 2 m vom gefahrenen Weg,
-        # davon Anteil mit belegter Zelle in <= 10 cm
-        pts = []
-        for ax_, ay_, bx_, by_, _ in world.segs:
-            n_ = max(2, int(math.hypot(bx_ - ax_, by_ - ay_) / 0.05))
-            pts += [(ax_ + (bx_ - ax_) * k / n_, ay_ + (by_ - ay_) * k / n_) for k in range(n_ + 1)]
-        pts = np.array(pts)
-        path = np.array([(r["x"], r["y"]) for r in L[::5]])
-        near = np.hypot(pts[:, None, 0] - path[None, :, 0], pts[:, None, 1] - path[None, :, 1]).min(axis=1) <= 2.0
-        pts = pts[near]
-        if len(pts) and len(occ):
-            dd = np.hypot(pts[:, None, 0] - wx[None, :], pts[:, None, 1] - wy[None, :]).min(axis=1)
-            recall = float((dd <= 0.10).mean())
-        else:
-            recall = float("nan")
-        grid = {"belegt_zellen": int(len(occ)), "praezision_15cm": round(prec, 3), "abdeckung_10cm": round(recall, 3),
+        path = [(r["x"], r["y"]) for r in L]
+        grid = {"belegt_zellen": len(gm.occupied_cells()),
+                **map_quality(gm.lo, gm.res, gm.cfg.l_show, world.scene, (x0, y0, th0), path),
                 "pose_fehler_m": round(math.hypot(ex - world.x, ey - world.y), 3),
                 "kurs_fehler_deg": round(math.degrees((th0 + gm.th - world.th + math.pi) % (2 * math.pi) - math.pi), 1)}
     out = {"imu_sync": (app.imu_sync.reliable, app.imu_sync.sign, round(app.imu_sync.offset * 1000), round(app.imu_sync.corr, 2)) if imu else None,
            "collisions": world.collisions, "coll_frames": world.coll_frames, "dist_m": round(world.dist_travelled, 2), "frames": len(L),
            "loop_ms": round(app._loop_ms, 1), "odom": app.odom_src, "odom_m": round(app.odom_m, 2),
-           "grid": grid}
+           "grid": grid, "status": app._cmd.status, "fertig_s": done_t.get("s"),
+           "explore": app.behavior.info() if hasattr(app.behavior, "info") else None,
+           "plan_ms": round(app.planner.ms, 1) if app.planner is not None else None}
+    if record is not None:
+        out.update(start_pose=(L[0]["x"], L[0]["y"], L[0]["th"]), path=[(r["x"], r["y"]) for r in L])
     if home:
         x0, y0 = L[0]["x"], L[0]["y"]
         k = min(switch.get("frame", len(L)) , len(L)) - 1
         out.update(home_weg_m=round(math.hypot(L[k]["x"] - x0, L[k]["y"] - y0), 2),
                    home_end_m=round(math.hypot(world.x - x0, world.y - y0), 2),
-                   home_status=app._cmd.status, plan_ms=round(app.planner.ms, 1))
+                   home_status=app._cmd.status)
     if person:
         d = np.array([math.hypot(r["px"] - r["x"], r["py"] - r["y"]) for r in L])
         b = np.array([math.degrees((math.atan2(r["py"] - r["y"], r["px"] - r["x"]) - r["th"] + math.pi) % (2 * math.pi) - math.pi) for r in L])
@@ -128,7 +155,15 @@ def run(mode="follow", secs=25.0, video=None, shake=1.0, quiet=True, imu=False, 
 if __name__ == "__main__":
     mode = sys.argv[1] if len(sys.argv) > 1 else "follow"
     secs = float(sys.argv[2]) if len(sys.argv) > 2 and not sys.argv[2].startswith("--") else 25
-    args = [a for a in sys.argv[3:] if not a.startswith("--")]
+    args = [a for i, a in enumerate(sys.argv) if i >= 3 and not a.startswith("--") and sys.argv[i - 1] not in ("--set", "--scene", "--phantoms")]
+    rider = "--rider" in sys.argv
+    ov = dict(RIDER) if rider else {}
+    for i, a in enumerate(sys.argv):
+        if a == "--set":
+            k, v = sys.argv[i + 1].split("=")
+            ov[k] = eval(v, {})
     print(run(mode, secs, args[0] if args else None, imu="--imu" in sys.argv, fs_thread="--fs-thread" in sys.argv,
               wheels="--wheels" in sys.argv, method="kanten" if "--kanten" in sys.argv else None,
-              dyn="--dyn" in sys.argv))
+              dyn="--dyn" in sys.argv, overrides=ov, vx_true=RIDER_VX if rider else None,
+              scene=sys.argv[sys.argv.index("--scene") + 1] if "--scene" in sys.argv else "raum",
+              phantoms=int(sys.argv[sys.argv.index("--phantoms") + 1]) if "--phantoms" in sys.argv else 0))

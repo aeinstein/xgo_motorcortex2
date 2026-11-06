@@ -289,9 +289,13 @@ details.extras[open]>summary{margin-bottom:8px}
     </div>
     <img id="karte" alt="Raumkarte" width="320" height="320">
     <div class="leise" style="margin-top:6px" id="karte-pose">-</div>
+    <div class="leise" id="karte-erkunden" hidden></div>
     <details class="hilfe"><summary>grau unbekannt · hell frei · dunkel belegt · grün Weg · cyan Plan · blau Start · rot Rider</summary>
       <p>Ursprung = Startpose (oben = vorn beim Start). Strecke und Drehung aus den Rädern (auch bei
         gestoppter Bildverarbeitung); ohne Marker driftet die Karte mit der Zeit.</p>
+      <p>„Erkunden“ kartiert den Raum: erst ein Rundumblick, dann fährt er die Grenzen zwischen bekanntem Boden und
+        Unbekanntem an, bis nichts mehr erreichbar ist (oder Zeit- bzw. Akkugrenze). Danach speichert er die Karte und
+        fährt zum Start.</p>
       <p>„Zum Start“ plant einen Weg über die Karte und fährt ihn ab. Die Karte wird regelmäßig gespeichert
         und beim Start von xgonav geladen; der Rider muss dann wieder am Startpunkt stehen.</p>
     </details>
@@ -343,6 +347,8 @@ const felder = [
   ['Gier / Nick', s => s.ego ? s.ego.yaw_dps.toFixed(0) + ' / ' + s.ego.pitch_dps.toFixed(0) + ' °/s' : '-'],
   ['TTC / Schärfe', s => (s.ttc != null ? s.ttc.toFixed(1) + ' s' : '-') + ' / ' + (s.ego ? s.ego.sharp : '-')],
 ];
+const ERKUNDEN = {scan: 'Rundumblick', ziel: 'fährt zu einer Stelle', face: 'schaut', settle: 'schaut', backup: 'setzt zurück',
+  wander: 'befreit sich', heim: 'fährt zum Start', fertig: 'fertig'};
 const MODI = {idle: 'Idle', manual: 'Hand', follow: 'Folgen', explore: 'Erkunden', approach: 'Anfahren', home: 'Zum Start'};
 const esc = t => String(t ?? '-').replace(/[<&]/g, c => c === '<' ? '&lt;' : '&amp;');
 const $ = id => document.getElementById(id);
@@ -414,6 +420,13 @@ async function status() {
     pip.classList.toggle('aktiv', s.pipeline !== 'läuft');
     if (s.grid) $('karte-pose').textContent =
       'x ' + s.grid.pose[0].toFixed(2) + ' m · y ' + s.grid.pose[1].toFixed(2) + ' m · ' + s.grid.pose[2].toFixed(0) + '° · Start ' + s.grid.zum_start_m.toFixed(2) + ' m · belegt ' + s.grid.belegt_m2 + ' m²';
+    const ek = $('karte-erkunden');
+    ek.hidden = !s.explore;
+    if (s.explore) {
+      const ende = s.explore.ende ? ' · ' + s.explore.ende : '';
+      ek.textContent = 'Erkunden: ' + ERKUNDEN[s.explore.zustand] + ' · ' + s.explore.stellen + ' Stellen offen'
+        + (s.explore.gesperrt ? ', ' + s.explore.gesperrt + ' übergangen' : '') + ende;
+    }
     belichtStatus(s.exposure);
     gainStatus(s.exposure);
   } catch (e) { zeige('keine Verbindung zu xgonav'); verbindungWeg(); }

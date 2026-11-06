@@ -145,6 +145,10 @@ class FreespaceCfg:
     # Höhe an seinem Fußpunkt (oder bis zum Horizont reicht). Flache Flecken, Fugen und Kabel
     # auf dem Boden sind kürzer. 0 = aus. Braucht die Kamerageometrie.
     min_obst_height_m: float = 0.04
+    # Diese Klassen werden nicht als Hindernis eingetragen: Die Box großer Möbel sagt nichts über die
+    # Standfläche, ihre Unterkante ist kein Fußpunkt (RiderPi 2026-11-06: "bed" vom Bett bis zum unteren
+    # Bildrand über die volle Breite, alles blockiert). Das Möbel selbst findet das Bodenmodell.
+    no_block_cls: list[str] = field(default_factory=lambda: ["bed", "couch", "dining table"])
     # Linsenabschattung (tools/calibrate.py shading -> JSON). "" = aus (Simulator).
     # Pixel, die mehr als shading_max_gain Verstärkung bräuchten, gelten als unzuverlässig
     # und nie als Hindernis (RiderPi: untere Ecken, äußere Ränder).
@@ -297,12 +301,21 @@ class GridCfg:
     enabled: bool = True
     resolution_m: float = 0.05
     size_m: float = 16.0               # Kantenlänge, Start in der Mitte
-    max_range_m: float = 2.5           # weiter ist die Fußpunkt-Entfernung zu ungenau
+    # Treffer nur bis hierhin: Kamera nur 12,8 cm hoch, eine Bildzeile sind bei 2 m schon ~40 cm
+    max_range_m: float = 1.25
     min_range_m: float = 0.15          # davor sieht die Kamera den Boden nicht
+    # Das Bodenmodell meldet die Grenze so viele Zeilen (seiner Auflösung) unterhalb der wahren
+    # (Stufenfilter, Erosion). Nur für die Raumkarte; die Merkkarte behält das als Sicherheitsrand.
+    # Simulator-Sweep 2026-11-05: 1,5; am RiderPi noch nicht gegen eine bekannte Entfernung geprüft.
+    row_bias: float = 1.5
     column_step: int = 2               # jede k-te Spalte des Bodenmodells (160 Spalten)
     l_free: float = -0.4               # Log-Odds je Beobachtung
-    l_occ: float = 1.2                 # Treffer zählen mehr: die Grenze trifft selten dieselbe Zelle
+    l_occ: float = 0.5                 # zwei Treffer bis "belegt" (l_show): ein Ausreißer sperrt nichts
     free_margin_m: float = 0.10        # Freistrahl endet so weit vor der Grenze (Messrauschen)
+    free_margin_quad: float = 0.05     # dazu so viel x Entfernung² (der Fehler wächst quadratisch)
+    free_range_m: float = 1.5          # Freistrahlen bis hierhin (Treffer nur bis max_range_m); 0 = wie max_range_m
+    driven_free_r_m: float = 0.10      # gefahrener Weg gilt so breit als frei; 0 = aus
+    max_turn_dps: float = 40.0         # bei schnellerer Drehung nichts eintragen (Unschärfe, Pose)
     occ_free_factor: float = 0.5       # schon belegte Zellen baut ein Freistrahl nur so stark ab
     l_min: float = -3.0
     l_max: float = 3.5
@@ -323,7 +336,9 @@ class GridCfg:
 @dataclass
 class HomeCfg:
     # Modus home: Pfad über die Raumkarte zum Startpunkt (planner.py), Pure Pursuit
-    inflate_m: float = 0.18            # belegte Zellen um so viel aufblasen (Rider-Radius + Rand)
+    # Belegte Zellen um so viel aufblasen; über dem Radius der Bahnprüfung (localmap, 0,18 m),
+    # sonst plant der Planer genau an ihre Bremsgrenze
+    inflate_m: float = 0.23
     clear_cost: float = 4.0            # Zusatzkosten nahe an Hindernissen (fällt bis 2*inflate_m ab)
     unknown_cost: float = 3.0          # unbekannte Zellen kosten so viel mehr als freie
     margin_m: float = 1.5              # Suchgebiet = Pose, Start, gefahrener Weg + Rand
@@ -332,6 +347,7 @@ class HomeCfg:
     replan_s: float = 2.0
     keep_factor: float = 1.2           # alter Weg bleibt, solange frei und <= Faktor x neuer + 0,3 m
     use_localmap: bool = True          # Hindernisse der Bahnprüfung (Merkkarte) mit einplanen
+    localmap_reach_m: float = 1.0      # nur so nahe: weiter weg misst die Merkkarte zu ungenau
     v: float = 0.15                    # normiert, wie behavior.cruise_v
     # Lenkung: am RiderPi rollt der Rider bei jedem Anfahren erst zurück und eine Drehung läuft
     # ~15° nach; ständiges Wechseln zwischen Drehen und Fahren brachte ihn nicht vom Fleck
@@ -339,9 +355,40 @@ class HomeCfg:
     kp_turn: float = 1.5               # 1/s (Folgen: behavior.kp_turn)
     turn_enter_deg: float = 75.0       # ab diesem Winkelfehler auf der Stelle drehen ...
     turn_exit_deg: float = 25.0        # ... bis er darunter ist
+    # Kleine Lenkbefehle ignoriert die Firmware (u8 128 ± 6): darunter sonst keine Korrektur
+    # unter ~11° Fehler. Ab min_w_err_deg Fehler deshalb mindestens min_w.
+    min_w: float = 0.055
+    min_w_err_deg: float = 4.0
     align_heading: bool = True         # am Ziel auf den Startkurs drehen
     align_tol_deg: float = 10.0
     max_fail: int = 3                  # so oft kein Weg -> aufgeben
+
+
+@dataclass
+class ExploreCfg:
+    # Modus explore: Frontiers der Raumkarte anfahren (frontier.py), bis nichts Unbekanntes mehr
+    # erreichbar ist. Weg und Lenkung wie home ([home]).
+    scan_w: float = 0.07               # Rundumblick am Anfang (langsam: unter grid.max_turn_dps)
+    min_cluster_m: float = 0.4         # kleinere Frontier-Gruppen zählen nicht
+    gain_radius_m: float = 1.2         # Nutzen: unbekannte Fläche in diesem Umkreis des Ziels
+    travel_mps: float = 0.27           # Fahrzeit-Schätzung
+    turn_dps: float = 40.0             # Drehzeit-Schätzung
+    base_s: float = 3.0                # feste Zeit je Ziel: sonst gewinnt immer das Nächste
+    standoff_m: float = 0.3            # so weit vor der Frontier anhalten
+    start_free_r_m: float = 0.2        # um den Startpunkt gilt der Boden als frei
+    reach_m: float = 0.25              # Ziel gilt als erreicht
+    settle_s: float = 0.6              # nach Ankunft stehen und schauen (Nicken beruhigen)
+    keep_dist_m: float = 0.5           # altes Ziel besteht, solange Frontier-Zellen so nah sind
+    goal_timeout_s: float = 60.0       # länger an einem Ziel: gilt als festgefahren
+    no_growth_s: float = 120.0         # so lange kaum Zuwachs an bekanntem Boden: Karte gilt als fertig
+    min_growth_m2: float = 0.5
+    avoid_r_m: float = 0.5             # Umkreis gesperrter Ziele
+    wander_s: float = 15.0             # Befreiung: so lange reaktiv fahren ...
+    max_wander: int = 3                # ... höchstens so oft, dann Stopp mit Meldung
+    no_goal_limit: int = 3             # so viele Suchen ohne Ziel: Karte gilt als fertig
+    max_s: float = 900.0               # Zeitgrenze
+    min_battery: int = 25              # %: darunter beenden und zum Start
+    return_home: bool = True           # am Ende zum Startpunkt fahren
 
 
 @dataclass
@@ -375,6 +422,7 @@ class Config:
     odom: OdomCfg = field(default_factory=OdomCfg)
     grid: GridCfg = field(default_factory=GridCfg)
     home: HomeCfg = field(default_factory=HomeCfg)
+    explore: ExploreCfg = field(default_factory=ExploreCfg)
     control_hz: float = 20.0
 
     @classmethod

@@ -1032,6 +1032,7 @@ def test_gridmap_wall_and_turn():
     from xgonav.geometry import CamGeometry
     from xgonav.gridmap import GridMap
     cfg = Config()
+    cfg.grid.row_bias = 0.0                                     # hier zählt die reine Geometrie
     g = CamGeometry(640, 480, 91.0, 1.39, 43.0, 85.0)
     m = GridMap(cfg.grid, g, 160, 120)
     hz = g.horizon_row(0) / 4
@@ -1054,6 +1055,80 @@ def test_gridmap_wall_and_turn():
     assert img.shape == (200, 200, 3)
     m.reset()
     assert len(m.occupied_cells()) == 0 and m.stats()["pose"] == [0.0, 0.0, 0.0]
+
+
+def _wall_fs(g, dist):
+    """Bodenmodell-Ergebnis mit gerader Wand in dist (m) bei Nick 0."""
+    from xgonav.freespace import FreeSpace
+    hz = g.horizon_row(0) / 4
+    ys = np.arange(int(hz * 4) + 1, 480)
+    y1 = ys[np.nanargmin(np.abs(g.ground_dist_np(ys) - dist))]
+    col = (120 - y1 / 4) / (120 - hz)
+    return FreeSpace([col] * 5, np.full(160, col), hz, np.zeros((120, 160), np.uint8), True, None)
+
+
+def test_gridmap_range_hits_and_margin():
+    """Ein Treffer reicht nicht für "belegt", Treffer nur bis max_range_m, Freistrahl weiter und mit Rand."""
+    from xgonav.gridmap import GridMap
+    cfg = Config()
+    cfg.grid.row_bias = 0.0
+    g = CamGeometry(640, 480, 91.0, 1.39, 43.0, 85.0)
+    m = GridMap(cfg.grid, g, 160, 120)
+    near = _wall_fs(g, 1.0)
+    m.add_freespace(near, 0.0)
+    assert len(m.occupied_cells()) == 0                         # Ausreißer sperrt nichts
+    m.add_freespace(near, 0.0)
+    assert len(m.occupied_cells()) > 0
+    far = GridMap(cfg.grid, g, 160, 120)
+    wall = _wall_fs(g, 2.2)
+    for _ in range(5):
+        far.add_freespace(wall, 0.0)
+    assert len(far.occupied_cells()) == 0                       # zu weit für einen Treffer
+    r, c = np.nonzero(far.lo < -cfg.grid.l_show)
+    xs = (c + 0.5 - far.n / 2) * far.res
+    assert 1.3 < xs.max() < cfg.grid.free_range_m + 0.1         # frei nur bis free_range_m
+    # row_bias schiebt die Grenze nach hinten
+    biased = Config()
+    b = GridMap(biased.grid, g, 160, 120)
+    for _ in range(2):
+        b.add_freespace(near, 0.0)
+    plain = m.occupied_cells()[:, 0].mean()
+    assert b.occupied_cells()[:, 0].mean() > plain + 0.05
+
+
+def test_gridmap_driven_path_is_free():
+    from xgonav.gridmap import GridMap
+    cfg = Config()
+    m = GridMap(cfg.grid, CamGeometry(640, 480, 91.0, 1.39, 43.0, 85.0), 160, 120)
+    r, c = m.cell(0.3, 0.0)
+    m.lo[int(r), int(c)] = cfg.grid.l_max                       # angeblich belegt, liegt auf dem Weg
+    for _ in range(10):
+        m.move(0.05, 0.0)
+    assert m.lo[int(r), int(c)] < -cfg.grid.l_show
+    r2, c2 = m.cell(0.3, cfg.grid.driven_free_r_m + 0.10)
+    assert m.lo[int(r2), int(c2)] == 0.0                        # daneben bleibt unbekannt
+
+
+def test_freespace_keeps_pitch_and_pose_of_capture():
+    """Das Ergebnis des Bodenmodell-Threads kommt später an: Karten rechnen mit Nick und Pose
+    der Aufnahme, sonst streut die Entfernung um Dezimeter (2026-11-05)."""
+    from xgonav.freespace import FreeSpaceEstimator, FreeSpaceWorker
+    from xgonav.localmap import mask_movable
+    cfg = Config()
+    g = CamGeometry(640, 480, 91.0, 1.39, 43.0, 85.0)
+    est = FreeSpaceEstimator(cfg.freespace, (640, 480), g)
+    w = FreeSpaceWorker(est)
+    w.start()
+    w.offer(np.full((480, 640, 3), 90, np.uint8), 0.03, [], (1.0, 2.0, 0.5))
+    t_end = time.monotonic() + 5
+    fs = None
+    while fs is None and time.monotonic() < t_end:
+        fs = w.poll()
+        time.sleep(0.01)
+    w.close()
+    assert fs.pitch_dev == 0.03 and fs.pose == (1.0, 2.0, 0.5)
+    view = mask_movable(fs, [("person", (0, 0, 100, 100))], 640, 480)
+    assert view is not fs and view.pitch_dev == 0.03 and view.pose == (1.0, 2.0, 0.5)
 
 
 def test_gridworker_uses_pose_of_observation():
@@ -1278,3 +1353,368 @@ def test_freespace_reset_and_dark_sample():
     assert max(est.update(floor).sectors) < 0.5                      # alles "blockiert"
     est.reset()
     assert min(est.update(floor).sectors) > 0.5
+
+
+# ---------------------------------------------------------------- Erkunden (frontier.py, MapExplore)
+def _room_map(door=False):
+    """Bekannter Raum 2,4 x 2,4 m um den Ursprung, Wände belegt; door: 0,8 m Lücke in der +x-Wand
+    (dahinter unbekannt)."""
+    from xgonav.gridmap import GridMap
+    cfg = Config()
+    m = GridMap(cfg.grid, CamGeometry(640, 480, 91.0, 1.39, 43.0, 85.0), 160, 120)
+    r0, c0 = (int(v) for v in m.cell(-1.2, -1.2))
+    r1, c1 = (int(v) for v in m.cell(1.2, 1.2))
+    m.lo[r0:r1 + 1, c0:c1 + 1] = cfg.grid.l_max
+    m.lo[r0 + 1:r1, c0 + 1:c1] = cfg.grid.l_min
+    if door:
+        dr0, _ = (int(v) for v in m.cell(0.0, -0.4))
+        dr1, _ = (int(v) for v in m.cell(0.0, 0.4))
+        m.lo[dr0:dr1 + 1, c1] = cfg.grid.l_min
+    return cfg, m
+
+
+def test_frontier_finds_door_and_nothing_in_closed_room():
+    from xgonav.frontier import next_goal
+    cfg, m = _room_map()
+    p = next_goal(m, (0.0, 0.0, 0.0), cfg.home, cfg.explore)
+    assert p.path is None and p.clusters == 0                  # geschlossen: nichts zu erkunden
+    assert p.known_m2 > 4.0
+    cfg, m = _room_map(door=True)
+    p = next_goal(m, (-0.5, 0.0, 0.0), cfg.home, cfg.explore)
+    assert p.path is not None and p.clusters == 1
+    assert abs(p.frontier[0] - 1.2) < 0.15 and abs(p.frontier[1]) < 0.3
+    assert p.goal[0] < p.frontier[0] - 0.1                     # hält davor an
+    # gesperrt: kein Ziel mehr, wird aber gezählt
+    p = next_goal(m, (-0.5, 0.0, 0.0), cfg.home, cfg.explore, avoid=[(p.frontier[0], p.frontier[1], 0.5)])
+    assert p.path is None and p.avoided == 1
+
+
+def test_frontier_ignores_unreachable_and_small():
+    from xgonav.frontier import next_goal
+    cfg, m = _room_map()
+    # Freie Insel hinter der Wand: hat Grenze zu unbekannt, ist aber nicht erreichbar
+    r, c = (int(v) for v in m.cell(2.5, 0.0))
+    m.lo[r - 8:r + 8, c - 8:c + 8] = cfg.grid.l_min
+    assert next_goal(m, (0.0, 0.0, 0.0), cfg.home, cfg.explore).path is None
+    # Winziges Loch in der Mitte des Raums: zu klein für ein Ziel
+    r, c = (int(v) for v in m.cell(0.3, 0.3))
+    m.lo[r, c] = 0.0
+    assert next_goal(m, (0.0, 0.0, 0.0), cfg.home, cfg.explore).path is None
+
+
+def test_frontier_keeps_goal_instead_of_switching():
+    """Ein bestehendes Ziel bleibt, auch wenn ein anderes gerade besser ist (sonst pendelt er)."""
+    from xgonav.frontier import next_goal
+    cfg, m = _room_map(door=True)
+    r0, _ = (int(v) for v in m.cell(0.0, -0.4))
+    r1, _ = (int(v) for v in m.cell(0.0, 0.4))
+    _, c0 = (int(v) for v in m.cell(-1.2, 0.0))
+    m.lo[r0:r1 + 1, c0] = cfg.grid.l_min                       # zweite Tür in der -x-Wand
+    pose = (-0.8, 0.0, math.pi)
+    best = next_goal(m, pose, cfg.home, cfg.explore)
+    assert best.clusters == 2 and best.frontier[0] < 0         # nah und voraus
+    far = (1.2, 0.0)
+    kept = next_goal(m, pose, cfg.home, cfg.explore, keep_frontier=far)
+    assert kept.frontier[0] > 0.9
+
+
+def test_frontier_ignores_localmap_for_reachability():
+    """Merkkarte versperrt den Weg: Das Ziel bleibt erhalten und wird notfalls ohne sie angefahren."""
+    from xgonav.frontier import next_goal
+    cfg, m = _room_map(door=True)
+    ys = np.linspace(-1.2, 1.2, 60)
+    wall = np.column_stack([np.full(60, 0.3), ys])             # angebliche Wand quer durch den Raum
+    p = next_goal(m, (-0.5, 0.0, 0.0), cfg.home, cfg.explore, obstacles=wall)
+    assert p.path is not None and p.clusters == 1
+
+
+def test_shorten_path():
+    from xgonav.frontier import shorten
+    assert shorten([(0.0, 0.0), (1.0, 0.0)], 0.3)[-1] == pytest.approx((0.7, 0.0))
+    assert shorten([(0.0, 0.0), (1.0, 0.0), (1.0, 1.0)], 1.2)[-1] == pytest.approx((0.8, 0.0))
+    assert shorten([(0.0, 0.0), (0.1, 0.0)], 0.3) == [(0.0, 0.0), (0.0, 0.0)]
+
+
+def test_wavefront_keeps_narrow_gap():
+    from xgonav.frontier import wavefront
+    p = np.zeros((40, 40), bool)
+    p[:, :18] = p[:, 22:] = True                               # zwei Hälften
+    p[20, 18:22] = True                                        # einzellig breite Verbindung
+    d, step = wavefront(p, (5, 5))
+    assert d[5 // step, 35 // step] > 0
+    q = p.copy()
+    q[20, 18:22] = False
+    d, step = wavefront(q, (5, 5))
+    assert d[5 // step, 35 // step] < 0
+
+
+def test_pathfollower_detour_is_not_stuck():
+    """Umweg: Luftlinie zum Ziel wächst, der Rider kommt aber voran. Stehen: gilt als fest."""
+    from xgonav.behaviors import PathFollower, World
+    from xgonav.egomotion import EgoResult
+    cfg = Config()
+    f = PathFollower(cfg.behavior, cfg.robot, cfg.home)
+    f.set_path([(0.0, 0.0), (-3.0, 0.0), (-3.0, 3.0), (3.0, 3.0)])
+
+    def w(t, x, y, th=math.pi):
+        return World(t=t, dt=0.05, W=640, H=480, hfov=1.6, ego=EgoResult(0, t, 0.05), tracks=[], free=None,
+                     balancing=True, yaw=0.0, cmd_v=0.0, pose=(x, y, th))
+    for i in range(100):
+        f.drive(w(i * 0.1, -i * 0.03, 0.0), "Test")
+    assert not f.stuck
+    for i in range(100, 145):
+        f.drive(w(i * 0.1, -3.0, 0.0), "Test")
+    assert f.stuck
+
+
+def test_pathfollower_small_error_still_steers():
+    """Unter ~11° Fehler läge der Lenkbefehl unter der Totzone der Firmware (u8 128 ± 6)."""
+    from xgonav.behaviors import PathFollower, World
+    from xgonav.egomotion import EgoResult
+    cfg = Config()
+    f = PathFollower(cfg.behavior, cfg.robot, cfg.home)
+    f.set_path([(0.0, 0.0), (3.0, 0.0)])
+
+    def w(deg):
+        return World(t=0.0, dt=0.05, W=640, H=480, hfov=1.6, ego=EgoResult(0, 0.0, 0.05), tracks=[], free=None,
+                     balancing=True, yaw=0.0, cmd_v=0.0, pose=(0.0, 0.0, -math.radians(deg)))
+    assert f.drive(w(8), "T").w >= cfg.home.min_w
+    assert f.drive(w(-8), "T").w <= -cfg.home.min_w
+    assert f.drive(w(0.5), "T").w == pytest.approx(0.0, abs=0.01)
+
+
+def _ex_world(t, pose, goal=(0.0, 0.0, 0.0), battery=None):
+    from xgonav.behaviors import World
+    from xgonav.egomotion import EgoResult
+    return World(t=t, dt=0.05, W=640, H=480, hfov=1.6, ego=EgoResult(0, t, 0.05), tracks=[], free=None,
+                 balancing=True, yaw=pose[2], cmd_v=0.0, pose=pose, goal=goal, battery=battery)
+
+
+def _plan(goal=(1.0, 0.0), frontier=(1.3, 0.0), clusters=1, avoided=0, known=5.0):
+    from xgonav.frontier import ExplorePlan
+    return ExplorePlan([(0.0, 0.0), goal], goal, frontier, clusters, avoided, 2.0, known)
+
+
+def test_map_explore_scan_then_goal_then_face():
+    from xgonav.behaviors import MapExplore
+    cfg = Config()
+    b = MapExplore(cfg.behavior, cfg.robot, cfg.home, cfg.explore)
+    th, t = 0.0, 0.0
+    c = b.step(_ex_world(t, (0.0, 0.0, th)))
+    assert c.v == 0 and c.w > 0 and b.state == "scan" and not b.want_plan(t)   # erst Rundumblick
+    while b.state == "scan":
+        th += 0.1
+        t += 0.1
+        c = b.step(_ex_world(t, (0.0, 0.0, th)))
+    assert b.want_plan(t) and not b.want_plan(t)               # ein Auftrag zur Zeit
+    b.set_path(_plan())
+    c = b.step(_ex_world(t, (0.0, 0.0, 0.0)))
+    assert c.v > 0 and b.frontier == (1.3, 0.0)
+    c = b.step(_ex_world(t + 1, (0.9, 0.0, math.pi)))          # angekommen, schaut aber zurück
+    assert b.state == "face" and b.visited == [(1.3, 0.0)]
+    c = b.step(_ex_world(t + 1.1, (0.9, 0.0, math.pi)))
+    assert c.v == 0 and abs(c.w) > 0
+    b.step(_ex_world(t + 1.2, (0.9, 0.0, 0.0)))
+    assert b.state == "settle"
+    b.step(_ex_world(t + 5, (0.9, 0.0, 0.0)))
+    assert b.state == "ziel"
+
+
+def _explore_ready():
+    from xgonav.behaviors import MapExplore
+    cfg = Config()
+    b = MapExplore(cfg.behavior, cfg.robot, cfg.home, cfg.explore)
+    b.state = "ziel"
+    return cfg, b
+
+
+def test_map_explore_stuck_replans_then_blocks_goal():
+    cfg, b = _explore_ready()
+    b.want_plan(0.0)
+    b.set_path(_plan())
+    b.f.stuck = True
+    c = b.step(_ex_world(1.0, (0.0, 0.0, 0.0)))
+    assert c.v == 0 and b.f.path is None and b.stucks == 1 and not b.blocked_goals
+    b.t_plan = -1e9
+    assert b.want_plan(5.0) and not b.keep_ok
+    b.set_path(_plan())
+    b.f.stuck = True
+    b.step(_ex_world(6.0, (0.0, 0.0, 0.0)))
+    assert b.blocked_goals == [(1.3, 0.0)] and b.state == "backup"
+    c = b.step(_ex_world(6.1, (0.0, 0.0, 0.0)))
+    assert c.v < 0                                             # setzt zurück (Bahnprüfung gilt)
+    b.step(_ex_world(7.0, (0.0, 0.0, 0.0)))
+    assert b.state == "ziel"
+
+
+def test_map_explore_goal_timeout_blocks_goal():
+    cfg, b = _explore_ready()
+    b.t_plan = 0.0
+    b.set_path(_plan())
+    b.step(_ex_world(1.0, (0.0, 0.0, 0.0)))
+    assert not b.blocked_goals
+    b.step(_ex_world(cfg.explore.goal_timeout_s + 1, (0.0, 0.0, 0.0)))
+    assert b.blocked_goals == [(1.3, 0.0)]
+
+
+def test_map_explore_finishes_saves_and_returns_home():
+    from xgonav.frontier import ExplorePlan
+    cfg, b = _explore_ready()
+    b.visited.append((5.0, 5.0))
+    for _ in range(cfg.explore.no_goal_limit):
+        b.set_path(ExplorePlan(None, known_m2=20.0))
+    b.pending = True                                           # eine Zielsuche läuft noch
+    b.step(_ex_world(10.0, (1.0, 1.0, 0.0)))
+    assert b.state == "heim" and b.reason == "Karte fertig" and b.save_map
+    b.set_path(ExplorePlan([(1.0, 1.0), (2.0, 2.0)], (2.0, 2.0), (2.0, 2.0)))   # veraltet: wird verworfen
+    assert b.f.path is None
+    b.set_path([(1.0, 1.0), (0.0, 0.0)])
+    assert b.step(_ex_world(11.0, (1.0, 1.0, math.radians(-135)))).v > 0
+    c = b.step(_ex_world(30.0, (0.05, 0.0, 0.0)))
+    assert b.done and c.v == 0 and c.status == "Karte fertig"
+
+
+def test_map_explore_wanders_before_giving_up():
+    """Noch kein Ziel gefunden: erst woanders hinfahren, nach max_wander aufhören."""
+    from xgonav.frontier import ExplorePlan
+    cfg, b = _explore_ready()
+    t = 0.0
+    for k in range(cfg.explore.max_wander):
+        for _ in range(cfg.explore.no_goal_limit):
+            b.set_path(ExplorePlan(None))
+        b.step(_ex_world(t, (0.0, 0.0, 0.0)))
+        assert b.state == "wander" and b.wanders == k + 1
+        t += cfg.explore.wander_s + 1
+        b.step(_ex_world(t, (0.0, 0.0, 0.0)))
+        assert b.state == "ziel"
+    for _ in range(cfg.explore.no_goal_limit):
+        b.set_path(ExplorePlan(None))
+    b.step(_ex_world(t, (0.0, 0.0, 0.0)))
+    assert b.state == "heim" and b.reason == "festgefahren"
+
+
+def test_map_explore_ends_on_battery_and_no_growth():
+    cfg, b = _explore_ready()
+    b.want_plan(0.0)
+    b.set_path(_plan())
+    b.step(_ex_world(1.0, (1.0, 1.0, 0.0), battery=cfg.explore.min_battery))
+    assert b.state == "heim" and b.reason == "Akku"
+    cfg, b = _explore_ready()
+    b.t_plan = 0.0
+    b.set_path(_plan(known=5.0))
+    b.step(_ex_world(1.0, (0.0, 0.0, 0.0)))
+    assert b.state == "ziel"
+    b.step(_ex_world(cfg.explore.no_growth_s + 1, (0.0, 0.0, 0.0)))
+    assert b.state == "heim" and b.reason == "Karte fertig"
+
+
+def test_plan_goal_in_wall_is_not_cleared_on_request():
+    from xgonav.planner import plan
+    cfg, m = _room_map()
+    assert plan(m, (0.0, 0.0), (1.2, 0.0), cfg.home, clear_goal=False) is None
+    assert plan(m, (0.0, 0.0), (0.5, 0.5), cfg.home, clear_goal=False) is not None
+
+
+def test_plan_after_load_searches_known_area():
+    """Nach dem Laden ist der gefahrene Weg leer: Umwege müssen trotzdem im Suchgebiet liegen."""
+    from xgonav.planner import known_area
+    cfg, m = _room_map()
+    r0, c0, r1, c1 = known_area(m, [(0.0, 0.0)], 0.5)
+    rw, cw = (int(v) for v in m.cell(-1.2, -1.2))
+    assert r0 <= rw - 9 and c0 <= cw - 9
+
+
+def test_phantoms_shorten_columns():
+    """Der Simulator speist Fehlalarme wirklich ein."""
+    from xgonav.freespace import FreeSpace
+    from xgonav.sim import Phantoms, SimScene
+
+    class Est:
+        H, W = 120, 160
+        geo = CamGeometry(640, 480, 88.5, 1.39, 43.0, 85.0)
+
+        def update(self, bgr, pitch_dev=0.0, boxes=()):
+            hz = self.geo.horizon_row(0) / 4
+            return FreeSpace([1.0] * 5, np.full(160, 1.0), hz, None, True)
+
+    class W:
+        scene = SimScene()
+        x, y, th = 1.0, 1.0, 0.0
+    est = Est()
+    p = Phantoms(W, est, n=1, on_prob=1.0)
+    p.pts = [(2.0, 1.0)]
+    p.dirs = [math.pi]                                         # sichtbar aus Richtung des Riders
+    fs = est.update(None)
+    assert p.hits == 1 and np.nanmin(fs.columns) < 0.9
+    assert (fs.columns < 0.9).sum() < 40                       # nur ein Fleck, nicht das ganze Bild
+
+
+def test_blocking_boxes_skip_furniture_target_and_stale():
+    from xgonav.config import FreespaceCfg
+    from xgonav.localmap import blocking_boxes
+    from xgonav.tracker import Track
+    bed = Track("bed", 320, 370, 640, 200, 0.6, 10.0)
+    person = Track("person", 100, 300, 50, 200, 0.8, 10.0)
+    target = Track("person", 400, 300, 50, 200, 0.8, 10.0)
+    alt = Track("chair", 200, 300, 50, 80, 0.8, 9.0)
+    boxes = blocking_boxes([bed, person, target, alt], target.id, 10.1, FreespaceCfg().no_block_cls)
+    assert boxes == [person.box]
+
+
+def _world_at(t, pose):
+    from xgonav.behaviors import World
+    from xgonav.egomotion import EgoResult
+    return World(t=t, dt=0.05, W=640, H=480, hfov=1.6, ego=EgoResult(0, t, 0.05), tracks=[], free=None,
+                 balancing=True, yaw=0.0, cmd_v=0.0, pose=pose, goal=(0.0, 0.0, 0.0))
+
+
+def test_home_gives_up_when_stuck_near_goal():
+    """Hindernis am Ziel: Neuplanen hilft nicht, Fahrt endet mit Meldung statt endlos zu warten."""
+    from xgonav.behaviors import Home
+    cfg = Config()
+    b = Home(cfg.behavior, cfg.robot, cfg.home)
+    pose = (0.32, 0.0, math.pi)
+    assert b.want_plan(0.0)
+    b.set_path([pose[:2], (0.0, 0.0)])
+    b.step(_world_at(0.0, pose))
+    for k in range(cfg.home.max_fail):
+        b.f.stuck = True
+        assert b.want_plan(float(k + 1))
+        b.set_path([pose[:2], (0.0, 0.0)])
+        c = b.step(_world_at(float(k + 1), pose))
+    assert b.gave_up and c.v == 0 and "kein Weg" in c.status
+
+
+def test_home_stuck_counter_resets_with_progress():
+    from xgonav.behaviors import Home
+    cfg = Config()
+    b = Home(cfg.behavior, cfg.robot, cfg.home)
+    far, near = (3.0, 0.0, math.pi), (2.0, 0.0, math.pi)
+    assert b.want_plan(0.0)
+    b.set_path([far[:2], (0.0, 0.0)])
+    b.step(_world_at(0.0, far))
+    for k in range(cfg.home.max_fail - 1):
+        b.f.stuck = True
+        b.pending = False
+        assert b.want_plan(float(k + 1))
+    b.pending = False
+    b.step(_world_at(5.0, near))                                 # 1 m näher: Zähler von vorn
+    assert b.stuck_n == 0 and not b.gave_up
+
+
+def test_map_explore_home_stuck_finishes_with_message():
+    from xgonav.behaviors import MapExplore
+    cfg = Config()
+    b = MapExplore(cfg.behavior, cfg.robot, cfg.home, cfg.explore)
+    pose = (0.32, 0.0, math.pi)
+    b.state, b.reason = "heim", "Karte fertig"
+    b.f.set_path([pose[:2], (0.0, 0.0)])
+    b.step(_world_at(0.0, pose))
+    class P:
+        def request(self, *a, **k):
+            return 1
+    for k in range(cfg.home.max_fail):
+        b.f.stuck = True
+        b.request_plan(P(), None, _world_at(float(k + 1), pose), None)
+    c = b.step(_world_at(9.0, pose))
+    assert b.done and b.state == "fertig" and c.v == 0 and "nicht erreicht" in c.status

@@ -8,6 +8,7 @@ nach einigen Sekunden vergessen.
 """
 from __future__ import annotations
 
+import dataclasses
 import math
 
 import numpy as np
@@ -194,6 +195,11 @@ class LocalMap:
         return (left.min() if len(left) else math.inf, right.min() if len(right) else math.inf)
 
 
+def blocking_boxes(tracks, target_id, now: float, no_block_cls=()) -> list:
+    """Boxen, die als Hindernis ins Freiraum-Ergebnis kommen: frisch gesehen, nicht das Ziel, keine große Möbelklasse."""
+    return [t.box for t in tracks if t.id != target_id and t.lost_s(now) < 0.5 and t.cls not in no_block_cls]
+
+
 MOVABLE = {"person", "dog", "cat", "bird", "horse", "sports ball", "bicycle", "car"}
 ESCAPE_TOL_M = 0.01   # arc_clearance: Punkt im Radius blockiert erst, wenn die Bahn ihm >1 cm näher kommt
 
@@ -211,4 +217,4 @@ def mask_movable(free: FreeSpace, objects, W: int, H: int) -> FreeSpace:
     for x1, _, x2, _ in mov:
         x1, x2 = max(0.0, x1), min(float(W), x2)
         cols[max(0, int(x1 / sc) - 1): int(x2 / sc) + 2] = np.nan
-    return FreeSpace(free.sectors, cols, free.horizon_row, free.mask, free.valid, free.known_from)
+    return dataclasses.replace(free, columns=cols)

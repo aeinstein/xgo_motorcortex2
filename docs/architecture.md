@@ -43,7 +43,8 @@ camera.FrameSource ─► egomotion.EgoMotion ─► tracker.Tracker ◄── d
 | `wheels.py` | Wheel odometry from `wheels_log` |
 | `gridmap.py` | Room occupancy grid in world frame, start point, save/load; ray entry optionally in C++ (`native/gridfast.cpp`) |
 | `planner.py` | A* on the room map for `home`, own thread (`PlannerWorker`) |
-| `behaviors.py` | `idle`, `manual`, `follow`, `explore`, `approach`, `home`; `safety()` |
+| `behaviors.py` | `idle`, `manual`, `follow`, `explore` (`MapExplore`, reactive `Explore` without room map), `approach`, `home`; `PathFollower`, `safety()` |
+| `frontier.py` | mapping targets for `explore`, runs in the planner thread |
 | `robot.py` | `ProcRobot` (`/proc/XGORider`), `SimRobot`; ramp, keepalive, watchdog |
 | `web.py` | Local HTTP/WebSocket API (`127.0.0.1:8088`) |
 | `lcd.py` | Overlay to `/tmp/lcd0` (Pi only, lazy import) |

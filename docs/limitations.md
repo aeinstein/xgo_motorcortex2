@@ -1,6 +1,6 @@
 # Limitations and measured facts
 
-Single device: RiderPi, CM4 2 GB, kernel 6.6.74+rpt-rpi-v8, OV5647 wide-angle, firmware R-1.1.3 → R-1.1.6 (+ patches 0001–0005 since 2026-11-05).
+Single device: RiderPi, CM4 2 GB, kernel 6.6.74+rpt-rpi-v8, OV5647 wide-angle, firmware R-1.1.3 → R-1.1.6 (+ patches 0001–0010 since 2026-11-05).
 
 ## Hardware test status
 
@@ -12,12 +12,21 @@ Single device: RiderPi, CM4 2 GB, kernel 6.6.74+rpt-rpi-v8, OV5647 wide-angle, f
 | Camera geometry, lens shading | measured |
 | Manual driving (web UI) | tested |
 | `follow` | tested 2026-11-02 (runs 3–8, `max_v` 0.10–0.15); works, path check blocked in some runs |
-| `explore` | short manual tries 2026-11-04/05, no recording; stood in front of obstacles without turning away (fixed, `path_blocked`) |
+| `explore` | frontier mapping, three recorded RiderPi runs 2026-11-06, see below. Map not yet usable: ends too early |
 | `home` | 2026-11-05, 3 tries: did not reach the start. Stop/turn/start cycles and changing plans (45 s without progress), then stuck 1.3 m before the start at a gap the path check considers too narrow; afterwards changed (path keeping, `LocalMap` obstacles in planning, curve driving), **not retested** |
 | `approach` | **not tested** |
 | IMU sync while balancing | not verified |
 | Patch 0003 (`force_yaw`) | not tested |
-| Room map | used only by `home`; drifts (no markers); loading assumes the Rider stands at the start point |
+| Room map | used by `home` and `explore`; drifts (no markers); loading assumes the Rider stands at the start point. `row_bias` 1.5 from the simulator, not checked against a known distance on the RiderPi |
+
+## System software
+
+| Item | Value |
+|---|---|
+| Kernel | 6.6.74, pinned (`deploy/apt-pin-kernel`). `apt upgrade` 2026-11-05 aborted at 6.12.115 (`wm8960-soundcard` does not build); rolled back, reboot verified |
+| Python packages of the service | user `aeinstein`: OpenCV 4.10, numpy 1.26 from `~/.local`; root sees system 4.6, 1.24. The C++ core links system OpenCV 4.6 |
+| libcamera | 0.5.2 since 2026-11-05: via xgonav 24.0 fps, loop 8.9 / p95 19.3 ms (lying, evening). Image quality not compared with 0.4 |
+| `pykms` | pip package `rpi-kms` in `~/.local` broke with the new `libkms++` (undefined symbol, service crash loop); moved aside, system `python3-kms++` is used |
 
 ## Camera
 
@@ -58,7 +67,7 @@ Largest cost: optical flow (`ego.lk_*`). The Python binding does not accept preb
 | Reverse | 2026-11-02 much weaker than forward (u8 109: 4 cm vs u8 147: 86 cm in 2 s). 2026-11-05 with patches up to 0010: symmetric (sent 0.12 forward 0.70 m in 3 s, sent 0.24 reverse 1.30 m in 3 s). `reverse_gain = 2.0` always, `manual_forward_gain = 2.0` manual only. Sent 0.24, 3 s (2026-11-05 21:50): forward 1.09 m, peak 0.49 m/s, reverse 1.39 m, peak 0.53 m/s; same top speed, forward needs ~1 s longer to reach it (cause not examined); heading within 1° forward, 3° reverse; stops in ~0.6 s, pitch ±8°. Sent 0.30 (full stick) not driven yet. Autonomous modes stay at factor 1 forward: simulator (`--dyn`, ~54 cm/s, 8 runs each) 1 collision and home arrived 1 of 4, factor 1: 0 collisions, 4 of 4; free-space thresholds would need retuning |
 | Balancing drift | slow drift in position and heading |
 | Roll while standing | +2.1 to +3.2° (+ = right side down), stays with the Rider when it turns (floor share ~0.6° over 173° heading, 8 rest phases); lying +0.4 to +1.0° (once −0.1°). Height test 2026-11-05: 75 mm 2.22 / 2.55°, 115 mm 2.21 / 2.24°, standard 2.73 / 2.31°; 8 ticks of leg-zero error would give 0.77° between the heights, so it explains ~0.5° at most. Rest: the body is really tilted (user: straight at roll −2°, IMU then +0.49°, close to the lying value, so ~0.5° is sensor share). Leveling test 2026-11-05: leveling on reached −0.04° in 1.1 s without oscillation; after one turn and with leveling off, same leg command, roll stayed +0.13° (before +2.46°), so it is a state, not a fixed length difference. Hysteresis test 2026-11-05: with roll command 0 the body stays at +2.10° after stand-up, +0.72° after −3°, +3.35° after +3°: dead zone or play in the leg servos, ~2.6° wide (servo dead zone vs mechanical play not separated). A 3 s leveling pulse left +0.51°; afterwards +0.54° after a left turn, +0.60° after a right turn, +0.82° after 2 s forward, +1.16° after 2 s reverse (creeps with driving, long-term not tested). `robot.level_after_standup` runs one such pulse after each stand-up, the web button „Neu ausrichten“ (`POST /level`) another. Firmware leveling (0x61) is off by default |
-| Firmware units | 1 unit ≈ 1 m/s assumed (`vx_limit`), map fallback only |
+| Firmware units | 1 unit ≈ 1.8 m/s at command 0.12–0.24 (`vx_limit`, 2026-11-05) |
 | Stand-up | Rider rolls ~20 cm forward |
 | Rolling while turning | R-1.1.6 integrates the tilt gyros only; balancing with ~2° roll / ~1° pitch, turning leaks into them → pitch estimate +2–3° (left) / −5–9° (right) → rolled back on left turns, forward on right turns (up to 0.3 m/s, 20–40 cm per 3 s turn). Firmware patch 0005 (flashed 2026-11-05) removes the rotation about the vertical from pitch and roll rate. Turn test (3 s on the spot, centre displacement): 0.15 (~37 °/s) −4 / +9 cm; 0.30 (~85 °/s) +6 cm left, +26 cm right (first pitch-only version +16 / +40 cm). Remaining at fast turns: pitch estimate sinks 1–3° in both directions, consistent with centripetal acceleration on the accelerometer (IMU ~11 cm from the turning axis) plus ~0.3 % gyro cross-coupling. Patch 0006 (flashed 2026-11-05 19:28, holds the accelerometer angles while |yaw rate| > 25 °/s) changed nothing measurable: 0.15 −1 / +11 cm, 0.30 +11 / +27 cm (left / right) – centripetal acceleration is not the main cause; right turns still push forward. Register 0x0e trace 2026-11-05 20:36: stock switches position hold off while turning, only the speed loop brakes; a small forward speed asks for lean-back, measured pitch stays ~1° behind the target, balance output keeps pushing forward (origin of that 1° not fully resolved). Patch 0008 (flashed) holds the wheel centre also while turning: 0.15 −0.2 / +1.8 cm, 0.30 +2.0 / +2.3 cm (left / right) against −3.6 / +9.5 and +15 / +29 cm without; rate unchanged; patch 0010 (flashed 2026-11-05) makes it the default. Turning also lags (~0.3 s, 10–17° overshoot); `sim_run.py --dyn` models lag, dead band and a short roll-back |
 
@@ -74,7 +83,7 @@ Largest cost: optical flow (`ego.lk_*`). The Python binding does not accept preb
 | Monocular depth (YOLO26n-depth, offline test) | ~0.7 s/frame on CM4 at 320 px (estimated), sees carpet as flat, fooled by glossy floor, no wall/floor separation beyond ~0.7 m at 12.8 cm camera height |
 | Without IMU / sync | slow pitch unobservable: 1° ≈ 40 % distance error at 2 m; size fusion compensates. Status `pitch_src` shows source |
 | Follow distance (sim) | ~1.5 m without / ~1.4 m with IMU at target 1.2 m (deadband + lag) |
-| Explore (sim) | occasional contact in 40 s runs (2 of 5); 30 s slow test passes; cause not analysed |
+| Explore (sim) | frontier version: 0 collisions in 10 runs to the end; an earlier version once hit a box corner and wheel slip then ruined the pose (1.7 m). Contact is not detected |
 | Ego-motion | spikes up to ~80 ms per frame |
 | Without free space (`freespace.enabled = false`) | only `idle`, `manual`, `follow`; `explore`/`approach` → HTTP 409 |
 
@@ -84,3 +93,13 @@ Largest cost: optical flow (`ego.lk_*`). The Python binding does not accept preb
 - Room map drifts (no markers).
 - Leg calibration buttons removed (saving with slack legs overwrote flash zero points, 2026-11-02).
 - Battery: driver powers off below 8 % (`low_batt_level`); full image processing draws more than the charging dock supplies.
+
+## `explore` on the RiderPi (2026-11-06)
+
+| Item | Finding |
+|---|---|
+| **No cliff protection** | Run 1 nearly drove down a step, stopped by hand about 50 cm before it. The frontier goal lay ~20 cm behind the step, the map had it as free. The floor model saw the step only from about 1 m. Block stairs physically; do not run unattended |
+| Flat objects | A yellow tape patch on the floor counts as an obstacle |
+| Stand-up roll | The Rider rolled ~24 cm forward (one run); the start point is set after that, so it is not where the Rider lay |
+| Early end | Runs 2 and 3 reported "Karte fertig" with open areas left: occupied specks plus `inflate_m` cut the map even on driven ground (run 2); cause in run 3 (39 s, 4.8 m) not analysed |
+| Timing | Control step grows during the run (8 → 46 ms mean, 27 ms CPU), raw recording running; cause not analysed. Planner median 35–182 ms, peak 1.2 s |

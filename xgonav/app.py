@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import collections
+import dataclasses
 import gc
 import logging
 import math
@@ -24,7 +25,7 @@ from .planner import PlannerWorker
 from .geometry import CamGeometry
 from .wheels import WheelOdom, make_wheels
 from .imu import ImuSource, ImuSync, make_imu
-from .localmap import LocalMap, mask_movable
+from .localmap import LocalMap, blocking_boxes, mask_movable
 from .robot import Robot
 from .tracker import Tracker
 
@@ -171,7 +172,8 @@ class App:
             raise ModeNotAllowed("Modus home braucht die Raumkarte ([grid] enabled)")
 
     def _make(self, name: str, target: str | None = None) -> Behavior:
-        return make_behavior(name, self.cfg.behavior, self.cfg.robot, target, self.cfg.home)
+        return make_behavior(name, self.cfg.behavior, self.cfg.robot, target, self.cfg.home, self.cfg.explore,
+                             has_map=getattr(self, "gridmap", None) is not None)
 
     @property
     def pipeline_on(self) -> bool:
@@ -374,9 +376,11 @@ class App:
             if r is not None:
                 self._free = r
             if f.idx % 2 == 0 or self._free is None:
-                self.fs_worker.offer(f.bgr, pitch_dev, [t.box for t in self.tracker.tracks])
+                self.fs_worker.offer(f.bgr, pitch_dev, [t.box for t in self.tracker.tracks],
+                                     self.gridmap.pose() if self.gridmap is not None else None)
         elif self.fse is not None and (f.idx % 2 == 0 or self._free is None):
             self._free = self.fse.update(f.bgr, pitch_dev, [t.box for t in self.tracker.tracks])
+            self._free.pose = self.gridmap.pose() if self.gridmap is not None else None
             tm.fs_ran = True
         tracks = self.tracker.confirmed(f.t)
         tm.mark("fs")
@@ -389,9 +393,8 @@ class App:
             if free is not None and self.fse is not None:
                 # Objekte als Hindernisse, außer dem aktuellen Ziel
                 tgt = self._cmd.target_id
-                free = FreeSpace(list(free.sectors), free.columns.copy(), free.horizon_row, free.mask, free.valid,
-                                 free.known_from)
-                self.fse.block_boxes(free, [t.box for t in tracks if t.id != tgt and t.lost_s(f.t) < 0.5])
+                free = dataclasses.replace(free, sectors=list(free.sectors), columns=free.columns.copy())
+                self.fse.block_boxes(free, blocking_boxes(tracks, tgt, f.t, self.cfg.freespace.no_block_cls))
             # Eigenbewegung seit dem letzten Regelschritt. Kurs aus den Rädern, wenn vorhanden:
             # Der Bild-Kurs verfälscht bei Vorwärtsfahrt (Tiefenunterschiede landen im
             # Drehmodell, gemessen 2026-11-04: −8,9° bzw. +3° auf 2 m geradeaus).
@@ -405,7 +408,7 @@ class App:
             w = World(t=f.t, dt=dt, W=self.cfg.camera.width, H=self.cfg.camera.height, hfov=self.hfov,
                       ego=ego, tracks=tracks, free=free, balancing=self.robot.state.balancing,
                       yaw=self.yaw, cmd_v=self.robot.command[0],
-                      geo=self.geo, pitch_dev=pitch_dev)
+                      geo=self.geo, pitch_dev=pitch_dev, battery=self.robot.state.battery)
             if self.lmap is not None:
                 self.lmap.move(ds, dyaw)
                 if self.gridmap is not None:
@@ -416,17 +419,23 @@ class App:
                 if free is not None and self._free is not self._fs_in_map:
                     self._fs_in_map = self._free
                     view = self._map_view(free, tracks, f.t)
-                    self.lmap.add_freespace(view, f.t, pitch_dev)
-                    if self.grid_worker is not None:
-                        self.grid_worker.offer(view, pitch_dev)
-                    elif self.gridmap is not None:
-                        self.gridmap.add_freespace(view, pitch_dev)
+                    # Nick und Pose der Aufnahme, nicht des Bildes, in dem das Ergebnis ankam
+                    pd = view.pitch_dev if view.pitch_dev is not None else pitch_dev
+                    self.lmap.add_freespace(view, f.t, pd)
+                    # Raumkarte nur auf den Rädern (liegend sieht die Kamera etwas anderes) und
+                    # ohne schnelle Drehung
+                    rate = abs(math.degrees(dyaw)) / dt if dt > 0 else 0.0
+                    if self.robot.state.balancing and rate <= self.cfg.grid.max_turn_dps:
+                        if self.grid_worker is not None:
+                            self.grid_worker.offer(view, pd)
+                        elif self.gridmap is not None:
+                            self.gridmap.add_freespace(view, pd, view.pose)
             if self.gridmap is not None:
                 if self.grid_worker is None:
                     self.gridmap.maybe_save(self.cfg.grid.file, self.cfg.grid.save_every_s)
                 w.pose, w.goal = self.gridmap.pose(), self.gridmap.start
-                if self.behavior.name == "home":
-                    self._home_plan(w)
+                if hasattr(self.behavior, "want_plan"):
+                    self._plan_tick(w)
             # approach erkundet mit derselben Logik, bis das Ziel in Sicht ist
             if self.lmap is not None and self.behavior.name in ("explore", "approach"):
                 vg = self.cfg.behavior.cruise_v * self.cfg.robot.vx_limit
@@ -456,6 +465,7 @@ class App:
                                **self._loop_spread(),
                                "det_ms": round(self.det.infer_ms, 1), "det_batches": self._det_count,
                                "plan_ms": round(self.planner.ms, 1) if self.planner is not None else None,
+                               "explore": self.behavior.info() if hasattr(self.behavior, "info") else None,
                                "fs_ms": round(self.fs_worker.ms, 1) if self.fs_worker is not None else None,
                                "grid": None if self.gridmap is None else {
                                    **self.gridmap.stats(),
@@ -589,24 +599,25 @@ class App:
         self.geo.pitch_sigma_deg = 1.5
         return ego.pitch_dev
 
-    def _home_plan(self, w: World) -> None:
-        """Modus home: fertigen Weg übernehmen, bei Bedarf neu planen lassen (eigener Thread)."""
+    def _plan_tick(self, w: World) -> None:
+        """Verhalten mit Planung: fertiges Ergebnis übergeben, bei Bedarf neu planen (eigener Thread)."""
         b = self.behavior
         r = self.planner.poll()
         if r is not None and r[0] == self._plan_seq and b.pending:
             b.set_path(r[1])
-            if r[1] is None:
-                log.info("kein Weg zum Start gefunden (%d.)", b.fails)
         if b.want_plan(w.t):
-            self._plan_seq = self.planner.request(w.pose[:2], w.goal[:2], keep=b.path if b.keep_ok else None,
-                                                  obstacles=self._lmap_world(w.pose))
+            self._plan_seq = b.request_plan(self.planner, self.gridmap, w, self._lmap_world(w.pose))
         self.gridmap.plan = list(b.path) if b.path else []
+        if getattr(b, "save_map", False):
+            b.save_map = False
+            if self.cfg.grid.file:
+                threading.Thread(target=self.gridmap.save, args=(self.cfg.grid.file,), name="karte-speichern", daemon=True).start()
 
     def _lmap_world(self, pose) -> np.ndarray | None:
         """Bestätigte Punkte der Merkkarte (dieselben, die die Bahnprüfung bremsen) in Welt-m."""
         if self.lmap is None or not self.cfg.home.use_localmap:
             return None
-        p = self.lmap.confirmed_points(1.5)
+        p = self.lmap.confirmed_points(self.cfg.home.localmap_reach_m)
         if not len(p):
             return None
         x, y, th = pose

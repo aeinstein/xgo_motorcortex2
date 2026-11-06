@@ -10,7 +10,7 @@ sudo ./deploy/install-all.sh [--no-driver] [--no-display] [--no-web]
 
 | Step | Action |
 |---|---|
-| Driver | builds `kernel_module/` as the calling user, installs `xgo-drv`; needs `/lib/modules/$(uname -r)/build` (`linux-headers-rpi-v8`) |
+| Driver | builds `kernel_module/` as the calling user, installs `xgo-drv`; needs `/lib/modules/$(uname -r)/build` (`linux-headers-$(uname -r)`) |
 | Display | builds `st7789/project/riderpi`, installs `/usr/bin/st7789_server`; warns if `st7789_display.service` is enabled |
 | rc.local | installs `/etc/rc.local` and `rc-local.service` |
 | xgonav | runs `deploy/install.sh` |
@@ -20,6 +20,15 @@ Behaviour:
 - Files in `/etc` that differ are backed up as `*.bak-<timestamp>`.
 - The nginx site is enabled only if certificate and key exist (paths in `deploy/nginx-xgonav.conf`, `ssl_certificate*`). Then `sites-enabled/default` is removed and `stunnel4`, `rc-control` are disabled.
 - Does **not** start xgonav, does **not** reload the driver. Both take effect after reboot / manual start.
+
+## Kernel
+
+| Item | Value |
+|---|---|
+| Version | stays on `6.6.74+rpt-rpi-v8` |
+| Pin | `sudo cp deploy/apt-pin-kernel /etc/apt/preferences.d/xgonav-kernel` (blocks the `linux-*-rpi-*` meta packages and 6.12) |
+| Why | on 6.12.115 `wm8960-soundcard` (DKMS) does not build, which aborts the kernel setup; `xgo-drv` is neither built nor tested there |
+| After `apt upgrade` | check imports as the service user: `sudo -u aeinstein /opt/xgonav/venv/bin/python -c "import picamera2"` (the service also uses `~/.local`, root does not) |
 
 ## Manual steps
 

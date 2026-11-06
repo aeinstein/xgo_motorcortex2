@@ -56,7 +56,7 @@ if [ "$DO_DRIVER" = 1 ]; then
     schritt "Treiber xgo-drv bauen und installieren"
     if [ ! -d "/lib/modules/$(uname -r)/build" ]; then
         echo "Kernel-Header für $(uname -r) fehlen (/lib/modules/$(uname -r)/build)." >&2
-        echo "Auf Bookworm z. B.: sudo apt-get install linux-headers-rpi-v8 – oder mit --no-driver überspringen." >&2
+        echo "Auf Bookworm z. B.: sudo apt-get install linux-headers-$(uname -r) – oder mit --no-driver überspringen." >&2
         exit 1
     fi
     als_nutzer make -C kernel_module

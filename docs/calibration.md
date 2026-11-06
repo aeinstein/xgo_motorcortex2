@@ -94,7 +94,7 @@ python3 tools/calibrate_odom.py rechne [--ref gerade|kamera|imu|mittel] [--dist-
 
 ## 5. Forward scale (command fallback)
 
-Assumption: 1 firmware unit = 1 m/s (`vx_limit`). Used for the map only when wheel odometry is unavailable.
+`robot.vx_limit`: 1.8 m/s per firmware unit on the RiderPi (2026-11-05). Used by the path check and follow prediction, and for the map only when wheel odometry is unavailable.
 RiderPi at v = 0.08: ~12.5 cm/s (assumption: 12 cm/s).
 
 ## 6. Drive gains — `[robot] reverse_gain`, `manual_forward_gain`

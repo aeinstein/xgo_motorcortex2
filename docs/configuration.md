@@ -45,7 +45,7 @@ Default = `config.py`. RiderPi = `deploy/config.example.toml` (blank = default).
 | `reverse_gain` | 1.0 | 2.0 [K] | multiplier for negative v (applied after `max_v`) |
 | `level_pulse_s` | 3.0 | | length of one leveling pulse (roll command 0, firmware `roll_balance` on, then off) |
 | `level_after_standup` | false | true | one pulse after each stand-up, 2.5 s after it; web button „Neu ausrichten“ triggers the same pulse |
-| `vx_limit` | 1.5 | | firmware units at u8 0/255 (used for map only, uncalibrated) |
+| `vx_limit` | 1.5 | 1.8 | m/s per firmware unit (measured 2026-11-05: command 0.15 → ~27 cm/s); path check, follow prediction, odometry fallback |
 | `vyaw_limit_dps` | 360 | | °/s at u8 0/255 |
 | `accel_v` / `accel_w` | 0.8 / 2.0 | | per second |
 | `keepalive_s` | 0.3 | | s |
@@ -119,6 +119,7 @@ Default = `config.py`. RiderPi = `deploy/config.example.toml` (blank = default).
 | `min_obst_height_m` | 0.04 | | |
 | `shading_file` | `""` | `shading.json` [K] | |
 | `shading_max_gain` | 8.0 | 5.0 | |
+| `no_block_cls` | bed, couch, dining table | | detector classes not entered as obstacles: their box bottom is no footprint (RiderPi 2026-11-06: "bed" box down to the image bottom blocked everything) |
 | `min_known_frac` | 0.2 | | columns below → unknown |
 | `bg_model` / `shading_max_gain_bg` | false / 8.0 | false | edge model from blue+green where red is unmeasurable; full width, but false obstacles in dark lower corners |
 | `min_learn_v` | 12 | | no learning from (nearly) black samples |

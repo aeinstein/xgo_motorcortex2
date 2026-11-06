@@ -84,15 +84,96 @@ class SimScene:
                    for (x1, y1, x2, y2) in self.boxes)
 
 
+SCENES = {
+    "raum": SimScene,
+    # zwei Zimmer, dazwischen eine Wand mit 0,8 m breiter Tür (Wände als flache Kisten)
+    "zwei": lambda: SimScene(boxes=[(3.0, 0.0, 3.1, 2.6), (3.0, 3.4, 3.1, 6.0), (1.2, 4.4, 1.9, 5.1), (4.3, 0.9, 4.9, 1.8)]),
+}
+
+
+def scene_floor(scene: SimScene, x: np.ndarray, y: np.ndarray, margin: float = 0.0) -> np.ndarray:
+    """Liegt der Punkt auf echtem Boden (im Raum, nicht in einer Kiste)? margin: Abstand zu den
+    Rändern, den er mindestens haben muss."""
+    x, y = np.asarray(x, float), np.asarray(y, float)
+    ok = (x >= margin) & (y >= margin) & (x <= scene.size - margin) & (y <= scene.size - margin)
+    for x1, y1, x2, y2 in scene.boxes:
+        ok &= ~((x >= x1 - margin) & (x <= x2 + margin) & (y >= y1 - margin) & (y <= y2 + margin))
+    return ok
+
+
+def map_quality(lo: np.ndarray, res: float, l_show: float, scene: SimScene, start: tuple, path=None) -> dict:
+    """Kartenqualität gegen die Wahrheit. lo: Log-Odds, start: (x, y, th) der Karten-Null in der
+    Welt, path: gefahrene Punkte (Welt, für die Abdeckung nahe am Weg)."""
+    n = lo.shape[0]
+    x0, y0, th0 = start
+    c0, s0 = math.cos(th0), math.sin(th0)
+
+    def to_world(r, c):
+        mx, my = (c + 0.5 - n / 2) * res, (r + 0.5 - n / 2) * res
+        return x0 + mx * c0 - my * s0, y0 + mx * s0 + my * c0
+
+    r, c = np.nonzero(lo > l_show)
+    ox, oy = to_world(r, c)
+    seg = scene.segments()
+    ax, ay, bx, by = seg[:, 0], seg[:, 1], seg[:, 2], seg[:, 3]
+    dx, dy = bx - ax, by - ay
+    if len(ox):
+        t = np.clip(((ox[:, None] - ax) * dx + (oy[:, None] - ay) * dy) / (dx * dx + dy * dy), 0, 1)
+        d = np.hypot(ax + t * dx - ox[:, None], ay + t * dy - oy[:, None]).min(axis=1)
+        prec = float((d < 0.15).mean())
+    else:
+        prec = float("nan")
+    r, c = np.nonzero(lo < -l_show)
+    fx, fy = to_world(r, c)
+    # Eine Zelle Toleranz: eine Zelle auf der Wand gilt nicht als "frei hinter der Wand"
+    wrong = ~scene_floor(scene, fx, fy, -res) if len(fx) else np.zeros(0, bool)
+    # Wahrer Boden auf einem Raster: wie viel davon kennt die Karte als frei?
+    g = np.arange(res / 2, scene.size, res)
+    gx, gy = np.meshgrid(g, g)
+    fl = scene_floor(scene, gx, gy)
+    gx, gy = gx[fl], gy[fl]
+    wx, wy = gx - x0, gy - y0
+    mx, my = wx * c0 + wy * s0, -wx * s0 + wy * c0
+    cc = np.floor(mx / res + n / 2).astype(np.int64)
+    rr = np.floor(my / res + n / 2).astype(np.int64)
+    inside = (rr >= 0) & (rr < n) & (cc >= 0) & (cc < n)
+    known = np.zeros(len(gx), bool)
+    known[inside] = lo[rr[inside], cc[inside]] < -l_show
+    # Wandpunkte alle 5 cm: Anteil mit belegter Zelle in <= 10 cm, gesamt und <= 2 m vom Weg
+    pts = []
+    for ax_, ay_, bx_, by_, _ in seg:
+        k = max(2, int(math.hypot(bx_ - ax_, by_ - ay_) / 0.05))
+        pts += [(ax_ + (bx_ - ax_) * i / k, ay_ + (by_ - ay_) * i / k) for i in range(k + 1)]
+    pts = np.array(pts)
+    if len(ox):
+        step = max(1, len(pts) * len(ox) // 4_000_000)
+        dd = np.hypot(pts[::step, None, 0] - ox[None, :], pts[::step, None, 1] - oy[None, :]).min(axis=1)
+        cover = float((dd <= 0.10).mean())
+    else:
+        dd, step, cover = None, 1, float("nan")
+    recall = float("nan")
+    if path is not None and dd is not None and len(path):
+        p = np.asarray(path, float)[::5]
+        near = np.hypot(pts[::step, None, 0] - p[None, :, 0], pts[::step, None, 1] - p[None, :, 1]).min(axis=1) <= 2.0
+        if near.any():
+            recall = float((dd[near] <= 0.10).mean())
+    return {"praezision_15cm": round(prec, 3), "abdeckung_10cm": round(recall, 3), "waende_10cm": round(cover, 3),
+            "frei_aussen_m2": round(float(wrong.sum()) * res * res, 2),
+            "frei_innen_m2": round(float((~wrong).sum()) * res * res, 2),
+            "boden_bekannt": round(float(known.mean()), 3),
+            "belegt_m2": round(len(ox) * res * res, 2)}
+
+
 class SimWorld(FrameSource):
     def __init__(self, cfg: CameraCfg, robot: SimRobot, person: Person | None = None,
                  start=(1.0, 1.0, 0.0), shake: float = 1.0, render_scale: int = 2, fps: int = 20,
-                 vx_mps: float = 1.0, mount_offset_mm: float = 45.0, dynamics: bool = False):
+                 vx_mps: float = 1.0, mount_offset_mm: float = 45.0, dynamics: bool = False,
+                 scene: SimScene | None = None):
         super().__init__(cfg)
         self.robot = robot
         self.dynamics = dynamics
         self._vf = self._wf = 0.0
-        self.scene = SimScene()
+        self.scene = scene or SimScene()
         self.segs = self.scene.segments()
         self.person = person
         self.x, self.y, self.th = start
@@ -367,6 +448,62 @@ class SimWheels:
                     self.rate_hz = self.hz
 
         return _SimWheels(*a, **k)
+
+
+class Phantoms:
+    """Fehlalarme des Bodenmodells, die der Simulator sonst nicht kennt: n ortsfeste Flecken (wie
+    Spiegelungen oder Lichtpfützen), die aus manchen Blickwinkeln und nur zeitweise eine Bodengrenze
+    vortäuschen. Wickelt FreeSpaceEstimator.update ein."""
+
+    def __init__(self, world: "SimWorld", est, n: int = 6, seed: int = 3, radius: float = 0.15, on_prob: float = 0.5):
+        self.world, self.est = world, est
+        rng = np.random.default_rng(seed)
+        pts = []
+        while len(pts) < n:
+            x, y = rng.uniform(0.4, world.scene.size - 0.4, 2)
+            if scene_floor(world.scene, x, y, 0.3):
+                pts.append((float(x), float(y)))
+        self.pts = pts
+        self.radius, self.on_prob = radius, on_prob
+        # Fleck wirkt nur aus einem Blickwinkelbereich (Spiegelung)
+        self.dirs = rng.uniform(-math.pi, math.pi, n)
+        self._rng = rng
+        self.hits = 0
+        self._update = est.update
+        est.update = self.update
+
+    def update(self, bgr, pitch_dev=0.0, exclude_boxes=()):
+        fs = self._update(bgr, pitch_dev, exclude_boxes)
+        est, w = self.est, self.world
+        geo = est.geo
+        if fs is None or fs.columns is None or geo is None:
+            return fs
+        span = est.H - fs.horizon_row
+        sc = geo.W / est.W
+        n = len(fs.columns)
+        bear = np.arctan2(geo.W / 2 - (np.arange(n) + 0.5) * sc, geo.f)
+        for (px, py), d0 in zip(self.pts, self.dirs):
+            dx, dy = px - w.x, py - w.y
+            dist = math.hypot(dx, dy)
+            if dist < 0.25 or dist > 2.0 or self._rng.random() > self.on_prob:
+                continue
+            seen_from = math.atan2(-dy, -dx)
+            if abs((seen_from - d0 + math.pi) % (2 * math.pi) - math.pi) > math.radians(70):
+                continue
+            ang = (math.atan2(dy, dx) - w.th + math.pi) % (2 * math.pi) - math.pi
+            half = math.asin(min(1.0, self.radius / dist))
+            cols = np.nonzero(np.abs(bear - ang) < half)[0]
+            if not len(cols):
+                continue
+            fwd = dist * math.cos(ang)
+            if fwd <= 0.05:
+                continue
+            y = geo.H / 2 + geo.f * math.tan(math.atan2(geo.cam_h, fwd) + math.radians(geo.tilt_deg) + pitch_dev)
+            v = (est.H - y / sc) / span
+            if 0.0 <= v < 1.0:
+                fs.columns[cols] = np.fmin(fs.columns[cols], v)
+                self.hits += 1
+        return fs
 
 
 class FakeDetector:

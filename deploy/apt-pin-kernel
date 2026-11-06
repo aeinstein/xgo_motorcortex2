@@ -1,0 +1,6 @@
+# xgonav: Kernel bleibt 6.6.74. xgo-drv und wm8960-soundcard (DKMS) sind dafür gebaut, alle Messungen
+# stammen von dort; das Upgrade auf 6.12.115 brach am 2026-11-05 am Soundtreiber ab.
+# Installieren: sudo cp deploy/apt-pin-kernel /etc/apt/preferences.d/xgonav-kernel
+Package: linux-image-rpi-* linux-headers-rpi-* linux-image-6.12* linux-headers-6.12* linux-kbuild-6.12*
+Pin: release *
+Pin-Priority: -1

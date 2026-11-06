@@ -33,13 +33,17 @@ Status JSON: `odom.src` = `räder` | `befehl`, `odom.m` = total distance.
 | Frame | world, origin = start pose, x forward, y left at start |
 | Size | 16 m × 16 m, 0.05 m cells, start in the centre |
 | Rays | every 2nd of 160 floor-model columns |
-| Free | up to boundary − 0.10 m; `l_free` −0.4; occupied cells reduced only ×0.5 |
-| Occupied | at boundary, `l_occ` +1.2 |
+| Free | up to boundary − (0.10 m + 0.05 × d²); `l_free` −0.4; occupied cells reduced only ×0.5 |
+| Occupied | at boundary, `l_occ` +0.5: two hits until shown as occupied |
 | Clamp | −3.0 .. +3.5; shown as free/occupied beyond ±0.7 |
-| Range | 0.15–2.5 m; "free to horizon" columns mark free up to 2.5 m only |
+| Range | hits 0.15–`max_range_m` 1.25 m, free rays to `free_range_m` 1.5 m, RiderPi 1.1 m (one image row at 2 m is ~40 cm; a step was seen as floor from > 1 m on 2026-11-06, simulator with 1.1: floor known 0.43–0.83, occupied precision 0.84–0.92); "free to horizon" columns mark free up to 1.5 m only |
+| Row correction | `row_bias` 1.5 rows: the floor model reports the boundary below the true one; room map only, the local map keeps it as a safety margin. From the simulator, **not checked on the RiderPi** |
+| Pitch, pose | those of the captured image (`FreeSpace.pitch_dev`, `.pose`), not of the later frame the result arrives in |
+| Filter | only while balancing and below `max_turn_dps` 40 °/s |
+| Driven path | `driven_free_r_m` 0.10 m around the path counts as free |
 | Unknown | columns without measurable floor (lens shading) stay unknown |
 | Thread | `GridWorker` (cores = `cpu.freespace_cpus`), pose at capture time passed along |
-| Use | display; path planning for mode `home` (not for other modes) |
+| Use | display; path planning for modes `home` and `explore` |
 | Drift | no correction (no markers); drifts over time |
 
 ### Rendering (`/map.png`)
@@ -94,7 +98,34 @@ Status JSON `grid`: `pose [x m, y m, yaw °]`, `start [x m, y m, yaw °]`, `zum_
 | Requires | `freespace.enabled`, `grid.enabled`, running pipeline |
 | Accuracy | limited by map drift: arrives at the *map* start; real error = pose error |
 
+### Mapping a room (`--mode explore`, `xgonav/frontier.py`)
+
+| Item | Value |
+|---|---|
+| Start | one full turn at `explore.scan_w` |
+| Frontier | reachable free cell next to unknown; groups ≥ `min_cluster_m` 0.4 m. Reachability from the room map only, the local map only shapes the path |
+| Choice | unknown area within `gain_radius_m` / (drive time + turn time + `base_s`). The goal stays until reached or gone, no switching by score |
+| Arrival | stops `standoff_m` before the frontier, turns towards it, `settle_s`; the spot is not revisited |
+| Stuck | no 5 cm progress or 10° turn in 3 s: replan without the old path; again, or `goal_timeout_s`: back up 0.8 s, block the goal. No goal left: `wander_s` reactive driving, at most `max_wander` times, then stop |
+| End | nothing reachable, < `min_growth_m2` new floor in `no_growth_s`, `max_s`, or `min_battery`. Then save and drive to the start (`return_home`) |
+| Status JSON | `explore`: `zustand`, `stellen`, `gesperrt`, `befreit`, `ziel`, `ende` |
+| Without room map | `explore` drives reactively (`Explore`), as `approach` does while searching |
+
+Measuring: `tools/map_eval.py record` stores simulator observations, `eval` replays them through `GridMap` in seconds, with `--set grid.x=a,b` sweeps and `--rays` (boundary error per distance).
+
 ### Simulator quality (`tests/sim_run.py explore`)
 
 Reported per run: `praezision_15cm` (occupied cells within 15 cm of a true wall/box), `abdeckung_10cm` (wall/box points ≤ 2 m from the driven path with an occupied cell within 10 cm), `pose_fehler_m`, `kurs_fehler_deg`.
-Example 15 s explore: precision 0.62, coverage 0.23, pose error 0.10 m, heading error 6.2°.
+Also `waende_10cm` (all walls), `boden_bekannt` (true floor known as free), `frei_aussen_m2` (free cells outside the room).
+
+| 2026-11-05 (`--wheels --kanten --fs-thread --dyn --rider`) | Reactive, 90 s, before | Frontier, to „Karte fertig“ |
+|---|---|---|
+| Occupied cells ≤ 15 cm from truth | 0.46 | 0.95–0.97 |
+| Walls ≤ 10 cm | 0.36 | 0.87–0.94 |
+| Floor known | 0.67 (after fixes) | 0.89–0.92 |
+| Free outside the room | ~9 m² | 0.13–0.37 m² |
+| Duration, distance | never finished | 150–250 s, 27–44 m |
+| Collisions | 0 of 8 | 0 of 6 (one room, two rooms) |
+
+Largest single cause: distances were computed from the pitch of a later frame (threaded floor model). Boundary error at 0.5–0.75 m, p10/p90: −0.19/+0.17 m before, −0.11/−0.02 m after.
+With 8 phantom spots (`--phantoms 8`, two rooms): 0 collisions in 4 runs, 3 complete, 1 ended early and reported an unreached spot.

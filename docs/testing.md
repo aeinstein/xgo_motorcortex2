@@ -41,7 +41,7 @@ python3 -m venv .venv && .venv/bin/pip install "opencv-python-headless>=4.6" "nu
 
 | Scenario | Result |
 |---|---|
-| Explore | 7/7 runs without collision after fixes (before: 1 stuck in 11, cause: reverse not arc-checked) |
+| Explore | frontier mapping, to „Karte fertig“: 6/6 without collision, see `docs/mapping.md` |
 | Follow, person 0.3 m/s, target 1.2 m | mean 1.8 m, min 1.4 m, no collision |
 | Home, 60 s, simulated wheels | end 0.14 m from true start, no collision, plan 2 ms (PC); without wheels camera heading drifts (pose error 0.5–1.8 m) |
 | Pitch from image only | 0.56° spread |
@@ -57,4 +57,4 @@ python3 -m venv .venv && .venv/bin/pip install "opencv-python-headless>=4.6" "nu
 | Python | OpenCV | numpy |
 |---|---|---|
 | 3.13 | 5 | |
-| 3.11 (Bookworm) | 4.6 | 1.26 |
+| 3.11 (Bookworm, RiderPi service) | 4.10 from `~/.local` (system 4.6) | 1.26 from `~/.local` (system 1.24) |

@@ -34,8 +34,20 @@ def test_follow_with_imu_autosync():
 
 @pytest.mark.slow
 def test_home_returns_to_start():
-    # 30 s erkunden, dann zum Start; mit Rad-Odometrie (sonst driftet der Kamerakurs)
-    r = run("home", 60.0, wheels=True)
+    # 50 s erkunden (davon ~14 s Rundumblick), dann zum Start; mit Rad-Odometrie (sonst driftet der Kamerakurs)
+    r = run("home", 100.0, wheels=True)
     assert r["collisions"] == 0
     assert r["home_weg_m"] > 1.0        # war tatsächlich weg
     assert r["home_end_m"] < 0.35       # echte Endpose nahe der echten Startpose
+
+
+@pytest.mark.slow
+def test_explore_maps_room():
+    # Bis „Karte fertig“ (2-4 min): mit Rider-Einstellungen, kanten, Rädern und Trägheit
+    from sim_run import RIDER, RIDER_VX
+    r = run("explore", 300.0, wheels=True, method="kanten", fs_thread=True, dyn=True, vx_true=RIDER_VX, overrides=RIDER)
+    g = r["grid"]
+    assert r["collisions"] == 0
+    assert r["status"].startswith("Karte fertig") and r["fertig_s"] is not None
+    assert g["boden_bekannt"] >= 0.8 and g["waende_10cm"] >= 0.7
+    assert g["praezision_15cm"] >= 0.85 and g["frei_aussen_m2"] < 1.0

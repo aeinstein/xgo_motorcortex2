@@ -161,6 +161,26 @@ class GridMap:
                 self.path.append((self.x, self.y))
                 if len(self.path) > 5000:
                     del self.path[:1000]
+                self._clear_disk(self.x, self.y, self.cfg.driven_free_r_m)
+
+    def clear_here(self, r: float) -> None:
+        """Um die aktuelle Pose ist Boden (m)."""
+        with self._lock:
+            self._clear_disk(self.x, self.y, r)
+
+    def _clear_disk(self, x: float, y: float, r: float) -> None:
+        """Wo der Rider stand oder fuhr, ist Boden. Aufrufer hält das Lock."""
+        if r <= 0:
+            return
+        k = int(math.ceil(r / self.res))
+        rc, cc = (int(v) for v in self.cell(x, y))
+        r0, r1, c0, c1 = max(0, rc - k), min(self.n, rc + k + 1), max(0, cc - k), min(self.n, cc + k + 1)
+        if r0 >= r1 or c0 >= c1:
+            return
+        rr, cc2 = np.ogrid[r0 - rc:r1 - rc, c0 - cc:c1 - cc]
+        disk = rr * rr + cc2 * cc2 <= k * k
+        view = self.lo[r0:r1, c0:c1]
+        view[disk] = np.minimum(view[disk], self.cfg.l_min)
 
     def cell(self, x, y):
         """Welt-Meter -> Zellindizes (Zeile, Spalte); Kartenmitte = Ursprung."""
@@ -185,7 +205,7 @@ class GridMap:
         cols = np.asarray(fs.columns, float)
         idx = np.arange(0, len(cols), max(1, cfg.column_step))     # NaN-Spalten = unbekannt
         v = cols[idx]
-        dist = self.geo.ground_dist_np((self.fh - v * span) * sc, pitch_dev)
+        dist = self.geo.ground_dist_np((self.fh - v * span - cfg.row_bias) * sc, pitch_dev)
         start = np.full(len(idx), cfg.min_range_m)
         if fs.known_from is not None:
             kf = np.asarray(fs.known_from, float)[idx]
@@ -194,10 +214,11 @@ class GridMap:
         to_horizon = v >= 0.98
         with np.errstate(invalid="ignore"):
             hit = ~to_horizon & np.isfinite(dist) & (dist <= cfg.max_range_m)
-            free_len = np.where(to_horizon, cfg.max_range_m, np.where(np.isfinite(dist), np.minimum(dist, cfg.max_range_m), np.nan))
-            # Freistrahl endet free_margin vor der Grenze: die gemessene Grenze schwankt um
-            # einige cm, sonst löscht jede etwas zu weite Messung die zuvor belegte Zelle
-            free_len = np.where(hit, dist - max(self.res, cfg.free_margin_m), free_len)
+            # Freistrahl endet vor der Grenze: die gemessene Grenze schwankt mit der Entfernung,
+            # sonst löscht jede etwas zu weite Messung die zuvor belegte Zelle
+            free_r = cfg.free_range_m if cfg.free_range_m > 0 else cfg.max_range_m
+            margin = max(self.res, cfg.free_margin_m) + cfg.free_margin_quad * dist * dist
+            free_len = np.where(to_horizon, free_r, np.where(np.isfinite(dist), np.minimum(dist - margin, free_r), np.nan))
         key = (len(idx), sc, self.geo.W, self.geo.f)
         if key not in self._bear:
             x_full = (idx + 0.5) * sc
@@ -355,7 +376,7 @@ class GridWorker:
             self._thread.join(timeout=2)
 
     def offer(self, fs: FreeSpace, pitch_dev: float) -> None:
-        job = (fs, pitch_dev, self.grid.pose())
+        job = (fs, pitch_dev, fs.pose if fs.pose is not None else self.grid.pose())
         with self._cond:
             if len(self._q) == self._q.maxlen:
                 self.dropped += 1

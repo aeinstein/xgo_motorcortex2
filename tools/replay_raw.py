@@ -14,6 +14,7 @@ Blockade als Fehlalarm, sofern sonst nichts im Weg steht (Szene vorher prüfen).
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import json
 import math
 import os
@@ -74,8 +75,7 @@ def replay(d: str, cfg: Config, objects: bool = True, person_min: float = 1.2, v
         dt = t - last_ctrl if last_ctrl is not None else 0.0
         last_ctrl = t
         tracks = m["tracks"]
-        free = FreeSpace(list(free_raw.sectors), free_raw.columns.copy(), free_raw.horizon_row, free_raw.mask,
-                         free_raw.valid, free_raw.known_from)
+        free = dataclasses.replace(free_raw, sectors=list(free_raw.sectors), columns=free_raw.columns.copy())
         if objects:
             fse.block_boxes(free, [tr["box"] for tr in tracks if tr["id"] != m["target"]])
         yaw = math.radians(m["yaw_vis_deg"] or 0.0)

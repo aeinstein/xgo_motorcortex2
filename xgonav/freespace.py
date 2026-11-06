@@ -41,6 +41,11 @@ class FreeSpace:
     # je Spalte, gleiche Normierung wie columns: darunter ist die Farbe nicht messbar
     # (Linsenabschattung), dort gilt "unbekannt". None = überall messbar.
     known_from: np.ndarray | None = None
+    # Nick (rad) und Kartenpose (x, y, th) der Aufnahme. Das Bodenmodell rechnet im eigenen Thread:
+    # das Ergebnis kommt 1-3 Bilder später an, Entfernungen aus dem Nick dieses späteren Bildes
+    # streuen um Dezimeter (Nicken ±3° bei 2,5 Hz). None = nicht bekannt (Tests, alte Aufrufer).
+    pitch_dev: float | None = None
+    pose: tuple | None = None
 
     @property
     def center(self) -> float:
@@ -391,7 +396,7 @@ class FreeSpaceEstimator:
             known = np.clip(self._unknown_rows / max(1.0, self.H - horizon), 0.0, 1.0)
             if n_unknown:
                 known = np.where(np.isnan(cols), 1.0, known)
-        return FreeSpace(sectors, cols, horizon, floor, True, known)
+        return FreeSpace(sectors, cols, horizon, floor, True, known, pitch_dev)
 
     def _apply_bg_model(self, small: np.ndarray, prob: np.ndarray, rect, smask, updated: bool) -> None:
         """Boden-Wahrscheinlichkeit ohne Rotkanal für die Pixel, wo nur Blau+Grün messbar sind
@@ -713,9 +718,10 @@ class FreeSpaceWorker:
         if self._thread:
             self._thread.join(timeout=2)
 
-    def offer(self, bgr, pitch_dev: float, boxes) -> None:
+    def offer(self, bgr, pitch_dev: float, boxes, pose=None) -> None:
+        """pose: Kartenpose zum Bild, wird dem Ergebnis mitgegeben."""
         with self._cond:
-            self._job = (bgr, pitch_dev, list(boxes))
+            self._job = (bgr, pitch_dev, list(boxes), pose)
             self._cond.notify()
 
     def poll(self) -> FreeSpace | None:
@@ -737,7 +743,8 @@ class FreeSpaceWorker:
             self.busy = True
             t0 = time.perf_counter()
             try:
-                fs = self.est.update(*job)
+                fs = self.est.update(*job[:3])
+                fs.pose = job[3]
             except Exception:
                 log.exception("Bodenmodell fehlgeschlagen")
                 fs = None

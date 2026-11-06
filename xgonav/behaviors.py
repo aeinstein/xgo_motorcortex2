@@ -10,7 +10,7 @@ import math
 import random
 from dataclasses import dataclass, field
 
-from .config import BehaviorCfg, HomeCfg, RobotCfg
+from .config import BehaviorCfg, ExploreCfg, HomeCfg, RobotCfg
 from .egomotion import EgoResult
 from .freespace import FreeSpace
 from .geometry import CamGeometry
@@ -38,6 +38,7 @@ class World:
     # Erkunden braucht das: sonst will es weiter vorwärts, die Bahnprüfung setzt v auf 0 und
     # der Rider steht vor dem Hindernis, ohne wegzudrehen (RiderPi 2026-11-04).
     path_blocked: bool = False
+    battery: int | None = None        # % oder None (unbekannt)
 
     def bearing(self, x: float) -> float:
         """Bildspalte -> Winkel rad (links positiv)."""
@@ -242,6 +243,7 @@ class Explore(Behavior):
     """Reaktives Erkunden: in Richtung des größten Freiraums, bei Blockade
     zurücksetzen und um einen zufälligen Winkel wegdrehen (Kurs aus Ego-Motion)."""
     name = "explore"
+    BRAKE_S = 0.6
 
     def __init__(self, cfg, rcfg):
         super().__init__(cfg, rcfg)
@@ -263,7 +265,7 @@ class Explore(Behavior):
 
         if self.state == "cruise":
             if blocked:
-                self._enter("backup", w.t)
+                self._enter("brake", w.t)
                 return Command(0, 0, hmm, "Hindernis – stopp")
             v = self.cfg.cruise_v * clamp(center / self.cfg.slow_free, 0.3, 1.0)
             wc = 0.0
@@ -276,6 +278,13 @@ class Explore(Behavior):
                 if fs.sectors[best] - center > 0.1:
                     wc = yaw_rate_to_w(1.5 * angs[best], self.rcfg)
             return Command(v, wc, hmm, "erkunde (frei %.2f)" % center)
+
+        if self.state == "brake":
+            # Der Rider braucht ~0,6 s zum Anhalten (2026-11-05); direkt von vor auf zurück
+            # brächte ihn stark ins Nicken
+            if w.t - self.t_state < self.BRAKE_S:
+                return Command(0, 0, hmm, "Hindernis – stopp")
+            self._enter("backup", w.t)
 
         if self.state == "backup":
             if w.t - self.t_state < 0.8:
@@ -337,49 +346,34 @@ def _wrap(a: float) -> float:
     return (a + math.pi) % (2 * math.pi) - math.pi
 
 
-class Home(Behavior):
-    """Zurück zum Startpunkt der Raumkarte: Weg plant planner.py (App stößt an, sobald
-    want_plan() es verlangt), gefahren wird per Pure Pursuit. Sicherheitsschicht und
-    Bahnprüfung gelten wie bei explore. Am Ziel optional auf den Startkurs drehen."""
-    name = "home"
-    STUCK_S = 3.0          # so lange ohne 5 cm Annäherung -> neu planen
+STUCK_PROGRESS_M = 0.3    # so viel näher ans Ziel, dann zählt früheres Festfahren nicht mehr
 
-    def __init__(self, cfg, rcfg, hcfg: HomeCfg | None = None):
-        super().__init__(cfg, rcfg)
-        self.h = hcfg or HomeCfg()
+
+class PathFollower:
+    """Weg abfahren (Pure Pursuit) mit der am RiderPi erprobten Lenkung; für home, explore, patrol.
+    Beobachtet den Fortschritt: stuck wird wahr, wenn der Rider STUCK_S lang weder 5 cm vorankam noch
+    beim Drehen auf der Stelle 10° gutmachte. Die Luftlinie zum Ziel taugt dafür nicht: Jeder Umweg
+    entfernt sich erst und galt so nach 3 s als festgefahren."""
+    STUCK_S = 3.0
+
+    def __init__(self, cfg: BehaviorCfg, rcfg: RobotCfg, hcfg: HomeCfg):
+        self.cfg, self.rcfg, self.h = cfg, rcfg, hcfg
         self.path: list[tuple[float, float]] | None = None
-        self.pending = False
-        self.t_plan = -1e9
-        self.fails = 0
-        self.done = False
-        self.gave_up = False
-        self._best = math.inf
-        self._t_best: float | None = None
-        self._stuck = False
-        self.keep_ok = False          # darf der Planer den bisherigen Weg behalten? (nicht nach Festfahren)
+        self.stuck = False
         self._turning = False
+        self._anchor: tuple[float, float] | None = None
+        self._t_prog = 0.0
+        self._err_ref = 0.0
 
-    # --- Planung (von App bedient) ---
-    def want_plan(self, t: float) -> bool:
-        if self.pending or self.done or self.gave_up:
-            return False
-        if self.path is None or t - self.t_plan > self.h.replan_s or self._stuck:
-            self.keep_ok = self.path is not None and not self._stuck
-            self.pending, self.t_plan, self._stuck = True, t, False
-            return True
-        return False
+    def set_path(self, path) -> None:
+        self.path = list(path) if path else None
 
-    def set_path(self, path: list[tuple[float, float]] | None) -> None:
-        self.pending = False
-        if path is None:
-            self.fails += 1
-            if self.fails >= self.h.max_fail:
-                self.gave_up = True
-            return                                  # alten Weg behalten, falls vorhanden
-        self.fails = 0
-        self.path = list(path)
+    def clear(self) -> None:
+        self.path = None
+        self.stuck = False
+        self._anchor = None
 
-    def _target(self, x: float, y: float) -> tuple[float, float]:
+    def target(self, x: float, y: float) -> tuple[float, float]:
         """Punkt lookahead_m entlang des Wegs ab der Projektion der Pose."""
         p = self.path
         if len(p) == 1:
@@ -408,6 +402,95 @@ class Home(Behavior):
             i, t = i + 1, 0.0
         return p[-1]
 
+    def _watch(self, t: float, x: float, y: float, err: float) -> None:
+        if self._anchor is None:
+            self._anchor, self._t_prog, self._err_ref = (x, y), t, abs(err)
+            return
+        moved = math.hypot(x - self._anchor[0], y - self._anchor[1]) >= 0.05
+        turned = self._turning and abs(err) < self._err_ref - math.radians(10)
+        if moved or turned:
+            self._anchor, self._t_prog, self._err_ref = (x, y), t, abs(err)
+        elif t - self._t_prog > self.STUCK_S:
+            self.stuck = True
+            self._anchor = None
+
+    def drive(self, w: World, label: str) -> Command:
+        """Fahrbefehl entlang des Wegs; label steht vorn im Status."""
+        hmm = self.cfg.height_cruise_mm
+        x, y, th = w.pose
+        tx, ty = self.target(x, y)
+        err = _wrap(math.atan2(ty - y, tx - x) - th)
+        # Auf der Stelle drehen nur bei großem Fehler (Hysterese), sonst in der Kurve weiterfahren
+        if self._turning:
+            self._turning = abs(err) > math.radians(self.h.turn_exit_deg)
+        else:
+            self._turning = abs(err) > math.radians(self.h.turn_enter_deg)
+        self._watch(w.t, x, y, err)
+        wc = clamp(yaw_rate_to_w(self.h.kp_turn * err, self.rcfg), -1.0, 1.0)
+        if self._turning:
+            if abs(wc) < self.cfg.search_w:          # kleine Werte ignoriert die Firmware
+                wc = math.copysign(self.cfg.search_w, err)
+            return Command(0.0, wc, hmm, "%s – drehe (%+.0f°)" % (label, math.degrees(err)))
+        if abs(wc) < self.h.min_w and abs(err) > math.radians(self.h.min_w_err_deg):
+            wc = math.copysign(self.h.min_w, err)
+        v = self.h.v * clamp(1.0 - abs(err) / math.radians(90), 0.3, 1.0)
+        return Command(v, wc, hmm, "%s (%+.0f°)" % (label, math.degrees(err)))
+
+    def align(self, err: float, label: str) -> Command:
+        """Auf der Stelle auf einen Endkurs drehen (err rad)."""
+        wc = clamp(yaw_rate_to_w(self.h.kp_turn * err, self.rcfg), -1.0, 1.0)
+        if abs(wc) < self.cfg.search_w:              # kleine Werte ignoriert die Firmware
+            wc = math.copysign(self.cfg.search_w, err)
+        return Command(0.0, wc, self.cfg.height_cruise_mm, "%s (%+.0f°)" % (label, math.degrees(err)))
+
+
+class Home(Behavior):
+    """Zurück zum Startpunkt der Raumkarte: Weg plant planner.py (App stößt an, sobald
+    want_plan() es verlangt), gefahren wird mit PathFollower. Sicherheitsschicht und
+    Bahnprüfung gelten wie bei explore. Am Ziel optional auf den Startkurs drehen."""
+    name = "home"
+
+    def __init__(self, cfg, rcfg, hcfg: HomeCfg | None = None):
+        super().__init__(cfg, rcfg)
+        self.h = hcfg or HomeCfg()
+        self.f = PathFollower(cfg, rcfg, self.h)
+        self.pending = False
+        self.t_plan = -1e9
+        self.fails = 0
+        self.done = False
+        self.gave_up = False
+        self.keep_ok = False          # darf der Planer den bisherigen Weg behalten? (nicht nach Festfahren)
+        self.stuck_n = 0              # Festfahren in Folge ohne Annäherung ans Ziel
+        self.best_dist = math.inf
+
+    @property
+    def path(self):
+        return self.f.path
+
+    # --- Planung (von App bedient) ---
+    def want_plan(self, t: float) -> bool:
+        if self.pending or self.done or self.gave_up:
+            return False
+        if self.f.path is None or t - self.t_plan > self.h.replan_s or self.f.stuck:
+            self.keep_ok = self.f.path is not None and not self.f.stuck
+            self.stuck_n += self.f.stuck
+            self.pending, self.t_plan, self.f.stuck = True, t, False
+            return True
+        return False
+
+    def request_plan(self, planner, grid, w: World, obstacles) -> int:
+        return planner.request(w.pose[:2], w.goal[:2], keep=self.f.path if self.keep_ok else None, obstacles=obstacles)
+
+    def set_path(self, path: list[tuple[float, float]] | None) -> None:
+        self.pending = False
+        if path is None:
+            self.fails += 1
+            if self.fails >= self.h.max_fail:
+                self.gave_up = True
+            return                                  # alten Weg behalten, falls vorhanden
+        self.fails = 0
+        self.f.set_path(path)
+
     def step(self, w: World) -> Command:
         hmm = self.cfg.height_cruise_mm
         if w.pose is None or w.goal is None:
@@ -420,44 +503,283 @@ class Home(Behavior):
         if dist < self.h.arrive_m:
             err = _wrap(gth - th)
             if self.h.align_heading and abs(err) > math.radians(self.h.align_tol_deg):
-                wc = clamp(yaw_rate_to_w(self.h.kp_turn * err, self.rcfg), -1.0, 1.0)
-                if abs(wc) < self.cfg.search_w:      # kleine Werte ignoriert die Firmware
-                    wc = math.copysign(self.cfg.search_w, err)
-                return Command(0.0, wc, hmm, "am Start – richte aus (%+.0f°)" % math.degrees(err))
+                return self.f.align(err, "am Start – richte aus")
             self.done = True
             return Command(0, 0, hmm, "am Start angekommen")
+        # Steht das Ziel selbst hinter einem Hindernis, findet der Planer immer denselben Weg und die
+        # Bahnprüfung bremst ihn immer wieder (RiderPi 2026-11-06, Klebemarke am Startpunkt): aufhören
+        if dist < self.best_dist - STUCK_PROGRESS_M:
+            self.best_dist, self.stuck_n = dist, 0
+        if self.stuck_n >= self.h.max_fail:
+            self.gave_up = True
         if self.gave_up:
             return Command(0, 0, hmm, "kein Weg zum Start – stopp")
-        # Fortschritt beobachten: Sicherheitsschicht bremst -> nach STUCK_S neu planen
-        if dist < self._best - 0.05 or self._t_best is None:
-            self._best, self._t_best = dist, w.t
-        elif w.t - self._t_best > self.STUCK_S:
-            self._stuck, self._best, self._t_best = True, dist, w.t
-        if self.path is None:
+        if self.f.path is None:
             return Command(0, 0, hmm, "plane Weg zum Start")
-        tx, ty = self._target(x, y)
-        err = _wrap(math.atan2(ty - y, tx - x) - th)
-        # Auf der Stelle drehen nur bei großem Fehler (Hysterese), sonst in der Kurve weiterfahren
-        if self._turning:
-            self._turning = abs(err) > math.radians(self.h.turn_exit_deg)
+        return self.f.drive(w, "zum Start %.2f m" % dist)
+
+
+class MapExplore(Behavior):
+    """Raum kartieren: erst ein Rundumblick, dann Frontier für Frontier anfahren (frontier.py), bis
+    nichts Unbekanntes mehr erreichbar ist; am Ende Karte speichern und zum Start. Festfahren: erst neu
+    planen, dann zurücksetzen und das Ziel sperren; ohne Ziel kurz reaktiv fahren (Explore), zuletzt
+    aufhören. Sicherheitsschicht und Bahnprüfung gelten wie überall."""
+    name = "explore"
+    NO_PATH_RETRY_S = 1.0
+
+    def __init__(self, cfg, rcfg, hcfg: HomeCfg | None = None, ecfg: ExploreCfg | None = None):
+        super().__init__(cfg, rcfg)
+        self.h, self.e = hcfg or HomeCfg(), ecfg or ExploreCfg()
+        self.f = PathFollower(cfg, rcfg, self.h)
+        self.wander = Explore(cfg, rcfg)
+        self.state = "scan"
+        self.pending = False
+        self.keep_ok = False
+        self.t_plan = -1e9
+        self.t0: float | None = None
+        self.until = 0.0
+        self.frontier: tuple | None = None
+        self.goal: tuple | None = None
+        self.visited: list = []            # angefahren, Frontier blieb: nicht noch einmal
+        self.blocked_goals: list = []      # festgefahren: gesperrt bis zur nächsten Befreiung
+        self.clusters = self.avoided = 0
+        self.no_goal = 0
+        self.stucks = 0
+        self.t_goal = 0.0
+        self.wanders = 0
+        self.home_fails = 0
+        self.home_stuck = 0
+        self.home_best = math.inf
+        self.reason = ""
+        self.save_map = False              # App speichert die Karte, sobald das gesetzt ist
+        self.done = False
+        self._scan_th: float | None = None
+        self._scan_sum = 0.0
+        self._cleared = False
+        self._face: tuple | None = None
+        self._known_best = 0.0
+        self._t_growth: float | None = None
+
+    @property
+    def path(self):
+        return self.f.path
+
+    def info(self) -> dict:
+        """Für /status und die Weboberfläche."""
+        return {"zustand": self.state, "stellen": self.clusters, "gesperrt": self.avoided, "befreit": self.wanders,
+                "ziel": None if self.frontier is None else [round(self.frontier[0], 2), round(self.frontier[1], 2)],
+                "ende": self.reason}
+
+    # --- Planung (von App bedient) ---
+    def want_plan(self, t: float) -> bool:
+        if self.pending or self.state not in ("ziel", "heim"):
+            return False
+        if self.f.path is None and t - self.t_plan < self.NO_PATH_RETRY_S:
+            return False                            # ohne Weg nicht im Regeltakt nachfragen
+        if self.f.path is None or self.f.stuck or t - self.t_plan > self.h.replan_s:
+            self.keep_ok = self.f.path is not None and not self.f.stuck
+            self.pending, self.t_plan = True, t
+            return True
+        return False
+
+    def request_plan(self, planner, grid, w: World, obstacles) -> int:
+        from .frontier import next_goal
+        if self.state == "heim":
+            self.home_stuck += self.f.stuck
+            self.f.stuck = False
+            return planner.request(w.pose[:2], w.goal[:2], keep=self.f.path if self.keep_ok else None, obstacles=obstacles)
+        if not self._cleared:
+            grid.clear_here(self.e.start_free_r_m)  # wo er steht, ist Boden; die Kamera sieht dort nichts
+            self._cleared = True
+        r = self.e.avoid_r_m
+        avoid = [(x, y, r) for x, y in self.visited + self.blocked_goals]
+        return planner.request_fn(next_goal, grid, w.pose, self.h, self.e, obstacles, avoid,
+                                  self.frontier, self.f.path if self.keep_ok else None)
+
+    def set_path(self, res) -> None:
+        self.pending = False
+        if self.state == "heim":
+            if hasattr(res, "frontier"):             # Antwort auf die letzte Zielsuche: veraltet
+                self.t_plan = -1e9
+                return
+            if res is None:
+                self.home_fails += 1
+                if self.home_fails >= self.h.max_fail:
+                    self._finish("kein Weg zum Start")
+                return
+            self.home_fails = 0
+            self.f.set_path(res)
+            return
+        if self.state != "ziel" or isinstance(res, list):
+            return
+        if res is not None and res.known_m2 > self._known_best + self.e.min_growth_m2:
+            self._known_best, self._t_growth = res.known_m2, self.t_plan
+        if res is None or res.path is None:          # None: Planer-Ausnahme
+            self.clusters, self.avoided = (res.clusters, res.avoided) if res is not None else (self.clusters, self.avoided)
+            self.f.clear()
+            self.frontier = self.goal = None
+            self.no_goal += 1
+            return
+        self.no_goal = 0
+        self.clusters, self.avoided = res.clusters, res.avoided
+        if self.frontier is None or math.hypot(res.frontier[0] - self.frontier[0], res.frontier[1] - self.frontier[1]) > self.e.keep_dist_m:
+            self.stucks = 0                         # neues Ziel
+            self.t_goal = self.t_plan
+            self.f.clear()
+        self.frontier, self.goal = res.frontier, res.goal
+        self.f.set_path(res.path)
+
+    # --- Abschluss ---
+    def _end(self, why: str, w: World) -> None:
+        """Erkunden beendet: Karte speichern, zum Start, falls gewünscht und möglich."""
+        self.reason = why
+        self.save_map = True
+        self.f.clear()
+        self.frontier = self.goal = None
+        self.t_plan = -1e9
+        if self.e.return_home and w.goal is not None:
+            self.state = "heim"
         else:
-            self._turning = abs(err) > math.radians(self.h.turn_enter_deg)
-        wc = clamp(yaw_rate_to_w(self.h.kp_turn * err, self.rcfg), -1.0, 1.0)
-        if self._turning:
-            v = 0.0
-            if abs(wc) < self.cfg.search_w:          # kleine Werte ignoriert die Firmware
-                wc = math.copysign(self.cfg.search_w, err)
-            return Command(v, wc, hmm, "zum Start %.2f m – drehe (%+.0f°)" % (dist, math.degrees(err)))
-        v = self.h.v * clamp(1.0 - abs(err) / math.radians(90), 0.3, 1.0)
-        return Command(v, wc, hmm, "zum Start %.2f m (%+.0f°)" % (dist, math.degrees(err)))
+            self._finish(why)
+
+    def _finish(self, why: str = "") -> None:
+        self.state = "fertig"
+        self.done = True
+        self.save_map = True
+        if why and why != self.reason:
+            self.reason = "%s, %s" % (self.reason, why) if self.reason else why
+        self.f.clear()
+
+    def step(self, w: World) -> Command:
+        hmm = self.cfg.height_cruise_mm
+        e = self.e
+        if w.pose is None:
+            return Command(0, 0, hmm, "keine Raumkarte – stopp")
+        x, y, th = w.pose
+        if self.t0 is None:
+            self.t0 = w.t
+        if self.state not in ("heim", "fertig"):
+            if w.t - self.t0 > e.max_s:
+                self._end("Zeitgrenze", w)
+            elif w.battery is not None and 0 < w.battery <= e.min_battery:
+                self._end("Akku", w)
+
+        if self.state == "scan":
+            if self._scan_th is not None:
+                self._scan_sum += abs(_wrap(th - self._scan_th))
+            self._scan_th = th
+            if self._scan_sum >= 2 * math.pi:
+                self.state = "ziel"
+                return Command(0, 0, hmm, "Rundumblick fertig")
+            return Command(0.0, e.scan_w, hmm, "Rundumblick %.0f°" % math.degrees(self._scan_sum))
+        if self.state == "face":
+            # Zur Frontier drehen: sie kann seitlich oder hinter ihm liegen, das Bild zeigt nur ±44°
+            fx, fy = self._face
+            err = _wrap(math.atan2(fy - y, fx - x) - th)
+            if abs(err) < math.radians(15) or w.t >= self.until or math.hypot(fx - x, fy - y) < 0.05:
+                self.state, self.until = "settle", w.t + e.settle_s
+                return Command(0, 0, hmm, "schaue")
+            return self.f.align(err, "schaue zur Stelle")
+        if self.state == "settle":
+            if w.t >= self.until:
+                self.state = "ziel"
+            return Command(0, 0, hmm, "schaue")
+        if self.state == "backup":
+            if w.t >= self.until:
+                self.state = "ziel"
+                return Command(0, 0, hmm, "weiter")
+            return Command(-self.cfg.backup_v, 0.0, hmm, "setze zurück")
+        if self.state == "wander":
+            if w.t >= self.until:
+                self.state = "ziel"
+                self.wander.state = "cruise"
+                return Command(0, 0, hmm, "weiter")
+            c = self.wander.step(w)
+            c.status = "befreie mich: " + c.status
+            return c
+        if self.state == "fertig":
+            return Command(0, 0, hmm, self._final_status())
+        if self.state == "heim":
+            if w.goal is None:
+                self._finish()
+                return Command(0, 0, hmm, self._final_status())
+            gx, gy, gth = w.goal
+            dist = math.hypot(gx - x, gy - y)
+            if dist < self.h.arrive_m:
+                err = _wrap(gth - th)
+                if self.h.align_heading and abs(err) > math.radians(self.h.align_tol_deg):
+                    return self.f.align(err, "am Start – richte aus")
+                self._finish()
+                return Command(0, 0, hmm, self._final_status())
+            if dist < self.home_best - STUCK_PROGRESS_M:
+                self.home_best, self.home_stuck = dist, 0
+            if self.home_stuck >= self.h.max_fail:
+                self._finish("Start nicht erreicht, %.2f m entfernt" % dist)
+                return Command(0, 0, hmm, self._final_status())
+            if self.f.path is None:
+                return Command(0, 0, hmm, "Karte fertig, plane Weg zum Start")
+            return self.f.drive(w, "Karte fertig, zum Start %.2f m" % dist)
+
+        # --- ziel ---
+        if self._t_growth is None:
+            self._t_growth = w.t
+        if w.t - self._t_growth > e.no_growth_s:
+            self._end("Karte fertig", w)            # es kommt kaum noch etwas dazu
+            return Command(0, 0, hmm, self._final_status())
+        if self.no_goal >= e.no_goal_limit:
+            self.no_goal = 0
+            if self.blocked_goals or self.clusters > self.avoided or not self.visited:
+                # Es gibt noch Stellen, nur gerade nicht anfahrbar (oder noch gar kein Ziel gefunden,
+                # etwa wegen Fehlalarmen rundherum): woanders hin und noch einmal versuchen
+                if self.wanders >= e.max_wander:
+                    self._end("festgefahren", w)
+                    return Command(0, 0, hmm, "festgefahren – Stopp")
+                self.wanders += 1
+                self.blocked_goals.clear()
+                self.state, self.until = "wander", w.t + e.wander_s
+                return Command(0, 0, hmm, "keine Stelle erreichbar, befreie mich")
+            self._end("Karte fertig", w)
+            return Command(0, 0, hmm, self._final_status())
+        timed_out = self.frontier is not None and w.t - self.t_goal > e.goal_timeout_s
+        if self.f.stuck or timed_out:
+            self.f.stuck = False
+            self.stucks = 2 if timed_out else self.stucks + 1
+            if self.stucks == 1:
+                self.keep_ok = False
+                self.f.set_path(None)               # sofort neu planen, ohne den alten Weg
+                return Command(0, 0, hmm, "komme nicht weiter, plane neu")
+            if self.frontier is not None:
+                self.blocked_goals.append((self.frontier[0], self.frontier[1]))
+            self.stucks = 0
+            self.frontier = self.goal = None
+            self.f.clear()
+            self.state, self.until = "backup", w.t + 0.8
+            return Command(0, 0, hmm, "Ziel gesperrt")
+        if self.f.path is None:
+            return Command(0, 0, hmm, "suche Ziel (%d Stellen)" % self.clusters)
+        if math.hypot(self.goal[0] - x, self.goal[1] - y) < e.reach_m:
+            self.visited.append((self.frontier[0], self.frontier[1]))
+            self._face = self.frontier
+            self.frontier = self.goal = None
+            self.f.clear()
+            self.state, self.until = "face", w.t + 6.0
+            return Command(0, 0, hmm, "Ziel erreicht")
+        return self.f.drive(w, "erkunde (%d Stellen)" % self.clusters)
+
+    def _final_status(self) -> str:
+        offen = self.avoided
+        if self.reason == "Karte fertig":
+            return "Karte fertig (%d Stellen nicht erreicht)" % offen if offen else "Karte fertig"
+        return "Erkunden beendet: %s" % self.reason
 
 
 def make_behavior(name: str, cfg: BehaviorCfg, rcfg: RobotCfg, target: str | None = None,
-                  hcfg: HomeCfg | None = None) -> Behavior:
+                  hcfg: HomeCfg | None = None, ecfg: ExploreCfg | None = None, has_map: bool = True) -> Behavior:
+    """has_map: Raumkarte vorhanden; sonst erkundet explore nur reaktiv."""
     return {"idle": lambda: Idle(cfg, rcfg),
             "manual": lambda: Manual(cfg, rcfg),
             "follow": lambda: Follow(cfg, rcfg, target),
-            "explore": lambda: Explore(cfg, rcfg),
+            "explore": lambda: MapExplore(cfg, rcfg, hcfg, ecfg) if has_map else Explore(cfg, rcfg),
             "approach": lambda: Approach(cfg, rcfg, target),
             "home": lambda: Home(cfg, rcfg, hcfg)}[name]()
 
