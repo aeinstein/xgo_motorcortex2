@@ -26,6 +26,7 @@ from .geometry import CamGeometry
 from .wheels import WheelOdom, make_wheels
 from .imu import ImuSource, ImuSync, make_imu
 from .localmap import LocalMap, blocking_boxes, mask_movable
+from .route import arc_hits_zone, check as route_check, load as route_load, save as route_save
 from .robot import Robot
 from .tracker import Tracker
 
@@ -125,6 +126,7 @@ class App:
             if self.fse is not None and cfg.grid.enabled else None
         if self.gridmap is not None and cfg.grid.file and os.path.exists(cfg.grid.file):
             self.gridmap.load(cfg.grid.file)
+            route_load(cfg.grid.file, self.gridmap)
         self.grid_worker = GridWorker(self.gridmap, cfg.cpu.freespace_cpus, save_path=cfg.grid.file,
                                       save_every_s=cfg.grid.save_every_s) \
             if self.gridmap is not None and cfg.grid.threaded else None
@@ -164,17 +166,50 @@ class App:
     # ------------------------------------------------------------------
     # Diese Modi fahren auf Freiraum zu und verlassen sich auf Bodenmodell + Merkkarte.
     # Ohne Freiraum-Erkennung hielten sie alles für frei und stoppten nur per TTC.
-    NEEDS_FREESPACE = {"explore", "approach", "home"}
+    NEEDS_FREESPACE = {"explore", "approach", "home", "patrol"}
 
     def _check_mode(self, name: str) -> None:
         if name in self.NEEDS_FREESPACE and self.fse is None:
             raise ModeNotAllowed(f"Modus {name} braucht die Freiraum-Erkennung (freespace.enabled)")
         if name == "home" and getattr(self, "gridmap", None) is None:
             raise ModeNotAllowed("Modus home braucht die Raumkarte ([grid] enabled)")
+        gm = getattr(self, "gridmap", None)
+        if name == "explore" and gm is not None and gm.locked:
+            raise ModeNotAllowed("Karte ist gesperrt: erst entsperren oder neu anfangen")
+        if name == "patrol":
+            if gm is None:
+                raise ModeNotAllowed("Streife braucht die Raumkarte ([grid] enabled)")
+            if not gm.route:
+                raise ModeNotAllowed("Streife braucht eine Route: Punkte auf der Karte setzen")
+            batt = self.robot.state.battery
+            if batt and batt < self.cfg.patrol.start_battery:
+                raise ModeNotAllowed(f"Akku {batt} %: Streife erst ab {self.cfg.patrol.start_battery} %")
+            x, y, _ = gm.pose()
+            d = math.hypot(x - gm.start[0], y - gm.start[1])
+            if d > self.cfg.patrol.start_tol_m:
+                raise ModeNotAllowed(f"laut Karte {d:.2f} m vom Start: Rider an den Startpunkt stellen, Dienst neu starten")
 
     def _make(self, name: str, target: str | None = None) -> Behavior:
-        return make_behavior(name, self.cfg.behavior, self.cfg.robot, target, self.cfg.home, self.cfg.explore,
-                             has_map=getattr(self, "gridmap", None) is not None)
+        b = make_behavior(name, self.cfg.behavior, self.cfg.robot, target, self.cfg.home, self.cfg.explore,
+                          has_map=getattr(self, "gridmap", None) is not None, pcfg=self.cfg.patrol)
+        if name == "patrol" and getattr(self, "gridmap", None) is not None:
+            b.set_route(self.gridmap.route, self.gridmap.route_loop)
+        return b
+
+    def set_route(self, points, loop: bool, zones=None) -> list[str]:
+        """Route und, falls angegeben, Sperrzonen setzen und speichern. Rückgabe: Fehler; leer = übernommen.
+        Nicht während der Streife: Der laufende Modus fährt seine Kopie weiter."""
+        gm = self.gridmap
+        z = gm.zones if zones is None else zones
+        errors = route_check(gm, self.cfg.home, points, z)
+        if errors:
+            return errors
+        with gm._lock:
+            gm.route, gm.route_loop, gm.zones = list(points), bool(loop), list(z)
+        route_save(self.cfg.grid.file, gm)
+        if self.cfg.grid.file:
+            gm.save(self.cfg.grid.file)               # map_id muss auf der Platte stehen, sonst passt die Route nicht
+        return []
 
     @property
     def pipeline_on(self) -> bool:
@@ -214,9 +249,15 @@ class App:
     # Modi, die ohne Kamerabild laufen (Regelschritt dann in _paused_tick)
     NO_CAMERA = {"idle", "manual"}
 
-    def set_mode(self, name: str, target: str | None = None) -> None:
+    def set_mode(self, name: str, target: str | None = None, confirmed: bool = False) -> None:
+        """confirmed: Der Nutzer hat bestätigt, dass der Rider am Startpunkt steht (Streife: ohne Wiederfinden
+        gilt beim Laden Pose = Start)."""
         self._make(name, target)  # validiert (KeyError)
         self._check_mode(name)
+        if name == "patrol" and not confirmed:
+            raise ModeNotAllowed("Streife: bitte bestätigen, dass der Rider am Startpunkt steht")
+        if name == "patrol":
+            self.gridmap.lock()
         if not self.pipeline_on and name not in self.NO_CAMERA:
             raise ModeNotAllowed(f"Modus {name} braucht laufende Bildverarbeitung")
         with self._mode_lock:
@@ -441,6 +482,10 @@ class App:
             if self.lmap is not None and self.behavior.name in ("explore", "approach"):
                 vg = self.cfg.behavior.cruise_v * self.cfg.robot.vx_limit
                 w.path_blocked = self.lmap.arc_clearance(vg, 0.0, horizon_s=1.2) < 0.6 * vg + 0.08
+            if getattr(self.behavior, "want_set_down", False):
+                self.behavior.want_set_down = False
+                log.warning("Akku leer: setze ab")
+                self.robot.set_down()
             if self.behavior.name == "manual":
                 cmd = self._manual_cmd()
             else:
@@ -466,7 +511,8 @@ class App:
                                **self._loop_spread(),
                                "det_ms": round(self.det.infer_ms, 1), "det_batches": self._det_count,
                                "plan_ms": round(self.planner.ms, 1) if self.planner is not None else None,
-                               "explore": self.behavior.info() if hasattr(self.behavior, "info") else None,
+                               "explore": self.behavior.info() if self.behavior.name == "explore" and hasattr(self.behavior, "info") else None,
+                               "patrol": self.behavior.info() if self.behavior.name == "patrol" else None,
                                "fs_ms": round(self.fs_worker.ms, 1) if self.fs_worker is not None else None,
                                "grid": None if self.gridmap is None else {
                                    **self.gridmap.stats(),
@@ -617,6 +663,9 @@ class App:
         if b.want_plan(w.t):
             self._plan_seq = b.request_plan(self.planner, self.gridmap, w, self._lmap_world(w.pose))
         self.gridmap.plan = list(b.path) if b.path else []
+        if b.name == "explore" and getattr(b, "done", False) and not self.gridmap.locked:
+            self.gridmap.lock()                       # fertig kartiert: Fahrten ändern die Karte nicht mehr
+            b.save_map = True
         if getattr(b, "save_map", False):
             b.save_map = False
             if self.cfg.grid.file:
@@ -648,6 +697,11 @@ class App:
             return cmd
         v = cmd.v * self.cfg.robot.vx_limit
         wr = math.radians(cmd.w * self.cfg.robot.vyaw_limit_dps)
+        gm = self.gridmap
+        if gm is not None and gm.zones and arc_hits_zone(gm.pose(), v, wr, gm.zones, self.lmap.radius):
+            cmd.v = 0.0
+            cmd.status += " | Sperrzone"
+            return cmd
         # auch rückwärts: die Karte kennt Hindernisse hinter dem Rider (vorher gesehen)
         clear = self.lmap.arc_clearance(v, wr, horizon_s=1.2)
         need = 0.6 * abs(v) + 0.08

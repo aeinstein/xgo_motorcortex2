@@ -10,7 +10,7 @@ import math
 import random
 from dataclasses import dataclass, field
 
-from .config import BehaviorCfg, ExploreCfg, HomeCfg, RobotCfg
+from .config import BehaviorCfg, ExploreCfg, HomeCfg, PatrolCfg, RobotCfg
 from .egomotion import EgoResult
 from .freespace import FreeSpace
 from .geometry import CamGeometry
@@ -527,6 +527,9 @@ class Home(Behavior):
             return Command(0, 0, hmm, "am Start angekommen")
         # Steht das Ziel selbst hinter einem Hindernis, findet der Planer immer denselben Weg und die
         # Bahnprüfung bremst ihn immer wieder (RiderPi 2026-11-06, Klebemarke am Startpunkt): aufhören
+        if self.stuck_n >= 1 and dist < self.h.near_m:
+            self.done = True
+            return Command(0, 0, hmm, "am Start angekommen (%.2f m daneben)" % dist)
         if dist < self.best_dist - STUCK_PROGRESS_M:
             self.best_dist, self.stuck_n, self.t_best = dist, 0, w.t
         if self.stuck_n >= self.h.max_fail and w.t - self.t_best > self.h.give_up_s:
@@ -731,6 +734,9 @@ class MapExplore(Behavior):
                     return self.f.align(err, "am Start – richte aus")
                 self._finish()
                 return Command(0, 0, hmm, self._final_status())
+            if self.home_stuck >= 1 and dist < self.h.near_m:
+                self._finish("am Start, %.2f m daneben" % dist)
+                return Command(0, 0, hmm, self._final_status())
             if dist < self.home_best - STUCK_PROGRESS_M:
                 self.home_best, self.home_stuck, self.home_t_best = dist, 0, w.t
             if self.home_stuck >= self.h.max_fail and w.t - self.home_t_best > self.h.give_up_s:
@@ -794,15 +800,196 @@ class MapExplore(Behavior):
         return "Erkunden beendet: %s" % self.reason
 
 
+class Patrol(Behavior):
+    """Streife: Wegpunkte der Route der Reihe nach anfahren (auf Wunsch im Kreis), am Ende oder bei wenig Akku
+    zum Start. Festgefahren: erst neu planen, dann zurücksetzen und den Punkt auslassen; bleibt in einer Runde
+    keiner übrig, zum Start. Bahnprüfung und Sicherheitsschicht gelten wie überall; die Karte ändert sich nicht."""
+    name = "patrol"
+    NO_PATH_RETRY_S = 1.0
+
+    def __init__(self, cfg, rcfg, hcfg: HomeCfg | None = None, pcfg: PatrolCfg | None = None):
+        super().__init__(cfg, rcfg)
+        self.h, self.p = hcfg or HomeCfg(), pcfg or PatrolCfg()
+        self.f = PathFollower(cfg, rcfg, self.h)
+        self.points: list[tuple[float, float]] = []
+        self.loop = False
+        self.idx = 0
+        self.lap = 1
+        self.state = "fahrt"
+        self.pending = False
+        self.keep_ok = False
+        self.t_plan = -1e9
+        self.t_point: float | None = None
+        self.until = 0.0
+        self.fails = self.stucks = 0
+        self.reached_lap = 0                 # in dieser Runde erreichte Punkte
+        self.reached = 0
+        self.skipped: list[int] = []         # ausgelassene Punkte (1-basiert), je Runde neu
+        self.reason = ""
+        self.done = False
+        self.want_set_down = False
+
+    def set_route(self, points, loop: bool) -> None:
+        self.points, self.loop = [tuple(p) for p in points], loop
+
+    @property
+    def path(self):
+        return self.f.path
+
+    def info(self) -> dict:
+        return {"zustand": self.state, "punkt": self.idx + 1, "von": len(self.points), "runde": self.lap,
+                "erreicht": self.reached, "ausgelassen": list(self.skipped), "ende": self.reason}
+
+    # --- Planung (von App bedient) ---
+    def want_plan(self, t: float) -> bool:
+        if self.pending or self.state not in ("fahrt", "heim"):
+            return False
+        if self.f.path is None and t - self.t_plan < self.NO_PATH_RETRY_S:
+            return False
+        if self.f.path is None or self.f.stuck or t - self.t_plan > self.h.replan_s:
+            self.keep_ok = self.f.path is not None and not self.f.stuck
+            self.pending, self.t_plan = True, t
+            return True
+        return False
+
+    def request_plan(self, planner, grid, w: World, obstacles) -> int:
+        keep = self.f.path if self.keep_ok else None
+        if self.state == "heim":
+            return planner.request(w.pose[:2], w.goal[:2], keep=keep, obstacles=obstacles)
+        return planner.request(w.pose[:2], self.points[self.idx], keep=keep, obstacles=obstacles, clear_goal=False)
+
+    def set_path(self, res) -> None:
+        self.pending = False
+        if res is None:
+            self.fails += 1
+            return
+        self.fails = 0
+        self.f.set_path(res)
+
+    # --- Ablauf ---
+    def _go_home(self, why: str) -> None:
+        self.reason = why
+        self.state = "heim"
+        self.f.clear()
+        self.stucks = self.fails = 0
+        self.t_plan = -1e9
+
+    def _finish(self, why: str) -> None:
+        self.state = "fertig"
+        self.done = True
+        self.reason = (self.reason + ", " + why) if self.reason else why
+        self.f.clear()
+
+    def _next(self, w: World) -> None:
+        """Nächster Punkt; am Ende der Route nächste Runde oder zum Start."""
+        self.idx += 1
+        self.t_point = w.t
+        self.stucks = self.fails = 0
+        self.f.clear()
+        self.t_plan = -1e9
+        if self.idx < len(self.points):
+            return
+        if self.reached_lap == 0:
+            self._go_home("kein Punkt erreichbar")
+        elif self.loop:
+            self.idx, self.reached_lap = 0, 0
+            self.lap += 1
+            self.skipped = []
+        else:
+            self._go_home("Runde fertig")
+
+    def _skip(self, w: World) -> Command:
+        self.skipped.append(self.idx + 1)
+        self.state, self.until = "backup", w.t + 0.8
+        self.f.clear()
+        return Command(0, 0, self.cfg.height_cruise_mm, "Punkt %d ausgelassen" % (self.idx + 1))
+
+    def step(self, w: World) -> Command:
+        hmm = self.cfg.height_cruise_mm
+        if w.pose is None:
+            return Command(0, 0, hmm, "keine Raumkarte – stopp")
+        x, y, _ = w.pose
+        if self.state == "fertig":
+            return Command(0, 0, hmm, "Streife beendet: %s" % self.reason)
+        if self.t_point is None:
+            self.t_point = w.t
+        if w.battery is not None and w.battery > 0:
+            if w.battery <= self.p.down_battery:
+                self._finish("Akku leer")
+                self.want_set_down = True
+                return Command(0, 0, hmm, "Streife beendet: Akku leer, setze ab")
+            if w.battery <= self.p.return_battery and self.state != "heim":
+                self._go_home("Akku")
+        if self.state == "schau":
+            if w.t >= self.until:
+                self.state = "fahrt"
+                self._next(w)
+            return Command(0, 0, hmm, "Streife: schaue")
+        if self.state == "backup":
+            if w.t < self.until:
+                return Command(-self.cfg.backup_v, 0.0, hmm, "setze zurück")
+            self.state = "fahrt"
+            self._next(w)
+            return Command(0, 0, hmm, "weiter")
+        if self.state == "heim":
+            if w.goal is None:
+                self._finish("kein Startpunkt")
+                return Command(0, 0, hmm, "Streife beendet: %s" % self.reason)
+            dist = math.hypot(w.goal[0] - x, w.goal[1] - y)
+            stuck = self.f.stuck
+            if stuck:
+                self.f.stuck = self.f.pressing = False
+                self.stucks += 1
+                self.keep_ok = False
+                self.f.set_path(None)
+            if dist < self.h.arrive_m or (self.stucks >= 1 and dist < self.h.near_m):
+                self._finish("am Start" if dist < self.h.arrive_m else "am Start, %.2f m daneben" % dist)
+            elif self.stucks >= 3 * self.h.max_fail or self.fails >= 3 * self.h.max_fail:
+                self._finish("Start nicht erreicht, %.2f m entfernt" % dist)
+            if self.state == "fertig":
+                return Command(0, 0, hmm, "Streife beendet: %s" % self.reason)
+            if self.f.path is None:
+                return Command(0, 0, hmm, "Streife: plane Weg zum Start")
+            return self.f.drive(w, "Streife: zum Start %.2f m" % dist)
+        # --- fahrt ---
+        px, py = self.points[self.idx]
+        dist = math.hypot(px - x, py - y)
+        arrived = dist < self.p.reach_m
+        if self.f.stuck:
+            pressing = self.f.pressing
+            self.f.stuck = self.f.pressing = False
+            self.stucks = 2 if pressing else self.stucks + 1
+            arrived = arrived or dist < self.h.near_m
+            if not arrived and self.stucks < 2:
+                self.keep_ok = False
+                self.f.set_path(None)
+                return Command(0, 0, hmm, "komme nicht weiter, plane neu")
+            if not arrived:
+                return self._skip(w)
+        if arrived:
+            self.reached += 1
+            self.reached_lap += 1
+            self.state, self.until = "schau", w.t + self.p.pause_s
+            self.f.clear()
+            return Command(0, 0, hmm, "Streife: Punkt %d erreicht" % (self.idx + 1))
+        if w.t - self.t_point > self.p.point_timeout_s or self.fails >= self.h.max_fail:
+            return self._skip(w)
+        if self.f.path is None:
+            return Command(0, 0, hmm, "Streife: plane Weg zu Punkt %d" % (self.idx + 1))
+        return self.f.drive(w, "Streife: Punkt %d/%d, Runde %d, %.2f m" % (self.idx + 1, len(self.points), self.lap, dist))
+
+
 def make_behavior(name: str, cfg: BehaviorCfg, rcfg: RobotCfg, target: str | None = None,
-                  hcfg: HomeCfg | None = None, ecfg: ExploreCfg | None = None, has_map: bool = True) -> Behavior:
+                  hcfg: HomeCfg | None = None, ecfg: ExploreCfg | None = None, has_map: bool = True,
+                  pcfg: PatrolCfg | None = None) -> Behavior:
     """has_map: Raumkarte vorhanden; sonst erkundet explore nur reaktiv."""
     return {"idle": lambda: Idle(cfg, rcfg),
             "manual": lambda: Manual(cfg, rcfg),
             "follow": lambda: Follow(cfg, rcfg, target),
             "explore": lambda: MapExplore(cfg, rcfg, hcfg, ecfg) if has_map else Explore(cfg, rcfg),
             "approach": lambda: Approach(cfg, rcfg, target),
-            "home": lambda: Home(cfg, rcfg, hcfg)}[name]()
+            "home": lambda: Home(cfg, rcfg, hcfg),
+            "patrol": lambda: Patrol(cfg, rcfg, hcfg, pcfg)}[name]()
 
 
 # ---------------------------------------------------------------------------

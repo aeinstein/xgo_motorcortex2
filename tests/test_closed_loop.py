@@ -42,6 +42,17 @@ def test_home_returns_to_start():
 
 
 @pytest.mark.slow
+def test_patrol_route_after_mapping():
+    # Kartieren, drei Punkte wählen, abfahren, zum Start; wie am Rider, ohne echten IMU-Kurs
+    from sim_run import RIDER, RIDER_VX
+    r = run("patrol", 420.0, wheels=True, method="kanten", fs_thread=True, dyn=True, vx_true=RIDER_VX, overrides=RIDER)
+    assert r["collisions"] == 0 and r["route_fehler"] == [] and r["streife_s"] is not None
+    p = r["explore"]
+    assert p["zustand"] == "fertig" and p["erreicht"] == 3 and p["ausgelassen"] == []
+    assert "am Start" in p["ende"] and r["karte_gesperrt"]
+
+
+@pytest.mark.slow
 def test_explore_maps_room():
     # Bis „Karte fertig“ (2-4 min): mit Rider-Einstellungen, kanten, Rädern und Trägheit
     from sim_run import RIDER, RIDER_VX

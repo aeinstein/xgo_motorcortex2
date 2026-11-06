@@ -29,6 +29,20 @@ def apply_overrides(cfg, overrides) -> None:
         setattr(part, name, val)
 
 
+def pick_route(gm, cfg, n=3):
+    """n weit auseinanderliegende, erreichbare Punkte auf der Karte (Ersatz für die Klicks im Web)."""
+    from xgonav.route import check
+    rr, cc = np.nonzero(gm.lo < -gm.cfg.l_show)
+    cand = [((c + 0.5 - gm.n / 2) * gm.res, (r + 0.5 - gm.n / 2) * gm.res) for r, c in zip(rr[::7], cc[::7])]
+    cand = [p for p in cand if not check(gm, cfg.home, [p], [])]
+    pts = []
+    ref = [(gm.start[0], gm.start[1])]
+    for _ in range(n):
+        p = max(cand, key=lambda q: min(math.hypot(q[0] - a, q[1] - b) for a, b in ref + pts))
+        pts.append(p)
+    return pts
+
+
 def run(mode="follow", secs=25.0, video=None, shake=1.0, quiet=True, imu=False, fs_thread=False, wheels=False, vx_true=None, method=None, dyn=False,
         overrides=None, scene="raum", record=None, phantoms=0):
     """overrides: siehe apply_overrides. record: Liste, bekommt je Eintrag in die Raumkarte die Beobachtung
@@ -36,7 +50,8 @@ def run(mode="follow", secs=25.0, video=None, shake=1.0, quiet=True, imu=False, 
     logging.basicConfig(level=logging.WARNING if quiet else logging.INFO)
     cfg = Config()
     home = mode == "home"
-    cfg.behavior.mode = "explore" if home else mode
+    patrol = mode == "patrol"                # erst kartieren, dann Streife
+    cfg.behavior.mode = "explore" if home or patrol else mode
     cfg.output.web_port = 0
     cfg.freespace.threaded = fs_thread
     if method:
@@ -45,7 +60,7 @@ def run(mode="follow", secs=25.0, video=None, shake=1.0, quiet=True, imu=False, 
     if record is not None:
         cfg.grid.threaded = False
     robot = SimRobot(cfg.robot)
-    person = Person([(3.2, 1.3), (4.8, 4.6), (1.4, 5.0), (1.2, 3.0)], speed=0.3) if mode not in ("explore", "home") else None
+    person = Person([(3.2, 1.3), (4.8, 4.6), (1.4, 5.0), (1.2, 3.0)], speed=0.3) if mode not in ("explore", "home", "patrol") else None
     world = SimWorld(cfg.camera, robot, person, start=(1.0, 1.2, 0.2), shake=shake,
                      mount_offset_mm=cfg.camera.mount_offset_mm,
                      vx_mps=vx_true if vx_true is not None else cfg.robot.vx_limit,  # vx_true: echte m/s je Einheit
@@ -98,6 +113,24 @@ def run(mode="follow", secs=25.0, video=None, shake=1.0, quiet=True, imu=False, 
             app.set_mode("home")
         threading.Thread(target=to_home, daemon=True).start()
     done_t = {}
+    if patrol:
+        def to_patrol():
+            while not app.running: time.sleep(0.02)
+            t0 = time.monotonic()
+            while app.running and not getattr(app.behavior, "done", False): time.sleep(0.2)
+            done_t["s"] = round(time.monotonic() - t0, 1)
+            time.sleep(1.5)
+            pts = pick_route(app.gridmap, cfg)
+            done_t["route"] = app.set_route(pts, False, [])
+            done_t["pts"] = [(round(a, 2), round(b, 2)) for a, b in pts]
+            app.set_mode("patrol", confirmed=True)
+            while app.running and app.behavior.name != "patrol": time.sleep(0.05)
+            t1 = time.monotonic()
+            while app.running and not getattr(app.behavior, "done", False): time.sleep(0.2)
+            done_t["streife_s"] = round(time.monotonic() - t1, 1)
+            time.sleep(1.0)
+            app.stop()
+        threading.Thread(target=to_patrol, daemon=True).start()
     if mode == "explore":
         def watch():
             while not app.running: time.sleep(0.02)
@@ -133,6 +166,9 @@ def run(mode="follow", secs=25.0, video=None, shake=1.0, quiet=True, imu=False, 
            "grid": grid, "status": app._cmd.status, "fertig_s": done_t.get("s"),
            "explore": app.behavior.info() if hasattr(app.behavior, "info") else None,
            "plan_ms": round(app.planner.ms, 1) if app.planner is not None else None}
+    if patrol:
+        out.update(route=done_t.get("pts"), route_fehler=done_t.get("route"), streife_s=done_t.get("streife_s"),
+                   karte_gesperrt=gm.locked, belegt_ende=len(gm.occupied_cells()))
     if record is not None:
         out.update(start_pose=(L[0]["x"], L[0]["y"], L[0]["th"]), path=[(r["x"], r["y"]) for r in L])
     if home:

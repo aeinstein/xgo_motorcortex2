@@ -98,6 +98,20 @@ Status JSON `grid`: `pose [x m, y m, yaw °]`, `start [x m, y m, yaw °]`, `zum_
 | Requires | `freespace.enabled`, `grid.enabled`, running pipeline |
 | Accuracy | limited by map drift: arrives at the *map* start; real error = pose error |
 
+### Route and patrol (`xgonav/route.py`, mode `patrol`)
+
+| Item | Value |
+|---|---|
+| Map lock | set when `explore` ends or `patrol` starts, `POST /map/lock`; locked: observations and the driven path do not change the map, the pose still moves. `explore` refuses a locked map |
+| Map id | `map_id` in the npz; a route file with another id is ignored |
+| Route file | `<grid.file>.route.json`: points, `loop`, zones, written atomically together with the map |
+| Point check | on known floor, outside `inflate_m`, reachable from the start, outside zones; otherwise the route is rejected with a message |
+| No-go zones | polygons in map coordinates. Planner and frontier never enter them plus `inflate_m`, `_arc_check` stops an arc that would come within 0.18 m (moving away stays allowed). All modes except manual. They drift with the pose: **no replacement for a physical barrier** |
+| Patrol | points in order, `pause_s` 1.5 s each; stuck: replan, then back up and skip the point; contact, `max_fail` plans without a way or `point_timeout_s` 90 s: skip. No point reached in a lap, or end of a non-loop route: to the start |
+| Near enough | stuck within `home.near_m` 0.5 m of a target counts as arrived: the 0.18 m clearance can make a free target unreachable |
+| Start | only with user confirmation (the map assumes pose = start after loading), pose ≤ `start_tol_m` 0.6 m from the start, battery ≥ 40 %. Back at 30 %, set down at 15 % (action 254) |
+| Status JSON | `patrol`: `zustand`, `punkt`, `von`, `runde`, `erreicht`, `ausgelassen`, `ende`; `grid`: `gesperrt`, `map_id`, `route`, `zonen` |
+
 ### Mapping a room (`--mode explore`, `xgonav/frontier.py`)
 
 | Item | Value |

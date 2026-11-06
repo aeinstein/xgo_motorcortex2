@@ -17,6 +17,7 @@ import ctypes
 import logging
 import math
 import os
+import secrets
 import threading
 import time
 
@@ -81,8 +82,30 @@ class GridMap:
             self._stats, self._stats_t = None, 0.0
             self.start = (0.0, 0.0, 0.0)                        # Startpunkt (x, y, th) im Karten-KS
             self.plan: list[tuple[float, float]] = []             # geplanter Weg (nur Anzeige, von App)
+            self.map_id = secrets.token_hex(4)                    # Route und Zonen gehören zu genau dieser Karte
+            self.locked = False                                   # gesperrt: Beobachtungen ändern die Karte nicht
+            self.route: list[tuple[float, float]] = []            # Wegpunkte der Streife (xgonav/route.py)
+            self.route_loop = False
+            self.zones: list[list[tuple[float, float]]] = []      # Sperrzonen: Eckpunkte, gelten für alle Modi
             self._saved_key = None                                # (updates, start) beim letzten Speichern
             self._saved_t = time.monotonic()
+
+    def lock(self, on: bool = True) -> None:
+        with self._lock:
+            self.locked = on
+        log.info("Raumkarte %s", "gesperrt" if on else "entsperrt")
+
+    def zones_mask(self, zones, r0: int, c0: int, shape: tuple, margin_m: float) -> np.ndarray:
+        """Zellen in den Zonen samt Rand (bool, Ausschnitt ab r0, c0)."""
+        m = np.zeros(shape, np.uint8)
+        rad = int(math.ceil(margin_m / self.res))
+        for z in zones:
+            p = (np.asarray(z, np.float64) / self.res + self.n / 2 - [c0, r0])
+            px = np.round(p).astype(np.int32).reshape(-1, 1, 2)
+            cv2.fillPoly(m, [px], 1)
+            if rad > 0:
+                cv2.polylines(m, [px], True, 1, thickness=2 * rad + 1)
+        return m.astype(bool)
 
     def set_start(self) -> None:
         """Startpunkt = aktuelle Pose (Knopf „Start hier“)."""
@@ -98,11 +121,12 @@ class GridMap:
             start = np.array(self.start, np.float64)
             path_pts = np.array(self.path, np.float64).reshape(-1, 2)
             key = (self.updates, self.start)
+            map_id, locked = self.map_id, self.locked
         tmp = path + ".tmp"
         try:
             with open(tmp, "wb") as f:
                 np.savez_compressed(f, lo=lo.astype(np.float16), res=self.res, n=self.n,
-                                    start=start, path=path_pts)
+                                    start=start, path=path_pts, map_id=map_id, locked=locked)
             os.replace(tmp, path)
         except OSError as e:
             log.warning("Raumkarte nicht gespeichert (%s): %s", path, e)
@@ -134,6 +158,8 @@ class GridMap:
                     return False
                 lo = d["lo"].astype(np.float32)
                 start = tuple(float(v) for v in d["start"])
+                map_id = str(d["map_id"]) if "map_id" in d.files else secrets.token_hex(4)
+                locked = bool(d["locked"]) if "locked" in d.files else False
         except (OSError, KeyError, ValueError) as e:
             log.warning("Raumkarte %s nicht geladen: %s", path, e)
             return False
@@ -143,6 +169,8 @@ class GridMap:
             self.x, self.y, self.th = start
             self.path = [(start[0], start[1])]
             self.plan = []
+            self.map_id, self.locked = map_id, locked
+            self.route, self.route_loop, self.zones = [], False, []
             self._stats = None
             self._saved_key = (self.updates, self.start)
         log.info("Raumkarte geladen (%s) – Rider muss am Startpunkt stehen", path)
@@ -170,7 +198,7 @@ class GridMap:
 
     def _clear_disk(self, x: float, y: float, r: float) -> None:
         """Wo der Rider stand oder fuhr, ist Boden. Aufrufer hält das Lock."""
-        if r <= 0:
+        if r <= 0 or self.locked:
             return
         k = int(math.ceil(r / self.res))
         rc, cc = (int(v) for v in self.cell(x, y))
@@ -197,7 +225,7 @@ class GridMap:
                       pose: tuple[float, float, float] | None = None) -> None:
         """Beobachtung eintragen. pose = (x, y, th) zum Zeitpunkt der Aufnahme (GridWorker
         rechnet später, der Rider ist dann schon weiter); None = aktuelle Pose."""
-        if fs is None or fs.columns is None:
+        if fs is None or fs.columns is None or self.locked:
             return
         cfg = self.cfg
         sc = self.geo.W / self.fw
@@ -300,7 +328,8 @@ class GridMap:
             occ = int((lo > self.cfg.l_show).sum())
             free = int((lo < -self.cfg.l_show).sum())
             return {"belegt_m2": round(occ * self.res ** 2, 2), "frei_m2": round(free * self.res ** 2, 2),
-                    "updates": self.updates}
+                    "updates": self.updates, "gesperrt": self.locked, "map_id": self.map_id,
+                    "route": len(self.route), "zonen": len(self.zones)}
 
     def image(self, px: int = 480, view_m: float | None = None) -> np.ndarray:
         return self.render(px, view_m)[0]
@@ -318,6 +347,7 @@ class GridMap:
             path = list(self.path)
             plan = list(self.plan)
             sx, sy, sth = self.start
+            route, loop, zones = list(self.route), self.route_loop, list(self.zones)
         n_px = max(1, int(round(view_m / self.res)))                   # Zellen je Bildkante
         k = px / n_px
         mx, my = center if center is not None else (x, y)
@@ -340,6 +370,14 @@ class GridMap:
             cv2.polylines(img, [np.array([to_px(a, b) for a, b in path], np.int32)], False, (60, 170, 60), 2)
         if len(plan) > 1:
             cv2.polylines(img, [np.array([to_px(a, b) for a, b in plan], np.int32)], False, (230, 210, 0), 2)
+        for z in zones:                                                  # Sperrzonen rot, Route magenta
+            cv2.polylines(img, [np.array([to_px(a, b) for a, b in z], np.int32)], True, (40, 40, 220), 2)
+        if route:
+            cv2.polylines(img, [np.array([to_px(a, b) for a, b in route], np.int32)], loop, (200, 60, 200), 1)
+            for i, (a, b) in enumerate(route, 1):
+                q = to_px(a, b)
+                cv2.circle(img, q, 5, (200, 60, 200), -1)
+                cv2.putText(img, str(i), (q[0] + 6, q[1] - 6), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (200, 60, 200), 1, cv2.LINE_AA)
         sp = to_px(sx, sy)
         cv2.circle(img, sp, max(4, int(round(0.08 / self.res * k))), (230, 110, 30), 2)
         cv2.line(img, sp, to_px(sx + 0.16 * math.cos(sth), sy + 0.16 * math.sin(sth)), (230, 110, 30), 2)

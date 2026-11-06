@@ -90,6 +90,11 @@ class Robot:
     def stop(self) -> None:
         self.drive(0.0, 0.0)
 
+    def set_down(self) -> None:
+        """Absetzen (Firmware-Aktion 254)."""
+        self.stop()
+        self._write("action", 254)
+
     def set_height(self, mm: float) -> None:
         mm = max(self.cfg.height_min_mm, min(self.cfg.height_max_mm, mm))
         if self._height_mm is not None and abs(mm - self._height_mm) < 1.0:

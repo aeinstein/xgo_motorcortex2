@@ -9,6 +9,9 @@
  *   POST api.php?a=map_reset                  (Raumkarte leeren, Pose und Start auf 0)
  *   POST api.php?a=map_start                  (Startpunkt = aktuelle Pose)
  *   POST api.php?a=map_save                   (Raumkarte sofort speichern, [grid] file)
+ *   POST api.php?a=map_lock&on=0|1            (Karte sperren: Fahrten ändern sie nicht mehr)
+ *   GET  api.php?a=route                      (Route und Sperrzonen)
+ *   POST api.php?a=route&pts=x,y;x,y&loop=0|1[&zones=x,y;x,y;x,y|...|&nozones=1]   (Meter im Karten-KS)
  *   POST api.php?a=stop
  *   POST api.php?a=pipeline&on=0|1
  *   POST api.php?a=drive&v=-1..1&w=-1..1      (nur Modus manual, alle 0,2 s senden)
@@ -34,7 +37,7 @@
 declare(strict_types=1);
 
 const XGONAV = 'http://127.0.0.1:8088';
-const MODES = ['idle', 'manual', 'follow', 'explore', 'approach', 'home'];
+const MODES = ['idle', 'manual', 'follow', 'explore', 'approach', 'home', 'patrol'];
 const PROC = '/proc/XGORider';
 const RC = '/home/aeinstein/motorcortex/rc_server';     // Emotionen der früheren Fernsteuerung
 const EMOTION = '/opt/xgonav/tools/emotion.sh';         // Player (RGB565-Rohbilder statt ffmpeg)
@@ -142,6 +145,9 @@ $post = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST';
 if ($a === 'status') {
     xgonav('GET', '/status');
 }
+if ($a === 'route' && !$post) {
+    xgonav('GET', '/route');
+}
 if ($a === 'sys') {
     antwort(200, json_encode(sys((int)($_GET['since'] ?? 0))));
 }
@@ -158,13 +164,31 @@ switch ($a) {
         if (!preg_match('/^[a-z ]{1,30}$/', $target)) {    // COCO-Klassen: Kleinbuchstaben, Leerzeichen
             antwort(400, json_encode(['error' => 'ungültiges Ziel']));
         }
-        xgonav('POST', '/mode?' . http_build_query(['name' => $name, 'target' => $target]));
+        xgonav('POST', '/mode?' . http_build_query(['name' => $name, 'target' => $target,
+                                                    'bestaetigt' => ($_GET['bestaetigt'] ?? '') === '1' ? '1' : '0']));
     case 'map_reset':
         xgonav('POST', '/map/reset');
     case 'map_start':
         xgonav('POST', '/map/start');
     case 'map_save':
         xgonav('POST', '/map/save');
+    case 'map_lock':
+        xgonav('POST', '/map/lock?on=' . (($_GET['on'] ?? '1') === '0' ? '0' : '1'));
+    case 'route':
+        // Nur Zahlen und Trenner; Grenzen und Erreichbarkeit prüft xgonav
+        $q = ['pts' => $_GET['pts'] ?? '', 'loop' => ($_GET['loop'] ?? '0') === '1' ? '1' : '0'];
+        if (!preg_match('/^[-0-9.,;]{0,2000}$/', $q['pts'])) {
+            antwort(400, json_encode(['error' => 'Route ungültig']));
+        }
+        if (isset($_GET['zones'])) {
+            if (!preg_match('/^[-0-9.,;|]{0,2000}$/', $_GET['zones'])) {
+                antwort(400, json_encode(['error' => 'Sperrzone ungültig']));
+            }
+            $q['zones'] = $_GET['zones'];
+        } elseif (isset($_GET['nozones'])) {
+            $q['nozones'] = '1';
+        }
+        xgonav('POST', '/route?' . http_build_query($q));
     case 'stop':
         xgonav('POST', '/stop');
     case 'ausrichten':

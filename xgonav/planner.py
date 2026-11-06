@@ -235,12 +235,20 @@ def plan(grid: GridMap, start_xy: tuple[float, float], goal_xy: tuple[float, flo
     s, g = local(start_xy), local(goal_xy)
     # Um die Pose freigeben: sie driftet, sonst sperrt eine Wand neben dem Rider ihn ein
     rad = int(math.ceil(cfg.inflate_m / res))
+    forbid = grid.zones_mask(grid.zones, r0, c0, lo.shape, cfg.inflate_m) if grid.zones else None
+    core = grid.zones_mask(grid.zones, r0, c0, lo.shape, 0.0) if grid.zones else None
 
     def clear_ends(b: np.ndarray) -> None:
         for (r, c) in ((s, g) if clear_goal else (s,)):
             disk = np.zeros_like(b, np.uint8)
             cv2.circle(disk, (c, r), rad, 1, -1)
             b[disk.astype(bool)] = False
+        if forbid is not None:                          # Sperrzone bleibt zu; nur am Rand wegfahren darf er
+            b[forbid] = True
+            near = np.zeros_like(b, np.uint8)
+            cv2.circle(near, (s[1], s[0]), rad, 1, -1)
+            b[near.astype(bool) & ~core] = False
+            b[core] = True
     clear_ends(blocked)
 
     def to_world(r, c):

@@ -52,7 +52,8 @@ def test_robot_ramp_clamp_and_watchdog():
 def test_robot_height_mapping():
     r = SimRobot(Config().robot)
     r.set_height(60)
-    r.set_height(120)
+    r.set_height(90)
+    r.set_height(120)   # begrenzt auf height_limit_u8
     r.set_height(500)   # begrenzt, identisch -> kein neuer Write
     vals = [v for _, n, v in r.writes if n == "height"]
     assert vals == [0, 255]
@@ -1668,12 +1669,12 @@ def _world_at(t, pose):
                  balancing=True, yaw=0.0, cmd_v=0.0, pose=pose, goal=(0.0, 0.0, 0.0))
 
 
-def test_home_gives_up_when_stuck_near_goal():
-    """Hindernis am Ziel: Neuplanen hilft nicht, Fahrt endet mit Meldung statt endlos zu warten."""
+def test_home_gives_up_when_stuck():
+    """Hindernis im Weg: Neuplanen hilft nicht, Fahrt endet mit Meldung statt endlos zu warten."""
     from xgonav.behaviors import Home
     cfg = Config()
     b = Home(cfg.behavior, cfg.robot, cfg.home)
-    pose = (0.32, 0.0, math.pi)
+    pose = (1.0, 0.0, math.pi)
     assert b.want_plan(0.0)
     b.set_path([pose[:2], (0.0, 0.0)])
     b.step(_world_at(0.0, pose))
@@ -1708,7 +1709,7 @@ def test_map_explore_home_stuck_finishes_with_message():
     from xgonav.behaviors import MapExplore
     cfg = Config()
     b = MapExplore(cfg.behavior, cfg.robot, cfg.home, cfg.explore)
-    pose = (0.32, 0.0, math.pi)
+    pose = (1.0, 0.0, math.pi)
     b.state, b.reason = "heim", "Karte fertig"
     b.f.set_path([pose[:2], (0.0, 0.0)])
     b.step(_world_at(0.0, pose))
@@ -1845,3 +1846,209 @@ def test_grid_heading_from_imu():
     assert abs(app._grid_dyaw(0.5) - math.radians(2.0)) < 1e-9
     app.robot.state.yaw_deg = None                                     # keine IMU: Rückfall
     assert app._grid_dyaw(0.5) == 0.5
+
+
+def test_home_stuck_near_goal_counts_as_arrived():
+    from xgonav.behaviors import Home, MapExplore
+    cfg = Config()
+    pose = (0.28, 0.0, math.pi)
+    h = Home(cfg.behavior, cfg.robot, cfg.home)
+    assert h.want_plan(0.0)
+    h.set_path([pose[:2], (0.0, 0.0)])
+    h.f.stuck = True
+    h.pending = False
+    assert h.want_plan(1.0)
+    c = h.step(_world_at(1.0, pose))
+    assert h.done and c.v == 0 and "angekommen" in c.status
+    m = MapExplore(cfg.behavior, cfg.robot, cfg.home, cfg.explore)
+    m.state, m.reason, m.home_stuck = "heim", "Karte fertig", 1
+    c = m.step(_world_at(1.0, pose))
+    assert m.done and c.v == 0 and "daneben" in m.reason
+
+
+def _patrol(points, loop=False):
+    from xgonav.behaviors import Patrol
+    cfg = Config()
+    b = Patrol(cfg.behavior, cfg.robot, cfg.home, cfg.patrol)
+    b.set_route(points, loop)
+    return cfg, b
+
+
+def test_patrol_visits_points_and_returns():
+    cfg, b = _patrol([(1.0, 0.0), (1.0, 1.0)])
+    assert b.want_plan(0.0)
+    b.set_path([(0.0, 0.0), (1.0, 0.0)])
+    assert b.step(_world_at(0.0, (0.0, 0.0, 0.0))).v > 0
+    c = b.step(_world_at(5.0, (0.95, 0.0, 0.0)))
+    assert c.v == 0 and b.state == "schau" and b.reached == 1
+    b.step(_world_at(5.0 + cfg.patrol.pause_s + 0.1, (0.95, 0.0, 0.0)))
+    assert b.state == "fahrt" and b.idx == 1
+    b.set_path([(0.95, 0.0), (1.0, 1.0)])
+    b.step(_world_at(8.0, (1.0, 0.95, 0.0)))
+    b.step(_world_at(8.0 + cfg.patrol.pause_s + 0.1, (1.0, 0.95, 0.0)))
+    assert b.state == "heim" and b.reason == "Runde fertig"
+    b.set_path([(1.0, 0.95), (0.0, 0.0)])
+    b.step(_world_at(12.0, (0.05, 0.0, 0.0)))
+    assert b.done and "am Start" in b.reason
+
+
+def test_patrol_skips_stuck_point_and_loops():
+    cfg, b = _patrol([(2.0, 0.0), (0.0, 2.0)], loop=True)
+    pose = (0.0, 0.0, 0.0)
+    b.set_path([pose[:2], (2.0, 0.0)])
+    b.f.stuck = True
+    c = b.step(_world_at(1.0, pose))
+    assert c.v == 0 and b.f.path is None and b.state == "fahrt"            # erst neu planen
+    b.set_path([pose[:2], (2.0, 0.0)])
+    b.f.stuck = True
+    b.step(_world_at(2.0, pose))
+    assert b.state == "backup" and b.skipped == [1]
+    assert b.step(_world_at(2.1, pose)).v < 0                               # zurücksetzen
+    b.step(_world_at(3.0, pose))
+    assert b.state == "fahrt" and b.idx == 1
+    b.set_path([pose[:2], (0.0, 2.0)])
+    b.step(_world_at(4.0, (0.0, 1.9, 0.0)))
+    assert b.state == "schau"
+    b.step(_world_at(4.0 + cfg.patrol.pause_s + 0.1, (0.0, 1.9, 0.0)))
+    assert b.state == "fahrt" and b.idx == 0 and b.lap == 2 and b.skipped == []
+
+
+def test_patrol_all_unreachable_goes_home():
+    cfg, b = _patrol([(2.0, 0.0)])
+    pose = (1.0, 0.0, 0.0)
+    for _ in range(cfg.home.max_fail):
+        b.pending = True
+        b.set_path(None)
+    b.step(_world_at(1.0, pose))
+    assert b.state == "backup"
+    b.step(_world_at(2.0, pose))
+    assert b.state == "heim" and b.reason == "kein Punkt erreichbar"
+
+
+def test_patrol_battery_home_and_set_down():
+    cfg, b = _patrol([(2.0, 0.0)])
+    w = _world_at(1.0, (0.0, 0.5, 0.0))
+    w.battery = cfg.patrol.return_battery
+    b.step(w)
+    assert b.state == "heim" and b.reason == "Akku"
+    w = _world_at(2.0, (0.0, 0.5, 0.0))
+    w.battery = cfg.patrol.down_battery
+    c = b.step(w)
+    assert b.done and b.want_set_down and c.v == 0
+
+
+def _route_map():
+    from xgonav.gridmap import GridMap
+    from dataclasses import replace
+    cfg = Config()
+    geo = CamGeometry(640, 480, 88.5, 5.18, 43.0, 85.0)
+    m = GridMap(replace(cfg.grid, native=False, file=""), geo, 160, 120)
+    r0, c0 = (int(k) for k in m.cell(-3.0, -3.0))
+    r1, c1 = (int(k) for k in m.cell(3.0, 3.0))
+    m.lo[r0 - 1:r1 + 1, c0 - 1:c1 + 1] = cfg.grid.l_max
+    m.lo[r0:r1, c0:c1] = cfg.grid.l_min
+    return cfg, m
+
+
+def test_route_check_messages():
+    from xgonav.route import check
+    cfg, m = _route_map()
+    assert check(m, cfg.home, [(1.0, 1.0), (-1.0, 2.0)], []) == []
+    assert "nicht auf bekanntem Boden" in check(m, cfg.home, [(5.0, 5.0)], [])[0]
+    assert "zu nah" in check(m, cfg.home, [(2.95, 0.0)], [])[0]
+    assert "Sperrzone" in check(m, cfg.home, [(1.0, 1.0)], [[(0.5, 0.5), (1.5, 0.5), (1.5, 1.5), (0.5, 1.5)]])[0]
+    wall = int(m.cell(1.5, 0.0)[1])
+    m.lo[:, wall - 1:wall + 2] = cfg.grid.l_max
+    assert "nicht erreichbar" in check(m, cfg.home, [(2.5, 0.0)], [])[0]
+
+
+def test_route_file_belongs_to_map(tmp_path):
+    from xgonav.route import load, save
+    cfg, m = _route_map()
+    f = str(tmp_path / "karte.npz")
+    m.route, m.route_loop, m.zones = [(1.0, 1.0), (2.0, 0.5)], True, [[(0.0, 2.0), (1.0, 2.0), (1.0, 2.5)]]
+    assert m.save(f) and save(f, m)
+    n = _route_map()[1]
+    assert n.load(f) and load(f, n)
+    assert n.map_id == m.map_id and n.route == m.route and n.route_loop and n.zones == m.zones
+    o = _route_map()[1]                                                 # andere Karte
+    assert not load(f, o) and o.route == []
+
+
+def test_parse_route_text():
+    from xgonav.route import parse_points, parse_zones
+    assert parse_points("1,2;-0.5,3") == [(1.0, 2.0), (-0.5, 3.0)] and parse_points("") == []
+    assert len(parse_zones("0,0;1,0;1,1|2,2;3,2;3,3")) == 2
+    for bad in ("1", "a,b", "1,2,3", "nan,1"):
+        with pytest.raises(ValueError):
+            parse_points(bad)
+    with pytest.raises(ValueError):
+        parse_zones("0,0;1,0")
+
+
+def test_locked_map_does_not_change():
+    from xgonav.freespace import FreeSpace
+    cfg, m = _route_map()
+    geo = m.geo
+    hz = geo.horizon_row(0) / 4
+    fs = FreeSpace([0.5] * 5, np.full(160, 0.4, np.float32), hz, np.zeros((120, 160), np.uint8), True, None)
+    m.lock()
+    before = m.lo.copy()
+    m.add_freespace(fs, 0.0, (0.0, 0.0, 0.0))
+    m.move(0.3, 0.0)
+    assert np.array_equal(m.lo, before) and m.x > 0.2                   # Pose läuft weiter
+
+
+def test_zone_blocks_planner_frontier_and_arc():
+    from xgonav.frontier import next_goal
+    from xgonav.planner import plan
+    from xgonav.route import arc_hits_zone
+    cfg, m = _route_map()
+    zone = [(1.0, -4.0), (1.5, -4.0), (1.5, 4.0), (1.0, 4.0)]            # Band quer durch den Raum
+    assert plan(m, (0.0, 0.0), (2.5, 0.0), cfg.home) is not None
+    m.zones = [zone]
+    assert plan(m, (0.0, 0.0), (2.5, 0.0), cfg.home) is None
+    assert plan(m, (0.0, 0.0), (0.5, 1.0), cfg.home) is not None
+    r0, c0 = (int(k) for k in m.cell(2.0, -3.0))
+    m.lo[r0:, :] = 0.0                                                  # dahinter unbekannt
+    r = next_goal(m, (0.0, 0.0, 0.0), cfg.home, cfg.explore)
+    assert r.path is None or all(p[0] < 1.0 for p in r.path)
+    assert arc_hits_zone((0.5, 0.0, 0.0), 0.27, 0.0, [zone], 0.18)      # fährt darauf zu
+    assert not arc_hits_zone((0.5, 0.0, 0.0), -0.27, 0.0, [zone], 0.18)  # fährt weg
+    assert not arc_hits_zone((0.9, 0.0, 0.0), -0.1, 0.0, [zone], 0.18)  # nah dran, entfernt sich
+    assert arc_hits_zone((0.9, 0.0, 0.0), 0.1, 0.0, [zone], 0.18)
+    assert not arc_hits_zone((-2.0, 0.0, 0.0), 0.27, 0.0, [zone], 0.18)
+
+
+def test_app_checks_patrol_start_and_locks_explore():
+    from xgonav.app import ModeNotAllowed
+    app = _app(freespace=True)
+    gm = app.gridmap
+    with pytest.raises(ModeNotAllowed, match="Route"):
+        app.set_mode("patrol", confirmed=True)
+    gm.route = [(1.0, 0.0)]
+    app.robot.state.battery = 100
+    with pytest.raises(ModeNotAllowed, match="bestätigen"):
+        app.set_mode("patrol")
+    app.robot.state.battery = app.cfg.patrol.start_battery - 1
+    with pytest.raises(ModeNotAllowed, match="Akku"):
+        app.set_mode("patrol", confirmed=True)
+    app.robot.state.battery = 100
+    gm.move(2.0, 0.0)
+    with pytest.raises(ModeNotAllowed, match="vom Start"):
+        app.set_mode("patrol", confirmed=True)
+    gm.move(-2.0, 0.0)
+    app.set_mode("patrol", confirmed=True)
+    assert gm.locked
+    with pytest.raises(ModeNotAllowed, match="gesperrt"):
+        app.set_mode("explore")
+
+
+def test_arc_check_stops_at_zone():
+    from xgonav.behaviors import Command
+    app = _app(freespace=True)
+    app.gridmap.zones = [[(0.2, -1.0), (0.6, -1.0), (0.6, 1.0), (0.2, 1.0)]]
+    c = app._arc_check(Command(0.15, 0.0, 100.0, "x"))
+    assert c.v == 0 and "Sperrzone" in c.status
+    c = app._arc_check(Command(-0.1, 0.0, 100.0, "x"))
+    assert "Sperrzone" not in c.status

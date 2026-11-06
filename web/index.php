@@ -142,8 +142,11 @@ pre{background:#0b0d10;border-radius:6px;padding:8px;overflow:auto;max-height:40
 .trenner{border:0;border-top:1px solid var(--rand);margin:10px 0}
 
 /* --- Raumkarte */
-#karte-rahmen{max-width:400px;aspect-ratio:1;margin:0 auto;overflow:hidden;background:#808080;border-radius:6px;cursor:grab;user-select:none;-webkit-user-select:none}
+#karte-rahmen{position:relative;max-width:400px;aspect-ratio:1;margin:0 auto;overflow:hidden;background:#808080;border-radius:6px;cursor:grab;user-select:none;-webkit-user-select:none}
 #karte-rahmen.zieht{cursor:grabbing}
+#karte-rahmen.setzt{cursor:crosshair}
+#karte-punkte{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.route-leiste{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:6px}
 #karte{display:block;width:100%;height:100%;pointer-events:none;user-select:none;-webkit-user-select:none}
 
 /* --- Extras */
@@ -197,6 +200,7 @@ details.extras[open]>summary{margin-bottom:8px}
         <button data-modus="explore" onclick="modus('explore')">Erkunden</button>
         <button data-modus="approach" onclick="modus('approach')">Anfahren</button>
         <button data-modus="home" onclick="modus('home')" title="Weg über die Raumkarte zum Startpunkt">Zum Start</button>
+        <button data-modus="patrol" onclick="streife()" title="Route auf der Raumkarte abfahren">Streife</button>
       </div>
       <input id="ziel" value="person" title="Ziel für Folgen/Anfahren (COCO-Klasse)" aria-label="Ziel">
     </div>
@@ -298,9 +302,24 @@ details.extras[open]>summary{margin-bottom:8px}
     </div>
     <div id="karte-rahmen" title="ziehen: verschieben · Mausrad: zoomen · Doppelklick: zurück zum Rider">
       <img id="karte" alt="Raumkarte" width="320" height="320" draggable="false">
+      <svg id="karte-punkte" viewBox="0 0 1 1" preserveAspectRatio="none"></svg>
     </div>
     <div class="leise" style="margin-top:6px" id="karte-pose">-</div>
     <div class="leise" id="karte-erkunden" hidden></div>
+    <div class="leise" id="karte-streife" hidden></div>
+    <div class="route-leiste" id="route-start">
+      <button onclick="bearbeiten('route')" title="Wegpunkte der Streife per Klick auf die Karte setzen">Route setzen</button>
+      <button onclick="bearbeiten('zone')" title="Bereich, den der Rider nie befährt: Ecken anklicken">Sperrzone</button>
+      <button onclick="zonenLoeschen()" title="Alle Sperrzonen löschen">Zonen löschen</button>
+      <button id="karte-sperre" onclick="karteSperren()" title="Gesperrt ändern Fahrten die Karte nicht">Karte sperren</button>
+    </div>
+    <div class="route-leiste" id="route-edit" hidden>
+      <span id="route-hinweis" class="leise"></span>
+      <label id="route-kreis"><input type="checkbox" id="route-loop"> im Kreis</label>
+      <button onclick="punktWeg()">Letzten weg</button>
+      <button onclick="bearbeitenFertig()" class="aktiv">Übernehmen</button>
+      <button onclick="bearbeitenEnde()">Abbrechen</button>
+    </div>
     <details class="hilfe"><summary>grau unbekannt · hell frei · dunkel belegt · grün Weg · cyan Plan · blau Start · rot Rider</summary>
       <p>Maus: ziehen verschiebt, Mausrad zoomt um den Zeiger, Doppelklick zentriert wieder auf den Rider
         und folgt ihm.</p>
@@ -309,6 +328,12 @@ details.extras[open]>summary{margin-bottom:8px}
       <p>„Erkunden“ kartiert den Raum: erst ein Rundumblick, dann fährt er die Grenzen zwischen bekanntem Boden und
         Unbekanntem an, bis nichts mehr erreichbar ist (oder Zeit- bzw. Akkugrenze). Danach speichert er die Karte und
         fährt zum Start.</p>
+      <p>„Route setzen“: Punkte der Reihe nach auf die Karte klicken; magenta ist die gespeicherte Route. Jeder Punkt
+        muss auf bekanntem, erreichbarem Boden liegen. „Sperrzone“: Ecken eines Bereichs anklicken, den er nie befahren
+        soll, etwa eine Treppe (rot). Sie gilt für alle Modi außer der Handsteuerung, driftet aber mit der Karte: Sie
+        ersetzt keine Absperrung. Route und Zonen gehören zu dieser Karte; nach „Zurücksetzen“ sind sie weg.</p>
+      <p>„Streife“ fährt die Route ab und am Ende zum Start. Der Rider muss dafür am Startpunkt stehen. Ab 30 % Akku fährt
+        er zurück, bei 15 % setzt er sich ab. Nach „Erkunden“ ist die Karte gesperrt, damit Fahrten sie nicht mehr ändern.</p>
       <p>„Zum Start“ plant einen Weg über die Karte und fährt ihn ab. Die Karte wird regelmäßig gespeichert
         und beim Start von xgonav geladen; der Rider muss dann wieder am Startpunkt stehen.</p>
     </details>
@@ -362,7 +387,8 @@ const felder = [
 ];
 const ERKUNDEN = {scan: 'Rundumblick', ziel: 'fährt zu einer Stelle', face: 'schaut', settle: 'schaut', backup: 'setzt zurück',
   wander: 'befreit sich', heim: 'fährt zum Start', fertig: 'fertig'};
-const MODI = {idle: 'Idle', manual: 'Hand', follow: 'Folgen', explore: 'Erkunden', approach: 'Anfahren', home: 'Zum Start'};
+const MODI = {idle: 'Idle', manual: 'Hand', follow: 'Folgen', explore: 'Erkunden', approach: 'Anfahren', home: 'Zum Start', patrol: 'Streife'};
+const STREIFE = {fahrt: 'fährt', schau: 'schaut', backup: 'setzt zurück', heim: 'fährt zum Start', fertig: 'fertig'};
 const esc = t => String(t ?? '-').replace(/[<&]/g, c => c === '<' ? '&lt;' : '&amp;');
 const $ = id => document.getElementById(id);
 let aktModus = null, aktPipeline = null;
@@ -408,6 +434,10 @@ async function befehl(a, p = {}, still = false) {
   finally { if (!still) status(); }
 }
 function modus(n) { return befehl('mode', {name: n, target: $('ziel').value.trim().toLowerCase()}); }
+function streife() {
+  if (!confirm('Steht der Rider am Startpunkt, und sind Treppen und Kanten abgesperrt?')) return;
+  return befehl('mode', {name: 'patrol', target: 'person', bestaetigt: 1});
+}
 function pipelineUmschalten() { return befehl('pipeline', {on: aktPipeline === 'läuft' ? 0 : 1}); }
 async function status() {
   try {
@@ -439,6 +469,19 @@ async function status() {
       const ende = s.explore.ende ? ' · ' + s.explore.ende : '';
       ek.textContent = 'Erkunden: ' + ERKUNDEN[s.explore.zustand] + ' · ' + s.explore.stellen + ' Stellen offen'
         + (s.explore.gesperrt ? ', ' + s.explore.gesperrt + ' übergangen' : '') + ende;
+    }
+    const st = $('karte-streife');
+    st.hidden = !s.patrol;
+    if (s.patrol) {
+      const p = s.patrol;
+      st.textContent = 'Streife: ' + STREIFE[p.zustand] + ' · Punkt ' + p.punkt + ' von ' + p.von + ' · Runde ' + p.runde
+        + (p.ausgelassen.length ? ' · ausgelassen: ' + p.ausgelassen.join(', ') : '') + (p.ende ? ' · ' + p.ende : '');
+    }
+    if (s.grid) {
+      karteGesperrt = !!s.grid.gesperrt;
+      const ks = $('karte-sperre');
+      ks.textContent = karteGesperrt ? 'Karte entsperren' : 'Karte sperren';
+      ks.classList.toggle('aktiv', karteGesperrt);
     }
     belichtStatus(s.exposure);
     gainStatus(s.exposure);
@@ -607,7 +650,72 @@ function karteAnzeigen() {
   if (!b) { $('karte').style.transform = ''; return; }
   const cx = karte.cx == null ? b.cx : karte.cx, cy = karte.cy == null ? b.cy : karte.cy;
   $('karte').style.transform = 'translate(' + W * (cy - b.cy) / karte.v + 'px,' + W * (cx - b.cx) / karte.v + 'px) scale(' + b.v / karte.v + ')';
+  punkteZeichnen();
 }
+// Route und Sperrzonen setzen: Klick auf die Karte legt einen Punkt in Karten-Koordinaten an (oben = +x, links = +y).
+// Gespeichertes zeichnet der Server ins Bild, die noch nicht übernommenen Punkte liegen als SVG darüber.
+const bearb = {art: null, pts: []};
+let karteGesperrt = false;
+async function routeHolen() {
+  const r = await fetch('api.php?a=route', {cache: 'no-store'});
+  if (!r.ok) throw new Error('Route nicht lesbar');
+  return r.json();
+}
+const punktText = pts => pts.map(p => p[0].toFixed(3) + ',' + p[1].toFixed(3)).join(';');
+const zonenText = zonen => zonen.map(punktText).join('|');
+function punkteZeichnen() {
+  const svg = $('karte-punkte'), b = karte.bild;
+  if (!bearb.art || !b) { svg.innerHTML = ''; return; }
+  const cx = karte.cx == null ? b.cx : karte.cx, cy = karte.cy == null ? b.cy : karte.cy;
+  const q = bearb.pts.map(p => [0.5 - (p[1] - cy) / karte.v, 0.5 - (p[0] - cx) / karte.v]);
+  const farbe = bearb.art === 'zone' ? '#dc2828' : '#c83cc8';
+  const linie = q.map(p => p.join(',')).join(' ');
+  const form = bearb.art === 'zone' ? 'polygon' : 'polyline';
+  svg.innerHTML = '<' + form + ' points="' + linie + '" fill="none" stroke="' + farbe + '" stroke-width="2" vector-effect="non-scaling-stroke"/>'
+    + q.map(p => '<circle cx="' + p[0] + '" cy="' + p[1] + '" r="0.012" fill="' + farbe + '"/>').join('');
+}
+function bearbeitenHinweis() {
+  $('route-hinweis').textContent = (bearb.art === 'zone' ? 'Ecken der Sperrzone anklicken: ' : 'Wegpunkte anklicken: ') + bearb.pts.length;
+}
+async function bearbeiten(art) {
+  let akt = {points: [], loop: false};
+  if (art === 'route') {
+    try { akt = await routeHolen(); } catch (e) { zeige(e.message); return; }
+  }
+  bearb.art = art;
+  bearb.pts = art === 'route' ? akt.points.map(p => [p[0], p[1]]) : [];
+  $('route-loop').checked = !!akt.loop;
+  $('route-kreis').hidden = art !== 'route';
+  $('route-start').hidden = true; $('route-edit').hidden = false;
+  $('karte-rahmen').classList.add('setzt');
+  bearbeitenHinweis(); punkteZeichnen();
+}
+function bearbeitenEnde() {
+  bearb.art = null; bearb.pts = [];
+  $('route-start').hidden = false; $('route-edit').hidden = true;
+  $('karte-rahmen').classList.remove('setzt');
+  punkteZeichnen();
+}
+function punktWeg() { bearb.pts.pop(); bearbeitenHinweis(); punkteZeichnen(); }
+async function bearbeitenFertig() {
+  let akt;
+  try { akt = await routeHolen(); } catch (e) { zeige(e.message); return; }
+  const p = {pts: punktText(akt.points), loop: akt.loop ? 1 : 0};
+  if (bearb.art === 'route') {
+    p.pts = punktText(bearb.pts); p.loop = $('route-loop').checked ? 1 : 0;
+  } else {
+    if (bearb.pts.length < 3) { zeige('Eine Sperrzone braucht mindestens 3 Ecken'); return; }
+    p.zones = zonenText([...akt.zones, bearb.pts]);
+  }
+  if (await befehl('route', p)) { bearbeitenEnde(); karteAnstoss(); }
+}
+async function zonenLoeschen() {
+  if (!confirm('Alle Sperrzonen löschen?')) return;
+  let akt;
+  try { akt = await routeHolen(); } catch (e) { zeige(e.message); return; }
+  if (await befehl('route', {pts: punktText(akt.points), loop: akt.loop ? 1 : 0, nozones: 1})) karteAnstoss();
+}
+function karteSperren() { return befehl('map_lock', {on: karteGesperrt ? 0 : 1}); }
 // Ziehen darf kein System-Drag werden: Ist Text markiert, zöge der Browser sonst die Markierung mit und
 // bräche die Bewegung per pointercancel ab.
 function keinSystemDrag(el) {
@@ -621,23 +729,34 @@ function karteView(v) {     // Auswahlfeld
 (() => {
   const el = $('karte-rahmen'), mitte = () => [karte.cx == null ? karte.bild.cx : karte.cx, karte.cy == null ? karte.bild.cy : karte.cy];
   const grenze = c => Math.max(-karte.bild.size, Math.min(karte.bild.size, c));
-  let start = null;
+  let start = null, gezogen = false;
   keinSystemDrag(el);
+  // Klick (Maus oder Finger): Punkt setzen. Ziehen verschiebt weiter die Karte.
+  el.addEventListener('click', e => {
+    if (!bearb.art || !karte.bild || gezogen) { gezogen = false; return; }
+    const q = el.getBoundingClientRect(), [cx, cy] = mitte();
+    const fx = (e.clientX - q.left) / q.width, fy = (e.clientY - q.top) / q.height;
+    bearb.pts.push([cx + (0.5 - fy) * karte.v, cy + (0.5 - fx) * karte.v]);
+    bearbeitenHinweis(); punkteZeichnen();
+  });
   el.addEventListener('pointerdown', e => {
     if (e.pointerType === 'touch' || e.button !== 0 || !karte.bild) return;
     start = {x: e.clientX, y: e.clientY, m: mitte()};
+    gezogen = false;
     el.setPointerCapture(e.pointerId); el.classList.add('zieht');
   });
   el.addEventListener('pointermove', e => {
     if (!start) return;
     const dx = e.clientX - start.x, dy = e.clientY - start.y, W = el.clientWidth;
     if (!dx && !dy) return;
+    if (Math.abs(dx) + Math.abs(dy) > 3) gezogen = true;
+    if (!gezogen) return;
     karte.cx = grenze(start.m[0] + dy / W * karte.v); karte.cy = grenze(start.m[1] + dx / W * karte.v);
     karteAnzeigen();
   });
   const ende = () => { if (start) { start = null; el.classList.remove('zieht'); karteAnstoss(); } };
   el.addEventListener('pointerup', ende); el.addEventListener('pointercancel', ende);
-  el.addEventListener('dblclick', () => { karte.cx = karte.cy = null; karteAnzeigen(); karteAnstoss(); });
+  el.addEventListener('dblclick', () => { if (bearb.art) return; karte.cx = karte.cy = null; karteAnzeigen(); karteAnstoss(); });
   el.addEventListener('wheel', e => {
     if (!karte.bild) return;
     e.preventDefault();

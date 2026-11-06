@@ -130,3 +130,15 @@ With full processing, the charging dock current is insufficient to charge.
 | red | target track |
 | violet | image motion |
 | blue | drive command |
+
+## Route, no-go zones, patrol
+
+| Control | Effect |
+|---|---|
+| Route setzen | click points on the map, optional loop, `POST api.php?a=route&pts=x,y;x,y&loop=0\|1` |
+| Sperrzone | click at least 3 corners, added to the existing zones (`zones=x,y;x,y;x,y\|...`) |
+| Zonen löschen | `nozones=1` |
+| Karte sperren | `POST api.php?a=map_lock&on=0\|1` |
+| Streife | mode `patrol` after a confirmation dialog (`bestaetigt=1`) |
+
+Coordinates are metres in the map frame (top = +x, left = +y). `GET api.php?a=route` returns points, loop, zones, `map_id`.

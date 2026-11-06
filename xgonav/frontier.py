@@ -107,8 +107,17 @@ def next_goal(grid: GridMap, pose: tuple, hcfg: HomeCfg, ecfg: ExploreCfg, obsta
     blocked[disk.astype(bool)] = False                 # die Pose driftet: Wand neben dem Rider sperrt ihn nicht ein
     if blocked_x is not None:
         blocked_x[disk.astype(bool)] = False
+    forbid = None
+    if grid.zones:                                     # Sperrzonen bleiben zu, auch als Ziel
+        forbid = grid.zones_mask(grid.zones, r0, c0, lo.shape, hcfg.inflate_m)
+        core = grid.zones_mask(grid.zones, r0, c0, lo.shape, 0.0)
+        for b_ in (blocked, blocked_x):
+            if b_ is not None:
+                b_[forbid & ~(disk.astype(bool) & ~core)] = True
+                b_[core] = True
     known_m2 = round(float(free.sum()) * res * res, 2)
-    passable = (free | disk.astype(bool) | (driven if driven is not None else False)) & ~blocked
+    passable = (free | (disk.astype(bool) if forbid is None else disk.astype(bool) & ~forbid)
+                | (driven if driven is not None else False)) & ~blocked
     _, labels = cv2.connectedComponents(passable.astype(np.uint8), connectivity=8)
     reach = labels == labels[s]
     fr = reach & (cv2.dilate(unknown.astype(np.uint8), _CROSS) > 0)

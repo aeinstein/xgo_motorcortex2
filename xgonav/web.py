@@ -23,6 +23,7 @@ import cv2
 
 from .affinity import pin_thread
 from .app import App, render
+from .route import parse_points, parse_zones
 
 log = logging.getLogger(__name__)
 START = time.time()      # Startzeit des Prozesses: Oberfläche verbindet den Stream nach Neustart neu
@@ -127,6 +128,13 @@ def serve(app: App, host: str, port: int, fps: int, render_cpus=None) -> Threadi
                                  "battery": st.battery, "balancing": st.balancing, "yaw_drv": st.yaw_deg,
                                  "tracks": [], "free": [], "ttc": None})
                 return self._send(200, json.dumps(body).encode())
+            if u.path == "/route":
+                gm = app.gridmap
+                if gm is None:
+                    return self._send(404, b'{"error":"keine Raumkarte"}')
+                with gm._lock:
+                    body = {"points": gm.route, "loop": gm.route_loop, "zones": gm.zones, "map_id": gm.map_id, "gesperrt": gm.locked}
+                return self._send(200, json.dumps(body).encode())
             if u.path == "/map.png":
                 return self._map_png(parse_qs(u.query))
             if u.path == "/ws":
@@ -161,6 +169,27 @@ def serve(app: App, host: str, port: int, fps: int, render_cpus=None) -> Threadi
                 except ValueError as e:   # ModeNotAllowed
                     return self._send(409, json.dumps({"error": str(e)}).encode())
                 return self._send(200, b'{"ok":true}')
+            if u.path == "/route":
+                if app.gridmap is None:
+                    return self._send(404, b'{"error":"keine Raumkarte"}')
+                if app.mode == "patrol":
+                    return self._send(409, json.dumps({"error": "nicht während der Streife"}).encode())
+                try:
+                    pts = parse_points(q.get("pts", [""])[0])
+                    zones = parse_zones(q["zones"][0]) if "zones" in q else ([] if "nozones" in q else None)
+                except ValueError as e:
+                    return self._send(400, json.dumps({"error": "Route ungültig: " + str(e)}).encode())
+                errors = app.set_route(pts, q.get("loop", ["0"])[0] == "1", zones)
+                if errors:
+                    return self._send(409, json.dumps({"error": "; ".join(errors)}).encode())
+                return self._send(200, b'{"ok":true}')
+            if u.path == "/map/lock":
+                if app.gridmap is None:
+                    return self._send(404, b'{"error":"keine Raumkarte"}')
+                if app.mode == "patrol":
+                    return self._send(409, json.dumps({"error": "nicht während der Streife"}).encode())
+                app.gridmap.lock(q.get("on", ["1"])[0] != "0")
+                return self._send(200, b'{"ok":true}')
             if u.path == "/map/reset":
                 if app.gridmap is None:
                     return self._send(404, b'{"error":"keine Raumkarte"}')
@@ -192,7 +221,8 @@ def serve(app: App, host: str, port: int, fps: int, render_cpus=None) -> Threadi
                 return self._send(200, json.dumps({"ok": True, "gain": g}).encode())
             if u.path == "/mode":
                 try:
-                    app.set_mode(q.get("name", ["idle"])[0], (q.get("target") or [None])[0] or None)
+                    app.set_mode(q.get("name", ["idle"])[0], (q.get("target") or [None])[0] or None,
+                                 confirmed=q.get("bestaetigt", ["0"])[0] == "1")
                 except KeyError:
                     return self._send(400, b'{"error":"unbekannter Modus"}')
                 except ValueError as e:   # ModeNotAllowed

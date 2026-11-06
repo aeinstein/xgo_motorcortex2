@@ -345,6 +345,9 @@ class HomeCfg:
     margin_m: float = 1.5              # Suchgebiet = Pose, Start, gefahrener Weg + Rand
     lookahead_m: float = 0.5
     arrive_m: float = 0.15
+    # Festgefahren, aber so nah am Ziel: gilt als angekommen. Der Sicherheitsabstand der Bahnprüfung (0,18 m) lässt
+    # ihn nicht an ein Ziel, neben dem etwas liegt, auch wenn das Ziel selbst frei ist (RiderPi 2026-11-06)
+    near_m: float = 0.5
     replan_s: float = 2.0
     keep_factor: float = 1.2           # alter Weg bleibt, solange frei und <= Faktor x neuer + 0,3 m
     use_localmap: bool = True          # Hindernisse der Bahnprüfung (Merkkarte) mit einplanen
@@ -398,6 +401,18 @@ class ExploreCfg:
 
 
 @dataclass
+class PatrolCfg:
+    # Streife: Route abfahren (xgonav/route.py, Modus patrol)
+    reach_m: float = 0.25              # Wegpunkt erreicht
+    pause_s: float = 1.5               # am Wegpunkt stehen und schauen
+    point_timeout_s: float = 90.0      # länger: Wegpunkt auslassen
+    start_battery: int = 40            # %: darunter nicht losfahren
+    return_battery: int = 30           # %: zurück zum Start
+    down_battery: int = 15             # %: sofort absetzen
+    start_tol_m: float = 0.6           # laut Karte höchstens so weit vom Start, um loszufahren
+
+
+@dataclass
 class CpuCfg:
     # CPU-Pinning (Linux). Leer = nicht pinnen. Am RiderPi: Hauptschleife samt Kamera,
     # OpenCV-Workern und Rest des Systems auf 0-1, YOLO auf 2-3 (Aufrufer + Pool-Thread).
@@ -429,6 +444,7 @@ class Config:
     grid: GridCfg = field(default_factory=GridCfg)
     home: HomeCfg = field(default_factory=HomeCfg)
     explore: ExploreCfg = field(default_factory=ExploreCfg)
+    patrol: PatrolCfg = field(default_factory=PatrolCfg)
     control_hz: float = 20.0
 
     @classmethod
