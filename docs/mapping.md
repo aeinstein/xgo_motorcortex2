@@ -134,4 +134,4 @@ With 8 phantom spots (`--phantoms 8`, two rooms): 0 collisions in 4 runs, 3 comp
 
 2026-11-06, `free_range_m` 1.1, driven ground passable, `avoid_r_m` 0.3 (one room, two rooms, with and without 8 phantoms): 12 of 12 to „Karte fertig“, 0 collisions, 142–204 s, 24–36 m, floor known 0.78–0.88, walls 0.77–0.94, occupied precision 0.86–0.94, free outside 0.01–0.07 m².
 
-Tried and dropped 2026-11-06: weak hits beyond `max_range_m` (up to 1.75–2.25 m, +0.1–0.2 per image). RiderPi recordings: obstacles in the map 2–13 s earlier (median), little added. Simulator (18 runs): occupied precision 0.64–0.84, and in the two-room scene 7 of 9 runs saw at most 0.69 of the floor, 5 of them about 0.40; 0 collisions.
+Tried and dropped 2026-11-06: weak hits beyond `max_range_m` (up to 1.75–2.25 m, +0.1–0.2 per image). RiderPi recordings: obstacles in the map 3–13 s earlier (median), little added. Simulator (18 runs): occupied precision 0.64–0.84, and in the two-room scene 7 of 9 runs saw at most 0.69 of the floor, 5 of them about 0.40; 0 collisions.
