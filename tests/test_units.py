@@ -1833,3 +1833,15 @@ def test_map_explore_contact_blocks_goal_at_once():
     b.f.stuck = b.f.pressing = True
     c = b.step(_world_at(1.0, pose))
     assert b.state == "backup" and b.blocked_goals == [(3.0, 0.0)] and c.v == 0 and not b.f.pressing
+
+
+def test_grid_heading_from_imu():
+    app = _app(freespace=True)
+    assert app._grid_dyaw(0.5) == 0.5                                  # Default: Räder
+    app.cfg.grid.yaw_source = "imu"
+    app.robot.state.yaw_deg = 179.0
+    assert app._grid_dyaw(0.5) == 0.0                                  # erster Wert: nur merken
+    app.robot.state.yaw_deg = -179.0                                   # über die Naht: +2°
+    assert abs(app._grid_dyaw(0.5) - math.radians(2.0)) < 1e-9
+    app.robot.state.yaw_deg = None                                     # keine IMU: Rückfall
+    assert app._grid_dyaw(0.5) == 0.5

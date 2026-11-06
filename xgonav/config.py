@@ -321,7 +321,8 @@ class GridCfg:
     l_max: float = 3.5
     l_show: float = 0.7                # ab hier "belegt"/"frei" in Anzeige und Statistik
     view_m: float = 6.0                # Bildausschnitt für die Anzeige
-    # Drehung der Kartenpose: "räder" (Rad-Odometrie, sonst Kamera) oder "kamera" (Ego-Motion)
+    # Drehung der Kartenpose: "räder" (Rad-Odometrie, sonst Kamera), "kamera" (Ego-Motion) oder "imu" (Firmware,
+    # sonst wie "räder"). RiderPi 2026-11-06, 32 m: mit Rädern 75 cm Fehler (Schlupf beim Drehen), mit IMU ~6 cm.
     yaw_source: str = "räder"
     # Eintragen in eigenem Thread (GridWorker, Kerne wie [cpu] freespace_cpus); False = im Regelschritt
     threaded: bool = True

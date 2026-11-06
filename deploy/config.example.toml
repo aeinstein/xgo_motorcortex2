@@ -71,6 +71,7 @@ sample_cols = 0.5
 
 [grid]
 file = "/opt/xgonav/raumkarte.npz"   # Raumkarte speichern/laden; beim Laden muss der Rider am Startpunkt stehen
+yaw_source = "imu"       # 2026-11-06: Räder rutschen beim Drehen (75 cm nach 32 m), IMU ~6 cm
 free_range_m = 1.1       # 2026-11-06: Stufe wurde aus > 1 m als Boden gesehen und bei 1,5 m als frei eingetragen
 
 [map]

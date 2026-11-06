@@ -190,7 +190,7 @@ Sounds: `sound` true, `sound_dir` `/opt/xgonav/sounds`, `sound_found` `freude.wa
 | `l_min` / `l_max` / `l_show` | -3.0 / 3.5 / 0.7 |
 | `free_margin_m` / `occ_free_factor` | 0.10 / 0.5 |
 | `view_m` | 6.0 |
-| `yaw_source` | `räder` (wheels) or `kamera` |
+| `yaw_source` | `räder` (wheels), `kamera` or `imu` (firmware heading, RiderPi); see `docs/limitations.md` |
 | `threaded` | true |
 | `native` | true: enter rays in the C++ core (`xgonav/native/gridfast.cpp`) if built; same map as numpy (CM4 1.5 → 0.1 ms per observation) |
 | `file` | `""` (off); RiderPi example: `/opt/xgonav/raumkarte.npz` |

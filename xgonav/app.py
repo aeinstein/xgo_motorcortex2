@@ -98,6 +98,7 @@ class App:
         self._wheel_at_ctrl = None         # Radprobe beim letzten Regelschritt
         self.odom_src = "befehl"
         self._wheel_dyaw: float | None = None   # Drehung laut Rädern im letzten Regelschritt
+        self._grid_yaw: float | None = None     # letzter IMU-Kurs (Grad) für die Raumkarte
         self.odom_m = 0.0                  # gefahrene Strecke laut Odometrie (Betrag, seit Start)
         self.imu_sync = ImuSync(cfg.imu)
         self._imu_lp: float | None = None
@@ -413,9 +414,9 @@ class App:
                 self.lmap.move(ds, dyaw)
                 if self.gridmap is not None:
                     # Kartenkurs: Räder driften bei Drehungen weniger als die Ego-Motion
-                    gyaw = self._wheel_dyaw if (self.cfg.grid.yaw_source == "räder"
+                    gyaw = self._wheel_dyaw if (self.cfg.grid.yaw_source != "kamera"
                                                 and self._wheel_dyaw is not None) else dyaw_vis
-                    self.gridmap.move(ds, gyaw)
+                    self.gridmap.move(ds, self._grid_dyaw(gyaw))
                 if free is not None and self._free is not self._fs_in_map:
                     self._fs_in_map = self._free
                     view = self._map_view(free, tracks, f.t)
@@ -504,7 +505,15 @@ class App:
         if self.lmap is not None:
             self.lmap.move(ds, dyaw)
         if self.gridmap is not None:
-            self.gridmap.move(ds, dyaw)
+            self.gridmap.move(ds, self._grid_dyaw(dyaw))
+
+    def _grid_dyaw(self, fallback: float) -> float:
+        """Drehung der Kartenpose seit dem letzten Aufruf (rad): aus der Firmware-IMU bei yaw_source \"imu\"."""
+        y = self.robot.state.yaw_deg
+        if self.cfg.grid.yaw_source != "imu" or y is None:
+            return fallback
+        last, self._grid_yaw = self._grid_yaw, y
+        return 0.0 if last is None else math.radians((y - last + 180.0) % 360.0 - 180.0)
 
     def _odom_ds(self, now: float, dt: float) -> float:
         """Strecke seit dem letzten Regelschritt (m): aus den Rad-Encodern, wenn frisch;
