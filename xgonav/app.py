@@ -184,10 +184,8 @@ class App:
             batt = self.robot.state.battery
             if batt and batt < self.cfg.patrol.start_battery:
                 raise ModeNotAllowed(f"Akku {batt} %: Streife erst ab {self.cfg.patrol.start_battery} %")
-            x, y, _ = gm.pose()
-            d = math.hypot(x - gm.start[0], y - gm.start[1])
-            if d > self.cfg.patrol.start_tol_m:
-                raise ModeNotAllowed(f"laut Karte {d:.2f} m vom Start: Rider an den Startpunkt stellen, Dienst neu starten")
+            if not self.robot.state.balancing:
+                raise ModeNotAllowed("Streife: Rider muss stehen, er rollt beim Aufstehen noch vor")
 
     def _make(self, name: str, target: str | None = None) -> Behavior:
         b = make_behavior(name, self.cfg.behavior, self.cfg.robot, target, self.cfg.home, self.cfg.explore,
@@ -258,6 +256,7 @@ class App:
             raise ModeNotAllowed("Streife: bitte bestätigen, dass der Rider am Startpunkt steht")
         if name == "patrol":
             self.gridmap.lock()
+            self.gridmap.relocate_to_start()
         if not self.pipeline_on and name not in self.NO_CAMERA:
             raise ModeNotAllowed(f"Modus {name} braucht laufende Bildverarbeitung")
         with self._mode_lock:

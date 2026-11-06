@@ -107,6 +107,14 @@ class GridMap:
                 cv2.polylines(m, [px], True, 1, thickness=2 * rad + 1)
         return m.astype(bool)
 
+    def relocate_to_start(self) -> None:
+        """Der Nutzer bestätigt: Der Rider steht am Startpunkt. Die Pose springt dorthin, die Drift ist weg."""
+        with self._lock:
+            d = math.hypot(self.x - self.start[0], self.y - self.start[1])
+            self.x, self.y, self.th = self.start
+            self.path = [(self.x, self.y)]
+        log.info("Pose auf den Startpunkt gesetzt (%.2f m Korrektur)", d)
+
     def set_start(self) -> None:
         """Startpunkt = aktuelle Pose (Knopf „Start hier“)."""
         with self._lock:

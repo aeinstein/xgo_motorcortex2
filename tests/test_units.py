@@ -56,7 +56,8 @@ def test_robot_height_mapping():
     r.set_height(120)   # begrenzt auf height_limit_u8
     r.set_height(500)   # begrenzt, identisch -> kein neuer Write
     vals = [v for _, n, v in r.writes if n == "height"]
-    assert vals == [0, 255]
+    assert vals == [0, 128, 205]
+    assert r.height_mm == pytest.approx(60 + 60 * 205 / 255)
 
 
 # ---------------------------------------------------------------- Ego-Motion
@@ -2034,12 +2035,13 @@ def test_app_checks_patrol_start_and_locks_explore():
     with pytest.raises(ModeNotAllowed, match="Akku"):
         app.set_mode("patrol", confirmed=True)
     app.robot.state.battery = 100
-    gm.move(2.0, 0.0)
-    with pytest.raises(ModeNotAllowed, match="vom Start"):
+    app.robot.state.balancing = False
+    with pytest.raises(ModeNotAllowed, match="stehen"):
         app.set_mode("patrol", confirmed=True)
-    gm.move(-2.0, 0.0)
+    app.robot.state.balancing = True
+    gm.move(2.0, 0.3)
     app.set_mode("patrol", confirmed=True)
-    assert gm.locked
+    assert gm.locked and gm.pose() == gm.start and gm.path == [gm.start[:2]]   # Pose springt zum Start
     with pytest.raises(ModeNotAllowed, match="gesperrt"):
         app.set_mode("explore")
 

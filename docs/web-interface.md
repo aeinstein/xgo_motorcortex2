@@ -17,7 +17,7 @@
 | Header (sticky) | host, connection, mode, state (balancing/lying), battery (green ≥ 40 %, yellow ≥ 20 %, red < 20 %), pipeline, **STOPP** |
 | Left | camera image (WebSocket), mode selector (Idle · Hand · Follow · Explore · Approach · Zum Start) + target class, pipeline card with start/stop and status tiles, raw status JSON |
 | Lage (open by default, right column top) | 3D model of the Rider rotated by roll, pitch, yaw from `imu_log`: CAD model `web/rider-model.bin` via WebGL, legs follow the `height`/`roll` setpoints through the linkage, smoothed ~0.33 s, at minimum while state = 254 (sliders keep their value), see limitations (built by `tools/step_to_model.py` from `docs/Rider-Pi.STEP`, loaded when Verlauf is first opened); without WebGL or the file, simple boxes on canvas 2D; fixed compass ring on the ground (0° = heading at ESP32 start, + = left), blue line = body forward direction; values below. Samples (50 Hz) replayed smoothly ~0.3 s behind; rotation about the wheel axle. Drag (mouse/touch) to orbit the view (elevation 5–85°), double-click resets; view kept in `localStorage` `xgonav.lage3d`; live (5 s buffer, memory); open/closed kept in `localStorage` `xgonav.lage` |
-| Fahren | D-pad, speed 5–100 %, height 61–255, roll −20..20°, Aufstehen (arm, 255), Neu ausrichten (leveling pulse), Absetzen (disarm, 254) |
+| Fahren | D-pad, speed 5–100 %, height 61–205, roll −20..20°, Aufstehen (arm, 255), Neu ausrichten (leveling pulse), Absetzen (disarm, 254) |
 | Raumkarte | room map PNG, view 3/6/10/16 m; mouse: drag to pan, wheel to zoom about the pointer (1 m..`grid.size_m`), double-click recentres on the Rider and follows again (touch: page scrolls, no pan); Start hier (start = pose), Speichern, reset, pose line with distance to start |
 | Kamera | exposure (ms, auto), gain (1–63.9×, auto), actual values |
 | Verlauf (collapsed) | history charts, see below |
@@ -70,7 +70,7 @@ GET only for `status` and `sys`; all commands POST. Parameters are validated; in
 | `POST ?a=map_save` | xgonav `/map/save` | |
 | `POST ?a=led&i=0..3&c=%23rrggbb` | `/proc/XGORider/leds/<i>` | |
 | `POST ?a=action&n=..` | `/proc/XGORider/action` | 1..6, 254, 255 |
-| `POST ?a=height&h=..` | `/proc/XGORider/height` | 61..255 |
+| `POST ?a=height&h=..` | `/proc/XGORider/height` | 61..205 |
 | `POST ?a=roll&deg=..` | `/proc/XGORider/roll` | −20..20 |
 | `POST ?a=calibration&on=0\|1` | `settings/calibration` | API only, no UI button |
 | `POST ?a=pitch_calibration` | `settings/pitch_calibration` | API only, no UI button |

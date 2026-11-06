@@ -95,6 +95,7 @@ Largest cost: optical flow (`ego.lk_*`). The Python binding does not accept preb
 - Web UI has no authentication.
 - Room map drifts (no markers).
 - Web attitude model: legs show the last written `height`/`roll` setpoints, not measured positions (firmware does not report them). State 254 (Absetzen) shows legs at the firmware minimum (45 mm extension) as an assumption. Other firmware moves (limp legs, leveling, stand-up, falls) are not shown; unknown after driver load (assumes 128).
+- Body height limited to u8 205 (web UI, API, xgonav; provisional). Setpoint 235 on 2026-11-06: firmware stop, state 252 (not tilt, fall, low battery or servo loss; IMU, control gap > 30 ms or invalid control output; cause open, single event). 205 held ~2 s, 225 ~1 s. Firmware itself accepts 0..255; direct writes to `/proc/XGORider/height` are not limited.
 - Leg calibration buttons removed (saving with slack legs overwrote flash zero points, 2026-11-02).
 - Battery: driver powers off below 8 % (`low_batt_level`); full image processing draws more than the charging dock supplies.
 
@@ -109,5 +110,6 @@ Largest cost: optical flow (`ego.lk_*`). The Python binding does not accept preb
 | Timing | Control step grew during the run (8 → 46 ms mean, 27 ms CPU), raw recording running; `LocalMap.confirmed_points` compares every point with every point (up to 2900 points). Result now cached between floor updates, the planner's copy runs in its thread. Run 4, same recording: control step 8–12 ms mean, main loop median 19 ms, p95 49 ms (before 33 and 97 ms). Planner median 215 ms, peak 761 ms |
 | Heading | Run 6, 32 m, photo with A4 scale: pose 75 cm wrong with wheel heading (slip while turning, wheels and IMU differ by up to 37°). Same run re-integrated with IMU heading: about 6 cm, walls single and straight. One run, strip taken as start. `grid.yaw_source = "imu"` since then, not driven yet |
 | `patrol` | since 2026-11-06, simulator only, **not driven**. No alarm yet |
+| Drift with IMU heading | Run 9, 11.9 m, measured at the end: 195 mm to the left, heading looked right (pose said 4 cm, 7°). Larger than the 6 cm the re-integration of run 6 suggested |
 | Way back | Run 4 ended 1.7 m from the start: the direct way led along a chair and a chair mat. Abort now only after `give_up_s` 20 s without approach. Run 5 ended 0.89 m from the start with "kein Weg" while driving freely: the room map alone had a straight way, so the local map closed it. `plan()` now falls back without it, not driven since |
 | Contact | Only inferred from stationary wheels under command, see `docs/mapping.md`; no sensor |

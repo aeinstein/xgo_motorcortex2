@@ -109,7 +109,7 @@ Status JSON `grid`: `pose [x m, y m, yaw °]`, `start [x m, y m, yaw °]`, `zum_
 | No-go zones | polygons in map coordinates. Planner and frontier never enter them plus `inflate_m`, `_arc_check` stops an arc that would come within 0.18 m (moving away stays allowed). All modes except manual. They drift with the pose: **no replacement for a physical barrier** |
 | Patrol | points in order, `pause_s` 1.5 s each; stuck: replan, then back up and skip the point; contact, `max_fail` plans without a way or `point_timeout_s` 90 s: skip. No point reached in a lap, or end of a non-loop route: to the start |
 | Near enough | stuck within `home.near_m` 0.5 m of a target counts as arrived: the 0.18 m clearance can make a free target unreachable |
-| Start | only with user confirmation (the map assumes pose = start after loading), pose ≤ `start_tol_m` 0.6 m from the start, battery ≥ 40 %. Back at 30 %, set down at 15 % (action 254) |
+| Start | only standing and with user confirmation that the Rider is at the start point: the pose jumps to the start, which removes drift. Battery ≥ 40 %. Back at 30 %, set down at 15 % (action 254) |
 | Status JSON | `patrol`: `zustand`, `punkt`, `von`, `runde`, `erreicht`, `ausgelassen`, `ende`; `grid`: `gesperrt`, `map_id`, `route`, `zonen` |
 
 ### Mapping a room (`--mode explore`, `xgonav/frontier.py`)

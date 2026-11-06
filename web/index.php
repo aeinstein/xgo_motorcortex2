@@ -267,7 +267,7 @@ details.extras[open]>summary{margin-bottom:8px}
         <input type="range" id="tempo" min="5" max="100" value="60">
         <span class="w" id="tempo-w"></span><span class="leer"></span>
         <label for="hoehe">Höhe</label>
-        <input type="range" id="hoehe" min="61" max="255" value="128"
+        <input type="range" id="hoehe" min="61" max="205" value="128"
           oninput="document.getElementById('hoehe-w').textContent = this.value"
           onchange="befehl('height', {h: this.value})">
         <span class="w" id="hoehe-w">128</span><span class="leer"></span>
@@ -435,7 +435,7 @@ async function befehl(a, p = {}, still = false) {
 }
 function modus(n) { return befehl('mode', {name: n, target: $('ziel').value.trim().toLowerCase()}); }
 function streife() {
-  if (!confirm('Steht der Rider am Startpunkt, und sind Treppen und Kanten abgesperrt?')) return;
+  if (!confirm('Steht der Rider (aufgestanden) am Startpunkt, in Startrichtung? Die Pose springt dann dorthin. Sind Treppen und Kanten abgesperrt?')) return;
   return befehl('mode', {name: 'patrol', target: 'person', bestaetigt: 1});
 }
 function pipelineUmschalten() { return befehl('pipeline', {on: aktPipeline === 'läuft' ? 0 : 1}); }

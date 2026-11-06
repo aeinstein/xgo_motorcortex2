@@ -96,11 +96,12 @@ class Robot:
         self._write("action", 254)
 
     def set_height(self, mm: float) -> None:
-        mm = max(self.cfg.height_min_mm, min(self.cfg.height_max_mm, mm))
+        span = self.cfg.height_max_mm - self.cfg.height_min_mm
+        limit_mm = self.cfg.height_min_mm + span * min(self.cfg.height_limit_u8, 255) / 255
+        mm = max(self.cfg.height_min_mm, min(limit_mm, mm))
         if self._height_mm is not None and abs(mm - self._height_mm) < 1.0:
             return
         self._height_mm = mm
-        span = self.cfg.height_max_mm - self.cfg.height_min_mm
         u = int(round(255 * (mm - self.cfg.height_min_mm) / span))
         self._write("height", u)
 

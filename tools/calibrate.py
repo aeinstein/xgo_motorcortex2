@@ -78,6 +78,7 @@ def wall(cfg: Config, frames: int = 40, cols: tuple[float, float] = (0.4, 0.6), 
     # definierte Körperhöhe für die Messung (wie im Fahrbetrieb)
     hmm = cfg.behavior.height_cruise_mm
     u = int(round(255 * (hmm - cfg.robot.height_min_mm) / (cfg.robot.height_max_mm - cfg.robot.height_min_mm)))
+    u = max(0, min(cfg.robot.height_limit_u8, u))
     try:
         Path(cfg.robot.proc_dir, "height").write_text(str(u))
         time.sleep(1.5)

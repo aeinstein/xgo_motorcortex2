@@ -51,7 +51,8 @@ Default = `config.py`. RiderPi = `deploy/config.example.toml` (blank = default).
 | `keepalive_s` | 0.3 | | s |
 | `stall_timeout_s` | 0.5 | | s, userspace watchdog |
 | `kernel_watchdog_ms` | 1000 | 1000 | `settings/motion_timeout_ms` |
-| `height_min_mm` / `height_max_mm` | 60 / 120 | | |
+| `height_min_mm` / `height_max_mm` | 60 / 120 | | scale mm → u8 (0..255) |
+| `height_limit_u8` | 205 | | highest setpoint (≈ 108 mm); see `limitations.md` |
 
 ### `[camera]`
 | Key | Default | RiderPi | Note |

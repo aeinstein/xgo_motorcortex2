@@ -43,7 +43,7 @@ const RC = '/home/aeinstein/motorcortex/rc_server';     // Emotionen der früher
 const EMOTION = '/opt/xgonav/tools/emotion.sh';         // Player (RGB565-Rohbilder statt ffmpeg)
 const EMOTION_RAW = '/opt/xgonav/emotions';             // von deploy/install.sh vorkonvertiert
 const HEIGHT_MIN = 61;                                   // u8; ~10 mm über dem Minimum, dazu ~4 mm fürs Ausrichten (ein Bein tiefer)
-const HEIGHT_MAX = 255;                                 // volle Höhe (Firmware 0..255)
+const HEIGHT_MAX = 205;                                 // u8; Firmware nähme 255, bei 235 Stopp 252 (2026-11-06, Ursache offen)
 
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');

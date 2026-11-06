@@ -37,7 +37,8 @@ class RobotCfg:
     stall_timeout_s: float = 0.5   # kein drive() mehr -> Stopp (Userspace-Watchdog)
     kernel_watchdog_ms: int = 1000 # nur wirksam mit Kernel-Patch (settings/motion_timeout_ms)
     height_min_mm: float = 60.0
-    height_max_mm: float = 120.0
+    height_max_mm: float = 120.0   # min/max legen nur die Skala mm -> u8 fest
+    height_limit_u8: int = 205     # höchster Sollwert; bei 235 Stopp 252 (2026-11-06, Ursache offen)
 
 
 @dataclass
@@ -409,7 +410,6 @@ class PatrolCfg:
     start_battery: int = 40            # %: darunter nicht losfahren
     return_battery: int = 30           # %: zurück zum Start
     down_battery: int = 15             # %: sofort absetzen
-    start_tol_m: float = 0.6           # laut Karte höchstens so weit vom Start, um loszufahren
 
 
 @dataclass
