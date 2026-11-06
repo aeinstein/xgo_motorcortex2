@@ -26,6 +26,7 @@ static const struct proc_ops settings_ops = {
 };
 
 static const struct proc_ops translation_ops = {
+    .proc_read = translation_read,
     .proc_write = translation_write,
 };
 
@@ -242,6 +243,25 @@ static ssize_t settings_read(struct file *file, char __user *user_buf, size_t co
     return simple_read_from_buffer(user_buf, count, ppos, buffer, len);
 }
 
+// Zuletzt geschriebene Sollwerte für die Anzeige: Die Firmware meldet die Beinstellung nicht zurück.
+#define XGO_SOLL_UNBEKANNT INT_MIN
+static int soll_height = XGO_SOLL_UNBEKANNT;
+static int soll_roll = XGO_SOLL_UNBEKANNT;
+
+// height, roll: letzter Sollwert als Zahl, leer solange seit dem Laden keiner geschrieben wurde
+static ssize_t translation_read(struct file *file, char __user *user_buf, size_t count, loff_t *ppos) {
+    const char *setting_name = file->f_path.dentry->d_name.name;
+    char buffer[16];
+    int wert, len = 0;
+
+    if (strcmp(setting_name, "height") == 0) wert = READ_ONCE(soll_height);
+    else if (strcmp(setting_name, "roll") == 0) wert = READ_ONCE(soll_roll);
+    else wert = XGO_SOLL_UNBEKANNT;
+    if (wert != XGO_SOLL_UNBEKANNT) len = scnprintf(buffer, sizeof(buffer), "%d\n", wert);
+
+    return simple_read_from_buffer(user_buf, count, ppos, buffer, len);
+}
+
 static ssize_t translation_write(struct file *file, const char __user *user_buf, size_t count, loff_t *ppos) {
     char buffer[8];
     const char *setting_name = file->f_path.dentry->d_name.name;
@@ -270,6 +290,7 @@ static ssize_t translation_write(struct file *file, const char __user *user_buf,
     	if (parsed < -XGO_ROLL_MAX_DEG || parsed > XGO_ROLL_MAX_DEG) return -EINVAL;
     	value = (uint8_t)DIV_ROUND_CLOSEST((parsed + XGO_ROLL_MAX_DEG) * 255, 2 * XGO_ROLL_MAX_DEG);
     	write_serial_data(XGO_ROLL_ANGLE, &value, 1);
+    	WRITE_ONCE(soll_roll, parsed);
     	return count;
     }
     if (parsed < 0 || parsed > 255) {
@@ -289,6 +310,7 @@ static ssize_t translation_write(struct file *file, const char __user *user_buf,
 
     } else if(strcmp(setting_name, "height") == 0) {
     	write_serial_data(XGO_BODYHEIGHT, &value, 1);
+    	WRITE_ONCE(soll_height, parsed);
 
     } else if(strcmp(setting_name, "roll_balance") == 0) {
     	// 0x61 (XGO_IMU): Roll-Balance an/aus, früher unter "roll"

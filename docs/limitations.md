@@ -91,6 +91,7 @@ Largest cost: optical flow (`ego.lk_*`). The Python binding does not accept preb
 
 - Web UI has no authentication.
 - Room map drifts (no markers).
+- Web attitude model: legs show the last written `height`/`roll` setpoints, not measured positions (firmware does not report them). State 254 (Absetzen) shows legs at the firmware minimum (45 mm extension) as an assumption. Other firmware moves (limp legs, leveling, stand-up, falls) are not shown; unknown after driver load (assumes 128).
 - Leg calibration buttons removed (saving with slack legs overwrote flash zero points, 2026-11-02).
 - Battery: driver powers off below 8 % (`low_batt_level`); full image processing draws more than the charging dock supplies.
 

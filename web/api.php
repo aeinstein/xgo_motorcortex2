@@ -118,6 +118,10 @@ function sys(int $since): array
     $temp = @file_get_contents('/sys/class/thermal/thermal_zone0/temp');
     $load = @file_get_contents('/proc/loadavg');
     $akku = @file_get_contents(PROC . '/battery');
+    // Sollwerte der Beine, null solange unbekannt (nichts geschrieben seit dem Laden, alter Treiber)
+    $hoehe = trim((string)@file_get_contents(PROC . '/height'));
+    $roll = trim((string)@file_get_contents(PROC . '/roll'));
+    $zustand = trim((string)@file_get_contents(PROC . '/state'));
     return [
         't' => (int)round(microtime(true) * 1000),
         'seq' => $seq,
@@ -126,6 +130,9 @@ function sys(int $since): array
         'temp_c' => is_numeric(trim((string)$temp)) ? round((int)$temp / 1000, 1) : null,
         'load' => $load ? (float)explode(' ', $load)[0] : null,
         'battery' => is_numeric(trim((string)$akku)) ? (int)$akku : null,
+        'height' => is_numeric($hoehe) ? (int)$hoehe : null,
+        'roll' => is_numeric($roll) ? (int)$roll : null,
+        'state' => is_numeric($zustand) ? (int)$zustand : null,
     ];
 }
 

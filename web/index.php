@@ -142,7 +142,7 @@ pre{background:#0b0d10;border-radius:6px;padding:8px;overflow:auto;max-height:40
 .trenner{border:0;border-top:1px solid var(--rand);margin:10px 0}
 
 /* --- Raumkarte */
-#karte-rahmen{max-width:400px;aspect-ratio:1;margin:0 auto;overflow:hidden;background:#808080;border-radius:6px;cursor:grab}
+#karte-rahmen{max-width:400px;aspect-ratio:1;margin:0 auto;overflow:hidden;background:#808080;border-radius:6px;cursor:grab;user-select:none;-webkit-user-select:none}
 #karte-rahmen.zieht{cursor:grabbing}
 #karte{display:block;width:100%;height:100%;pointer-events:none;user-select:none;-webkit-user-select:none}
 
@@ -166,7 +166,7 @@ details.extras[open]>summary{margin-bottom:8px}
 .unter .rechts{float:right}
 .lage3d{display:block;width:100%;background:var(--karte2);border-radius:6px;cursor:grab;touch-action:none}
 .lage3d.zieht{cursor:grabbing}
-.lage3d-rahmen{position:relative}
+.lage3d-rahmen{position:relative;user-select:none;-webkit-user-select:none}
 .lage3d-gl{position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none}
 .unter button{padding:1px 7px;font-size:12px;margin-left:6px}
 </style>
@@ -540,13 +540,13 @@ function strobe() {
 
 function ausrichten() {
   const r = $('roll');
-  r.value = 0; r.oninput();          // xgonav setzt den Rollbefehl selbst auf 0
+  r.value = 0; r.oninput(); r._zeit = performance.now();   // xgonav setzt den Rollbefehl selbst auf 0
   return befehl('ausrichten');
 }
 
 function rollNull() {
   const r = $('roll');
-  r.value = 0; r.oninput(); befehl('roll', {deg: 0});
+  r.value = 0; r.oninput(); r._zeit = performance.now(); befehl('roll', {deg: 0});
 }
 
 // --- System
@@ -608,6 +608,12 @@ function karteAnzeigen() {
   const cx = karte.cx == null ? b.cx : karte.cx, cy = karte.cy == null ? b.cy : karte.cy;
   $('karte').style.transform = 'translate(' + W * (cy - b.cy) / karte.v + 'px,' + W * (cx - b.cx) / karte.v + 'px) scale(' + b.v / karte.v + ')';
 }
+// Ziehen darf kein System-Drag werden: Ist Text markiert, zöge der Browser sonst die Markierung mit und
+// bräche die Bewegung per pointercancel ab.
+function keinSystemDrag(el) {
+  el.addEventListener('mousedown', e => { if (e.button === 0) e.preventDefault(); });
+  el.addEventListener('dragstart', e => e.preventDefault());
+}
 function karteView(v) {     // Auswahlfeld
   karte.v = Number(v); karteAnzeigen(); karteAnstoss();
 }
@@ -616,6 +622,7 @@ function karteView(v) {     // Auswahlfeld
   const el = $('karte-rahmen'), mitte = () => [karte.cx == null ? karte.bild.cx : karte.cx, karte.cy == null ? karte.bild.cy : karte.cy];
   const grenze = c => Math.max(-karte.bild.size, Math.min(karte.bild.size, c));
   let start = null;
+  keinSystemDrag(el);
   el.addEventListener('pointerdown', e => {
     if (e.pointerType === 'touch' || e.button !== 0 || !karte.bild) return;
     start = {x: e.clientX, y: e.clientY, m: mitte()};
@@ -697,13 +704,15 @@ const MODELL = [
 ];
 // CAD-Modell: Format siehe modell_lesen in tools/step_to_model.py. Flächennormalen beim Laden, daher ohne Indizes.
 const MODELL_ACHSE = [0, 0, 3.0];    // Radachse im CAD (Raddurchmesser 60 mm)
-const GL_VS = `attribute vec3 aP, aN, aC; varying vec3 vN, vC;
-uniform mat3 uR; uniform vec3 uA, uPos, uRe, uHo, uVo; uniform vec4 uS; uniform vec2 uT;
+const GL_VS = `attribute vec3 aP, aN, aC; attribute float aTeil; varying vec3 vN, vC;
+uniform mat3 uR; uniform vec3 uA, uAchse, uPos, uRe, uHo, uVo; uniform vec4 uS; uniform vec2 uT; uniform vec4 uTeil[9];
 void main() {
-  vec3 q = uR * (aP - uA) + uA - uPos;
+  vec4 b = uTeil[int(aTeil + 0.5)];     // cos, sin, tx, tz in der x/z-Ebene (Beinglieder)
+  vec3 p = vec3(b.x * aP.x - b.y * aP.z + b.z, aP.y, b.y * aP.x + b.x * aP.z + b.w);
+  vec3 q = uR * (p - uA) + uAchse - uPos;
   float x = dot(q, uRe), y = dot(q, uHo), z = dot(q, uVo);
   gl_Position = vec4(uS.x * x + uS.y * z, uS.z * y + uS.w * z, uT.x * z + uT.y, z);
-  vN = uR * aN; vC = aC;
+  vN = uR * vec3(b.x * aN.x - b.y * aN.z, aN.y, b.y * aN.x + b.x * aN.z); vC = aC;
 }`;
 const GL_FS = `precision mediump float; varying vec3 vN, vC; uniform vec3 uL;
 void main() {
@@ -714,20 +723,46 @@ void main() {
 let lageGL = null, lageGLVersucht = false;
 function modellDekodieren(buf) {
   const k = new DataView(buf);
-  if (k.getUint32(0, true) !== 0x4d524758) throw new Error('kein Rider-Modell');
+  if (k.getUint32(0, true) !== 0x32524758) throw new Error('kein Rider-Modell');
   const nP = k.getUint32(4, true), nD = k.getUint32(8, true), nG = k.getUint32(12, true), s = k.getFloat32(16, true);
-  const o = 20 + 8 * nG, pos = new Int16Array(buf, o, nP * 3), idx = new Uint16Array(buf, o + ((nP * 6 + 3) & ~3), nD * 3);
-  const a = new Float32Array(nD * 27);
-  let z = 0, g = 0, rest = 0, c = null;
+  const o = 20 + 8 * nG + 80, pos = new Int16Array(buf, o, nP * 3), idx = new Uint16Array(buf, o + ((nP * 6 + 3) & ~3), nD * 3);
+  const dreh = Array.from({length: 2}, (_, j) => Object.fromEntries(['S', 'P', 'A', 'B', 'W'].map((n, m) =>
+    [n, [k.getFloat32(20 + 8 * nG + 40 * j + 8 * m, true), k.getFloat32(20 + 8 * nG + 40 * j + 8 * m + 4, true)]])));
+  const a = new Float32Array(nD * 30);
+  let z = 0, g = 0, rest = 0, c = null, teil = 0;
   for (let i = 0; i < nD; i++) {
-    while (!rest) { const b = 20 + 8 * g++; c = [k.getUint8(b) / 255, k.getUint8(b + 1) / 255, k.getUint8(b + 2) / 255]; rest = k.getUint32(b + 4, true); }
+    while (!rest) { const b = 20 + 8 * g++; c = [k.getUint8(b) / 255, k.getUint8(b + 1) / 255, k.getUint8(b + 2) / 255]; teil = k.getUint8(b + 3); rest = k.getUint32(b + 4, true); }
     rest--;
     const P = [0, 1, 2].map(j => { const v = idx[3 * i + j] * 3; return [pos[v] * s, pos[v + 1] * s, pos[v + 2] * s]; });
     const u = P[1].map((v, m) => v - P[0][m]), w = P[2].map((v, m) => v - P[0][m]);
     const n = [u[1] * w[2] - u[2] * w[1], u[2] * w[0] - u[0] * w[2], u[0] * w[1] - u[1] * w[0]];
-    for (const p of P) { a.set(p, z); a.set(n, z + 3); a.set(c, z + 6); z += 9; }
+    for (const p of P) { a.set(p, z); a.set(n, z + 3); a.set(c, z + 6); a[z + 9] = teil; z += 10; }
   }
-  return a;
+  return {daten: a, dreh};
+}
+// Beine: Sollwerte aus dem Treiber (Höhe u8, Roll °), Firmware meldet keine Stellung. Unbekannt: Standard 128.
+// Abgesetzt (Zustand 254): Beine auf dem Minimum der Firmware, die Regler behalten ihren Wert.
+const BEIN_MIN_MM = 45;
+const beinSoll = {h: 128, r: 0, abgesetzt: false}, beinIst = {l: null, r: null, t: 0};
+const grenze = (v, a, b) => Math.max(a, Math.min(b, v));
+function beinStreckung(h, r) {    // mm links, rechts wie Firmware (main.cpp, updateLegTargets)
+  const m = grenze(h, 55, 200) * 36 / 255, d = Math.sin(r / 57.3) * 43;
+  return [grenze(m + d, 0, 36) + 45, grenze(m - d, 0, 36) + 45];
+}
+// Viergelenk S-A-B-P (cm, x/z): je Glied [cos, sin, tx, tz]: Servo-Glied, oberes Glied, Koppel, Rad. Wie beinlage im Konverter.
+function beinTeile({S, P, A, B, W}, e) {
+  const abst = (p, q) => Math.hypot(p[0] - q[0], p[1] - q[1]);
+  const um = (q, w) => { const c = Math.cos(w), s = Math.sin(w); return [c, s, q[0] - c * q[0] + s * q[1], q[1] - s * q[0] - c * q[1]]; };
+  const w = Math.acos(abst(S, W) * 10 / 96) - Math.acos(e / 96), bS = um(S, w);
+  const A2 = [bS[0] * A[0] - bS[1] * A[1] + bS[2], bS[1] * A[0] + bS[0] * A[1] + bS[3]];
+  const ab = abst(A, B), pb = abst(P, B), dd = abst(P, A2), a = (pb * pb - ab * ab + dd * dd) / (2 * dd), h = Math.sqrt(Math.max(0, pb * pb - a * a));
+  const mx = P[0] + a * (A2[0] - P[0]) / dd, mz = P[1] + a * (A2[1] - P[1]) / dd, ex = (A2[1] - P[1]) / dd, ez = -(A2[0] - P[0]) / dd;
+  const B1 = [mx + h * ex, mz + h * ez], B3 = [mx - h * ex, mz - h * ez], B2 = abst(B1, B) <= abst(B3, B) ? B1 : B3;
+  const oben = Math.atan2(B2[1] - P[1], B2[0] - P[0]) - Math.atan2(B[1] - P[1], B[0] - P[0]);
+  const r = Math.atan2(B2[1] - A2[1], B2[0] - A2[0]) - Math.atan2(B[1] - A[1], B[0] - A[0]), c = Math.cos(r), s = Math.sin(r);
+  const K = [c, s, A2[0] - c * A[0] + s * A[1], A2[1] - s * A[0] - c * A[1]];
+  const W2 = [c * W[0] - s * W[1] + K[2], s * W[0] + c * W[1] + K[3]];
+  return {teile: [bS, um(P, oben), K, [1, 0, W2[0] - W[0], W2[1] - W[1]]], achse: W2};
 }
 async function modellLaden() {
   lageGLVersucht = true;
@@ -736,7 +771,7 @@ async function modellLaden() {
     if (!gl) throw new Error('kein WebGL');
     const r = await fetch('rider-model.bin');
     if (!r.ok) throw new Error('HTTP ' + r.status);
-    const daten = modellDekodieren(await r.arrayBuffer());
+    const {daten, dreh} = modellDekodieren(await r.arrayBuffer());
     const prog = gl.createProgram();
     for (const [typ, text] of [[gl.VERTEX_SHADER, GL_VS], [gl.FRAGMENT_SHADER, GL_FS]]) {
       const sh = gl.createShader(typ); gl.shaderSource(sh, text); gl.compileShader(sh); gl.attachShader(prog, sh);
@@ -746,25 +781,35 @@ async function modellLaden() {
     gl.useProgram(prog);
     gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
     gl.bufferData(gl.ARRAY_BUFFER, daten, gl.STATIC_DRAW);
-    [['aP', 0], ['aN', 12], ['aC', 24]].forEach(([n, off]) => {
-      const a = gl.getAttribLocation(prog, n); gl.enableVertexAttribArray(a); gl.vertexAttribPointer(a, 3, gl.FLOAT, false, 36, off);
+    [['aP', 0, 3], ['aN', 12, 3], ['aC', 24, 3], ['aTeil', 36, 1]].forEach(([n, off, g]) => {
+      const a = gl.getAttribLocation(prog, n); gl.enableVertexAttribArray(a); gl.vertexAttribPointer(a, g, gl.FLOAT, false, 40, off);
     });
     gl.enable(gl.DEPTH_TEST); gl.clearColor(0, 0, 0, 0);
     const u = {};
-    for (const n of ['uR', 'uA', 'uPos', 'uRe', 'uHo', 'uVo', 'uS', 'uT', 'uL']) u[n] = gl.getUniformLocation(prog, n);
-    gl.uniform3fv(u.uL, LICHT); gl.uniform3fv(u.uA, MODELL_ACHSE);
+    for (const n of ['uR', 'uA', 'uAchse', 'uPos', 'uRe', 'uHo', 'uVo', 'uS', 'uT', 'uL', 'uTeil']) u[n] = gl.getUniformLocation(prog, n);
+    gl.uniform3fv(u.uL, LICHT); gl.uniform3fv(u.uAchse, MODELL_ACHSE);
     const nah = 30, fern = 110;   // Kameraabstand 70 cm, das Modell reicht höchstens ±25 cm darum
     gl.uniform2f(u.uT, (fern + nah) / (fern - nah), -2 * fern * nah / (fern - nah));
     cv.addEventListener('webglcontextlost', () => { lageGL = null; });
-    lageGL = {gl, u, n: daten.length / 9};
+    lageGL = {gl, u, n: daten.length / 10, dreh};
   } catch (e) { console.warn('Rider-Modell nicht geladen, zeichne Quader:', e); }
 }
 function modellZeichnen(K, R, B, H, dpr) {
-  const {gl, u, n} = lageGL, cv = gl.canvas, b = Math.round(B * dpr), h = Math.round(H * dpr);
+  const {gl, u, n, dreh} = lageGL, cv = gl.canvas, b = Math.round(B * dpr), h = Math.round(H * dpr);
   if (cv.width !== b || cv.height !== h) { cv.width = b; cv.height = h; }
   gl.viewport(0, 0, b, h);
   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
   if (!R) return;
+  // Tiefpass wie die Firmware (~0,33 s), damit Reglerzüge nicht springen
+  const jetzt = performance.now(), f = beinIst.l == null ? 1 : 1 - Math.exp(-(jetzt - beinIst.t) / 330);
+  const [zL, zR] = beinSoll.abgesetzt ? [BEIN_MIN_MM, BEIN_MIN_MM] : beinStreckung(beinSoll.h, beinSoll.r);
+  beinIst.l = beinIst.l == null ? zL : beinIst.l + (zL - beinIst.l) * f;
+  beinIst.r = beinIst.r == null ? zR : beinIst.r + (zR - beinIst.r) * f;
+  beinIst.t = jetzt;
+  const L = beinTeile(dreh[0], beinIst.l), Re = beinTeile(dreh[1], beinIst.r);
+  gl.uniform4fv(u.uTeil, [1, 0, 0, 0, ...Re.teile.flat(), ...L.teile.flat()]);   // 0 Körper, 1..4 rechts, 5..8 links
+  // Die Mitte der Radachsen liegt fest: Der Körper hebt und senkt sich, die Räder bleiben am Boden
+  gl.uniform3f(u.uA, (L.achse[0] + Re.achse[0]) / 2, 0, (L.achse[1] + Re.achse[1]) / 2);
   gl.uniformMatrix3fv(u.uR, false, [R[0][0], R[1][0], R[2][0], R[0][1], R[1][1], R[2][1], R[0][2], R[1][2], R[2][2]]);
   gl.uniform3fv(u.uPos, K.pos); gl.uniform3fv(u.uRe, K.r); gl.uniform3fv(u.uHo, K.u); gl.uniform3fv(u.uVo, K.f);
   // wie kamera(): Pixel = (cx + k·x/z, cy − k·y/z), hier als Clip-Koordinaten mit w = z
@@ -795,10 +840,10 @@ function kamera(B, H) {
     return [skal(q, r) / z, -skal(q, u) / z, z];
   };
   // Rahmen für jeden Blickwinkel aus Ring (r 17) und einem Kasten um alle Lagen des Modells
-  // (±11 cm um die Achse, 0..15 cm hoch): 90 % der Fläche, mittig
+  // (±13 cm um die Achse, 0..17 cm hoch, Beine ganz ausgefahren): 90 % der Fläche, mittig
   const rand = [];
   for (let k = 0; k < 36; k++) { const w = Math.PI * k / 18; rand.push(norm([17 * Math.cos(w), 17 * Math.sin(w), 0])); }
-  for (const x of [-11, 11]) for (const y of [-11, 11]) for (const z of [0, 15]) rand.push(norm([x, y, z]));
+  for (const x of [-13, 13]) for (const y of [-13, 13]) for (const z of [0, 17]) rand.push(norm([x, y, z]));
   const xs = rand.map(v => v[0]), ys = rand.map(v => v[1]);
   const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
   const k = 0.9 * Math.min(B / (x1 - x0), H / (y1 - y0)), cx = B / 2 - k * (x0 + x1) / 2, cy = H / 2 - k * (y0 + y1) / 2;
@@ -881,6 +926,7 @@ function lageStarten() { if (!lageRaf) lageRaf = requestAnimationFrame(lageSchle
 (() => {
   const cv = $('d-lage'), merken = () => { try { localStorage.setItem('xgonav.lage3d', JSON.stringify(lageSicht.map(v => Math.round(v)))); } catch (e) {} };
   let start = null;
+  keinSystemDrag(cv);
   cv.addEventListener('pointerdown', e => { start = [e.clientX, e.clientY, ...lageSicht]; cv.setPointerCapture(e.pointerId); cv.classList.add('zieht'); });
   cv.addEventListener('pointermove', e => {
     if (!start) return;
@@ -1040,9 +1086,26 @@ function lageUmschalten() {
   try { localStorage.setItem('xgonav.lage', $('lagekarte').open ? '1' : '0'); } catch (e) {}
   if ($('lagekarte').open) { sysHolen(); lageStarten(); }
 }
+// Regler zeigen den Sollwert aus dem Treiber (auch wenn xgonav oder ein anderer Tab ihn setzt).
+// Nicht während der Nutzer zieht und kurz danach: Die Antwort kann noch den alten Wert enthalten.
+function reglerSetzen(id, wert, text) {
+  const el = $(id);
+  if (el._zieht || (el._zeit != null && performance.now() - el._zeit < 1000)) return;
+  el.value = wert;
+  $(id + '-w').textContent = text;
+}
+for (const id of ['hoehe', 'roll']) {
+  const el = $(id), los = () => { el._zieht = false; el._zeit = performance.now(); };
+  el.addEventListener('pointerdown', () => { el._zieht = true; });
+  el.addEventListener('input', () => { el._zeit = performance.now(); });
+  window.addEventListener('pointerup', () => { if (el._zieht) los(); });
+  window.addEventListener('pointercancel', () => { if (el._zieht) los(); });
+}
+let sysErstes = true;       // einmal immer: Regler stimmen auch bei zugeklappten Karten
 async function sysHolen() {
   clearTimeout(sysTimer);
-  if (!$('verlauf').open && !$('lagekarte').open) return; // beide zugeklappt: nichts abfragen
+  if (!sysErstes && !$('verlauf').open && !$('lagekarte').open) return; // beide zugeklappt: nichts abfragen
+  sysErstes = false;
   try {
     const r = await fetch('api.php?a=sys&since=' + imuSeq, {cache: 'no-store'});
     const s = await r.json();
@@ -1055,6 +1118,9 @@ async function sysHolen() {
         const off = performance.now() - lage[lage.length - 1][0];
         lageOff = lageOff == null || off < lageOff || Math.abs(off - lageOff) > 2000 ? off : lageOff + (off - lageOff) * 0.02;
       }
+      if (s.height != null) { beinSoll.h = s.height; reglerSetzen('hoehe', s.height, String(s.height)); }
+      if (s.roll != null) { beinSoll.r = s.roll; reglerSetzen('roll', s.roll, s.roll + '°'); }
+      beinSoll.abgesetzt = s.state === 254;
       const jetzt = Date.now();
       if (!cpuVorher || jetzt - cpuZeit >= 1000) {         // CPU, Temperatur, Akku: 1 Hz
         if (cpuVorher && cpuVorher.length === s.cpu.length)

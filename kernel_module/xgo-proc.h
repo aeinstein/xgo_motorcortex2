@@ -20,6 +20,7 @@ static ssize_t state_read(struct file *file, char __user *user_buf, size_t count
 static ssize_t buttons_read(struct file *file, char __user *user_buf, size_t count, loff_t *ppos);
 static ssize_t settings_read(struct file *file, char __user *user_buf, size_t count, loff_t *ppos);
 static ssize_t settings_write(struct file *file, const char __user *user_buf, size_t count, loff_t *ppos);
+static ssize_t translation_read(struct file *file, char __user *user_buf, size_t count, loff_t *ppos);
 static ssize_t translation_write(struct file *file, const char __user *user_buf, size_t count, loff_t *ppos);
 
 #endif //XGO_PROC_H
