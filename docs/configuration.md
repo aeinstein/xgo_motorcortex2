@@ -126,6 +126,7 @@ Default = `config.py`. RiderPi = `deploy/config.example.toml` (blank = default).
 | `min_learn_v` | 12 | | no learning from (nearly) black samples |
 | `restart_hold_s` | 1.0 | | relearn after pipeline start, standing up, exposure/gain change |
 | `method` | `farbe` | `kanten` | floor boundary: `farbe` = color histogram; `kanten` = first step edge from the bottom with a differing patch above (uncorrected image, insensitive to shading and gray-on-gray walls); `beide` = `kanten`, color model where no edge is found |
+| `shadow_net` | `""` | `""` | FloorNet weights (`tools/floornet/export.py`, e.g. `models/floornet.bin`). Runs in the freespace thread (needs `threaded = true`) and is drawn in the overlay in magenta; makes no decisions. Off if the C++ core is missing or its self-test fails |
 | `edge_thin` / `edge_k` | true / 3 | | remove thin lines (joints) first; rows per side of the step |
 | `edge_chroma_w` | 2.0 | | weight of LAB a/b vs. L |
 | `edge_step_thr` / `edge_seg_thr` | 35 / 28 | | min step; min deviation of the patch above (min obstacle height) from the floor below |

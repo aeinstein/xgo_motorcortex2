@@ -15,6 +15,7 @@ Single device: RiderPi, CM4 2 GB, kernel 6.6.74+rpt-rpi-v8, OV5647 wide-angle, f
 | `explore` | frontier mapping, three recorded RiderPi runs 2026-11-06, see below. Map not yet usable: ends too early |
 | `home` | 2026-11-05, 3 tries: did not reach the start. Stop/turn/start cycles and changing plans (45 s without progress), then stuck 1.3 m before the start at a gap the path check considers too narrow; afterwards changed (path keeping, `LocalMap` obstacles in planning, curve driving), **not retested** |
 | `approach` | **not tested** |
+| FloorNet | shadow mode only, makes no decisions; preset goal against hand lines missed ([floornet.md](floornet.md)) |
 | IMU sync while balancing | not verified |
 | Patch 0003 (`force_yaw`) | not tested |
 | Room map | used by `home` and `explore`; drifts (no markers); loading assumes the Rider stands at the start point. `row_bias` 1.5 from the simulator, not checked against a known distance on the RiderPi |

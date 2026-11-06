@@ -39,6 +39,7 @@ camera.FrameSource ─► egomotion.EgoMotion ─► tracker.Tracker ◄── d
 | `geometry.py` | Camera geometry, ground-plane distance |
 | `freespace.py`, `shading.py` | Floor colour model → free/blocked per image column; lens-shading correction; edge scan and downscale optionally in C++ (`native/floorfast.cpp`) |
 | `fastlib.py` | loads optional C++ core `native/libxgofast.so` (ctypes), ABI check per function group |
+| `floornet.py` | self-trained floor network in the C++ core (`native/floornet.cpp`); shadow mode in the freespace thread, makes no decisions ([floornet.md](floornet.md)) |
 | `localmap.py` | Short-term obstacle memory in robot frame (`map.max_age_s` = 4 s) |
 | `wheels.py` | Wheel odometry from `wheels_log` |
 | `gridmap.py` | Room occupancy grid in world frame, start point, save/load; ray entry optionally in C++ (`native/gridfast.cpp`) |

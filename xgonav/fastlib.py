@@ -1,9 +1,9 @@
 """Optionaler C++-Kern xgonav/native/libxgofast.so (ctypes).
 
 Enthält Ego-Motion (native/egofast.cpp), Kantenverfahren und Verkleinern des Bodenmodells
-(native/floorfast.cpp) und das Eintragen in die Raumkarte (native/gridfast.cpp). Gebaut wird
-am Rider mit `make -C xgonav/native`; fehlt die Bibliothek, rechnen egomotion.py,
-freespace.py und gridmap.py in Python (gleiches Ergebnis).
+(native/floorfast.cpp), das Eintragen in die Raumkarte (native/gridfast.cpp) und FloorNet
+(native/floornet.cpp). Gebaut wird am Rider mit `make -C xgonav/native`; fehlt die Bibliothek,
+rechnen egomotion.py, freespace.py und gridmap.py in Python (gleiches Ergebnis), FloorNet ist dann aus.
 Jede Funktionsgruppe hat eine eigene ABI-Nummer, die der Aufrufer prüft.
 """
 from __future__ import annotations

@@ -19,6 +19,7 @@ from .camera import FrameSource, OpenCVSource, make_source
 from .config import Config
 from .detector import Detection, DetectorWorker
 from .egomotion import EgoMotion, EgoResult, warp_box
+from .floornet import FloorNet
 from .freespace import FreeSpace, FreeSpaceEstimator, FreeSpaceWorker, column_runs
 from .gridmap import GridMap, GridWorker
 from .planner import PlannerWorker
@@ -115,7 +116,13 @@ class App:
         self.geo = CamGeometry(size[0], size[1], cfg.camera.hfov_deg, cfg.camera.tilt_deg,
                                cfg.camera.mount_offset_mm, cfg.behavior.height_cruise_mm)
         self.fse = FreeSpaceEstimator(cfg.freespace, size, self.geo) if cfg.freespace.enabled else None
-        self.fs_worker = FreeSpaceWorker(self.fse, cfg.cpu.freespace_cpus) \
+        shadow = None
+        if self.fse is not None and cfg.freespace.shadow_net:
+            if cfg.freespace.threaded:
+                shadow = FloorNet.load(cfg.freespace.shadow_net)
+            else:
+                log.warning("[floornet] Schattenbetrieb braucht freespace.threaded: aus")
+        self.fs_worker = FreeSpaceWorker(self.fse, cfg.cpu.freespace_cpus, shadow) \
             if self.fse is not None and cfg.freespace.threaded else None
         m = cfg.map
         self.lmap = LocalMap(self.geo, self.fse.W, self.fse.H, max_age_s=m.max_age_s, confirm=m.confirm,
@@ -513,6 +520,7 @@ class App:
                                "explore": self.behavior.info() if self.behavior.name == "explore" and hasattr(self.behavior, "info") else None,
                                "patrol": self.behavior.info() if self.behavior.name == "patrol" else None,
                                "fs_ms": round(self.fs_worker.ms, 1) if self.fs_worker is not None else None,
+                               "net_ms": round(self.fs_worker.net_ms, 1) if self.fs_worker is not None and self.fs_worker.net is not None else None,
                                "grid": None if self.gridmap is None else {
                                    **self.gridmap.stats(),
                                    "ms": round(self.grid_worker.ms, 1) if self.grid_worker else None,
@@ -743,6 +751,10 @@ def render(snap: Snapshot, text: bool = True) -> np.ndarray | None:
             x0, x1 = int(i * W / n), int((i + 1) * W / n)
             col = (0, int(255 * s), int(255 * (1 - s)))
             cv2.rectangle(img, (x0 + 2, H - 8), (x1 - 2, H - 2), col, -1)
+    if fs is not None and fs.net_rows is not None:       # FloorNet im Schattenbetrieb
+        n = len(fs.net_rows)
+        pts = [(int((i + 0.5) * W / n), int(r)) for i, r in enumerate(fs.net_rows)]
+        cv2.polylines(img, [np.array(pts, np.int32)], False, (255, 0, 255), 2)
     for t in snap.tracks:
         x1, y1, x2, y2 = map(int, t.box)
         tgt = t.id == snap.cmd.target_id

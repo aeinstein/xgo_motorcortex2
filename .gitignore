@@ -3,6 +3,7 @@ __pycache__/
 models/*.onnx
 models/*.pt
 models/*_ncnn/
+models/*.bin
 *.mp4
 .venv/
 .idea/

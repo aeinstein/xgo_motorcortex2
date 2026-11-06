@@ -26,6 +26,8 @@ python3 -m venv .venv && .venv/bin/pip install "opencv-python-headless>=4.6" "nu
 
 `replay_raw.py`: run in the directory containing `shading.json`.
 
+FloorNet tests (`tests/test_floornet_*.py`): those that need torch are skipped on the PC; run them on the GPU machine. `test_floornet_native.py` builds the C++ core there with `tests/neon_shim` (result only, not speed).
+
 ## Simulator (`xgonav/sim.py`)
 
 | Feature | Value |

@@ -67,6 +67,7 @@ python3 -m venv .venv && .venv/bin/pip install "opencv-python-headless>=4.6" "nu
 | [driver.md](docs/driver.md) | `xgo-drv`, patches, `/proc/XGORider` reference, UART, driver test |
 | [web-interface.md](docs/web-interface.md) | Web UI, `api.php`, xgonav local API, WebSocket protocol |
 | [mapping.md](docs/mapping.md) | Odometry, short-term local map, room map (occupancy grid) |
+| [floornet.md](docs/floornet.md) | Self-trained floor network: labels, hand lines, training, results; shadow mode only |
 | [display-emotions.md](docs/display-emotions.md) | LCD daemon, overlay, emotion player and triggers |
 | [testing.md](docs/testing.md) | Unit/slow tests, simulator, replay, results |
 | [limitations.md](docs/limitations.md) | Hardware test status, measured values, known issues |

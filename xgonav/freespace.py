@@ -46,6 +46,8 @@ class FreeSpace:
     # streuen um Dezimeter (Nicken ±3° bei 2,5 Hz). None = nicht bekannt (Tests, alte Aufrufer).
     pitch_dev: float | None = None
     pose: tuple | None = None
+    # FloorNet im Schattenbetrieb: Grenzzeile je Netzspalte (Vollbild). Geht in keine Entscheidung ein.
+    net_rows: np.ndarray | None = None
 
     @property
     def center(self) -> float:
@@ -696,8 +698,10 @@ class FreeSpaceWorker:
     Konstanten (W, H, scale) des Schätzers darf die Hauptschleife weiter nutzen, diag wird
     je Lauf durch ein neues dict ersetzt (nie verändert)."""
 
-    def __init__(self, est: FreeSpaceEstimator, cpus=None):
+    def __init__(self, est: FreeSpaceEstimator, cpus=None, net=None):
         self.est = est
+        self.net = net                     # FloorNet im Schattenbetrieb oder None
+        self.net_ms = 0.0
         self.cpus = list(cpus or [])
         self._cond = threading.Condition()
         self._job = None
@@ -717,6 +721,8 @@ class FreeSpaceWorker:
             self._cond.notify_all()
         if self._thread:
             self._thread.join(timeout=2)
+        if self.net is not None and not (self._thread and self._thread.is_alive()):
+            self.net.close()
 
     def offer(self, bgr, pitch_dev: float, boxes, pose=None) -> None:
         """pose: Kartenpose zum Bild, wird dem Ergebnis mitgegeben."""
@@ -750,7 +756,22 @@ class FreeSpaceWorker:
                 fs = None
             ms = (time.perf_counter() - t0) * 1000
             self.ms = 0.8 * self.ms + 0.2 * ms if self.ms else ms
+            if fs is not None and self.net is not None:
+                self._shadow(fs, job[0])
             self.busy = False
             if fs is not None:
                 with self._cond:
                     self._result = fs
+
+    def _shadow(self, fs: FreeSpace, bgr) -> None:
+        """FloorNet mitrechnen. Ein Fehler darf das Bodenmodell nicht treffen: Dann ist das Netz aus."""
+        import time
+        t0 = time.perf_counter()
+        try:
+            fs.net_rows = self.net.run(bgr)
+        except Exception:
+            log.exception("FloorNet fehlgeschlagen, Schattenbetrieb aus")
+            self.net = None
+            return
+        ms = (time.perf_counter() - t0) * 1000
+        self.net_ms = 0.8 * self.net_ms + 0.2 * ms if self.net_ms else ms

@@ -184,6 +184,9 @@ class FreespaceCfg:
     # "beide": Kanten, und wo diese in einer Spalte nichts finden (frei bis edge_fallback_free),
     # das Farbmodell (Nutzer: Farbe im Dunkeln besser, Kanten im Hellen).
     method: str = "farbe"
+    # FloorNet im Schattenbetrieb (xgonav/floornet.py): Gewichte, z. B. "models/floornet.bin". Rechnet im
+    # Bodenmodell-Thread mit (threaded = true) und erscheint im Overlay, entscheidet aber nichts. "" = aus.
+    shadow_net: str = ""
     edge_fallback_free: float = 0.98
     edge_thin: bool = True         # dünne Linien vorher entfernen (Fugen – aber auch Kontaktschatten)
     edge_k: int = 3                # Zeilen je Seite für den Stufenvergleich (Arbeitsauflösung)

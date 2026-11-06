@@ -18,6 +18,7 @@ mkdir -p "$DEST" "$DEST/models"
 cp -r xgonav tools web "$DEST/"
 [ -f "$DEST/config.toml" ] || cp deploy/config.example.toml "$DEST/config.toml"
 cp -n models/*.onnx "$DEST/models/" 2>/dev/null || echo "Hinweis: kein ONNX-Modell in models/ – siehe tools/export_model.sh"
+cp -f models/floornet.bin "$DEST/models/" 2>/dev/null || true   # FloorNet, nur für [freespace] shadow_net
 for d in models/*_ncnn; do [ -d "$d" ] && [ ! -e "$DEST/$d" ] && cp -r "$d" "$DEST/models/"; done
 # C++-Kern der Ego-Motion bauen; scheitert das, rechnet xgonav in Python (langsamer)
 make -C "$DEST/xgonav/native" || echo "Hinweis: C++-Kern nicht gebaut – Ego-Motion läuft in Python"
