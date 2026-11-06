@@ -303,9 +303,14 @@ class GridMap:
                     "updates": self.updates}
 
     def image(self, px: int = 480, view_m: float | None = None) -> np.ndarray:
-        """Karte als BGR-Bild, Ausschnitt view_m x view_m um die aktuelle Pose. Oben = Karten-x
-        (vorn beim Start), links = Karten-y (links beim Start). Grau unbekannt, hell frei,
-        dunkel belegt; Weg grün, Plan cyan, Start blau, Pose als rotes Dreieck, Maßstab 1 m."""
+        return self.render(px, view_m)[0]
+
+    def render(self, px: int = 480, view_m: float | None = None, center: tuple | None = None):
+        """Karte als BGR-Bild, Ausschnitt view_m x view_m um center (Karten-Koordinaten in m),
+        ohne center um die aktuelle Pose. Oben = Karten-x (vorn beim Start), links = Karten-y
+        (links beim Start). Grau unbekannt, hell frei, dunkel belegt; Weg grün, Plan cyan, Start
+        blau, Pose als rotes Dreieck, Maßstab 1 m. Rückgabe: Bild, Mitte x, Mitte y, Kante in m
+        (auf ganze Zellen gerundet)."""
         view_m = view_m or self.cfg.view_m
         with self._lock:
             lo = self.lo.copy()
@@ -313,11 +318,12 @@ class GridMap:
             path = list(self.path)
             plan = list(self.plan)
             sx, sy, sth = self.start
-        n_px = int(round(view_m / self.res))                           # Zellen je Bildkante
+        n_px = max(1, int(round(view_m / self.res)))                   # Zellen je Bildkante
         k = px / n_px
+        mx, my = center if center is not None else (x, y)
         v, u = np.mgrid[0:n_px, 0:n_px]
-        wx = x + (n_px / 2 - v - 0.5) * self.res                        # oben = +x
-        wy = y + (n_px / 2 - u - 0.5) * self.res                        # links = +y
+        wx = mx + (n_px / 2 - v - 0.5) * self.res                       # oben = +x
+        wy = my + (n_px / 2 - u - 0.5) * self.res                       # links = +y
         r, c = self.cell(wx, wy)
         inside = (r >= 0) & (r < self.n) & (c >= 0) & (c < self.n)
         val = np.zeros((n_px, n_px), np.float32)
@@ -327,8 +333,8 @@ class GridMap:
         img = cv2.resize(cv2.cvtColor(g, cv2.COLOR_GRAY2BGR), (px, px), interpolation=cv2.INTER_NEAREST)
 
         def to_px(ax, ay):
-            return (int(round((n_px / 2 - (ay - y) / self.res) * k)),
-                    int(round((n_px / 2 - (ax - x) / self.res) * k)))
+            return (int(round((n_px / 2 - (ay - my) / self.res) * k)),
+                    int(round((n_px / 2 - (ax - mx) / self.res) * k)))
 
         if len(path) > 1:
             cv2.polylines(img, [np.array([to_px(a, b) for a, b in path], np.int32)], False, (60, 170, 60), 2)
@@ -343,7 +349,7 @@ class GridMap:
         cv2.fillPoly(img, [np.array([tip, lft, rgt], np.int32)], (40, 40, 220))
         cv2.line(img, (10, px - 12), (10 + int(round(1.0 / self.res * k)), px - 12), (220, 120, 0), 3)
         cv2.putText(img, "1 m", (12, px - 18), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (220, 120, 0), 1, cv2.LINE_AA)
-        return img
+        return img, mx, my, n_px * self.res
 
 
 class GridWorker:

@@ -29,3 +29,21 @@ def test_rider_model_file():
     r = _gruppe(p, d, gr, "reifen")                              # Reifen beidseits, 6 cm Durchmesser, um die Achse
     assert r[:, 1].min() < -4 and r[:, 1].max() > 4
     assert abs(r[:, 0].min() + r[:, 0].max()) < 0.1 and abs(r[:, 2].max() - 6) < 0.1
+
+
+def test_gridmap_render_center():
+    from xgonav.config import Config
+    from xgonav.geometry import CamGeometry
+    from xgonav.gridmap import GridMap
+    m = GridMap(Config().grid, CamGeometry(640, 480, 91.0, 1.39, 43.0, 85.0), 160, 120)
+    rot = lambda img: np.argwhere((img[:, :, 2] > 180) & (img[:, :, 1] < 80))
+    img, mx, my, kante = m.render(200, 4.0)                      # ohne Mitte: Rider mittig
+    assert (mx, my) == (0.0, 0.0) and abs(kante - 4.0) < 1e-9
+    assert np.abs(rot(img).mean(0) - 100).max() < 10
+    # Mitte 1 m vor (oben = +x) und 1 m links (links = +y) vom Rider: Rider im Bild unten rechts
+    img, mx, my, _ = m.render(200, 4.0, (1.0, 1.0))
+    assert (mx, my) == (1.0, 1.0)
+    z, s = rot(img).mean(0)
+    assert abs(z - 150) < 10 and abs(s - 150) < 10
+    assert abs(m.render(200, 4.03)[3] - 4.05) < 1e-9             # Kante auf ganze Zellen (5 cm)
+    assert m.image(120).shape == (120, 120, 3)

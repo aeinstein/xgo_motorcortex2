@@ -17,7 +17,7 @@ python3 -m venv .venv && .venv/bin/pip install "opencv-python-headless>=4.6" "nu
 ```
 
 ```bash
-python -m pytest -q tests/                       # Unit-Tests (88 Tests, ~2 s; 5 ohne C++-Kern übersprungen); slow ist per pytest.ini ausgeschlossen
+python -m pytest -q tests/                       # Unit-Tests (89 Tests, ~2 s; 5 ohne C++-Kern übersprungen); slow ist per pytest.ini ausgeschlossen
 python -m pytest -q -m slow tests/               # Closed-Loop im Simulator (5 Tests, ~6 min gesamt); -m überschreibt addopts
 python -m pytest -q tests/test_units.py -k imu_sync   # einzelner Test
 

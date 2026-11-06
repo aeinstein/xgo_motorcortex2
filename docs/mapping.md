@@ -59,7 +59,7 @@ Status JSON: `odom.src` = `räder` | `befehl`, `odom.m` = total distance.
 | red triangle | Rider pose |
 | blue bar | 1 m scale |
 
-Parameters: `px` 120..960 (default 480), `view` 1..16 m (default `grid.view_m` 6).
+Parameters: `px` 120..960 (default 480), `view` 1..16 m (default `grid.view_m` 6), `cx`, `cy` centre in map metres (default Rider pose).
 Reset: web „Zurücksetzen“ or `POST /map/reset` (empty map, pose 0, start 0).
 Status JSON `grid`: `pose [x m, y m, yaw °]`, `start [x m, y m, yaw °]`, `zum_start_m`, `belegt_m2`, `frei_m2`, `updates`, `ms`, `verworfen`; top level `plan_ms`.
 

@@ -81,9 +81,11 @@ def serve(app: App, host: str, port: int, fps: int, render_cpus=None) -> Threadi
         def log_message(self, *a):
             pass
 
-        def _send(self, code, body: bytes, ctype="application/json"):
+        def _send(self, code, body: bytes, ctype="application/json", extra: dict | None = None):
             self.send_response(code)
             self.send_header("Content-Type", ctype)
+            for k, v in (extra or {}).items():
+                self.send_header(k, v)
             self.send_header("Content-Length", str(len(body)))
             self.send_header("Cache-Control", "no-store")
             self.end_headers()
@@ -205,13 +207,22 @@ def serve(app: App, host: str, port: int, fps: int, render_cpus=None) -> Threadi
             try:
                 px = min(960, max(120, int(q.get("px", ["480"])[0])))
                 view = min(gm.cfg.size_m, max(1.0, float(q.get("view", [str(gm.cfg.view_m)])[0])))
-            except ValueError:
-                return self._send(400, b'{"error":"px/view ungueltig"}')
+                center = None
+                if "cx" in q or "cy" in q:                 # ohne beide: Mitte = aktuelle Pose
+                    center = (float(q["cx"][0]), float(q["cy"][0]))
+                    if not all(math.isfinite(c) for c in center):
+                        raise ValueError
+                    center = tuple(min(gm.cfg.size_m, max(-gm.cfg.size_m, c)) for c in center)
+            except (ValueError, KeyError):
+                return self._send(400, b'{"error":"px/view/cx/cy ungueltig"}')
             pin_thread(render_cpus, "Bild-Thread", quiet=True)
-            ok, png = cv2.imencode(".png", gm.image(px, view))
+            img, mx, my, kante = gm.render(px, view, center)
+            ok, png = cv2.imencode(".png", img)
             if not ok:
                 return self._send(500, b'{"error":"PNG"}')
-            return self._send(200, png.tobytes(), "image/png")
+            # Für die Oberfläche: was das Bild wirklich zeigt (Verschieben/Zoomen ohne Warten)
+            return self._send(200, png.tobytes(), "image/png",
+                              {"X-Map-View": f"{mx:.3f},{my:.3f},{kante:.3f},{gm.cfg.size_m:.1f}"})
 
         def _ws(self):
             """Bilder als WebSocket-Stream. Nach jedem Bild wartet der Server auf eine

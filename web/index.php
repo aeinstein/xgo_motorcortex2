@@ -142,7 +142,9 @@ pre{background:#0b0d10;border-radius:6px;padding:8px;overflow:auto;max-height:40
 .trenner{border:0;border-top:1px solid var(--rand);margin:10px 0}
 
 /* --- Raumkarte */
-#karte{width:100%;max-width:400px;height:auto;aspect-ratio:1;background:#808080;display:block;border-radius:6px;margin:0 auto}
+#karte-rahmen{max-width:400px;aspect-ratio:1;margin:0 auto;overflow:hidden;background:#808080;border-radius:6px;cursor:grab}
+#karte-rahmen.zieht{cursor:grabbing}
+#karte{display:block;width:100%;height:100%;pointer-events:none;user-select:none;-webkit-user-select:none}
 
 /* --- Extras */
 details.extras>summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px;user-select:none}
@@ -289,15 +291,19 @@ details.extras[open]>summary{margin-bottom:8px}
 
   <section class="karte">
     <div class="kopf"><h2>Raumkarte</h2>
-      <select id="karte-view" aria-label="Ausschnitt"><option value="3">3 m</option><option value="6" selected>6 m</option><option value="10">10 m</option><option value="16">16 m</option></select>
+      <select id="karte-view" aria-label="Ausschnitt" onchange="karteView(this.value)"><option value="3">3 m</option><option value="6" selected>6 m</option><option value="10">10 m</option><option value="16">16 m</option><option id="karte-view-frei" hidden></option></select>
       <button onclick="befehl('map_start')" title="Startpunkt = aktuelle Pose">Start hier</button>
       <button onclick="befehl('map_save')" title="Raumkarte jetzt speichern ([grid] file)">Speichern</button>
       <button onclick="befehl('map_reset')">Zurücksetzen</button>
     </div>
-    <img id="karte" alt="Raumkarte" width="320" height="320">
+    <div id="karte-rahmen" title="ziehen: verschieben · Mausrad: zoomen · Doppelklick: zurück zum Rider">
+      <img id="karte" alt="Raumkarte" width="320" height="320" draggable="false">
+    </div>
     <div class="leise" style="margin-top:6px" id="karte-pose">-</div>
     <div class="leise" id="karte-erkunden" hidden></div>
     <details class="hilfe"><summary>grau unbekannt · hell frei · dunkel belegt · grün Weg · cyan Plan · blau Start · rot Rider</summary>
+      <p>Maus: ziehen verschiebt, Mausrad zoomt um den Zeiger, Doppelklick zentriert wieder auf den Rider
+        und folgt ihm.</p>
       <p>Ursprung = Startpose (oben = vorn beim Start). Strecke und Drehung aus den Rädern (auch bei
         gestoppter Bildverarbeitung); ohne Marker driftet die Karte mit der Zeit.</p>
       <p>„Erkunden“ kartiert den Raum: erst ein Rundumblick, dann fährt er die Grenzen zwischen bekanntem Boden und
@@ -570,21 +576,76 @@ function herunterfahren() {
   if (confirm('Rider wirklich herunterfahren?')) befehl('shutdown');
 }
 
-// Raumkarte: einmal pro Sekunde neu laden, nächstes Bild erst nach dem vorigen
-let karteUrl = null;
+// Raumkarte: einmal pro Sekunde neu laden, nächstes Bild erst nach dem vorigen. Verschieben und Zoomen
+// zeichnet der Server; bis das neue Bild da ist, verschiebt und skaliert CSS das alte.
+// Karten-KS: oben = +x, links = +y (m). cx/cy null = Mitte folgt dem Rider.
+const karte = {cx: null, cy: null, v: 6, bild: null};   // bild: Stand des angezeigten Bildes (X-Map-View)
+let karteUrl = null, karteTimer = null, karteLaeuft = false, karteNochmal = false;
 async function karteHolen() {
+  clearTimeout(karteTimer);
+  if (karteLaeuft) { karteNochmal = true; return; }
+  karteLaeuft = true;
   try {
-    const v = $('karte-view').value;
-    const r = await fetch('map.png?px=480&view=' + v, {cache: 'no-store'});
+    const mitte = karte.cx == null ? '' : '&cx=' + karte.cx.toFixed(3) + '&cy=' + karte.cy.toFixed(3);
+    const r = await fetch('map.png?px=480&view=' + karte.v.toFixed(3) + mitte, {cache: 'no-store'});
     if (r.ok) {
-      const url = URL.createObjectURL(await r.blob());
-      $('karte').src = url;
+      const [cx, cy, v, size] = (r.headers.get('X-Map-View') || '').split(',').map(Number);
+      const url = URL.createObjectURL(await r.blob()), img = $('karte');
+      img.onload = () => { karte.bild = size ? {cx, cy, v, size} : null; karteAnzeigen(); };
+      img.src = url;
       if (karteUrl) URL.revokeObjectURL(karteUrl);
       karteUrl = url;
     }
   } catch (e) { /* xgonav weg */ }
-  setTimeout(karteHolen, 1000);
+  karteLaeuft = false;
+  karteTimer = setTimeout(karteHolen, karteNochmal ? 0 : 1000);
+  karteNochmal = false;
 }
+const karteAnstoss = () => { clearTimeout(karteTimer); karteTimer = setTimeout(karteHolen, 150); };
+function karteAnzeigen() {
+  const b = karte.bild, W = $('karte-rahmen').clientWidth;
+  if (!b) { $('karte').style.transform = ''; return; }
+  const cx = karte.cx == null ? b.cx : karte.cx, cy = karte.cy == null ? b.cy : karte.cy;
+  $('karte').style.transform = 'translate(' + W * (cy - b.cy) / karte.v + 'px,' + W * (cx - b.cx) / karte.v + 'px) scale(' + b.v / karte.v + ')';
+}
+function karteView(v) {     // Auswahlfeld
+  karte.v = Number(v); karteAnzeigen(); karteAnstoss();
+}
+// Nur Maus/Stift: Auf dem Touchscreen bleibt Wischen über der Karte das Scrollen der Seite.
+(() => {
+  const el = $('karte-rahmen'), mitte = () => [karte.cx == null ? karte.bild.cx : karte.cx, karte.cy == null ? karte.bild.cy : karte.cy];
+  const grenze = c => Math.max(-karte.bild.size, Math.min(karte.bild.size, c));
+  let start = null;
+  el.addEventListener('pointerdown', e => {
+    if (e.pointerType === 'touch' || e.button !== 0 || !karte.bild) return;
+    start = {x: e.clientX, y: e.clientY, m: mitte()};
+    el.setPointerCapture(e.pointerId); el.classList.add('zieht');
+  });
+  el.addEventListener('pointermove', e => {
+    if (!start) return;
+    const dx = e.clientX - start.x, dy = e.clientY - start.y, W = el.clientWidth;
+    if (!dx && !dy) return;
+    karte.cx = grenze(start.m[0] + dy / W * karte.v); karte.cy = grenze(start.m[1] + dx / W * karte.v);
+    karteAnzeigen();
+  });
+  const ende = () => { if (start) { start = null; el.classList.remove('zieht'); karteAnstoss(); } };
+  el.addEventListener('pointerup', ende); el.addEventListener('pointercancel', ende);
+  el.addEventListener('dblclick', () => { karte.cx = karte.cy = null; karteAnzeigen(); karteAnstoss(); });
+  el.addEventListener('wheel', e => {
+    if (!karte.bild) return;
+    e.preventDefault();
+    const d = e.deltaY * (e.deltaMode === 1 ? 33 : e.deltaMode === 2 ? 400 : 1);
+    const neu = Math.max(1, Math.min(karte.bild.size, karte.v * Math.exp(d * 0.0015)));
+    if (neu === karte.v) return;
+    // Der Punkt unter dem Mauszeiger bleibt stehen
+    const q = el.getBoundingClientRect(), fx = (e.clientX - q.left) / q.width, fy = (e.clientY - q.top) / q.height, [cx, cy] = mitte();
+    karte.cx = grenze(cx + (0.5 - fy) * (karte.v - neu)); karte.cy = grenze(cy + (0.5 - fx) * (karte.v - neu));
+    karte.v = neu;
+    const o = $('karte-view-frei');
+    o.value = String(neu); o.textContent = neu.toFixed(1) + ' m'; o.hidden = false; $('karte-view').value = o.value;
+    karteAnzeigen(); karteAnstoss();
+  }, {passive: false});
+})();
 // --- Verlauf: Lage (IMU), CPU je Kern, Akku. Abfrage nur bei offener Karte, Akku immer
 // (aus status()) und im localStorage, damit er ein Neuladen der Seite übersteht.
 const FARBEN = ['#3987e5', '#d95926', '#199e70', '#c98500'];   // Kategorien, dunkel, geprüft (CVD)

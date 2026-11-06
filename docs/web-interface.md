@@ -18,7 +18,7 @@
 | Left | camera image (WebSocket), mode selector (Idle · Hand · Follow · Explore · Approach · Zum Start) + target class, pipeline card with start/stop and status tiles, raw status JSON |
 | Lage (open by default, right column top) | 3D model of the Rider rotated by roll, pitch, yaw from `imu_log`: CAD model `web/rider-model.bin` via WebGL, rigid in the CAD pose (built by `tools/step_to_model.py` from `docs/Rider-Pi.STEP`, loaded when Verlauf is first opened); without WebGL or the file, simple boxes on canvas 2D; fixed compass ring on the ground (0° = heading at ESP32 start, + = left), blue line = body forward direction; values below. Samples (50 Hz) replayed smoothly ~0.3 s behind; rotation about the wheel axle. Drag (mouse/touch) to orbit the view (elevation 5–85°), double-click resets; view kept in `localStorage` `xgonav.lage3d`; live (5 s buffer, memory); open/closed kept in `localStorage` `xgonav.lage` |
 | Fahren | D-pad, speed 5–100 %, height 61–255, roll −20..20°, Aufstehen (arm, 255), Neu ausrichten (leveling pulse), Absetzen (disarm, 254) |
-| Raumkarte | room map PNG, view 3/6/10/16 m, Start hier (start = pose), Speichern, reset, pose line with distance to start |
+| Raumkarte | room map PNG, view 3/6/10/16 m; mouse: drag to pan, wheel to zoom about the pointer (1 m..`grid.size_m`), double-click recentres on the Rider and follows again (touch: page scrolls, no pan); Start hier (start = pose), Speichern, reset, pose line with distance to start |
 | Kamera | exposure (ms, auto), gain (1–16×, auto), actual values |
 | Verlauf (collapsed) | history charts, see below |
 | Extras (collapsed) | actions 1–6, 4 LEDs + all off + strobe, display emotions |
@@ -87,7 +87,7 @@ xgonav unreachable → HTTP 502 `xgonav nicht erreichbar`. Exposure/gain changes
 | GET | `/ws` | WebSocket, overlay JPEGs |
 | GET | `/frame?after=<idx>` | single JPEG newer than idx |
 | GET | `/stream` | MJPEG (legacy) |
-| GET | `/map.png?px=480&view=6` | room map; px 120..960, view 1..`grid.size_m`; 404 if no map |
+| GET | `/map.png?px=480&view=6[&cx=&cy=]` | room map; px 120..960, view 1..`grid.size_m`; centre `cx`,`cy` in map metres (both or neither; default Rider pose; clamped to ±`grid.size_m`); header `X-Map-View: cx,cy,view,size`; 404 if no map |
 | POST | `/mode?name=..&target=..` | 400 unknown mode, 409 not allowed |
 | POST | `/stop` | standstill, mode idle |
 | POST | `/pipeline?on=0\|1` | stop/start image processing |
