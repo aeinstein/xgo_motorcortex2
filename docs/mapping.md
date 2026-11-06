@@ -105,7 +105,9 @@ Status JSON `grid`: `pose [x m, y m, yaw °]`, `start [x m, y m, yaw °]`, `zum_
 | Start | one full turn at `explore.scan_w` |
 | Frontier | reachable free cell next to unknown; groups ≥ `min_cluster_m` 0.4 m. Reachability from the room map only, the local map only shapes the path |
 | Choice | unknown area within `gain_radius_m` / (drive time + turn time + `base_s`). The goal stays until reached or gone, no switching by score |
-| Arrival | stops `standoff_m` before the frontier, turns towards it, `settle_s`; the spot is not revisited |
+| Arrival | stops `standoff_m` before the frontier, turns towards it, `settle_s`; no new goal within `avoid_r_m` 0.3 m of the spot |
+| Driven ground | cells within `driven_free_r_m` of the driven path stay passable for the planner despite occupied specks and `inflate_m`; obstacles the local map sees now still block |
+| Contact | command > 0.08 but < 2 cm movement in 2.5 s (normal start-up takes up to 1.8 s): treated as contact, back up and block the goal at once. Wheel slip hides it |
 | Stuck | no 5 cm progress or 10° turn in 3 s: replan without the old path; again, or `goal_timeout_s`: back up 0.8 s, block the goal. No goal left: `wander_s` reactive driving, at most `max_wander` times, then stop |
 | End | nothing reachable, < `min_growth_m2` new floor in `no_growth_s`, `max_s`, or `min_battery`. Then save and drive to the start (`return_home`) |
 | Status JSON | `explore`: `zustand`, `stellen`, `gesperrt`, `befreit`, `ziel`, `ende` |
@@ -129,3 +131,5 @@ Also `waende_10cm` (all walls), `boden_bekannt` (true floor known as free), `fre
 
 Largest single cause: distances were computed from the pitch of a later frame (threaded floor model). Boundary error at 0.5–0.75 m, p10/p90: −0.19/+0.17 m before, −0.11/−0.02 m after.
 With 8 phantom spots (`--phantoms 8`, two rooms): 0 collisions in 4 runs, 3 complete, 1 ended early and reported an unreached spot.
+
+2026-11-06, `free_range_m` 1.1, driven ground passable, `avoid_r_m` 0.3 (one room, two rooms, with and without 8 phantoms): 12 of 12 to „Karte fertig“, 0 collisions, 142–204 s, 24–36 m, floor known 0.78–0.88, walls 0.77–0.94, occupied precision 0.86–0.94, free outside 0.01–0.07 m².

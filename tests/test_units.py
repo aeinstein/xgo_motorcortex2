@@ -1682,6 +1682,8 @@ def test_home_gives_up_when_stuck_near_goal():
         assert b.want_plan(float(k + 1))
         b.set_path([pose[:2], (0.0, 0.0)])
         c = b.step(_world_at(float(k + 1), pose))
+    assert not b.gave_up                                         # noch nicht lange genug
+    c = b.step(_world_at(cfg.home.give_up_s + 1.0, pose))
     assert b.gave_up and c.v == 0 and "kein Weg" in c.status
 
 
@@ -1716,5 +1718,118 @@ def test_map_explore_home_stuck_finishes_with_message():
     for k in range(cfg.home.max_fail):
         b.f.stuck = True
         b.request_plan(P(), None, _world_at(float(k + 1), pose), None)
-    c = b.step(_world_at(9.0, pose))
+    b.step(_world_at(9.0, pose))
+    assert not b.done
+    c = b.step(_world_at(cfg.home.give_up_s + 1.0, pose))
     assert b.done and b.state == "fertig" and c.v == 0 and "nicht erreicht" in c.status
+
+
+def test_localmap_confirm_cache_matches_exact_and_later():
+    """Zwischenspeicher: gleiches Ergebnis wie frisch gerechnet, auch nach move() und mit wachsender Reichweite."""
+    from xgonav.localmap import LocalMap
+    geo = CamGeometry(640, 480, 88.5, 5.18, 43.0, 85.0)
+    rng = np.random.default_rng(3)
+    lm = LocalMap(geo, 160, 120, max_age_s=99.0, confirm=3, confirm_radius_m=0.06)
+    lm.pts = rng.uniform(-1.2, 1.2, (400, 2))
+    lm.t = np.zeros(400)
+    lm.obs = rng.integers(0, 6, 400)
+
+    def fresh(reach):
+        f = LocalMap(geo, 160, 120, max_age_s=99.0, confirm=3, confirm_radius_m=0.06)
+        f.pts, f.t, f.obs = lm.pts.copy(), lm.t.copy(), lm.obs.copy()
+        return f.confirmed_points(reach)
+    for reach, ds, dy in ((0.4, 0.0, 0.0), (0.4, 0.05, 0.1), (1.0, 0.1, -0.2), (0.6, 0.2, 0.3), (1.5, 0.0, 0.0)):
+        lm.move(ds, dy)
+        a, b = lm.confirmed_points(reach), fresh(reach)
+        assert a.shape == b.shape and np.allclose(a, b)
+        assert np.allclose(lm.confirmed_later(reach)(), b)
+    lm.obs = lm.obs.copy()
+    lm.pts, lm.t, lm.obs = lm.pts[:200], lm.t[:200], lm.obs[:200]        # neue Punktmenge: alter Stand gilt nicht
+    a, b = lm.confirmed_points(1.0), fresh(1.0)
+    assert a.shape == b.shape and np.allclose(a, b)
+
+
+def _driven_room():
+    """Raum mit Fleckenreihe quer: Mit Abstand kommt nur durch, wer weiß, dass er dort gefahren ist."""
+    from xgonav.gridmap import GridMap
+    from dataclasses import replace
+    cfg = Config()
+    geo = CamGeometry(640, 480, 88.5, 5.18, 43.0, 85.0)
+    m = GridMap(replace(cfg.grid, native=False, file=""), geo, 160, 120)
+    r0, c0 = (int(k) for k in m.cell(-2.0, -1.0))
+    r1, c1 = (int(k) for k in m.cell(2.0, 1.0))
+    m.lo[r0 - 1:r1 + 1, c0 - 1:c1 + 1] = cfg.grid.l_max                 # geschlossene Wände
+    m.lo[r0:r1, c0:c1] = cfg.grid.l_min
+    for y in np.arange(-1.0, 1.0, 0.3):                              # Flecken bei x = 0 alle 30 cm
+        r, c = m.cell(0.0, float(y))
+        m.lo[int(r), int(c)] = cfg.grid.l_max
+    return cfg, m
+
+
+def test_planner_passes_driven_path_through_specks():
+    from xgonav.planner import plan
+    cfg, m = _driven_room()
+    assert plan(m, (-1.0, 0.0), (1.0, 0.0), cfg.home) is None
+    m.path = [(-1.0, 0.15), (0.0, 0.15), (1.0, 0.15)]
+    assert plan(m, (-1.0, 0.15), (1.0, 0.15), cfg.home) is not None
+
+
+def test_driven_path_stays_closed_for_fresh_obstacles():
+    from xgonav.planner import cost_map, driven_mask
+    cfg, m = _driven_room()
+    m.path = [(-1.0, 0.15), (0.0, 0.15), (1.0, 0.15)]
+    lo = m.lo
+    driven = driven_mask(m, 0, 0, lo.shape)
+    r, c = (int(k) for k in m.cell(0.0, 0.15))
+    assert driven[r, c]
+    blocked, _ = cost_map(lo, m.res, m.cfg.l_show, cfg.home, None, driven)
+    assert not blocked[r, c]
+    extra = np.zeros(lo.shape, bool)
+    extra[r, c] = True                                               # Merkkarte sieht dort jetzt etwas
+    blocked, _ = cost_map(lo, m.res, m.cfg.l_show, cfg.home, extra, driven)
+    assert blocked[r, c]
+
+
+def test_plan_falls_back_without_localmap():
+    """Schließt nur die Merkkarte den Weg, wird trotzdem geplant (die Bahnprüfung bremst); die Karte allein sperrt."""
+    from xgonav.planner import plan
+    cfg, m = _driven_room()
+    m.path = [(-1.0, 0.15), (0.0, 0.15), (1.0, 0.15)]
+    wall = np.column_stack([np.zeros(41), np.linspace(-1.0, 1.0, 41)])
+    assert plan(m, (-1.0, 0.15), (1.0, 0.15), cfg.home, obstacles=wall) is not None
+    assert plan(m, (-1.0, 0.15), (1.0, 0.15), cfg.home, obstacles=lambda: wall) is not None   # auch als Funktion
+    m.path = [(0.0, 0.0)]
+    assert plan(m, (-1.0, 0.15), (1.0, 0.15), cfg.home, obstacles=wall) is None
+
+
+def test_pathfollower_detects_pressing_quickly():
+    from xgonav.behaviors import PathFollower, World
+    from xgonav.egomotion import EgoResult
+    cfg = Config()
+    f = PathFollower(cfg.behavior, cfg.robot, cfg.home)
+    f.set_path([(0.0, 0.0), (3.0, 0.0)])
+
+    def step(t, x, v):
+        return f.drive(World(t=t, dt=0.05, W=640, H=480, hfov=1.6, ego=EgoResult(0, t, 0.05), tracks=[], free=None, balancing=True,
+                             yaw=0.0, cmd_v=v, pose=(x, 0.0, 0.0), goal=(3.0, 0.0, 0.0)), "x")
+    for k in range(21):                                              # fährt: nichts
+        step(k * 0.1, k * 0.015, 0.15)
+    assert not f.pressing
+    for k in range(21, 36):                                          # gebremst, Befehl klein: kein Kontakt
+        step(k * 0.1, 0.3, 0.02)
+    assert not f.pressing
+    for k in range(36, 70):                                          # Befehl groß, Räder stehen
+        step(k * 0.1, 0.3, 0.15)
+    assert f.pressing and f.stuck
+
+
+def test_map_explore_contact_blocks_goal_at_once():
+    from xgonav.behaviors import MapExplore
+    cfg = Config()
+    b = MapExplore(cfg.behavior, cfg.robot, cfg.home, cfg.explore)
+    pose = (1.0, 0.0, 0.0)
+    b.state, b.frontier, b.goal, b.t_goal = "ziel", (3.0, 0.0), (2.7, 0.0), 0.0
+    b.f.set_path([pose[:2], (2.7, 0.0)])
+    b.f.stuck = b.f.pressing = True
+    c = b.step(_world_at(1.0, pose))
+    assert b.state == "backup" and b.blocked_goals == [(3.0, 0.0)] and c.v == 0 and not b.f.pressing

@@ -29,6 +29,8 @@ class LocalMap:
         self.confirm = max(1, int(confirm))
         self.confirm_radius = confirm_radius_m
         self.pts = np.zeros((0, 2))
+        self._conf = np.zeros(0, np.int8)   # je Punkt: -1 ungeprüft, 0 unbestätigt, 1 bestätigt
+        self._conf_t = None                 # gilt für dieses self.t (neu bei jeder Änderung der Punktmenge)
         self.t = np.zeros(0)
         self.obs = np.zeros(0, np.int64)     # Nummer der Beobachtung, aus der der Punkt stammt
         self._obs_n = 0
@@ -158,10 +160,35 @@ class LocalMap:
         cand = r < reach
         if self.confirm <= 1 or not cand.any():
             return self.pts[cand]
-        nb = r < reach + self.confirm_radius
-        C, P, O = self.pts[cand], self.pts[nb], self.obs[nb]
-        near = ((C[:, None, :] - P[None, :, :]) ** 2).sum(-1) < self.confirm_radius ** 2
-        return C[self._distinct(near, O) >= self.confirm]
+        # Das Ergebnis je Punkt ändert sich nur mit der Punktmenge: move() verschiebt alle gleich. Der
+        # Regelschritt fragt mehrmals je Takt, am RiderPi kostete das bei ~2000 Punkten ~27 ms CPU.
+        if self._conf_t is not self.t or len(self._conf) != len(self.pts):
+            self._conf_t, self._conf = self.t, np.full(len(self.pts), -1, np.int8)
+        need = cand & (self._conf < 0)
+        if need.any():
+            nb = r < r[need].max() + self.confirm_radius
+            C, P, O = self.pts[need], self.pts[nb], self.obs[nb]
+            near = ((C[:, None, :] - P[None, :, :]) ** 2).sum(-1) < self.confirm_radius ** 2
+            self._conf[need] = self._distinct(near, O) >= self.confirm
+        return self.pts[cand & (self._conf == 1)]
+
+    def confirmed_later(self, reach: float):
+        """Funktion, die confirmed_points(reach) für den jetzigen Stand rechnet, ohne Zwischenspeicher: für den
+        Planer-Thread. Die Arrays werden nie verändert, nur ersetzt, und die Rechnung bremst die Hauptschleife nicht."""
+        pts, obs, confirm, rad = self.pts, self.obs, self.confirm, self.confirm_radius
+
+        def run() -> np.ndarray:
+            if not len(pts):
+                return pts
+            r = np.hypot(pts[:, 0], pts[:, 1])
+            cand = r < reach
+            if confirm <= 1 or not cand.any():
+                return pts[cand]
+            nb = r < reach + rad
+            C, P = pts[cand], pts[nb]
+            near = ((C[:, None, :] - P[None, :, :]) ** 2).sum(-1) < rad ** 2
+            return C[LocalMap._distinct(near, obs[nb]) >= confirm]
+        return run
 
     def arc_clearance(self, v_mps: float, w_rads: float, horizon_s: float = 1.0, steps: int = 10) -> float:
         """Freie Strecke (m) entlang des Bogens, bevor ein (bestätigter) Punkt näher als radius kommt.

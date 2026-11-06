@@ -18,7 +18,7 @@ import numpy as np
 
 from .config import ExploreCfg, HomeCfg
 from .gridmap import GridMap
-from .planner import cost_map, kept_path, known_area, path_length, route
+from .planner import cost_map, driven_mask, kept_path, known_area, path_length, route
 
 
 @dataclass
@@ -67,6 +67,8 @@ def next_goal(grid: GridMap, pose: tuple, hcfg: HomeCfg, ecfg: ExploreCfg, obsta
     """pose: (x, y, th). avoid: gesperrte Stellen (x, y, r). keep_frontier/keep_path: bisheriges Ziel."""
     res = grid.res
     x, y, th = pose
+    if callable(obstacles):                             # erst hier rechnen, im Planer-Thread
+        obstacles = obstacles()
     r0, c0, r1, c1 = known_area(grid, [(x, y)], hcfg.margin_m)
     with grid._lock:
         lo = grid.lo[r0:r1 + 1, c0:c1 + 1].copy()
@@ -81,10 +83,11 @@ def next_goal(grid: GridMap, pose: tuple, hcfg: HomeCfg, ecfg: ExploreCfg, obsta
     # Erreichbarkeit nur aus der Raumkarte. Die Merkkarte ändert sich mit jeder Blickrichtung: Mit ihr
     # fielen Ziele hinter einer Engstelle immer wieder weg, und der Rider pendelte (Simulator 2026-11-05).
     # Für den Weg zählt sie: erst drumherum planen, zur Not ohne sie (die Bahnprüfung bremst ohnehin).
-    blocked, cost = cost_map(lo, res, l_show, hcfg)
+    driven = driven_mask(grid, r0, c0, lo.shape)
+    blocked, cost = cost_map(lo, res, l_show, hcfg, None, driven)
     blocked_x = cost_x = None
     if extra is not None:
-        blocked_x, cost_x = cost_map(lo, res, l_show, hcfg, extra)
+        blocked_x, cost_x = cost_map(lo, res, l_show, hcfg, extra, driven)
     occ = lo > l_show
     free = lo < -l_show
     unknown = ~free & ~occ
@@ -105,7 +108,7 @@ def next_goal(grid: GridMap, pose: tuple, hcfg: HomeCfg, ecfg: ExploreCfg, obsta
     if blocked_x is not None:
         blocked_x[disk.astype(bool)] = False
     known_m2 = round(float(free.sum()) * res * res, 2)
-    passable = (free | disk.astype(bool)) & ~blocked
+    passable = (free | disk.astype(bool) | (driven if driven is not None else False)) & ~blocked
     _, labels = cv2.connectedComponents(passable.astype(np.uint8), connectivity=8)
     reach = labels == labels[s]
     fr = reach & (cv2.dilate(unknown.astype(np.uint8), _CROSS) > 0)

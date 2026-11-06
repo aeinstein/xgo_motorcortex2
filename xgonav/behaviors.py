@@ -355,11 +355,17 @@ class PathFollower:
     beim Drehen auf der Stelle 10° gutmachte. Die Luftlinie zum Ziel taugt dafür nicht: Jeder Umweg
     entfernt sich erst und galt so nach 3 s als festgefahren."""
     STUCK_S = 3.0
+    # Vorwärts befohlen, aber die Räder stehen: er drückt gegen etwas. Am RiderPi 2026-11-06 stand er so
+    # 4-5 s. Normales Anfahren braucht dort bis 5 cm im Mittel 1 s, höchstens 1,8 s; 1,5 s löste einmal
+    # auf freier Strecke aus.
+    PRESS_V, PRESS_M, PRESS_S = 0.08, 0.02, 2.5
 
     def __init__(self, cfg: BehaviorCfg, rcfg: RobotCfg, hcfg: HomeCfg):
         self.cfg, self.rcfg, self.h = cfg, rcfg, hcfg
         self.path: list[tuple[float, float]] | None = None
         self.stuck = False
+        self.pressing = False
+        self._press: tuple | None = None
         self._turning = False
         self._anchor: tuple[float, float] | None = None
         self._t_prog = 0.0
@@ -371,6 +377,8 @@ class PathFollower:
     def clear(self) -> None:
         self.path = None
         self.stuck = False
+        self.pressing = False
+        self._press = None
         self._anchor = None
 
     def target(self, x: float, y: float) -> tuple[float, float]:
@@ -402,6 +410,15 @@ class PathFollower:
             i, t = i + 1, 0.0
         return p[-1]
 
+    def _watch_press(self, t: float, x: float, y: float, cmd_v: float) -> None:
+        if cmd_v <= self.PRESS_V:
+            self._press = None
+        elif self._press is None or math.hypot(x - self._press[0], y - self._press[1]) >= self.PRESS_M:
+            self._press = (x, y, t)
+        elif t - self._press[2] > self.PRESS_S:
+            self.stuck = self.pressing = True
+            self._press = None
+
     def _watch(self, t: float, x: float, y: float, err: float) -> None:
         if self._anchor is None:
             self._anchor, self._t_prog, self._err_ref = (x, y), t, abs(err)
@@ -418,6 +435,7 @@ class PathFollower:
         """Fahrbefehl entlang des Wegs; label steht vorn im Status."""
         hmm = self.cfg.height_cruise_mm
         x, y, th = w.pose
+        self._watch_press(w.t, x, y, w.cmd_v)
         tx, ty = self.target(x, y)
         err = _wrap(math.atan2(ty - y, tx - x) - th)
         # Auf der Stelle drehen nur bei großem Fehler (Hysterese), sonst in der Kurve weiterfahren
@@ -462,6 +480,7 @@ class Home(Behavior):
         self.keep_ok = False          # darf der Planer den bisherigen Weg behalten? (nicht nach Festfahren)
         self.stuck_n = 0              # Festfahren in Folge ohne Annäherung ans Ziel
         self.best_dist = math.inf
+        self.t_best = None
 
     @property
     def path(self):
@@ -509,8 +528,8 @@ class Home(Behavior):
         # Steht das Ziel selbst hinter einem Hindernis, findet der Planer immer denselben Weg und die
         # Bahnprüfung bremst ihn immer wieder (RiderPi 2026-11-06, Klebemarke am Startpunkt): aufhören
         if dist < self.best_dist - STUCK_PROGRESS_M:
-            self.best_dist, self.stuck_n = dist, 0
-        if self.stuck_n >= self.h.max_fail:
+            self.best_dist, self.stuck_n, self.t_best = dist, 0, w.t
+        if self.stuck_n >= self.h.max_fail and w.t - self.t_best > self.h.give_up_s:
             self.gave_up = True
         if self.gave_up:
             return Command(0, 0, hmm, "kein Weg zum Start – stopp")
@@ -550,6 +569,7 @@ class MapExplore(Behavior):
         self.home_fails = 0
         self.home_stuck = 0
         self.home_best = math.inf
+        self.home_t_best = None
         self.reason = ""
         self.save_map = False              # App speichert die Karte, sobald das gesetzt ist
         self.done = False
@@ -712,8 +732,8 @@ class MapExplore(Behavior):
                 self._finish()
                 return Command(0, 0, hmm, self._final_status())
             if dist < self.home_best - STUCK_PROGRESS_M:
-                self.home_best, self.home_stuck = dist, 0
-            if self.home_stuck >= self.h.max_fail:
+                self.home_best, self.home_stuck, self.home_t_best = dist, 0, w.t
+            if self.home_stuck >= self.h.max_fail and w.t - self.home_t_best > self.h.give_up_s:
                 self._finish("Start nicht erreicht, %.2f m entfernt" % dist)
                 return Command(0, 0, hmm, self._final_status())
             if self.f.path is None:
@@ -743,7 +763,8 @@ class MapExplore(Behavior):
         timed_out = self.frontier is not None and w.t - self.t_goal > e.goal_timeout_s
         if self.f.stuck or timed_out:
             self.f.stuck = False
-            self.stucks = 2 if timed_out else self.stucks + 1
+            self.stucks = 2 if timed_out or self.f.pressing else self.stucks + 1   # Kontakt: gleich zurück
+            self.f.pressing = False
             if self.stucks == 1:
                 self.keep_ok = False
                 self.f.set_path(None)               # sofort neu planen, ohne den alten Weg

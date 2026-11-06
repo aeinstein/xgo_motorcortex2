@@ -362,6 +362,9 @@ class HomeCfg:
     align_heading: bool = True         # am Ziel auf den Startkurs drehen
     align_tol_deg: float = 10.0
     max_fail: int = 3                  # so oft kein Weg -> aufgeben
+    # Festgefahren aufgeben erst nach so viel Zeit ohne 0,3 m Annäherung: Die Merkkarte vergisst nach 4 s, und
+    # am RiderPi wäre die Bahn kurz nach dem Abbruch wieder frei gewesen (2026-11-06)
+    give_up_s: float = 20.0
 
 
 @dataclass
@@ -382,7 +385,9 @@ class ExploreCfg:
     goal_timeout_s: float = 60.0       # länger an einem Ziel: gilt als festgefahren
     no_growth_s: float = 120.0         # so lange kaum Zuwachs an bekanntem Boden: Karte gilt als fertig
     min_growth_m2: float = 0.5
-    avoid_r_m: float = 0.5             # Umkreis gesperrter Ziele
+    # Umkreis besuchter und gesperrter Stellen. Mit 0,5 m fiel die letzte Stelle eines Gangs weg, die nur
+    # 0,49 m weiter lag als die vorige (RiderPi 2026-11-06, „Karte fertig“ nach 39 s)
+    avoid_r_m: float = 0.3
     wander_s: float = 15.0             # Befreiung: so lange reaktiv fahren ...
     max_wander: int = 3                # ... höchstens so oft, dann Stopp mit Meldung
     no_goal_limit: int = 3             # so viele Suchen ohne Ziel: Karte gilt als fertig

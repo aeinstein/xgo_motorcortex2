@@ -26,10 +26,26 @@ _NB = [(-1, 0, 1.0), (1, 0, 1.0), (0, -1, 1.0), (0, 1, 1.0),
        (-1, -1, math.sqrt(2)), (-1, 1, math.sqrt(2)), (1, -1, math.sqrt(2)), (1, 1, math.sqrt(2))]
 
 
+def driven_mask(grid: GridMap, r0: int, c0: int, shape: tuple) -> np.ndarray | None:
+    """Zellen um die gefahrene Bahn (Ausschnitt ab r0, c0). Dort ist der Rider durchgekommen, auch wenn
+    belegte Flecken samt Sicherheitsabstand die Karte sonst durchschneiden (RiderPi 2026-11-06)."""
+    with grid._lock:
+        pts = list(grid.path)
+    if len(pts) < 2:
+        return None
+    p = np.asarray(pts, np.float64) / grid.res + grid.n / 2
+    px = np.round(p - [c0, r0]).astype(np.int32)
+    m = np.zeros(shape, np.uint8)
+    rad = max(1, int(round(grid.cfg.driven_free_r_m / grid.res)))
+    cv2.polylines(m, [px], False, 1, thickness=2 * rad + 1)
+    return m.astype(bool)
+
+
 def cost_map(lo: np.ndarray, res: float, l_show: float, cfg: HomeCfg,
-             extra_occ: np.ndarray | None = None) -> tuple[np.ndarray, np.ndarray]:
+             extra_occ: np.ndarray | None = None, driven: np.ndarray | None = None) -> tuple[np.ndarray, np.ndarray]:
     """(gesperrt, Kosten je Zelle) aus Log-Odds. Kosten >= 1. extra_occ: zusätzlich belegte
-    Zellen (bool, gleiche Form), z. B. Hindernisse der Merkkarte."""
+    Zellen (bool, gleiche Form), z. B. Hindernisse der Merkkarte. driven: passierbar trotz Raumkarte
+    (driven_mask); was extra_occ gerade sieht, sperrt auch dort."""
     occ = lo > l_show
     if extra_occ is not None:
         occ |= extra_occ
@@ -37,6 +53,11 @@ def cost_map(lo: np.ndarray, res: float, l_show: float, cfg: HomeCfg,
     dist = cv2.distanceTransform((~occ).astype(np.uint8), cv2.DIST_L2, 5) * res if occ.any() \
         else np.full(lo.shape, np.inf, np.float32)
     blocked = dist < cfg.inflate_m
+    if driven is not None:
+        opened = driven
+        if extra_occ is not None and extra_occ.any():
+            opened = driven & (cv2.distanceTransform((~extra_occ).astype(np.uint8), cv2.DIST_L2, 5) * res >= cfg.inflate_m)
+        blocked[opened] = False
     near = np.clip(1.0 - (dist - cfg.inflate_m) / max(cfg.inflate_m, 1e-3), 0.0, 1.0)
     unknown = (lo >= -l_show) & ~occ
     cost = 1.0 + cfg.clear_cost * near + cfg.unknown_cost * unknown
@@ -192,6 +213,8 @@ def plan(grid: GridMap, start_xy: tuple[float, float], goal_xy: tuple[float, flo
     Ziele wie Wegpunkte: ein Punkt in der Wand soll auffallen, nicht angefahren werden."""
     res, n = grid.res, grid.n
     keep = [tuple(p) for p in keep] if keep else None
+    if callable(obstacles):                             # erst hier rechnen, im Planer-Thread
+        obstacles = obstacles()
     r0, c0, r1, c1 = known_area(grid, [tuple(start_xy), tuple(goal_xy)] + (keep or []), cfg.margin_m)
     with grid._lock:
         lo = grid.lo[r0:r1 + 1, c0:c1 + 1].copy()
@@ -202,7 +225,8 @@ def plan(grid: GridMap, start_xy: tuple[float, float], goal_xy: tuple[float, flo
         ok = (rr >= 0) & (rr < lo.shape[0]) & (cc >= 0) & (cc < lo.shape[1])
         extra = np.zeros(lo.shape, bool)
         extra[rr[ok], cc[ok]] = True
-    blocked, cost = cost_map(lo, res, grid.cfg.l_show, cfg, extra)
+    driven = driven_mask(grid, r0, c0, lo.shape)
+    blocked, cost = cost_map(lo, res, grid.cfg.l_show, cfg, extra, driven)
 
     def local(xy):
         r, c = grid.cell(xy[0], xy[1])
@@ -211,10 +235,13 @@ def plan(grid: GridMap, start_xy: tuple[float, float], goal_xy: tuple[float, flo
     s, g = local(start_xy), local(goal_xy)
     # Um die Pose freigeben: sie driftet, sonst sperrt eine Wand neben dem Rider ihn ein
     rad = int(math.ceil(cfg.inflate_m / res))
-    for (r, c) in ((s, g) if clear_goal else (s,)):
-        disk = np.zeros_like(blocked, np.uint8)
-        cv2.circle(disk, (c, r), rad, 1, -1)
-        blocked[disk.astype(bool)] = False
+
+    def clear_ends(b: np.ndarray) -> None:
+        for (r, c) in ((s, g) if clear_goal else (s,)):
+            disk = np.zeros_like(b, np.uint8)
+            cv2.circle(disk, (c, r), rad, 1, -1)
+            b[disk.astype(bool)] = False
+    clear_ends(blocked)
 
     def to_world(r, c):
         return (c + c0 + 0.5 - n / 2) * res, (r + r0 + 0.5 - n / 2) * res
@@ -223,6 +250,12 @@ def plan(grid: GridMap, start_xy: tuple[float, float], goal_xy: tuple[float, flo
     if keep and math.hypot(keep[-1][0] - goal_xy[0], keep[-1][1] - goal_xy[1]) < 0.05:
         kept = kept_path(keep, start_xy, blocked, local)
     out = route(blocked, cost, s, g, to_world, start_xy, goal_xy)
+    if out is None and kept is None and extra is not None:
+        # Die Merkkarte schloss eine Engstelle, durch die er gerade fuhr, und die Fahrt endete mit „kein Weg“
+        # (RiderPi 2026-11-06). Zur Not ohne sie, wie die Zielsuche: Die Bahnprüfung bremst ohnehin.
+        blocked, cost = cost_map(lo, res, grid.cfg.l_show, cfg, None, driven)
+        clear_ends(blocked)
+        out = route(blocked, cost, s, g, to_world, start_xy, goal_xy)
     if out is None:
         return kept
     if kept is not None and path_length(kept) <= cfg.keep_factor * path_length(out) + 0.3:

@@ -99,7 +99,9 @@ Largest cost: optical flow (`ego.lk_*`). The Python binding does not accept preb
 | Item | Finding |
 |---|---|
 | **No cliff protection** | Run 1 nearly drove down a step, stopped by hand about 50 cm before it. The frontier goal lay ~20 cm behind the step, the map had it as free. The floor model saw the step only from about 1 m. Block stairs physically; do not run unattended |
-| Flat objects | A yellow tape patch on the floor counts as an obstacle |
+| Flat objects | A yellow tape patch and the edge of a chair mat on the floor count as obstacles |
 | Stand-up roll | The Rider rolled ~24 cm forward (one run); the start point is set after that, so it is not where the Rider lay |
-| Early end | Runs 2 and 3 reported "Karte fertig" with open areas left: occupied specks plus `inflate_m` cut the map even on driven ground (run 2); cause in run 3 (39 s, 4.8 m) not analysed |
-| Timing | Control step grows during the run (8 → 46 ms mean, 27 ms CPU), raw recording running; cause not analysed. Planner median 35–182 ms, peak 1.2 s |
+| Early end | Runs 2 and 3 reported "Karte fertig" with open areas left: occupied specks plus `inflate_m` cut the map even on driven ground (run 2), last open spot 0.49 m from an old goal inside the 0.5 m avoid radius (run 3). Changed afterwards (driven ground, `avoid_r_m` 0.3), **not driven since** |
+| Timing | Control step grew during the run (8 → 46 ms mean, 27 ms CPU), raw recording running; `LocalMap.confirmed_points` compares every point with every point (up to 2900 points). Result now cached between floor updates, the planner's copy runs in its thread. Run 4, same recording: control step 8–12 ms mean, main loop median 19 ms, p95 49 ms (before 33 and 97 ms). Planner median 215 ms, peak 761 ms |
+| Way back | Run 4 ended 1.7 m from the start: the direct way led along a chair and a chair mat. Abort now only after `give_up_s` 20 s without approach. Run 5 ended 0.89 m from the start with "kein Weg" while driving freely: the room map alone had a straight way, so the local map closed it. `plan()` now falls back without it, not driven since |
+| Contact | Only inferred from stationary wheels under command, see `docs/mapping.md`; no sensor |

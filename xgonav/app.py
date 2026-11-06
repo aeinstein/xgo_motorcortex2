@@ -613,16 +613,22 @@ class App:
             if self.cfg.grid.file:
                 threading.Thread(target=self.gridmap.save, args=(self.cfg.grid.file,), name="karte-speichern", daemon=True).start()
 
-    def _lmap_world(self, pose) -> np.ndarray | None:
-        """Bestätigte Punkte der Merkkarte (dieselben, die die Bahnprüfung bremsen) in Welt-m."""
+    def _lmap_world(self, pose):
+        """Funktion für den Planer-Thread: bestätigte Punkte der Merkkarte (dieselben, die die Bahnprüfung
+        bremsen) in Welt-m, oder None. Bei vielen Punkten dauert das am RiderPi um 100 ms, zu lang für die
+        Hauptschleife."""
         if self.lmap is None or not self.cfg.home.use_localmap:
             return None
-        p = self.lmap.confirmed_points(self.cfg.home.localmap_reach_m)
-        if not len(p):
-            return None
+        points = self.lmap.confirmed_later(self.cfg.home.localmap_reach_m)
         x, y, th = pose
         c, s = math.cos(th), math.sin(th)
-        return np.column_stack([x + p[:, 0] * c - p[:, 1] * s, y + p[:, 0] * s + p[:, 1] * c])
+
+        def world() -> np.ndarray | None:
+            p = points()
+            if not len(p):
+                return None
+            return np.column_stack([x + p[:, 0] * c - p[:, 1] * s, y + p[:, 0] * s + p[:, 1] * c])
+        return world
 
     def _map_view(self, free: FreeSpace, tracks, now: float) -> FreeSpace:
         return mask_movable(free, [(t.cls, t.box) for t in tracks], self.cfg.camera.width, self.cfg.camera.height)
