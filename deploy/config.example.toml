@@ -27,8 +27,8 @@ scaler_crop = [16, 0, 2560, 1920]   # Ausschnitt wie im 640x480-Modus: hfov/tilt
 hfov_deg = 88.5       # [K] Zollstock 0,5–2 m bei 100 mm Kamerahöhe (2026-11-04)
 # 4 ms war bei Wohnraum-Licht (15–50 Lux) fast schwarz. 15 ms reichte bei Tages- und
 # Lampenlicht, kostet aber Schärfe bei schnellen Drehungen. 0 = Auto (Modus "short").
-exposure_us = 20000      # Standard (Nutzer 2026-11-03): 20 ms bei maximaler Verstärkung
-analogue_gain = 16.0     # maximale Verstärkung (OV5647 1..16, Automatik ginge nur bis 8)
+exposure_us = 20000      # Standard (Nutzer 2026-11-03): 20 ms bei Verstärkung 16
+analogue_gain = 16.0     # OV5647 1..63,9; Automatik nur bis 8; über ~8x kein besserer Rauschabstand
 mount_offset_mm = 43.0   # [K] Kamerahöhe 128 mm über Boden bei Körperhöhe 85 mm
 tilt_deg = 5.18          # [K] Zollstock 2026-11-04, gilt zusammen mit imu.pitch_ref_deg
 

@@ -39,6 +39,9 @@ Single device: RiderPi, CM4 2 GB, kernel 6.6.74+rpt-rpi-v8, OV5647 wide-angle, f
 | Lens shading | edge: blue/green to ~20 %, red to 1–9 % (from ~250 px off centre) |
 | Measurable floor | middle ~6/8 of width from 18–25 cm; outer eighths and lower corners blind |
 | Low light | 4 ms at 15–50 lux: gain 8 maxed, mean brightness 3/255 (auto 33 ms: 20–30/255); RiderPi config: 20 ms, gain 16 |
+| Analogue gain range | driver register 16..1023 = 1..63.94×; libcamera `camera_controls` shows 1..16 before start, 1..63.94 after |
+| Gain above 8× (measured 2026-11-06, 5 ms, one scene, 16 frames, green raw) | signal and temporal noise both scale with gain up to 63.9×; SNR stays ~4–5 from 8× on, so only brighter, and saturates sooner (20 ms, daylight: 16 % of pixels at 16×, 45 % at 63.9×) |
+| Missing raw codes | exactly 16× every 2nd code, exactly 32× every 4th; 15×, 17×, 24×, 31×, 33×, 48× none; cause unknown |
 | 640x480 sensor mode | runs 26.5 instead of 25 fps (driver pixel rate ~6 % low); use 1296x972 + crop |
 
 ## CPU (CM4, 640×480)

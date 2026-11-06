@@ -32,7 +32,7 @@ START = time.time()      # Startzeit des Prozesses: Oberfläche verbindet den St
 API = {"GET": ["/status", "/ws (WebSocket: Bilder, Bestätigung je Bild)", "/frame?after=<idx>&raw=1", "/stream",
                "/map.png?px=480&view=6 (Raumkarte)"],
        "POST": ["/mode?name=..&target=..", "/stop", "/pipeline?on=0|1", "/drive?v=..&w=.. (nur Modus manual)",
-                "/exposure?us=0|100..33333 (0 = Automatik)", "/gain?g=0|1..16 (0 = Automatik)",
+                "/exposure?us=0|100..33333 (0 = Automatik)", "/gain?g=0|1..63.9 (0 = Automatik)",
                 "/map/reset (Raumkarte leeren, Pose auf 0)", "/level (Beine neu ausrichten, 3 s)"]}
 
 

@@ -62,7 +62,7 @@ Default = `config.py`. RiderPi = `deploy/config.example.toml` (blank = default).
 | `sensor_mode` | `""` | `1296x972` | pure 2×2 binning; 640x480 mode runs 26.5 instead of 25 fps |
 | `scaler_crop` | `[]` | `[16, 0, 2560, 1920]` | keeps FOV/tilt/shading of 640x480 mode |
 | `exposure_us` | 4000 | 20000 | 0 = auto; runtime-adjustable from web |
-| `analogue_gain` | 0.0 | 16.0 | 1..16, 0 = auto (auto max 8) |
+| `analogue_gain` | 0.0 | 16.0 | 1..63.9, 0 = auto (auto max 8) |
 | `hfov_deg` | 88.5 | 88.5 [K] | |
 | `mount_offset_mm` | 45 | 43 [K] | camera height = body height + offset |
 | `tilt_deg` | 0.0 | 1.39 [K] | pair with `imu.pitch_ref_deg` |

@@ -19,7 +19,7 @@
 | Lage (open by default, right column top) | 3D model of the Rider rotated by roll, pitch, yaw from `imu_log`: CAD model `web/rider-model.bin` via WebGL, legs follow the `height`/`roll` setpoints through the linkage, smoothed ~0.33 s, at minimum while state = 254 (sliders keep their value), see limitations (built by `tools/step_to_model.py` from `docs/Rider-Pi.STEP`, loaded when Verlauf is first opened); without WebGL or the file, simple boxes on canvas 2D; fixed compass ring on the ground (0° = heading at ESP32 start, + = left), blue line = body forward direction; values below. Samples (50 Hz) replayed smoothly ~0.3 s behind; rotation about the wheel axle. Drag (mouse/touch) to orbit the view (elevation 5–85°), double-click resets; view kept in `localStorage` `xgonav.lage3d`; live (5 s buffer, memory); open/closed kept in `localStorage` `xgonav.lage` |
 | Fahren | D-pad, speed 5–100 %, height 61–255, roll −20..20°, Aufstehen (arm, 255), Neu ausrichten (leveling pulse), Absetzen (disarm, 254) |
 | Raumkarte | room map PNG, view 3/6/10/16 m; mouse: drag to pan, wheel to zoom about the pointer (1 m..`grid.size_m`), double-click recentres on the Rider and follows again (touch: page scrolls, no pan); Start hier (start = pose), Speichern, reset, pose line with distance to start |
-| Kamera | exposure (ms, auto), gain (1–16×, auto), actual values |
+| Kamera | exposure (ms, auto), gain (1–63.9×, auto), actual values |
 | Verlauf (collapsed) | history charts, see below |
 | Extras (collapsed) | actions 1–6, 4 LEDs + all off + strobe, display emotions |
 | System | shutdown (confirm dialog) |
@@ -64,7 +64,7 @@ GET only for `status` and `sys`; all commands POST. Parameters are validated; in
 | `POST ?a=ausrichten` | xgonav `/level` | 409 if not balancing |
 | `POST ?a=drive&v=..&w=..` | xgonav `/drive` | −1..1; mode `manual` only |
 | `POST ?a=exposure&us=..` | xgonav `/exposure` | 0 = auto, 100..33333 (checked by xgonav) |
-| `POST ?a=gain&g=..` | xgonav `/gain` | 0 = auto, 1..16 |
+| `POST ?a=gain&g=..` | xgonav `/gain` | 0 = auto, 1..63.9 |
 | `POST ?a=map_reset` | xgonav `/map/reset` | |
 | `POST ?a=map_start` | xgonav `/map/start` | |
 | `POST ?a=map_save` | xgonav `/map/save` | |

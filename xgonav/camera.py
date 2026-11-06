@@ -128,7 +128,7 @@ class FrameSource:
         log.info("Belichtung -> %s", f"{us} µs" if us else "Automatik")
         return us
 
-    GAIN_MIN, GAIN_MAX = 1.0, 16.0           # OV5647 laut libcamera; die Automatik geht nur bis 8
+    GAIN_MIN, GAIN_MAX = 1.0, 63.9           # Treiber 16..1023 = 1..63,94x (am Rider gemessen); Automatik nur bis 8
 
     @property
     def gain(self) -> float:

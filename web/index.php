@@ -219,14 +219,14 @@ details.extras[open]>summary{margin-bottom:8px}
       <span class="w" id="belicht-w">-</span>
       <button id="belicht-auto" onclick="belichtung(0)">Auto</button>
       <label for="gain">Verstärkung</label>
-      <input type="range" id="gain" min="1" max="16" value="8" step="0.5"
+      <input type="range" id="gain" min="1" max="63.9" value="8" step="0.5"
         oninput="gainAnzeige(this.value)" onchange="verstaerkung(this.value)">
       <span class="w" id="gain-w">-</span>
       <button id="gain-auto" onclick="verstaerkung(0)">Auto</button>
     </div>
     <details class="hilfe"><summary>Gilt bis zum Neustart von xgonav</summary>
       <p>Kürzere Belichtung = weniger Bewegungsunschärfe, aber dunkler; mehr Verstärkung = heller, aber mehr
-        Rauschen (Automatik nur bis 8). Dauerhaft über <code>[camera] exposure_us</code> /
+        Rauschen (Automatik nur bis 8; über ~8× wird der Rauschabstand nicht mehr besser, nur das Bild heller). Dauerhaft über <code>[camera] exposure_us</code> /
         <code>analogue_gain</code> in config.toml.</p>
     </details>
   </section>

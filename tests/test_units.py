@@ -850,8 +850,8 @@ def test_gain_runtime_limits():
     src = FrameSource(CameraCfg())
     assert src.gain == 0.0                              # Default: Automatik
     assert src.set_gain(4) == 4.0 and src.gain == 4.0
-    assert src.set_gain(16) == 16.0
-    for bad in (0.5, 17, -1):
+    assert src.set_gain(16) == 16.0 and src.set_gain(63.9) == 63.9
+    for bad in (0.5, 64, -1):
         with pytest.raises(ValueError):
             src.set_gain(bad)
     assert src.set_gain(0) == 0.0

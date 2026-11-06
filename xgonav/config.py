@@ -57,7 +57,7 @@ class CameraCfg:
     # Bilddauer-Korrektur, nur nötig im 640x480-Modus (dort ~1.061): angefragt = 1/fps * Faktor.
     frame_clock_corr: float = 1.0
     exposure_us: int = 4000        # kurze Belichtung gegen Bewegungsunschärfe; 0 = Auto
-    analogue_gain: float = 0.0     # feste Verstärkung 1..16 (OV5647); 0 = Auto
+    analogue_gain: float = 0.0     # feste Verstärkung 1..63,9 (OV5647); 0 = Auto
     hfov_deg: float = 88.5         # RiderPi: Zollstock bei 100 mm Kamerahöhe (f = 328 px @ 640); RPi Cam v1 hätte 62,2
     # Geometrie für Entfernung per Bodenebene (KALIBRIEREN, siehe README)
     mount_offset_mm: float = 45.0  # Kamerahöhe über Boden = Körperhöhe + Offset

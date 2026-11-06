@@ -22,7 +22,7 @@
  *   POST api.php?a=ausrichten               (Beine neu ausrichten, xgonav /level)
  *   POST api.php?a=roll&deg=-20..20          (Grad, + = nach rechts; Treiber-Patch 0004: Register 0x36)
  *   POST api.php?a=exposure&us=0|100..33333     (Belichtung in µs, 0 = Automatik; nur bis zum Neustart)
- *   POST api.php?a=gain&g=0|1..16               (analoge Verstärkung, 0 = Automatik; nur bis zum Neustart)
+ *   POST api.php?a=gain&g=0|1..63.9             (analoge Verstärkung, 0 = Automatik; nur bis zum Neustart)
  *   POST api.php?a=calibration&on=0|1       (Beinnullpunkte: 1 = Start, Motoren los; 0 = speichern)
  *   POST api.php?a=pitch_calibration         (Lage: Firmware balanciert im Stand aus und speichert den Trimm)
  *   POST api.php?a=emotion&name=...           (Bildfolge aufs Display)
