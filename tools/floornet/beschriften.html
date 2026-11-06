@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>FloorNet: Prüfsatz beschriften</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: #1b1d21; color: #e6e6e6; font: 15px/1.4 system-ui, sans-serif; }
+  #wrap { display: flex; gap: 12px; padding: 10px; height: 100%; }
+  #links { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+  #rechts { width: 340px; flex: none; display: flex; flex-direction: column; gap: 10px; overflow-x: hidden; overflow-y: auto; padding-right: 6px; }
+  #kopf { display: flex; gap: 14px; align-items: baseline; flex-wrap: wrap; }
+  #kopf .knopfreihe { margin-left: auto; }
+  #zaehler { font-weight: 600; font-size: 18px; }
+  #meldung { color: #ffd166; min-height: 1.4em; }
+  canvas { display: block; background: #000; }
+  #bild { cursor: crosshair; }
+  #lupe { width: 100%; height: auto; border: 1px solid #444; flex: none; }
+  ul { margin: 4px 0; padding-left: 18px; }
+  li { margin: 3px 0; }
+  h3 { margin: 6px 0 2px; font-size: 14px; color: #9fb4c7; }
+  kbd { background: #33363c; border: 1px solid #555; border-radius: 3px; padding: 0 5px; font: 12px ui-monospace, monospace; }
+  button { background: #33363c; color: #e6e6e6; border: 1px solid #555; border-radius: 4px; padding: 4px 10px; cursor: pointer; font: inherit; }
+  button:hover { background: #40444b; }
+  #leiste { height: 6px; background: #33363c; border-radius: 3px; overflow: hidden; }
+  #fortschritt { height: 100%; width: 0; background: #06d6a0; }
+  .knopfreihe { display: flex; gap: 8px; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="links">
+    <div id="kopf">
+      <span id="zaehler"></span>
+      <span id="dauer"></span>
+      <span id="meldung" role="status" aria-live="polite"></span>
+      <div class="knopfreihe">
+        <button id="export" type="button">Exportieren</button>
+        <button id="import" type="button">Importieren</button>
+        <input id="datei" type="file" accept=".json" hidden>
+      </div>
+    </div>
+    <div id="leiste"><div id="fortschritt"></div></div>
+    <canvas id="bild" width="640" height="480"></canvas>
+  </div>
+  <div id="rechts">
+    <canvas id="lupe" width="340" height="212" aria-hidden="true"></canvas>
+    <div>
+      <h3>Wo die Linie hingehört</h3>
+      <ul>
+        <li>Dorthin, wo der Rider <b>nicht mehr weiterkommt</b>: Fuß von Wand und Möbeln, Vorderkante des Teppichs, Füße von Personen.</li>
+        <li>Schatten, Spiegelungen, Fugen und flach liegendes Papier sind <b>Boden</b>, dort keine Linie.</li>
+        <li>Unter Möbeln: Boden, solange nichts im Weg steht. Die Linie läuft am Fuß dessen, was dort steht.</li>
+        <li>Dünne Beine mit einer kleinen Zacke mitnehmen, wenn man sie erkennt.</li>
+        <li>Grenze näher als der Bildrand: Punkt ganz unten ins Bild setzen.</li>
+        <li>Nicht erkennbar: Abschnitt mit <kbd>U</kbd> als unsicher markieren, lieber nicht raten.</li>
+      </ul>
+      <h3>Bedienung</h3>
+      <ul>
+        <li>Von links nach rechts anklicken; Punkte lassen sich ziehen.</li>
+        <li>Rechtsklick auf einen Punkt löscht ihn.</li>
+        <li><kbd>Enter</kbd> weiter · <kbd>←</kbd> <kbd>→</kbd> blättern</li>
+        <li><kbd>Z</kbd> letzten Punkt zurücknehmen</li>
+        <li><kbd>U</kbd> Abschnitt unter der Maus unsicher</li>
+        <li><kbd>X</kbd> ganzes Bild unbrauchbar</li>
+        <li><kbd>B</kbd> Bild heller oder dunkler</li>
+      </ul>
+      <p>Alles wird im Browser gespeichert. Zwischendurch und am Ende bitte exportieren, Knopf oben.</p>
+    </div>
+  </div>
+</div>
+<script src="index.js"></script>
+<script>
+"use strict";
+// Einheiten: Punkte in Bildpixeln (640 x 480), [x, y] oder [x, y, 1] = Abschnitt rechts davon ist unsicher.
+const W = 640, H = 480, RAND = 14, UNTEN = 472, TREFFER = 10;
+const SPEICHER = "floornet_pruefsatz_v1";
+const HELL = [1.0, 1.5, 2.2, 3.0];
+
+const leinwand = document.getElementById("bild"), ctx = leinwand.getContext("2d");
+const lupe = document.getElementById("lupe"), lctx = lupe.getContext("2d");
+const melde = document.getElementById("meldung");
+
+let daten = lade();
+let pos = daten.bilder ? ersteOffene() : 0;
+let hell = 0, skala = 1, maus = null, ziehe = null, verlauf = [], eintritt = performance.now();
+const bild = new Image();
+
+function lade() {
+  try {
+    const d = JSON.parse(localStorage.getItem(SPEICHER) || "null");
+    if (d && d.bilder) return d;
+  } catch (e) { /* nichts Lesbares gespeichert: neu anfangen */ }
+  return { version: 1, bilder: {}, exportiert: 0 };
+}
+
+function speichere() {
+  try {
+    localStorage.setItem(SPEICHER, JSON.stringify(daten));
+  } catch (e) {
+    melde.textContent = "Speichern im Browser fehlgeschlagen: bitte jetzt exportieren.";
+  }
+}
+
+function fertigZahl() { return BILDER.filter(b => (daten.bilder[b.id] || {}).fertig).length; }
+
+function ersteOffene() {
+  const i = BILDER.findIndex(b => !(daten.bilder[b.id] || {}).fertig);
+  return i < 0 ? BILDER.length - 1 : i;
+}
+
+function eintrag() {
+  const id = BILDER[pos].id;
+  return daten.bilder[id] || (daten.bilder[id] = { pts: [], fertig: false, sek: 0 });
+}
+
+function zeitBuchen() {
+  const jetzt = performance.now(), e = eintrag();
+  // Pausen nicht mitzählen: mehr als zwei Minuten an einem Bild waren keine Arbeit
+  e.sek = (e.sek || 0) + Math.min((jetzt - eintritt) / 1000, 120);
+  eintritt = jetzt;
+}
+
+function zeige(neu) {
+  zeitBuchen();
+  speichere();
+  pos = Math.max(0, Math.min(BILDER.length - 1, neu));
+  verlauf = [];
+  ziehe = null;
+  melde.textContent = "";
+  bild.src = BILDER[pos].src;
+  if (pos + 1 < BILDER.length) new Image().src = BILDER[pos + 1].src;
+  kopf();
+}
+
+function kopf() {
+  const n = fertigZahl();
+  document.getElementById("zaehler").textContent = "Bild " + (pos + 1) + " von " + BILDER.length + " · fertig " + n;
+  document.getElementById("fortschritt").style.width = (100 * n / BILDER.length) + "%";
+  const zeiten = BILDER.map(b => daten.bilder[b.id]).filter(e => e && e.fertig).map(e => e.sek || 0);
+  let text = "";
+  if (zeiten.length >= 5) {
+    const schnitt = zeiten.reduce((a, b) => a + b, 0) / zeiten.length;
+    text = "Ø " + schnitt.toFixed(0) + " s je Bild, noch etwa " + Math.round(schnitt * (BILDER.length - n) / 60) + " min";
+  }
+  if (n - (daten.exportiert || 0) >= 50) text += " · Zeit für einen Export";
+  document.getElementById("dauer").textContent = text;
+}
+
+function passeGroesseAn() {
+  const b = window.innerWidth - 340 - 12 - 20, h = window.innerHeight - 80;
+  skala = Math.max(0.5, Math.min(b / W, h / H));
+  leinwand.width = Math.round(W * skala);
+  leinwand.height = Math.round(H * skala);
+  zeichne();
+}
+
+function linie(c, pts, sx, sy, dx, dy) {
+  // Sichere Abschnitte durchgezogen, unsichere rot gestrichelt
+  for (let i = 0; i + 1 < pts.length; i++) {
+    c.beginPath();
+    c.setLineDash(pts[i][2] ? [6, 5] : []);
+    c.strokeStyle = pts[i][2] ? "#ff5a5f" : "#ff3df2";
+    c.moveTo(pts[i][0] * sx + dx, pts[i][1] * sy + dy);
+    c.lineTo(pts[i + 1][0] * sx + dx, pts[i + 1][1] * sy + dy);
+    c.stroke();
+  }
+  c.setLineDash([]);
+}
+
+function zeichne() {
+  if (!bild.complete || !bild.naturalWidth) return;
+  const filter = "brightness(" + HELL[hell] + ")";
+  leinwand.style.filter = filter;
+  lupe.style.filter = filter;
+  ctx.drawImage(bild, 0, 0, leinwand.width, leinwand.height);
+  const e = eintrag();
+  ctx.lineWidth = 2;
+  linie(ctx, e.pts, skala, skala, 0, 0);
+  for (const p of e.pts) {
+    ctx.beginPath();
+    ctx.fillStyle = "#fff";
+    ctx.arc(p[0] * skala, p[1] * skala, 3, 0, 2 * Math.PI);
+    ctx.fill();
+  }
+  if (e.unbrauchbar) {
+    ctx.fillStyle = "rgba(200,0,0,0.35)";
+    ctx.fillRect(0, 0, leinwand.width, leinwand.height);
+  }
+  zeichneLupe();
+}
+
+function zeichneLupe() {
+  lctx.fillStyle = "#000";
+  lctx.fillRect(0, 0, lupe.width, lupe.height);
+  if (!maus || !bild.complete) return;
+  const zoom = 4, bw = lupe.width / zoom, bh = lupe.height / zoom;
+  const x0 = maus[0] - bw / 2, y0 = maus[1] - bh / 2;
+  lctx.imageSmoothingEnabled = false;
+  lctx.drawImage(bild, x0, y0, bw, bh, 0, 0, lupe.width, lupe.height);
+  lctx.lineWidth = 2;
+  linie(lctx, eintrag().pts, zoom, zoom, -x0 * zoom, -y0 * zoom);
+  lctx.strokeStyle = "#0ff";
+  lctx.lineWidth = 1;
+  lctx.beginPath();
+  lctx.moveTo(lupe.width / 2, 0); lctx.lineTo(lupe.width / 2, lupe.height);
+  lctx.moveTo(0, lupe.height / 2); lctx.lineTo(lupe.width, lupe.height / 2);
+  lctx.stroke();
+}
+
+function bildPunkt(ev) {
+  const r = leinwand.getBoundingClientRect();
+  return [(ev.clientX - r.left) / skala, (ev.clientY - r.top) / skala];
+}
+
+function einrasten(p) {
+  let x = p[0], y = p[1];
+  if (x < RAND) x = 0;
+  if (x > W - 1 - RAND) x = W - 1;
+  if (y > UNTEN) y = H;
+  return [Math.round(Math.max(0, Math.min(W - 1, x))), Math.round(Math.max(0, Math.min(H, y)))];
+}
+
+function naechster(p, grenze) {
+  const pts = eintrag().pts;
+  let best = -1, bd = grenze / skala;
+  pts.forEach((q, i) => {
+    const d = Math.hypot(q[0] - p[0], q[1] - p[1]);
+    if (d < bd) { bd = d; best = i; }
+  });
+  return best;
+}
+
+function sortiere() { eintrag().pts.sort((a, b) => a[0] - b[0]); }
+
+function geaendert() {
+  const e = eintrag();
+  e.fertig = false;
+  e.unbrauchbar = false;
+  speichere();
+  kopf();
+  zeichne();
+}
+
+leinwand.addEventListener("mousedown", ev => {
+  if (ev.button !== 0) return;
+  const p = bildPunkt(ev), i = naechster(p, TREFFER);
+  if (i >= 0) {
+    ziehe = eintrag().pts[i];
+  } else {
+    const q = einrasten(p);
+    eintrag().pts.push(q);
+    verlauf.push(q);
+    ziehe = q;
+    sortiere();
+    geaendert();
+  }
+  ev.preventDefault();
+});
+
+window.addEventListener("mousemove", ev => {
+  const r = leinwand.getBoundingClientRect();
+  if (ev.clientX >= r.left && ev.clientX <= r.right && ev.clientY >= r.top && ev.clientY <= r.bottom) {
+    maus = bildPunkt(ev);
+  }
+  if (ziehe) {
+    const q = einrasten(bildPunkt(ev));
+    ziehe[0] = q[0];
+    ziehe[1] = q[1];
+    sortiere();
+    zeichne();
+  } else {
+    zeichneLupe();
+  }
+});
+
+window.addEventListener("mouseup", () => {
+  if (ziehe) {
+    ziehe = null;
+    geaendert();
+  }
+});
+
+leinwand.addEventListener("contextmenu", ev => {
+  ev.preventDefault();
+  const i = naechster(bildPunkt(ev), TREFFER * 1.5);
+  if (i >= 0) {
+    eintrag().pts.splice(i, 1);
+    geaendert();
+  }
+});
+
+function weiter() {
+  const e = eintrag();
+  if (e.unbrauchbar) {
+    e.fertig = true;
+  } else {
+    if (!e.pts.length) {
+      melde.textContent = "Noch keine Linie. X = Bild unbrauchbar.";
+      return;
+    }
+    if (e.pts[0][0] > 0 || e.pts[e.pts.length - 1][0] < W - 1) {
+      // Einmal sichtbar bis zum Rand verlängern, das nächste Enter bestätigt
+      if (e.pts[0][0] > 0) e.pts.unshift([0, e.pts[0][1]]);
+      if (e.pts[e.pts.length - 1][0] < W - 1) e.pts.push([W - 1, e.pts[e.pts.length - 1][1]]);
+      geaendert();
+      melde.textContent = "Bis zum Rand verlängert. Stimmt das? Enter = weiter";
+      return;
+    }
+    e.fertig = true;
+  }
+  speichere();
+  if (pos + 1 >= BILDER.length) {
+    zeitBuchen();
+    kopf();
+    melde.textContent = "Letztes Bild erreicht. Bitte exportieren.";
+    return;
+  }
+  zeige(pos + 1);
+}
+
+function exportiere() {
+  zeitBuchen();
+  daten.exportiert = fertigZahl();
+  speichere();
+  const url = URL.createObjectURL(new Blob([JSON.stringify(daten)], { type: "application/json" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "pruefsatz_beschriftung.json";
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+  melde.textContent = fertigZahl() + " fertige Bilder exportiert (Ordner Downloads).";
+  kopf();
+}
+
+document.getElementById("export").addEventListener("click", exportiere);
+document.getElementById("import").addEventListener("click", () => document.getElementById("datei").click());
+document.getElementById("datei").addEventListener("change", async ev => {
+  const f = ev.target.files[0];
+  if (!f) return;
+  try {
+    const d = JSON.parse(await f.text());
+    if (!d.bilder) throw new Error("keine Beschriftung");
+    Object.assign(daten.bilder, d.bilder);
+    speichere();
+    melde.textContent = Object.keys(d.bilder).length + " Einträge übernommen.";
+    zeige(ersteOffene());
+  } catch (e) {
+    melde.textContent = "Datei nicht lesbar: " + e.message;
+  }
+  ev.target.value = "";
+});
+
+window.addEventListener("keydown", ev => {
+  if (ev.target.tagName === "BUTTON" && (ev.key === "Enter" || ev.key === " ")) return;
+  const k = ev.key.toLowerCase();
+  if (k === "enter") {
+    weiter();
+  } else if (k === "arrowleft") {
+    zeige(pos - 1);
+  } else if (k === "arrowright") {
+    zeige(pos + 1);
+  } else if (k === "z" || k === "backspace") {
+    const pts = eintrag().pts, q = verlauf.pop();
+    const i = q ? pts.indexOf(q) : pts.length - 1;
+    if (i >= 0) {
+      pts.splice(i, 1);
+      geaendert();
+    }
+  } else if (k === "u") {
+    const pts = eintrag().pts;
+    if (maus && pts.length >= 2) {
+      for (let i = 0; i + 1 < pts.length; i++) {
+        if (maus[0] >= pts[i][0] && maus[0] <= pts[i + 1][0]) {
+          if (pts[i][2]) pts[i].length = 2; else pts[i][2] = 1;
+          geaendert();
+          break;
+        }
+      }
+    }
+  } else if (k === "x") {
+    const e = eintrag();
+    e.unbrauchbar = !e.unbrauchbar;
+    e.fertig = false;
+    speichere();
+    if (e.unbrauchbar) weiter(); else zeichne();
+  } else if (k === "b") {
+    hell = (hell + 1) % HELL.length;
+    zeichne();
+  } else {
+    return;
+  }
+  ev.preventDefault();
+});
+
+window.addEventListener("resize", passeGroesseAn);
+window.addEventListener("beforeunload", () => { zeitBuchen(); speichere(); });
+bild.onload = zeichne;
+passeGroesseAn();
+zeige(pos);
+</script>
+</body>
+</html>
