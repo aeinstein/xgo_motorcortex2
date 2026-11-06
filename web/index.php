@@ -164,6 +164,8 @@ details.extras[open]>summary{margin-bottom:8px}
 .unter .rechts{float:right}
 .lage3d{display:block;width:100%;background:var(--karte2);border-radius:6px;cursor:grab;touch-action:none}
 .lage3d.zieht{cursor:grabbing}
+.lage3d-rahmen{position:relative}
+.lage3d-gl{position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none}
 .unter button{padding:1px 7px;font-size:12px;margin-left:6px}
 </style>
 </head>
@@ -223,10 +225,7 @@ details.extras[open]>summary{margin-bottom:8px}
     </details>
   </section>
   <details class="karte extras" id="verlauf" ontoggle="verlaufUmschalten()">
-    <summary><h2>Verlauf</h2><span class="leise">Lage · CPU · Akku</span></summary>
-    <div class="unter">Lage (IMU, live, ~0,3 s verzögert) <span class="rechts">ziehen: Ansicht drehen · Doppelklick: zurück</span></div>
-    <canvas class="lage3d" id="d-lage" data-h="230" role="img" aria-label="Lage des Riders als 3D-Modell"></canvas>
-    <div class="legende" id="l-lage" title="Gier 0° = Kurs beim Start des ESP32; + = links. Roll + = rechts tief, Nick + = vorn tief"></div>
+    <summary><h2>Verlauf</h2><span class="leise">CPU · Akku</span></summary>
     <div class="unter">CPU je Kern, letzte 10 min <span class="rechts" id="v-temp"></span></div>
     <div class="legende" id="l-cpu"></div>
     <canvas class="diag" id="d-cpu" data-h="140"></canvas>
@@ -236,6 +235,14 @@ details.extras[open]>summary{margin-bottom:8px}
 </div>
 
 <div class="spalte">
+  <details class="karte extras" id="lagekarte" ontoggle="lageUmschalten()">
+    <summary><h2>Lage</h2><span class="leise">IMU live · ziehen: drehen · Doppelklick: zurück</span></summary>
+    <div class="lage3d-rahmen">
+      <canvas class="lage3d" id="d-lage" data-h="230" role="img" aria-label="Lage des Riders als 3D-Modell"></canvas>
+      <canvas class="lage3d-gl" id="d-lage-gl" aria-hidden="true"></canvas>
+    </div>
+    <div class="legende" id="l-lage" title="Gier 0° = Kurs beim Start des ESP32; + = links. Roll + = rechts tief, Nick + = vorn tief"></div>
+  </details>
   <section class="karte">
     <div class="kopf"><h2>Fahren</h2>
       <button onclick="arm()" title="Aktion 255">Aufstehen</button>
@@ -586,7 +593,8 @@ const lage = [];            // [t_ms (Treiberzeit), roll, pitch, gier] – Puffe
 const cpu = [];             // [t_ms, [Kern0 %, Kern1 %, …]]
 let imuSeq = 0, cpuVorher = null, cpuZeit = 0;
 
-// --- Lage als 3D-Modell (Canvas 2D, eigene Projektion, keine Bibliothek). Körper-KS: x vorn,
+// --- Lage als 3D-Modell (eigene Projektion, keine Bibliothek): Ring und Kurslinie im Canvas 2D, darüber
+// das CAD-Modell rider-model.bin per WebGL (tools/step_to_model.py); ohne das die Quader in MODELL. Körper-KS: x vorn,
 // y links, z hoch (cm). Firmware: Roll + = rechts tief, Nick + = vorn tief, Gier + = links.
 const LAGE_VERZUG = 300;    // ms hinter der neuesten Probe abspielen (Abfrage alle 250 ms)
 const ACHSE = [0, 0, 3.2];  // um die Radachse drehen: Räder bleiben am Boden
@@ -626,6 +634,82 @@ const MODELL = [
   ...rad([0, 6.2, 3.2], 3.2, 1.8, '#23272d'),             // Rad links (11)
   ...rad([0, -6.2, 3.2], 3.2, 1.8, '#23272d'),            // Rad rechts (21)
 ];
+// CAD-Modell: Format siehe modell_lesen in tools/step_to_model.py. Flächennormalen beim Laden, daher ohne Indizes.
+const MODELL_ACHSE = [0, 0, 3.0];    // Radachse im CAD (Raddurchmesser 60 mm)
+const GL_VS = `attribute vec3 aP, aN, aC; varying vec3 vN, vC;
+uniform mat3 uR; uniform vec3 uA, uPos, uRe, uHo, uVo; uniform vec4 uS; uniform vec2 uT;
+void main() {
+  vec3 q = uR * (aP - uA) + uA - uPos;
+  float x = dot(q, uRe), y = dot(q, uHo), z = dot(q, uVo);
+  gl_Position = vec4(uS.x * x + uS.y * z, uS.z * y + uS.w * z, uT.x * z + uT.y, z);
+  vN = uR * aN; vC = aC;
+}`;
+const GL_FS = `precision mediump float; varying vec3 vN, vC; uniform vec3 uL;
+void main() {
+  vec3 n = normalize(vN);
+  if (!gl_FrontFacing) n = -n;
+  gl_FragColor = vec4(vC * (0.42 + 0.58 * max(0.0, dot(n, uL))), 1.0);
+}`;
+let lageGL = null, lageGLVersucht = false;
+function modellDekodieren(buf) {
+  const k = new DataView(buf);
+  if (k.getUint32(0, true) !== 0x4d524758) throw new Error('kein Rider-Modell');
+  const nP = k.getUint32(4, true), nD = k.getUint32(8, true), nG = k.getUint32(12, true), s = k.getFloat32(16, true);
+  const o = 20 + 8 * nG, pos = new Int16Array(buf, o, nP * 3), idx = new Uint16Array(buf, o + ((nP * 6 + 3) & ~3), nD * 3);
+  const a = new Float32Array(nD * 27);
+  let z = 0, g = 0, rest = 0, c = null;
+  for (let i = 0; i < nD; i++) {
+    while (!rest) { const b = 20 + 8 * g++; c = [k.getUint8(b) / 255, k.getUint8(b + 1) / 255, k.getUint8(b + 2) / 255]; rest = k.getUint32(b + 4, true); }
+    rest--;
+    const P = [0, 1, 2].map(j => { const v = idx[3 * i + j] * 3; return [pos[v] * s, pos[v + 1] * s, pos[v + 2] * s]; });
+    const u = P[1].map((v, m) => v - P[0][m]), w = P[2].map((v, m) => v - P[0][m]);
+    const n = [u[1] * w[2] - u[2] * w[1], u[2] * w[0] - u[0] * w[2], u[0] * w[1] - u[1] * w[0]];
+    for (const p of P) { a.set(p, z); a.set(n, z + 3); a.set(c, z + 6); z += 9; }
+  }
+  return a;
+}
+async function modellLaden() {
+  lageGLVersucht = true;
+  try {
+    const cv = $('d-lage-gl'), gl = cv.getContext('webgl', {antialias: true});
+    if (!gl) throw new Error('kein WebGL');
+    const r = await fetch('rider-model.bin');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const daten = modellDekodieren(await r.arrayBuffer());
+    const prog = gl.createProgram();
+    for (const [typ, text] of [[gl.VERTEX_SHADER, GL_VS], [gl.FRAGMENT_SHADER, GL_FS]]) {
+      const sh = gl.createShader(typ); gl.shaderSource(sh, text); gl.compileShader(sh); gl.attachShader(prog, sh);
+    }
+    gl.linkProgram(prog);
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+    gl.useProgram(prog);
+    gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+    gl.bufferData(gl.ARRAY_BUFFER, daten, gl.STATIC_DRAW);
+    [['aP', 0], ['aN', 12], ['aC', 24]].forEach(([n, off]) => {
+      const a = gl.getAttribLocation(prog, n); gl.enableVertexAttribArray(a); gl.vertexAttribPointer(a, 3, gl.FLOAT, false, 36, off);
+    });
+    gl.enable(gl.DEPTH_TEST); gl.clearColor(0, 0, 0, 0);
+    const u = {};
+    for (const n of ['uR', 'uA', 'uPos', 'uRe', 'uHo', 'uVo', 'uS', 'uT', 'uL']) u[n] = gl.getUniformLocation(prog, n);
+    gl.uniform3fv(u.uL, LICHT); gl.uniform3fv(u.uA, MODELL_ACHSE);
+    const nah = 30, fern = 110;   // Kameraabstand 70 cm, das Modell reicht höchstens ±25 cm darum
+    gl.uniform2f(u.uT, (fern + nah) / (fern - nah), -2 * fern * nah / (fern - nah));
+    cv.addEventListener('webglcontextlost', () => { lageGL = null; });
+    lageGL = {gl, u, n: daten.length / 9};
+  } catch (e) { console.warn('Rider-Modell nicht geladen, zeichne Quader:', e); }
+}
+function modellZeichnen(K, R, B, H, dpr) {
+  const {gl, u, n} = lageGL, cv = gl.canvas, b = Math.round(B * dpr), h = Math.round(H * dpr);
+  if (cv.width !== b || cv.height !== h) { cv.width = b; cv.height = h; }
+  gl.viewport(0, 0, b, h);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  if (!R) return;
+  gl.uniformMatrix3fv(u.uR, false, [R[0][0], R[1][0], R[2][0], R[0][1], R[1][1], R[2][1], R[0][2], R[1][2], R[2][2]]);
+  gl.uniform3fv(u.uPos, K.pos); gl.uniform3fv(u.uRe, K.r); gl.uniform3fv(u.uHo, K.u); gl.uniform3fv(u.uVo, K.f);
+  // wie kamera(): Pixel = (cx + k·x/z, cy − k·y/z), hier als Clip-Koordinaten mit w = z
+  gl.uniform4f(u.uS, 2 * K.k / B, 2 * K.cx / B - 1, 2 * K.k / H, 1 - 2 * K.cy / H);
+  gl.drawArrays(gl.TRIANGLES, 0, n);
+}
 function drehmatrix(roll, pitch, gier) {      // R = Rz(gier) · Ry(nick) · Rx(roll), Grad
   const g = Math.PI / 180, [cr, sr] = [Math.cos(roll * g), Math.sin(roll * g)];
   const [cp, sp] = [Math.cos(pitch * g), Math.sin(pitch * g)], [cy, sy] = [Math.cos(gier * g), Math.sin(gier * g)];
@@ -640,7 +724,7 @@ const LAGE_SICHT = [40, 28];
 let lageSicht = LAGE_SICHT.slice();
 try { const v = JSON.parse(localStorage.getItem('xgonav.lage3d')); if (Array.isArray(v) && v.length === 2) lageSicht = v.map(Number); } catch (e) {}
 function kamera(B, H) {
-  const az = lageSicht[0] * Math.PI / 180, el = lageSicht[1] * Math.PI / 180, dist = 70, ziel = [0, 0, 6];
+  const az = lageSicht[0] * Math.PI / 180, el = lageSicht[1] * Math.PI / 180, dist = 70, ziel = [0, 0, 5];
   const d = [Math.cos(el) * Math.cos(az), Math.cos(el) * Math.sin(az), Math.sin(el)];
   const pos = d.map((v, i) => ziel[i] + v * dist), f = d.map(v => -v);
   const r = [f[1], -f[0], 0], rl = Math.hypot(r[0], r[1]); r[0] /= rl; r[1] /= rl;   // f × z
@@ -649,15 +733,15 @@ function kamera(B, H) {
     const q = [p[0] - pos[0], p[1] - pos[1], p[2] - pos[2]], z = skal(q, f);
     return [skal(q, r) / z, -skal(q, u) / z, z];
   };
-  // Rahmen für jeden Blickwinkel aus Ring (r 22) und einem Kasten um alle Lagen des Modells
-  // (±13 cm um die Achse, 0..17 cm hoch): 90 % der Fläche, mittig
+  // Rahmen für jeden Blickwinkel aus Ring (r 17) und einem Kasten um alle Lagen des Modells
+  // (±11 cm um die Achse, 0..15 cm hoch): 90 % der Fläche, mittig
   const rand = [];
-  for (let k = 0; k < 36; k++) { const w = Math.PI * k / 18; rand.push(norm([22 * Math.cos(w), 22 * Math.sin(w), 0])); }
-  for (const x of [-13, 13]) for (const y of [-13, 13]) for (const z of [0, 17]) rand.push(norm([x, y, z]));
+  for (let k = 0; k < 36; k++) { const w = Math.PI * k / 18; rand.push(norm([17 * Math.cos(w), 17 * Math.sin(w), 0])); }
+  for (const x of [-11, 11]) for (const y of [-11, 11]) for (const z of [0, 15]) rand.push(norm([x, y, z]));
   const xs = rand.map(v => v[0]), ys = rand.map(v => v[1]);
   const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
   const k = 0.9 * Math.min(B / (x1 - x0), H / (y1 - y0)), cx = B / 2 - k * (x0 + x1) / 2, cy = H / 2 - k * (y0 + y1) / 2;
-  return {pos, f, proj: p => { const v = norm(p); return [cx + k * v[0], cy + k * v[1], v[2]]; }};
+  return {pos, f, r, u, k, cx, cy, proj: p => { const v = norm(p); return [cx + k * v[0], cy + k * v[1], v[2]]; }};
 }
 // Lage zur Treiberzeit t, linear zwischen den Proben (Gier ist fortlaufend, nicht gewickelt)
 function lageBei(t) {
@@ -686,21 +770,22 @@ function lageZeichnen(w) {
   // Boden: Kompassring, fest in der Welt (Gier dreht das Modell dagegen); 0° = Kurs beim ESP32-Start
   const ring = (r, n = 72) => Array.from({length: n + 1}, (_, k) => K.proj([r * Math.cos(2 * Math.PI * k / n), r * Math.sin(2 * Math.PI * k / n), 0]));
   g.strokeStyle = '#2b3038'; g.lineWidth = 1;
-  for (const r of [9, 18]) { g.beginPath(); ring(r).forEach((p, k) => k ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1])); g.stroke(); }
+  for (const r of [7, 14]) { g.beginPath(); ring(r).forEach((p, k) => k ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1])); g.stroke(); }
   for (let a = 0; a < 360; a += 30) {
     const c = Math.cos(a * Math.PI / 180), s = Math.sin(a * Math.PI / 180);
-    const p1 = K.proj([16.5 * c, 16.5 * s, 0]), p2 = K.proj([18 * c, 18 * s, 0]), pt = K.proj([20.5 * c, 20.5 * s, 0]);
+    const p1 = K.proj([12.8 * c, 12.8 * s, 0]), p2 = K.proj([14 * c, 14 * s, 0]), pt = K.proj([15.8 * c, 15.8 * s, 0]);
     g.strokeStyle = a % 90 ? '#2b3038' : '#4a535e'; g.beginPath(); g.moveTo(p1[0], p1[1]); g.lineTo(p2[0], p2[1]); g.stroke();
     if (a % 90 === 0) { g.fillStyle = '#8b94a1'; g.fillText(a > 180 ? (a - 360) + '°' : a + '°', pt[0], pt[1]); }
   }
-  if (!w) { g.fillStyle = '#8b94a1'; g.fillText('keine IMU-Daten', B / 2, 16); return; }
+  if (!w) { if (lageGL) modellZeichnen(K, null, B, H, dpr); g.fillStyle = '#8b94a1'; g.fillText('keine IMU-Daten', B / 2, 16); return; }
   const R = drehmatrix(w[0], w[1], w[2]);
   const welt = p => { const q = mal(R, [p[0] - ACHSE[0], p[1] - ACHSE[1], p[2] - ACHSE[2]]); return [q[0] + ACHSE[0], q[1] + ACHSE[1], q[2] + ACHSE[2]]; };
   // Schatten/Kursanzeiger am Boden: Vorwärtsrichtung des Körpers, auf den Boden projiziert
   const vor = mal(R, [1, 0, 0]), vl = Math.hypot(vor[0], vor[1]) || 1;
-  const a0 = K.proj([0, 0, 0]), a1 = K.proj([14 * vor[0] / vl, 14 * vor[1] / vl, 0]);
+  const a0 = K.proj([0, 0, 0]), a1 = K.proj([12 * vor[0] / vl, 12 * vor[1] / vl, 0]);
   g.strokeStyle = '#3987e5'; g.lineWidth = 2; g.beginPath(); g.moveTo(a0[0], a0[1]); g.lineTo(a1[0], a1[1]); g.stroke();
-  // Flächen: drehen, Rückseiten weg, von hinten nach vorn zeichnen, Lambert-Schattierung
+  if (lageGL) { modellZeichnen(K, R, B, H, dpr); return; }
+  // Ersatz ohne WebGL/Datei. Flächen: drehen, Rückseiten weg, von hinten nach vorn zeichnen, Lambert-Schattierung
   const flaechen = [];
   for (const f of MODELL) {
     const p = f.p.map(welt), n = mal(R, f.n);
@@ -718,7 +803,8 @@ function lageZeichnen(w) {
 let lageOff = null, lageRaf = 0, lageN = 0;
 function lageSchleife() {
   lageRaf = 0;
-  if (!$('verlauf').open || document.hidden) return;
+  if (!$('lagekarte').open || document.hidden) return;
+  if (!lageGLVersucht) modellLaden();
   const t = lageOff == null ? null : performance.now() - lageOff - LAGE_VERZUG;
   const w = t == null ? null : lageBei(t);
   lageZeichnen(w);
@@ -887,11 +973,15 @@ let sysTimer = null;
 // Offen/zu merken, damit der Verlauf nach dem Neuladen gleich weiterläuft
 function verlaufUmschalten() {
   try { localStorage.setItem('xgonav.verlauf', $('verlauf').open ? '1' : '0'); } catch (e) {}
-  if ($('verlauf').open) { sysHolen(); lageStarten(); }
+  if ($('verlauf').open) sysHolen();
+}
+function lageUmschalten() {
+  try { localStorage.setItem('xgonav.lage', $('lagekarte').open ? '1' : '0'); } catch (e) {}
+  if ($('lagekarte').open) { sysHolen(); lageStarten(); }
 }
 async function sysHolen() {
   clearTimeout(sysTimer);
-  if (!$('verlauf').open) return;                         // zugeklappt: nichts abfragen
+  if (!$('verlauf').open && !$('lagekarte').open) return; // beide zugeklappt: nichts abfragen
   try {
     const r = await fetch('api.php?a=sys&since=' + imuSeq, {cache: 'no-store'});
     const s = await r.json();
@@ -932,6 +1022,7 @@ bildVerbinden();
 karteHolen();
 status();
 if (localStorage.getItem('xgonav.verlauf') === '1') $('verlauf').open = true;
+if (localStorage.getItem('xgonav.lage') !== '0') $('lagekarte').open = true;   // Standard: offen
 sysHolen();
 lageStarten();
 setInterval(status, 700);

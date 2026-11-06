@@ -16,15 +16,16 @@
 |---|---|
 | Header (sticky) | host, connection, mode, state (balancing/lying), battery (green ≥ 40 %, yellow ≥ 20 %, red < 20 %), pipeline, **STOPP** |
 | Left | camera image (WebSocket), mode selector (Idle · Hand · Follow · Explore · Approach · Zum Start) + target class, pipeline card with start/stop and status tiles, raw status JSON |
+| Lage (open by default, right column top) | 3D model of the Rider rotated by roll, pitch, yaw from `imu_log`: CAD model `web/rider-model.bin` via WebGL, rigid in the CAD pose (built by `tools/step_to_model.py` from `docs/Rider-Pi.STEP`, loaded when Verlauf is first opened); without WebGL or the file, simple boxes on canvas 2D; fixed compass ring on the ground (0° = heading at ESP32 start, + = left), blue line = body forward direction; values below. Samples (50 Hz) replayed smoothly ~0.3 s behind; rotation about the wheel axle. Drag (mouse/touch) to orbit the view (elevation 5–85°), double-click resets; view kept in `localStorage` `xgonav.lage3d`; live (5 s buffer, memory); open/closed kept in `localStorage` `xgonav.lage` |
 | Fahren | D-pad, speed 5–100 %, height 61–255, roll −20..20°, Aufstehen (arm, 255), Neu ausrichten (leveling pulse), Absetzen (disarm, 254) |
 | Raumkarte | room map PNG, view 3/6/10/16 m, Start hier (start = pose), Speichern, reset, pose line with distance to start |
 | Kamera | exposure (ms, auto), gain (1–16×, auto), actual values |
-| Verlauf (collapsed) | 3D attitude, history charts, see below |
+| Verlauf (collapsed) | history charts, see below |
 | Extras (collapsed) | actions 1–6, 4 LEDs + all off + strobe, display emotions |
 | System | shutdown (confirm dialog) |
 
 Polling: status every 700 ms, map every 1 s (next request after previous finished), `a=sys` every 250 ms
-only while Verlauf is open (CPU, temperature, battery taken at most once per second).
+only while Lage or Verlauf is open (CPU, temperature, battery taken at most once per second).
 
 ## History (Verlauf)
 
@@ -33,7 +34,6 @@ works without xgonav.
 
 | Chart | Data | Window | Storage |
 |---|---|---|---|
-| Lage | 3D model of the Rider (body, front/camera, legs, wheels) rotated by roll, pitch, yaw from `imu_log`; fixed compass ring on the ground (0° = heading at ESP32 start, + = left), blue line = body forward direction; values below. Samples (50 Hz) replayed smoothly ~0.3 s behind; rotation about the wheel axle. Drag (mouse/touch) to orbit the view (elevation 5–85°), double-click resets; view kept in `localStorage` `xgonav.lage3d` | live (5 s buffer) | memory |
 | CPU | load per core (%), from `/proc/stat` deltas; temperature + loadavg in heading | 10 min | memory |
 | Akku | battery % (from status, or `a=sys`), ≤ 1 point / 30 s | 120 min | `localStorage` `xgonav.akku`; button Leeren |
 

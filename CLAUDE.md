@@ -17,7 +17,7 @@ python3 -m venv .venv && .venv/bin/pip install "opencv-python-headless>=4.6" "nu
 ```
 
 ```bash
-python -m pytest -q tests/                       # Unit-Tests (87 Tests, ~2 s; 5 ohne C++-Kern übersprungen); slow ist per pytest.ini ausgeschlossen
+python -m pytest -q tests/                       # Unit-Tests (88 Tests, ~2 s; 5 ohne C++-Kern übersprungen); slow ist per pytest.ini ausgeschlossen
 python -m pytest -q -m slow tests/               # Closed-Loop im Simulator (5 Tests, ~6 min gesamt); -m überschreibt addopts
 python -m pytest -q tests/test_units.py -k imu_sync   # einzelner Test
 
@@ -40,6 +40,7 @@ sudo ./deploy/install.sh                         # auf dem Rider: nach /opt/xgon
 sudo ./deploy/install-all.sh                     # auf dem Rider: alles (Treiber, Display, rc.local, xgonav, Web)
 python tools/nudge.py turn 20 | move 1.0         # auf dem Rider: balancierenden Rider drehen (IMU-geregelt) / fahren
 python tools/calibrate.py shading                # auf dem Rider: Linsenabschattung aus Weißbild -> shading.json
+python tools/step_to_model.py --cache rider.npz  # nur PC (pip install cadquery-ocp fast-simplification): docs/Rider-Pi.STEP -> web/rider-model.bin
 ```
 
 Am echten Rider gilt: Bewegungen nur mit Zustimmung und Beobachtung durch den Nutzer, Körperhöhe nie unter Minimum + 10 mm, `rc-control.service` stoppen, solange xgonav fährt. Firmware nie selbst flashen; nur app0 (`0x10000`), niemals `0x310000–0x32ffff` (Beinnullpunkte, BLE-Name, Pitch-Trim) oder spiffs, vorher Vollbackup (`firmware/README.md`).
