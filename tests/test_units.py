@@ -845,6 +845,25 @@ def test_exposure_runtime_limits():
     assert src.exposure_us == 0                         # ungültige Werte ändern nichts
 
 
+def test_raw_run_dir_keeps_previous_recording(tmp_path):
+    """Jeder Start bekommt ein eigenes Verzeichnis, auch bei gleicher Uhrzeit."""
+    import os
+    from unittest import mock
+    from xgonav.__main__ import _raw_run_dir
+    base = tmp_path / "neu" / "fahrt"
+    with mock.patch("time.strftime", return_value="20261106-150000"):
+        a = _raw_run_dir(str(base))
+        with open(os.path.join(a, "000000.jpg"), "w") as f:
+            f.write("alt")
+        b = _raw_run_dir(str(base))
+        c = _raw_run_dir(str(base))
+    assert os.path.basename(a) == "20261106-150000"
+    assert os.path.basename(b) == "20261106-150000-2" and os.path.basename(c) == "20261106-150000-3"
+    with open(os.path.join(a, "000000.jpg")) as f:
+        assert f.read() == "alt"
+    assert not os.listdir(b)
+
+
 def test_gain_runtime_limits():
     from xgonav.camera import FrameSource
     from xgonav.config import CameraCfg

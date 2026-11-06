@@ -22,7 +22,7 @@ Unknown section or key in TOML → `KeyError` at load. New parameters go into th
 | `--web-port N` | `output.web_port` (0 = off) |
 | `--no-lcd` | `output.lcd_fifo = ""` |
 | `--record FILE.mp4` | record overlay video |
-| `--record-raw DIR` | raw JPEGs + `meta.jsonl` (for `tools/replay_raw.py`) |
+| `--record-raw DIR` | raw JPEGs + `meta.jsonl` (for `tools/replay_raw.py`), each start in a new subdirectory `DIR/YYYYMMDD-HHMMSS` |
 | `--duration S` | exit after S seconds |
 | `--fast` | video file as fast as possible |
 | `-v` | debug log |

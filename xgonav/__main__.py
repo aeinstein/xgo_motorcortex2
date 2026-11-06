@@ -37,7 +37,8 @@ def main(argv=None) -> int:
     ap.add_argument("--no-lcd", action="store_true")
     ap.add_argument("--record", help="Debug-Overlay als Video speichern (mp4)")
     ap.add_argument("--record-raw", metavar="DIR",
-                    help="Rohbilder (JPEG) + Metadaten (meta.jsonl) für die Auswertung am PC speichern")
+                    help="Rohbilder (JPEG) + Metadaten (meta.jsonl) für die Auswertung am PC speichern, "
+                         "je Start in einem neuen Unterverzeichnis von DIR")
     ap.add_argument("--duration", type=float, help="nach N Sekunden beenden")
     ap.add_argument("--fast", action="store_true", help="Videodatei so schnell wie möglich (nicht Echtzeit)")
     ap.add_argument("-v", "--verbose", action="store_true")
@@ -104,14 +105,32 @@ def main(argv=None) -> int:
     return 0
 
 
-def _raw_recorder(app: App, outdir: str) -> None:
+def _raw_run_dir(base: str) -> str:
+    """Neues Unterverzeichnis für diesen Start anlegen. idx beginnt nach jedem Start bei 0, im
+    selben Verzeichnis würden sonst die Bilder der letzten Aufnahme überschrieben."""
+    import os
+    os.makedirs(base, exist_ok=True)
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    name, n = stamp, 1
+    while True:                # Gleiche Sekunde oder Uhr nach Neustart noch nicht gestellt
+        path = os.path.join(base, name)
+        try:
+            os.mkdir(path)
+            return path
+        except FileExistsError:
+            n += 1
+            name = f"{stamp}-{n}"
+
+
+def _raw_recorder(app: App, base: str) -> None:
     """Rohbilder + Metadaten je Frame. Läuft hinter der Hauptschleife her und nimmt
     immer den neuesten Snapshot; kommt es nicht nach, fehlen Frames (idx zeigt Lücken)."""
     import json
     import os
     import cv2
-    os.makedirs(outdir, exist_ok=True)
-    meta = open(os.path.join(outdir, "meta.jsonl"), "a", buffering=1)
+    outdir = _raw_run_dir(base)
+    logging.getLogger(__name__).info("Rohaufzeichnung nach %s", outdir)
+    meta = open(os.path.join(outdir, "meta.jsonl"), "x", buffering=1)
     last = -1
     n = 0
     while not app.running:
