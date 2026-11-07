@@ -903,6 +903,10 @@ const LAGE_MS = 5e3, CPU_MS = 600e3, AKKU_MS = 120 * 60e3, AKKU_TAKT_MS = 30e3, 
 const lage = [];            // [t_ms (Treiberzeit), roll, pitch, gier] – Puffer zum Abspielen der 50-Hz-Proben
 const cpu = [];             // [t_ms, [Kern0 %, Kern1 %, …]]
 let imuSeq = 0, cpuVorher = null, cpuZeit = 0;
+// Rad-Encoder aus wheels_log (gleiche Treiberzeit wie die Lage): [t_ms, Ticks links, Ticks rechts], fortlaufend
+// über den int32-Überlauf; 1024 Ticks je Umdrehung, vorwärts +. radRoh = letzte Rohwerte zum Entfalten.
+const radPuffer = [], RAD_TICKS = 1024;
+let radSeq = 0, radRoh = null, radJetzt = null;
 
 // --- Lage als 3D-Modell (eigene Projektion, keine Bibliothek): Ring und Kurslinie im Canvas 2D, darüber
 // das CAD-Modell rider-model.bin per WebGL (tools/step_to_model.py); ohne das die Quader in MODELL. Körper-KS: x vorn,
@@ -993,7 +997,7 @@ function beinStreckung(h, r) {    // mm links, rechts wie Firmware (main.cpp, up
   return [grenze(m + d, 0, 36) + 45, grenze(m - d, 0, 36) + 45];
 }
 // Viergelenk S-A-B-P (cm, x/z): je Glied [cos, sin, tx, tz]: Servo-Glied, oberes Glied, Koppel, Rad. Wie beinlage im Konverter.
-function beinTeile({S, P, A, B, W}, e) {
+function beinTeile({S, P, A, B, W}, e, ticks = 0) {
   const abst = (p, q) => Math.hypot(p[0] - q[0], p[1] - q[1]);
   const um = (q, w) => { const c = Math.cos(w), s = Math.sin(w); return [c, s, q[0] - c * q[0] + s * q[1], q[1] - s * q[0] - c * q[1]]; };
   const w = Math.acos(abst(S, W) * 10 / 96) - Math.acos(e / 96), bS = um(S, w);
@@ -1005,7 +1009,10 @@ function beinTeile({S, P, A, B, W}, e) {
   const r = Math.atan2(B2[1] - A2[1], B2[0] - A2[0]) - Math.atan2(B[1] - A[1], B[0] - A[0]), c = Math.cos(r), s = Math.sin(r);
   const K = [c, s, A2[0] - c * A[0] + s * A[1], A2[1] - s * A[0] - c * A[1]];
   const W2 = [c * W[0] - s * W[1] + K[2], s * W[0] + c * W[1] + K[3]];
-  return {teile: [bS, um(P, oben), K, [1, 0, W2[0] - W[0], W2[1] - W[1]]], achse: W2};
+  // Rad: um die eigene Achse W drehen (Encoder), dann nach W2. Vorwärts rollen = vorn nach unten (x -> -z)
+  const phi = -2 * Math.PI * (((ticks % RAD_TICKS) + RAD_TICKS) % RAD_TICKS) / RAD_TICKS, rc = Math.cos(phi), rs = Math.sin(phi);
+  const Rad = [rc, rs, W2[0] - (rc * W[0] - rs * W[1]), W2[1] - (rs * W[0] + rc * W[1])];
+  return {teile: [bS, um(P, oben), K, Rad], achse: W2};
 }
 async function modellLaden() {
   lageGLVersucht = true;
@@ -1049,7 +1056,8 @@ function modellZeichnen(K, R, B, H, dpr) {
   beinIst.l = beinIst.l == null ? zL : beinIst.l + (zL - beinIst.l) * f;
   beinIst.r = beinIst.r == null ? zR : beinIst.r + (zR - beinIst.r) * f;
   beinIst.t = jetzt;
-  const L = beinTeile(dreh[0], beinIst.l), Re = beinTeile(dreh[1], beinIst.r);
+  const [tL, tR] = radJetzt || [0, 0];
+  const L = beinTeile(dreh[0], beinIst.l, tL), Re = beinTeile(dreh[1], beinIst.r, tR);
   gl.uniform4fv(u.uTeil, [1, 0, 0, 0, ...Re.teile.flat(), ...L.teile.flat()]);   // 0 Körper, 1..4 rechts, 5..8 links
   // Die Mitte der Radachsen liegt fest: Der Körper hebt und senkt sich, die Räder bleiben am Boden
   gl.uniform3f(u.uA, (L.achse[0] + Re.achse[0]) / 2, 0, (L.achse[1] + Re.achse[1]) / 2);
@@ -1100,6 +1108,15 @@ function lageBei(t) {
   if (i >= lage.length) return lage[lage.length - 1].slice(1);
   const a = lage[i - 1], b = lage[i], f = (t - a[0]) / ((b[0] - a[0]) || 1);
   return [1, 2, 3].map(k => a[k] + (b[k] - a[k]) * f);
+}
+// Radticks zur Treiberzeit t, linear zwischen den Proben; null ohne Raddaten
+function radBei(t) {
+  if (!radPuffer.length) return null;
+  const i = suche(radPuffer, t);
+  if (i <= 0) return radPuffer[0].slice(1);
+  if (i >= radPuffer.length) return radPuffer[radPuffer.length - 1].slice(1);
+  const a = radPuffer[i - 1], b = radPuffer[i], f = (t - a[0]) / ((b[0] - a[0]) || 1);
+  return [a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f];
 }
 function farbe(hex, s) {
   const v = parseInt(hex.slice(1), 16);
@@ -1156,6 +1173,7 @@ function lageSchleife() {
   if (!lageGLVersucht) modellLaden();
   const t = lageOff == null ? null : performance.now() - lageOff - LAGE_VERZUG;
   const w = t == null ? null : lageBei(t);
+  radJetzt = t == null ? null : radBei(t);
   lageZeichnen(w);
   if (w && lageN++ % 10 === 0) {
     const gier = ((w[2] + 180) % 360 + 360) % 360 - 180;
@@ -1359,11 +1377,20 @@ async function sysHolen() {
   if (!sysErstes && !$('verlauf').open && !$('lagekarte').open) return; // beide zugeklappt: nichts abfragen
   sysErstes = false;
   try {
-    const r = await fetch('api.php?a=sys&since=' + imuSeq, {cache: 'no-store'});
+    const r = await fetch('api.php?a=sys&since=' + imuSeq + '&wsince=' + radSeq, {cache: 'no-store'});
     const s = await r.json();
     if (r.ok) {
       if (s.seq < imuSeq) { lage.length = 0; imuSeq = 0; lageOff = null; }  // Treiber neu geladen
       for (const p of s.imu) { lage.push([p[1], p[2], p[3], p[4]]); imuSeq = p[0]; }
+      if (s.wseq != null) {
+        if (s.wseq < radSeq) { radPuffer.length = 0; radSeq = 0; radRoh = null; }   // Treiber neu geladen
+        const d32 = d => ((d + 2 ** 31) % 2 ** 32 + 2 ** 32) % 2 ** 32 - 2 ** 31;  // wie _wrap32 in wheels.py
+        for (const p of s.wheels || []) {
+          const v = radPuffer.length && radRoh ? [radPuffer[radPuffer.length - 1][1] + d32(p[2] - radRoh[0]), radPuffer[radPuffer.length - 1][2] + d32(p[3] - radRoh[1])] : [p[2], p[3]];
+          radPuffer.push([p[1], ...v]); radRoh = [p[2], p[3]]; radSeq = p[0];
+        }
+        if (radPuffer.length) abschneiden(radPuffer, radPuffer[radPuffer.length - 1][0] - LAGE_MS);
+      }
       if (lage.length) {
         abschneiden(lage, lage[lage.length - 1][0] - LAGE_MS);
         // Treiberzeit -> Browserzeit: kleinster Abstand (frischeste Probe), langsam nachführen

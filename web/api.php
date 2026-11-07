@@ -98,8 +98,22 @@ function xgonav(string $method, string $path): never
 
 // Messwerte für die Verlaufsanzeige. CPU-Zeiten roh (Jiffies), die Auslastung rechnet der
 // Browser aus der Differenz zweier Abfragen – so bleibt PHP zustandslos.
-function sys(int $since): array
+function sys(int $since, int $wsince): array
 {
+    // wheels_log: "seq t_ns ticks11 ticks21 fw_ms", letzte 64 Proben (~1,3 s bei 50 Hz), 11 = links
+    $rad = [];
+    $wseq = 0;
+    foreach (@file(PROC . '/wheels_log', FILE_IGNORE_NEW_LINES) ?: [] as $z) {
+        $p = explode(' ', $z);
+        if (count($p) !== 5) {
+            continue;
+        }
+        $wseq = max($wseq, (int)$p[0]);
+        if ((int)$p[0] <= $wsince) {
+            continue;
+        }
+        $rad[] = [(int)$p[0], round((int)$p[1] / 1e6, 1), (int)$p[2], (int)$p[3]];
+    }
     $imu = [];
     $seq = 0;                                               // neueste seq; < since = Treiber neu geladen
     // imu_log: "seq t_ns roll pitch yaw" (Milligrad), letzte 128 Proben (~2,5 s bei 50 Hz)
@@ -134,6 +148,8 @@ function sys(int $since): array
         't' => (int)round(microtime(true) * 1000),
         'seq' => $seq,
         'imu' => $imu,
+        'wseq' => $wseq,
+        'wheels' => $rad,                                   // [seq, t_ms, ticks links, ticks rechts]
         'cpu' => $cpu,
         'temp_c' => is_numeric(trim((string)$temp)) ? round((int)$temp / 1000, 1) : null,
         'load' => $load ? (float)explode(' ', $load)[0] : null,
@@ -179,7 +195,7 @@ if ($a === 'horizon' && !$post) {
     xgonav('GET', '/horizon');
 }
 if ($a === 'sys') {
-    antwort(200, json_encode(sys((int)($_GET['since'] ?? 0))));
+    antwort(200, json_encode(sys((int)($_GET['since'] ?? 0), (int)($_GET['wsince'] ?? 0))));
 }
 if (!$post) {
     antwort(405, json_encode(['error' => 'Befehle nur per POST']));
