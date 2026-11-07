@@ -255,10 +255,10 @@ class GridMap:
             free_r = cfg.free_range_m if cfg.free_range_m > 0 else cfg.max_range_m
             margin = max(self.res, cfg.free_margin_m) + cfg.free_margin_quad * dist * dist
             free_len = np.where(to_horizon, free_r, np.where(np.isfinite(dist), np.minimum(dist - margin, free_r), np.nan))
-        key = (len(idx), sc, self.geo.W, self.geo.f)
+        key = (len(idx), sc, self.geo.W, self.geo.f, self.geo.cx)
         if key not in self._bear:
             x_full = (idx + 0.5) * sc
-            bear = np.arctan2(self.geo.W / 2 - x_full, self.geo.f)      # Peilung, links +
+            bear = self.geo.bearing(x_full)                               # Peilung, links +
             # ground_dist_np liefert den Abstand nach vorn (wie LocalMap: x = d, y = d*tan),
             # die Strahlen brauchen die Länge entlang der Peilung
             self._bear = {key: (bear, 1.0 / np.cos(bear))}

@@ -98,7 +98,7 @@ def rays(data: dict, pitch: str) -> None:
         v = cols[idx]
         span = g.fh - o["horizon_row"]
         d = g.geo.ground_dist_np((g.fh - v * span) * sc, o["pitch_" + pitch])
-        bear = np.arctan2(g.geo.W / 2 - (idx + 0.5) * sc, g.geo.f)
+        bear = g.geo.bearing((idx + 0.5) * sc)
         px, py, pth = o["pose_cap"]
         wx, wy = x0 + px * c0 - py * s0, y0 + px * s0 + py * c0
         off = g.geo.cam_fwd                       # Pose = Radachse, gemessen wird ab Kamera

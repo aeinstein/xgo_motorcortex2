@@ -30,6 +30,8 @@ class CamGeometry:
     body_max_mm: float = 120.0
     # Linse vor der Radachse (mm): Karten haben ihren Ursprung an der Achse, ground_dist misst ab Kamerafußpunkt
     cam_fwd_mm: float = 0.0
+    # Bildspalte, die genau in Fahrtrichtung zeigt = W/2 + cx_offset_px (Peilung 0)
+    cx_offset_px: float = 0.0
 
     @classmethod
     def from_cfg(cls, cfg, body_height_mm: float | None = None) -> "CamGeometry":
@@ -37,7 +39,17 @@ class CamGeometry:
         return cls(c.width, c.height, c.hfov_deg, c.tilt_deg, c.mount_offset_mm,
                    cfg.behavior.height_cruise_mm if body_height_mm is None else body_height_mm,
                    cam_h_u8=tuple(c.cam_h_u8), body_min_mm=cfg.robot.height_min_mm,
-                   body_max_mm=cfg.robot.height_max_mm, cam_fwd_mm=c.cam_fwd_mm)
+                   body_max_mm=cfg.robot.height_max_mm, cam_fwd_mm=c.cam_fwd_mm,
+                   cx_offset_px=c.cx_offset_px)
+
+    @property
+    def cx(self) -> float:
+        """Bildspalte der Fahrtrichtung (Peilung 0)."""
+        return self.W / 2 + self.cx_offset_px
+
+    def bearing(self, x):
+        """Bildspalte -> Peilung (rad, links +); numpy oder float."""
+        return np.arctan2(self.cx - np.asarray(x, float), self.f)
 
     @property
     def cam_fwd(self) -> float:

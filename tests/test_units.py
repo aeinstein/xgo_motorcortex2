@@ -1258,6 +1258,35 @@ def test_sim_camera_ahead_of_axle():
     assert np.array_equal(imgs[0], imgs[1])
 
 
+def test_cx_offset_bearing_maps_and_sim():
+    """[camera] cx_offset_px: Spalte der Fahrtrichtung liegt rechts der Bildmitte (RiderPi 13 px, Fluchtpunkt)."""
+    import dataclasses
+    from xgonav.gridmap import GridMap
+    from xgonav.localmap import LocalMap
+    from xgonav.sim import Person
+    g0 = CamGeometry(640, 480, 91.8, 1.39, 43.0, 85.0)
+    g13 = CamGeometry(640, 480, 91.8, 1.39, 43.0, 85.0, cx_offset_px=13.0)
+    assert g13.bearing(333.0) == pytest.approx(0.0) and g13.bearing(320.0) > 0      # Bildmitte liegt links
+    wall = _wall_fs(g0, 0.6)
+    a, b = LocalMap(g0, 160, 120), LocalMap(g13, 160, 120)
+    a.add_freespace(wall, 0.0, 0.0); b.add_freespace(wall, 0.0, 0.0)
+    assert np.allclose(b.pts[:, 0], a.pts[:, 0])
+    assert np.allclose(b.pts[:, 1] - a.pts[:, 1], b.pts[:, 0] * 13.0 / g13.f)        # Peilung um 13 px gedreht
+    cfg = Config()
+    m0, m13 = GridMap(cfg.grid, g0, 160, 120), GridMap(cfg.grid, g13, 160, 120)
+    for _ in range(3):
+        m0.add_freespace(wall, 0.0); m13.add_freespace(wall, 0.0)
+    assert m13.occupied_cells()[:, 1].mean() > m0.occupied_cells()[:, 1].mean() + 0.01
+    # Simulator: Person genau voraus erscheint in Spalte 333
+    cam = dataclasses.replace(cfg.camera, cx_offset_px=13.0)
+    r = SimRobot(cfg.robot)
+    r._height_mm = 85
+    w = SimWorld(cam, r, Person([(3.0, 1.5), (3.0, 1.5)], speed=0.0), start=(1.0, 1.5, 0.0), shake=0.0)
+    w._integrate(0.0, 0.05)
+    _, box = w._render(0.0, 0.05)
+    assert (box[0] + box[2]) / 2 == pytest.approx(333.0, abs=2.5)
+
+
 def test_gridmap_driven_path_is_free():
     from xgonav.gridmap import GridMap
     cfg = Config()

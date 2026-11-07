@@ -73,6 +73,9 @@ class CameraCfg:
     # Rider, dort zählen Räder und Sicherheitsradius); Bodenpunkte werden um diesen Versatz nach vorn eingetragen.
     # RiderPi: CAD 36,9, Bodenprobe 34/41 -> 36. 0 = Kamera auf der Achse (Simulator rendert dann wie bisher).
     cam_fwd_mm: float = 0.0
+    # Spalte der Fahrtrichtung minus Bildmitte (px bei width): gedrehter Einbau oder verschobene optische Mitte,
+    # für Peilungen gleich. RiderPi: Fluchtpunkt bei Geradeausfahrt (8 Fahrten, 45 m, 2026-11-08) Spalte 333 -> 13.
+    cx_offset_px: float = 0.0
     tilt_deg: float = 0.0        # >0 = Kamera schaut nach oben
     loop_file: bool = True         # Videodatei endlos abspielen (Replay)
     realtime_file: bool = True     # Videodatei in Echtzeit statt so schnell wie möglich
@@ -337,7 +340,8 @@ class GridCfg:
     min_range_m: float = 0.15          # davor sieht die Kamera den Boden nicht
     # Das Bodenmodell meldet die Grenze so viele Zeilen (seiner Auflösung) unterhalb der wahren
     # (Stufenfilter, Erosion). Nur für die Raumkarte; die Merkkarte behält das als Sicherheitsrand.
-    # Simulator-Sweep 2026-11-05: 1,5; am RiderPi noch nicht gegen eine bekannte Entfernung geprüft.
+    # Simulator-Sweep 2026-11-05: 1,5. RiderPi (Klebeband 0,48 m, 2026-11-07): Grenze ~1 Zeile ÜBER der
+    # Kante (weiter weg) -> dort -1,0. Negativ = Grenze näher heranholen.
     row_bias: float = 1.5
     column_step: int = 2               # jede k-te Spalte des Bodenmodells (160 Spalten)
     l_free: float = -0.4               # Log-Odds je Beobachtung

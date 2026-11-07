@@ -18,7 +18,7 @@ Single device: RiderPi, CM4 2 GB, kernel 6.6.74+rpt-rpi-v8, OV5647 wide-angle, f
 | FloorNet | shadow mode only, makes no decisions; preset goal against hand lines missed ([floornet.md](floornet.md)) |
 | IMU sync while balancing | not verified |
 | Patch 0003 (`force_yaw`) | not tested |
-| Room map | used by `home` and `explore`; drifts (no markers); loading assumes the Rider stands at the start point. `row_bias` 1.5 from the simulator, not checked against a known distance on the RiderPi |
+| Room map | used by `home` and `explore`; drifts (no markers); loading assumes the Rider stands at the start point. `row_bias` −1.0 on the RiderPi from a flat tape edge at 0.48 m (simulator 1.5), wall base not checked |
 
 ## System software
 

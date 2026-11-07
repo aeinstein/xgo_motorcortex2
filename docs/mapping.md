@@ -37,7 +37,7 @@ Status JSON: `odom.src` = `räder` | `befehl`, `odom.m` = total distance.
 | Occupied | at boundary, `l_occ` +0.5: two hits until shown as occupied |
 | Clamp | −3.0 .. +3.5; shown as free/occupied beyond ±0.7 |
 | Range | hits 0.15–`max_range_m` 1.25 m, free rays to `free_range_m` 1.5 m, RiderPi 1.1 m (one image row at 2 m is ~40 cm; a step was seen as floor from > 1 m on 2026-11-06, simulator with 1.1: floor known 0.43–0.83, occupied precision 0.84–0.92); "free to horizon" columns mark free up to 1.5 m only |
-| Row correction | `row_bias` 1.5 rows: the floor model reports the boundary below the true one; room map only, the local map keeps it as a safety margin. From the simulator, **not checked on the RiderPi** |
+| Row correction | `row_bias` (working rows, + = farther): default 1.5 from the simulator (boundary below the true one); RiderPi −1.0 (tape at 0.48 m, 2026-11-07: boundary ~1 row above the edge). Room map only, the local map uses the raw boundary. Wall base not checked yet |
 | Pitch, pose | those of the captured image (`FreeSpace.pitch_dev`, `.pose`), not of the later frame the result arrives in |
 | Filter | only while balancing and below `max_turn_dps` 40 °/s |
 | Driven path | `driven_free_r_m` 0.10 m around the path counts as free |

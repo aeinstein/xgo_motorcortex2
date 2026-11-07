@@ -67,7 +67,7 @@ class LocalMap:
         if ok.any():
             i, d = idx[ok], d[ok]
             x_full = (i + 0.5) * sc
-            y = d * (self.geo.W / 2 - x_full) / self.geo.f       # d * tan(Peilung)
+            y = d * (self.geo.cx - x_full) / self.geo.f       # d * tan(Peilung)
             # Ursprung = Radachse: d zählt ab Kamerafußpunkt, der cam_fwd davor liegt
             new_pts = self._thin(np.column_stack([d + self.geo.cam_fwd, y]))
             self.pts = np.vstack([self.pts, new_pts])
@@ -99,7 +99,7 @@ class LocalMap:
         x, y = self.pts[:, 0] - self.geo.cam_fwd, self.pts[:, 1]
         ahead = x > 1e-3
         col = np.full(len(x), -1)
-        xf = self.geo.W / 2 - self.geo.f * y[ahead] / x[ahead]
+        xf = self.geo.cx - self.geo.f * y[ahead] / x[ahead]
         col[ahead] = np.floor(xf / sc).astype(int)
         inside = ahead & (col >= 1) & (col < n - 1)   # Randspalten auslassen
         r = np.full(len(x), np.nan)

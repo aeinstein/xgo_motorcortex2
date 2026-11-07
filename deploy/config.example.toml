@@ -33,6 +33,7 @@ mount_offset_mm = 43.0   # nur ohne cam_h_u8: Kamerahöhe = Körperhöhe + Offse
 cam_h_u8 = [100.8, 0.1037]   # [K] Kamerahöhe = a + b·u8; gemessen [109.4, 0.1126] (u8 106/150/200 -> 122/125/132,5 mm),
                              # x0,921 aus Bodenprobe 0,48/0,98 m (2026-11-07): f·h war 7,9 % zu groß, Ursache offen
 cam_fwd_mm = 36.0        # [K] Linse vor der Radachse (CAD 36,9; Bodenprobe 34/41); Kartenursprung = Radachse
+cx_offset_px = 13.0      # [K] Fahrtrichtung bei Spalte 333: Fluchtpunkt Geradeausfahrt, 8 Fahrten 45 m (2026-11-08)
 tilt_deg = 5.18          # [K] Zollstock 2026-11-04, gilt zusammen mit imu.pitch_ref_deg
 
 [imu]
@@ -76,6 +77,7 @@ sample_cols = 0.5
 file = "/opt/xgonav/raumkarte.npz"   # Raumkarte speichern/laden; beim Laden muss der Rider am Startpunkt stehen
 yaw_source = "imu"       # 2026-11-06: Räder rutschen beim Drehen (75 cm nach 32 m), IMU ~6 cm
 free_range_m = 1.1       # 2026-11-06: Stufe wurde aus > 1 m als Boden gesehen und bei 1,5 m als frei eingetragen
+row_bias = -1.0          # Klebeband 0,48 m (2026-11-07): Kantengrenze 3,85 px (~1 Zeile) über der Kante; Wand ungeprüft
 
 [map]
 confirm = 3              # Kartenpunkt blockiert die Bahn erst nach 3 Beobachtungen

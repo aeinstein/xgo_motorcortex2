@@ -43,7 +43,8 @@ class World:
     def bearing(self, x: float) -> float:
         """Bildspalte -> Winkel rad (links positiv)."""
         f = (self.W / 2) / math.tan(self.hfov / 2)
-        return -math.atan2(x - self.W / 2, f)
+        cx = self.geo.cx if self.geo is not None else self.W / 2     # Spalte der Fahrtrichtung
+        return -math.atan2(x - cx, f)
 
 
 @dataclass
@@ -211,7 +212,7 @@ class Follow(Behavior):
         if not cands:
             return None
         # größte (nächste) Instanz, Bildmitte bevorzugt
-        best = max(cands, key=lambda t: t.h / w.H - 0.3 * abs(t.cx - w.W / 2) / w.W)
+        best = max(cands, key=lambda t: t.h / w.H - 0.3 * abs(w.bearing(t.cx)) / math.radians(45))
         if best.id != self.target:
             self.servo.reset()
         self.target = best.id

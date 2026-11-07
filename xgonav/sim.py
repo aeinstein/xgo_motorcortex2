@@ -284,7 +284,9 @@ class SimWorld(FrameSource):
         f = (W / 2) / math.tan(math.radians(self.cfg.hfov_deg) / 2)
         th = self.th + self.yaw_jit
         cols = np.arange(W) + 0.5
-        lat = (W / 2 - cols) / f                      # tan(Winkel) links +
+        c0 = W / 2 + getattr(self.cfg, "cx_offset_px", 0.0) / self.rs   # Spalte der Fahrtrichtung
+        self._c0 = c0
+        lat = (c0 - cols) / f                         # tan(Winkel) links +
         fwd = np.array([math.cos(th), math.sin(th)])
         left = np.array([-math.sin(th), math.cos(th)])
         dirs = fwd[None] + lat[:, None] * left[None]  # Strahlen (nicht normiert, Tiefe=1)
@@ -365,7 +367,7 @@ class SimWorld(FrameSource):
         X = rel @ np.array([-math.sin(th), math.cos(th)])
         if Z < 0.15:
             return None
-        c = W / 2 - f * X / Z
+        c = self._c0 - f * X / Z
         half = f * 0.25 / Z  # 0.50 m breit (Annahme im Code: 0.45 -> 10 % Bias)
         c1, c2 = int(math.floor(c - half)), int(math.ceil(c + half))
 
@@ -486,7 +488,7 @@ class Phantoms:
         span = est.H - fs.horizon_row
         sc = geo.W / est.W
         n = len(fs.columns)
-        bear = np.arctan2(geo.W / 2 - (np.arange(n) + 0.5) * sc, geo.f)
+        bear = geo.bearing((np.arange(n) + 0.5) * sc)
         cx, cy = getattr(w, "_cam_xy", (w.x, w.y))      # Kamera, nicht Radachse
         for (px, py), d0 in zip(self.pts, self.dirs):
             dx, dy = px - cx, py - cy

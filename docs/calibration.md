@@ -16,6 +16,7 @@ python tools/nudge.py move <s>       # open loop, + = forward
 | Default | 91.8° (RiderPi, f = 310 px at 640 px); RPi camera v1 would be 62.2° |
 | RiderPi measured (2026-11-07) | turns on the spot against IMU heading (IMU = 99.6–99.8 % of true angle over full turns): rotation fit with fixed IMU yaw 304–310 px, ORB pairs 25–45° apart 310–313 px in three recordings → 91.8°. Lens distortion negligible (k1 −0.010…+0.003, ≤ 2 px at the edge, ~4 px in the corner) |
 | Earlier values | 88.5° (f 328.3 px) from the folding rule (section 2a) with measured h = 100 mm: that method only fixes f·h, the 5.6 % gap means h was ~106 mm. Checkerboard on a display gave 297–316 px |
+| Driving direction (2026-11-08) | focus of expansion while driving straight: 16 segments ≥ 1.5 m from 8 drives (45 m), rotation per frame pair estimated, FOE shared per segment → column 333.8 (MAD 16, SE ~4; ≥ 2.5 m: 332.2). Camera looks ~2.5° left of the driving direction (or optical centre shifted; same for bearings) → `cx_offset_px = 13`. Simulator check ±3 px. Roll not measured (stripe board: ~1.5°) |
 | Wrong FOV effect | all angles from the image (ego yaw/pitch, tracker shift, object bearing) scale with f: with 88.5° they were ~5 % too small |
 | Floor distances | depend on f·h: after changing f, re-measure camera height (`mount_offset_mm`), else distances shrink ~6 % |
 | Method | turn ≥ 360° on the spot and compare image rotation with IMU heading, or checkerboard + `cv2.calibrateCamera` |

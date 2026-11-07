@@ -37,7 +37,7 @@ def draw_line(gm: GridMap, hit: np.ndarray, free: np.ndarray, pose, pitch: float
     """Eine Handlinie in die Zählfelder eintragen. rows: Zeile je Spalte, ok: Spalte zählt."""
     x, y, th = pose
     n = len(rows)
-    bear = np.arctan2(geo.W / 2 - (np.arange(n) + 0.5) * geo.W / n, geo.f)
+    bear = geo.bearing((np.arange(n) + 0.5) * geo.W / n)
     rad = 1.0 / np.cos(bear)
     d = L.row_dist(geo, rows, pitch)
     for c in np.nonzero(ok)[0]:
