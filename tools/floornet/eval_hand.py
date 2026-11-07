@@ -3,10 +3,13 @@
 
   python tools/floornet/eval_hand.py pruefsatz_beschriftung.json --labels labels/ --lauf lauf2/ [--norm 1]
   python tools/floornet/eval_hand.py hand.json --labels labels/ --lauf a/:streife1,unten2 b/:explore9,unten1 --skip erste.json
+  python tools/floornet/eval_hand.py hand.json --labels labels_u3/ --lauf lauf_end/ --hoehe pruefsatz3/hoehe.json
 
 Mehrere Läufe: Jede Fahrt wird nur mit dem Netz gemessen, das sie nicht im Training hatte. --skip lässt Bilder aus,
 die schon zur Fehlersuche dienten. --median 3 glättet die Vorhersage über drei Spalten. --minimum 1 wertet statt
-des Netzes je Spalte die nähere Grenze von Netz und Kanten aus (Plan, Schritt 7).
+des Netzes je Spalte die nähere Grenze von Netz und Kanten aus (Plan, Schritt 7). --hoehe wertet je Gruppe aus
+(Gruppenname = Körperhöhe in mm, andere Gruppen fallen weg) und rechnet mit der Kamerahöhe dieser Körperhöhe; die
+Labels nehmen BASE_BODY_MM an (2026-11-07: Höhe während der Fahrt im Web verstellt).
 
 Je Spalte der Fehler in Metern, Bänder nach der Entfernung der Handlinie. Fälschlich frei: Vorhersage mehr als
 15 cm hinter der Linie. Fälschlich blockiert: mehr als 15 cm davor. Der Unterschied wird je Bild ausgezählt und
@@ -31,6 +34,26 @@ NCOLS = 80
 W, H = 640, 480
 NEAR_M = 1.0                # Band für die Entscheidung
 GROUPS = {"oben": ("explore9", "streife1"), "unten": ("unten1", "unten2")}
+BASE_BODY_MM = 85.0         # Körperhöhe, mit der label.py die Geometrie baut (behavior.height_cruise_mm)
+
+
+def body_heights(groups: dict) -> tuple[dict, set]:
+    """hoehe.json: Gruppe -> Bild-IDs. Rückgabe: ID -> Körperhöhe (mm) für Gruppen mit Zahl als Namen,
+    dazu die IDs aller übrigen Gruppen (Höhe unklar, zählen nicht)."""
+    body, drop = {}, set()
+    for g, ids in groups.items():
+        try:
+            mm = float(g)
+        except ValueError:
+            drop.update(ids)
+            continue
+        body.update({i: mm for i in ids})
+    return body, drop
+
+
+def cam_heights(cam_h: float, ids: list, body: dict) -> np.ndarray:
+    """Kamerahöhe je Bild (m): die der Labels, verschoben um die Abweichung der Körperhöhe."""
+    return np.array([cam_h + (body[i] - BASE_BODY_MM) / 1000.0 if i in body else cam_h for i in ids])
 
 
 def polyline_rows(pts: list, ncols: int = NCOLS, width: int = W) -> tuple[np.ndarray, np.ndarray]:
@@ -88,6 +111,7 @@ def main() -> int:
     ap.add_argument("--minimum", type=int, default=0, help="1: je Spalte die nähere Grenze von Netz und Kanten")
     ap.add_argument("--norm", type=int, default=0)
     ap.add_argument("--far", type=float, default=0.15)
+    ap.add_argument("--hoehe", default="", help="JSON Gruppe -> Bild-IDs (hoehe.json des Prüfsatzes)")
     a = ap.parse_args()
 
     import cv2
@@ -111,8 +135,15 @@ def main() -> int:
         for k in load_hand(a.skip):
             hand.pop(k, None)
     hand = {k: v for k, v in hand.items() if k.split("/", 1)[0] in nets or "*" in nets}
+    groups, body = {}, {}
+    if a.hoehe:
+        groups = json.load(open(a.hoehe, encoding="utf-8"))
+        body, drop = body_heights(groups)
+        n0 = len(hand)
+        hand = {k: v for k, v in hand.items() if k not in drop}
+        print("Höhe unklar, ausgelassen:", n0 - len(hand))
     print("Bilder von Hand:", len(hand))
-    res = {}
+    res, ids_of = {}, {}
     by_run = {}
     for k in hand:
         run, f = k.split("/", 1)
@@ -136,21 +167,27 @@ def main() -> int:
         rows = np.stack([hand[run + "/" + f][0] for f in files])
         ok = np.stack([hand[run + "/" + f][1] for f in files])
         pitch = d["pitch"][idx]
+        ids = [run + "/" + f for f in files]
+        geo = dict(geo, cam_h=cam_heights(geo["cam_h"], ids, body)[:, None])
         res[run] = {"netz": pr, "kanten": kr, "hand": rows, "ok": ok, "dist": T.row_dist(geo, rows, pitch),
                     "dnetz": T.row_dist(geo, pr, pitch), "dkanten": T.row_dist(geo, kr, pitch)}
+        ids_of[run] = ids
 
-    def table(runs, title):
-        runs = [r for r in runs if r in res]
-        if not runs:
+    def table(sel, title):
+        """sel: Fahrt -> Indizes der Bilder, die zählen."""
+        sel = {r: i for r, i in sel.items() if r in res and len(i)}
+        if not sel:
             return
-        print("\n== %s (%s), %d Bilder" % (title, ",".join(runs), sum(len(res[r]["hand"]) for r in runs)))
+        sub = {r: {k: v[i] for k, v in res[r].items()} for r, i in sel.items()}
+        runs = list(sel)
+        print("\n== %s (%s), %d Bilder" % (title, ",".join(runs), sum(len(i) for i in sel.values())))
         for lo, hi in ((0.0, 0.5), (0.5, 1.0), (1.0, 1.5), (1.5, 2.5)):
             line = "%3.1f-%3.1f m " % (lo, hi)
             for who, dk in (("netz", "dnetz"), ("kanten", "dkanten")):
                 n = fr = bl = 0.0
                 meds = []
                 for r in runs:
-                    q = res[r]
+                    q = sub[r]
                     m = q["ok"] & (q["dist"] >= lo) & (q["dist"] < hi) & np.isfinite(q[who])
                     e = q[dk] - q["dist"]
                     c, f, b = rates(e, m, a.far)
@@ -162,7 +199,7 @@ def main() -> int:
         # Entscheidung: Spalten mit Handlinie unter NEAR_M
         parts = {"netz": [], "kanten": []}
         for r in runs:
-            q = res[r]
+            q = sub[r]
             for who, dk in (("netz", "dnetz"), ("kanten", "dkanten")):
                 m = q["ok"] & (q["dist"] < NEAR_M) & np.isfinite(q[who])
                 parts[who].append(rates(q[dk] - q["dist"], m, a.far))
@@ -175,9 +212,18 @@ def main() -> int:
         print("unter %.1f m, Netz / Kanten: fälschlich frei %.2f [%.2f..%.2f], fälschlich blockiert %.2f [%.2f..%.2f]" % (NEAR_M, *ff, *fb))
         print("Ziel fälschlich frei <= 0,5 und fälschlich blockiert <= 1,0: %s" % ("ERREICHT" if ff[0] <= 0.5 and fb[0] <= 1.0 else "nicht erreicht"))
 
-    for title, group in GROUPS.items():
-        table(group, title)
-    table(list(res), "alle")
+    def alle(runs):
+        return {r: np.arange(len(res[r]["hand"])) for r in runs if r in res}
+
+    if groups:
+        for g, members in groups.items():
+            members = set(members)
+            table({r: np.array([j for j, k in enumerate(ids_of[r]) if k in members], int) for r in res},
+                  "Körperhöhe %s mm" % g)
+    else:
+        for title, group in GROUPS.items():
+            table(alle(group), title)
+    table(alle(list(res)), "alle")
     return 0
 
 

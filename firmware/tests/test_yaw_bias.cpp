@@ -1,4 +1,4 @@
-// Host-Test für Patch 0009: Gyro-z-Nullpunkt laufend nachführen (trackYawBias) + Totband 0,3 °/s.
+// Host-Test für Patch 0009: Gyro-z-Nullpunkt laufend nachführen (trackYawBias); mit Patch 0011 ohne Gier-Totband.
 // updateImu mit synthetischen Rohdaten (500 Hz, Rauschen ±0,15 °/s, Rohwert-Quantisierung), Encoder
 // mit 100 Hz passend zur wahren Drehung. Fall wie am RiderPi 2026-11-05: Startkalibrierung bei
 // 0,2 °/s Sensor-Nullpunkt, danach durch Erwärmung 0,68 °/s (Fehler 0,48 °/s).
@@ -71,7 +71,7 @@ int main() {
         check(s.imu.calibrated && std::fabs(s.imu.gyro_bias[2] - 0.2) < 0.03, "Startkalibrierung trifft 0,2 °/s");
         s.run(60, 0, YawReference::None);
         std::printf("       ohne Nachführung, 60 s still, Nullpunkt 0,48 °/s daneben: Kurs %+.1f°\n", s.yawErr());
-        check(s.yawErr() > 20, "ohne Nachführung läuft der Kurs weg (Totband 0,3 °/s verdeckt den Fehler nicht mehr)");
+        check(s.yawErr() > 20, "ohne Nachführung läuft der Kurs weg (ohne Totband sichtbar)");
     }
     {
         Sim s; boot(s);
@@ -105,7 +105,16 @@ int main() {
         Sim s; s.sensor_bias = 0.2; s.run(3.0, 0, YawReference::None);   // richtiger Nullpunkt
         s.run(20, 0.5, YawReference::None);
         std::printf("       0,5 °/s für 20 s (wahr 10°): Kurs %+.2f°\n", s.imu.yaw_deg - (s.true_yaw - 10));
-        check(std::fabs(s.yawErr()) < 0.6, "Totband 0,3 °/s: langsames Drehen (0,5 °/s) wird mitgezählt (Original: 0°)");
+        check(std::fabs(s.yawErr()) < 0.6, "ohne Totband: langsames Drehen (0,5 °/s) wird mitgezählt (Original: 0°)");
+    }
+    {
+        Sim s; s.sensor_bias = 0.2; s.run(3.0, 0, YawReference::None);   // richtiger Nullpunkt
+        const double y0 = s.imu.yaw_deg, t0 = s.true_yaw;
+        s.run(60, 0.1, YawReference::None);
+        // Ohne Nachführung (None) bleibt der Restfehler der Startkalibrierung stehen und läuft mit auf
+        const double d = s.imu.yaw_deg - y0, rest = s.biasErr() * 60;
+        std::printf("       0,1 °/s für 60 s (wahr 6°): Kurs %+.2f°, davon Nullpunkt-Restfehler %+.2f°\n", d, rest);
+        check(std::fabs(d - (s.true_yaw - t0) - rest) < 0.1, "ohne Totband: sehr langsames Drehen (0,1 °/s) wird mitgezählt (0009: 0°)");
     }
     std::printf(fail ? "FEHLER\n" : "ok\n");
     return fail;

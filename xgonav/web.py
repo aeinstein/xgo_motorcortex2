@@ -22,18 +22,28 @@ from urllib.parse import parse_qs, urlparse
 import cv2
 
 from .affinity import pin_thread
-from .app import App, render
+from .app import App, ModeNotAllowed, render
 from .route import parse_points, parse_zones
 
 log = logging.getLogger(__name__)
 START = time.time()      # Startzeit des Prozesses: Oberfläche verbindet den Stream nach Neustart neu
 
+def _hz_rows(hz: dict | None) -> tuple[float, float]:
+    """row_stand und row_imu (Vollbild-Zeilen) aus Snapshot.horizon, fehlend NaN."""
+    hz = hz or {}
+    return tuple(float("nan") if hz.get(k) is None else float(hz[k]) for k in ("row_stand", "row_imu"))
+
+
 # Schnittstelle für die PHP-Oberfläche (web/) bzw. nginx. Keine HTML-Seite mehr hier.
-API = {"GET": ["/status", "/ws (WebSocket: Bilder, Bestätigung je Bild)", "/frame?after=<idx>&raw=1", "/stream",
-               "/map.png?px=480&view=6 (Raumkarte)"],
+API = {"GET": ["/status", "/ws?nick=1 (WebSocket: Bilder, Bestätigung je Bild; nick: Horizontzeilen im Kopf)",
+               "/frame?after=<idx>&raw=1", "/stream",
+               "/map.png?px=480&view=6 (Raumkarte)",
+               "/horizon (Horizonttabelle + Stand)"],
        "POST": ["/mode?name=..&target=..", "/stop", "/pipeline?on=0|1", "/drive?v=..&w=.. (nur Modus manual)",
                 "/exposure?us=0|100..33333 (0 = Automatik)", "/gain?g=0|1..63.9 (0 = Automatik)",
-                "/map/reset (Raumkarte leeren, Pose auf 0)", "/level (Beine neu ausrichten, 3 s)"]}
+                "/map/reset (Raumkarte leeren, Pose auf 0)", "/level (Beine neu ausrichten, 3 s)",
+                "/horizon/edit?row=.. (Linie einstellen, leer = aus)", "/horizon/cal?row=.. (für diese Höhe speichern)",
+                "/horizon/delete?h=<mm>"]}
 
 
 WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
@@ -126,6 +136,7 @@ def serve(app: App, host: str, port: int, fps: int, render_cpus=None) -> Threadi
                     st = app.robot.state
                     body.update({"cmd": {"v": round(app.robot.command[0], 3), "w": round(app.robot.command[1], 3)},
                                  "battery": st.battery, "balancing": st.balancing, "yaw_drv": st.yaw_deg,
+                                 "height_mm": app.robot.height_mm,
                                  "tracks": [], "free": [], "ttc": None})
                 return self._send(200, json.dumps(body).encode())
             if u.path == "/route":
@@ -135,10 +146,16 @@ def serve(app: App, host: str, port: int, fps: int, render_cpus=None) -> Threadi
                 with gm._lock:
                     body = {"points": gm.route, "loop": gm.route_loop, "zones": gm.zones, "map_id": gm.map_id, "gesperrt": gm.locked}
                 return self._send(200, json.dumps(body).encode())
+            if u.path == "/horizon":
+                try:
+                    body = {**app.horizon_table(), "stand": app.snapshot.horizon}
+                except ValueError as e:   # ModeNotAllowed
+                    return self._send(409, json.dumps({"error": str(e)}).encode())
+                return self._send(200, json.dumps(body).encode())
             if u.path == "/map.png":
                 return self._map_png(parse_qs(u.query))
             if u.path == "/ws":
-                return self._ws()
+                return self._ws(parse_qs(u.query))
             if u.path == "/frame":
                 return self._frame(parse_qs(u.query))
             if u.path == "/stream":
@@ -219,6 +236,36 @@ def serve(app: App, host: str, port: int, fps: int, render_cpus=None) -> Threadi
                 except ValueError as e:
                     return self._send(400, json.dumps({"error": str(e) or "g ungültig"}).encode())
                 return self._send(200, json.dumps({"ok": True, "gain": g}).encode())
+            if u.path == "/horizon/edit":
+                # Linie zum Einstellen ins Overlay zeichnen; row leer = aus
+                r = q.get("row", [""])[0]
+                try:
+                    row = float(r) if r != "" else None
+                    if row is not None and not (math.isfinite(row) and 0 <= row < app.cfg.camera.height):
+                        raise ValueError
+                except ValueError:
+                    return self._send(400, b'{"error":"row ungueltig"}')
+                app.hz_edit_row = row
+                return self._send(200, json.dumps({"ok": True, "row": row}).encode())
+            if u.path == "/horizon/cal":
+                try:
+                    row = float(q.get("row", [""])[0])
+                    if not math.isfinite(row):
+                        raise ValueError("row ungültig")
+                    e = app.horizon_calibrate(row)
+                except ModeNotAllowed as e:
+                    return self._send(409, json.dumps({"error": str(e)}).encode())
+                except ValueError as e:
+                    return self._send(400, json.dumps({"error": str(e) or "row ungültig"}).encode())
+                return self._send(200, json.dumps({"ok": True, "eintrag": e}).encode())
+            if u.path == "/horizon/delete":
+                try:
+                    ok = app.horizon_delete(float(q.get("h", [""])[0]))
+                except ModeNotAllowed as e:
+                    return self._send(409, json.dumps({"error": str(e)}).encode())
+                except ValueError:
+                    return self._send(400, b'{"error":"h ungueltig"}')
+                return self._send(200 if ok else 404, json.dumps({"ok": ok}).encode())
             if u.path == "/mode":
                 try:
                     app.set_mode(q.get("name", ["idle"])[0], (q.get("target") or [None])[0] or None,
@@ -254,12 +301,16 @@ def serve(app: App, host: str, port: int, fps: int, render_cpus=None) -> Threadi
             return self._send(200, png.tobytes(), "image/png",
                               {"X-Map-View": f"{mx:.3f},{my:.3f},{kante:.3f},{gm.cfg.size_m:.1f}"})
 
-        def _ws(self):
+        def _ws(self, q):
             """Bilder als WebSocket-Stream. Nach jedem Bild wartet der Server auf eine
             Bestätigung des Browsers (beliebige Nachricht) und schickt dann das neueste Bild.
             So bleibt es bei einer Verbindung, ohne dass sich Bilder in TCP-Puffern stauen
-            (MJPEG über schwaches WLAN: bis 20 s). Binärnachricht: 4 Byte Bildnummer + JPEG."""
+            (MJPEG über schwaches WLAN: bis 20 s). Binärnachricht: 4 Byte Bildnummer + JPEG.
+            nick=1: zwischen Bildnummer und JPEG zwei float32 (big endian) row_stand und row_imu dieses Bildes
+            (NaN ohne gültige Standreferenz). Damit verschiebt der Browser das Bild selbst, sodass die IMU-Linie
+            fest steht (Driftprüfung); die Bildpipeline rechnet dafür nichts."""
             pin_thread(render_cpus, "Bild-Thread", quiet=True)
+            nick = q.get("nick", ["0"])[0] == "1"
             key = self.headers.get("Sec-WebSocket-Key")
             if not key or "websocket" not in self.headers.get("Upgrade", "").lower():
                 return self._send(400, b'{"error":"WebSocket erwartet"}')
@@ -290,7 +341,10 @@ def serve(app: App, host: str, port: int, fps: int, render_cpus=None) -> Threadi
                     if not ok:
                         continue
                     last = snap.idx
-                    self.wfile.write(ws_frame(0x2, struct.pack("!I", snap.idx & 0xFFFFFFFF) + jpg.tobytes()))
+                    kopf = struct.pack("!I", snap.idx & 0xFFFFFFFF)
+                    if nick:
+                        kopf += struct.pack("!ff", *_hz_rows(snap.horizon))
+                    self.wfile.write(ws_frame(0x2, kopf + jpg.tobytes()))
                     # auf Bestätigung warten; Ping beantworten, Close beenden
                     while True:
                         m = ws_read(self.rfile)

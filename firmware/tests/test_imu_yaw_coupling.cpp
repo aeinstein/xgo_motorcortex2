@@ -1,6 +1,7 @@
 // Host-Test für die Patches 0005/0006: updateImu mit synthetischen Rohdaten. Sensor gekippt wie
 // beim balancierenden RiderPi (Roll +2,2°, Nick -1,1°) und nicht auf der Drehachse (d vor/hinter,
-// 2 cm seitlich: Fliehkraft auf den Beschleunigungssensor). 5 s Stillstand (Kalibrierung),
+// 2 cm seitlich: Fliehkraft auf den Beschleunigungssensor), Nick-Kreisel mit -2,4 % Gier-Übersprechen
+// wie am RiderPi gemessen (Register 0x10, 2026-11-07). 5 s Stillstand (Kalibrierung),
 // 3 s Drehung um die Senkrechte mit 40 bzw. 85 °/s in beide Richtungen, 3 s Stillstand. Die
 // wahre Lage ändert sich nicht.
 //   Original: Nick bis 5,6° daneben (am Rider gemessen +2..3° bei 40 °/s)
@@ -36,6 +37,7 @@ int main() {
     const double ka = 1.0 / (0.000030517578125 * 19.6);   // m/s^2 -> Rohwert (±2 g)
     const double kg = 1.0 / (0.000030517578125 * 2000.0); // °/s -> Rohwert (±2000 °/s)
     const double e = 0.02;                                 // m seitlich der Drehachse (Sensor-x)
+    const double xtalk = -0.024;                           // Nick-Kreisel misst xtalk * Gierrate mit
     for (double d : {0.11, -0.11}) {                       // m vor/hinter der Drehachse (Sensor-y)
         for (double omega : {40.0, -40.0, 85.0, -85.0}) {
             ImuState s;
@@ -49,7 +51,7 @@ int main() {
                 put(raw + 0, (g * ux - w2 * e) * ka);  // Firmware: acc[0] = -AX, acc[1] = -AY, acc[2] = +AZ
                 put(raw + 2, (g * uy - w2 * d) * ka);
                 put(raw + 4, g * uz * ka);
-                put(raw + 6, w * ux * kg);             // gyro[1] (Nick) = +GX
+                put(raw + 6, (w * ux + xtalk * w * uz) * kg);   // gyro[1] (Nick) = +GX, mit Übersprechen
                 put(raw + 8, w * uy * kg);             // gyro[0] (Roll) = -GY
                 put(raw + 10, w * uz * kg);            // gyro[2] (Gier) = +GZ
                 us += 5000;

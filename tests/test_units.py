@@ -57,7 +57,70 @@ def test_robot_height_mapping():
     r.set_height(500)   # begrenzt, identisch -> kein neuer Write
     vals = [v for _, n, v in r.writes if n == "height"]
     assert vals == [0, 128, 205]
-    assert r.height_mm == pytest.approx(60 + 60 * 205 / 255)
+    assert r.height_mm == pytest.approx(60 + 60 * 200 / 255)   # die Firmware fährt höchstens 200
+
+
+def test_robot_height_readback(tmp_path):
+    """Höhe aus /proc: Web-Änderungen übernehmen, nach dem Aufstehen gilt die Mittelstellung der Firmware,
+    der alte Inhalt von /proc nicht mehr; danach schreibt das Verhalten seine Höhe neu."""
+    import dataclasses
+    from xgonav.robot import ProcRobot
+
+    def setze(name, text):                               # wie ein Schreiber von außen (Web, Treiber)
+        (tmp_path / name).write_text(text)
+
+    for name, text in (("height", ""), ("state", "1"), ("yaw", "0"), ("battery", "90"), ("buttons", "0")):
+        setze(name, text)
+    r = ProcRobot(dataclasses.replace(Config().robot, proc_dir=str(tmp_path)))
+    mm = r.height_u8_to_mm
+
+    def takt():
+        r._poll_state()
+        r._height_tick()
+
+    takt()
+    assert r.height_mm is None                           # leer: noch nie geschrieben
+    r.set_height(85)
+    assert (tmp_path / "height").read_text() == "106" and r.height_mm == pytest.approx(mm(106))
+    takt()
+    assert r.height_mm == pytest.approx(mm(106))
+    setze("height", "203")                               # Web während der Fahrt
+    takt()
+    assert r.height_mm == pytest.approx(mm(200))         # Firmware begrenzt auf 200
+    r.set_height(85)                                     # Verhalten will weiter 85: kein neuer Write
+    assert (tmp_path / "height").read_text() == "203" and r.height_mm == pytest.approx(mm(200))
+    setze("state", "254")                                # absetzen ...
+    takt()
+    setze("state", "1")                                  # ... und aufstehen
+    takt()
+    assert r.height_mm == pytest.approx(mm(128))
+    takt()
+    assert r.height_mm == pytest.approx(mm(128))         # "203" in /proc ist veraltet
+    r.set_height(85)
+    assert (tmp_path / "height").read_text() == "106" and r.height_mm == pytest.approx(mm(106))
+
+
+def test_app_geometry_follows_robot_height():
+    """Die Bodengeometrie rechnet mit dem gültigen Höhen-Sollwert, auch wenn ihn nicht xgonav setzte."""
+    import threading
+    from xgonav.app import App
+    cfg = Config(); cfg.output.web_port = 0; cfg.detector.enabled = False
+    robot = SimRobot(cfg.robot)
+    world = SimWorld(cfg.camera, robot, None, start=(1.0, 1.5, 0.0))
+    app = App(cfg, robot, world, imu=None)
+    app.imu = None
+    th = threading.Thread(target=app.run, kwargs={"duration": 4.0}, daemon=True)
+    th.start()
+    try:
+        time.sleep(1.0)
+        assert app.geo.body_height_mm == pytest.approx(cfg.behavior.height_cruise_mm)
+        robot._height_mm = 107.0                         # wie von Robot._poll_height übernommen
+        time.sleep(0.6)
+        assert app.geo.body_height_mm == pytest.approx(107.0)
+        assert app.geo.cam_h == pytest.approx((107.0 + cfg.camera.mount_offset_mm) / 1000)
+        assert app.snapshot.stats["height_mm"] == pytest.approx(107.0)
+    finally:
+        app.stop(); th.join(timeout=5)
 
 
 # ---------------------------------------------------------------- Ego-Motion

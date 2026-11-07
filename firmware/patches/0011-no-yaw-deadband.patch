@@ -1,0 +1,29 @@
+diff --git a/firmware/src/control/rider_leg_imu.cpp b/firmware/src/control/rider_leg_imu.cpp
+index 3595d01..136c9ee 100644
+--- a/firmware/src/control/rider_leg_imu.cpp
++++ b/firmware/src/control/rider_leg_imu.cpp
+@@ -159,9 +159,9 @@ bool updateImu(ImuState &s, const std::uint8_t *raw, std::size_t size,
+     s.pitch_rad = float(double(s.pitch_deg) / 57.3);
+     s.roll_deg = float((double(s.roll_deg) - double(s.gyro_roll_filtered) * dt) * (1.0 - roll_weight) +
+                        double(s.accel_roll_filtered) * roll_weight);
+-    // Patch 0009: Totband 2 -> 0,3 °/s; der Nullpunkt wird jetzt laufend nachgeführt (trackYawBias).
+-    // Mit 2 °/s fehlte jedes langsame Wegdrehen im Kurs, und ein Nullpunktfehler blieb im Stand unsichtbar.
+-    if (std::fabs(yaw_rate) > kYawDeadbandDegS) s.yaw_deg = float(double(s.yaw_deg) + double(yaw_rate) * dt);
++    // Patch 0011: kein Gier-Totband mehr (Original 2 °/s, 0009: 0,3 °/s); der Nullpunkt kommt aus
++    // trackYawBias. Erst nach der Startkalibrierung integrieren: vorher ist gyro_bias[2] eine Teilsumme.
++    if (s.calibrated) s.yaw_deg = float(double(s.yaw_deg) + double(yaw_rate) * dt);
+ 
+     // 0x400d37b1..3839: preserve the firmware's AND between pitch and roll tests.
+     // Calling code changes mode to 1 immediately on calibration completion.
+diff --git a/firmware/src/control/rider_leg_imu.h b/firmware/src/control/rider_leg_imu.h
+index 8ad38f1..44c4bf6 100644
+--- a/firmware/src/control/rider_leg_imu.h
++++ b/firmware/src/control/rider_leg_imu.h
+@@ -74,7 +74,6 @@ struct YawBiasTracker {
+     float boot_bias = 0;                 // Nullpunkt der Startkalibrierung (Register 0x0f)
+     bool boot_seen = false;
+ };
+-constexpr float kYawDeadbandDegS = 0.3f;        // Original 2 °/s
+ constexpr double kWheelYawDegPerTick = 0.1170;  // (pi*0,060 m/1024)/0,090 m in Grad, am Rider gegen IMU gemessen
+ // Nach updateImu je Probe aufrufen; encoder11/21 vorwärts positiv (11 = links), Drehung links +.
+ void trackYawBias(ImuState &state, YawBiasTracker &tracker, YawReference ref,

@@ -1,0 +1,106 @@
+diff --git a/firmware/src/command_protocol.cpp b/firmware/src/command_protocol.cpp
+index 4110cd4..c9403eb 100644
+--- a/firmware/src/command_protocol.cpp
++++ b/firmware/src/command_protocol.cpp
+@@ -19,6 +19,7 @@ uint8_t readLength(uint8_t reg) {
+     case 0x0d:return 24;
+     case 0x0e:return 32;
+     case 0x0f:return 12;
++    case 0x10:return 32;
+     case 0x62: case 0x63: case 0x64:return 4;
+     case 0x65:return 24;
+     case 0x66: case 0x67: case 0x68:return 2;
+@@ -174,6 +175,8 @@ size_t buildReadResponse(const CommandEvent &r,const Telemetry &t,uint8_t *out,s
+         std::memcpy(data,t.diag,32);break;
+     case 0x0f:  // custom (patch 0009): yaw-bias diagnostics, layout in main.cpp fillYawDiag()
+         std::memcpy(data,t.yawdiag,12);break;
++    case 0x10:  // custom (patch 0013): attitude-fusion diagnostics, layout in main.cpp fillImuDiag()
++        std::memcpy(data,t.imudiag,32);break;
+     default:return 0;
+     }
+     return buildFrame(0x12,r.reg,data,n,out,cap);
+diff --git a/firmware/src/command_protocol.h b/firmware/src/command_protocol.h
+index e60a4c1..ea38165 100644
+--- a/firmware/src/command_protocol.h
++++ b/firmware/src/command_protocol.h
+@@ -60,6 +60,8 @@ struct Telemetry {
+     uint8_t diag[32] = {};
+     // Custom reg 0x0f (patch 0009): 12-byte yaw-bias diagnostics, filled by main.cpp publish().
+     uint8_t yawdiag[12] = {};
++    // Custom reg 0x10 (patch 0013): 32-byte attitude-fusion diagnostics, filled by main.cpp publish().
++    uint8_t imudiag[32] = {};
+     uint8_t policy_mode=0,policy_action_space=0;
+     uint8_t policy_contract=6;
+     bool policy_trained=false,policy_valid=false;
+diff --git a/firmware/src/control/rider_leg_imu.cpp b/firmware/src/control/rider_leg_imu.cpp
+index 509c391..4cb3e2e 100644
+--- a/firmware/src/control/rider_leg_imu.cpp
++++ b/firmware/src/control/rider_leg_imu.cpp
+@@ -164,6 +164,13 @@ bool updateImu(ImuState &s, const std::uint8_t *raw, std::size_t size,
+         s.accel_pitch_filtered = float(double(s.accel_pitch_filtered) * 0.97 + double(accel_pitch) * 0.03);
+         s.accel_roll_filtered = float(double(s.accel_roll_filtered) * 0.92 + double(accel_roll) * 0.08);
+     }
++    // Patch 0013: nur für Register 0x10 merken; die Rechnung oben und unten bleibt unverändert.
++    s.diag_accel_pitch = accel_pitch;
++    s.diag_accel_roll = accel_roll;
++    s.diag_pitch_coupling = yaw_rate * (tan_roll + kNickGierUebersprechen);
++    s.diag_roll_coupling = -(yaw_rate * tan_pitch);
++    s.diag_accel_frozen = !(std::fabs(yaw_rate) <= 25.0f);
++    ++s.diag_samples;
+     const double dt = double(std::uint32_t(now_us - s.last_us)) * 0.000001;
+     s.last_us = now_us;
+     const double pitch_weight = s.calibrated ? 1.0 / (double(std::fabs(s.gyro_pitch_filtered)) + 500.0) : 0.05;
+diff --git a/firmware/src/control/rider_leg_imu.h b/firmware/src/control/rider_leg_imu.h
+index 2a1f750..4093c2a 100644
+--- a/firmware/src/control/rider_leg_imu.h
++++ b/firmware/src/control/rider_leg_imu.h
+@@ -51,6 +51,11 @@ struct ImuState {
+     std::uint16_t identical_samples = 0, calibration_count = 0, tilt_count = 0;
+     std::uint32_t last_us = 0;
+     bool calibrated = false, just_calibrated = false, tilt_fault = false;
++    // Patch 0013 (Diagnose-Register 0x10): Zwischenwerte der Lagefusion, nur gespeichert, nicht genutzt.
++    float diag_accel_pitch = 0, diag_accel_roll = 0;     // Beschleunigungswinkel dieser Probe (°)
++    float diag_pitch_coupling = 0, diag_roll_coupling = 0; // Abzug 0005 Nick/Roll (°/s), wie in updateImu
++    bool diag_accel_frozen = false;                      // 0006: Beschleunigungswinkel eingefroren
++    std::uint8_t diag_samples = 0;                       // Probenzähler (läuft über)
+ };
+ // raw: 12-byte big-endian sensor register window 0x0b..0x16.
+ // Returns false only for an invalid caller buffer; performs no I2C or motor I/O.
+diff --git a/firmware/src/main.cpp b/firmware/src/main.cpp
+index 7d698cc..7acf302 100644
+--- a/firmware/src/main.cpp
++++ b/firmware/src/main.cpp
+@@ -770,6 +770,25 @@ public:
+         d[6]=uint8_t(t.updates);d[7]=uint8_t(t.updates>>8);d[8]=uint8_t(t.ref);d[9]=t.open?1:0;
+         put(10,(s.imu.gyro_deg_s[2]-s.imu.gyro_bias[2])*100.0f);
+     }
++    // Patch 0013: Register 0x10, 32 Byte little endian, Lagefusion (Nick/Roll) zum Prüfen von 0005/0006:
++    // 0 u16 ms | 2 i16 Roll-Kreisel roh x100 (°/s) | 4 i16 gefilterte Rollrate x100 (°/s) | 6 i16 Beschleunigung z x100 (m/s^2) | 8 i16 Beschleunigungs-Nick dieser Probe x100 (°) |
++    // 10 i16 gefilterter Beschleunigungs-Nick x100 | 12 i16 Nick x100 | 14 i16 Nick-Kreisel roh x100 (°/s) |
++    // 16 i16 Abzug 0005 gz*(tan(Beschl.-Roll)+Übersprechen) x100 (°/s) | 18 i16 gefilterte Nickrate x100 (°/s) | 20 i16 Gierrate x10 (°/s) |
++    // 22 i16 Beschleunigungs-Roll dieser Probe x100 | 24 i16 gefilterter Beschleunigungs-Roll x100 | 26 i16 Roll x100 |
++    // 28 i16 Abzug 0005 -gz*tan(pitch) x100 (°/s) | 30 u8 Flags (bit0 0006 friert ein, bit1 kalibriert) | 31 u8 Probenzähler
++    void fillImuDiag(uint8_t* d) {
++        auto put=[&](int at,float v){const float r=std::isfinite(v)?std::round(v):0.0f;
++            const int16_t q=int16_t(std::max(-32768.0f,std::min(32767.0f,r)));d[at]=uint8_t(uint16_t(q));d[at+1]=uint8_t(uint16_t(q)>>8);};
++        const auto& m=s.imu;
++        const uint16_t ms=uint16_t(millis());d[0]=uint8_t(ms);d[1]=uint8_t(ms>>8);
++        put(2,m.gyro_deg_s[0]*100.0f);put(4,m.gyro_roll_filtered*100.0f);put(6,m.acceleration[2]*100.0f);
++        put(8,m.diag_accel_pitch*100.0f);put(10,m.accel_pitch_filtered*100.0f);put(12,m.pitch_deg*100.0f);
++        put(14,m.gyro_deg_s[1]*100.0f);put(16,m.diag_pitch_coupling*100.0f);put(18,m.gyro_pitch_filtered*100.0f);
++        put(20,(m.gyro_deg_s[2]-m.gyro_bias[2])*10.0f);
++        put(22,m.diag_accel_roll*100.0f);put(24,m.accel_roll_filtered*100.0f);put(26,m.roll_deg*100.0f);
++        put(28,m.diag_roll_coupling*100.0f);
++        d[30]=uint8_t((m.diag_accel_frozen?1:0)|(m.calibrated?2:0));d[31]=m.diag_samples;
++    }
+     void publish() {
+         s.standup=standup_phase?2:(standup_requested?1:0);
+         s.ms=millis();s.driving=driving;s.manual_stop=manual_stop;s.leg_calibrating=leg_calibrating;s.imu_valid=imu_valid;
+@@ -786,6 +805,7 @@ public:
+         t.t_ms=s.ms;
+         fillDiag(t.diag);
+         fillYawDiag(t.yawdiag);
++        fillImuDiag(t.imudiag);
+         t.leg12_zero=s.calibration.zero_a;t.leg22_zero=s.calibration.zero_b;
+         t.policy_mode=uint8_t(s.policy.mode);t.policy_model_id=policy.model().id;
+         t.policy_trained=s.policy.trained;t.policy_valid=s.policy.model_valid;

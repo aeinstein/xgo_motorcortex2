@@ -1,0 +1,35 @@
+diff --git a/firmware/src/control/rider_leg_imu.cpp b/firmware/src/control/rider_leg_imu.cpp
+index 136c9ee..c127467 100644
+--- a/firmware/src/control/rider_leg_imu.cpp
++++ b/firmware/src/control/rider_leg_imu.cpp
+@@ -29,10 +29,15 @@ void updateLegTargets(LegState &s, float height, float command_roll_deg,
+                       bool leveling, float roll_pid_increment,
+                       std::uint16_t zero_a, std::uint16_t zero_b) {
+     // 0x400d4514; float stores are retained at original rounding boundaries.
++    // Patch 0012: Original klang das Ziel nach dem Nivellieren wieder auf den Rollbefehl ab; gerade blieb
++    // der Rider nur, solange die Beinservos in ihrer Totzone standen. Jede Höhenänderung bewegte beide
++    // Servos, und er stand wieder schief (RiderPi 2026-11-07: ~2°). Jetzt bleibt die gefundene Differenz
++    // als Trimm stehen. Ohne Nivellieren ist roll_trim_deg 0 und das Ergebnis bitgleich zum Original.
+     if (leveling) s.roll_target_deg += roll_pid_increment;
+     else s.roll_target_deg = float(double(s.roll_target_deg) * 0.95 +
+-                                  double(command_roll_deg) * 0.050000000000000044);
++                                  double(command_roll_deg + s.roll_trim_deg) * 0.050000000000000044);
+     s.roll_target_deg = clamp(s.roll_target_deg, -20.0f, 20.0f);
++    if (leveling) s.roll_trim_deg = clamp(s.roll_target_deg - command_roll_deg, -10.0f, 10.0f);
+     const double difference = std::sin(double(s.roll_target_deg) / 57.3) * 43.0;
+     const float a = float(double(height) + difference);
+     const float b = float(double(height) - difference);
+diff --git a/firmware/src/control/rider_leg_imu.h b/firmware/src/control/rider_leg_imu.h
+index 44c4bf6..2a1f750 100644
+--- a/firmware/src/control/rider_leg_imu.h
++++ b/firmware/src/control/rider_leg_imu.h
+@@ -10,6 +10,9 @@ struct LegState {
+     float roll_target_deg = 0;              // command structure 3ffc30b4 +12
+     float extension_a = 45, extension_b = 45; // +16,+20; firmware length units
+     std::uint16_t servo_a = 0, servo_b = 0; // 3ffbe170+2, 3ffbe15c+2
++    // Patch 0012: Rolldifferenz, die das Nivellieren gefunden hat (Ziel - Rollbefehl, ±10°). Sie bleibt nach
++    // dem Abschalten stehen, auch über Höhenänderungen; zurückgesetzt nur mit dem LegState (Aufstehen, Fallen).
++    float roll_trim_deg = 0;
+ };
+ // roll_pid_increment is updatePid(roll PID)'s output when leveling is enabled.
+ // The caller sets its target=0 and feedback=measured roll (IMU +96).

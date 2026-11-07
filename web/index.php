@@ -1,6 +1,6 @@
 <?php
 /*
- * xgonav – Bedienoberfläche. Bild: WebSocket ws (nginx -> xgonav /ws, Bestätigung je Bild),
+ * xgonav – Bedienoberfläche. Bild: WebSocket ws?nick=1 (nginx -> xgonav /ws, Bestätigung je Bild),
  * Raumkarte: map.png, Status und Befehle: api.php. Enthält die Funktionen der früheren
  * Fernsteuerung (rc_server): Handsteuerung, Höhe, Aktionen, LEDs, Emotionen, Herunterfahren.
  * Keine Authentifizierung.
@@ -105,7 +105,8 @@ details.hilfe[open] summary{color:var(--text)}
 details.hilfe p{margin:4px 0 0}
 
 /* --- Bild und Modus */
-#bild{width:100%;height:auto;aspect-ratio:4/3;object-fit:contain;display:block;background:#000;border:1px solid var(--rand);border-radius:var(--r)}
+#bild-rahmen{overflow:hidden;background:#000;border:1px solid var(--rand);border-radius:var(--r)}
+#bild{width:100%;height:auto;aspect-ratio:4/3;object-fit:contain;display:block;background:#000}
 .modus{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .segment{display:inline-flex;border:1px solid var(--rand2);border-radius:7px;overflow:hidden;flex-wrap:wrap}
 .segment button{border:0;border-radius:0;border-right:1px solid var(--rand2);margin:0}
@@ -183,6 +184,7 @@ details.extras[open]>summary{margin-bottom:8px}
     <span class="pille" id="p-zustand"><span class="lang">Zustand </span><b>-</b></span>
     <span class="pille" id="p-akku"><span class="lang">Akku </span><b>-</b></span>
     <span class="pille" id="p-pip"><span class="lang">Bildverarb. </span><b>-</b></span>
+    <span class="pille" id="p-wlan" title="WLAN-Empfang (Pegel) und Durchsatz des Riders: ↓ empfangen, ↑ gesendet"><span class="lang">WLAN </span><b>-</b></span>
   </div>
   <button id="stop" onclick="befehl('stop')" title="Stillstand, Modus idle">STOPP</button>
 </header>
@@ -190,7 +192,7 @@ details.extras[open]>summary{margin-bottom:8px}
 
 <main>
 <div class="spalte">
-  <img id="bild" alt="" aria-label="Kamerabild" width="640" height="480">
+  <div id="bild-rahmen"><img id="bild" alt="" aria-label="Kamerabild" width="640" height="480"></div>
   <div class="karte">
     <div class="modus">
       <div class="segment">
@@ -231,10 +233,15 @@ details.extras[open]>summary{margin-bottom:8px}
     </details>
   </section>
   <details class="karte extras" id="verlauf" ontoggle="verlaufUmschalten()">
-    <summary><h2>Verlauf</h2><span class="leise">CPU · Akku</span></summary>
+    <summary><h2>Verlauf</h2><span class="leise">CPU · WLAN · Akku</span></summary>
     <div class="unter">CPU je Kern, letzte 10 min <span class="rechts" id="v-temp"></span></div>
     <div class="legende" id="l-cpu"></div>
     <canvas class="diag" id="d-cpu" data-h="140"></canvas>
+    <div class="unter">WLAN-Durchsatz, letzte 10 min <span class="rechts" id="v-wlan"></span></div>
+    <div class="legende" id="l-wlan"></div>
+    <canvas class="diag" id="d-wlan" data-h="110"></canvas>
+    <div class="unter">WLAN-Empfang (Pegel)</div>
+    <canvas class="diag" id="d-pegel" data-h="90"></canvas>
     <div class="unter">Akku, 120 min (im Browser gespeichert) <span class="rechts"><span id="v-akku"></span><button onclick="akkuLeeren()">Leeren</button></span></div>
     <canvas class="diag" id="d-akku" data-h="100"></canvas>
   </details>
@@ -290,6 +297,35 @@ details.extras[open]>summary{margin-bottom:8px}
       <p>„Neu ausrichten“: Die Beine haben eine Totzone, bei gleichem Befehl steht er bis zu 2,6° unterschiedlich
         schief. Der Knopf setzt Roll auf 0° und lässt die Firmware 3 s nivellieren; danach bleibt er so stehen. Das
         passiert auch einmal nach jedem Aufstehen. Beim Fahren kann er langsam wieder schief werden.</p>
+    </details>
+  </section>
+
+  <section class="karte" id="horizont" hidden>
+    <div class="kopf"><h2>Horizont</h2><span class="leise" id="hz-zustand">-</span></div>
+    <div class="leise" id="hz-werte">-</div>
+    <div class="knoepfe" style="margin-top:6px">
+      <button onclick="hzSchieben(-5)" title="Linie 5 px nach oben">−5</button>
+      <button onclick="hzSchieben(-1)" title="Linie 1 px nach oben">−1</button>
+      <span class="w" id="hz-zeile">-</span>
+      <button onclick="hzSchieben(1)" title="Linie 1 px nach unten">+1</button>
+      <button onclick="hzSchieben(5)" title="Linie 5 px nach unten">+5</button>
+      <button id="hz-speichern" onclick="hzSpeichern()" title="Zeile der grünen Linie für die aktuelle Körperhöhe speichern">Für diese Höhe speichern</button>
+      <button onclick="hzAus()" title="Grüne Linie ausblenden">Linie aus</button>
+      <label title="Bild senkrecht so verschieben, dass die cyan IMU-Linie fest steht"><input type="checkbox" id="hz-stabil" onchange="hzStabil(this.checked)"> Bild am IMU-Nick festhalten</label>
+    </div>
+    <div class="leise" style="margin-top:6px" id="hz-tabelle">-</div>
+    <details class="hilfe"><summary>weiß Stand · cyan IMU · magenta Bild · orange IMU roh · grün Einstellen</summary>
+      <p>Erst aufstehen lassen und nicht anfassen: Nach 3 s Einschwingen misst xgonav 3 s lang den mittleren
+        Nickwinkel (Standreferenz). Danach die grüne Linie auf einen Bezug in Kamerahöhe schieben (Laserlinie,
+        Klebeband an der Wand in Höhe der Kameramitte) und speichern. Das je Körperhöhe wiederholen; dazwischen
+        rechnet xgonav linear.</p>
+      <p>Cyan ist der Horizont aus IMU minus Standreferenz. Magenta startet am IMU-Wert, folgt dann dem Bildnick
+        (schnelle Änderungen) und wird spätestens nach 0,5 s wieder auf die IMU gesetzt; magenta gilt für die
+        Entfernungen. Orange ist der rohe Nick des Treibers (neueste Probe, ohne Zeitabgleich zum Bild), links
+        mit dem Rohwert in Grad. Nach jeder Höhenänderung und jedem Absetzen misst er die Standlage neu.</p>
+      <p>„Bild am IMU-Nick festhalten“: Das Bild wird je Bild so verschoben, dass die cyan IMU-Linie fest auf der
+        Standzeile liegt. Stimmt die IMU, steht die Szene still; wandert sie gegen die cyan Linie, driftet die IMU
+        oder der Zeitabgleich. Schwarzer Rand oben/unten = Verschiebung.</p>
     </details>
   </section>
 
@@ -408,15 +444,27 @@ function verbindungOk() {
 function verbindungWeg() { pille('p-verb', 'getrennt', 'schlecht'); }
 // Kamerabild über eine WebSocket-Verbindung. Jedes Bild wird sofort bestätigt, erst dann
 // schickt xgonav das nächste (neueste): kein Rückstau wie beim MJPEG-Stream über schwaches
-// WLAN (bis 20 s). Nachricht: 4 Byte Bildnummer + JPEG. Bei Abbruch nach 1 s neu verbinden.
-let bildUrl = null;
+// WLAN (bis 20 s). Nachricht (nick=1): 4 Byte Bildnummer, 2 x float32 row_stand/row_imu, JPEG.
+// Bei Abbruch nach 1 s neu verbinden.
+// „Bild am IMU-Nick festhalten“: Das Bild wird hier im Browser per CSS um row_stand − row_imu verschoben,
+// sodass die cyan IMU-Linie fest steht; die Bildpipeline rechnet dafür nichts.
+let bildUrl = null, bildDy = 0;
+let bildStabil = false;
+try { bildStabil = localStorage.getItem('xgonav.stabil') === '1'; } catch (e) {}
+function bildVerschieben() {
+  const b = $('bild'), H = b.naturalHeight || 480;
+  b.style.transform = bildStabil && bildDy ? 'translateY(' + (bildDy / H * 100).toFixed(3) + '%)' : '';
+}
 function bildVerbinden() {
   const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host +
-                           location.pathname.replace(/[^/]*$/, '') + 'ws');
+                           location.pathname.replace(/[^/]*$/, '') + 'ws?nick=1');
   ws.binaryType = 'arraybuffer';
+  $('bild').onload = bildVerschieben;               // Verschiebung erst mit dem zugehörigen Bild
   ws.onmessage = ev => {
     ws.send('ok');                                    // Bestätigung: nächstes Bild bitte
-    const url = URL.createObjectURL(new Blob([new Uint8Array(ev.data, 4)], {type: 'image/jpeg'}));
+    const d = new DataView(ev.data), stand = d.getFloat32(4), imu = d.getFloat32(8);
+    bildDy = Number.isFinite(stand) && Number.isFinite(imu) ? stand - imu : 0;
+    const url = URL.createObjectURL(new Blob([new Uint8Array(ev.data, 12)], {type: 'image/jpeg'}));
     $('bild').src = url;
     if (bildUrl) URL.revokeObjectURL(bildUrl);
     bildUrl = url;
@@ -439,14 +487,90 @@ function streife() {
   return befehl('mode', {name: 'patrol', target: 'person', bestaetigt: 1});
 }
 function pipelineUmschalten() { return befehl('pipeline', {on: aktPipeline === 'läuft' ? 0 : 1}); }
+// Horizont im Stand ([horizon] enabled): grüne Linie einstellen und je Körperhöhe speichern
+const HZ_ZUSTAND = {liegt: 'liegt – erst aufstehen', wartet: 'schwingt ein', misst: 'misst Standlage', 'gültig': 'Standreferenz gültig'};
+let hzZeile = null, hzTabelleT = 0;
+const zahlOder = (v, n = 1, e = '') => v == null ? '-' : v.toFixed(n) + e;
+function hzAnzeigen(h) {
+  const box = $('horizont');
+  box.hidden = !h;
+  if (!h) return;
+  $('hz-zustand').textContent = HZ_ZUSTAND[h.zustand] || h.zustand;
+  $('hz-stabil').checked = bildStabil;
+  $('hz-werte').textContent = 'Höhe ' + zahlOder(h.hoehe_mm, 1, ' mm') + ' · IMU im Stand ' + zahlOder(h.ref_deg, 2, '°')
+    + ' (±' + zahlOder(h.std_deg, 2, '°') + ') · Zeile Stand ' + zahlOder(h.row_stand) + ' / IMU ' + zahlOder(h.row_imu)
+    + ' / Bild ' + zahlOder(h.row_bild) + ' · Bild−IMU ' + zahlOder(h.bild_minus_imu_deg, 2, '°')
+    + ' · IMU roh ' + zahlOder(h.imu_roh_deg, 2, '°')
+    + ' · Ego ok ' + (h.ego_ok != null ? Math.round(h.ego_ok * 100) + ' %' : '-')
+    + (h.row_cal == null ? ' · keine Tabelle: tilt_deg der Konfig' : (h.tabelle_deckt ? '' : ' · außerhalb der Tabelle'));
+  $('hz-speichern').disabled = h.zustand !== 'gültig' || hzZeile == null;
+  if (hzZeile == null && h.edit_row != null) hzZeile = h.edit_row;
+  $('hz-zeile').textContent = hzZeile == null ? '-' : hzZeile.toFixed(0);
+  if (Date.now() - hzTabelleT > 5000) hzTabelle();
+}
+async function hzTabelle() {
+  hzTabelleT = Date.now();
+  try {
+    const r = await fetch('api.php?a=horizon');
+    const j = await r.json();
+    if (!r.ok) return;
+    const el = $('hz-tabelle');
+    el.innerHTML = j.punkte.length ? j.punkte.map(p => esc(p.height_mm.toFixed(1) + ' mm → Zeile ' + p.row.toFixed(1)
+      + (p.ref_deg != null ? ' (IMU ' + p.ref_deg.toFixed(2) + '°)' : ''))
+      + ' <button onclick="hzLoeschen(' + p.height_mm + ')" title="Eintrag löschen">×</button>').join('<br>')
+      : 'Tabelle leer';
+  } catch (e) {}
+}
+async function hzSchieben(d) {
+  const h = (window.letzterStatus || {}).horizon || {};
+  if (hzZeile == null) hzZeile = h.row_cal ?? h.row_stand ?? h.row_imu ?? 240;
+  hzZeile = Math.max(0, Math.min(479, hzZeile + d));
+  $('hz-zeile').textContent = hzZeile.toFixed(0);
+  await befehl('horizon_edit', {row: hzZeile}, true);
+}
+async function hzSpeichern() {
+  if (hzZeile == null) return;
+  if (await befehl('horizon_cal', {row: hzZeile})) { hzTabelle(); }
+}
+function hzStabil(an) {
+  bildStabil = an;
+  try { localStorage.setItem('xgonav.stabil', an ? '1' : '0'); } catch (e) {}
+  bildVerschieben();
+}
+async function hzAus() { hzZeile = null; await befehl('horizon_edit', {row: ''}, true); }
+async function hzLoeschen(mm) {
+  if (!confirm('Horizont für ' + mm + ' mm löschen?')) return;
+  if (await befehl('horizon_delete', {h: mm})) hzTabelle();
+}
+// WLAN aus dem Header X-Wlan der Statusabfrage ("rx tx dBm Qualität"); Raten hier aus der Differenz
+const wlan = [];            // [t_ms, ↓ kB/s, ↑ kB/s, dBm, Qualität]
+let wlanVorher = null;
+function wlanMerken(h) {
+  const f = (h || '').split(' ').map(v => v === '-' ? null : Number(v));
+  if (f.length !== 4) { pille('p-wlan', '-'); return; }
+  const [rx, tx, dbm, q] = f, jetzt = Date.now();
+  let ab = null, auf = null;
+  if (wlanVorher && rx != null && tx != null && rx >= wlanVorher.rx && tx >= wlanVorher.tx) {
+    const dt = (jetzt - wlanVorher.t) / 1000;               // Zählerrücksprung (Neustart): verwerfen
+    if (dt > 0.2) { ab = (rx - wlanVorher.rx) / 1024 / dt; auf = (tx - wlanVorher.tx) / 1024 / dt; }
+  }
+  if (rx != null && tx != null) wlanVorher = {t: jetzt, rx, tx};
+  if (ab != null) { wlan.push([jetzt, ab, auf, dbm, q]); abschneiden(wlan, jetzt - CPU_MS); }
+  const kb = v => v == null ? '-' : v < 10 ? v.toFixed(1) : v.toFixed(0);
+  pille('p-wlan', (dbm != null ? dbm + ' dBm' : '-') + (ab != null ? ' · ↓' + kb(ab) + ' ↑' + kb(auf) + ' kB/s' : ''),
+        dbm == null ? '' : dbm >= -60 ? 'gut' : dbm >= -70 ? 'warn' : 'schlecht');
+}
 async function status() {
   try {
     const r = await fetch('api.php?a=status');
+    wlanMerken(r.headers.get('X-Wlan'));
     const s = await r.json();
     if (!r.ok) { zeige(s.error || ('Fehler ' + r.status)); verbindungWeg(); return; }
     verbindungOk();
     aktModus = s.mode;
     aktPipeline = s.pipeline;
+    window.letzterStatus = s;
+    hzAnzeigen(s.horizon);
     $('kurz').innerHTML = felder.map(([k, f, breit]) =>
       '<div class="kachel' + (breit ? ' breit' : '') + '"><div class="k">' + k + '</div><div class="w">' + esc(f(s)) + '</div></div>').join('');
     $('roh').textContent = JSON.stringify(s, null, 1);
@@ -1189,6 +1313,15 @@ function verlaufZeichnen() {
   legende('l-cpu', cs, ' %', 0);
   linien($('d-cpu'), cs, {von: jetzt - CPU_MS, bis: jetzt, ymin: 0, ymax: 100, einheit: '%', luecke: 5e3,
                           xText: uhr, xs: 120e3, nk: 0});
+  const ws = [{name: '↓ empfangen', farbe: FARBEN[0], pkt: wlan.map(p => [p[0], p[1]])},
+              {name: '↑ gesendet', farbe: FARBEN[1], pkt: wlan.map(p => [p[0], p[2]])}];
+  legende('l-wlan', ws, ' kB/s', 0);
+  linien($('d-wlan'), ws, {von: jetzt - CPU_MS, bis: jetzt, ymin: 0, einheit: '', luecke: 5e3, minSpanne: 10,
+                           xText: uhr, xs: 120e3, nk: 0});
+  const wl = wlan.length ? wlan[wlan.length - 1] : null;
+  $('v-wlan').textContent = wl ? (wl[3] != null ? wl[3] + ' dBm' : '') + (wl[4] != null ? ' · Qualität ' + wl[4] + '/70' : '') : '';
+  linien($('d-pegel'), [{name: 'Pegel', farbe: FARBEN[2], pkt: wlan.filter(p => p[3] != null).map(p => [p[0], p[3]])}],
+         {von: jetzt - CPU_MS, bis: jetzt, ymin: -90, ymax: -30, einheit: '', luecke: 5e3, xText: uhr, xs: 120e3, nk: 0});
   const a = akkuLesen().filter(p => p[0] > jetzt - AKKU_MS);
   $('v-akku').textContent = a.length ? a[a.length - 1][1] + ' %' : '';
   linien($('d-akku'), [{name: 'Akku', farbe: FARBEN[0], pkt: a}],

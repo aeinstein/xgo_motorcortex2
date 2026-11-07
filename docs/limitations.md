@@ -1,6 +1,6 @@
 # Limitations and measured facts
 
-Single device: RiderPi, CM4 2 GB, kernel 6.6.74+rpt-rpi-v8, OV5647 wide-angle, firmware R-1.1.3 → R-1.1.6 (+ patches 0001–0010 since 2026-11-05).
+Single device: RiderPi, CM4 2 GB, kernel 6.6.74+rpt-rpi-v8, OV5647 wide-angle, firmware R-1.1.3 → R-1.1.6 (+ patches 0001–0013 since 2026-11-07).
 
 ## Hardware test status
 
@@ -96,7 +96,8 @@ Largest cost: optical flow (`ego.lk_*`). The Python binding does not accept preb
 - Web UI has no authentication.
 - Room map drifts (no markers).
 - Web attitude model: legs show the last written `height`/`roll` setpoints, not measured positions (firmware does not report them). State 254 (Absetzen) shows legs at the firmware minimum (45 mm extension) as an assumption. Other firmware moves (limp legs, leveling, stand-up, falls) are not shown; unknown after driver load (assumes 128).
-- Body height limited to u8 205 (web UI, API, xgonav; provisional). Setpoint 235 on 2026-11-06: firmware stop, state 252 (not tilt, fall, low battery or servo loss; IMU, control gap > 30 ms or invalid control output; cause open, single event). 205 held ~2 s, 225 ~1 s. Firmware itself accepts 0..255; direct writes to `/proc/XGORider/height` are not limited.
+- Body height and camera geometry: xgonav reads `/proc/XGORider/height` every 0.2 s and follows new writes, also from the web (before 2026-11-07 it ignored them: drive `unten3` ran at camera height 151 mm while the geometry assumed 128 mm, distances ~18 % too far). While the Rider is down the firmware zeroes its height every tick and stands up at its centre 128 (≈ 90 mm); `/proc` still shows the old value, so xgonav assumes 90 mm after each stand-up until the next write (behaviors send their height again). It is the setpoint, not the leg position (legs need ~1 s). A web write of the same value as before the stand-up is not detected.
+- Body height limited to u8 205 (web UI, API, xgonav; provisional). The firmware drives only 55..200 (`main.cpp`, range seen in training), so 201..205 act as 200 (≈ 107 mm). Setpoint 235 on 2026-11-06: firmware stop, state 252 (not tilt, fall, low battery or servo loss; IMU, control gap > 30 ms or invalid control output; cause open, single event). 205 held ~2 s, 225 ~1 s. Firmware itself accepts 0..255; direct writes to `/proc/XGORider/height` are not limited.
 - Leg calibration buttons removed (saving with slack legs overwrote flash zero points, 2026-11-02).
 - Battery: driver powers off below 8 % (`low_batt_level`); full image processing draws more than the charging dock supplies.
 

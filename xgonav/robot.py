@@ -24,6 +24,11 @@ from .config import RobotCfg
 log = logging.getLogger(__name__)
 
 NEUTRAL = 128
+# Höhe in der Firmware (xgorider2_rl main.cpp, action_engine.cpp): Solange der Rider nicht balanciert, setzt
+# sie den Sollwert in jedem Takt auf 0; beim Aufstehen nimmt sie die Mittelstellung 128. Gefahren wird nur
+# 55..200. /proc/XGORider/height zeigt dagegen den zuletzt geschriebenen Wert, auch über das Aufstehen hinweg.
+FW_HEIGHT_STANDUP_U8 = 128
+FW_HEIGHT_MIN_U8, FW_HEIGHT_MAX_U8 = 55, 200
 
 
 def norm_to_u8(x: float) -> int:
@@ -57,7 +62,11 @@ class Robot:
         self._last_cmd_t = 0.0
         self._last_send_t = 0.0
         self._last_ramp_t = time.monotonic()
-        self._height_mm: float | None = None
+        self._height_lock = threading.Lock()
+        self._height_mm: float | None = None      # gültiger Sollwert, auch von außen gesetzt (Web)
+        self._height_cmd_mm: float | None = None  # zuletzt von xgonav selbst geschrieben
+        self._height_text: str | None = None      # zuletzt gelesener Inhalt von /proc/.../height
+        self._height_down = False                 # lag seit dem letzten Aufstehen
         self._seen_down = False              # erst nach einer Liegephase zählt Balancieren als Aufstehen
         self._balancing_since: float | None = None
         self._level_on_t: float | None = None
@@ -96,17 +105,42 @@ class Robot:
         self._write("action", 254)
 
     def set_height(self, mm: float) -> None:
+        """Schreibt nur, wenn sich der eigene Sollwert ändert. Eine Höhe von außen (Web) bleibt so stehen,
+        bis das Verhalten eine andere will; die Geometrie folgt ihr über height_mm."""
         span = self.cfg.height_max_mm - self.cfg.height_min_mm
         limit_mm = self.cfg.height_min_mm + span * min(self.cfg.height_limit_u8, 255) / 255
         mm = max(self.cfg.height_min_mm, min(limit_mm, mm))
-        if self._height_mm is not None and abs(mm - self._height_mm) < 1.0:
+        with self._height_lock:
+            if self._height_cmd_mm is not None and abs(mm - self._height_cmd_mm) < 1.0:
+                return
+            u = int(round(255 * (mm - self.cfg.height_min_mm) / span))
+            self._write("height", u)
+            self._height_cmd_mm = mm
+            self._height_mm = self.height_u8_to_mm(u)
+
+    def height_u8_to_mm(self, u: int) -> float:
+        """Sollwert u8 -> Körperhöhe (mm), mit der Begrenzung der Firmware."""
+        u = max(FW_HEIGHT_MIN_U8, min(FW_HEIGHT_MAX_U8, u))
+        return self.cfg.height_min_mm + (self.cfg.height_max_mm - self.cfg.height_min_mm) * u / 255
+
+    def _height_tick(self) -> None:
+        """Nach dem Aufstehen gilt die Mittelstellung der Firmware, nicht der alte Wert in /proc. Das
+        Verhalten schreibt seine Höhe danach neu (sonst fuhr er mit 90 mm, während die Geometrie 85 annahm)."""
+        if not self.state.balancing:
+            self._height_down = True
             return
-        self._height_mm = mm
-        u = int(round(255 * (mm - self.cfg.height_min_mm) / span))
-        self._write("height", u)
+        if not self._height_down:
+            return
+        self._height_down = False
+        with self._height_lock:
+            self._height_mm = self.height_u8_to_mm(FW_HEIGHT_STANDUP_U8)
+            self._height_cmd_mm = None
+        log.info("Aufgestanden: Körperhöhe %.1f mm (Mittelstellung der Firmware)", self._height_mm)
 
     @property
     def height_mm(self) -> float | None:
+        """Gültiger Höhen-Sollwert (mm), None solange keiner bekannt ist. Das ist der Sollwert, nicht die
+        gemessene Beinstellung: Nach einer Änderung brauchen die Beine noch etwa eine Sekunde."""
         return self._height_mm
 
     @property
@@ -126,6 +160,7 @@ class Robot:
                 target = (0.0, 0.0)
             if now >= next_poll:
                 self._poll_state()
+                self._height_tick()
                 self._level_tick(now)
                 next_poll = now + 0.2
             if not self.state.balancing:
@@ -278,7 +313,31 @@ class ProcRobot(Robot):
             self.state.yaw_deg = float(yaw)
         self.state.battery = self._read_int("battery")
         self.state.buttons = self._read_int("buttons") or 0
+        self._poll_height()
         self.state.t = time.monotonic()
+
+    def _poll_height(self) -> None:
+        """Höhen-Sollwert zurücklesen: Das Web (api.php) schreibt ihn direkt, ohne xgonav. Am 2026-11-07
+        rechnete die Geometrie deshalb eine ganze Fahrt mit 128 statt 151 mm Kamerahöhe. Übernommen wird nur
+        ein neu geschriebener Wert: Nach dem Aufstehen ist der alte Inhalt veraltet (_height_tick)."""
+        with self._height_lock:                 # nicht zwischen Schreiben und Merken in set_height lesen
+            try:
+                with open(self._path("height")) as f:
+                    text = f.read().strip()
+            except OSError:
+                return
+            if not text.isdigit() or text == self._height_text:
+                return                          # leer, solange seit dem Laden des Treibers keiner schrieb
+            first = self._height_text is None
+            self._height_text = text
+            mm = self.height_u8_to_mm(int(text))
+            if self._height_mm is not None and abs(mm - self._height_mm) < 0.5:
+                return
+            self._height_mm = mm
+        if first:
+            log.info("Körperhöhe laut Treiber: %.1f mm (u8 %s)", mm, text)
+        elif self._height_cmd_mm is None or abs(mm - self._height_cmd_mm) >= 1.0:
+            log.warning("Körperhöhe von außen: %.1f mm (u8 %s), Geometrie folgt", mm, text)
 
 
 class SimRobot(Robot):

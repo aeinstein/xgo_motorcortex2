@@ -21,6 +21,9 @@
 #   0008 Positionshalten auch beim Drehen auf der Stelle (Radmitte), Aktion 241 an / 240 aus
 #   0009 Gyro-z-Nullpunkt laufend nachführen (Räder/Stillstand), Gier-Totband 2 -> 0,3 °/s, Register 0x0f
 #   0010 Positionshalten beim Drehen per Default an
+#   0011 Gier-Totband entfernt (Integration erst nach Startkalibrierung)
+#   0012 Roll-Trimm aus dem Nivellieren behalten (über Höhenänderungen)
+#   0013 Diagnose-Register 0x10 (Lagefusion Nick/Roll: Beschleunigungswinkel, Abzug 0005, Einfrieren 0006)
 # Braucht: git, python3 (venv), Internet beim ersten Lauf (PlatformIO lädt Toolchain ~1 GB).
 set -euo pipefail
 

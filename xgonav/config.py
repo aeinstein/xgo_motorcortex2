@@ -83,6 +83,22 @@ class ImuCfg:
 
 
 @dataclass
+class HorizonCfg:
+    """Horizont im Stand (xgonav/horizon.py, docs/calibration.md): IMU-Referenz je Aufstehen,
+    Horizontzeile je Körperhöhe. Aus: Nick wie bisher aus pitch_ref_deg + tilt_deg."""
+    enabled: bool = False
+    file: str = "horizont.json"    # Tabelle Körperhöhe -> Horizontzeile (vom Web geschrieben)
+    settle_s: float = 3.0          # nach Aufstehen/Höhenänderung warten
+    window_s: float = 3.0          # dann über so lange den IMU-Rohnick mitteln
+    max_std_deg: float = 0.5       # größere Streuung: Fenster verwerfen, neu messen
+    min_samples: int = 50          # IMU-Proben im Fenster (50 Hz -> 150 erwartet)
+    # Schnelle Änderungen aus dem Bild: Bildnick ab dem letzten IMU-Wert aufsummiert, spätestens nach
+    # bild_max_s wieder auf die IMU gesetzt (aufsummierter Bildnick driftet, 2026-11-07 ~0,13°/min).
+    # 0 = nur IMU.
+    bild_max_s: float = 0.5
+
+
+@dataclass
 class EgoCfg:
     proc_width: int = 320          # Auflösung für optischen Fluss
     max_features: int = 150
@@ -435,6 +451,7 @@ class Config:
     camera: CameraCfg = field(default_factory=CameraCfg)
     ego: EgoCfg = field(default_factory=EgoCfg)
     imu: ImuCfg = field(default_factory=ImuCfg)
+    horizon: HorizonCfg = field(default_factory=HorizonCfg)
     detector: DetectorCfg = field(default_factory=DetectorCfg)
     tracker: TrackerCfg = field(default_factory=TrackerCfg)
     freespace: FreespaceCfg = field(default_factory=FreespaceCfg)

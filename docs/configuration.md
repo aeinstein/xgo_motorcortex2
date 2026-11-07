@@ -52,7 +52,7 @@ Default = `config.py`. RiderPi = `deploy/config.example.toml` (blank = default).
 | `stall_timeout_s` | 0.5 | | s, userspace watchdog |
 | `kernel_watchdog_ms` | 1000 | 1000 | `settings/motion_timeout_ms` |
 | `height_min_mm` / `height_max_mm` | 60 / 120 | | scale mm → u8 (0..255) |
-| `height_limit_u8` | 205 | | highest setpoint (≈ 108 mm); see `limitations.md` |
+| `height_limit_u8` | 205 | | highest setpoint (≈ 108 mm; firmware clamps at 200 ≈ 107 mm); see `limitations.md` |
 
 ### `[camera]`
 | Key | Default | RiderPi | Note |
@@ -80,6 +80,16 @@ Default = `config.py`. RiderPi = `deploy/config.example.toml` (blank = default).
 | `pitch_ref_deg` | 0.0 | -0.5 [K] | raw IMU pitch at camera calibration (R-1.1.3: -2.7) |
 | `min_corr` | 0.6 | | sync accepted above |
 | `sync_range_ms` / `sync_step_ms` | 100 / 4 | | |
+
+### `[horizon]` (standing horizon, `docs/calibration.md` 2b)
+| Key | Default | Note |
+|---|---|---|
+| `enabled` | false | off: pitch from `pitch_ref_deg` + `tilt_deg` as before |
+| `file` | `horizont.json` | table body height → horizon row, written by the web |
+| `settle_s` / `window_s` | 3.0 / 3.0 | wait after stand-up/height change, then average |
+| `max_std_deg` | 0.5 | larger spread: window dropped |
+| `min_samples` | 50 | IMU samples per window (50 Hz → 150) |
+| `bild_max_s` | 0.5 | image pitch for fast changes, re-anchored to the IMU after this; 0 = IMU only |
 
 ### `[ego]`
 | Key | Default |

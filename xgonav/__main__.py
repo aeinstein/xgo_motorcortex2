@@ -154,7 +154,7 @@ def _raw_recorder(app: App, base: str) -> None:
                 "yaw_vis_deg": st.get("yaw_vis_deg"), "balancing": st.get("balancing"),
                 # Kurs/Pose für die Auswertung von explore/home: Räder, IMU (Firmware), Raumkarte
                 "mode": st.get("mode"), "yaw_deg": st.get("yaw_deg"), "yaw_src": st.get("yaw_src"),
-                "yaw_drv": st.get("yaw_drv"), "odom": st.get("odom"),
+                "yaw_drv": st.get("yaw_drv"), "odom": st.get("odom"), "height_mm": st.get("height_mm"),
                 "pose": (st.get("grid") or {}).get("pose"), "start": (st.get("grid") or {}).get("start"),
                 "tracks": [{"id": t.id, "cls": t.cls, "conf": round(t.conf, 3),
                             "box": [round(v, 1) for v in t.box]} for t in snap.tracks],

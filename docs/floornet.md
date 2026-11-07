@@ -22,6 +22,7 @@ Constraints from the kernel: no ReLU and no bias after the depthwise convolution
 | `tools/floornet/label.py` | labels from the room map: `kanten` over a run → occupancy grid → raycast into every frame |
 | `tools/floornet/handmap.py` | labels from hand lines: same raycast, map built only from hand lines |
 | `tools/floornet/beschriften.html`, `make_testset.py` | click tool for hand lines, runs from the file system, stores in the browser, exports JSON |
+| `tools/floornet/schnitt.py` | time window of a recording as its own run: `label.py` uses only the longest stretch without a pose jump (> 12 cm between frames) |
 | `tools/floornet/eval_hand.py` | metric against hand lines, in metres per distance band, bootstrap over frames |
 | `tools/floornet/net.py`, `train.py` | network, folding, training (GPU) |
 | `tools/floornet/export.py` | weights and test vector for the C++ core (`models/floornet.bin`, gitignored) |
@@ -80,3 +81,28 @@ Goal missed. Fewer false free is significant in all six measurements, false bloc
 | No effect | smoothing over 3 columns, brightness normalisation |
 
 The network in `models/floornet.bin` is trained on all hand lines, so it has no clean test yet. That needs new frames.
+
+## Shadow mode on the Rider
+
+Final network since 2026-11-06. CM4 against PyTorch on 30 real frames: at most 0.0003 rows apart; self-test 4.8e-06.
+
+| Measurement | Without network | With network |
+|---|---|---|
+| Idle, 24 fps: main loop mean / p95 | 8.1 / 14.1 ms | 9.8 / 15.8 ms |
+| Idle: YOLO, CPU of xgonav | 120 ms, 154 % | 136 ms, 178 % |
+| Idle: network | | 14.9 ms (moving average) |
+| `explore` with raw recording, median / p90 | loop 16.6 / 31.8 ms, YOLO 133 ms (`unten1`) | loop 23.1 / 52.6 ms, YOLO 171 ms, network 20.4 / 29.4 ms (`unten3`) |
+
+The drive rows come from different scenes and light; they are not a clean comparison. The plan goal p95 < 15 ms is missed while driving.
+
+## Clean test set (2026-11-07)
+
+Two daylight drives downstairs (`unten3`, `unten4`), never used in training. 220 frames for hand lines, ordered by body height:
+
+| Group | Frames | Runs |
+|---|---|---|
+| Body height 85 mm (camera 128 mm) | 111 | `unten3` before 170 s, `unten4` (+ `unten4b`..`e`) |
+| Body height 107 mm (web change during `unten3`, u8 203, firmware drives 200; camera ~150 mm) | 107 | `unten3` from 178 s, `unten3b`, `unten3c` |
+| Height unclear (first seconds of `explore`) | 2 | `unten3` |
+
+Runs split with `schnitt.py` at pose jumps (seconds from the first meta line): `unten3b` 396.4–end, `unten3c` 511–end, `unten4b` 117–174, `unten4c` 174–212.7, `unten4d` 212.7–255, `unten4e` 255–end. `eval_hand.py --hoehe pruefsatz3/hoehe.json` reports each group and converts rows to metres with the camera height of that group.

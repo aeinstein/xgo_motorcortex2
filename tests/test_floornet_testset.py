@@ -77,3 +77,27 @@ def test_laufangabe():
 
 def test_werkzeug_liegt_neben_dem_skript():
     assert (Path(M.__file__).with_name("beschriften.html")).exists()
+
+
+def test_schnitt_legt_zeitfenster_als_lauf_an(tmp_path):
+    import schnitt as S
+    src, dst = tmp_path / "fahrt", tmp_path / "fahrt_b"
+    src.mkdir()
+    with open(src / "meta.jsonl", "w", encoding="utf-8") as f:
+        for i in range(10):
+            (src / ("%06d.jpg" % i)).write_bytes(b"jpg%d" % i)
+            f.write(json.dumps({"idx": i, "t": 100.0 + i, "file": "%06d.jpg" % i}) + "\n")
+        f.write('{"idx": 10, "t": 1')                    # abgeschnittene letzte Zeile
+    assert S.schneide(str(src), str(dst), 3.0, 6.0) == 3
+    lines = [json.loads(x) for x in (dst / "meta.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert [m["idx"] for m in lines] == [3, 4, 5]
+    assert (dst / "000004.jpg").read_bytes() == b"jpg4" and not (dst / "000006.jpg").exists()
+    with pytest.raises(FileExistsError):
+        S.schneide(str(src), str(dst), 0.0, 2.0)          # nie überschreiben
+
+
+def test_hoehengruppen_und_kamerahoehe():
+    body, drop = E.body_heights({"85": ["a/1.jpg"], "107.1": ["a/2.jpg", "b/3.jpg"], "unsicher": ["a/4.jpg"]})
+    assert body == {"a/1.jpg": 85.0, "a/2.jpg": 107.1, "b/3.jpg": 107.1} and drop == {"a/4.jpg"}
+    ch = E.cam_heights(0.128, ["a/1.jpg", "a/2.jpg", "a/9.jpg"], body)
+    assert ch == pytest.approx([0.128, 0.128 + 0.0221, 0.128])

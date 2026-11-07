@@ -2,7 +2,8 @@
 /*
  * xgonav – Status und Befehle an die lokale xgonav-Schnittstelle weiterreichen.
  *
- *   GET  api.php?a=status
+ *   GET  api.php?a=status                     (Header X-Wlan: "rx_bytes tx_bytes dBm Qualität" von wlan0,
+ *                                              '-' wenn unbekannt; Raten rechnet der Browser)
  *   GET  api.php?a=sys&since=<seq>            (Verlauf: IMU-Proben nach seq, CPU je Kern roh, Temperatur, Akku;
  *                                              direkt aus /proc, läuft auch ohne xgonav)
  *   POST api.php?a=mode&name=follow&target=person
@@ -12,6 +13,10 @@
  *   POST api.php?a=map_lock&on=0|1            (Karte sperren: Fahrten ändern sie nicht mehr)
  *   GET  api.php?a=route                      (Route und Sperrzonen)
  *   POST api.php?a=route&pts=x,y;x,y&loop=0|1[&zones=x,y;x,y;x,y|...|&nozones=1]   (Meter im Karten-KS)
+ *   GET  api.php?a=horizon                    (Horizonttabelle und Standreferenz, [horizon] enabled)
+ *   POST api.php?a=horizon_edit&row=0..479|   (Linie zum Einstellen im Bild, leer = aus)
+ *   POST api.php?a=horizon_cal&row=0..479     (Zeile für die aktuelle Körperhöhe speichern, nur im Stand)
+ *   POST api.php?a=horizon_delete&h=<mm>      (Eintrag dieser Körperhöhe löschen)
  *   POST api.php?a=stop
  *   POST api.php?a=pipeline&on=0|1
  *   POST api.php?a=drive&v=-1..1&w=-1..1      (nur Modus manual, alle 0,2 s senden)
@@ -139,14 +144,38 @@ function sys(int $since): array
     ];
 }
 
+// WLAN für die Kopfleiste: Bytezähler und Empfang, drei kleine Dateien je Statusabfrage (kein Prozessstart,
+// xgonav rechnet nichts). Raten aus der Differenz zweier Abfragen im Browser.
+function wlan(): string
+{
+    $st = '/sys/class/net/wlan0/statistics/';
+    $rx = trim((string)@file_get_contents($st . 'rx_bytes'));
+    $tx = trim((string)@file_get_contents($st . 'tx_bytes'));
+    $dbm = $q = '-';
+    // /proc/net/wireless: "wlan0: 0000   44.  -66.  -256 ..." (Status, Qualität, Pegel dBm, Rauschen)
+    foreach (@file('/proc/net/wireless', FILE_IGNORE_NEW_LINES) ?: [] as $z) {
+        $f = preg_split('/\s+/', trim($z));
+        if (($f[0] ?? '') === 'wlan0:' && count($f) >= 4) {
+            $q = rtrim($f[2], '.');
+            $dbm = rtrim($f[3], '.');
+        }
+    }
+    $ok = fn(string $v) => preg_match('/^-?\d+$/', $v) ? $v : '-';
+    return implode(' ', [$ok($rx), $ok($tx), $ok($dbm), $ok($q)]);
+}
+
 $a = $_GET['a'] ?? '';
 $post = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST';
 
 if ($a === 'status') {
+    header('X-Wlan: ' . wlan());          // auch wenn xgonav nicht antwortet
     xgonav('GET', '/status');
 }
 if ($a === 'route' && !$post) {
     xgonav('GET', '/route');
+}
+if ($a === 'horizon' && !$post) {
+    xgonav('GET', '/horizon');
 }
 if ($a === 'sys') {
     antwort(200, json_encode(sys((int)($_GET['since'] ?? 0))));
@@ -189,6 +218,13 @@ switch ($a) {
             $q['nozones'] = '1';
         }
         xgonav('POST', '/route?' . http_build_query($q));
+    case 'horizon_edit':
+        $row = $_GET['row'] ?? '';
+        xgonav('POST', '/horizon/edit?row=' . ($row === '' ? '' : round(zahl('row', 0, 479.9), 1)));
+    case 'horizon_cal':
+        xgonav('POST', '/horizon/cal?row=' . round(zahl('row', 0, 479.9), 1));
+    case 'horizon_delete':
+        xgonav('POST', '/horizon/delete?h=' . round(zahl('h', 0, 300), 1));
     case 'stop':
         xgonav('POST', '/stop');
     case 'ausrichten':
