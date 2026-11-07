@@ -59,9 +59,16 @@ class CameraCfg:
     frame_clock_corr: float = 1.0
     exposure_us: int = 4000        # kurze Belichtung gegen Bewegungsunschärfe; 0 = Auto
     analogue_gain: float = 0.0     # feste Verstärkung 1..63,9 (OV5647); 0 = Auto
-    hfov_deg: float = 88.5         # RiderPi: Zollstock bei 100 mm Kamerahöhe (f = 328 px @ 640); RPi Cam v1 hätte 62,2
+    # RiderPi: aus Drehungen gegen den IMU-Kurs gemessen (2026-11-07, f = 310 px @ 640, 304–313 in drei
+    # Aufnahmen; Verzeichnung vernachlässigbar). Der Zollstock (88,5°) legt nur f·h fest. RPi Cam v1 hätte 62,2.
+    hfov_deg: float = 91.8
     # Geometrie für Entfernung per Bodenebene (KALIBRIEREN, siehe README)
-    mount_offset_mm: float = 45.0  # Kamerahöhe über Boden = Körperhöhe + Offset
+    mount_offset_mm: float = 45.0  # Kamerahöhe über Boden = Körperhöhe + Offset (nur ohne cam_h_u8)
+    # Kamerahöhe (Linsenmitte über Boden, mm) = a + b * Höhen-Sollwert u8, [a, b]. RiderPi 2026-11-07 im Stand
+    # gemessen: u8 106/150/200 -> 122/125/132,5 mm -> [109.4, 0.1126]. Die Körperhöhe in mm (60..120 über
+    # 0..255) steigt doppelt so schnell wie die echte; darum nicht Körperhöhe + Offset. Leer = mount_offset_mm.
+    # Bodenprobe 0,48/0,98 m: f·h 7,9 % zu groß, Rider-Wert daher x0,921 = [100.8, 0.1037] (Ursache offen).
+    cam_h_u8: list = field(default_factory=list)
     tilt_deg: float = 0.0          # >0 = Kamera schaut nach oben
     loop_file: bool = True         # Videodatei endlos abspielen (Replay)
     realtime_file: bool = True     # Videodatei in Echtzeit statt so schnell wie möglich

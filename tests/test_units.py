@@ -237,6 +237,20 @@ def test_ground_distance_roundtrip():
     assert g.ground_dist(200) is None
 
 
+def test_cam_h_from_height_u8():
+    """[camera] cam_h_u8: Kamerahöhe als Gerade über den Höhen-Sollwert (Messung 2026-11-07), leer = alt."""
+    from xgonav.robot import FW_HEIGHT_STANDUP_U8
+    cfg = Config()
+    cfg.camera.cam_h_u8 = [109.4, 0.1126]
+    g = CamGeometry.from_cfg(cfg)
+    for u, soll in ((106, 121.34), (150, 126.29), (200, 131.92), (FW_HEIGHT_STANDUP_U8, 123.81)):
+        g.body_height_mm = cfg.robot.height_min_mm + (cfg.robot.height_max_mm - cfg.robot.height_min_mm) * u / 255
+        assert g.cam_h * 1000 == pytest.approx(soll, abs=0.01)
+    cfg.camera.cam_h_u8 = []
+    g = CamGeometry.from_cfg(cfg, 85.0)
+    assert g.cam_h * 1000 == pytest.approx(85.0 + cfg.camera.mount_offset_mm)
+
+
 def test_object_dist_ignores_clipped_edges():
     g = CamGeometry(640, 480, 62.2, 0.0, 45.0, 85.0)
     d = 1.5

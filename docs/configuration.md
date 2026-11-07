@@ -64,8 +64,9 @@ Default = `config.py`. RiderPi = `deploy/config.example.toml` (blank = default).
 | `scaler_crop` | `[]` | `[16, 0, 2560, 1920]` | keeps FOV/tilt/shading of 640x480 mode |
 | `exposure_us` | 4000 | 20000 | 0 = auto; runtime-adjustable from web |
 | `analogue_gain` | 0.0 | 16.0 | 1..63.9, 0 = auto (auto max 8) |
-| `hfov_deg` | 88.5 | 88.5 [K] | |
-| `mount_offset_mm` | 45 | 43 [K] | camera height = body height + offset |
+| `hfov_deg` | 91.8 | 91.8 [K] | f = 310 px @ 640, from turns vs IMU heading (calibration.md §0) |
+| `mount_offset_mm` | 45 | 43 [K] | camera height = body height + offset; only used without `cam_h_u8` |
+| `cam_h_u8` | `[]` | `[100.8, 0.1037]` [K] | camera height = a + b·u8 (height set-point): measured lens centre while balancing `[109.4, 0.1126]` × 0.921 from the floor check (calibration.md §2) |
 | `tilt_deg` | 0.0 | 1.39 [K] | pair with `imu.pitch_ref_deg` |
 | `frame_clock_corr` | 1.0 | | 640x480 mode: ~1.061 |
 | `loop_file` / `realtime_file` | true / true | | video replay |

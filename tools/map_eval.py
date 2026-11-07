@@ -55,8 +55,7 @@ def record(a) -> None:
 
 def make_grid(cfg: Config, body_h: float) -> GridMap:
     c = cfg.camera
-    geo = CamGeometry(c.width, c.height, c.hfov_deg, c.tilt_deg, c.mount_offset_mm, cfg.behavior.height_cruise_mm)
-    geo.body_height_mm = body_h
+    geo = CamGeometry.from_cfg(cfg, body_h)
     fw = cfg.freespace.width
     return GridMap(cfg.grid, geo, fw, int(round(c.height * fw / c.width)))
 

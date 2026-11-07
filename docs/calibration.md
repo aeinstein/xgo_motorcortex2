@@ -13,10 +13,12 @@ python tools/nudge.py move <s>       # open loop, + = forward
 
 | Item | Value |
 |---|---|
-| Default | 88.5° (RiderPi); RPi camera v1 would be 62.2° |
-| RiderPi measured | 88.5° (f = 328.3 px at 640 px) from folding-rule measurement (section 2a); ±1 mm camera height ≈ ±0.55°. Earlier checkerboard on a display (297–316 px) was disturbed by reflections |
-| Method | board of known width at known distance, or checkerboard + `cv2.calibrateCamera` |
-| Wrong FOV effect | `solve` returned 54 mm camera height instead of measured 128 mm |
+| Default | 91.8° (RiderPi, f = 310 px at 640 px); RPi camera v1 would be 62.2° |
+| RiderPi measured (2026-11-07) | turns on the spot against IMU heading (IMU = 99.6–99.8 % of true angle over full turns): rotation fit with fixed IMU yaw 304–310 px, ORB pairs 25–45° apart 310–313 px in three recordings → 91.8°. Lens distortion negligible (k1 −0.010…+0.003, ≤ 2 px at the edge, ~4 px in the corner) |
+| Earlier values | 88.5° (f 328.3 px) from the folding rule (section 2a) with measured h = 100 mm: that method only fixes f·h, the 5.6 % gap means h was ~106 mm. Checkerboard on a display gave 297–316 px |
+| Wrong FOV effect | all angles from the image (ego yaw/pitch, tracker shift, object bearing) scale with f: with 88.5° they were ~5 % too small |
+| Floor distances | depend on f·h: after changing f, re-measure camera height (`mount_offset_mm`), else distances shrink ~6 % |
+| Method | turn ≥ 360° on the spot and compare image rotation with IMU heading, or checkerboard + `cv2.calibrateCamera` |
 
 ## 1. Turn direction and scale — `[robot] vyaw_limit_dps`
 
@@ -29,7 +31,12 @@ Checks sign, prints `vyaw_limit_dps`. Measured via ego-motion → needs step 0.
 
 | Item | Value |
 |---|---|
-| Height, direct measurement | lens centre above floor; RiderPi: 128 mm at body height 85 mm → `mount_offset_mm = 43` |
+| Height, direct measurement | lens centre above floor while balancing, at two or more height set-points → `cam_h_u8 = [a, b]` (mm = a + b·u8) |
+| RiderPi (2026-11-07) | u8 106 / 150 / 200: wheel axle 31 mm, leg pivot 87 / 91 / 98 mm, lens centre 122 / 125 / 132–133 mm → `cam_h_u8 = [109.4, 0.1126]` (residuals ≤ 1.3 mm). Camera sits rigidly 35 mm above the leg pivot |
+| Why not body height + offset | the body height in mm (60–120 over u8 0–255) rises 22 mm from u8 106 to 200, the real body only 11 mm; the old `mount_offset_mm = 43` (128 mm at u8 106) put the camera 18 mm too high at u8 200 |
+| Floor check (2026-11-07) | tape front edges 0.48 / 0.98 m from wheel contact, raw frames at u8 106 and 200, camera 36 mm ahead of contact (CAD): horizon off −0.05° / +0.08°, f·h too large by factor 1/0.926 / 1/0.921 (distances ~7.5 % too far) |
+| RiderPi value | `cam_h_u8 = [100.8, 0.1037]` = measured × 0.921 (u8 200, sharper edges). Empirical: cause open (vertical focal length vs. height); check: folding rule upright on a wall at known distance → px per cm |
+| CAD check | `docs/Rider-Pi.STEP` with the leg linkage of `tools/step_to_model.py`: lens 122.6 mm at u8 106 when the floor is taken at the tyre (radius 31.5 mm), rise 12.4 mm to u8 200 |
 | Tilt | from wall base line |
 | RiderPi | `tilt_deg = 1.39` at raw IMU pitch -2.7° (R-1.1.3, board + 2 wall measurements, spread 0.25°) |
 | R-1.1.6 | `pitch_ref_deg = -0.5`, set visually on the horizon line; wall measurement open |
@@ -53,7 +60,7 @@ python tools/calibrate.py solve <row1>:<m1> <row2>:<m2>
 | Model | row(D) = cy + f·tan(atan(h / (D + 8 mm + e)) − τ), cy = 240; fit e, τ and f (with measured h) |
 | Degeneracy | rows alone only fix f·h → measure camera height h directly |
 | RiderPi | h = 100 mm (measured), rows 338.2 / 303.3 / 292.3 / 286.3 → f = 328.3 px (hfov 88.5°), horizon row 269.8 = 5.18° up at IMU pitch −4.43°, residuals ≤ 0.24 px |
-| Result | `hfov_deg = 88.5`, `tilt_deg = 5.18`, `pitch_ref_deg = -4.43`; `mount_offset_mm` needs camera height while balancing at known body height (still 43) |
+| Result | `hfov_deg = 88.5`, `tilt_deg = 5.18`, `pitch_ref_deg = -4.43`; `mount_offset_mm` needs camera height while balancing at known body height (still 43). Superseded for f by section 0 (91.8°); f·h from this fit stays valid |
 
 ## 2b. Standing horizon per body height — `[horizon]` (2026-11-07, not yet run on the Rider)
 

@@ -23,6 +23,19 @@ class CamGeometry:
     mount_offset_mm: float = 45.0
     body_height_mm: float = 85.0
     pitch_sigma_deg: float = 1.5   # unbeobachtbares langsames Nicken (Neigung beim Beschleunigen)
+    # Kamerahöhe = a + b * u8 (mm) über den Höhen-Sollwert der Firmware; leer = Körperhöhe + mount_offset_mm.
+    # body_min/max_mm: Skala Körperhöhe (mm) <-> u8 wie robot.height_u8_to_mm.
+    cam_h_u8: tuple = ()
+    body_min_mm: float = 60.0
+    body_max_mm: float = 120.0
+
+    @classmethod
+    def from_cfg(cls, cfg, body_height_mm: float | None = None) -> "CamGeometry":
+        c = cfg.camera
+        return cls(c.width, c.height, c.hfov_deg, c.tilt_deg, c.mount_offset_mm,
+                   cfg.behavior.height_cruise_mm if body_height_mm is None else body_height_mm,
+                   cam_h_u8=tuple(c.cam_h_u8), body_min_mm=cfg.robot.height_min_mm,
+                   body_max_mm=cfg.robot.height_max_mm)
 
     @property
     def f(self) -> float:
@@ -30,6 +43,9 @@ class CamGeometry:
 
     @property
     def cam_h(self) -> float:
+        if self.cam_h_u8:
+            u = 255.0 * (self.body_height_mm - self.body_min_mm) / (self.body_max_mm - self.body_min_mm)
+            return (self.cam_h_u8[0] + self.cam_h_u8[1] * u) / 1000.0
         return (self.body_height_mm + self.mount_offset_mm) / 1000.0
 
     def horizon_row(self, pitch_dev: float = 0.0) -> float:

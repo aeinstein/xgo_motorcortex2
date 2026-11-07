@@ -49,8 +49,7 @@ def replay(d: str, cfg: Config, objects: bool = True, person_min: float = 1.2, v
            quiet: bool = False, exclude: bool = True) -> dict:
     meta = [json.loads(line) for line in open(os.path.join(d, "meta.jsonl"))]
     W, H = cfg.camera.width, cfg.camera.height
-    geo = CamGeometry(W, H, cfg.camera.hfov_deg, cfg.camera.tilt_deg, cfg.camera.mount_offset_mm,
-                      cfg.behavior.height_cruise_mm)
+    geo = CamGeometry.from_cfg(cfg)
     fse = FreeSpaceEstimator(cfg.freespace, (W, H), geo)
     lmap = LocalMap(geo, fse.W, fse.H, max_age_s=cfg.map.max_age_s, confirm=cfg.map.confirm,
                     confirm_radius_m=cfg.map.confirm_radius_m)

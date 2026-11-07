@@ -320,8 +320,7 @@ def load_cfg(path: str | None, sets: list[str]) -> Config:
 
 
 def make_geo(cfg: Config) -> CamGeometry:
-    return CamGeometry(cfg.camera.width, cfg.camera.height, cfg.camera.hfov_deg, cfg.camera.tilt_deg,
-                       cfg.camera.mount_offset_mm, cfg.behavior.height_cruise_mm)
+    return CamGeometry.from_cfg(cfg)
 
 
 def process(job: tuple) -> dict:
