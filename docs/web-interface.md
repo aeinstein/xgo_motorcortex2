@@ -36,7 +36,7 @@ works without xgonav.
 | Chart | Data | Window | Storage |
 |---|---|---|---|
 | CPU | load per core (%), from `/proc/stat` deltas; temperature + loadavg in heading | 10 min | memory |
-| WLAN | ↓/↑ kB/s from `wlan0` byte-counter deltas, signal dBm (−90…−30), quality /70 in heading; from header `X-Wlan` of each status poll | 10 min | memory |
+| WLAN | ↓/↑ kB/s from `wlan0` byte-counter deltas, signal dBm (−90…−30), quality /70 in heading; from `a=sys` field `wlan` (1 Hz, no gaps in a hidden tab) and header `X-Wlan` of each status poll (pill; `setInterval` is throttled to 1/min in hidden tabs) | 10 min | memory |
 | Akku | battery % (from status, or `a=sys`), ≤ 1 point / 30 s | 120 min | `localStorage` `xgonav.akku`; button Leeren |
 
 - Battery is recorded while the page is open, also with the card collapsed. A second open tab merges into the same key.

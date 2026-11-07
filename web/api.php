@@ -141,6 +141,7 @@ function sys(int $since): array
         'height' => is_numeric($hoehe) ? (int)$hoehe : null,
         'roll' => is_numeric($roll) ? (int)$roll : null,
         'state' => is_numeric($zustand) ? (int)$zustand : null,
+        'wlan' => wlan(),                                   // wie Header X-Wlan; Verlauf lückenlos wie die CPU
     ];
 }
 

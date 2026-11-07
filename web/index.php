@@ -1385,6 +1385,8 @@ async function sysHolen() {
         $('v-temp').textContent = (s.temp_c != null ? s.temp_c.toFixed(1) + ' °C' : '') +
                                   (s.load != null ? ' · Last ' + s.load.toFixed(2) : '');
         akkuMerken(s.battery);
+        wlanMerken(s.wlan);   // Verlauf aus derselben Abfrage wie die CPU: setInterval(status) drosselt
+                              // der Browser im Hintergrund auf 1×/min, diese Kette nur auf 1×/s
         verlaufZeichnen();
       }
     }
