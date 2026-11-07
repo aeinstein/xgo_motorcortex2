@@ -245,16 +245,20 @@ def cmd_dreh(a) -> int:
         y0 = status().get("yaw_deg")
         if y0 is None:
             raise RuntimeError("kein yaw_deg in /status (Bildverarbeitung an?)")
-        ziel = y0 + a.grad
-        print("vorher:", _pose(), "-> Ziel %.1f°" % ziel)
-        t_end = time.monotonic() + a.timeout
+        print("vorher:", _pose(), "-> %+.1f° (Ziel %.1f°)" % (a.grad, y0 + a.grad))
+        # Gedrehten Winkel aufsummieren (je Schritt auf ±180° umgerechnet), damit auch ±360° und mehr gehen,
+        # egal ob yaw_deg durchläuft oder bei ±180° umspringt.
+        gedreht, y_alt = 0.0, y0
+        t_end = time.monotonic() + (a.timeout if a.timeout is not None else 10.0 + abs(a.grad) / 20.0)
         while True:
             if not balanciert():
                 raise RuntimeError("liegt (state %s)" % proc("state"))
             if time.monotonic() > t_end:
                 raise RuntimeError("Zeit abgelaufen")
             y = status().get("yaw_deg")
-            err = (ziel - y + 180.0) % 360.0 - 180.0
+            gedreht += (y - y_alt + 180.0) % 360.0 - 180.0
+            y_alt = y
+            err = a.grad - gedreht
             if abs(err) <= a.tol:
                 break
             w = math.copysign(min(a.w, max(0.08, 0.01 * abs(err))), err)
@@ -266,7 +270,8 @@ def cmd_dreh(a) -> int:
         return 1
     _halt()
     time.sleep(1.0)                 # Rider dreht nach dem Stopp etwas nach
-    print("nachher:", _pose())
+    gedreht += (status().get("yaw_deg") - y_alt + 180.0) % 360.0 - 180.0
+    print("nachher:", _pose(), "| gedreht %+.1f° (Soll %+.1f°)" % (gedreht, a.grad))
     return 0
 
 
@@ -312,7 +317,8 @@ def main() -> int:
     p.add_argument("sekunden", type=float); p.set_defaults(f=cmd_fahr)
     p = sp.add_parser("dreh"); p.add_argument("grad", type=float)
     p.add_argument("--w", type=float, default=0.20, help="höchste Drehrate (normiert)")
-    p.add_argument("--tol", type=float, default=3.0); p.add_argument("--timeout", type=float, default=15.0)
+    p.add_argument("--tol", type=float, default=3.0)
+    p.add_argument("--timeout", type=float, default=None, help="Standard: 10 s + 1 s je 20°")
     p.set_defaults(f=cmd_dreh)
     for n, f in (("absetzen", cmd_absetzen), ("ende", cmd_ende)):
         p = sp.add_parser(n); p.add_argument("--timeout", type=float, default=5.0); p.set_defaults(f=f)

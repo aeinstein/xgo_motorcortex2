@@ -46,8 +46,9 @@ $R python3 /root/rider_nav.py zustand
    - `fahr V W SEK` – normiert, v > 0 vor, w > 0 links; schickt `/drive` mit 10 Hz (manual hält nur 0,5 s),
      endet mit Stillstand + idle. Richtwerte: v 0,08 ≈ 10 cm/s, v 0,12 ≈ 26 cm/s (nichtlinear); xgonav begrenzt auf
      `max_v`/`max_w` der Konfig (Beispiel 0,15/0,30). Rückwärts wirkt mit `reverse_gain`.
-   - `dreh GRAD` – + = links, regelt auf `yaw_deg` aus `/status` (Quelle `yaw_src`, Räder bevorzugt),
-     Toleranz 3°, er dreht nach dem Stopp etwas nach.
+   - `dreh GRAD` – + = links, beliebig groß (auch `360`, `-360`, `720`): summiert die Kursänderung aus `yaw_deg`
+     in `/status` auf (Quelle `yaw_src`, Räder bevorzugt), Toleranz 3°, Zeitlimit 10 s + 1 s je 20°. Er dreht nach
+     dem Stopp etwas nach (gemessen bis ~5°); für „wieder auf Startkurs“ danach mit kleinem `dreh` korrigieren.
    - Handsteuerung prüft **kein** Bodenmodell und keine Bahn: Strecken klein halten, Richtung vorher ansagen.
    - Abbruch des Nutzers („stopp“, Tool abgelehnt): sofort `$R python3 /root/rider_nav.py absetzen` bzw. bei
      abgebrochenem SSH prüfen, ob `rider_nav.py` am Rider noch läuft (`pkill -f "[r]ider_nav.py"`, danach `/stop`).
