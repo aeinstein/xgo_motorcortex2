@@ -16,7 +16,7 @@ Status JSON: `odom.src` = `räder` | `befehl`, `odom.m` = total distance.
 
 | Item | Value |
 |---|---|
-| Frame | robot (x forward, y left, m) |
+| Frame | robot (x forward, y left, m), origin = wheel axle; floor points shifted forward by `camera.cam_fwd_mm` |
 | Input | floor-boundary points from the free-space estimator |
 | Motion | heading from ego-motion, distance from odometry |
 | Lifetime | `map.max_age_s` = 4 s |
@@ -30,7 +30,7 @@ Status JSON: `odom.src` = `räder` | `befehl`, `odom.m` = total distance.
 | Item | Value |
 |---|---|
 | Type | occupancy grid, log-odds |
-| Frame | world, origin = start pose, x forward, y left at start |
+| Frame | world, origin = start pose (wheel axle), x forward, y left at start; rays start `camera.cam_fwd_mm` ahead of the pose |
 | Size | 16 m × 16 m, 0.05 m cells, start in the centre |
 | Rays | every 2nd of 160 floor-model columns |
 | Free | up to boundary − (0.10 m + 0.05 × d²); `l_free` −0.4; occupied cells reduced only ×0.5 |

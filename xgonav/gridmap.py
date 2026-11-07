@@ -1,7 +1,7 @@
 """Belegungskarte des Raums (Occupancy Grid) aus Bodenmodell und Odometrie.
 
 Anders als die Kurzzeit-Merkkarte (localmap.py, Roboter-KS, vergisst nach Sekunden) ist das
-eine Karte im festen Welt-KS: Ursprung = Startpose, x vorn, y links (beim Start), Meter.
+eine Karte im festen Welt-KS: Ursprung = Startpose (Radachse), x vorn, y links (beim Start), Meter.
 Die eigene Pose wird mitgeführt: Strecke aus der Rad-Odometrie (bzw. Fahrbefehl), Drehung aus
 der Ego-Motion – dieselben Größen wie für die Merkkarte. Ohne Korrektur (Marker, Stufe 3)
 driftet sie mit der Zeit.
@@ -267,6 +267,9 @@ class GridMap:
         ok = np.isfinite(free_len) & (free_len > start)
         with self._lock:
             px, py, pth = pose if pose is not None else (self.x, self.y, self.th)
+            # Pose = Radachse; die Strahlen beginnen am Kamerafußpunkt cam_fwd davor
+            off = self.geo.cam_fwd
+            px, py = px + off * math.cos(pth), py + off * math.sin(pth)
             ang = pth + bear
             ca, sa = np.cos(ang), np.sin(ang)
             lo = self.lo

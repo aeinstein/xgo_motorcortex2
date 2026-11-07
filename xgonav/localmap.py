@@ -1,4 +1,4 @@
-"""Kurzzeit-Hinderniskarte im Roboter-KS + Bahnprüfung.
+"""Kurzzeit-Hinderniskarte im Roboter-KS (Ursprung Radachse) + Bahnprüfung.
 
 Die Kamera sieht nur ±31°. Beim Drehen um eine Ecke verschwindet das
 Hindernis aus dem Bild, ist aber noch da. Deshalb werden die Bodengrenzen aus
@@ -68,7 +68,8 @@ class LocalMap:
             i, d = idx[ok], d[ok]
             x_full = (i + 0.5) * sc
             y = d * (self.geo.W / 2 - x_full) / self.geo.f       # d * tan(Peilung)
-            new_pts = self._thin(np.column_stack([d, y]))
+            # Ursprung = Radachse: d zählt ab Kamerafußpunkt, der cam_fwd davor liegt
+            new_pts = self._thin(np.column_stack([d + self.geo.cam_fwd, y]))
             self.pts = np.vstack([self.pts, new_pts])
             self.t = np.concatenate([self.t, np.full(len(new_pts), now)])
             self.obs = np.concatenate([self.obs, np.full(len(new_pts), self._obs_n, np.int64)])
@@ -94,7 +95,8 @@ class LocalMap:
         rng = np.where(free, self.max_range, np.minimum(dist, self.max_range))
         rng[~known] = np.nan
         near = self.geo.ground_dist(self.geo.H - 1, pitch_dev) or 0.0
-        x, y = self.pts[:, 0], self.pts[:, 1]
+        # Spalte und Entfernungen gelten ab Kamera, die Punkte ab Radachse
+        x, y = self.pts[:, 0] - self.geo.cam_fwd, self.pts[:, 1]
         ahead = x > 1e-3
         col = np.full(len(x), -1)
         xf = self.geo.W / 2 - self.geo.f * y[ahead] / x[ahead]

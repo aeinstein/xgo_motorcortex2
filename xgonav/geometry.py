@@ -28,6 +28,8 @@ class CamGeometry:
     cam_h_u8: tuple = ()
     body_min_mm: float = 60.0
     body_max_mm: float = 120.0
+    # Linse vor der Radachse (mm): Karten haben ihren Ursprung an der Achse, ground_dist misst ab Kamerafußpunkt
+    cam_fwd_mm: float = 0.0
 
     @classmethod
     def from_cfg(cls, cfg, body_height_mm: float | None = None) -> "CamGeometry":
@@ -35,7 +37,12 @@ class CamGeometry:
         return cls(c.width, c.height, c.hfov_deg, c.tilt_deg, c.mount_offset_mm,
                    cfg.behavior.height_cruise_mm if body_height_mm is None else body_height_mm,
                    cam_h_u8=tuple(c.cam_h_u8), body_min_mm=cfg.robot.height_min_mm,
-                   body_max_mm=cfg.robot.height_max_mm)
+                   body_max_mm=cfg.robot.height_max_mm, cam_fwd_mm=c.cam_fwd_mm)
+
+    @property
+    def cam_fwd(self) -> float:
+        """Kamerafußpunkt vor der Radachse (m)."""
+        return self.cam_fwd_mm / 1000.0
 
     @property
     def f(self) -> float:

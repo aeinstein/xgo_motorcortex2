@@ -1194,6 +1194,70 @@ def test_gridmap_range_hits_and_margin():
     assert b.occupied_cells()[:, 0].mean() > plain + 0.05
 
 
+def test_localmap_origin_is_wheel_axle():
+    """[camera] cam_fwd_mm: Kamera sitzt vor der Radachse; Punkte liegen um den Versatz weiter vorn,
+    Freiräumen trifft dieselben Punkte wie ohne Versatz."""
+    from xgonav.freespace import FreeSpace
+    from xgonav.localmap import LocalMap
+    g0 = CamGeometry(640, 480, 91.0, 1.39, 43.0, 85.0)
+    g36 = CamGeometry(640, 480, 91.0, 1.39, 43.0, 85.0, cam_fwd_mm=36.0)
+    wall = _wall_fs(g0, 0.5)
+    maps = []
+    for g in (g0, g36):
+        lm = LocalMap(g, 160, 120, confirm=1)
+        lm.add_freespace(wall, 0.0, 0.0)
+        maps.append(lm)
+    a, b = maps
+    assert len(a.pts) == len(b.pts) > 10
+    assert np.allclose(b.pts[:, 0] - a.pts[:, 0], 0.036) and np.allclose(b.pts[:, 1], a.pts[:, 1])
+    # Drehung auf der Stelle um 90° links: Punkt geradeaus wandert nach rechts, Abstand zur Achse bleibt
+    i = int(np.argmin(np.abs(b.pts[:, 1])))
+    x0, y0 = b.pts[i]
+    b.move(0.0, math.radians(90))
+    assert b.pts[i] == pytest.approx([y0, -x0], abs=1e-9)          # um die Achse, Abstand ab Achse bleibt
+    b.move(0.0, math.radians(-90))
+    # Freiräumen: ferne Wand löscht die Punkte bei 0,5 m, Wand bei 0,6 m nicht (Toleranz) – mit und ohne Versatz
+    for far, keep in ((1.2, False), (0.6, True)):
+        n = []
+        for lm in maps:
+            c = LocalMap(lm.geo, 160, 120, confirm=1)
+            c.pts, c.t, c.obs = lm.pts.copy(), lm.t.copy(), lm.obs.copy()
+            c.add_freespace(_wall_fs(g0, far), 0.1, 0.0)
+            n.append(int((c.t == 0.0).sum()))                # alte Punkte (neue haben t 0,1)
+        assert n[0] == n[1]
+        assert n[0] > len(a.pts) // 2 if keep else n[0] <= 2      # Randspalten werden nie geräumt
+
+
+def test_gridmap_rays_start_ahead_of_axle():
+    """Raumkarte: Pose = Radachse, Strahlen beginnen cam_fwd davor (gleich wie verschobene Pose ohne Versatz)."""
+    from xgonav.gridmap import GridMap
+    cfg = Config()
+    g0 = CamGeometry(640, 480, 91.0, 1.39, 43.0, 85.0)
+    g36 = CamGeometry(640, 480, 91.0, 1.39, 43.0, 85.0, cam_fwd_mm=36.0)
+    fs = _wall_fs(g0, 1.0)
+    th = math.radians(30)
+    a, b = GridMap(cfg.grid, g36, 160, 120), GridMap(cfg.grid, g0, 160, 120)
+    for _ in range(3):
+        a.add_freespace(fs, 0.0, (0.2, -0.1, th))
+        b.add_freespace(fs, 0.0, (0.2 + 0.036 * math.cos(th), -0.1 + 0.036 * math.sin(th), th))
+    assert np.array_equal(a.lo, b.lo) and len(a.occupied_cells()) > 0
+
+
+def test_sim_camera_ahead_of_axle():
+    """Simulator: mit cam_fwd_mm rendert die Kamera vor der Radachse (Achse = Pose, Kollision, Räder)."""
+    import dataclasses
+    cfg = Config()
+    imgs = []
+    for off, x in ((36.0, 1.0), (0.0, 1.036)):
+        cam = dataclasses.replace(cfg.camera, cam_fwd_mm=off)
+        r = SimRobot(cfg.robot)
+        r._height_mm = 85
+        w = SimWorld(cam, r, None, start=(x, 1.5, 0.0), shake=0.0)
+        w._integrate(0.0, 0.05)
+        imgs.append(w._render(0.0, 0.05)[0])
+    assert np.array_equal(imgs[0], imgs[1])
+
+
 def test_gridmap_driven_path_is_free():
     from xgonav.gridmap import GridMap
     cfg = Config()

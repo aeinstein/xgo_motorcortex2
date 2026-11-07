@@ -69,7 +69,11 @@ class CameraCfg:
     # 0..255) steigt doppelt so schnell wie die echte; darum nicht Körperhöhe + Offset. Leer = mount_offset_mm.
     # Bodenprobe 0,48/0,98 m: f·h 7,9 % zu groß, Rider-Wert daher x0,921 = [100.8, 0.1037] (Ursache offen).
     cam_h_u8: list = field(default_factory=list)
-    tilt_deg: float = 0.0          # >0 = Kamera schaut nach oben
+    # Linsenmitte vor der Radachse (mm). Ursprung von Merkkarte und Raumkarte ist die Radachse (dort dreht der
+    # Rider, dort zählen Räder und Sicherheitsradius); Bodenpunkte werden um diesen Versatz nach vorn eingetragen.
+    # RiderPi: CAD 36,9, Bodenprobe 34/41 -> 36. 0 = Kamera auf der Achse (Simulator rendert dann wie bisher).
+    cam_fwd_mm: float = 0.0
+    tilt_deg: float = 0.0        # >0 = Kamera schaut nach oben
     loop_file: bool = True         # Videodatei endlos abspielen (Replay)
     realtime_file: bool = True     # Videodatei in Echtzeit statt so schnell wie möglich
 

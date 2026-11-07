@@ -223,10 +223,11 @@ def cast_labels(gm: GridMap, geo: CamGeometry, x, y, th, pitch, ncols: int = NCO
     rows = np.zeros((N, ncols), np.float32)
     kinds = np.zeros((N, ncols), np.uint8)
     lo = gm.lo
+    off = geo.cam_fwd                       # Pose = Radachse, Strahlen ab Kamerafußpunkt (wie GridMap)
     for i in range(N):
         ang = th[i] + bear
-        wx = x[i] + np.outer(np.cos(ang), s)
-        wy = y[i] + np.outer(np.sin(ang), s)
+        wx = x[i] + off * math.cos(th[i]) + np.outer(np.cos(ang), s)
+        wy = y[i] + off * math.sin(th[i]) + np.outer(np.sin(ang), s)
         r, c = gm.cell(wx, wy)
         inside = (r >= 0) & (r < gm.n) & (c >= 0) & (c < gm.n)
         val = np.zeros(r.shape, np.float32)

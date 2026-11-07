@@ -32,6 +32,7 @@ analogue_gain = 16.0     # OV5647 1..63,9; Automatik nur bis 8; über ~8x kein b
 mount_offset_mm = 43.0   # nur ohne cam_h_u8: Kamerahöhe = Körperhöhe + Offset
 cam_h_u8 = [100.8, 0.1037]   # [K] Kamerahöhe = a + b·u8; gemessen [109.4, 0.1126] (u8 106/150/200 -> 122/125/132,5 mm),
                              # x0,921 aus Bodenprobe 0,48/0,98 m (2026-11-07): f·h war 7,9 % zu groß, Ursache offen
+cam_fwd_mm = 36.0        # [K] Linse vor der Radachse (CAD 36,9; Bodenprobe 34/41); Kartenursprung = Radachse
 tilt_deg = 5.18          # [K] Zollstock 2026-11-04, gilt zusammen mit imu.pitch_ref_deg
 
 [imu]

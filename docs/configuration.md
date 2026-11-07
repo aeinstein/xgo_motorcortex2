@@ -67,6 +67,7 @@ Default = `config.py`. RiderPi = `deploy/config.example.toml` (blank = default).
 | `hfov_deg` | 91.8 | 91.8 [K] | f = 310 px @ 640, from turns vs IMU heading (calibration.md §0) |
 | `mount_offset_mm` | 45 | 43 [K] | camera height = body height + offset; only used without `cam_h_u8` |
 | `cam_h_u8` | `[]` | `[100.8, 0.1037]` [K] | camera height = a + b·u8 (height set-point): measured lens centre while balancing `[109.4, 0.1126]` × 0.921 from the floor check (calibration.md §2) |
+| `cam_fwd_mm` | 0 | 36 [K] | lens ahead of the wheel axle; map origin is the axle, floor points are entered this far ahead (CAD 36.9, floor check 34/41, pattern 25–35). Simulator renders the camera there too |
 | `tilt_deg` | 0.0 | 1.39 [K] | pair with `imu.pitch_ref_deg` |
 | `frame_clock_corr` | 1.0 | | 640x480 mode: ~1.061 |
 | `loop_file` / `realtime_file` | true / true | | video replay |

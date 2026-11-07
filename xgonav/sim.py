@@ -289,7 +289,11 @@ class SimWorld(FrameSource):
         left = np.array([-math.sin(th), math.cos(th)])
         dirs = fwd[None] + lat[:, None] * left[None]  # Strahlen (nicht normiert, Tiefe=1)
         # Strahl-Segment-Schnitt
-        p = np.array([self.x, self.y])
+        # Kamera sitzt cam_fwd_mm vor der Radachse (self.x/y = Achse, dort dreht und kollidiert der Rider)
+        off = getattr(self.cfg, "cam_fwd_mm", 0.0) / 1000.0
+        cx, cy = self.x + off * math.cos(self.th), self.y + off * math.sin(self.th)
+        self._cam_xy = (cx, cy)
+        p = np.array([cx, cy])
         a, b = self.segs[:, 0:2], self.segs[:, 2:4]
         e = b - a
         denom = dirs[:, None, 0] * e[None, :, 1] - dirs[:, None, 1] * e[None, :, 0]
@@ -329,8 +333,8 @@ class SimWorld(FrameSource):
         floor = zf[:, None] < depth[None, :]
         if floor.any():
             Z = np.broadcast_to(np.where(np.isfinite(zf), zf, 0.0)[:, None], (H, W))
-            wx = self.x + Z * (fwd[0] + lat[None, :] * left[0])
-            wy = self.y + Z * (fwd[1] + lat[None, :] * left[1])
+            wx = cx + Z * (fwd[0] + lat[None, :] * left[0])
+            wy = cy + Z * (fwd[1] + lat[None, :] * left[1])
             ix, iy = np.floor(wx * 12).astype(np.int64), np.floor(wy * 12).astype(np.int64)
             n = (((ix * 73856093) ^ (iy * 19349663)) & 15).astype(np.int16) - 8
             base = np.array([95, 120, 150], np.int16)  # Holzboden-ähnlich (BGR)
@@ -355,7 +359,8 @@ class SimWorld(FrameSource):
 
     def _draw_person(self, img, f, th, depth, W, H):
         pr = self.person
-        rel = np.array([pr.x - self.x, pr.y - self.y])
+        cx, cy = self._cam_xy
+        rel = np.array([pr.x - cx, pr.y - cy])
         Z = rel @ np.array([math.cos(th), math.sin(th)])
         X = rel @ np.array([-math.sin(th), math.cos(th)])
         if Z < 0.15:
@@ -482,8 +487,9 @@ class Phantoms:
         sc = geo.W / est.W
         n = len(fs.columns)
         bear = np.arctan2(geo.W / 2 - (np.arange(n) + 0.5) * sc, geo.f)
+        cx, cy = getattr(w, "_cam_xy", (w.x, w.y))      # Kamera, nicht Radachse
         for (px, py), d0 in zip(self.pts, self.dirs):
-            dx, dy = px - w.x, py - w.y
+            dx, dy = px - cx, py - cy
             dist = math.hypot(dx, dy)
             if dist < 0.25 or dist > 2.0 or self._rng.random() > self.on_prob:
                 continue
