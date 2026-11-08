@@ -67,6 +67,21 @@ class CamGeometry:
             return (self.cam_h_u8[0] + self.cam_h_u8[1] * u) / 1000.0
         return (self.body_height_mm + self.mount_offset_mm) / 1000.0
 
+    def cam_h_line(self) -> tuple[float, float]:
+        """Kamerahöhe als Gerade über den Höhen-Sollwert: mm = a + b * u8, Rückgabe (a, b). Für die Anzeige."""
+        if self.cam_h_u8:
+            return float(self.cam_h_u8[0]), float(self.cam_h_u8[1])
+        return self.body_min_mm + self.mount_offset_mm, (self.body_max_mm - self.body_min_mm) / 255.0
+
+    def body_to_u8(self, body_mm: float) -> int:
+        """Körperhöhe (mm) -> Höhen-Sollwert u8, Skala wie robot.height_u8_to_mm."""
+        return int(round(255.0 * (body_mm - self.body_min_mm) / (self.body_max_mm - self.body_min_mm)))
+
+    def cam_h_at(self, body_mm: float) -> float:
+        """Kamerahöhe (mm) für eine Körperhöhe, gleiche Rechnung wie cam_h. Für die Anzeige."""
+        a, b = self.cam_h_line()
+        return a + b * 255.0 * (body_mm - self.body_min_mm) / (self.body_max_mm - self.body_min_mm)
+
     def horizon_row(self, pitch_dev: float = 0.0) -> float:
         """pitch_dev: aktuelles Nicken (rad, + = schaut höher) ggü. Normallage."""
         return self.H / 2 + self.f * math.tan(math.radians(self.tilt_deg) + pitch_dev)

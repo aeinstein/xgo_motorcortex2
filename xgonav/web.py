@@ -138,6 +138,12 @@ def serve(app: App, host: str, port: int, fps: int, render_cpus=None) -> Threadi
                                  "battery": st.battery, "balancing": st.balancing, "yaw_drv": st.yaw_deg,
                                  "height_mm": app.robot.height_mm,
                                  "tracks": [], "free": [], "ttc": None})
+                # Kamerahöhe für den Regler, nur zur Anfragezeit gerechnet: robot.height_mm kennt anders als
+                # /proc die Mittelstellung nach dem Aufstehen und die Begrenzung der Firmware
+                h = app.robot.height_mm
+                body["cam_h_gerade"] = [round(x, 4) for x in app.geo.cam_h_line()]
+                body["height_u8"] = None if h is None else app.geo.body_to_u8(h)
+                body["cam_h_mm"] = None if h is None else round(app.geo.cam_h_at(h), 1)
                 return self._send(200, json.dumps(body).encode())
             if u.path == "/route":
                 gm = app.gridmap

@@ -251,6 +251,51 @@ def test_cam_h_from_height_u8():
     assert g.cam_h * 1000 == pytest.approx(85.0 + cfg.camera.mount_offset_mm)
 
 
+@pytest.mark.parametrize("gerade", [[100.8, 0.1037], []])
+def test_cam_h_display_matches_geometry(gerade):
+    """Anzeige im Web: Gerade und cam_h_at müssen dasselbe ergeben wie die Bodengeometrie (cam_h)."""
+    from xgonav.robot import SimRobot
+    cfg = Config()
+    cfg.camera.cam_h_u8 = gerade
+    g = CamGeometry.from_cfg(cfg)
+    r = SimRobot(cfg.robot)
+    a, b = g.cam_h_line()
+    for u in (55, 106, 128, 150, 200):
+        g.body_height_mm = r.height_u8_to_mm(u)
+        assert g.body_to_u8(g.body_height_mm) == u
+        assert g.cam_h_at(g.body_height_mm) == pytest.approx(g.cam_h * 1000)
+        assert a + b * u == pytest.approx(g.cam_h * 1000)
+    if gerade:
+        g.body_height_mm = r.height_u8_to_mm(128)
+        assert g.cam_h * 1000 == pytest.approx(114.07, abs=0.01)
+
+
+def test_status_camera_height_fields():
+    """/status: Kamerahöhe aus dem gültigen Sollwert, null solange keiner bekannt ist."""
+    import json
+    import urllib.request
+    from xgonav.app import App
+    from xgonav.web import serve
+    cfg = Config(); cfg.output.web_port = 0; cfg.detector.enabled = False
+    cfg.camera.cam_h_u8 = [100.8, 0.1037]
+    robot = SimRobot(cfg.robot)
+    app = App(cfg, robot, SimWorld(cfg.camera, robot, None, start=(1.0, 1.5, 0.0)), imu=None)
+    srv = serve(app, "127.0.0.1", 0, 5)
+    try:
+        def status():
+            with urllib.request.urlopen("http://127.0.0.1:%d/status" % srv.server_address[1], timeout=3) as r:
+                return json.load(r)
+        robot._height_mm = None
+        s = status()
+        assert s["cam_h_gerade"] == [100.8, 0.1037]
+        assert s["height_u8"] is None and s["cam_h_mm"] is None
+        robot._height_mm = robot.height_u8_to_mm(128)
+        s = status()
+        assert s["height_u8"] == 128 and s["cam_h_mm"] == pytest.approx(114.1)
+    finally:
+        srv.shutdown(); srv.server_close(); app.stop()
+
+
 def test_object_dist_ignores_clipped_edges():
     g = CamGeometry(640, 480, 62.2, 0.0, 45.0, 85.0)
     d = 1.5

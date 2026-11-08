@@ -130,8 +130,11 @@ details.roh summary{cursor:pointer;color:var(--leise);font-size:12px;margin-top:
 pre{background:#0b0d10;border-radius:6px;padding:8px;overflow:auto;max-height:40vh;font-size:12px;margin:6px 0 0}
 
 /* --- Fahren */
-.fahren{display:grid;grid-template-columns:auto 1fr;gap:14px;align-items:start}
+.fahren{display:grid;grid-template-columns:auto 1fr;gap:14px;align-items:stretch}
 @media (max-width:420px){.fahren{grid-template-columns:1fr}.pad{justify-self:center}}
+.fahren-rechts{display:flex;flex-direction:column;gap:10px;justify-content:space-between;min-width:0}
+.aktionen{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.aktionen button{margin:0;padding:8px 6px;min-height:40px}
 .pad{display:grid;grid-template-columns:repeat(3,56px);grid-template-rows:repeat(3,52px);gap:5px;user-select:none;-webkit-user-select:none}
 .pad button{margin:0;padding:0;font-size:20px;border-radius:8px}
 @media (pointer:coarse){.pad{grid-template-columns:repeat(3,64px);grid-template-rows:repeat(3,58px)}}
@@ -173,6 +176,12 @@ details.extras[open]>summary{margin-bottom:8px}
 .lage3d-rahmen{position:relative;user-select:none;-webkit-user-select:none}
 .lage3d-gl{position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none}
 .unter button{padding:1px 7px;font-size:12px;margin-left:6px}
+.lage-flaeche{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px}
+.kamhoehe{display:flex;flex-direction:column;align-items:center;gap:4px;height:230px;font-size:12px;color:var(--leise)}
+.kamhoehe .w{color:var(--text);font-variant-numeric:tabular-nums;white-space:nowrap}
+/* senkrecht, oben = hoch; touch-action: Ziehen verschiebt nicht die Seite */
+#hoehe{writing-mode:vertical-lr;direction:rtl;flex:1 1 0;min-height:0;min-width:0;width:32px;touch-action:none}
+#lagekarte>.regler{margin-top:8px}
 </style>
 </head>
 <body>
@@ -250,45 +259,60 @@ details.extras[open]>summary{margin-bottom:8px}
 <div class="spalte">
   <details class="karte extras" id="lagekarte" ontoggle="lageUmschalten()">
     <summary><h2>Lage</h2><span class="leise">IMU live · ziehen: drehen · Doppelklick: zurück</span></summary>
-    <div class="lage3d-rahmen">
-      <canvas class="lage3d" id="d-lage" data-h="230" role="img" aria-label="Lage des Riders als 3D-Modell"></canvas>
-      <canvas class="lage3d-gl" id="d-lage-gl" aria-hidden="true"></canvas>
+    <div class="lage-flaeche">
+      <div class="lage3d-rahmen">
+        <canvas class="lage3d" id="d-lage" data-h="230" role="img" aria-label="Lage des Riders als 3D-Modell"></canvas>
+        <canvas class="lage3d-gl" id="d-lage-gl" aria-hidden="true"></canvas>
+      </div>
+      <div class="kamhoehe">
+        <label for="hoehe">Kamerahöhe</label>
+        <input type="range" id="hoehe" min="61" max="205" value="128"
+          oninput="hoeheWert(this.value)"
+          onchange="befehl('height', {h: this.value})">
+        <span class="w" id="hoehe-w" title="Sollwert u8 128">u8 128</span>
+      </div>
+    </div>
+    <div class="regler">
+      <label for="roll">Roll</label>
+      <input type="range" id="roll" min="-20" max="20" value="0" step="1"
+        oninput="document.getElementById('roll-w').textContent = this.value + '°'"
+        onchange="befehl('roll', {deg: this.value})">
+      <span class="w" id="roll-w">0°</span><button onclick="rollNull()" title="Roll auf 0°">0</button>
     </div>
     <div class="legende" id="l-lage" title="Gier 0° = Kurs beim Start des ESP32; + = links. Roll + = rechts tief, Nick + = vorn tief"></div>
+    <details class="hilfe"><summary>Kamerahöhe und Roll</summary>
+      <p>Kamerahöhe: Rechenwert der Bodengeometrie aus <code>cam_h_u8</code> (Linsenmitte über Boden, Sollwert u8
+        im Tooltip), die Beine brauchen danach etwa 1 s. Enthalten ist die Korrektur ×0,921 aus der Bodenprobe; der
+        Zollstock zeigt deshalb rund 8 % mehr, solange deren Ursache offen ist. Oberhalb von u8 200 ändert sich nichts
+        mehr. Untere Grenze mit Abstand zum Minimum; in Folgen/Erkunden setzt xgonav die Höhe selbst.</p>
+      <p>Roll: + = rechts.</p>
+    </details>
   </details>
   <section class="karte">
-    <div class="kopf"><h2>Fahren</h2>
-      <button onclick="arm()" title="Aktion 255">Aufstehen</button>
-      <button onclick="aufspringen()" title="Aktion 253 (!standup): Rider muss stehen und Platz haben">Aufspringen</button>
-      <button onclick="ausrichten()" title="Roll auf 0° und die Beine 3 s nivellieren (nur wenn er steht)">Neu ausrichten</button>
-      <button class="gefahr" onclick="befehl('action', {n: 254})" title="Aktion 254, Not-Stopp">Absetzen</button>
-    </div>
+    <div class="kopf"><h2>Fahren</h2></div>
     <div class="fahren">
       <div class="pad">
         <span></span><button data-fahrt="vor" aria-label="vor">▲</button><span></span>
         <button data-fahrt="links" aria-label="links">◀</button><span></span><button data-fahrt="rechts" aria-label="rechts">▶</button>
         <span></span><button data-fahrt="zurück" aria-label="zurück">▼</button><span></span>
       </div>
-      <div class="regler">
-        <label for="tempo">Tempo</label>
-        <input type="range" id="tempo" min="5" max="100" value="60">
-        <span class="w" id="tempo-w"></span><span class="leer"></span>
-        <label for="hoehe">Höhe</label>
-        <input type="range" id="hoehe" min="61" max="205" value="128"
-          oninput="document.getElementById('hoehe-w').textContent = this.value"
-          onchange="befehl('height', {h: this.value})">
-        <span class="w" id="hoehe-w">128</span><span class="leer"></span>
-        <label for="roll">Roll</label>
-        <input type="range" id="roll" min="-20" max="20" value="0" step="1"
-          oninput="document.getElementById('roll-w').textContent = this.value + '°'"
-          onchange="befehl('roll', {deg: this.value})">
-        <span class="w" id="roll-w">0°</span><button onclick="rollNull()" title="Roll auf 0°">0</button>
+      <div class="fahren-rechts">
+        <div class="regler">
+          <label for="tempo">Tempo</label>
+          <input type="range" id="tempo" min="5" max="100" value="60">
+          <span class="w" id="tempo-w"></span><span class="leer"></span>
+        </div>
+        <div class="aktionen">
+          <button onclick="arm()" title="Aktion 255">Aufstehen</button>
+          <button onclick="aufspringen()" title="Aktion 253 (!standup): Rider muss stehen und Platz haben">Aufspringen</button>
+          <button onclick="ausrichten()" title="Roll auf 0° und die Beine 3 s nivellieren (nur wenn er steht)">Neu ausrichten</button>
+          <button class="gefahr" onclick="befehl('action', {n: 254})" title="Aktion 254, Not-Stopp">Absetzen</button>
+        </div>
       </div>
     </div>
     <details class="hilfe"><summary>Gedrückt halten: Maus, Touch, Pfeiltasten/WASD</summary>
       <p>Fahren schaltet auf „Hand“ und ist auf max_v/max_w der Konfiguration begrenzt. Ohne Bodenmodell
-        und Bahnprüfung; Sturz-Erkennung und Watchdogs bleiben aktiv. Höhe: untere Grenze mit Abstand zum
-        Minimum; in Folgen/Erkunden setzt xgonav die Höhe selbst. Roll: + = rechts.</p>
+        und Bahnprüfung; Sturz-Erkennung und Watchdogs bleiben aktiv.</p>
       <p>Balancieren (Firmware R-1.1.6): Nach einem ESP32-Neustart balanciert der Rider erst nach
         „Aufstehen“. Liegt er, wartet die Firmware, bis er aufrecht steht – dann laufen die Räder sofort an.
         „Aufspringen“ (Aktion 253, wie <code>!standup</code>) lässt ihn aufspringen – <b>Rider muss stehen und Platz haben</b>.
@@ -309,7 +333,7 @@ details.extras[open]>summary{margin-bottom:8px}
       <span class="w" id="hz-zeile">-</span>
       <button onclick="hzSchieben(1)" title="Linie 1 px nach unten">+1</button>
       <button onclick="hzSchieben(5)" title="Linie 5 px nach unten">+5</button>
-      <button id="hz-speichern" onclick="hzSpeichern()" title="Zeile der grünen Linie für die aktuelle Körperhöhe speichern">Für diese Höhe speichern</button>
+      <button id="hz-speichern" onclick="hzSpeichern()" title="Zeile der grünen Linie für die aktuelle Kamerahöhe speichern">Für diese Kamerahöhe speichern</button>
       <button onclick="hzAus()" title="Grüne Linie ausblenden">Linie aus</button>
       <label title="Bild senkrecht so verschieben, dass die cyan IMU-Linie fest steht"><input type="checkbox" id="hz-stabil" onchange="hzStabil(this.checked)"> Bild am IMU-Nick festhalten</label>
     </div>
@@ -317,7 +341,7 @@ details.extras[open]>summary{margin-bottom:8px}
     <details class="hilfe"><summary>weiß Stand · cyan IMU · magenta Bild · orange IMU roh · grün Einstellen</summary>
       <p>Erst aufstehen lassen und nicht anfassen: Nach 3 s Einschwingen misst xgonav 3 s lang den mittleren
         Nickwinkel (Standreferenz). Danach die grüne Linie auf einen Bezug in Kamerahöhe schieben (Laserlinie,
-        Klebeband an der Wand in Höhe der Kameramitte) und speichern. Das je Körperhöhe wiederholen; dazwischen
+        Klebeband an der Wand in Höhe der Kameramitte) und speichern. Das je Kamerahöhe wiederholen; dazwischen
         rechnet xgonav linear.</p>
       <p>Cyan ist der Horizont aus IMU minus Standreferenz. Magenta startet am IMU-Wert, folgt dann dem Bildnick
         (schnelle Änderungen) und wird spätestens nach 0,5 s wieder auf die IMU gesetzt; magenta gilt für die
@@ -491,13 +515,29 @@ function pipelineUmschalten() { return befehl('pipeline', {on: aktPipeline === '
 const HZ_ZUSTAND = {liegt: 'liegt – erst aufstehen', wartet: 'schwingt ein', misst: 'misst Standlage', 'gültig': 'Standreferenz gültig'};
 let hzZeile = null, hzTabelleT = 0;
 const zahlOder = (v, n = 1, e = '') => v == null ? '-' : v.toFixed(n) + e;
+// Kamerahöhe aus dem Sollwert u8: Gerade aus /status, gerechnet im Browser. Ohne xgonav bleibt nur u8.
+let kamGerade = null, hoeheAusStatus = false;
+function kamText(u) {
+  u = Number(u);
+  if (!kamGerade) return 'u8 ' + u;
+  return (kamGerade[0] + kamGerade[1] * Math.max(55, Math.min(200, u))).toFixed(1) + ' mm';   // Grenzen der Firmware
+}
+function hoeheWert(u) {
+  const el = $('hoehe-w');
+  el.textContent = kamText(u);
+  el.title = 'Sollwert u8 ' + u;
+}
+function hoeheSetzen(u) {
+  reglerSetzen('hoehe', u, kamText(u));
+  $('hoehe-w').title = 'Sollwert u8 ' + $('hoehe').value;
+}
 function hzAnzeigen(h) {
   const box = $('horizont');
   box.hidden = !h;
   if (!h) return;
   $('hz-zustand').textContent = HZ_ZUSTAND[h.zustand] || h.zustand;
   $('hz-stabil').checked = bildStabil;
-  $('hz-werte').textContent = 'Höhe ' + zahlOder(h.hoehe_mm, 1, ' mm') + ' · IMU im Stand ' + zahlOder(h.ref_deg, 2, '°')
+  $('hz-werte').textContent = 'Kamerahöhe ' + zahlOder((window.letzterStatus || {}).cam_h_mm, 1, ' mm') + ' · IMU im Stand ' + zahlOder(h.ref_deg, 2, '°')
     + ' (±' + zahlOder(h.std_deg, 2, '°') + ') · Zeile Stand ' + zahlOder(h.row_stand) + ' / IMU ' + zahlOder(h.row_imu)
     + ' / Bild ' + zahlOder(h.row_bild) + ' · Bild−IMU ' + zahlOder(h.bild_minus_imu_deg, 2, '°')
     + ' · IMU roh ' + zahlOder(h.imu_roh_deg, 2, '°')
@@ -515,7 +555,7 @@ async function hzTabelle() {
     const j = await r.json();
     if (!r.ok) return;
     const el = $('hz-tabelle');
-    el.innerHTML = j.punkte.length ? j.punkte.map(p => esc(p.height_mm.toFixed(1) + ' mm → Zeile ' + p.row.toFixed(1)
+    el.innerHTML = j.punkte.length ? j.punkte.map(p => esc(p.kamera_mm.toFixed(1) + ' mm → Zeile ' + p.row.toFixed(1)
       + (p.ref_deg != null ? ' (IMU ' + p.ref_deg.toFixed(2) + '°)' : ''))
       + ' <button onclick="hzLoeschen(' + p.height_mm + ')" title="Eintrag löschen">×</button>').join('<br>')
       : 'Tabelle leer';
@@ -565,11 +605,14 @@ async function status() {
     const r = await fetch('api.php?a=status');
     wlanMerken(r.headers.get('X-Wlan'));
     const s = await r.json();
-    if (!r.ok) { zeige(s.error || ('Fehler ' + r.status)); verbindungWeg(); return; }
+    if (!r.ok) { hoeheAusStatus = false; zeige(s.error || ('Fehler ' + r.status)); verbindungWeg(); return; }
     verbindungOk();
     aktModus = s.mode;
     aktPipeline = s.pipeline;
     window.letzterStatus = s;
+    if (s.cam_h_gerade) kamGerade = s.cam_h_gerade;
+    hoeheAusStatus = s.height_u8 != null;
+    if (hoeheAusStatus) hoeheSetzen(s.height_u8);
     hzAnzeigen(s.horizon);
     $('kurz').innerHTML = felder.map(([k, f, breit]) =>
       '<div class="kachel' + (breit ? ' breit' : '') + '"><div class="k">' + k + '</div><div class="w">' + esc(f(s)) + '</div></div>').join('');
@@ -609,7 +652,7 @@ async function status() {
     }
     belichtStatus(s.exposure);
     gainStatus(s.exposure);
-  } catch (e) { zeige('keine Verbindung zu xgonav'); verbindungWeg(); }
+  } catch (e) { hoeheAusStatus = false; zeige('keine Verbindung zu xgonav'); verbindungWeg(); }
 }
 
 // --- Handsteuerung: solange gedrückt alle 200 ms senden; xgonav hält nach 0,5 s ohne Sollwert an
@@ -1397,7 +1440,7 @@ async function sysHolen() {
         const off = performance.now() - lage[lage.length - 1][0];
         lageOff = lageOff == null || off < lageOff || Math.abs(off - lageOff) > 2000 ? off : lageOff + (off - lageOff) * 0.02;
       }
-      if (s.height != null) { beinSoll.h = s.height; reglerSetzen('hoehe', s.height, String(s.height)); }
+      if (s.height != null) { beinSoll.h = s.height; if (!hoeheAusStatus) hoeheSetzen(s.height); }
       if (s.roll != null) { beinSoll.r = s.roll; reglerSetzen('roll', s.roll, s.roll + '°'); }
       beinSoll.abgesetzt = s.state === 254;
       const jetzt = Date.now();

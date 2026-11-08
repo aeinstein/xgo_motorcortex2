@@ -766,7 +766,9 @@ class App:
     def horizon_table(self) -> dict:
         if self.htable is None:
             raise ModeNotAllowed("Horizont aus ([horizon] enabled = false)")
-        return {"datei": self.htable.path, "punkte": list(self.htable.points)}
+        # kamera_mm nur für die Anzeige; Schlüssel der Tabelle bleibt height_mm
+        return {"datei": self.htable.path,
+                "punkte": [{**p, "kamera_mm": round(self.geo.cam_h_at(p["height_mm"]), 1)} for p in self.htable.points]}
 
     def horizon_calibrate(self, row: float) -> dict:
         """Horizontzeile (Vollbild) für die Körperhöhe der Standreferenz speichern. Nur im Stand mit gültiger
