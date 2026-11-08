@@ -21,6 +21,7 @@ typedef int32_t s32; typedef int64_t s64;
 #define S32_MIN INT32_MIN
 #endif
 #define NSEC_PER_SEC 1000000000ULL
+#define NSEC_PER_MSEC 1000000ULL
 
 #define pr_info(...)  do { printf(__VA_ARGS__); } while (0)
 #define pr_warn(...)  do { printf("WARN: " __VA_ARGS__); } while (0)

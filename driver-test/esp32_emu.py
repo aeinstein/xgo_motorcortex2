@@ -4,6 +4,10 @@ python3 esp32_emu.py <harness> <sekunden> <imu_hz> [--block] [--faults] [--imu65
 
 --imu65: Register 0x65 (R-1.1.6: accel + roll/pitch/yaw, 24 Byte); --wheels: 0x0c (Rad-Encoder);
 --combo: 0x0d (roll/pitch/yaw + Rad-Ticks + t_ms, 24 Byte; nur zusammen mit --wheels sinnvoll).
+--stream[=HZ]: Firmware 0014. Der Emulator versteht das Schreiben auf 0x11 (Rate) und sendet dann selbst Pakete
+Typ 0x14 (seq, t_us der Messung nach eigener, driftender ESP-Uhr, Winkel, Ticks) mit zufälligem Sendeverzug
+(Firmware-loop); aus nach 5 s ohne Byte vom Host. Das Testprogramm bekommt HZ (Standard 100) als Strom-Rate.
+--stream-off: wie --stream, aber die Firmware kennt 0x11 nicht (Rückfall auf Abfrage prüfen).
 Ohne diese Schalter antwortet der Emulator auf 0x65/0x0c gar nicht (wie R-1.1.3).
 """
 import math
@@ -24,7 +28,11 @@ FAULTS = "--faults" in args
 IMU65 = "--imu65" in args
 WHEELS = "--wheels" in args
 COMBO = "--combo" in args
+_st = [a for a in args if a.startswith("--stream")]
+STREAM = bool(_st) and "--stream-off" not in args
+STREAM_HZ = int(_st[0].split("=")[1]) if _st and "=" in _st[0] else 100
 T0 = time.monotonic()
+ESP_T0, ESP_PPM = T0 - 12.345, 40e-6       # ESP-Uhr: anderer Nullpunkt, 40 ppm schnell
 TPS11, TPS21 = 400.0, -250.0     # Rad-Ticks/s (rechts rückwärts, damit das Vorzeichen geprüft wird)
 
 
@@ -72,8 +80,49 @@ def payload(addr, n, t):
 
 master, slave = pty.openpty()
 name = os.ttyname(slave)
-stats = {"req": 0, "write": 0, "drop": 0, "corrupt": 0, "garbage": 0}
+stats = {"req": 0, "write": 0, "drop": 0, "corrupt": 0, "garbage": 0, "stream": 0, "stream_on": 0}
 stop = False
+wlock = threading.Lock()                  # Antworten und Strom-Pakete nicht ineinander schreiben
+stream_rate = 0
+last_rx = time.monotonic()
+
+
+def send(out):
+    with wlock:
+        os.write(master, out)
+
+
+def esp_us(t):
+    return int((t - ESP_T0) * (1 + ESP_PPM) * 1e6) & 0xFFFFFFFF
+
+
+def stream_frame(seq, t):
+    r, p, y = truth(t)
+    a, b = wheels_truth(t)
+    data = struct.pack("<HIfffII", seq & 0xFFFF, esp_us(t), r, p, y, a, b)
+    ln = len(data) + 8
+    chk = 255 - ((ln + 0x14 + 0x11 + sum(data)) % 256)
+    return bytes([0x55, 0x00, ln, 0x14, 0x11]) + data + bytes([chk, 0x00, 0xAA])
+
+
+def streamer():
+    seq, nxt = 0, time.monotonic()
+    while not stop:
+        if not stream_rate or time.monotonic() - last_rx > 5.0:
+            time.sleep(0.005)
+            nxt = time.monotonic()
+            continue
+        nxt += 1.0 / stream_rate
+        time.sleep(max(0.0, nxt - time.monotonic()))
+        t = time.monotonic()                      # Messzeit
+        seq += 1
+        out = stream_frame(seq, t)
+        time.sleep(rng.uniform(0.0, 0.008))       # Firmware-loop sendet später
+        time.sleep(len(out) * BYTE_S)              # Übertragung: erst danach ist das Paket beim Pi vollständig
+        if FAULTS and rng.random() < 0.02:        # Paket verworfen (UART-FIFO voll)
+            continue
+        send(out)
+        stats["stream"] += 1
 
 
 def serve():
@@ -84,6 +133,9 @@ def serve():
         except OSError:
             return
         buf += chunk
+        global last_rx, stream_rate
+        if chunk:
+            last_rx = time.monotonic()
         while True:
             i = buf.find(b"\x55\x00")
             if i < 0 or len(buf) < i + 3:
@@ -95,6 +147,10 @@ def serve():
             mode, addr = fr[3], fr[4]
             if mode == 0x01:
                 stats["write"] += 1
+                if addr == 0x11 and STREAM and len(fr) >= 6:
+                    if fr[5] and not stream_rate:
+                        stats["stream_on"] += 1
+                    stream_rate = fr[5]
                 continue
             if mode != 0x02:
                 continue
@@ -119,14 +175,17 @@ def serve():
                     out = bytes(rng.randrange(256) for _ in range(rng.randrange(1, 6))) + out
             if FAULTS and rng.random() < 0.1:   # Antwort in zwei Teilen
                 k = rng.randrange(1, len(out))
-                os.write(master, out[:k]); time.sleep(0.0005); os.write(master, out[k:])
+                with wlock:
+                    os.write(master, out[:k]); time.sleep(0.0005); os.write(master, out[k:])
             else:
-                os.write(master, out)
+                send(out)
 
 
 th = threading.Thread(target=serve, daemon=True)
 th.start()
-p = subprocess.run([harness, name, secs, hz], capture_output=True, text=True, timeout=float(secs) + 30)
+threading.Thread(target=streamer, daemon=True).start()
+hargs = [harness, name, secs, hz] + ([str(STREAM_HZ)] if _st else [])
+p = subprocess.run(hargs, capture_output=True, text=True, timeout=float(secs) + 30)
 stop = True
 lines = p.stdout.splitlines()
 samples = [tuple(map(int, l.split()[1:])) for l in lines if l.startswith("S ")]
@@ -160,4 +219,16 @@ if samples:
     for k, v in errs.items():
         v = sorted(v)
         print("ERR %-5s median %.3f° p95 %.3f° max %.3f°" % (k, v[len(v) // 2], v[int(len(v) * .95)], v[-1]))
+    # Zeitfehler der Stempel: Nick-Abweichung / Nickrate, nur wo die Rate groß ist (> 40°/s); ab 2 s (Versatz eingeschwungen)
+    terr = []
+    for seq, t, r, pi, y in samples:
+        ts_ = t / 1e9
+        if ts_ - ts[0] / 1e9 < 2.0:
+            continue
+        rate = (truth(ts_ + 1e-4)[1] - truth(ts_ - 1e-4)[1]) / 2e-4
+        if abs(rate) > 40:
+            terr.append((pi / 1000 - truth(ts_)[1]) / rate * 1000)   # ms, + = Stempel zu früh
+    if terr:
+        a = sorted(terr)
+        print("TIMEERR median %+.2f ms p5 %+.2f p95 %+.2f (n %d)" % (a[len(a) // 2], a[int(len(a) * .05)], a[int(len(a) * .95)], len(a)))
 print("RC", p.returncode, p.stderr[-500:] if p.stderr else "")

@@ -1336,6 +1336,22 @@ def test_proc_imu_reads_only_new_lines(tmp_path):
     assert math.degrees(imu.latest_yaw()[1]) == pytest.approx(8.0)
 
 
+def test_proc_imu_requests_stream(tmp_path):
+    """[imu] stream_hz wird beim Öffnen nach settings/imu_stream_hz geschrieben, wenn der Treiber das kennt."""
+    from xgonav.imu import ProcImu
+    (tmp_path / "settings").mkdir()
+    (tmp_path / "imu_log").write_text("")
+    (tmp_path / "settings" / "imu_hz").write_text("50\n")
+    cfg = Config()
+    cfg.imu.proc_dir = str(tmp_path)
+    cfg.imu.stream_hz = 100
+    assert ProcImu(cfg.imu)._open()                      # alter Treiber: Datei fehlt, nur Warnung
+    assert not (tmp_path / "settings" / "imu_stream_hz").exists()
+    (tmp_path / "settings" / "imu_stream_hz").write_text("0\n")
+    assert ProcImu(cfg.imu)._open()
+    assert (tmp_path / "settings" / "imu_stream_hz").read_text() == "100"
+
+
 def test_gridmap_driven_path_is_free():
     from xgonav.gridmap import GridMap
     cfg = Config()

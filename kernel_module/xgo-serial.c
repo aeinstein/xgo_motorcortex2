@@ -131,11 +131,94 @@ static int write_serial_data(const size_t addr, char * buffer, const size_t len)
     return 0;
 }
 
+// ---- IMU/Rad-Strom (nur Reader-Thread) -------------------------------------
+#define STREAM_TX_NS ((u64)(XGO_STREAM_LEN + 8) * 10 * NSEC_PER_SEC / 115200)   // 34 Byte bei 115200 8N1
+#define STREAM_WIN_NS (2ULL * NSEC_PER_SEC)
+
+static u16 stream_seq_last;
+static bool stream_seq_ok;
+static u32 stream_tus_last;
+static u64 stream_tus_hi;
+static s64 stream_win_min;
+static u64 stream_win_start;
+
+static u32 le32(const uint8_t *b) {
+    return (u32)b[0] | ((u32)b[1] << 8) | ((u32)b[2] << 16) | ((u32)b[3] << 24);
+}
+
+/*
+ * Ein Strom-Paket: Messzeit der Firmware (t_us) auf CLOCK_MONOTONIC abbilden und als IMU- und Radprobe ablegen.
+ * Versatz = Empfang - Übertragungsdauer - t_us; Wartezeiten (Firmware-loop, UART, Reader) machen ihn nur größer,
+ * also gilt das Minimum: sofort, wenn ein kleinerer kommt, und je ~2 s das Minimum des letzten Fensters
+ * (führt die Drift der ESP-Uhr nach).
+ */
+static void stream_frame(const uint8_t *b, u64 t_rx) {
+    u16 seq = (u16)(b[0] | (b[1] << 8));
+    u32 tus = le32(b + 2);
+    u64 tus64;
+    s64 cand;
+    struct imu_sample s;
+    struct wheel_sample w;
+    unsigned long flags;
+
+    atomic_inc(&stat_stream);
+    if (stream_seq_ok && (u16)(seq - stream_seq_last) != 1) atomic_inc(&stat_stream_gaps);
+    stream_seq_last = seq;
+    stream_seq_ok = true;
+
+    if (stream_off_ok && tus < stream_tus_last) {
+        if (stream_tus_last - tus > 0x80000000u) {
+            stream_tus_hi += 1ULL << 32;              // micros() lief über (~71 min)
+        } else {
+            stream_tus_hi = 0;                        // ESP neu gestartet: Zeitbezug neu
+            stream_off_ok = false;
+        }
+    }
+    stream_tus_last = tus;
+    tus64 = stream_tus_hi + tus;
+    cand = (s64)(t_rx - STREAM_TX_NS) - (s64)(tus64 * 1000);
+    if (!stream_off_ok) {
+        stream_off_ns = stream_win_min = cand;
+        stream_win_start = t_rx;
+        stream_off_ok = true;
+    } else {
+        if (cand < stream_win_min) stream_win_min = cand;
+        if (cand < stream_off_ns) stream_off_ns = cand;
+        if (t_rx - stream_win_start >= STREAM_WIN_NS) {
+            stream_off_ns = stream_win_min;
+            stream_win_min = cand;
+            stream_win_start = t_rx;
+        }
+    }
+
+    s.t_ns = (u64)((s64)(tus64 * 1000) + stream_off_ns);
+    s.roll = f32le_to_milli(b + 6);
+    s.pitch = f32le_to_milli(b + 10);
+    s.yaw = f32le_to_milli(b + 14);
+    w.t_ns = s.t_ns;
+    w.t11 = (s32)le32(b + 18);
+    w.t21 = (s32)le32(b + 22);
+    w.fw_ms = (u32)div_u64(tus64, 1000);
+
+    spin_lock_irqsave(&imu_lock, flags);
+    s.seq = ++imu_seq;
+    imu_log[s.seq % IMU_LOG_LEN] = s;
+    w.seq = ++wheel_seq;
+    wheel_log[w.seq % WHEEL_LOG_LEN] = w;
+    WRITE_ONCE(stream_last_rx_ns, t_rx);
+    spin_unlock_irqrestore(&imu_lock, flags);
+}
+
 // Vollständiger, prüfsummenkorrekter Frame im rx_buf.
 static void handle_frame(void) {
     uint8_t dlen = rx_LEN - 8;
 
     atomic_inc(&stat_frames);
+
+    if (rx_TYPE == XGO_STREAM_TYPE && rx_ADDR == XGO_STREAM && dlen == XGO_STREAM_LEN) {
+        stream_frame(rx_buf, ktime_get_ns());
+        return;
+    }
 
     spin_lock(&resp_lock);
     if ((int)rx_ADDR == pending_addr) {

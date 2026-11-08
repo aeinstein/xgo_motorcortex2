@@ -105,6 +105,31 @@ static bool wheel_read(struct wheel_sample *w) {
 	return true;
 }
 
+// Strom ein/aus: Rate jede Sekunde neu schreiben (Firmware schaltet nach 5 s ohne Byte vom Pi und nach
+// ESP-Neustart ab), 0 einmal beim Ausschalten. true = Pakete kommen (< 200 ms alt), Abfrage nicht nötig.
+static bool stream_tick(u64 now) {
+	static u64 sent_ns;
+	static unsigned int sent_hz;
+	unsigned int shz = READ_ONCE(XGO_IMU_STREAM_HZ);
+	uint8_t v;
+
+	if (shz == 0) {
+		if (sent_hz) {
+			v = 0;
+			write_serial_data(XGO_STREAM, (char *)&v, 1);
+			sent_hz = 0;
+		}
+		return false;
+	}
+	if (shz != sent_hz || now - sent_ns >= NSEC_PER_SEC) {
+		v = shz > 250 ? 250 : shz;
+		write_serial_data(XGO_STREAM, (char *)&v, 1);
+		sent_hz = shz;
+		sent_ns = now;
+	}
+	return now - READ_ONCE(stream_last_rx_ns) < 200 * NSEC_PER_MSEC;
+}
+
 static int imu_loop(void *data) {
 	struct imu_sample s;
 	struct wheel_sample w;
@@ -115,6 +140,10 @@ static int imu_loop(void *data) {
 		unsigned int hz = READ_ONCE(XGO_IMU_HZ), whz = READ_ONCE(XGO_WHEEL_HZ);
 		u64 start = ktime_get_ns(), period, used;
 
+		if (stream_tick(start)) {
+			msleep(20);                       // Strom läuft: Proben kommen über den Reader-Thread
+			continue;
+		}
 		if (hz == 0) {
 			msleep(200);
 			continue;

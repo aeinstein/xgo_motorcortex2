@@ -51,6 +51,7 @@ int main(int argc, char **argv) {
 	g_serial_path = argv[1];
 	double secs = atof(argv[2]);
 	XGO_IMU_HZ = atoi(argv[3]);
+	if (argc > 4) XGO_IMU_STREAM_HZ = atoi(argv[4]);   /* Strom (Firmware 0014) einschalten */
 	if (test_f32()) return 2;
 
 	if (open_serial_port()) { printf("open failed\n"); return 1; }
@@ -104,6 +105,8 @@ int main(int argc, char **argv) {
 	printf("STATS frames %d bad %d timeouts %d unsolicited %d main_ok %d main_fail %d writes %d\n",
 	       atomic_read(&stat_frames), atomic_read(&stat_bad), atomic_read(&stat_timeouts),
 	       atomic_read(&stat_unsolicited), n_main_ok, n_main_fail, n_writes);
+	printf("STREAM pakete %d luecken %d versatz_us %lld\n", atomic_read(&stat_stream),
+	       atomic_read(&stat_stream_gaps), stream_off_ok ? (long long)(stream_off_ns / 1000) : 0LL);
 	filp_close(serial_file, NULL);
 	return 0;
 }

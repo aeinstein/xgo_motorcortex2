@@ -86,6 +86,9 @@ class ImuCfg:
     enabled: bool = True
     proc_dir: str = "/proc/XGORider"
     imu_hz: int = 50               # wird beim Start nach settings/imu_hz geschrieben
+    # IMU/Rad-Strom der Firmware (Patch 0014) mit eigener Messzeit statt Abfrage; > 0 wird beim Start nach
+    # settings/imu_stream_hz geschrieben (Treiber mit Strom-Unterstützung). Ohne Strom fragt der Treiber wie bisher ab.
+    stream_hz: int = 0
     pitch_sign: int = 0            # 0 = automatisch aus Bild-Korrelation, sonst +1/-1
     time_offset_ms: float | None = None   # None = automatisch
     pitch_ref_deg: float = 0.0     # IMU-Rohpitch bei der Kamerakalibrierung (calibrate.py wall)

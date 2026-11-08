@@ -78,6 +78,7 @@ Default = `config.py`. RiderPi = `deploy/config.example.toml` (blank = default).
 |---|---|---|---|
 | `enabled` | true | true | needs `imu_log` |
 | `imu_hz` | 50 | 50 | written to `settings/imu_hz` |
+| `stream_hz` | 0 | 100 | > 0: written to `settings/imu_stream_hz` → firmware stream (patch 0014) with the firmware's sample time; driver without it: warning, polling |
 | `pitch_sign` | 0 | | 0 = auto from image correlation (RiderPi: -1) |
 | `time_offset_ms` | None | | None = auto (RiderPi: +4..+8 ms) |
 | `pitch_ref_deg` | 0.0 | -0.5 [K] | raw IMU pitch at camera calibration (R-1.1.3: -2.7) |

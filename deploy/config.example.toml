@@ -40,6 +40,7 @@ tilt_deg = 5.18          # [K] Zollstock 2026-11-04, gilt zusammen mit imu.pitch
 # braucht Treiber-Patch 0002 (/proc/XGORider/imu_log)
 enabled = true
 imu_hz = 50
+stream_hz = 100          # Firmware 0014 + Treiber: IMU/Rad-Strom mit Messzeit der Firmware (2026-11-08); Abfrage nur als Rückfall
 pitch_ref_deg = -4.43    # [K] IMU-Rohnick bei der Zollstock-Messung (angelehnt, ruhig)
                          # R-1.1.6: visuell an der Horizontlinie nachgestellt (2026-11-03);
                          # unter R-1.1.3 waren es -2,7 (Wandmessung). Wandmessung für R-1.1.6 offen.

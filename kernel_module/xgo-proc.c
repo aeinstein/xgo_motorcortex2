@@ -104,11 +104,18 @@ static int wheels_log_show(struct seq_file *m, void *v) {
 }
 
 static int serial_stats_show(struct seq_file *m, void *v) {
+	u64 last = READ_ONCE(stream_last_rx_ns);
 	seq_printf(m, "frames %d\nbad %d\ntimeouts %d\nunsolicited %d\nimu_seq %u\nimu_hz %u\nimu_block %d\n"
 		"wheels %d\nwheel_seq %u\nwheel_hz %u\n",
 		atomic_read(&stat_frames), atomic_read(&stat_bad), atomic_read(&stat_timeouts),
 		atomic_read(&stat_unsolicited), READ_ONCE(imu_seq), XGO_IMU_HZ, imu_block_mode,
 		wheels_supported, READ_ONCE(wheel_seq), XGO_WHEEL_HZ);
+	// IMU/Rad-Strom (Firmware 0014): Pakete, seq-Lücken, Sollrate, läuft (< 200 ms seit dem letzten Paket),
+	// Versatz CLOCK_MONOTONIC - ESP-Zeit in µs
+	seq_printf(m, "stream %d\nstream_gaps %d\nstream_hz %u\nstream_active %d\nstream_offset_us %lld\n",
+		atomic_read(&stat_stream), atomic_read(&stat_stream_gaps), XGO_IMU_STREAM_HZ,
+		last && ktime_get_ns() - last < 200 * NSEC_PER_MSEC,
+		stream_off_ok ? (long long)div_s64(stream_off_ns, 1000) : 0LL);
 	return 0;
 }
 
@@ -235,6 +242,9 @@ static ssize_t settings_read(struct file *file, char __user *user_buf, size_t co
 
     } else if (strcmp(setting_name, "imu_hz") == 0) {
     	len = snprintf(buffer, sizeof(buffer), "%u\n", XGO_IMU_HZ);
+
+    } else if (strcmp(setting_name, "imu_stream_hz") == 0) {
+    	len = snprintf(buffer, sizeof(buffer), "%u\n", XGO_IMU_STREAM_HZ);
 
     } else {
         return -EINVAL; // Ungültiger Zugriff
@@ -395,6 +405,12 @@ static ssize_t settings_write(struct file *file, const char __user *user_buf, si
     	WRITE_ONCE(XGO_IMU_HZ, v);
     	pr_info("XGORider: IMU %u Hz\n", v);
 
+    } else if (strcmp(setting_name, "imu_stream_hz") == 0) {
+    	unsigned int v;
+    	if (kstrtouint(strim(buffer), 10, &v) || v > 250) return -EINVAL;
+    	WRITE_ONCE(XGO_IMU_STREAM_HZ, v);
+    	pr_info("XGORider: IMU-Strom %u Hz\n", v);
+
     } else if (strcmp(setting_name, "wheel_hz") == 0) {
     	unsigned int v;
     	if (kstrtouint(strim(buffer), 10, &v) || v > 200) return -EINVAL;
@@ -532,6 +548,7 @@ static int createFilesystem(){
 	proc_create("pitch_calibration", 0666, proc_settings, &settings_ops);
 	proc_create("motion_timeout_ms", 0666, proc_settings, &settings_ops);
 	proc_create("imu_hz", 0666, proc_settings, &settings_ops);
+	proc_create("imu_stream_hz", 0666, proc_settings, &settings_ops);
 	proc_create("wheel_hz", 0666, proc_settings, &settings_ops);
 
 
@@ -599,6 +616,7 @@ static void destroyFilesystem(){
     remove_proc_entry("pitch_calibration", proc_settings);
     remove_proc_entry("motion_timeout_ms", proc_settings);
     remove_proc_entry("imu_hz", proc_settings);
+    remove_proc_entry("imu_stream_hz", proc_settings);
     remove_proc_entry("wheel_hz", proc_settings);
     remove_proc_entry("settings", proc_imu);
 

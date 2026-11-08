@@ -129,6 +129,17 @@ class ProcImu(ImuSource):
                 f.write(str(self.cfg.imu_hz))
         except OSError as e:
             log.warning("imu_hz nicht gesetzt: %s", e)
+        sp = os.path.join(self.cfg.proc_dir, "settings", "imu_stream_hz")
+        if os.path.exists(sp):
+            try:
+                with open(sp, "w") as f:
+                    f.write(str(int(self.cfg.stream_hz)))
+                if self.cfg.stream_hz:
+                    log.info("IMU-Strom %d Hz angefordert", self.cfg.stream_hz)
+            except OSError as e:
+                log.warning("imu_stream_hz nicht gesetzt: %s", e)
+        elif self.cfg.stream_hz:
+            log.warning("Treiber kennt keinen IMU-Strom (settings/imu_stream_hz fehlt) – Abfrage wie bisher")
         return True
 
     def _poll(self) -> int:
