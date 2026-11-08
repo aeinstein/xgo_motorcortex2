@@ -24,6 +24,7 @@
 #   0011 Gier-Totband entfernt (Integration erst nach Startkalibrierung)
 #   0012 Roll-Trimm aus dem Nivellieren behalten (über Höhenänderungen)
 #   0013 Diagnose-Register 0x10 (Lagefusion Nick/Roll: Beschleunigungswinkel, Abzug 0005, Einfrieren 0006)
+#   0014 IMU-/Rad-Datenstrom an den Pi (Register 0x11 = Rate in Hz, Pakete Typ 0x14)
 # Braucht: git, python3 (venv), Internet beim ersten Lauf (PlatformIO lädt Toolchain ~1 GB).
 set -euo pipefail
 

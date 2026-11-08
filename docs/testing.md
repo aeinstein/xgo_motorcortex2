@@ -22,6 +22,7 @@ python3 -m venv .venv && .venv/bin/pip install "opencv-python-headless>=4.6" "nu
 | `g++ -std=c++17 -ffp-contract=off -I $S firmware/tests/test_yaw_bias.cpp $S/control/rider_leg_imu.cpp` | firmware host test, patches 0009/0011 (gyro-z bias tracking, no yaw dead band) | <1 s |
 | `g++ -std=c++17 -ffp-contract=off -I $S firmware/tests/test_roll_trim.cpp $S/control/rider_leg_imu.cpp` | firmware host test, patch 0012 (roll trim kept after leveling) | <1 s |
 | `g++ -std=c++17 -ffp-contract=off -I $S firmware/tests/test_imu_diag.cpp $S/control/rider_leg_imu.cpp $S/command_protocol.cpp` | firmware host test, patch 0013 (diagnostic register 0x10) | <1 s |
+| `g++ -std=c++17 -ffp-contract=off -I $S firmware/tests/test_imu_stream.cpp $S/command_protocol.cpp` | firmware host test, patch 0014 (IMU/wheel data stream) | <1 s |
 | `python -m xgonav --source video.mp4 --robot sim --mode follow [--fast]` | replay own video | |
 | `python tools/replay_raw.py DIR --config rider.toml [--set k=v] [--video out.mp4]` | replay `--record-raw` capture through floor model, local map, arc check; reports false-alarm rate | |
 | `driver-test/run.sh kernel_module 6 50 --faults` | driver code vs ESP32 emulator | ~6 s |

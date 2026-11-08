@@ -1,0 +1,226 @@
+diff --git a/firmware/src/command_protocol.cpp b/firmware/src/command_protocol.cpp
+index c9403eb..84b15bc 100644
+--- a/firmware/src/command_protocol.cpp
++++ b/firmware/src/command_protocol.cpp
+@@ -45,7 +45,7 @@ void putAngle(uint8_t *out, float value) {
+ CommandKind commandKind(const CommandEvent &e) {
+     if(e.isRead())return CommandKind::Unknown;
+     switch(e.reg) {
+-    case 0x03:case 0x04:case 0x05:case 0x06:case 0x08:case 0x09:case 0x0a:case 0x13:
++    case 0x03:case 0x04:case 0x05:case 0x06:case 0x08:case 0x09:case 0x0a:case 0x11:case 0x13:
+     case 0x30:case 0x32:case 0x35:case 0x36:case 0x39:case 0x3e:case 0x60:case 0x61:
+     case 0x69:case 0x6a:case 0x6b:case 0x6c:case 0x82:case 0xa0:case 0xa1:case 0xb0:
+     case 0xb3:case 0xb4:case 0xb5:case 0xb6:case 0xb7:case 0xb8:
+@@ -60,6 +60,7 @@ const char *commandName(CommandKind kind) {
+     case CommandKind::ReservedNoop:return "reserved_noop";
+     case CommandKind::UnknownSetting06:return "setting_06_no_known_consumer";
+     case CommandKind::TelemetryStream:return "telemetry_stream";
++    case CommandKind::ImuStream:return "imu_stream";
+     case CommandKind::PitchCalibration:return "pitch_calibration";
+     case CommandKind::HeadingHold:return "heading_hold";
+     case CommandKind::BleSuffix:return "ble_suffix";
+diff --git a/firmware/src/command_protocol.h b/firmware/src/command_protocol.h
+index ea38165..50405e7 100644
+--- a/firmware/src/command_protocol.h
++++ b/firmware/src/command_protocol.h
+@@ -7,7 +7,7 @@ enum class Source : uint8_t { Usb = 0, Aux = 1, Ble = 3 };
+ enum class CommandKind : uint8_t {
+     ActionLoop = 0x03, LegCalibration = 0x04, ReservedNoop = 0x05,
+     UnknownSetting06 = 0x06, TelemetryStream = 0x08, PitchCalibration = 0x09,
+-    HeadingHold = 0x0a, BleSuffix = 0x13, Forward = 0x30,
++    HeadingHold = 0x0a, ImuStream = 0x11 /* Patch 0014 */, BleSuffix = 0x13, Forward = 0x30,
+     Turn = 0x32, Height = 0x35, Roll = 0x36, RollWave = 0x39,
+     Action = 0x3e, PositionHoldProtection = 0x60, Leveling = 0x61,
+     Rgb0 = 0x69, Rgb1 = 0x6a, Rgb2 = 0x6b, Rgb3 = 0x6c,
+diff --git a/firmware/src/imu_stream.h b/firmware/src/imu_stream.h
+new file mode 100644
+index 0000000..7491bab
+--- /dev/null
++++ b/firmware/src/imu_stream.h
+@@ -0,0 +1,93 @@
++#pragma once
++// Patch 0014: IMU- und Raddaten als Datenstrom an den Pi, statt sie per Leseanfrage abzufragen.
++// Einschalten: Schreibbefehl auf Register 0x11, 1 Byte = Rate in Hz (0 = aus, höchstens 250 Hz).
++// Ausgewählt wird nach der Messzeit, nicht nach Probenzahl: Die IMU wird am RiderPi nur etwa alle
++// 3 ms gelesen (gemessen 2026-11-08, nicht 2 ms wie kImuPeriodUs), die Abstände springen daher
++// um eine Abtastung (bei 100 Hz 9/12 ms), im Mittel stimmt die Rate. Nach Neustart aus.
++// Paket im üblichen Rahmen (buildFrame), Typ 0x14 (Antworten haben 0x12), Register 0x11,
++// 26 Byte Nutzdaten little endian:
++//   0 u16 seq (läuft über; eine Lücke heißt verworfenes Paket)
++//   2 u32 t_us  micros() der IMU-Lesung
++//   6/10/14 float Roll, Nick, Kurs (Grad, wie 0x0d)
++//   18/22 s32 Ticks Rad 11 / Rad 21 (wie 0x0c/0x0d)
++// Die Regelung legt Proben nur in den Ring (ein Erzeuger, ein Verbraucher, ohne Sperre); loop()
++// sendet und verwirft, wenn der UART-Puffer voll ist. Senden blockiert die Regelung damit nie.
++#include <atomic>
++#include <cstddef>
++#include <cstdint>
++#include <cstring>
++#include "command_protocol.h"
++
++namespace rider2 { namespace imustream {
++
++constexpr std::uint8_t kReg = 0x11, kType = 0x14;
++constexpr std::size_t kPayload = 26, kFrame = kPayload + 8;
++constexpr std::uint32_t kIdleOffMs = 5000;   // Strom aus, wenn der Pi so lange nichts schickt
++
++// Rate in Hz -> Sollabstand in µs (0 = aus), höchstens 250 Hz.
++inline std::uint32_t periodForHz(std::uint8_t hz) {
++    if (!hz) return 0;
++    return 1000000u / (hz > 250 ? 250u : hz);
++}
++
++struct Sample {
++    std::uint16_t seq = 0;
++    std::uint32_t t_us = 0;
++    float roll = 0, pitch = 0, yaw = 0;
++    std::int32_t w11 = 0, w21 = 0;
++};
++
++// Sagt je IMU-Probe (Messzeit t_us), ob sie gesendet werden soll; seq zählt jede fällige Probe,
++// auch wenn sie nicht gesendet werden kann (ungültig, Ring voll). Liegt die Zeit weit zurück
++// (Pause, Neustart des Stroms), wird neu aufgesetzt statt nachzuholen.
++struct Producer {
++    bool on = false;
++    std::uint32_t next_us = 0;
++    std::uint16_t seq = 0;
++    bool due(std::uint32_t period_us, std::uint32_t t_us) {
++        if (!period_us) { on = false; return false; }
++        if (!on) { on = true; next_us = t_us; }
++        if (std::int32_t(t_us - next_us) < 0) return false;
++        next_us += period_us;
++        if (std::int32_t(t_us - next_us) >= 0) next_us = t_us + period_us;
++        ++seq;
++        return true;
++    }
++};
++
++template <std::size_t N>
++class Ring {
++    static_assert((N & (N - 1)) == 0, "N muss eine Zweierpotenz sein");
++public:
++    bool push(const Sample& s) {
++        const std::uint32_t h = head_.load(std::memory_order_relaxed);
++        if (h - tail_.load(std::memory_order_acquire) >= N) return false;   // voll: verwerfen
++        buf_[h % N] = s;
++        head_.store(h + 1, std::memory_order_release);
++        return true;
++    }
++    bool pop(Sample& s) {
++        const std::uint32_t t = tail_.load(std::memory_order_relaxed);
++        if (t == head_.load(std::memory_order_acquire)) return false;
++        s = buf_[t % N];
++        tail_.store(t + 1, std::memory_order_release);
++        return true;
++    }
++private:
++    Sample buf_[N];
++    std::atomic<std::uint32_t> head_{0}, tail_{0};
++};
++
++inline void putU32(std::uint8_t* p, std::uint32_t v) { for (int i = 0; i < 4; ++i) p[i] = std::uint8_t(v >> (8 * i)); }
++inline void putF(std::uint8_t* p, float v) { std::uint32_t b; std::memcpy(&b, &v, 4); putU32(p, b); }
++
++inline std::size_t buildPacket(const Sample& s, std::uint8_t* out, std::size_t cap) {
++    std::uint8_t d[kPayload];
++    d[0] = std::uint8_t(s.seq); d[1] = std::uint8_t(s.seq >> 8);
++    putU32(d + 2, s.t_us);
++    putF(d + 6, s.roll); putF(d + 10, s.pitch); putF(d + 14, s.yaw);
++    putU32(d + 18, std::uint32_t(s.w11)); putU32(d + 22, std::uint32_t(s.w21));
++    return protocol::buildFrame(kType, kReg, d, kPayload, out, cap);
++}
++
++}} // namespace rider2::imustream
+diff --git a/firmware/src/main.cpp b/firmware/src/main.cpp
+index 7acf302..fd8d17b 100644
+--- a/firmware/src/main.cpp
++++ b/firmware/src/main.cpp
+@@ -22,6 +22,7 @@ extern "C" {extern const volatile uint32_t rider_rl_only_build=0x524c4f31;}
+ #include "runtime_guard.h"
+ #include "odometry.h"
+ #include "command_protocol.h"
++#include "imu_stream.h"
+ #include "ble_transport.h"
+ #include "trace.h"
+ #include "lift_guard.h"
+@@ -145,6 +146,11 @@ portMUX_TYPE stateLock=portMUX_INITIALIZER_UNLOCKED;
+ bool emergencyRequested=false;
+ QueueHandle_t commands=nullptr;
+ HardwareSerial commandSerial(1);
++// Patch 0014: IMU-Strom (imu_stream.h). Sollabstand µs, 0 = aus; Quelle des Einschaltbefehls; letztes Byte vom Pi.
++rider2::imustream::Ring<16> imuStreamRing;
++std::atomic<uint32_t> imuStreamPeriodUs{0};
++volatile uint8_t imuStreamSource=uint8_t(Source::Aux);
++volatile uint32_t lastAuxRxMs=0;
+ StreamParser parser;
+ bool bleReady=false;
+ bool robotTaskStarted=false;
+@@ -184,6 +190,7 @@ public:
+     int16_t diag_ctrl11=0,diag_ctrl21=0;   // patch 0007: classic controller output before gain/smoothing/slew
+     rider::control::YawBiasTracker yaw_bias_tracker;   // patch 0009: gyro-z bias tracking
+     bool turnHoldFlag() const {return turn_hold_enabled;}
++    rider2::imustream::Producer imu_stream_prod;   // patch 0014
+     rider2::fall::State fall_state,fall_deep_state;rider2::fall::Config fall_config,fall_deep_config=rider2::fall::deepConfig();uint32_t fall_last_us=0;
+     double trim_to_save=0;
+     bool save_trim_pending=false;
+@@ -300,13 +307,17 @@ public:
+     void dispatch(const CommandEvent& e) {
+         auto& a=actions.state();const uint8_t value=e.data[0];const uint32_t now=millis();
+         const auto kind=commandKind(e);
+-        if(board.state().low_stage && kind!=CommandKind::TelemetryStream){++s.rejected_commands;return;}
++        if(board.state().low_stage && kind!=CommandKind::TelemetryStream && kind!=CommandKind::ImuStream){++s.rejected_commands;return;}
+         switch(kind) {
+         case CommandKind::ActionLoop:actions.setLoop(value,now);break;
+         case CommandKind::LegCalibration:if(value==1)enterCalibration();else if(value==0)saveCalibration();break;
+         case CommandKind::ReservedNoop:break;
+         case CommandKind::UnknownSetting06:s.setting06=value;break;
+         case CommandKind::TelemetryStream:s.stream=value!=0;s.stream_source=e.source;break;
++        case CommandKind::ImuStream:   // patch 0014: Rate in Hz, 0 = aus; nur USB/Aux
++            if(e.source==Source::Ble){++s.rejected_commands;result("imu stream: USB/aux only");break;}
++            imuStreamSource=uint8_t(e.source);imuStreamPeriodUs.store(rider2::imustream::periodForHz(value));
++            result(value?"imu stream on":"imu stream off");break;
+         case CommandKind::PitchCalibration:
+ #if RIDER2_RL_ONLY
+             ++s.rejected_commands;result("wheel PID pitch trim unavailable in RL-only firmware");break;
+@@ -415,6 +426,16 @@ public:
+                 rider::control::updateImu(s.imu,raw,12,sample_us,now,actions.state().mode)&&
+                 std::isfinite(s.imu.pitch_deg)&&std::isfinite(s.imu.roll_deg)&&std::isfinite(s.imu.yaw_deg)&&std::isfinite(s.imu.pitch_rate_rad_s);
+             imu_low_g_only=!imu_valid&&low_g_read;
++            {   // Patch 0014: Probe für den IMU-Strom nur in den Ring legen, gesendet wird in loop()
++                uint32_t period=imuStreamPeriodUs.load(std::memory_order_relaxed);
++                if(period&&imuStreamSource==uint8_t(Source::Aux)&&uint32_t(now-lastAuxRxMs)>rider2::imustream::kIdleOffMs){imuStreamPeriodUs.store(0);period=0;}
++                if(imu_stream_prod.due(period,sample_us)&&imu_valid) {
++                    rider2::imustream::Sample x;x.seq=imu_stream_prod.seq;x.t_us=sample_us;
++                    x.roll=s.imu.roll_deg;x.pitch=s.imu.pitch_deg;x.yaw=s.imu.yaw_deg;
++                    x.w11=bus.sample(11).encoder_ticks;x.w21=bus.sample(21).encoder_ticks;
++                    imuStreamRing.push(x);
++                }
++            }
+             // Patch 0009: Gyro-z-Nullpunkt nachführen. Referenz beim Balancieren die Encoder-Differenz
+             // (beide Räder frisch), sonst Stillstand (liegt/sitzt; Bewegung verwirft trackYawBias selbst).
+             if(imu_valid) {
+@@ -1032,7 +1053,9 @@ void loop() {
+             else if(used<sizeof(line)-1)line[used++]=char(b);else overflow=true;
+         }else receive(Source::Usb,b);
+     }
+-    budget=256;while(commandSerial.available()&&budget--)receive(Source::Aux,uint8_t(commandSerial.read()));
++    budget=256;
++    if(commandSerial.available())lastAuxRxMs=millis();   // patch 0014: Pi lebt
++    while(commandSerial.available()&&budget--)receive(Source::Aux,uint8_t(commandSerial.read()));
+     static bool previousBle=false;static uint32_t previousDrops=0;
+     const bool connected=rider2::bleConnected();const uint32_t dropped=rider2::bleDroppedBytes();
+     if(previousBle!=connected||previousDrops!=dropped){parser.reset(Source::Ble);if(previousBle&&!connected){Event e;e.kind=EventKind::Neutral;enqueue(e);}previousBle=connected;previousDrops=dropped;}
+@@ -1080,5 +1103,13 @@ void loop() {
+         if(trace_usb.finished){trace_usb.finished=false;Serial.printf("# end %u\n",trace_usb.sent);}
+     }
+     if(uint32_t(now-lastStream)>20){lastStream=now;const auto s=snapshot();if(s.stream&&s.stream_source!=Source::Ble&&uint32_t(now-s.ms)<50){uint8_t out[48];route(s.stream_source,out,buildStreamTelemetry(s.telemetry,out,sizeof out));}}
++    {   // Patch 0014: IMU-Strom senden; ist der UART-Puffer voll, wird verworfen (seq zeigt die Lücke)
++        rider2::imustream::Sample x;uint8_t out[rider2::imustream::kFrame];
++        for(int k=0;k<8&&imuStreamRing.pop(x);++k) {
++            const size_t n=rider2::imustream::buildPacket(x,out,sizeof out);
++            if(imuStreamSource==uint8_t(Source::Aux)){if(commandSerial.availableForWrite()>=int(n))commandSerial.write(out,n);}
++            else if(Serial.availableForWrite()>=int(n))Serial.write(out,n);
++        }
++    }
+     delay(1);
+ }
