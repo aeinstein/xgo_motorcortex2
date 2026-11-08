@@ -202,6 +202,7 @@ Sounds: `sound` true, `sound_dir` `/opt/xgonav/sounds`, `sound_found` `freude.wa
 | `enabled` | true |
 | `resolution_m` / `size_m` | 0.05 / 16.0 |
 | `min_range_m` / `max_range_m` | 0.15 / 1.25 (hits only up to here) |
+| `confirm_dr_m` / `confirm_cells` | 0 (off) / 2; RiderPi 0.2: a hit counts only once the same spot (± cells) was hit from ranges at least this far apart; until then it is a candidate (orange in `/map.png`). Reflections in a glossy floor and seams move with the Rider and are never confirmed; turning on the spot alone confirms nothing |
 | `free_range_m` | 1.5 (free rays up to here); RiderPi 1.1 |
 | `row_bias` | 1.5 working rows (+ = boundary farther, simulator); RiderPi −1.0 (tape at 0.48 m: boundary ~1 row above the edge) |
 | `column_step` | 2 |

@@ -76,6 +76,7 @@ class GridMap:
     def reset(self) -> None:
         with self._lock:
             self.lo = np.zeros((self.n, self.n), np.float32)      # Log-Odds, 0 = unbekannt
+            self._reset_confirm()
             self.x = self.y = self.th = 0.0                       # Pose im Karten-KS (m, rad)
             self.path: list[tuple[float, float]] = [(0.0, 0.0)]
             self.updates = 0
@@ -89,6 +90,16 @@ class GridMap:
             self.zones: list[list[tuple[float, float]]] = []      # Sperrzonen: Eckpunkte, gelten für alle Modi
             self._saved_key = None                                # (updates, start) beim letzten Speichern
             self._saved_t = time.monotonic()
+
+    def _reset_confirm(self) -> None:
+        """Bestätigung aus zwei Abständen (confirm_dr_m): je Zelle kleinste/größte Entfernung, aus der sie
+        getroffen wurde, und ob sie bestätigt ist. Aufrufer hält das Lock (oder ist __init__)."""
+        if self.cfg.confirm_dr_m > 0:
+            self.rmin = np.full((self.n, self.n), np.inf, np.float32)
+            self.rmax = np.full((self.n, self.n), -np.inf, np.float32)
+            self.conf = np.zeros((self.n, self.n), bool)
+        else:
+            self.rmin = self.rmax = self.conf = None
 
     def lock(self, on: bool = True) -> None:
         with self._lock:
@@ -130,11 +141,13 @@ class GridMap:
             path_pts = np.array(self.path, np.float64).reshape(-1, 2)
             key = (self.updates, self.start)
             map_id, locked = self.map_id, self.locked
+            extra = {} if self.conf is None else {"rmin": self.rmin.astype(np.float16),
+                                                  "rmax": self.rmax.astype(np.float16), "conf": self.conf.copy()}
         tmp = path + ".tmp"
         try:
             with open(tmp, "wb") as f:
                 np.savez_compressed(f, lo=lo.astype(np.float16), res=self.res, n=self.n,
-                                    start=start, path=path_pts, map_id=map_id, locked=locked)
+                                    start=start, path=path_pts, map_id=map_id, locked=locked, **extra)
             os.replace(tmp, path)
         except OSError as e:
             log.warning("Raumkarte nicht gespeichert (%s): %s", path, e)
@@ -168,11 +181,19 @@ class GridMap:
                 start = tuple(float(v) for v in d["start"])
                 map_id = str(d["map_id"]) if "map_id" in d.files else secrets.token_hex(4)
                 locked = bool(d["locked"]) if "locked" in d.files else False
+                cand = tuple(d[k] for k in ("rmin", "rmax", "conf")) if "conf" in d.files else None
         except (OSError, KeyError, ValueError) as e:
             log.warning("Raumkarte %s nicht geladen: %s", path, e)
             return False
         with self._lock:
             self.lo = lo
+            self._reset_confirm()
+            if self.conf is not None and cand is not None:
+                # ältere Karten ohne diese Felder: belegte Zellen gelten als bestätigt (siehe unten)
+                self.rmin, self.rmax = cand[0].astype(np.float32), cand[1].astype(np.float32)
+                self.conf = cand[2].astype(bool)
+            elif self.conf is not None:
+                self.conf = lo > self.cfg.l_show
             self.start = start
             self.x, self.y, self.th = start
             self.path = [(start[0], start[1])]
@@ -217,6 +238,10 @@ class GridMap:
         disk = rr * rr + cc2 * cc2 <= k * k
         view = self.lo[r0:r1, c0:c1]
         view[disk] = np.minimum(view[disk], self.cfg.l_min)
+        if self.conf is not None:
+            self.rmin[r0:r1, c0:c1][disk] = np.inf
+            self.rmax[r0:r1, c0:c1][disk] = -np.inf
+            self.conf[r0:r1, c0:c1][disk] = False
 
     def cell(self, x, y):
         """Welt-Meter -> Zellindizes (Zeile, Spalte); Kartenmitte = Ursprung."""
@@ -281,10 +306,12 @@ class GridMap:
                     self._gen = 2
                 g = self._gp
                 g.nrays, g.px, g.py = len(idx), px, py
-                ok8, hit8 = ok.view(np.uint8), np.ascontiguousarray(hit).view(np.uint8)
+                # Treffer trägt der Kern nicht ein (hit = 0), das macht _add_hits für beide Wege gleich
+                ok8, hit8 = ok.view(np.uint8), np.zeros(len(idx), np.uint8)
                 self._lib.grid_add(ctypes.byref(g), lo.ctypes.data, self._stamp.ctypes.data, self._gen,
                                    start.ctypes.data, free_len.ctypes.data, dist.ctypes.data, ca.ctypes.data,
                                    sa.ctypes.data, ok8.ctypes.data, hit8.ctypes.data)
+                self._add_hits(px, py, dist, ca, sa, hit)
                 self.updates += 1
                 return
             # freie Strecken: Stützstellen alle res/2 von start bis free_len
@@ -302,15 +329,41 @@ class GridMap:
                 # Hysterese: schon belegte Zellen nur abgeschwächt abbauen
                 step = np.where(cur > cfg.l_show, cfg.l_free * cfg.occ_free_factor, cfg.l_free)
                 self.lo.flat[lin] = np.maximum(cur + step, cfg.l_min)
-            if hit.any():
-                ox = px + dist[hit] * ca[hit]
-                oy = py + dist[hit] * sa[hit]
-                r, c = self.cell(ox, oy)
-                m = (r >= 0) & (r < self.n) & (c >= 0) & (c < self.n)
-                lin = np.unique(r[m] * self.n + c[m])
-                self.lo.flat[lin] = np.minimum(self.lo.flat[lin] + cfg.l_occ, cfg.l_max)
+            self._add_hits(px, py, dist, ca, sa, hit)
             # nur berührte Zellen begrenzt (ganzes Raster: 100k Werte je Bild, ~1 ms am CM4)
             self.updates += 1
+
+    def _add_hits(self, px: float, py: float, dist, ca, sa, hit) -> None:
+        """Treffer eintragen (Aufrufer hält das Lock). Mit confirm_dr_m > 0 zählt eine Zelle erst, wenn sie
+        (oder eine Nachbarzelle bis confirm_cells) aus Entfernungen getroffen wurde, die sich um mindestens
+        confirm_dr_m unterscheiden. Ein echtes Hindernis bleibt an seiner Stelle, wenn der Rider näher
+        kommt; Spiegelungen im glänzenden Boden (RiderPi 2026-11-08: Fensterunterkante, d = D·h/(h_K + h))
+        und Fugen, die je nach Abstand eine andere sind, wandern mit und werden nie bestätigt. Aus einer
+        Drehung auf der Stelle allein wird daher nichts belegt."""
+        if not hit.any():
+            return
+        cfg = self.cfg
+        ox = px + dist[hit] * ca[hit]
+        oy = py + dist[hit] * sa[hit]
+        r, c = self.cell(ox, oy)
+        m = (r >= 0) & (r < self.n) & (c >= 0) & (c < self.n)
+        lin, first = np.unique(r[m] * self.n + c[m], return_index=True)
+        if self.conf is not None and lin.size:
+            d = dist[hit][m][first].astype(np.float32)
+            # Nachbarschaft in einem Zugriff (je Treffer (2k+1)² Zellen, am Rand abgeschnitten)
+            k = max(0, int(cfg.confirm_cells))
+            o = np.arange(-k, k + 1)
+            r2 = np.clip((lin // self.n)[:, None] + np.repeat(o, len(o))[None, :], 0, self.n - 1)
+            c2 = np.clip((lin % self.n)[:, None] + np.tile(o, len(o))[None, :], 0, self.n - 1)
+            nb = r2 * self.n + c2
+            lo_r = np.minimum(self.rmin.flat[nb].min(axis=1), d)
+            hi_r = np.maximum(self.rmax.flat[nb].max(axis=1), d)
+            ok = self.conf.flat[lin] | (hi_r - lo_r >= np.float32(cfg.confirm_dr_m))
+            self.rmin.flat[lin] = np.minimum(self.rmin.flat[lin], d)
+            self.rmax.flat[lin] = np.maximum(self.rmax.flat[lin], d)
+            self.conf.flat[lin] = ok
+            lin = lin[ok]
+        self.lo.flat[lin] = np.minimum(self.lo.flat[lin] + cfg.l_occ, cfg.l_max)
 
     # ---- Abfragen / Anzeige ------------------------------------------
     def occupied_cells(self, thresh: float | None = None) -> np.ndarray:
@@ -354,6 +407,7 @@ class GridMap:
         view_m = view_m or self.cfg.view_m
         with self._lock:
             lo = self.lo.copy()
+            cand_map = None if self.conf is None else (np.isfinite(self.rmin) & ~self.conf)
             x, y, th = self.x, self.y, self.th
             path = list(self.path)
             plan = list(self.plan)
@@ -371,7 +425,13 @@ class GridMap:
         val[inside] = lo[r[inside], c[inside]]
         g = (255 / (1.0 + np.exp(val))).astype(np.uint8)                 # 1 - P(belegt)
         g[np.abs(val) < 0.05] = 128
-        img = cv2.resize(cv2.cvtColor(g, cv2.COLOR_GRAY2BGR), (px, px), interpolation=cv2.INTER_NEAREST)
+        rgb = cv2.cvtColor(g, cv2.COLOR_GRAY2BGR)
+        if cand_map is not None:
+            # unbestätigte Treffer (nur aus einem Abstand gesehen, z. B. Spiegelungen): orange, nicht belegt
+            cm = np.zeros((n_px, n_px), bool)
+            cm[inside] = cand_map[r[inside], c[inside]]
+            rgb[cm & (val <= self.cfg.l_show)] = (0, 150, 255)
+        img = cv2.resize(rgb, (px, px), interpolation=cv2.INTER_NEAREST)
 
         def to_px(ax, ay):
             return (int(round((n_px / 2 - (ay - my) / self.res) * k)),

@@ -348,6 +348,13 @@ class GridCfg:
     # Treffer nur bis hierhin: Kamera nur 12,8 cm hoch, eine Bildzeile sind bei 2 m schon ~40 cm
     max_range_m: float = 1.25
     min_range_m: float = 0.15          # davor sieht die Kamera den Boden nicht
+    # Treffer erst eintragen, wenn dieselbe Stelle (± confirm_cells Zellen) aus Entfernungen getroffen wurde, die
+    # sich um mindestens so viel unterscheiden (m). Spiegelungen im glänzenden Boden und Fugen wandern mit dem
+    # Rider und werden so nie belegt (Anzeige: orange). Aus Drehungen auf der Stelle allein entsteht nichts.
+    # 0 = aus (jeder Treffer zählt). RiderPi 0.2 (2026-11-08: Fensterunterkante gespiegelt, doppelte Wand).
+    # Simulator explore 120 s: Wände 82 % (aus) / 57 % (±1 Zelle) / 73 % (±2 Zellen), Präzision 0,90 / 0,95 / 0,93.
+    confirm_dr_m: float = 0.0
+    confirm_cells: int = 2
     # Das Bodenmodell meldet die Grenze so viele Zeilen (seiner Auflösung) unterhalb der wahren
     # (Stufenfilter, Erosion). Nur für die Raumkarte; die Merkkarte behält das als Sicherheitsrand.
     # Simulator-Sweep 2026-11-05: 1,5. RiderPi (Klebeband 0,48 m, 2026-11-07): Grenze ~1 Zeile ÜBER der

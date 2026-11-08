@@ -1449,6 +1449,62 @@ def test_gridmap_native_matches_numpy():
     assert np.abs(mn.lo).max() > 1.0 and mn.updates == mp.updates == 300
 
 
+def test_gridmap_confirm_from_two_distances(tmp_path):
+    """confirm_dr_m: Treffer zählen erst, wenn dieselbe Stelle aus zwei verschiedenen Entfernungen getroffen
+    wurde. Echtes Hindernis: bleibt stehen, wird belegt. Spiegelung (wandert mit dem Rider) und Drehung auf der
+    Stelle (immer gleiche Entfernung): nie belegt, nur Kandidat. Gefahrener Weg löscht Kandidaten."""
+    from dataclasses import replace
+    from xgonav.gridmap import GridMap
+    cfg = Config()
+    g = CamGeometry(640, 480, 91.0, 1.39, 43.0, 85.0)
+    m = GridMap(replace(cfg.grid, confirm_dr_m=0.2, native=False), g, 160, 120)
+    ang = np.radians(np.linspace(-3, 3, 7))
+    ca, sa, hit = np.cos(ang), np.sin(ang), np.ones(7, bool)
+
+    def shot(px, d, n=3):
+        with m._lock:
+            for _ in range(n):
+                m._add_hits(px, 0.0, np.full(7, d), ca, sa, hit)
+
+    def occ(x):
+        r, c = m.cell(x, 0.0)
+        return m.lo[r, c] > cfg.grid.l_show
+
+    shot(0.0, 1.0)                                    # echtes Hindernis bei x = 1,0 aus 1,0 m
+    assert not occ(1.0) and np.isfinite(m.rmin[m.cell(1.0, 0.0)])
+    shot(0.3, 0.7)                                    # näher dran, gleiche Stelle: bestätigt
+    assert occ(1.0)
+    shot(0.0, 0.6)                                    # Spiegelung: vom Start bei 0,6 m ...
+    shot(0.72, 0.82)                                  # ... 0,72 m weiter vorn bei 1,54 m (wandert mit)
+    assert not occ(0.6) and not occ(1.54)
+    shot(5.0, 0.8, n=10)                              # Drehung auf der Stelle: immer 0,8 m
+    assert not occ(5.8)
+    img = m.image(480, 4.0)                           # Kandidaten orange in der Anzeige
+    assert img.shape == (480, 480, 3)
+    m._clear_disk(0.6, 0.0, 0.1)                      # darüber gefahren: Kandidat weg
+    assert not np.isfinite(m.rmin[m.cell(0.6, 0.0)])
+    f = str(tmp_path / "k.npz")                       # Kandidaten und Bestätigung werden gespeichert
+    assert m.save(f)
+    m2 = GridMap(replace(cfg.grid, confirm_dr_m=0.2, native=False), g, 160, 120)
+    assert m2.load(f) and m2.conf[m.cell(1.0, 0.0)] and np.isfinite(m2.rmin[m.cell(1.54, 0.0)])
+    # Kern (falls gebaut) und numpy gleich, auch mit Bestätigung
+    from xgonav.freespace import FreeSpace
+    from xgonav.gridmap import _grid_lib
+    if _grid_lib() is None:
+        return
+    mn = GridMap(replace(cfg.grid, confirm_dr_m=0.2), g, 160, 120)
+    mp = GridMap(replace(cfg.grid, confirm_dr_m=0.2, native=False), g, 160, 120)
+    rng = np.random.default_rng(5)
+    hz = g.horizon_row(0) / 4
+    for k in range(200):
+        cols = rng.uniform(0.0, 1.0, 160)
+        fs = FreeSpace([0.5] * 5, cols, hz, np.zeros((120, 160), np.uint8), True, None)
+        pose = (0.01 * k, 0.0, 0.0)
+        mn.add_freespace(fs, 0.0, pose)
+        mp.add_freespace(fs, 0.0, pose)
+    assert np.array_equal(mn.lo, mp.lo) and np.array_equal(mn.conf, mp.conf)
+
+
 # ---------------------------------------------------------------- Startpunkt, Speichern, Heimfahrt
 def _grid():
     from xgonav.gridmap import GridMap
