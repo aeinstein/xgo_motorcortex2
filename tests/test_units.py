@@ -2092,15 +2092,24 @@ def test_map_explore_contact_blocks_goal_at_once():
 
 
 def test_grid_heading_from_imu():
+    """[grid] yaw_source "imu": Kurs aus imu_log, ist der alt die /proc-Treppe, sonst Räder; Quellenwechsel ohne Sprung."""
+    from xgonav.imu import ImuSource
     app = _app(freespace=True)
-    assert app._grid_dyaw(0.5) == 0.5                                  # Default: Räder
+    now = time.monotonic()
+    assert app._grid_dyaw(0.5, now) == 0.5                             # Default: Räder
     app.cfg.grid.yaw_source = "imu"
     app.robot.state.yaw_deg = 179.0
-    assert app._grid_dyaw(0.5) == 0.0                                  # erster Wert: nur merken
+    assert app._grid_dyaw(0.5, now) == 0.5 and app.grid_yaw_src == "status"   # erster Wert: Räder, merken
     app.robot.state.yaw_deg = -179.0                                   # über die Naht: +2°
-    assert abs(app._grid_dyaw(0.5) - math.radians(2.0)) < 1e-9
-    app.robot.state.yaw_deg = None                                     # keine IMU: Rückfall
-    assert app._grid_dyaw(0.5) == 0.5
+    assert abs(app._grid_dyaw(0.5, now) - math.radians(2.0)) < 1e-9
+    app.imu = ImuSource(app.cfg.imu)                                   # imu_log-Kurs vorhanden: hat Vorrang
+    app.imu.add(1, now, 0.0, 0.0, math.radians(10.0))
+    assert app._grid_dyaw(0.5, now) == 0.5 and app.grid_yaw_src == "imu"      # Wechsel: Räder, kein Sprung
+    app.imu.add(2, now + 0.01, 0.0, 0.0, math.radians(13.0))
+    assert abs(app._grid_dyaw(0.5, now + 0.01) - math.radians(3.0)) < 1e-9
+    assert app._grid_dyaw(0.5, now + 5.0) == 0.5 and app.grid_yaw_src == "status"   # imu_log zu alt
+    app.imu, app.robot.state.yaw_deg = None, None                      # keine IMU: Rückfall
+    assert app._grid_dyaw(0.5, now) == 0.5 and app.grid_yaw_src == "odom"
 
 
 def test_home_stuck_near_goal_counts_as_arrived():

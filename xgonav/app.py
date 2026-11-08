@@ -102,7 +102,8 @@ class App:
         self._wheel_at_ctrl = None         # Radprobe beim letzten Regelschritt
         self.odom_src = "befehl"
         self._wheel_dyaw: float | None = None   # Drehung laut Rädern im letzten Regelschritt
-        self._grid_yaw: float | None = None     # letzter IMU-Kurs (Grad) für die Raumkarte
+        self._grid_yaw: tuple[str, float] | None = None   # (Quelle, letzter IMU-Kurs rad) für die Raumkarte
+        self.grid_yaw_src = "odom"
         self._lmap_yaw: float | None = None     # letzter Kurs aus imu_log (rad) für die Merkkarte
         self.lmap_yaw_src = "odom"
         self.odom_m = 0.0                  # gefahrene Strecke laut Odometrie (Betrag, seit Start)
@@ -474,7 +475,7 @@ class App:
                     # Kartenkurs: Räder driften bei Drehungen weniger als die Ego-Motion
                     gyaw = self._wheel_dyaw if (self.cfg.grid.yaw_source != "kamera"
                                                 and self._wheel_dyaw is not None) else dyaw_vis
-                    self.gridmap.move(ds, self._grid_dyaw(gyaw))
+                    self.gridmap.move(ds, self._grid_dyaw(gyaw, now))
                 if free is not None and self._free is not self._fs_in_map:
                     self._fs_in_map = self._free
                     view = self._map_view(free, tracks, f.t)
@@ -542,6 +543,7 @@ class App:
                                         "hz": round(self.wheels.rate_hz, 1) if self.wheels else None},
                                "mode": self.behavior.name, "yaw_vis_deg": round(math.degrees(self.vis_yaw), 1),
                                "yaw_deg": round(math.degrees(self.yaw), 1), "yaw_src": self.yaw_src, "lmap_yaw_src": self.lmap_yaw_src,
+                               "grid_yaw_src": self.grid_yaw_src,
                                "yaw_drv": self.robot.state.yaw_deg, "battery": self.robot.state.battery,
                                "balancing": self.robot.state.balancing,
                                "height_mm": round(self.geo.body_height_mm, 1),
@@ -573,7 +575,7 @@ class App:
         if self.lmap is not None:
             self.lmap.move(ds, self._lmap_dyaw(dyaw, now))
         if self.gridmap is not None:
-            self.gridmap.move(ds, self._grid_dyaw(dyaw))
+            self.gridmap.move(ds, self._grid_dyaw(dyaw, now))
 
     def _lmap_dyaw(self, fallback: float, now: float) -> float:
         """Drehung der Merkkarte seit dem letzten Aufruf (rad, links +): Kurs aus imu_log bei [map] yaw_source
@@ -586,13 +588,26 @@ class App:
         self.lmap_yaw_src = "imu"
         return fallback if last is None else p[1] - last
 
-    def _grid_dyaw(self, fallback: float) -> float:
-        """Drehung der Kartenpose seit dem letzten Aufruf (rad): aus der Firmware-IMU bei yaw_source \"imu\"."""
-        y = self.robot.state.yaw_deg
-        if self.cfg.grid.yaw_source != "imu" or y is None:
+    def _grid_dyaw(self, fallback: float, now: float) -> float:
+        """Drehung der Kartenpose seit dem letzten Aufruf (rad, links +) bei [grid] yaw_source "imu": Kurs aus
+        imu_log (Strom 100 Hz), ist der zu alt oder fehlt, die 5-Hz-Treppe aus /proc yaw; sonst und beim ersten
+        Wert bzw. Quellenwechsel fallback (Räder bzw. Kamera)."""
+        if self.cfg.grid.yaw_source != "imu":
+            self._grid_yaw, self.grid_yaw_src = None, "odom"
             return fallback
-        last, self._grid_yaw = self._grid_yaw, y
-        return 0.0 if last is None else math.radians((y - last + 180.0) % 360.0 - 180.0)
+        p = self.imu.latest_yaw() if self.imu is not None else None
+        if p is not None and now - p[0] <= self.cfg.imu.max_age_s:
+            cur = ("imu", p[1])
+        elif self.robot.state.yaw_deg is not None:
+            cur = ("status", math.radians(self.robot.state.yaw_deg))
+        else:
+            self._grid_yaw, self.grid_yaw_src = None, "odom"
+            return fallback
+        last, self._grid_yaw = self._grid_yaw, cur
+        self.grid_yaw_src = cur[0]
+        if last is None or last[0] != cur[0]:
+            return fallback
+        return (cur[1] - last[1] + math.pi) % (2 * math.pi) - math.pi
 
     def _odom_ds(self, now: float, dt: float) -> float:
         """Strecke seit dem letzten Regelschritt (m): aus den Rad-Encodern, wenn frisch;

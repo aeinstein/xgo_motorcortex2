@@ -33,7 +33,7 @@ Checks sign, prints `vyaw_limit_dps`. Measured via ego-motion → needs step 0.
 | Item | Value |
 |---|---|
 | Height, direct measurement | lens centre above floor while balancing, at two or more height set-points → `cam_h_u8 = [a, b]` (mm = a + b·u8) |
-| RiderPi (2026-11-07) | u8 106 / 150 / 200: wheel axle 31 mm, leg pivot 87 / 91 / 98 mm, lens centre 122 / 125 / 132–133 mm → `cam_h_u8 = [109.4, 0.1126]` (residuals ≤ 1.3 mm). Camera sits rigidly 35 mm above the leg pivot |
+| RiderPi (2026-11-07) | u8 106 / 150 / 200: wheel axle 31 mm (2026-11-08 exact: wheel diameter 60 mm, hub 30 mm above the floor), leg pivot 87 / 91 / 98 mm, lens centre 122 / 125 / 132–133 mm → `cam_h_u8 = [109.4, 0.1126]` (residuals ≤ 1.3 mm). Camera sits rigidly 35 mm above the leg pivot |
 | Why not body height + offset | the body height in mm (60–120 over u8 0–255) rises 22 mm from u8 106 to 200, the real body only 11 mm; the old `mount_offset_mm = 43` (128 mm at u8 106) put the camera 18 mm too high at u8 200 |
 | Floor check (2026-11-07) | tape front edges 0.48 / 0.98 m from wheel contact, raw frames at u8 106 and 200, camera 36 mm ahead of contact (CAD): horizon off −0.05° / +0.08°, f·h too large by factor 1/0.926 / 1/0.921 (distances ~7.5 % too far) |
 | RiderPi value | `cam_h_u8 = [100.8, 0.1037]` = measured × 0.921 (u8 200, sharper edges). Empirical: cause open (vertical focal length vs. height); check: folding rule upright on a wall at known distance → px per cm |
