@@ -34,6 +34,8 @@ class ImuSource:
         self._t: deque[float] = deque()
         self._p: deque[float] = deque()
         self._r: deque[float] = deque()
+        self._y: deque[float] = deque()                 # Kurs (rad, links +, stetig ohne ±180°-Sprünge)
+        self._y_last = None                             # letzter Rohwert (rad) zum Entfalten
         self._hist = history_s
         self._last_seq = 0
         self._stop = threading.Event()
@@ -53,16 +55,27 @@ class ImuSource:
         if self._thread:
             self._thread.join(timeout=1)
 
-    def add(self, seq: int, t: float, roll: float, pitch: float) -> None:
+    def add(self, seq: int, t: float, roll: float, pitch: float, yaw: float | None = None) -> None:
+        """yaw: Firmware-Kurs (rad, links +) oder None. Sprünge über ±π werden entfaltet."""
         with self._lock:
             if seq <= self._last_seq:
                 return
             self._last_seq = seq
+            if yaw is None:
+                y = self._y[-1] if self._y else 0.0
+            elif self._y_last is None:
+                y = yaw
+            else:
+                d = (yaw - self._y_last + math.pi) % (2 * math.pi) - math.pi
+                y = (self._y[-1] if self._y else yaw) + d
+            if yaw is not None:
+                self._y_last = yaw
             self._t.append(t)
             self._r.append(roll)
             self._p.append(pitch)
+            self._y.append(y)
             while self._t and self._t[0] < t - self._hist:
-                self._t.popleft(); self._r.popleft(); self._p.popleft()
+                self._t.popleft(); self._r.popleft(); self._p.popleft(); self._y.popleft()
             self._cache = None
 
     def arrays(self) -> tuple[np.ndarray, np.ndarray]:
@@ -81,9 +94,16 @@ class ImuSource:
         with self._lock:
             return self._t[-1] if self._t else None
 
+    def latest_yaw(self) -> tuple[float, float] | None:
+        """(t, Kurs rad links +) der neuesten Probe mit Kurs, sonst None."""
+        with self._lock:
+            if not self._t or self._y_last is None:
+                return None
+            return self._t[-1], self._y[-1]
+
     def _run(self) -> None:
         n0, t0 = 0, time.monotonic()
-        while not self._stop.wait(0.05):
+        while not self._stop.wait(getattr(self.cfg, "poll_s", 0.05)):
             try:
                 n = self._poll()
             except Exception:
@@ -114,18 +134,20 @@ class ProcImu(ImuSource):
     def _poll(self) -> int:
         with open(self.path) as f:
             lines = f.read().splitlines()
-        n = 0
-        for ln in lines:
+        # Puffer ist nach seq geordnet: von hinten nur die neuen Zeilen nehmen (sonst je Lesen ~128 Zeilen parsen)
+        new = []
+        for ln in reversed(lines):
             p = ln.split()
             if len(p) != 5:
                 continue
-            seq, t_ns = int(p[0]), int(p[1])
-            if seq <= self._last_seq:
-                continue
+            if int(p[0]) <= self._last_seq:
+                break
+            new.append(p)
+        for p in reversed(new):
             # Felder: seq t_ns roll pitch yaw (Milligrad)
-            self.add(seq, t_ns / 1e9, math.radians(int(p[2]) / 1000), math.radians(int(p[3]) / 1000))
-            n += 1
-        return n
+            self.add(int(p[0]), int(p[1]) / 1e9, math.radians(int(p[2]) / 1000), math.radians(int(p[3]) / 1000),
+                     math.radians(int(p[4]) / 1000))
+        return len(new)
 
 
 class ImuSync:

@@ -81,6 +81,7 @@ row_bias = -1.0          # Klebeband 0,48 m (2026-11-07): Kantengrenze 3,85 px (
 
 [map]
 confirm = 3              # Kartenpunkt blockiert die Bahn erst nach 3 Beobachtungen
+yaw_source = "imu"       # Merkkarte dreht mit dem Kurs aus imu_log: volle Drehungen IMU 0,997 / Räder 0,992 des wahren Winkels (2026-11-08)
 
 [behavior]
 mode = "idle"         # idle | follow | explore | approach | home

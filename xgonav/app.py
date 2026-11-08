@@ -103,6 +103,8 @@ class App:
         self.odom_src = "befehl"
         self._wheel_dyaw: float | None = None   # Drehung laut Rädern im letzten Regelschritt
         self._grid_yaw: float | None = None     # letzter IMU-Kurs (Grad) für die Raumkarte
+        self._lmap_yaw: float | None = None     # letzter Kurs aus imu_log (rad) für die Merkkarte
+        self.lmap_yaw_src = "odom"
         self.odom_m = 0.0                  # gefahrene Strecke laut Odometrie (Betrag, seit Start)
         self.imu_sync = ImuSync(cfg.imu)
         self._imu_lp: float | None = None
@@ -467,7 +469,7 @@ class App:
                       yaw=self.yaw, cmd_v=self.robot.command[0],
                       geo=self.geo, pitch_dev=pitch_dev, battery=self.robot.state.battery)
             if self.lmap is not None:
-                self.lmap.move(ds, dyaw)
+                self.lmap.move(ds, self._lmap_dyaw(dyaw, now))
                 if self.gridmap is not None:
                     # Kartenkurs: Räder driften bei Drehungen weniger als die Ego-Motion
                     gyaw = self._wheel_dyaw if (self.cfg.grid.yaw_source != "kamera"
@@ -539,7 +541,7 @@ class App:
                                "odom": {"src": self.odom_src, "m": round(self.odom_m, 2),
                                         "hz": round(self.wheels.rate_hz, 1) if self.wheels else None},
                                "mode": self.behavior.name, "yaw_vis_deg": round(math.degrees(self.vis_yaw), 1),
-                               "yaw_deg": round(math.degrees(self.yaw), 1), "yaw_src": self.yaw_src,
+                               "yaw_deg": round(math.degrees(self.yaw), 1), "yaw_src": self.yaw_src, "lmap_yaw_src": self.lmap_yaw_src,
                                "yaw_drv": self.robot.state.yaw_deg, "battery": self.robot.state.battery,
                                "balancing": self.robot.state.balancing,
                                "height_mm": round(self.geo.body_height_mm, 1),
@@ -569,9 +571,20 @@ class App:
         dyaw = self._wheel_dyaw or 0.0
         self.yaw += dyaw
         if self.lmap is not None:
-            self.lmap.move(ds, dyaw)
+            self.lmap.move(ds, self._lmap_dyaw(dyaw, now))
         if self.gridmap is not None:
             self.gridmap.move(ds, self._grid_dyaw(dyaw))
+
+    def _lmap_dyaw(self, fallback: float, now: float) -> float:
+        """Drehung der Merkkarte seit dem letzten Aufruf (rad, links +): Kurs aus imu_log bei [map] yaw_source
+        "imu", sonst (oder bei fehlender/alter IMU) fallback = Räder bzw. Kamera."""
+        p = self.imu.latest_yaw() if self.cfg.map.yaw_source == "imu" and self.imu is not None else None
+        if p is None or now - p[0] > self.cfg.imu.max_age_s:
+            self._lmap_yaw, self.lmap_yaw_src = None, "odom"
+            return fallback
+        last, self._lmap_yaw = self._lmap_yaw, p[1]
+        self.lmap_yaw_src = "imu"
+        return fallback if last is None else p[1] - last
 
     def _grid_dyaw(self, fallback: float) -> float:
         """Drehung der Kartenpose seit dem letzten Aufruf (rad): aus der Firmware-IMU bei yaw_source \"imu\"."""

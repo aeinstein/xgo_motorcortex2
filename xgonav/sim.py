@@ -421,7 +421,7 @@ class SimImu:
                     now = time.monotonic()
                     raw = self.sgn * w.pitch_truth(now - w._t0) + self.ref + self.noise * self._rng.standard_normal()
                     self._seq += 1
-                    self.add(self._seq, now + self.t_err, 0.0, raw)
+                    self.add(self._seq, now + self.t_err, 0.0, raw, w.th)
                     self.rate_hz = self.hz
 
         return _SimImu(*a, **k)

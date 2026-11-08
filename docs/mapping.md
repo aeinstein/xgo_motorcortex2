@@ -18,7 +18,7 @@ Status JSON: `odom.src` = `räder` | `befehl`, `odom.m` = total distance.
 |---|---|
 | Frame | robot (x forward, y left, m), origin = wheel axle; floor points shifted forward by `camera.cam_fwd_mm` |
 | Input | floor-boundary points from the free-space estimator |
-| Motion | heading from ego-motion, distance from odometry |
+| Motion | distance from wheel odometry; heading per `map.yaw_source`: wheels (else ego-motion) or, RiderPi, the firmware heading from `imu_log` (same source as the room map) |
 | Lifetime | `map.max_age_s` = 4 s |
 | Range | 2.5 m |
 | Confirmation | point blocks only with ≥ `map.confirm` observations within `confirm_radius_m` (RiderPi: 3 within 0.08 m) |

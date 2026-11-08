@@ -1287,6 +1287,55 @@ def test_cx_offset_bearing_maps_and_sim():
     assert (box[0] + box[2]) / 2 == pytest.approx(333.0, abs=2.5)
 
 
+def test_imu_yaw_unwrap_and_localmap_yaw_source():
+    """imu_log-Kurs: über ±180° stetig; [map] yaw_source "imu" dreht die Merkkarte damit, alte IMU -> Räder."""
+    from xgonav.app import App
+    from xgonav.imu import ImuSource
+    cfg = Config()
+    imu = ImuSource(cfg.imu)
+    assert imu.latest_yaw() is None
+    t0 = time.monotonic()
+    for k, deg in enumerate((170.0, 179.0, -178.0, -170.0)):              # Sprung über ±180°
+        imu.add(k + 1, t0 + 0.02 * k, 0.0, 0.0, math.radians(deg))
+    t, y = imu.latest_yaw()
+    assert math.degrees(y) == pytest.approx(190.0)
+    old = ImuSource(cfg.imu)
+    old.add(1, t0, 0.0, 0.0)                                               # ohne Kurs (alte Aufrufer)
+    assert old.latest_yaw() is None
+    cfg.output.web_port = 0
+    cfg.detector.enabled = False
+    cfg.map.yaw_source = "imu"
+    robot = SimRobot(cfg.robot)
+    app = App(cfg, robot, SimWorld(cfg.camera, robot, None), imu=imu)
+    now = t0 + 0.07
+    assert app._lmap_dyaw(0.5, now) == 0.5 and app.lmap_yaw_src == "imu"   # erster Wert: noch kein Bezug
+    imu.add(10, t0 + 0.08, 0.0, 0.0, math.radians(-165.0))
+    assert math.degrees(app._lmap_dyaw(0.5, t0 + 0.09)) == pytest.approx(5.0)
+    assert app._lmap_dyaw(0.5, t0 + 5.0) == 0.5 and app.lmap_yaw_src == "odom"   # IMU zu alt
+    cfg.map.yaw_source = "odom"
+    imu.add(11, t0 + 5.0, 0.0, 0.0, math.radians(-160.0))
+    assert app._lmap_dyaw(0.25, t0 + 5.0) == 0.25
+
+
+def test_proc_imu_reads_only_new_lines(tmp_path):
+    """imu_log ist ein Ringpuffer: je Lesen nur die neuen Zeilen übernehmen, in seq-Reihenfolge."""
+    from xgonav.imu import ProcImu
+    cfg = Config()
+    cfg.imu.proc_dir = str(tmp_path)
+    imu = ProcImu(cfg.imu)
+    imu.path = str(tmp_path / "imu_log")
+
+    def write(rng):
+        (tmp_path / "imu_log").write_text("".join("%d %d 0 %d %d\n" % (s, s * 10_000_000, s * 100, s * 1000) for s in rng))
+    write(range(1, 6))
+    assert imu._poll() == 5
+    write(range(3, 9))                                   # Puffer rückt weiter, 6..8 sind neu
+    assert imu._poll() == 3 and imu._poll() == 0
+    ts, ps = imu.arrays()
+    assert list(np.round(ts, 3)) == [0.01 * s for s in range(1, 9)]
+    assert math.degrees(imu.latest_yaw()[1]) == pytest.approx(8.0)
+
+
 def test_gridmap_driven_path_is_free():
     from xgonav.gridmap import GridMap
     cfg = Config()

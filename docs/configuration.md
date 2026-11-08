@@ -83,6 +83,7 @@ Default = `config.py`. RiderPi = `deploy/config.example.toml` (blank = default).
 | `pitch_ref_deg` | 0.0 | -0.5 [K] | raw IMU pitch at camera calibration (R-1.1.3: -2.7) |
 | `min_corr` | 0.6 | | sync accepted above |
 | `sync_range_ms` / `sync_step_ms` | 100 / 4 | | |
+| `poll_s` | 0.01 | | read `imu_log` this often; only new lines are parsed (RiderPi: one read 185 µs for 128 lines). At 0.05 the newest sample was up to ~50 ms older than the frame and the pitch was held, not interpolated |
 
 ### `[horizon]` (standing horizon, `docs/calibration.md` 2b)
 | Key | Default | Note |
@@ -156,7 +157,7 @@ Replay of three evening drives (`tools/replay_raw.py`, 2026-11-04), false alarms
 2026-11-05 (`edge_log_s` 16, `edge_glare`): replay 0 / 0 / 54 % — follow11 now sees the kitchen cabinet side 0.16 m beside the path and the 0.33 m gray wall it missed before; the replay counts these as false alarms (person far). Manual test cases (19 frames): 17 OK (before 13). Cost +0.2 ms per call on a PC.
 
 ### `[map]` (short-term local map)
-`max_age_s` 4.0, `confirm` 1 (RiderPi 3), `confirm_radius_m` 0.08.
+`max_age_s` 4.0, `confirm` 1 (RiderPi 3), `confirm_radius_m` 0.08, `yaw_source` `odom` (RiderPi `imu`): heading for moving the points; `odom` = like `[odom] yaw_source` (wheels, else camera), `imu` = firmware heading from `imu_log` (~50 Hz), falls back to `odom` when the IMU is missing or older than `imu.max_age_s`. RiderPi 2026-11-08, full turns against images: IMU 0.997, wheels 0.992 of the true angle; per turn the two differ randomly by ~2° (p90 ~8°). Status: `lmap_yaw_src`.
 
 ### `[behavior]`
 | Key | Default | RiderPi |

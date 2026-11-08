@@ -94,6 +94,9 @@ class ImuCfg:
     sync_range_ms: float = 100.0
     sync_step_ms: float = 4.0
     max_age_s: float = 0.3
+    # imu_log so oft einlesen (s). Bei 0,05 lag der neueste Wert beim Bild bis ~50 ms zurück (Nick wird dann
+    # gehalten, nicht interpoliert). RiderPi: ein Lesen 185 µs (128 Zeilen), geparst werden nur neue Zeilen.
+    poll_s: float = 0.01
 
 
 @dataclass
@@ -250,6 +253,10 @@ class MapCfg:
     # mindestens confirm Beobachtungen liegen. 1 = jede Einzelbeobachtung zählt (wie bisher).
     confirm: int = 1
     confirm_radius_m: float = 0.08
+    # Drehung der Merkkarte: "odom" = wie [odom] yaw_source (Räder, sonst Kamera); "imu" = Firmware-Kurs aus imu_log
+    # (~50 Hz), bei fehlender/alter IMU wie "odom". RiderPi 2026-11-08, volle Drehungen gegen Bilder: IMU 0,997,
+    # Räder 0,992 des wahren Winkels; je Drehung weichen beide zufällig ~2° (p90 ~8°) voneinander ab.
+    yaw_source: str = "odom"
 
 
 @dataclass
