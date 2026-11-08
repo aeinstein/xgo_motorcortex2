@@ -24,6 +24,7 @@ Constraints from the kernel: no ReLU and no bias after the depthwise convolution
 | `tools/floornet/beschriften.html`, `make_testset.py` | click tool for hand lines, runs from the file system, stores in the browser, exports JSON |
 | `tools/floornet/schnitt.py` | time window of a recording as its own run: `label.py` uses only the longest stretch without a pose jump (> 12 cm between frames) |
 | `tools/floornet/eval_hand.py` | metric against hand lines, in metres per distance band, bootstrap over frames |
+| `tools/floornet/comfy_label.py`, `comfy_batch.py`, `comfy_prompt8.txt` | labels from ComfyUI (Qwen-Image-Edit paints the floor green) against hand lines / for many frames, see below |
 | `tools/floornet/net.py`, `train.py` | network, folding, training (GPU) |
 | `tools/floornet/export.py` | weights and test vector for the C++ core (`models/floornet.bin`, gitignored) |
 | `tools/floornet/bench_kern.cpp` | timing of untrained variants on the CM4 |
@@ -94,6 +95,36 @@ Final network since 2026-11-06. CM4 against PyTorch on 30 real frames: at most 0
 | `explore` with raw recording, median / p90 | loop 16.6 / 31.8 ms, YOLO 133 ms (`unten1`) | loop 23.1 / 52.6 ms, YOLO 171 ms, network 20.4 / 29.4 ms (`unten3`) |
 
 The drive rows come from different scenes and light; they are not a clean comparison. The plan goal p95 < 15 ms is missed while driving.
+
+## Labels from ComfyUI (2026-11-08)
+
+ComfyUI on kimmy (service `comfyui`, ~29 GB VRAM next to LM Studio) has only image generation and editing models, no segmentation or depth. Qwen-Image-Edit 2511 with the 4-step Lightning LoRA recolours the floor green; the green mask gives the boundary per column (lowest run of floor from the bottom, gaps up to 6 rows bridged). 3.6 s per frame, first load 2.5 min.
+
+```
+FN_PROMPT="$(cat comfy_prompt8.txt)" python comfy_label.py --hand teil3.json --labels labels5/ --n 1000 --out lauf8
+python comfy_label.py --hand pruefsatz.json --labels labels_u3/ --ids ids.txt --hoehe pruefsatz3/hoehe.json --out p3
+python comfy_batch.py --prompt comfy_prompt8.txt --runs explore2,...,unten2 --step 8 --out labels_comfy8
+```
+
+| Prompt rule | Finding (287 hand frames of the development set) |
+|---|---|
+| "recolour the floor, add nothing" | under 1 m false free 10–27 %, `kanten` 40–32 %; reflections and lamp glare become floor |
+| naming rugs or "a small robot" | the model paints them into the frame (robot in ~50 % of frames): never name what should not appear |
+| floor under furniture only where the gap is higher than 18 cm | under sofas, chair bases, low shelves median 83–123 cm → 4–32 cm |
+| baseboards and skirting tiles are wall | tile skirting of the same material is no longer painted |
+| rugs are not floor (yellow rug not drivable) | kept in 9 frames, an invented mat at the frame edge in 3 |
+| floor ends at the front edge of sofa / chair base | no gain on 60 frames, worse on random ones: dropped |
+
+Prompt 8 (`comfy_prompt8.txt`) against hand lines, false free / false blocked / median:
+
+| Band | Development set, 287 frames | `kanten` | Clean test set 3, 62 frames so far | `kanten` |
+|---|---|---|---|---|
+| 0–0.5 m | 10.0 / 0.3 % / 1 cm | 40.2 / 1.3 % / 6 cm | 13.3 / 0.0 % / 1 cm | 60.1 / 0.1 % / 35 cm |
+| 0.5–1 m | 23.0 / 3.4 % / 4 cm | 31.5 / 14.7 % / 13 cm | 22.7 / 1.3 % / 3 cm | 42.7 / 11.3 % / 17 cm |
+| 1–1.5 m | 30.0 / 6.4 % / 9 cm | 34.3 / 35.2 % / 28 cm | 26.6 / 0.7 % / 8 cm | 47.8 / 23.6 % / 27 cm |
+| 1.5–2.5 m | 41.0 / 8.8 % / 15 cm | 29.3 / 56.4 % / 47 cm | 29.3 / 7.2 % / 12 cm | 43.0 / 44.3 % / 70 cm |
+
+The development set excludes columns under low furniture (hand lines there had no fixed rule). The prompts were tuned on the development set, so only test set 3 counts. Remaining false free: visible floor under overhanging sofas and chair bases. Hand-line rule since then: line where an 18 cm Rider would touch first; floor under tables counts; sofa, bed, cabinet, chair base: front edge; skirting is wall; rugs are obstacles; reflections, glare and seams are floor.
 
 ## Clean test set (2026-11-07)
 
