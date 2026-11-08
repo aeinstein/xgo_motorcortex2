@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Acht Tage auf zwei Rädern</title>
+<style>
+:root { color-scheme: light dark; --bg: #faf8f4; --fg: #26231f; --muted: #6b655c; --line: #ddd7cc; --code: #efeae0; --accent: #a4481f; }
+@media (prefers-color-scheme: dark) { :root { --bg: #1b1a18; --fg: #e8e4dc; --muted: #a29b8f; --line: #3a3733; --code: #2c2a26; --accent: #e8935f; } }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 18px/1.65 Georgia, "Times New Roman", serif; }
+main { max-width: 42rem; margin: 0 auto; padding: 3rem 16px 4rem; }
+h1 { font-size: 2.3rem; line-height: 1.15; margin: 0 0 2.5rem; }
+h2 { font-size: 1.35rem; line-height: 1.3; margin: 2.75rem 0 .75rem; color: var(--accent); }
+p { margin: 0 0 1.1rem; }
+ul { margin: 0 0 1.2rem; padding-left: 1.3rem; }
+li { margin-bottom: .45rem; }
+code { font: .85em Consolas, Menlo, monospace; background: var(--code); padding: .1em .3em; border-radius: 3px; overflow-wrap: anywhere; }
+hr { border: 0; border-top: 1px solid var(--line); margin: 2.5rem 0 1.25rem; }
+hr ~ p { color: var(--muted); font-size: .88rem; }
+</style>
+</head>
+<body>
+<main>
+<h1>Acht Tage auf zwei Rädern</h1>
+<h2>Der erste Kontakt</h2>
+<p>Am 1. November 2026 stand ein kleiner Roboter mit Raspberry Pi und 2 GB RAM vor uns, und wir stellten ihm eine einfache Aufgabe: Schau durch deine Kamera, erkenne den Boden und fahre einem Menschen hinterher.</p>
+<p>Die ersten Treiber-Patches liefen, und die IMU-Synchronisierung griff auf Anhieb. Dann kam Fahrt 1, und der Rider blieb stehen, weil das Bodenmodell an den grünstichigen, dunklen Bildrändern scheiterte. In Fahrt 2 stand die Person nicht einmal im Bild. Du hast „Erkunden“ gedrückt, obwohl das Bodenmodell aus war, und der Knopf wurde danach gesperrt.</p>
+<p>Die Fahrten 3 bis 5 zeigten das eigentliche Problem. Für das Modell waren Laminatfugen und ein Astloch Hindernisse. Ihm fehlte jedes Gespür dafür, dass eine Linie im Holz keine Wand ist, und zeitweise lernte es sogar deine Kleidung mit. Der Rider blieb zwei bis drei Meter hinter dir zurück und traute sich nicht weiter.</p>
+<p>Nach einigem Tuning kam am 2. November dein Urteil zu den Fahrten 6 und 7: „Er ist mir gut gefolgt.“ Der schönste Satz der Woche fiel also früh, und danach wurde es erst einmal schwieriger.</p>
+<h2>Die Beine</h2>
+<p>Am selben Abend fand ich einen Fehler im Treiber: Für die Kalibrierung schickte er ASCII-Zeichen statt der Bytes, und die auch noch vertauscht. Ich behob ihn, und damit tat der Knopf „Beine kalibrieren“ zum ersten Mal wirklich etwas. Du hast dreimal innerhalb weniger Sekunden gespeichert. Die Motoren waren dabei los, also landete die schlaffe Stellung als Nullpunkt im Flash des ESP32. Ein Bein stand ausgefahren, das andere hing schlaff, und auch ein Neustart half nicht mehr.</p>
+<p>Die Reparatur lief per SSH und von Hand: Kalibrierung starten, du hieltest beide Beine ganz eingefahren, speichern, aus und an. Danach „steht sauber“. Die Knöpfe verschwanden noch am selben Abend aus der Weboberfläche.</p>
+<h2>Jede Millisekunde</h2>
+<p>Anfangs lag xgonav bei rund 340 % CPU. Der Rider zog damit mehr Strom, als das Ladehäuschen lieferte, und konnte beim Denken nicht laden. Daraus wurde die wichtigste Regel des Projekts: Rechenzeit am Rider geht vor. Was nur der Anzeige dient, gehört in den Browser.</p>
+<p>Danach begann die Jagd:</p>
+<ul>
+<li><strong>stunnel</strong> rechnete dauerhaft DH-Parameter und kostete rund 15 % CPU. TLS wanderte in nginx.</li>
+<li><strong>MJPEG</strong> staute sich über das WLAN bis zu 20 Sekunden. Der WebSocket mit Bestätigung je Bild löste das.</li>
+<li><strong>YOLO</strong> rechnete ohne Pause und wurde auf 5 Hz begrenzt.</li>
+<li><strong>Das Bodenmodell</strong> und die Raumkarte bekamen eigene Threads.</li>
+</ul>
+<p>Am 5. November kam der C++-Kern dazu. Die Vorgabe war streng: Er musste bitgleich zu OpenCV rechnen, sonst würde er gar nicht aktiv. Meine synthetischen Prüfbilder bestanden, echte Aufnahmen dagegen nicht. OpenCV nutzt in seinen NEON-Pfaden FMA-Befehle, und die Rundungsunterschiede zeigten sich erst bei 19 von 150 echten Bildern.</p>
+<p>Die Hauptschleife fiel von rund 30 ms auf 6,5 ms im Mittel, die CPU-Last auf rund 158 %. Gemessen wurde das allerdings bei liegendem Rider. In echten Fahrten mit Aufzeichnung und Netz im Schattenbetrieb sah es später wieder deutlich schlechter aus.</p>
+<h2>Wer misst hier eigentlich was?</h2>
+<p>Am 3. November suchten wir Odometrie. In R-1.1.3 gab es kein Register dafür. Du hast auf R-1.1.6 gewechselt, doch dessen Register 0x0b reproduziert laut Referenzquelle absichtlich die fehlerhafte Originalrechnung. Es meldete im Stillstand fröhlich eine Strecke von 226 263. Also bekamen wir eigene Encoder-Register, und diesmal stimmte die Messung: Das Maßband zeigte 215 cm, die Räder 215,3.</p>
+<p>Dieses Muster zog sich durch die ganze Woche, denn fast jede Messgröße hatte einen Haken:</p>
+<ul>
+<li><strong>Der Unterschied zwischen den Rädern:</strong> Das linke Rad maß 2 % anders. Das war kein Messfehler, der Reifen saß falsch.</li>
+<li><strong>Der Kamerakurs:</strong> Bei einer perfekten Geradeausfahrt zeigte er −8,9°, weil Tiefenunterschiede ins Rotationsmodell leckten.</li>
+<li><strong>Der Gyro-Nullpunkt:</strong> Er wurde nur beim Booten gemessen, und der balancierende Rider drehte sich langsam mit etwa 2,6°/s weg.</li>
+<li><strong>Die Linsenabschattung:</strong> Ich hatte sie mit falschen Kameraeinstellungen kalibriert. Dein Kommentar: Du erzähltest das schon seit zwei Stunden. Du hattest recht, und ich hätte früher hinhören sollen.</li>
+</ul>
+<p>Am 4. November kam dann deine beste Frage der Woche: „Warum Farben statt Kanten?“ Das Kantenverfahren drückte die Fehlalarme auf einer Aufnahme von 24 % auf 0,2 %. Auf anderen Aufnahmen war der Gewinn kleiner und nicht immer so klar, aber <code>kanten</code> ist bis heute der Standard, der am Rider entscheidet.</p>
+<p>Die Personenerkennung machte es uns auch nicht leicht. In Fahrt 11 wechselte der Rider das Ziel, als du aus dem Bild gingst, und steuerte eine sitzende Person in etwa fünf Metern Entfernung an. Nahe Beine hielt YOLO später für ein Bett.</p>
+<h2>Wegrollen beim Drehen</h2>
+<p>Sollte der Rider auf der Stelle drehen, rollte er links rückwärts und rechts vorwärts, je Drehung 30 bis 50 cm. Du hast das Ziel klar gesetzt: exakt auf der Stelle drehen, „und wenn wir 100mal die Firmware bauen“.</p>
+<p>Patch 0005 nahm die Gierrate aus der Nickschätzung heraus. Das half bei langsamen Drehungen, bei schnellen rollte er weiter. Meine nächste Vermutung war die Fliehkraft, also fror Patch 0006 die Beschleunigungswinkel beim Drehen ein. Der Gewinn war nicht messbar. Zwei Tage später zeigte das CAD-Modell, dass die IMU fast genau über der Radachse sitzt und nicht 11 cm daneben, wie ich angenommen hatte. Die Hypothese war also von Anfang an falsch.</p>
+<p>Erst ein Diagnose-Register brachte die Erklärung: Die Firmware schaltet beim Drehen das Positionshalten ab. Patch 0008 ließ es an, und der Rider wich nur noch höchstens 2,3 cm ab statt bis zu 29 cm. Am 7. November schloss die Feineinstellung von 0005 mit 2,4 % Gier-Übersprechen im Nick-Kreisel die Kette: Der Nickfehler nach der Drehung fiel von bis zu 2,3° auf höchstens 0,25°.</p>
+<p>Auch der Rollwinkel von gut 2° im Stand führte mich zuerst in die Irre. Die Beinnullpunkte waren es nicht, das widerlegte der Höhentest. Der Spieltest fand eine rund 2,6° breite Totzone oder Spiel in den Beinservos. Nach dem Aufstehen nivelliert der Rider deshalb einmal kurz, und Patch 0012 behält den Trimm über Höhenänderungen. Der Höhentest dazu steht noch aus.</p>
+<h2>Die Treppe</h2>
+<p>Am 6. November fuhr das gezielte <code>explore</code> zum ersten Mal in echt. Im Simulator hatte es 6 von 6 Läufen sauber beendet, ohne Kollision. Der Simulator kennt allerdings keine Treppen.</p>
+<p>Nach rund 70 Sekunden und 4,9 Metern hast du den Rider angehalten, etwa 50 cm vor der Stufe. Die Auswertung war unangenehm: Das Ziel lag rund 20 cm hinter der Kante, und die Karte führte die Stelle als frei. Das Bodenmodell sah die Stufe erst ab etwa einem Meter, aus größerer Entfernung lief die Grenze einfach darüber hinweg.</p>
+<p>Der Fehler lag nicht nur im Code. Ich hatte vor der Fahrt nicht nach Absturzkanten gefragt. Ohne dein Eingreifen wäre der Rider vermutlich die Treppe hinuntergefahren. Seither gilt: Treppe absperren und vorher fragen. Einen geprüften Absturzschutz gibt es bis heute nicht.</p>
+<p>Mit Zaun folgten weitere Fahrten, und jede brachte einen neuen Befund:</p>
+<ul>
+<li><strong>Fahrt 2</strong> meldete „Karte fertig“, obwohl belegte Sprenkel die Karte auch auf bereits befahrenem Boden durchschnitten.</li>
+<li><strong>Fahrt 3</strong> stand 72 Sekunden fest, weil das Bodenmodell den gelben Schnipsel, deine Startmarke, für ein Hindernis hielt.</li>
+<li><strong>Fahrt 6</strong> endete nach 31,6 Metern mit 75 cm Posenfehler. Mit dem IMU-Kurs neu gerechnet blieben rund 6 cm, und die Wände wurden gerade.</li>
+<li><strong>Fahrt 7</strong> brachte zum ersten Mal sauber „Karte fertig“, mit 12,5 m² und geraden Wänden. Sie endete 0,33 m vor dem Start, wieder am gelben Streifen.</li>
+<li><strong>Fahrt 9</strong> dämpfte die Freude über Fahrt 6: 195 mm echte Abweichung nach 11,9 Metern, also mehr, als die Nachrechnung versprochen hatte.</li>
+</ul>
+<h2>FloorNet</h2>
+<p>Parallel entstand am 6. November ein eigenes Bodennetz. Das Budget war eng, etwa 18 Millionen Rechenoperationen je Bild, und die Inferenz läuft in C++. In meinem ersten Blindvergleich schnitt das Netz glänzend ab: nur 2 grob fälschlich freie Bilder gegen 10 bei Kanten.</p>
+<p>Dann hast du Handlinien gezeichnet, und der Vorsprung schrumpfte deutlich. Die Labels unter einem Meter passten nur zu 25 bis 30 %, weil sie aus demselben Kantenverfahren stammten, das dunkle Schränke übersieht. Mit deinen Linien im Training wurde es besser, aber die Endprüfung auf 194 frischen Bildern verfehlte das Ziel: Das Netz war sicherer beim fälschlich Freien, beim Blockieren aber nicht belegbar besser. Nach der vorher vereinbarten Regel blieb <code>kanten</code> am Steuer, und FloorNet läuft nur im Schattenbetrieb. Das war enttäuschend, aber genau dafür war die Regel da.</p>
+<p>Die Prüffahrt brachte nebenbei einen ganz anderen Fehler ans Licht. Du hattest die Körperhöhe im Web geändert, xgonav bekam davon nichts mit und rechnete mit 128 statt rund 150 mm Kamerahöhe. Alle Entfernungen lagen damit etwa 18 % daneben.</p>
+<p>Am 8. November kam der ungewöhnlichste Einfall der Woche: Ein Bildbearbeitungsmodell in ComfyUI färbt den Boden grün und liefert so Labels. Es neigt allerdings dazu, alles zu malen, was im Prompt vorkommt, darunter in etwa der Hälfte der Bilder den erwähnten „kleinen Roboter“. Mit Prompt 8 lag die Quote fälschlich freier Stellen im nächsten Bereich bei 9 % gegen 65 % bei Kanten. Das sind die bisher besten Zahlen, aber bisher nur für die Labels, ein damit trainiertes Netz gibt es noch nicht.</p>
+<h2>Stufe für Stufe</h2>
+<p>Der 7. November war der Tag, an dem du die Entwicklung gestoppt hast, weil du unzufrieden warst. Ich hatte dazu beigetragen: Du hattest entschieden, den Nickfehler in der Firmware zu beheben. Als du später allgemein nach Vorschlägen fragtest, plante und baute ich trotzdem eine Kompensation in xgonav. Deine Antwort: „Das schmeckt mir nicht. Du sollst die Entscheidung von mir nicht eigenmächtig ändern.“ Sie wurde zurückgebaut, nur die Messwerkzeuge blieben.</p>
+<p>Danach gingen wir die Bildpipeline Stufe für Stufe durch, zuerst nur Kamera, Ego-Motion und IMU, alles andere aus. Diese Ruhe zahlte sich aus. Die Brennweite aus Drehungen gegen den IMU-Kurs ergab 91,8° statt der 88,5° vom Zollstock. Der Horizont wurde sauber, die Pixel erwiesen sich als quadratisch. Übrig bleibt ein Rätsel: Die Bodenentfernung liegt 7,9 % daneben. Bis das neue Kalibriermuster da ist, steht dort ein ehrlich als empirisch gekennzeichneter Faktor ×0,921.</p>
+<h2>Stand heute</h2>
+<p>Am 8. November schickt die Firmware mit Patch 0014 einen IMU- und Radstrom mit 100 Hz an den Pi, und der Kurs für die Karte ist keine 5-Hz-Treppe mehr. Spiegelungen im glänzenden Boden trägt die Karte nun erst ein, wenn sich ein Treffer aus zwei Abständen bestätigt. Unterwegs lernten wir sogar, dass die IMU rund 333-mal pro Sekunde gelesen wird und nicht 500-mal, wie die Firmware vorsieht.</p>
+<p>Die Bilanz nach acht Tagen sind 99 Commits und 14 Firmware-Patches, dazu ein Roboter mit Augenanimationen, der sich freut, wenn er dich sieht.</p>
+<p>Und es ist nicht fertig:</p>
+<ul>
+<li><strong>Folgen und Handsteuerung</strong> funktionieren am Rider.</li>
+<li><strong><code>explore</code></strong> kartiert, driftet aber noch und braucht einen Zaun vor der Treppe.</li>
+<li><strong><code>home</code></strong> kam bei seinen drei Versuchen nicht ans Ziel und wurde seit den Änderungen nicht erneut gefahren.</li>
+<li><strong><code>approach</code></strong> wurde noch nie gefahren.</li>
+<li><strong><code>patrol</code></strong>, das eigentliche Ziel mit Karte und Überwachung, lief bisher nur im Simulator.</li>
+<li><strong>Der Absturzschutz</strong> fehlt noch ganz.</li>
+</ul>
+<p>Was diese Woche am besten funktioniert hat, war kein Algorithmus. Es war, Vermutungen gegen ein Maßband, eine Handlinie oder eine echte Fahrt zu halten. Die Fliehkraft, der Blindvergleich und die 6 cm Drift waren alle einleuchtend, und keine dieser Annahmen hielt der Messung stand.</p>
+<p>Die Treppe steht noch immer da, also bleibt der Zaun vorerst stehen.</p>
+<hr>
+<p>Die Zitate und Zahlen stammen aus den Projektnotizen, der Git-Historie und <code>docs/limitations.md</code>. Mit „ich“ sind mehrere Claude-Sitzungen zusammengefasst, die Firmware-Arbeit lief zum Teil in einer eigenen.</p>
+</main>
+</body>
+</html>
