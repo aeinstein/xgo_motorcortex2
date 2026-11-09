@@ -12,7 +12,7 @@ import cv2
 import numpy as np
 
 from .app import App, render
-from .emotion import active as emotion_active
+from .emotion import active as emotion_active, load_gaze
 
 log = logging.getLogger(__name__)
 
@@ -28,6 +28,9 @@ class LcdOut:
     def __init__(self, app: App, fifo: str, fps: int):
         self.app, self.fifo, self.period = app, fifo, 1.0 / max(1, fps)
         self._fd: int | None = None
+        self._atlas = None              # Augen des Modus pet, beim ersten Bedarf geladen
+        self._atlas_tried = False
+        self._gaze_sent = None
         threading.Thread(target=self._run, name="lcd", daemon=True).start()
 
     def _open(self) -> bool:
@@ -43,6 +46,27 @@ class LcdOut:
         self._fd = fd
         return True
 
+    def _gaze_frame(self, gaze) -> bool:
+        """Modus pet: Augenbild statt Overlay; schreibt nur, wenn es sich ändert (spart render + Verkleinern).
+        False: kein Atlas, das Overlay läuft weiter."""
+        if not self._atlas_tried:
+            self._atlas_tried = True
+            path = self.app.cfg.pet.gaze_dir
+            self._atlas = load_gaze(path)
+            if self._atlas is None:
+                log.warning("LCD: kein Augen-Atlas in %s (tools/eyes.py --gaze)", path)
+        if self._atlas is None:
+            return False
+        if gaze != self._gaze_sent:
+            try:
+                os.write(self._fd, self._atlas[gaze])
+                self._gaze_sent = gaze
+            except OSError:
+                os.close(self._fd)
+                self._fd = None
+        time.sleep(self.period)
+        return True
+
     def _run(self) -> None:
         while not self.app.running:
             time.sleep(0.1)
@@ -54,11 +78,16 @@ class LcdOut:
                 if self._fd is not None:
                     os.close(self._fd)
                     self._fd = None
+                self._gaze_sent = None          # danach das Augenbild neu schreiben
                 time.sleep(0.2)
                 continue
             if self._fd is None and not self._open():
                 time.sleep(2.0)
                 continue
+            gaze = getattr(self.app.behavior, "gaze", None)
+            if gaze is not None and self._gaze_frame(gaze):
+                continue
+            self._gaze_sent = None
             snap = self.app.snapshot
             if snap.idx == getattr(self, "_last_idx", None):   # kein neues Bild (z. B. pausiert)
                 time.sleep(self.period)

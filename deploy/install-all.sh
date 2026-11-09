@@ -105,17 +105,25 @@ if [ "$DO_WEB" = 1 ]; then
     # würde nginx nicht starten, deshalb dann die Seite nicht aktivieren.
     CERT=$(awk '$1 == "ssl_certificate" { sub(";", "", $2); print $2 }' deploy/nginx-xgonav.conf)
     KEY=$(awk '$1 == "ssl_certificate_key" { sub(";", "", $2); print $2 }' deploy/nginx-xgonav.conf)
+    # Einmalig umziehen: Zertifikat und Schlüssel lagen im Ordner der entfernten Fernsteuerung.
+    TLS_ALT=/home/aeinstein/motorcortex/rc_server/riderpi
+    if [ ! -f "$KEY" ] && [ -f "$TLS_ALT/privkey.key" ] && [ -f "$TLS_ALT/fullchain.crt" ]; then
+        install -d -m 0755 "$(dirname "$CERT")"
+        install -m 0644 "$TLS_ALT/fullchain.crt" "$CERT"
+        install -m 0600 "$TLS_ALT/privkey.key" "$KEY"
+        echo "  TLS: Zertifikat und Schlüssel nach $(dirname "$CERT") kopiert"
+    fi
     installiere deploy/nginx-xgonav.conf /etc/nginx/sites-available/xgonav
     if [ -f "$CERT" ] && [ -f "$KEY" ]; then
         ln -sfn ../sites-available/xgonav /etc/nginx/sites-enabled/xgonav
         # Die Seite ist default_server auf 80 (Weiterleitung auf https), die Debian-Default-Site
-        # (bzw. die alte rc_server-Seite) würde damit kollidieren.
+        # würde damit kollidieren.
         if [ -e /etc/nginx/sites-enabled/default ]; then
             cp -a /etc/nginx/sites-enabled/default "/etc/nginx/sites-enabled-default.bak-$STAMP"
             rm /etc/nginx/sites-enabled/default
             echo "  sites-enabled/default entfernt (Sicherung /etc/nginx/sites-enabled-default.bak-$STAMP)"
         fi
-        # stunnel (früher TLS auf 443) und die alte Fernsteuerung (rc_server, 1081) sind abgelöst.
+        # Falls noch vorhanden: stunnel (früher TLS auf 443) und die entfernte Fernsteuerung.
         for dienst in stunnel4 rc-control; do
             if systemctl is-enabled --quiet "$dienst" 2>/dev/null || systemctl is-active --quiet "$dienst" 2>/dev/null; then
                 systemctl disable --now "$dienst" >/dev/null 2>&1 && echo "  $dienst gestoppt und abgeschaltet"

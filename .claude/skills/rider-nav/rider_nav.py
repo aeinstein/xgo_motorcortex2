@@ -105,7 +105,7 @@ def cmd_zustand(_a) -> int:
            "status": s.get("status"), "height_mm": s.get("height_mm"), "yaw_deg": s.get("yaw_deg"),
            "yaw_src": s.get("yaw_src"), "odom": s.get("odom"),
            "standreferenz": hz.get("zustand") if hz else None,
-           "xgonav.service": dienst("xgonav"), "rc-control.service": dienst("rc-control")}
+           "xgonav.service": dienst("xgonav")}
     print(json.dumps(out, ensure_ascii=False, indent=1))
     return 0
 
@@ -146,9 +146,6 @@ def cmd_aufstehen(a) -> int:
     k = akku()
     if k is not None and k < MIN_AKKU:
         print("Akku %d %% < %d %% – kein Aufstehen" % (k, MIN_AKKU))
-        return 2
-    if dienst("rc-control") == "active":
-        print("rc-control.service läuft – erst stoppen (systemctl stop rc-control)")
         return 2
     s = status()
     if s.get("pipeline") != "läuft":

@@ -23,7 +23,7 @@ $R python3 /root/rider_nav.py zustand
 - **Freigabe:** Bewegung nur, wenn der Nutzer sie in diesem Gespräch angesagt hat und daneben steht. Hat er
   gesagt, dass der Rider lädt oder nicht bewegt werden darf: vorher fragen, auch für Aufstehen.
 - `zustand` lesen: Akku ≥ 20 % (sonst nicht fahren), `xgonav.service` active (sonst Nutzer fragen, nicht selbst
-  neu starten), `rc-control.service` nicht active (sonst `systemctl stop rc-control`).
+  neu starten).
 - Benutzt der Nutzer ihn gerade (Modus ≠ idle, z. B. manual/follow im Web): nicht eingreifen, fragen.
 - Autonome Modi (`explore`, `home`, `patrol`, `approach`) nur nach Frage nach Treppen/Kanten (kein Absturzschutz).
   Dieser Skill fährt nur Handsteuerung (`fahr`, `dreh`).

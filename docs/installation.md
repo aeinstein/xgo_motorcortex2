@@ -18,7 +18,7 @@ sudo ./deploy/install-all.sh [--no-driver] [--no-display] [--no-web]
 
 Behaviour:
 - Files in `/etc` that differ are backed up as `*.bak-<timestamp>`.
-- The nginx site is enabled only if certificate and key exist (paths in `deploy/nginx-xgonav.conf`, `ssl_certificate*`). Then `sites-enabled/default` is removed and `stunnel4`, `rc-control` are disabled.
+- The nginx site is enabled only if certificate and key exist (`/etc/xgonav/tls/fullchain.crt`, `privkey.key`; copied once from the old `rc_server/riderpi` folder if only that exists). Then `sites-enabled/default` is removed and legacy `stunnel4`, `rc-control` are disabled if still present.
 - Does **not** start xgonav, does **not** reload the driver. Both take effect after reboot / manual start.
 
 ## Kernel
@@ -44,7 +44,6 @@ sudo ln -s ../sites-available/xgonav /etc/nginx/sites-enabled/
 sudo rm /etc/nginx/sites-enabled/default
 sudo usermod -aG video www-data
 sudo install -m 0440 deploy/sudoers-xgonav-poweroff /etc/sudoers.d/xgonav-poweroff && sudo visudo -c
-sudo systemctl disable --now stunnel4 rc-control
 sudo nginx -t && sudo systemctl restart php8.2-fpm nginx
 ```
 
@@ -63,7 +62,9 @@ cat /proc/XGORider/serial_stats
 | Copied | `xgonav/`, `tools/`, `web/` → `/opt/xgonav/`; `models/*.onnx`, `models/*_ncnn/` (no overwrite) |
 | C++ core | `make -C /opt/xgonav/xgonav/native` → `libxgofast.so` (failure → Python ego-motion, warning) |
 | Config | `deploy/config.example.toml` → `/opt/xgonav/config.toml` only if missing |
-| Emotions | `tools/emotion.sh build $EMOTIONS_SRC /opt/xgonav/emotions` (default source `/home/$SUDO_USER/motorcortex/rc_server/emotions`) |
+| Emotions | `tools/eyes.py /opt/xgonav/emotions` |
+| Sounds | `tools/sounds.py /opt/xgonav/sounds` |
+| Eye atlas (mode `pet`) | `tools/eyes.py --gaze /opt/xgonav/eyes_gaze` |
 | User | `$SUDO_USER` (default `pi`) owns `/opt/xgonav`, added to group `video` |
 | Unit | `/etc/systemd/system/xgonav.service` (not enabled) |
 
@@ -111,5 +112,4 @@ Missing `model` → `fallback_model`; both missing → detector disabled (warnin
 
 ## Before driving
 
-- `sudo systemctl stop rc-control` (otherwise two processes write drive commands).
 - Body height ≥ minimum + 10 mm (web UI: u8 ≥ 43).

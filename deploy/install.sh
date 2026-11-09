@@ -22,16 +22,13 @@ cp -f models/floornet.bin "$DEST/models/" 2>/dev/null || true   # FloorNet, nur 
 for d in models/*_ncnn; do [ -d "$d" ] && [ ! -e "$DEST/$d" ] && cp -r "$d" "$DEST/models/"; done
 # C++-Kern der Ego-Motion bauen; scheitert das, rechnet xgonav in Python (langsamer)
 make -C "$DEST/xgonav/native" || echo "Hinweis: C++-Kern nicht gebaut – Ego-Motion läuft in Python"
-# Emotionen einmalig nach RGB565 konvertieren (Abspielen dann ohne ffmpeg).
-EMOTIONS_SRC=${EMOTIONS_SRC:-/home/$USER_NAME/motorcortex/rc_server/emotions}
-if [ -d "$EMOTIONS_SRC" ]; then
-    echo "Konvertiere Emotionen aus $EMOTIONS_SRC (einmalig, dauert einige Minuten) ..."
-    tools/emotion.sh build "$EMOTIONS_SRC" "$DEST/emotions"
-else
-    echo "Hinweis: keine Emotionen unter $EMOTIONS_SRC – EMOTIONS_SRC=... setzen"
-fi
+# Emotionen einmalig als RGB565 erzeugen (am Rider läuft davon nichts je Bild).
+echo "Erzeuge Emotionen (einmalig) ..."
+"$DEST/venv/bin/python" tools/eyes.py "$DEST/emotions" || echo "Hinweis: Emotionen nicht erzeugt"
 # Geräusche (freudig/traurig bei Person erkannt/verloren), Wiedergabe per aplay
 "$DEST/venv/bin/python" tools/sounds.py "$DEST/sounds"
+# Augen des Modus pet (einmalig; am Rider läuft davon nichts je Bild)
+"$DEST/venv/bin/python" tools/eyes.py --gaze "$DEST/eyes_gaze" || echo "Hinweis: Augen-Atlas nicht erzeugt – Modus pet zeigt das Overlay"
 chown -R "$USER_NAME":"$USER_NAME" "$DEST"
 usermod -aG video,audio "$USER_NAME"
 

@@ -464,6 +464,95 @@ class PatrolCfg:
 
 
 @dataclass
+class PetCfg:
+    # Modus pet (xgonav/pet.py): reagiert auf Menschen und Tiere, bleibt im Standard auf der Stelle.
+    # Abstandszonen der Person (m, Fußpunkt)
+    zone_far_m: float = 3.0            # darüber: nur bemerken
+    zone_mid_m: float = 1.5            # darüber: neugierig; darunter: Freude
+    zone_close_m: float = 0.5          # darunter: schüchtern (wandert mit dem Vertrauen)
+    kneel_max_m: float = 1.9           # Box oben frei und näher: hingekniet (stehend wäre der Kopf nicht im Bild)
+    zone_hold_s: float = 0.5           # so lange stabil, bevor eine Zone zählt
+    zone_repeat_s: float = 15.0        # dieselbe Zone frühestens wieder nach so langer Zeit
+    # Schreck: Annäherung aus dem Fußpunkt, Geradenanpassung über startle_window_s
+    startle_mps: float = 1.0
+    startle_heavy_mps: float = 1.8     # ab hier volle Stärke
+    # Eine Bildzeile sind in 2 m schon 10 cm: weiter weg misst der Fußpunkt zu ungenau (Simulator, 3 px Rauschen:
+    # Fehlalarme schon bei 0,3 m/s). Darum eng begrenzt und zusätzlich durch das Wachsen der Box bestätigt.
+    startle_max_m: float = 1.6         # weiter weg erschrickt er nicht
+    startle_window_s: float = 0.8      # bei 4 Hz Detektion ~3 Messungen
+    startle_min_samples: int = 3
+    startle_vs: float = 0.5            # Boxbreite muss mit diesem Anteil von Annäherung/Abstand wachsen
+    startle_s: float = 1.4             # Dauer der Reaktion (Abducken, Ruck)
+    startle_cooldown_s: float = 3.0
+    startle_min: float = 0.12          # schwächer: nur Augen, kein Abducken
+    # Körper. gestures = false: nur Augen und Töne
+    gestures: bool = True
+    height_mm: float = 85.0            # falls die Höhe unbekannt ist
+    duck_mm: float = 75.0              # wird auf Minimum + 10 mm angehoben (robot.height_min_mm)
+    roll_deg: float = 8.0              # Kopf schief; höchstens 12
+    tilt_s: float = 1.2
+    wiggle_w: float = 0.10
+    wiggle_s: float = 1.2
+    turn_kp: float = 1.5               # 1/s
+    turn_deadband_deg: float = 8.0
+    turn_w: float = 0.20
+    turn_min_w: float = 0.06           # kleinere Lenkbefehle ignoriert die Firmware
+    # Budgets, 0 = aus. Rückwärts ist blind und vorwärts sieht das Bodenmodell Stufen zu spät: nur mit
+    # Beobachtung und nur, wo keine Treppe ist. Ohne Räder fährt er nie, Obergrenzen 0,30 m / 1,0 m.
+    retreat_m: float = 0.0             # je Ereignis (RiderPi-Test: 0.12)
+    retreat_v: float = 0.10
+    retreat_max_s: float = 1.5
+    retreat_cooldown_s: float = 10.0
+    # Beide Budgets als Zeitimpuls (Budget / Tempo x pulse_margin), die Räder nur als Obergrenze: Beim Stoppbefehl
+    # läuft er noch ~0,9 s x Tempo nach (Simulator --dyn nach Messfahrt 2026-11-05), bei 0,18 m/s mehr als das
+    # ganze Budget. Über den ganzen Impuls entspricht der Weg dem Integral des Befehls.
+    pulse_margin: float = 0.85
+    creep_m: float = 0.0               # zur Katze, je Begegnung (RiderPi-Test: 0.4); braucht Bodenmodell + Merkkarte
+    creep_v: float = 0.06
+    # Tiere
+    animal_conf: float = 0.5
+    animal_hits: int = 4
+    dog_fear_m: float = 2.0
+    dog_close_m: float = 0.5           # näher: Ohnmacht
+    cat_stop_m: float = 0.8
+    animal_repeat_s: float = 20.0
+    # Vertrauen 0..1 und Schreckpegel
+    trust_start: float = 0.3
+    trust_gain: float = 0.01           # 1/s, während jemand sanft in der Nähe ist
+    trust_loss: float = 0.05           # je Schreck
+    fright_decay: float = 0.05         # 1/s
+    habit_tau_s: float = 60.0          # Gewöhnung klingt so schnell ab
+    # Ohnmacht: absetzen, nap_s liegen, von selbst aufstehen. Beim Aufspringen rollt er ~20 cm vor:
+    # bewusst einschalten, vorne >= 40 cm frei, keine Stufe.
+    faint: bool = False
+    faint_level: float = 1.0
+    faint_max: int = 3                 # höchstens so viele in faint_window_s, danach nur Schreck
+    faint_window_s: float = 600.0
+    nap_s: float = 10.0                # so lange ganz weg, dann gehen langsam die Augen auf
+    eyes_open_s: float = 3.0           # Augen öffnen, dabei schaut er sich um
+    clear_s: float = 2.5               # so lange niemand im Bild: die Luft ist rein, er springt auf
+    nap_max_s: float = 60.0            # bis dahin nicht rein: bleibt liegen
+    nap_rest_s: float = 2.0            # so lange nach dem Absetzen, bevor die Liegelage als Referenz gilt
+    nap_tilt_deg: float = 5.0          # mehr: hochgehoben, steht nicht von selbst auf
+    nap_moved_m: float = 0.01
+    standup_warn_s: float = 1.5        # Aufwachton vor dem Aufspringen
+    standup_timeout_s: float = 8.0
+    settle_s: float = 6.0              # danach keine Gesten (Aufschwung, Nivellier-Impuls, Standreferenz)
+    battery_low: int = 20              # %: darunter keine Ohnmacht und kein Aufstehen
+    # Sonst
+    peek_s: float = 3.0                # Person so kurz weg und wieder da: Guck-guck
+    gone_s: float = 3.0                # länger weg: schaut hinterher, dann traurig
+    nudge_m: float = 0.05              # so viel Radweg in 0,5 s ohne Fahrbefehl: angestupst
+    bored_s: float = 60.0
+    bored_repeat_s: float = 45.0
+    doze_s: float = 180.0              # dösen, Detektor auf doze_hz
+    timeout_s: float = 600.0           # so lange niemand: absetzen, Modus idle (Akku)
+    active_hz: float = 4.0             # Detektor in pet; spart gegen ~7 Hz fast die Hälfte
+    doze_hz: float = 1.0
+    gaze_dir: str = "/opt/xgonav/eyes_gaze"   # von tools/eyes.py --gaze (deploy/install.sh)
+
+
+@dataclass
 class CpuCfg:
     # CPU-Pinning (Linux). Leer = nicht pinnen. Am RiderPi: Hauptschleife samt Kamera,
     # OpenCV-Workern und Rest des Systems auf 0-1, YOLO auf 2-3 (Aufrufer + Pool-Thread).
@@ -497,6 +586,7 @@ class Config:
     home: HomeCfg = field(default_factory=HomeCfg)
     explore: ExploreCfg = field(default_factory=ExploreCfg)
     patrol: PatrolCfg = field(default_factory=PatrolCfg)
+    pet: PetCfg = field(default_factory=PetCfg)
     control_hz: float = 20.0
 
     @classmethod

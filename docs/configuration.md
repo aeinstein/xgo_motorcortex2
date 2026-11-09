@@ -13,7 +13,7 @@ Unknown section or key in TOML → `KeyError` at load. New parameters go into th
 | Flag | Effect |
 |---|---|
 | `--config FILE` | TOML overrides |
-| `--mode idle\|follow\|explore\|approach\|home` | `behavior.mode` |
+| `--mode idle\|follow\|explore\|approach\|home\|pet` | `behavior.mode` |
 | `--target CLASS` | `behavior.target_class` (COCO, e.g. `person`, `chair`) |
 | `--source picam\|<index>\|<file>` | `camera.source` |
 | `--robot proc\|sim` | default: `proc` if source is `picam`, else `sim` |
@@ -184,6 +184,25 @@ Replay of three evening drives (`tools/replay_raw.py`, 2026-11-04), false alarms
 ### `[emotion]`
 `enabled` true, `dir` `/opt/xgonav/emotions`, `fifo` `/tmp/lcd0`, `gap_s` 5, `lost_s` 2, `battery_low` 20 %, `battery_repeat_s` 300.
 Sounds: `sound` true, `sound_dir` `/opt/xgonav/sounds`, `sound_found` `freude.wav`, `sound_lost` `trauer.wav`, `sound_device` `""` (ALSA default).
+
+### `[pet]` (mode `pet`, see [display-emotions.md](display-emotions.md))
+All keys with comments: `PetCfg` in `xgonav/config.py`.
+
+| Key | Default | Note |
+|---|---|---|
+| `retreat_m` | 0 (off) | jerk backwards per scare, cap 0.30 m, RiderPi test 0.12. Blind, needs wheels |
+| `creep_m` | 0 (off) | toward a cat per encounter, cap 1.0 m, test 0.4. Needs wheels, floor model, local map |
+| `faint` | false | hard scare: set down, wake up, stand up by itself |
+| `gestures` | true | false: only eyes and sounds |
+| `zone_far_m`, `zone_mid_m`, `zone_close_m`, `kneel_max_m` | 3.0, 1.5, 0.5, 1.9 | person zones |
+| `startle_mps`, `startle_heavy_mps`, `startle_max_m` | 1.0, 1.8, 1.6 | foot point confirmed by box width growth; **not tuned on real footage** |
+| `pulse_margin` | 0.85 | budgets are time pulses (budget / speed × margin), wheels are only the upper limit: after a stop command it coasts ~0.9 s × speed |
+| `dog_fear_m`, `dog_close_m`, `cat_stop_m` | 2.0, 0.5, 0.8 | |
+| `nap_s`, `eyes_open_s`, `clear_s`, `nap_max_s` | 10, 3, 2.5, 60 | eyes shut, opening, nobody in view, give up |
+| `duck_mm`, `roll_deg` | 75, 8 | raised to minimum + 10 mm; cap 12° |
+| `active_hz`, `doze_hz` | 4, 1 | detector rate in this mode |
+| `doze_s`, `timeout_s` | 180, 600 | nobody around: doze; set down and `idle` |
+| `gaze_dir` | `/opt/xgonav/eyes_gaze` | eye atlas |
 
 ### `[odom]`
 | Key | Default | RiderPi |

@@ -39,6 +39,13 @@ class World:
     # der Rider steht vor dem Hindernis, ohne wegzudrehen (RiderPi 2026-11-04).
     path_blocked: bool = False
     battery: int | None = None        # % oder None (unbekannt)
+    # Für den Modus pet (xgonav/pet.py), sonst nicht gefüllt
+    ds: float = 0.0                   # Strecke seit dem letzten Regelschritt (m)
+    ds_measured: bool = False         # ds stammt von den Rädern, nicht aus dem Fahrbefehl
+    tilt: tuple | None = None         # (roll, pitch) in Grad aus frischer IMU
+    fw_mode: int | None = None        # /proc/XGORider/state
+    height_mm: float | None = None    # Höhen-Sollwert
+    map_ok: bool = False              # Merkkarte vorhanden
 
     def bearing(self, x: float) -> float:
         """Bildspalte -> Winkel rad (links positiv)."""
@@ -982,9 +989,13 @@ class Patrol(Behavior):
 
 def make_behavior(name: str, cfg: BehaviorCfg, rcfg: RobotCfg, target: str | None = None,
                   hcfg: HomeCfg | None = None, ecfg: ExploreCfg | None = None, has_map: bool = True,
-                  pcfg: PatrolCfg | None = None) -> Behavior:
+                  pcfg: PatrolCfg | None = None, petcfg=None) -> Behavior:
     """has_map: Raumkarte vorhanden; sonst erkundet explore nur reaktiv."""
+    def pet():
+        from .pet import Pet          # pet.py importiert dieses Modul
+        return Pet(cfg, rcfg, petcfg)
     return {"idle": lambda: Idle(cfg, rcfg),
+            "pet": pet,
             "manual": lambda: Manual(cfg, rcfg),
             "follow": lambda: Follow(cfg, rcfg, target),
             "explore": lambda: MapExplore(cfg, rcfg, hcfg, ecfg) if has_map else Explore(cfg, rcfg),

@@ -24,7 +24,7 @@ CPU time, camera geometry, manual driving (web UI), `follow` (runs 2026-11-02, `
 | `firmware/` | ESP32 firmware: fetch reference (xgorider2_rl), apply patches, build (`firmware/build.sh`) |
 | `docs/` | Per-topic documentation |
 
-Not included: legacy remote control `rc_server` (Node), TLS certificates/keys, YOLO models (`models/*_ncnn/`, `models/*.onnx`, gitignored).
+Not included: TLS certificates/keys, YOLO models (`models/*_ncnn/`, `models/*.onnx`, gitignored).
 
 ## Quick start (on the Rider)
 
@@ -42,10 +42,11 @@ python -m xgonav --mode follow                    # follow a person
 python -m xgonav --mode approach --target chair   # find and approach a chair
 python -m xgonav --mode explore
 python -m xgonav --mode home                      # back to the room-map start point
+python -m xgonav --mode pet                       # reacts to people, cats, dogs; stays in place by default
 python -m xgonav --mode idle --record debug.mp4   # watch only, record overlay
 ```
 
-Stop `rc-control.service` while xgonav drives. Never set body height below minimum + 10 mm.
+Never set body height below minimum + 10 mm.
 
 ## Quick start (PC, no hardware)
 

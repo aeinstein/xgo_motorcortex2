@@ -47,6 +47,7 @@ class RobotState:
     battery: int | None = None
     buttons: int = 0
     t: float = 0.0
+    mode: int | None = None    # Wert aus /proc/XGORider/state (1 = balanciert)
 
 
 class Robot:
@@ -103,6 +104,20 @@ class Robot:
         """Absetzen (Firmware-Aktion 254)."""
         self.stop()
         self._write("action", 254)
+
+    def stand_up(self) -> bool:
+        """Aufspringen aus dem Liegen (Firmware-Aktion 253); er rollt dabei ~20 cm vor. Nur vom Modus pet
+        nach dessen Prüfungen benutzt; an einen balancierenden Rider nie."""
+        if self.state.balancing:
+            return False
+        self.stop()
+        self._write("action", 253)
+        return True
+
+    def set_roll(self, deg: float) -> None:
+        """Rollwinkel (Grad, −20..20); nicht während eines Nivellier-Impulses, der setzt ihn selbst."""
+        if self._level_on_t is None and self.state.balancing:
+            self._write("roll", int(round(max(-20.0, min(20.0, deg)))))
 
     def set_height(self, mm: float) -> None:
         """Schreibt nur, wenn sich der eigene Sollwert ändert. Eine Höhe von außen (Web) bleibt so stehen,
@@ -303,6 +318,7 @@ class ProcRobot(Robot):
 
     def _poll_state(self) -> None:
         st = self._read_int("state")
+        self.state.mode = st
         if st is not None:
             bal = st == 1
             if bal != self.state.balancing:
@@ -349,6 +365,8 @@ class SimRobot(Robot):
         self.writes: list[tuple[float, str, int | str]] = []
         self._yaw = 0.0
         self._last_t = time.monotonic()
+        self._up_at: float | None = None     # Aufspringen läuft, balanciert ab dann
+        self.state.mode = 1
 
     def _write(self, name: str, value: int | str) -> None:
         self.writes.append((time.monotonic(), name, value))
@@ -356,9 +374,17 @@ class SimRobot(Robot):
             del self.writes[:5000]
         if self.log_cmds:
             log.info("SIM %s <- %s", name, value)
+        if name == "action" and value == 254:
+            self.state.balancing, self.state.mode = False, 254
+            self._up_at = None
+        elif name == "action" and value == 253 and not self.state.balancing:
+            self._up_at = time.monotonic() + 1.0
 
     def _poll_state(self) -> None:
         now = time.monotonic()
+        if self._up_at is not None and now >= self._up_at:
+            self.state.balancing, self.state.mode = True, 1
+            self._up_at = None
         self._yaw += u8_to_norm(norm_to_u8(self._cur[1])) * self.cfg.vyaw_limit_dps * (now - self._last_t)
         self._last_t = now
         self.state.yaw_deg = self._yaw

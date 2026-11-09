@@ -26,7 +26,7 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="xgonav", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--config", help="TOML-Datei mit Overrides")
-    ap.add_argument("--mode", choices=["idle", "follow", "explore", "approach", "home"])   # patrol nur über die Schnittstelle: braucht Bestätigung
+    ap.add_argument("--mode", choices=["idle", "follow", "explore", "approach", "home", "pet"])   # patrol nur über die Schnittstelle: braucht Bestätigung
     ap.add_argument("--target", help="COCO-Klasse für follow/approach (z. B. person, chair, dog)")
     ap.add_argument("--source", help="picam | Kameraindex | Videodatei")
     ap.add_argument("--robot", choices=["proc", "sim"], default=None,

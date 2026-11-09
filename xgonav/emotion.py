@@ -9,8 +9,10 @@ Hochfahren (cute) spielt rc.local, Herunterfahren (sleep) web/api.php.
 """
 from __future__ import annotations
 
+import glob
 import logging
 import os
+import random
 import shutil
 import subprocess
 import time
@@ -32,6 +34,25 @@ def active(fifo: str, max_age_s: float = 10.0) -> bool:
     except OSError:
         return False
     return st.st_size > 0 and time.time() - st.st_mtime < max_age_s
+
+
+LCD_FRAME_BYTES = 320 * 240 * 2
+
+
+def load_gaze(path: str, bins: int = 7, lids: int = 5) -> dict[tuple[int, int], bytes] | None:
+    """Augen-Atlas aus tools/eyes.py --gaze: {(Blick, Lid): RGB565}. None, wenn etwas fehlt."""
+    atlas = {}
+    for g in range(bins):
+        for l in range(lids):
+            try:
+                with open(os.path.join(path, f"g{g}_l{l}.raw"), "rb") as f:
+                    data = f.read()
+            except OSError:
+                return None
+            if len(data) != LCD_FRAME_BYTES:
+                return None
+            atlas[(g, l)] = data
+    return atlas
 
 
 class EmotionTrigger:
@@ -113,6 +134,10 @@ class Emotions:
                        "verloren": os.path.join(cfg.sound_dir, cfg.sound_lost)}
         self.sound_enabled = bool(cfg.sound and self._aplay
                                   and all(os.path.isfile(f) for f in self.sounds.values()))
+        # Töne des Modus pet: pet_<Ereignis>_<n>.wav (tools/sounds.py), einmal beim Start gesucht
+        self.pet_sounds: dict[str, list[str]] = {}
+        for f in sorted(glob.glob(os.path.join(cfg.sound_dir, "pet_*.wav"))):
+            self.pet_sounds.setdefault(os.path.basename(f).split("_")[1], []).append(f)
         self.trigger = EmotionTrigger(cfg, self.play, lambda: active(self.fifo),
                                       self.sound if self.sound_enabled else None)
         if cfg.enabled and not self.enabled:
@@ -122,7 +147,8 @@ class Emotions:
 
     def sound(self, event: str) -> None:
         """Geräusch im eigenen Prozess; ein noch laufendes wird abgebrochen."""
-        f = self.sounds.get(event)
+        variants = self.pet_sounds.get(event)
+        f = random.choice(variants) if variants else self.sounds.get(event)
         if not f:
             return
         if self._snd_proc is not None and self._snd_proc.poll() is None:
@@ -147,6 +173,15 @@ class Emotions:
     def play(self, name: str) -> None:
         if self.enabled:
             self._play_display(name)
+
+    def express(self, kind: str, name: str, urgent: bool = False) -> None:
+        """Ereignis aus dem Modus pet. Dringendes unterbricht (der neueste Player gewinnt), alles andere
+        entfällt, solange noch etwas läuft."""
+        if kind == "emotion":
+            if urgent or not active(self.fifo):
+                self.play(name)
+        elif self.sound_enabled and (urgent or self._snd_proc is None or self._snd_proc.poll() is not None):
+            self.sound(name)
 
     def update(self, now: float, mode: str, person: bool | None, battery: int | None) -> None:
         if self.enabled or self.sound_enabled:

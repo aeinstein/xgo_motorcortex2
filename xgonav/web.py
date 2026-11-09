@@ -172,6 +172,10 @@ def serve(app: App, host: str, port: int, fps: int, render_cpus=None) -> Threadi
             u = urlparse(self.path)
             q = parse_qs(u.query)
             if u.path == "/stop":
+                # nur=pet: api.php beim Absetzen. Sonst stünde er nach einem Absetzen während der
+                # Ohnmacht von selbst wieder auf; die anderen Modi behalten ihr bisheriges Verhalten.
+                if q.get("nur", [""])[0] == "pet" and app.mode != "pet":
+                    return self._send(200, b'{"ok":true}')
                 app.set_mode("idle")
                 app.robot.stop()
                 return self._send(200, b'{"ok":true}')

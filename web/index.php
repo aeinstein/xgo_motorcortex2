@@ -1,9 +1,8 @@
 <?php
 /*
  * xgonav – Bedienoberfläche. Bild: WebSocket ws?nick=1 (nginx -> xgonav /ws, Bestätigung je Bild),
- * Raumkarte: map.png, Status und Befehle: api.php. Enthält die Funktionen der früheren
- * Fernsteuerung (rc_server): Handsteuerung, Höhe, Aktionen, LEDs, Emotionen, Herunterfahren.
- * Keine Authentifizierung.
+ * Raumkarte: map.png, Status und Befehle: api.php. Dazu Handsteuerung, Höhe, Aktionen, LEDs,
+ * Emotionen, Herunterfahren. Keine Authentifizierung.
  *
  * Aufbau: Kopfleiste (immer sichtbar, mit STOPP) – links Bild, Modus, Kennzahlen, Kamera,
  * Verlauf (eingeklappt) – rechts Karten (Fahren, Raumkarte, Extras eingeklappt, System).
@@ -11,11 +10,11 @@
 declare(strict_types=1);
 header('Cache-Control: no-store');
 
-const RC = '/home/aeinstein/motorcortex/rc_server';
+const EMOTION_RAW = '/opt/xgonav/emotions';             // tools/eyes.py, von deploy/install.sh erzeugt
 $host = htmlspecialchars(gethostname() ?: 'rider', ENT_QUOTES);
 $emotionen = [];
-foreach (@scandir(RC . '/emotions') ?: [] as $e) {
-    if (preg_match('/^[A-Za-z]+$/', $e) && is_dir(RC . '/emotions/' . $e)) {
+foreach (@scandir(EMOTION_RAW) ?: [] as $e) {
+    if (preg_match('/^[A-Za-z]+$/', $e) && is_dir(EMOTION_RAW . '/' . $e)) {
         $emotionen[] = $e;
     }
 }
@@ -212,6 +211,7 @@ details.extras[open]>summary{margin-bottom:8px}
         <button data-modus="approach" onclick="modus('approach')">Anfahren</button>
         <button data-modus="home" onclick="modus('home')" title="Weg über die Raumkarte zum Startpunkt">Zum Start</button>
         <button data-modus="patrol" onclick="streife()" title="Route auf der Raumkarte abfahren">Streife</button>
+        <button data-modus="pet" onclick="modus('pet')" title="Reagiert auf Menschen, Katzen und Hunde">Haustier</button>
       </div>
       <input id="ziel" value="person" title="Ziel für Folgen/Anfahren (COCO-Klasse)" aria-label="Ziel">
     </div>
@@ -447,7 +447,7 @@ const felder = [
 ];
 const ERKUNDEN = {scan: 'Rundumblick', ziel: 'fährt zu einer Stelle', face: 'schaut', settle: 'schaut', backup: 'setzt zurück',
   wander: 'befreit sich', heim: 'fährt zum Start', fertig: 'fertig'};
-const MODI = {idle: 'Idle', manual: 'Hand', follow: 'Folgen', explore: 'Erkunden', approach: 'Anfahren', home: 'Zum Start', patrol: 'Streife'};
+const MODI = {idle: 'Idle', manual: 'Hand', follow: 'Folgen', explore: 'Erkunden', approach: 'Anfahren', home: 'Zum Start', patrol: 'Streife', pet: 'Haustier'};
 const STREIFE = {fahrt: 'fährt', schau: 'schaut', backup: 'setzt zurück', heim: 'fährt zum Start', fertig: 'fertig'};
 const esc = t => String(t ?? '-').replace(/[<&]/g, c => c === '<' ? '&lt;' : '&amp;');
 const $ = id => document.getElementById(id);

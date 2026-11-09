@@ -42,11 +42,10 @@
 declare(strict_types=1);
 
 const XGONAV = 'http://127.0.0.1:8088';
-const MODES = ['idle', 'manual', 'follow', 'explore', 'approach', 'home', 'patrol'];
+const MODES = ['idle', 'manual', 'follow', 'explore', 'approach', 'home', 'patrol', 'pet'];
 const PROC = '/proc/XGORider';
-const RC = '/home/aeinstein/motorcortex/rc_server';     // Emotionen der früheren Fernsteuerung
 const EMOTION = '/opt/xgonav/tools/emotion.sh';         // Player (RGB565-Rohbilder statt ffmpeg)
-const EMOTION_RAW = '/opt/xgonav/emotions';             // von deploy/install.sh vorkonvertiert
+const EMOTION_RAW = '/opt/xgonav/emotions';             // tools/eyes.py, von deploy/install.sh erzeugt
 const HEIGHT_MIN = 61;                                   // u8; ~10 mm über dem Minimum, dazu ~4 mm fürs Ausrichten (ein Bein tiefer)
 const HEIGHT_MAX = 205;                                 // u8; Firmware nähme 255, bei 235 Stopp 252 (2026-11-06, Ursache offen)
 
@@ -270,6 +269,13 @@ switch ($a) {
         if ($n > 6 && $n !== 253 && $n !== 254 && $n !== 255) {
             antwort(400, json_encode(['error' => 'Aktion ungültig']));
         }
+        if ($n === 254) {
+            // Die Aktion geht direkt nach /proc, xgonav erfährt davon nichts. Der Modus pet stünde
+            // nach einer Ohnmacht sonst von selbst wieder auf. Fehlschlag egal: dann läuft xgonav nicht.
+            @file_get_contents(XGONAV . '/stop?nur=pet', false, stream_context_create(['http' => [
+                'method' => 'POST', 'timeout' => 1, 'ignore_errors' => true, 'header' => "Content-Length: 0\r\n",
+            ]]));
+        }
         proc('action', (string)$n);
     case 'height':
         proc('height', (string)(int)zahl('h', HEIGHT_MIN, HEIGHT_MAX));
@@ -281,7 +287,7 @@ switch ($a) {
         proc('settings/pitch_calibration', '1');
     case 'emotion':
         $name = $_GET['name'] ?? '';
-        if (!preg_match('/^[A-Za-z]+$/', $name) || !is_dir(RC . '/emotions/' . $name)) {
+        if (!preg_match('/^[A-Za-z]+$/', $name) || !is_dir(EMOTION_RAW . '/' . $name)) {
             antwort(400, json_encode(['error' => 'Emotion unbekannt']));
         }
         if (!is_writable('/tmp/lcd0')) {    // FIFO des Display-Daemons, Gruppe video
@@ -289,9 +295,7 @@ switch ($a) {
         }
         // laufende Emotion abbrechen (Player und ggf. ffmpeg-Fallback bzw. altes showEmotion)
         exec('pkill -u www-data -f "[e]motion.sh play|[f]fmpeg.*/tmp/lcd0" 2>/dev/null');
-        // Vorkonvertierte Bilder, sonst spielt der Player die PNGs mit ffmpeg ab.
-        $verz = is_dir(EMOTION_RAW . '/' . $name) ? EMOTION_RAW . '/' . $name : RC . '/emotions/' . $name;
-        exec(sprintf('%s play %s > /dev/null 2>&1 &', escapeshellarg(EMOTION), escapeshellarg($verz)));
+        exec(sprintf('%s play %s > /dev/null 2>&1 &', escapeshellarg(EMOTION), escapeshellarg(EMOTION_RAW . '/' . $name)));
         antwort(200, json_encode(['ok' => true]));
     case 'shutdown':
         // Erst prüfen, ob poweroff erlaubt ist, dann "sleep" abspielen (blockiert ~4 s), dann aus.

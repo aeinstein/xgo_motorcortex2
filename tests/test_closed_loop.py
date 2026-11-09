@@ -18,6 +18,23 @@ def test_follow_person_with_shake():
 
 
 @pytest.mark.slow
+def test_pet_ruck_im_budget_und_keine_fehlalarme():
+    r = run("pet", 8.0, imu=True, wheels=True, dyn=True, animal="person", speed=2.5,
+            overrides={"robot.vx_limit": 1.8, "pet.retreat_m": 0.12})
+    assert r["pet"]["schrecks"] >= 1 and r["pet"]["ruck"] == 1
+    assert r["collisions"] == 0 and r["weg_von_start_m"] <= 0.12 and r["dist_m"] > 0.03
+    r = run("pet", 14.0, imu=True, wheels=True, dyn=True, animal="person", speed=0.3)
+    assert r["pet"]["schrecks"] == 0 and r["dist_m"] == 0.0
+
+
+@pytest.mark.slow
+def test_pet_hund_ohnmacht_steht_wieder_auf():
+    r = run("pet", 30.0, imu=True, wheels=True, dyn=True, animal="dog", speed=0.5,
+            overrides={"robot.vx_limit": 1.8, "pet.faint": True})
+    assert r["aktionen"] == [254, 253] and r["pet"]["zustand"] == "wach"
+
+
+@pytest.mark.slow
 def test_explore_no_collisions():
     r = run("explore", 30.0)
     assert r["collisions"] == 0

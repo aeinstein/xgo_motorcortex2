@@ -208,7 +208,8 @@ class App:
 
     def _make(self, name: str, target: str | None = None) -> Behavior:
         b = make_behavior(name, self.cfg.behavior, self.cfg.robot, target, self.cfg.home, self.cfg.explore,
-                          has_map=getattr(self, "gridmap", None) is not None, pcfg=self.cfg.patrol)
+                          has_map=getattr(self, "gridmap", None) is not None, pcfg=self.cfg.patrol,
+                          petcfg=self.cfg.pet)
         if name == "patrol" and getattr(self, "gridmap", None) is not None:
             b.set_route(self.gridmap.route, self.gridmap.route_loop)
         return b
@@ -332,6 +333,7 @@ class App:
             self.running = False
             with self.snap_cond:
                 self.snap_cond.notify_all()
+            self._pet_leave()
             self.robot.stop()
             if self.imu is not None:
                 self.imu.close()
@@ -356,6 +358,7 @@ class App:
             if self._pending_mode:
                 name, target = self._pending_mode
                 self._pending_mode = None
+                self._pet_leave()
                 self.behavior = self._make(name, target)
                 if self.gridmap is not None:
                     self.gridmap.plan = []
@@ -379,6 +382,7 @@ class App:
         self._apply_pending_mode()
         self._paused_odom()
         if self.behavior.name not in self.NO_CAMERA:
+            self._pet_leave()
             self.behavior = self._make("idle")
         if self.behavior.name != "manual":
             self._cmd = Command(0.0, 0.0, None, "Bildverarbeitung gestoppt")
@@ -469,6 +473,8 @@ class App:
                       ego=ego, tracks=tracks, free=free, balancing=self.robot.state.balancing,
                       yaw=self.yaw, cmd_v=self.robot.command[0],
                       geo=self.geo, pitch_dev=pitch_dev, battery=self.robot.state.battery)
+            if self.behavior.name == "pet":
+                self._pet_world(w, ds, now)
             if self.lmap is not None:
                 self.lmap.move(ds, self._lmap_dyaw(dyaw, now))
                 if self.gridmap is not None:
@@ -502,7 +508,7 @@ class App:
                 w.path_blocked = self.lmap.arc_clearance(vg, 0.0, horizon_s=1.2) < 0.6 * vg + 0.08
             if getattr(self.behavior, "want_set_down", False):
                 self.behavior.want_set_down = False
-                log.warning("Akku leer: setze ab")
+                log.warning("Modus %s: setze ab", self.behavior.name)
                 self.robot.set_down()
             if self.behavior.name == "manual":
                 cmd = self._manual_cmd()
@@ -510,7 +516,8 @@ class App:
                 cmd = safety(self.behavior.step(w), w, self.cfg.behavior)
                 cmd = self._arc_check(cmd)
             self._drive(cmd)
-            if cmd.height_mm is not None and now - self._last_height_t > 1.0:
+            # pet: Abducken beim Schreck darf nicht bis zu 1 s warten; set_height schreibt nur Änderungen
+            if cmd.height_mm is not None and (now - self._last_height_t > 1.0 or self.behavior.name == "pet"):
                 self.robot.set_height(cmd.height_mm)
                 self._last_height_t = now
             if self.robot.height_mm is not None:
@@ -519,7 +526,11 @@ class App:
             self._cmd = cmd
             self._free_ctrl = free
             cls = self.cfg.behavior.target_class
-            self._emotion_tick(any(t.cls == cls and t.lost_s(f.t) < 0.5 for t in tracks))
+            if self.behavior.name == "pet":
+                self._pet_tick()
+                self._emotion_tick(None)              # pet entscheidet selbst, bleibt nur der Akku
+            else:
+                self._emotion_tick(any(t.cls == cls and t.lost_s(f.t) < 0.5 for t in tracks))
         tm.mark("ctrl")
 
         snap = Snapshot(frame=f.bgr, idx=f.idx, t=f.t, pitch_dev=pitch_dev, tracks=list(tracks), horizon=self._hz_info,
@@ -533,6 +544,7 @@ class App:
                                "plan_ms": round(self.planner.ms, 1) if self.planner is not None else None,
                                "explore": self.behavior.info() if self.behavior.name == "explore" and hasattr(self.behavior, "info") else None,
                                "patrol": self.behavior.info() if self.behavior.name == "patrol" else None,
+                               "pet": self.behavior.info() if self.behavior.name == "pet" else None,
                                "fs_ms": round(self.fs_worker.ms, 1) if self.fs_worker is not None else None,
                                "net_ms": round(self.fs_worker.net_ms, 1) if self.fs_worker is not None and self.fs_worker.net is not None else None,
                                "grid": None if self.gridmap is None else {
@@ -672,6 +684,62 @@ class App:
             v = sorted(h)
             self._spread = {"loop_p95": round(v[int(0.95 * (len(v) - 1))], 1), "loop_max": round(v[-1], 1)}
         return self._spread
+
+    def _pet_world(self, w: World, ds: float, now: float) -> None:
+        """Was nur der Modus pet braucht; die anderen Modi zahlen dafür nichts."""
+        w.ds, w.ds_measured = ds, self.odom_src == "räder"
+        w.fw_mode = self.robot.state.mode
+        w.height_mm = self.robot.height_mm
+        w.map_ok = self.lmap is not None
+        tilt = self.imu.latest_tilt() if self.imu is not None else None
+        if tilt is not None and now - tilt[0] < 0.5:
+            w.tilt = (math.degrees(tilt[1]), math.degrees(tilt[2]))
+
+    def _pet_tick(self) -> None:
+        """Wünsche des Modus pet ausführen, im Regelschritt und nur bei Änderungen."""
+        b = self.behavior
+        if b.want_stand_up:
+            b.want_stand_up = False
+            log.warning("pet: stehe von selbst auf")
+            self.robot.stand_up()
+        if b.want_idle:
+            b.want_idle = False
+            self.set_mode("idle")
+        roll = b.brain.roll_deg
+        if roll != getattr(self, "_pet_roll", 0.0):
+            self._pet_roll = roll
+            self.robot.set_roll(roll)
+        det = getattr(self.det, "cfg", None)          # FakeDetector im Simulator hat keine
+        if det is not None and det.max_hz != b.brain.det_hz:
+            if getattr(self, "_pet_det_hz", None) is None:
+                self._pet_det_hz = det.max_hz
+            det.max_hz = b.brain.det_hz
+        for kind, name, urgent in b.brain.drain():
+            if self.emotions is not None:
+                try:
+                    self.emotions.express(kind, name, urgent)
+                except Exception as e:                # Anzeige darf die Regelung nie stören
+                    log.warning("pet: %s %s: %s", kind, name, e)
+
+    def _pet_leave(self) -> None:
+        """Beim Verlassen von pet: Höhe, Roll und Detektorrate zurück."""
+        b = self.behavior
+        if b.name != "pet":
+            return
+        det = getattr(self.det, "cfg", None)
+        if det is not None and getattr(self, "_pet_det_hz", None) is not None:
+            det.max_hz, self._pet_det_hz = self._pet_det_hz, None
+        self._pet_roll = 0.0
+        if not self.robot.state.balancing:
+            return
+        try:
+            if b.brain.base_h is not None:
+                self.robot.set_height(b.brain.base_h)
+            if b.brain.rolled:
+                self.robot.set_roll(0.0)
+                self.robot.request_level()            # Totzone der Beine, sonst bleiben bis 2,6° stehen
+        except OSError as e:
+            log.error("pet: Zurückstellen fehlgeschlagen: %s", e)
 
     def _emotion_tick(self, person: bool | None) -> None:
         if self.emotions is not None:

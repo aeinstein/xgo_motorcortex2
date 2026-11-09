@@ -60,7 +60,7 @@ GET only for `status` and `sys`; all commands POST. Parameters are validated; in
 |---|---|---|
 | `GET ?a=status` | xgonav `/status`; header `X-Wlan: rx_bytes tx_bytes dBm quality` (`wlan0`, `-` = unknown, also on 502), read from `/sys/class/net` and `/proc/net/wireless`, no process start | |
 | `GET ?a=sys&since=<seq>` | `/proc` direct | JSON `t`, `seq` (newest IMU seq), `imu` `[[seq, t_ms, roll, pitch, yaw], …]` (° , only seq > since), `cpu` `[[total, idle+iowait], …]` per core (jiffies), `temp_c`, `load`, `battery` |
-| `POST ?a=mode&name=..&target=..` | xgonav `/mode` | name ∈ idle, manual, follow, explore, approach, home; target `[a-z ]{1,30}` |
+| `POST ?a=mode&name=..&target=..` | xgonav `/mode` | name ∈ idle, manual, follow, explore, approach, home, patrol, pet; target `[a-z ]{1,30}` |
 | `POST ?a=stop` | xgonav `/stop` | |
 | `POST ?a=pipeline&on=0\|1` | xgonav `/pipeline` | |
 | `POST ?a=ausrichten` | xgonav `/level` | 409 if not balancing |
@@ -75,12 +75,12 @@ GET only for `status` and `sys`; all commands POST. Parameters are validated; in
 | `POST ?a=horizon_cal&row=..` | xgonav `/horizon/cal` | 0..479.9 |
 | `POST ?a=horizon_delete&h=..` | xgonav `/horizon/delete` | mm |
 | `POST ?a=led&i=0..3&c=%23rrggbb` | `/proc/XGORider/leds/<i>` | |
-| `POST ?a=action&n=..` | `/proc/XGORider/action` | 1..6, 254, 255 |
+| `POST ?a=action&n=..` | `/proc/XGORider/action` | 1..6, 253, 254, 255; 254 first calls xgonav `/stop?nur=pet` (ends mode `pet`, so it cannot stand up by itself) |
 | `POST ?a=height&h=..` | `/proc/XGORider/height` | 61..205 |
 | `POST ?a=roll&deg=..` | `/proc/XGORider/roll` | −20..20 |
 | `POST ?a=calibration&on=0\|1` | `settings/calibration` | API only, no UI button |
 | `POST ?a=pitch_calibration` | `settings/pitch_calibration` | API only, no UI button |
-| `POST ?a=emotion&name=..` | `tools/emotion.sh play` | name must exist in `rc_server/emotions` |
+| `POST ?a=emotion&name=..` | `tools/emotion.sh play` | name must exist in `/opt/xgonav/emotions` |
 | `POST ?a=shutdown` | plays `sleep` emotion, `sudo systemctl poweroff` | |
 
 xgonav unreachable → HTTP 502 `xgonav nicht erreichbar`. Exposure/gain changes last until xgonav restarts.

@@ -45,6 +45,7 @@ camera.FrameSource ─► egomotion.EgoMotion ─► tracker.Tracker ◄── d
 | `gridmap.py` | Room occupancy grid in world frame, start point, save/load; ray entry optionally in C++ (`native/gridfast.cpp`) |
 | `planner.py` | A* on the room map for `home`, own thread (`PlannerWorker`) |
 | `behaviors.py` | `idle`, `manual`, `follow`, `explore` (`MapExplore`, reactive `Explore` without room map), `approach`, `home`; `PathFollower`, `safety()` |
+| `pet.py` | mode `pet`: `PetBrain` (logic only), `Pet` (behavior); reacts to people, cats, dogs. Control step only, nothing per frame |
 | `frontier.py` | mapping targets for `explore`, runs in the planner thread |
 | `robot.py` | `ProcRobot` (`/proc/XGORider`), `SimRobot`; ramp, keepalive, watchdog |
 | `web.py` | Local HTTP/WebSocket API (`127.0.0.1:8088`) |

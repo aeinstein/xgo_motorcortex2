@@ -44,9 +44,10 @@ def pick_route(gm, cfg, n=3):
 
 
 def run(mode="follow", secs=25.0, video=None, shake=1.0, quiet=True, imu=False, fs_thread=False, wheels=False, vx_true=None, method=None, dyn=False,
-        overrides=None, scene="raum", record=None, phantoms=0):
+        overrides=None, scene="raum", record=None, phantoms=0, animal="person", speed=None):
     """overrides: siehe apply_overrides. record: Liste, bekommt je Eintrag in die Raumkarte die Beobachtung
-    (tools/map_eval.py spielt sie offline ab); dafür trägt die Karte im Regelschritt ein."""
+    (tools/map_eval.py spielt sie offline ab); dafür trägt die Karte im Regelschritt ein.
+    animal, speed (m/s): nur Modus pet, wer auf den Rider zukommt (person, cat, dog)."""
     logging.basicConfig(level=logging.WARNING if quiet else logging.INFO)
     cfg = Config()
     home = mode == "home"
@@ -61,6 +62,11 @@ def run(mode="follow", secs=25.0, video=None, shake=1.0, quiet=True, imu=False, 
         cfg.grid.threaded = False
     robot = SimRobot(cfg.robot)
     person = Person([(3.2, 1.3), (4.8, 4.6), (1.4, 5.0), (1.2, 3.0)], speed=0.3) if mode not in ("explore", "home", "patrol") else None
+    if mode == "pet":
+        # kommt geradewegs auf den Rider zu (Start bei x=1, y=1,2, Blick 0,2 rad), wartet 0,3 m davor kurz und
+        # geht seitlich aus dem Bild: Danach ist die Luft rein
+        h, b = {"person": (1.72, 0.50), "dog": (0.5, 0.5), "cat": (0.3, 0.35)}[animal]
+        person = Person([(4.2, 1.85), (1.3, 1.26), (1.4, 3.6)], speed=speed or 0.3, cls=animal, height_m=h, width_m=b, loop=False)
     world = SimWorld(cfg.camera, robot, person, start=(1.0, 1.2, 0.2), shake=shake,
                      mount_offset_mm=cfg.camera.mount_offset_mm,
                      vx_mps=vx_true if vx_true is not None else cfg.robot.vx_limit,  # vx_true: echte m/s je Einheit
@@ -166,6 +172,10 @@ def run(mode="follow", secs=25.0, video=None, shake=1.0, quiet=True, imu=False, 
            "grid": grid, "status": app._cmd.status, "fertig_s": done_t.get("s"),
            "explore": app.behavior.info() if hasattr(app.behavior, "info") else None,
            "plan_ms": round(app.planner.ms, 1) if app.planner is not None else None}
+    if mode == "pet":
+        out.update(pet=app.behavior.info() if app.behavior.name == "pet" else None,
+                   aktionen=[v for _, n, v in robot.writes if n == "action"],
+                   weg_von_start_m=round(math.hypot(world.x - L[0]["x"], world.y - L[0]["y"]), 3))
     if patrol:
         out.update(route=done_t.get("pts"), route_fehler=done_t.get("route"), streife_s=done_t.get("streife_s"),
                    karte_gesperrt=gm.locked, belegt_ende=len(gm.occupied_cells()))
@@ -191,7 +201,7 @@ def run(mode="follow", secs=25.0, video=None, shake=1.0, quiet=True, imu=False, 
 if __name__ == "__main__":
     mode = sys.argv[1] if len(sys.argv) > 1 else "follow"
     secs = float(sys.argv[2]) if len(sys.argv) > 2 and not sys.argv[2].startswith("--") else 25
-    args = [a for i, a in enumerate(sys.argv) if i >= 3 and not a.startswith("--") and sys.argv[i - 1] not in ("--set", "--scene", "--phantoms")]
+    args = [a for i, a in enumerate(sys.argv) if i >= 3 and not a.startswith("--") and sys.argv[i - 1] not in ("--set", "--scene", "--phantoms", "--animal", "--speed")]
     rider = "--rider" in sys.argv
     ov = dict(RIDER) if rider else {}
     for i, a in enumerate(sys.argv):
@@ -202,4 +212,6 @@ if __name__ == "__main__":
               wheels="--wheels" in sys.argv, method="kanten" if "--kanten" in sys.argv else None,
               dyn="--dyn" in sys.argv, overrides=ov, vx_true=RIDER_VX if rider else None,
               scene=sys.argv[sys.argv.index("--scene") + 1] if "--scene" in sys.argv else "raum",
-              phantoms=int(sys.argv[sys.argv.index("--phantoms") + 1]) if "--phantoms" in sys.argv else 0))
+              phantoms=int(sys.argv[sys.argv.index("--phantoms") + 1]) if "--phantoms" in sys.argv else 0,
+              animal=sys.argv[sys.argv.index("--animal") + 1] if "--animal" in sys.argv else "person",
+              speed=float(sys.argv[sys.argv.index("--speed") + 1]) if "--speed" in sys.argv else None))

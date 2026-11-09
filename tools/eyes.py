@@ -1,17 +1,17 @@
 """Augen-Animationen für die Emotionen auf dem 2"-Display (ST7789, 320x240, RGB565).
 
 Nur stilisierte Augen, einfarbig auf Schwarz (mit Antialiasing). Erzeugt für jede
-Emotion der früheren Fernsteuerung (rc_server/emotions) eine Bildfolge direkt im
-Format von tools/emotion.sh build:
+Emotion eine Bildfolge direkt im Format von tools/emotion.sh build:
 
   OUTDIR/<Name>/0001.raw ...   je 153600 Byte, RGB565 LE (wie ffmpeg -pix_fmt rgb565)
 
   python tools/eyes.py OUTDIR                      # alle Emotionen, Farbe Türkis
   python tools/eyes.py OUTDIR --color 255,160,0    # andere Farbe (R,G,B)
   python tools/eyes.py OUTDIR --only sad --only shy
-  python tools/eyes.py OUTDIR --png                # zusätzlich <Name><n>.png (Quellformat rc_server)
+  python tools/eyes.py OUTDIR --png                # zusätzlich <Name><n>.png
   python tools/eyes.py OUTDIR --preview VORSCHAU   # Kontaktabzug (PNG) und MP4 je Emotion
   python tools/eyes.py --list                      # Emotionen mit Bildanzahl
+  python tools/eyes.py --gaze DIR                  # Augen-Atlas des Modus pet (Blick x Lid)
 
 Abgespielt wird wie bisher mit tools/emotion.sh play OUTDIR/<Name> (25 fps). Jede
 Animation beginnt mit den neutralen Augen; außer sleep (endet geschlossen) endet
@@ -392,7 +392,7 @@ def vertigo(t: float, T: float):
     return dict(tilt=10 * math.sin(2 * math.pi * 0.9 * t) * e), l, r
 
 
-# Name (wie rc_server/emotions) -> (Funktion, Dauer in s)
+# Name -> (Funktion, Dauer in s)
 EMOTIONS = {
     "Angry": (angry, 2.4),
     "cute": (cute, 3.0),
@@ -415,6 +415,28 @@ def frames(name: str):
     n = int(round(dauer * FPS))
     for i in range(n):                              # erstes und letztes Bild = Ruhelage
         yield render(fn(i * dauer / (n - 1), dauer))
+
+
+def gaze_alpha(g: int, lid: int) -> np.ndarray:
+    """Augen des Modus pet (xgonav/pet.py): Blick g 0..6 (3 = Mitte, größer = rechts im Bild), Lid 0 offen bis
+    4 zu (langsames Aufwachen). Runde Augen wie cute, damit der Übergang zu den Emotionen nicht springt."""
+    x = (g - 3) / 3.0
+    z = dict(w=96.0, h=96.0, r=1.0, pupil=0.72, ppx=0.26 * x, ppy=0.08, hl=1.0, dx=14.0 * x)
+    if lid == 4:
+        z.update(pupil=0.0, hl=0.0, blink=1.0)
+    elif lid > 0:
+        z["top"] = 0.24 * lid
+    return render((dict(), neutral(**z), neutral(**z)))
+
+
+def write_gaze(ziel: Path, farbe: tuple[int, int, int]) -> int:
+    ziel.mkdir(parents=True, exist_ok=True)
+    n = 0
+    for g in range(7):
+        for lid in range(5):
+            (ziel / f"g{g}_l{lid}.raw").write_bytes(to_rgb565(to_bgr(gaze_alpha(g, lid), farbe)))
+            n += 1
+    return n
 
 
 # ---------------------------------------------------------------- Ausgabe
@@ -453,19 +475,24 @@ def main() -> int:
     ap.add_argument("--no-raw", action="store_true", help="keine .raw-Dateien schreiben")
     ap.add_argument("--preview", type=Path, help="Kontaktabzug <Name>.png und <Name>.mp4 hierhin")
     ap.add_argument("--list", action="store_true", help="Emotionen auflisten")
+    ap.add_argument("--gaze", type=Path, help="Augen-Atlas für den Modus pet hierhin (g<Blick>_l<Lid>.raw)")
     a = ap.parse_args()
 
     if a.list:
         for name, (_, d) in EMOTIONS.items():
             print(f"{name:12s} {int(round(d * FPS)):3d} Bilder  {d:.1f} s")
         return 0
-    if a.outdir is None and a.preview is None:
-        ap.error("OUTDIR oder --preview angeben")
+    if a.outdir is None and a.preview is None and a.gaze is None:
+        ap.error("OUTDIR, --preview oder --gaze angeben")
     try:
         farbe = tuple(int(c) for c in a.color.split(","))
         assert len(farbe) == 3 and all(0 <= c <= 255 for c in farbe)
     except (ValueError, AssertionError):
         ap.error("--color erwartet R,G,B mit Werten 0..255")
+    if a.gaze is not None:
+        print(f"Augen-Atlas: {write_gaze(a.gaze, farbe)} Bilder in {a.gaze}")
+        if a.outdir is None and a.preview is None:
+            return 0
     namen = a.only or list(EMOTIONS)
     for n in namen:
         if n not in EMOTIONS:

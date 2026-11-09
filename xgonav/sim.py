@@ -40,12 +40,16 @@ class Person:
     y: float = 0.0
     seg: int = 0
     pause_until: float = 0.0
+    cls: str = "person"       # Klasse für FakeDetector; für Katze oder Hund height_m/width_m anpassen
+    height_m: float = 1.72
+    width_m: float = 0.50
+    loop: bool = True         # False: bleibt am letzten Punkt
 
     def __post_init__(self):
         self.x, self.y = self.path[0]
 
     def step(self, t: float, dt: float) -> None:
-        if t < self.pause_until:
+        if t < self.pause_until or (not self.loop and self.seg >= len(self.path) - 1):
             return
         tx, ty = self.path[(self.seg + 1) % len(self.path)]
         dx, dy = tx - self.x, ty - self.y
@@ -368,13 +372,13 @@ class SimWorld(FrameSource):
         if Z < 0.15:
             return None
         c = self._c0 - f * X / Z
-        half = f * 0.25 / Z  # 0.50 m breit (Annahme im Code: 0.45 -> 10 % Bias)
+        half = f * pr.width_m / 2 / Z  # Person 0.50 m breit (Annahme im Code: 0.45 -> 10 % Bias)
         c1, c2 = int(math.floor(c - half)), int(math.ceil(c + half))
 
         def row(zw):
             return H / 2 + f * math.tan(math.atan2(self.cam_h - zw, Z) + self.pitch)
 
-        r_top, r_bot = row(1.72), row(0.0)
+        r_top, r_bot = row(pr.height_m), row(0.0)
         x1, x2 = max(0, c1), min(W, c2)
         y1, y2 = max(0, int(r_top)), min(H, int(math.ceil(r_bot)))
         if x2 <= x1 or y2 <= y1:
@@ -419,7 +423,9 @@ class SimImu:
                     if w._t0 is None:
                         continue
                     now = time.monotonic()
-                    raw = self.sgn * w.pitch_truth(now - w._t0) + self.ref + self.noise * self._rng.standard_normal()
+                    # liegend ruht die Lage (die Simulation kennt das Absetzen nur über den Zustand)
+                    p = w.pitch_truth(now - w._t0) if w.robot.state.balancing else math.radians(60.0)
+                    raw = self.sgn * p + self.ref + self.noise * self._rng.standard_normal()
                     self._seq += 1
                     self.add(self._seq, now + self.t_err, 0.0, raw, w.th)
                     self.rate_hz = self.hz
@@ -541,7 +547,8 @@ class FakeDetector:
         if tr.get("box") is not None:
             x1, y1, x2, y2 = tr["box"]
             n = self._rng.normal(0, 3, 4)
-            dets.append(Detection((x1 + n[0], y1 + n[1], x2 + n[2], y2 + n[3]), "person", 0.85))
+            cls = self.world.person.cls if self.world.person is not None else "person"
+            dets.append(Detection((x1 + n[0], y1 + n[1], x2 + n[2], y2 + n[3]), cls, 0.85))
         with self._lock:
             self._pending.append((now + self.lat, DetectionBatch(frame.idx, frame.t, dets, self.lat * 1000)))
 

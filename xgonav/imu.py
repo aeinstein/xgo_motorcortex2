@@ -94,6 +94,11 @@ class ImuSource:
         with self._lock:
             return self._t[-1] if self._t else None
 
+    def latest_tilt(self) -> tuple[float, float, float] | None:
+        """(t, roll, pitch in rad) der neuesten Probe, sonst None."""
+        with self._lock:
+            return (self._t[-1], self._r[-1], self._p[-1]) if self._t else None
+
     def latest_yaw(self) -> tuple[float, float] | None:
         """(t, Kurs rad links +) der neuesten Probe mit Kurs, sonst None."""
         with self._lock:

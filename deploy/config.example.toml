@@ -110,6 +110,13 @@ gap_s = 5.0             # surprised erst nach so langer Pause ohne Person
 lost_s = 2.0            # doubt bzw. embarrassed nach so langer Zeit ohne Person
 battery_low = 20        # %, Treiber schaltet bei 8 % ab
 
+[pet]                   # Modus pet (xgonav/pet.py); Boden und Karte können dafür aus bleiben, wenn creep_m = 0
+# Standard: bleibt auf der Stelle, keine Ohnmacht. Einzeln und unter Beobachtung freischalten,
+# nie oben an der Treppe. Rückwärts ist blind, beim Aufspringen rollt er ~20 cm vor.
+# retreat_m = 0.12      # Ruck zurück beim Schreck
+# creep_m = 0.4         # zur Katze schleichen; braucht Bodenmodell und Merkkarte
+# faint = true          # heftiger Schreck: absetzen, 10 s, von selbst aufstehen
+
 [cpu]
 # CPU-Pinning (CM4, 4 Kerne), gemessen 2026-11-02: CPU 282 -> 249 %, Detektor 149 -> 129 ms,
 # Schleife p95 38 -> 35 ms; mit Bild-Client 286 -> 263 %, p95 39 -> 36 ms.
