@@ -9,6 +9,7 @@
 | Backend | xgonav local API `127.0.0.1:8088` (`output.web_host`, `web_port`) |
 | Auth | **none** — LAN only |
 | Installed to | `/opt/xgonav/web/` |
+| Static pages | `https://<rider>/tagebuch/` → `web/tagebuch/index.html` (dev diary, nginx only) |
 
 ## Layout (`web/index.php`)
 

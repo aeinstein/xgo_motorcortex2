@@ -1,0 +1,519 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mein Rider-Tagebuch</title>
+<style>
+:root { color-scheme: light dark; --bg: #faf8f4; --fg: #26231f; --muted: #6b655c; --line: #ddd7cc; --code: #efeae0; --accent: #a4481f; --mark: #f3e7d8; }
+@media (prefers-color-scheme: dark) { :root { --bg: #1b1a18; --fg: #e8e4dc; --muted: #a29b8f; --line: #3a3733; --code: #2c2a26; --accent: #e8935f; --mark: #2e2720; } }
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 1.5rem; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 18px/1.62 Georgia, "Times New Roman", serif; }
+.seite { display: grid; grid-template-columns: 13.5rem minmax(0, 44rem); gap: 3rem; justify-content: center; padding: 0 24px; }
+nav { position: sticky; top: 0; align-self: start; max-height: 100vh; overflow-y: auto; padding: 3.2rem 0 2rem; font: 15px/1.35 system-ui, -apple-system, "Segoe UI", sans-serif; }
+nav h2 { margin: 0 0 .8rem; font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+nav ol { list-style: none; margin: 0; padding: 0; }
+nav a { display: block; padding: .5rem 0 .5rem .8rem; border-left: 2px solid var(--line); color: inherit; text-decoration: none; }
+nav a small { display: block; color: var(--muted); font-size: 13px; }
+nav a:hover { border-left-color: var(--muted); }
+nav a.aktiv { border-left-color: var(--accent); }
+nav a.aktiv b { color: var(--accent); }
+nav b { font-weight: 600; }
+main { padding: 3rem 0 5rem; min-width: 0; }
+h1 { font-size: 2.3rem; line-height: 1.15; margin: 0 0 1rem; }
+.vorwort { color: var(--muted); font-size: .92rem; margin: 0 0 3rem; padding-bottom: 2rem; border-bottom: 1px solid var(--line); }
+.vorwort p { margin: 0 0 .7rem; }
+article { margin: 0 0 4rem; }
+article > h2 { font-size: 1.5rem; line-height: 1.25; margin: 0; color: var(--accent); }
+.meta { margin: .15rem 0 1.6rem; font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--muted); }
+.e { display: grid; grid-template-columns: 3.4rem minmax(0, 1fr); gap: .9rem; margin: 0 0 1rem; }
+.e time, .e .zeit { font: 13.5px/1.9 Consolas, Menlo, monospace; color: var(--muted); font-variant-numeric: tabular-nums; }
+.e p { margin: 0 0 .7rem; }
+.e p:last-child { margin-bottom: 0; }
+.bilanz { margin: 1.6rem 0 0; padding: .9rem 1.1rem; background: var(--mark); border-radius: 4px; }
+.bilanz p { margin: 0; }
+code { font: .84em Consolas, Menlo, monospace; background: var(--code); padding: .1em .3em; border-radius: 3px; overflow-wrap: anywhere; }
+q { font-style: italic; quotes: "„" "“"; }
+footer { color: var(--muted); font-size: .9rem; border-top: 1px solid var(--line); padding-top: 1.2rem; }
+@media (max-width: 860px) {
+  body { font-size: 17px; }
+  .seite { display: block; padding: 0 16px; }
+  nav { top: 0; z-index: 2; margin: 0 -16px; padding: .5rem 16px; max-height: none; overflow-x: auto; background: var(--bg); border-bottom: 1px solid var(--line); }
+  nav h2 { display: none; }
+  nav ol { display: flex; gap: .3rem; width: max-content; }
+  nav a { padding: .25rem .6rem; border-left: 0; border-bottom: 2px solid transparent; white-space: nowrap; }
+  nav a small { display: none; }
+  nav a.aktiv { border-bottom-color: var(--accent); }
+  html { scroll-padding-top: 3.4rem; }
+  main { padding-top: 2rem; }
+  .e { grid-template-columns: 1fr; gap: 0; }
+}
+</style>
+</head>
+<body>
+<div class="seite">
+<nav aria-label="Einträge nach Datum">
+  <h2>Nach Datum</h2>
+  <ol>
+    <li><a href="#2026-11-01"><b>So, 1. Nov.</b><small>Erste Fahrt</small></a></li>
+    <li><a href="#2026-11-02"><b>Mo, 2. Nov.</b><small>Folgen und Beine</small></a></li>
+    <li><a href="#2026-11-03"><b>Di, 3. Nov.</b><small>Firmware geöffnet</small></a></li>
+    <li><a href="#2026-11-04"><b>Mi, 4. Nov.</b><small>Kanten statt Farben</small></a></li>
+    <li><a href="#2026-11-05"><b>Do, 5. Nov.</b><small>Jede Millisekunde</small></a></li>
+    <li><a href="#2026-11-06"><b>Fr, 6. Nov.</b><small>Die Treppe</small></a></li>
+    <li><a href="#2026-11-07"><b>Sa, 7. Nov.</b><small>Entwicklung gestoppt</small></a></li>
+    <li><a href="#2026-11-08"><b>So, 8. Nov.</b><small>Grüner Boden</small></a></li>
+  </ol>
+</nav>
+<main>
+<h1>Mein Rider-Tagebuch</h1>
+<div class="vorwort">
+  <p>Was ich mit dem XGO Rider und Claude gemacht habe, Tag für Tag, auch das, was danebenging. Heute steht noch nicht drin, das kommt später.</p>
+  <p>Mit „Claude“ sind viele Sitzungen gemeint, die einander nur über Notizen kannten. An manchen Tagen liefen mehrere gleichzeitig, ein Firmware-Claude und ein xgonav-Claude, und ich habe die Nachrichten zwischen ihnen getragen. Claude hat das aus Commits, Notizen und Sitzungsverläufen für mich aufgeschrieben. Was ich getippt habe, steht wörtlich da, mit Tippfehlern.</p>
+</div>
+
+<article id="2026-11-01">
+  <h2>Sonntag, 1. November 2026</h2>
+  <p class="meta">Erste Inbetriebnahme · Commits im alten Repo <code>xgonav</code></p>
+  <div class="e"><time>16:23</time><div>
+    <p>Claude auf <code>sun</code> gestartet und die Codebasis von xgonav lesen lassen: <code>CLAUDE.md</code>, venv, <code>git init</code>. Bis hierhin kannte xgonav nur den Simulator.</p>
+  </div></div>
+  <div class="e"><time>18:15</time><div>
+    <p>Noch im Simulator: Folgen fuhr 0,09 statt der geforderten 0,137. Claude fand, dass die Bahnprüfung in 31 % der Schritte kürzte, weil die Person selbst als Hindernis in der Merkkarte stand.</p>
+  </div></div>
+  <div class="e"><time>18:31</time><div>
+    <p><q>leg los, der Rider ist aufgebockt</q>. Treiber-Patches 0001 und 0002 auf den echten Rider, Sicherung um 18:35. Mein Quellordner brachte 1,7 GB <code>slam/</code> mit, Claude holte danach nur das Nötige. Dann habe ich das Repo freigegeben: <q>du darfst clonen, patchen und unter meinem Namen committen</q>.</p>
+  </div></div>
+  <div class="e"><time>19:07</time><div>
+    <p>Ich habe nach Rust gefragt. Claude hat gemessen und abgeraten, die Rechenzeit stecke in OpenCV und onnxruntime. Mit kleinerem Suchfenster fiel die Hauptschleife von 52–68 auf 17–23 ms. Um 19:33 habe ich nachgefragt, ob wenigstens die Bildpyramide in Rust ginge. Wieder abgeraten. Vier Tage später kam sie in C++.</p>
+  </div></div>
+  <div class="e"><time>19:41</time><div>
+    <p>Kamera kalibrieren. <q>ich kann ihn nicht positionieren, weil die IMU gegen mich ankämpft</q>. Also mein Vorschlag: <q>das beste ich wir manövrieren ihn per IMU in die korrekte position. ich sage dir was du tun sollst</q>. Claude baute <code>nudge.py</code>, ich habe angesagt. Mein „jetzt 10 grad“ nahm Claude als Fortsetzung nach rechts. Bei der nächsten Ansage drehte er falsch herum und fuhr rückwärts in die falsche Richtung, bevor meine Korrektur ankam.</p>
+    <p>Dabei kam ein alter Fehler in meinem <code>forceyaw()</code> ans Licht: Der Sollkurs war immer 0° statt der aktuellen Lage.</p>
+  </div></div>
+  <div class="e"><time>19:55</time><div>
+    <p>Claude errechnete 54 mm Kamerahöhe. <q>die kamerahöhe ist aber 128mm vom boden aus</q>. Nicht die Messung war falsch, sondern die angenommenen 62,2° Öffnungswinkel. Die Kamera hat ein Weitwinkelobjektiv, über 90°.</p>
+  </div></div>
+  <div class="e"><time>20:15</time><div>
+    <p><q>ich habe keinen drucker hier. ich kann dir ein schwarzes brett anbieten</q>. Also Brett in genau einem Meter, danach ein Schachbrett auf dem MacBook-Bildschirm. Claudes Drehserie war nicht auswertbar, bei gleichem IMU-Kurs lagen die Bilder 13° auseinander.</p>
+  </div></div>
+  <div class="e"><time>20:28</time><div>
+    <p>Ich hielt das MacBook, bis der Arm nicht mehr wollte: <q>ok reicht</q>. Claude hörte daraufhin mit allem auf. <q>sorry du solltest nur die aufnahme stoppen, mein arm wird schlapp</q>. Die Aufnahme lief am Rider weiter, weil nur die Verbindung getrennt war, und sie hatte kein einziges Bild erkannt. Das Halten war umsonst.</p>
+  </div></div>
+  <div class="e"><time>20:37</time><div>
+    <p><q>mach bitte eine eigene serie, schau dann bei jedem bild und bewege den rider</q>. 16 Bilder wurden brauchbar. Unterwegs fuhr Claude die minimale Körperhöhe an. Der Rider verfing sich an einem Kabel, musste die Balance retten und stand danach einen Meter weiter. <q>niemals ganz runter !, bitte lass 10mm frei</q>.</p>
+  </div></div>
+  <div class="e"><time>20:46</time><div>
+    <p><q>dreh 45 grad nach links und du stehtst wieder 10cm vor der tastatur</q>. Es wurden 62,4°, und er stand kurz vor meiner Tastatur. Claude baute das Drehwerkzeug auf zwei Stufen um, die nächsten 45° wurden 43,1°.</p>
+  </div></div>
+  <div class="e"><time>20:59</time><div>
+    <p>Ich habe Claude zwei Hersteller-Firmwares für den Rider2 gezeigt. Beide passen nicht. <q>ok, wir bleiben bei der Original-Firmware</q>. Das hielt zwei Tage.</p>
+  </div></div>
+  <div class="e"><time>21:03</time><div>
+    <p>Erste echte Fahrt unter xgonav, Akku 26 %. Er kam kaum vom Fleck, weil das Bodenmodell an den dunklen, grünstichigen Bildrändern scheiterte. <q>mach b</q>: Bodenmodell aus, zweiter Versuch. Um 21:13 habe ich im Browser „Erkunden“ gedrückt, und er fuhr geradeaus, ohne dass etwas nach Hindernissen schaute. Ich habe ihn zurück ins Häuschen gestellt, Claude hat den Knopf ohne Freiraumerkennung gesperrt.</p>
+  </div></div>
+  <div class="e"><time>21:20</time><div>
+    <p><q>lcd ausgabe ruckelt aber</q>. Die Farbumrechnung lief in numpy, mit OpenCV gingen 15 fps statt 5. <q>läuft jetzt flüssig,PS python fand ich schon immer scheiße</q>. Zum Schluss: <q>stoppe alles, er kann nicht laden, weil zu wenig strom über bleibt</q>.</p>
+  </div></div>
+  <div class="bilanz"><p>Bilanz: Der Rider läuft, die IMU passt, gefolgt ist er mir noch keinen Meter.</p></div>
+</article>
+
+<article id="2026-11-02">
+  <h2>Montag, 2. November 2026</h2>
+  <p class="meta">19 Commits im neuen Repo · erstes Folgen · Beinnullpunkte überschrieben</p>
+  <div class="e"><time>11:42</time><div>
+    <p>Weiße Seite auf dem MacBook vor die Kamera gehalten: Mitte weiß, Rand türkis, Rot fällt auf 19 %. Daran scheiterte das Bodenmodell. Claude baute eine Abschattungskorrektur, die wir zwei Tage später wieder aufmachen mussten.</p>
+  </div></div>
+  <div class="e"><time>12:06</time><div>
+    <p><q>er hat sich doch wieder 90 grad gedreht</q>. Dann die Testfahrten: Er folgte, blieb aber zwei bis drei Meter hinter mir. Laminatfugen und ein Astloch waren für das Farbmodell Hindernisse, und es lernte meine Kleidung mit. Mit Rohaufnahmen ließen sich die Fehlalarme erstmals zählen: 83 auf 17 %, allerdings an einer einzigen Aufnahme eingestellt.</p>
+  </div></div>
+  <div class="e"><time>12:58</time><div>
+    <p><q>er ist mir gut gefolgt</q>. Um 13:13: <q>er ist mir gut gefolgt, war schneller</q>. Um 13:19 noch einmal. Drei Fahrten in Folge. Danach lief er im Dienst hinter mir her, bis ich um 13:33 selbst auf Stopp gedrückt habe.</p>
+  </div></div>
+  <div class="e"><time>13:38</time><div>
+    <p><q>so, du mit deinem schrott python.... Auf dem rider liegt bereits ein nginx mit ssl</q>. Und: <q>und ich würde php immer bervorzugen statt python , da wo es geht, wie z.b. ein webinterface</q>. Also PHP hinter nginx, xgonav nur noch auf localhost. Mein Zertifikat war seit Januar abgelaufen, das haben wir erneuert. <code>rc-control</code> habe ich abschalten und meine Fernsteuerung in die neue Oberfläche übernehmen lassen.</p>
+  </div></div>
+  <div class="e"><time>14:07</time><div>
+    <p><q>deploy/sudoers-... fehlt</q>. Claude hatte in README und Commit auf eine Datei verwiesen, die nie angelegt worden war.</p>
+  </div></div>
+  <div class="e"><time>14:29</time><div>
+    <p><q>er ist 86cm vorwärts und 4cm rückwärts gefahren</q>, bei exakt symmetrischen Befehlen. Claudes Verdacht auf einen Vorwärtsdrang im Stand war schnell widerlegt: <q>er ist nicht gerollt, steht ruhig, schwankt ganz wenig</q>. Mit stärkeren Bytes getestet, dann meine Wahl: <q>nimm 2,0, der mit 90 war am nächsten</q>. Danach <q>beides gleich schnell</q>. Die Ursache in der Firmware blieb unbekannt.</p>
+  </div></div>
+  <div class="e"><time>14:44</time><div>
+    <p>Ich wollte alles an einem Ort, um 15:03 stand <code>xgo_motorcortex2</code>: Treiber, Display, Web, xgonav. Dann mein ffmpeg-Skript für die Emotionen ersetzt: 55 Bilder 0,18 s CPU statt 1,04 s für 24. Der Display-Daemon wurde neu gebaut, weil noch <q>Batt:10%</q> aus einem alten Binary aufs Bild kam. Dann automatische Emotionen. Um 16:01 spielte er bei 18 % Akku gleich <code>shy</code>.</p>
+  </div></div>
+  <div class="e"><time>17:59</time><div>
+    <p>Kaum startet xgonav beim Booten automatisch: <q>er fährt jetzt rückwärts</q>. <q>sobald ich auf hand stelle fährt er rückwärts</q>. Ich hielt die Lage für falsch kalibriert. Claude fand etwas anderes: Der Treiber schickte für die Kalibrierung ASCII-Zeichen statt Bytes, und vertauscht. Repariert, dazu Knöpfe in der Oberfläche.</p>
+  </div></div>
+  <div class="e"><time>18:16</time><div>
+    <p><q>jetzt ist er völlig verstellt</q>. <q>er kann jetzt nicht mehr stehen. ein bein hält er ausgefahren, das andere ist schlaff</q>. Ich hatte dreimal in wenigen Sekunden auf „Beine kalibrieren → speichern“ gedrückt, und der Knopf tat zum ersten Mal wirklich etwas: Motoren los, die schlaffe Stellung landete als Nullpunkt im Flash. Ein Neustart half nicht. So ein Knopf hätte nie ohne Rückfrage speichern dürfen.</p>
+  </div></div>
+  <div class="e"><time>18:23</time><div>
+    <p>Reparatur per SSH. Claude startete, ich hielt beide Beine ganz eingefahren. <q>speichern</q>. Eine Minute später: <q>ok er steht suaber</q>. Die Knöpfe flogen raus. <q>zum kalibrieren hab ich ihn einfach auf den kopf gestellt, merken</q>. Das Rückwärtsrollen von vorhin blieb ungeklärt.</p>
+  </div></div>
+  <div class="e"><time>18:36</time><div>
+    <p><q>können wir die framerate auf 25fps festlegen?</q> Die Kamera lieferte 26,5, Claude klebte erst einen Korrekturfaktor drauf. <q>schau doch mal im internet zu OV5647 evtl. gibts noch was zu verbessern</q>. Fund: Der Kerneltreiber gibt im 640×480-Modus eine falsche Pixelrate an. Mit Sensormodus 1296×972 flog der Faktor wieder raus. <q>ist viel besser geworden</q>.</p>
+  </div></div>
+  <div class="e"><time>19:04</time><div>
+    <p>Jetzt ging es an die Rechenzeit. <q>ich habe ja teilweise 20 sek. puffer</q>. <q>und jetzt frage ich mich warum stunnel 15% cpu hat aber keine verbindung</q>. stunnel rechnete dauernd DH-Parameter, also TLS direkt in nginx. <q>ist es möglich wieder websockets zu benutzen ?</q> WebSocket mit Bestätigung je Bild, der Stau war weg.</p>
+  </div></div>
+  <div class="e"><time>19:20</time><div>
+    <p><q>so jetzt bitte einmal den fetten python prozess(bildpipeline) profilen</q>. YOLO lag bei rund 200 %, es rechnete ohne Pause. Auf 5 Hz begrenzt: CPU 318 auf 264 %. Pinning brachte erst weniger als erhofft, die dritte Variante passte. Bodenmodell bitgenau 16,3 auf 13,3 ms. Um 20:36 habe ich es in einen eigenen Thread legen lassen: Schleife 16,7 auf 12,6 ms, p95 26,9 auf 17,1 ms. Der Detektor wurde dafür langsamer.</p>
+  </div></div>
+  <div class="bilanz"><p>Bilanz: Er folgt mir. Und ein Knopf, der den ESP32-Flash beschreibt, ist kein gewöhnlicher Knopf.</p></div>
+</article>
+
+<article id="2026-11-03">
+  <h2>Dienstag, 3. November 2026</h2>
+  <p class="meta">23 Commits · erster Tag mit zwei Claudes · R-1.1.6</p>
+  <div class="e"><time>10:31</time><div>
+    <p><q>Frage: Ist in der pipeline ein task der sich den Raum merkt?</q> Nein. Damit fing die Raumkarte an, und die braucht eine Wegmessung. Claude baute <code>raw_reg</code> und las R-1.1.3 durch: keine Odometrie. Für das verdächtige Register 0x06 habe ich ein Rad von Hand gedreht. Es war nur ein Rest im Sendepuffer.</p>
+  </div></div>
+  <div class="e"><time>10:55</time><div>
+    <p><q>der head hat einen USB anschluss, dieser hängt jetzt an meinem Windows. wie kannst du dem windows claude sagen was er zu tun hat?</q> Ging nicht, ich bekam einen Auftrag zum Einfügen. Seitdem bin ich der Bote zwischen den Claudes. Um 10:57 am Windows-PC: <q>hi, am COM3 hängt ein ESP, sichere die firmware</q>.</p>
+  </div></div>
+  <div class="e"><time>11:12</time><div>
+    <p><q>kannst du die disassemlieren ?</q> Capstone 6 stürzte ab, decodierte an einem gültigen <code>entry</code> nichts und erfand ESP32-S3-Befehle. Ich habe Ghidra gewählt. Es wollte JDK 25, Jython fehlte, also Export in Java. Um 11:21: 232 774 Instruktionen, 5 449 Funktionen.</p>
+  </div></div>
+  <div class="e"><time>11:39</time><div>
+    <p>Claude scannte alle 256 Register über USB und sah nur Version und IMU. <q>PS denkst du dran, auf dem rider ist das cm4 nur mittels serial verbunden. dort müssen die radpositionen abrufbar sein</q>. Es blieb dabei, dreifach bestätigt: R-1.1.3 gibt die Raddaten nie heraus. Lustig: Der Windows-Claude fand <code>raw_reg</code> im Treiber und schrieb mir, dass <em>ich</em> daran baue. Das war der andere Claude, eine Stunde vorher.</p>
+  </div></div>
+  <div class="e"><time>12:06</time><div>
+    <p>Binär-Patch: kein freier Platz im Code, ein angehängtes Segment außer Sprungweite, und die einzige „unbenutzte“ Funktion in Reichweite startete in Wahrheit das BLE. Claude legte mir die Entscheidung vor, ich habe gewählt: Referenz R-1.1.6 bauen und testen, zur Not zurück.</p>
+  </div></div>
+  <div class="e"><time>12:21</time><div>
+    <p>Geflasht. Radwerte da, aber der Rider stand nicht, er war nur nie „gearmt“. Um 12:29 brach Claudes Sicherheitscheck das Armen ab, weil er aufrecht stand und die Räder sofort angelaufen wären. <q>ja, arm senden – steht sicher</q>. Er balancierte.</p>
+  </div></div>
+  <div class="e"><time>12:34</time><div>
+    <p>Dem xgonav-Claude: <q>schaumal in debug-firmware/protocol.md Es gibt neuigkeiten für dich</q>. Der fing gleich an, sich einzumischen. <q>du hast mit der firmware erstmal nix zu tun. ein anderer claude kümmert sich darum. du sagst nur was du brauchst.</q> Ab da habe ich Anforderungen hinübergetragen. Register 0x0c, dann das Kombi-Register 0x0d. Für die Handmessung lag er erst auf dem Kopf: <q>nochmal, er lag auf dem kopf und wollte aufstehen</q>. Ergebnis 1024 Ticks je Umdrehung, beide vorwärts positiv.</p>
+  </div></div>
+  <div class="e"><time>13:17</time><div>
+    <p>Erste Fahrt mit Rädern, sie zeigten 10,2 cm. <q>eher 15cm</q>, schätzte ich. Claude suchte schon nach einem falschen Raddurchmesser. <q>dann messen wir exakt</q>. Maßband 29,5 cm, Räder 29,5 cm. Meine Schätzung war falsch. Claudes Erklärung eines Kursunterschieds mit der IMU-Totzone auch, das zeigte die Kamera zwei Minuten später. Das Register 0x0b, das nach Odometrie aussieht, meldete im Stillstand 226 263 Strecke.</p>
+  </div></div>
+  <div class="e"><time>13:35</time><div>
+    <p>Kalibrierfahrt, angekündigt rund 1 m bei 1,3 m Platz. Er fuhr 215 cm, weil R-1.1.6 nichtlinear umsetzt: v = 0,08 ergibt 10 cm/s, v = 0,12 aber 27 cm/s. Claude hatte hochgerechnet statt gemessen. <q>Ist ok, er ist 215 cm gefahren, nichts passiert</q>. Band und Räder passten auf 3 mm.</p>
+  </div></div>
+  <div class="e"><time>14:06</time><div>
+    <p>Raumkarte läuft, ich habe sie gleich ausprobiert: <q>das bodenmodell hingt auch, ich sehe das es nicht funktioniert bei meinem boden</q>, <q>und der disarm geht nicht, also das hinetzen</q>. Aktion 0 setzt nicht ab, obwohl das in der <code>protocol.md</code> des Firmware-Claude stand. Ich habe die Nachricht hinübergetragen, er baute Aktion 254. Währenddessen verschwand COM3, der ESP kam als COM4 wieder. Nebenbei habe ich die LEDs auf halbe Helligkeit setzen lassen.</p>
+  </div></div>
+  <div class="e"><time>16:52</time><div>
+    <p><q>so bitte einmal das webfrontend hübsch, alles ein wenig kompakter und überlegter</q>. Um 17:01: <q>im Ordner docs bitte zu jedem Thema eine .md Datei in english(kein gelaber, harte Fakten)</q>. Dann die Firmware ins Repo. Claude baute meine Patches aus einer Beschreibung nach, bis ich mit <code>ref.patch</code> die Originale geliefert habe.</p>
+  </div></div>
+  <div class="e"><time>17:46</time><div>
+    <p><q>in der boden karte start punkt festhalten bodenkarte persitieren und funktion um zum start zurück zukehren</q>. Modus <code>home</code>, im Simulator 0,14 m vom Start, am Rider noch nicht gefahren. Dazu Verlaufsdiagramme für Lage, CPU und Akku.</p>
+  </div></div>
+  <div class="bilanz"><p>Bilanz: neue Firmware, echte Encoder, erste Karte. Und zwei Claudes, die voneinander nur wissen, was ich ihnen sage.</p></div>
+</article>
+
+<article id="2026-11-04">
+  <h2>Mittwoch, 4. November 2026</h2>
+  <p class="meta">16 Commits · Umzug auf den Windows-PC · Kanten statt Farben</p>
+  <div class="e"><time>14:41</time><div>
+    <p><q>ich habe den Grund gefunden, warum die Räder unzterschiedlich groß erschienen. Ein Reifen war nicht korrekt drauf.</q> Claude hatte die 2 % tags zuvor für einen Messfehler gehalten.</p>
+  </div></div>
+  <div class="e"><time>14:54</time><div>
+    <p>Nachkalibrieren ging nicht: <q>wenn du losfahren möchtest ist er schon 90 grad wehggedreht</q>. Claude baute das Werkzeug um. <q>stopp, das wird so nichts. wir müssen erst das problem mit der drift im stand hinbekommen.</q> −77,8° in 30 s, der Gyro-Nullpunkt wird nur beim Booten gemessen. Nach einem ESP-Neustart in Ruhe blieben −0,5°. <q>mach mir eine md datei mit der claude anweisung</q>, und die ging an den Firmware-Claude.</p>
+  </div></div>
+  <div class="e"><time>15:07</time><div>
+    <p>2 m Fahrt, mein Maßband: <q>er ist 212,5 cm gefahren</q>. Claude rechnete mit dem Kamera-Kurs von −8,9°. <q>er ist nicht nach rechts gefahren, es war perfekt gerade aus</q>. Das Rotationsmodell nimmt Tiefenunterschiede für Drehung. Als Kursreferenz war die Kamera damit erledigt.</p>
+  </div></div>
+  <div class="e"><time>15:33</time><div>
+    <p><q>ok warum steht in der config hfov_deg = 62.2 obwohl es 91 sein sollte</q>. Dann: <q>wir müssen die kamera neu einmessen. ich hatte zuvile fehler gemacht, weil das nicht so einfach war</q>. Kein Drucker, ein spiegelndes Display, kaum Licht. <q>ich kann dir einen 2m lengen zollstock hin legen</q>. Zollstock längs und quer, <q>wie gesagt die cam höhe ist exakt 10cm gemessen</q>. Ergebnis 88,5°. Die Zahl hielt genau drei Tage.</p>
+  </div></div>
+  <div class="e"><time>16:17</time><div>
+    <p>Der Rider startete ohne geordnetes Herunterfahren neu, geklärt ist das nicht. Nach Stopp und Start der Bildverarbeitung meldete das Bodenmodell überall „blockiert“. Claudes Dunkelbild-These hielt nicht, jetzt wird das Modell einfach zurückgesetzt. Das neue Randmodell brachte Boden über die volle Breite, und dann: <q>er kam gerade nicht weiter</q>. „Bahn 0,02 m“. Wieder aus.</p>
+  </div></div>
+  <div class="e"><time>16:41</time><div>
+    <p><q>kannst du rausfinden, wie man den rider direkt aufstehen lassen kann?</q> Laut Ghidra hatte die alte Firmware gar keine Aufsteh-Routine, sie schaltete nach dem Booten einfach die Balance ein. <q>änder die firmware so, das das per serialcmd ausgelöst wird, nicht nachdem boot</q>. Aktion 253, geflasht um 16:54. <q>ok, geht</q>.</p>
+  </div></div>
+  <div class="e"><time>17:44</time><div>
+    <p><q>ich würde gerne an meinem Windows PC weiterarbeiten, nicht auf der sun</q>. Umzug. Der Zugang zum Rider klappte erst nach <q>nimm einfach den aeinstein-ed</q>.</p>
+  </div></div>
+  <div class="e"><time>18:02</time><div>
+    <p>Fahrt 9, er folgte nur knapp die Hälfte der Zeit. Claude lieferte eine Analyse über YOLO. <q>es bleibt bei dem 256 modell, mich interessiert auch nicht so sehr die erkennung, als wie die bodenerkennung und hindernisse</q>.</p>
+  </div></div>
+  <div class="e"><time>18:16</time><div>
+    <p>Claude präsentierte als Fund, dass die Abschattungskorrektur das Bild zerstört. <q>hey ich erzähle seit 2 stunden, das wir das mit falschen kamera einstellungen gemacht hatten und du das prüfen sollst</q>. <code>calibrate.py</code> lief tatsächlich mit anderem Sensormodus und anderer Bildrate als xgonav. Ich habe das Display abschalten lassen und drei neue Kalibrierungen gemacht. Ergebnis: Die Kamera korrigiert das schon selbst, die dritte brachte dem Bodenmodell kaum etwas.</p>
+  </div></div>
+  <div class="e"><time>18:34</time><div>
+    <p>Meine Frage: Warum Farben statt Kanten? Claude erklärte erst, warum Kanten mal verworfen worden waren, und baute es dann doch. Im Simulator kam er nur noch 0,6 m weit, weil die guten Schwellen nicht als Standard eingetragen waren. Auf der Aufnahme von Fahrt 9 aber: Fehlalarme 24 % → 0,2 %.</p>
+  </div></div>
+  <div class="e"><time>18:54</time><div>
+    <p>Claude wollte optimieren. <q>wir fahren erst</q>. Fahrt 10: nur noch 5 von 741 Schritten blockiert. <q>und bitte die geschwindigkeit verdoppeln</q>. Fahrt 11: Als ich aus dem Bild ging, wechselte er das Ziel und fuhr auf eine sitzende Person in fünf Metern Entfernung zu.</p>
+  </div></div>
+  <div class="e"><time>19:26</time><div>
+    <p><q>farbmodell ist im dunkeln besser, kanten im hellen. wie wäre es mit einem umschalten</q>. Claude baute <code>method = "beide"</code>, konnte es an den Aufnahmen aber nicht bestätigen, und hat das auch so gesagt. Es läuft weiter <code>kanten</code>.</p>
+  </div></div>
+  <div class="e"><time>19:42</time><div>
+    <p><q>warum stoppt er immer beim erkunden modus?</q> Die Bahnprüfung setzte v = 0, und niemand drehte weg. Behoben. Dazu freudige und traurige Töne und türkise Augen auf dem Display. Ich habe sie gleich ersetzen lassen. Der Rider freut sich jetzt, wenn er mich sieht.</p>
+  </div></div>
+  <div class="e"><time>23:05</time><div>
+    <p>Ich habe YOLO26 mit Tiefenwahrnehmung testen lassen. Rund 0,7 s je Bild am CM4, und Teppich sieht es als flach. Zum Messen brauchbar, im Betrieb nicht.</p>
+  </div></div>
+  <div class="bilanz"><p>Bilanz: <code>kanten</code> entscheidet ab heute.</p></div>
+</article>
+
+<article id="2026-11-05">
+  <h2>Donnerstag, 5. November 2026</h2>
+  <p class="meta">9 Commits · C++-Kern, Patches 0005 bis 0010, Kernel-Unfall</p>
+  <div class="e"><time>00:08</time><div>
+    <p>Claude hat 36 Bilder durchgesehen. Zur Teppichkante von mir: <q>er kann da nicht hoch</q>, sie ist also richtig erkannt. In Claudes eigenem Code tauchte eine Zeile mit <code>or True</code> auf, die nichts prüfte. Um 01:38 fiel auch Fast-SCNN durch, Teppich ist für das Netz Boden.</p>
+  </div></div>
+  <div class="e"><time>08:31</time><div>
+    <p><q>prüfe ob der erzeugte stand, mit dem Stand in c:\rider überein stimmt</q>. Tat er nicht, der Standup-Patch fehlte. <q>füge den fehlenden Patch unter firmware ein</q>. Jetzt ist der Build bitgleich mit dem auf dem Rider.</p>
+  </div></div>
+  <div class="e"><time>09:42</time><div>
+    <p>NCNN mit 93 statt 112 ms je Bild: <q>ja bau ein, jede ms zählt, überall</q>. Um 10:30: <q>wie können wir die pyramiden einbauen, doch auf kack python verzichten?</q> Also ein C++-Kern für die Ego-Motion, live 6,6 statt 9,9 ms.</p>
+  </div></div>
+  <div class="e"><time>12:16</time><div>
+    <p>Der Rider war für Claude seit zwanzig Minuten weg, kein Ping, kein SSH. Bis 16:27 ging nichts, dann: <q>rider ist online</q>. Beim A/B-Vergleich danach habe ich die Bildverarbeitung aus Versehen per Web abgebrochen, ging trotzdem.</p>
+  </div></div>
+  <div class="e"><time>16:48</time><div>
+    <p><q>mach die ego-motion und die gridmap.add...</q> Vorgabe bitgleich zu OpenCV. Claudes synthetische Prüfbilder bestanden, echte nicht, 19 von 150 wichen ab, weil OpenCV in NEON mit FMA rechnet. Um 17:34 stand es, auf 6227 Bildern gleich: Schleife 6,5 ms, p95 11,4, CPU 158 %. Gemessen bei liegendem Rider.</p>
+  </div></div>
+  <div class="e"><time>17:49</time><div>
+    <p><q>PS zum start hat nicht den startpunkt wieder gefunden, dieser ist bestimmt 2 meter gedriftet</q>. Claude hatte zuerst den Radkurs in Verdacht. Eine bessere Messung zeigte später: Rad- und IMU-Kurs passen, <code>home</code> scheiterte an Planung und Fahrweise.</p>
+  </div></div>
+  <div class="e"><time>18:13</time><div>
+    <p>Ich sagte, er stehe wieder am Startpunkt, und Claude startete xgonav neu, ohne nachzusehen. Ich war inzwischen im Hand-Modus und er balancierte. Danach kam kein Kamerabild mehr. Seitdem wird nur noch bedingt neu gestartet. Außerdem von mir: <q>wenn du den rider nicht zum fahren brauchst, deaktiviere die pipeline und setz ihn ab, damit der akku geschont wird</q>.</p>
+  </div></div>
+  <div class="e"><time>18:24</time><div>
+    <p><q>können wir das drehverhalten in der firmware verbessern?</q> Er rollte beim Drehen 30 bis 50 cm weg. Patch 0005, <q>er hängt am USB, kannst flashen</q>. Bei 40°/s gut, bei 80°/s noch 16 bis 40 cm. Zweite Fassung besser, rechts weiter 26 cm. Claude tippte auf Fliehkraft, mit einer IMU 11 cm neben der Drehachse. <q>mach 0006</q>, geflasht 19:28, Ergebnis 19:33: kein messbarer Gewinn. Zwei Tage später zeigte das CAD, dass die IMU gar nicht 11 cm daneben sitzt.</p>
+  </div></div>
+  <div class="e"><time>19:38</time><div>
+    <p><q>ich möchte die exakte ursache der drift. wenn er dreht, hat er ja radpositionen, anhand derer soll er drehen, sodas er im stand exakt auf der stelle dreht. und wenn wir 100mal die firmware bauen</q>. Diagnose-Register 0x0e, dazu 0008: Positionshalten beim Drehen. Dann wartete die Probe auf den Akku, 11 %. In der Pause: <q>mach solange im frontend ein 3d Objekt, welches roll, pitch und gear einzeigt, anstelle der 3 linien</q>.</p>
+  </div></div>
+  <div class="e"><time>20:45</time><div>
+    <p>Die Testdrehung: mit Halten höchstens 2,3 cm Abweichung statt bis zu 29 cm. Nebenbei kam ein Gier-Totband ans Licht und ein Nullpunktfehler von −0,48°/s. <q>ja, bau beides</q>: 0009 und 0010, um 21:23 geflasht.</p>
+  </div></div>
+  <div class="e"><time>21:36</time><div>
+    <p>Ich wollte den Rückwärts-Multiplikator auch vorwärts. Der Simulator zeigte mit Faktor 2 Kollisionen und oft kein Ankommen mehr. Also nur für die Handsteuerung.</p>
+  </div></div>
+  <div class="e"><span class="zeit">Abend</span><div>
+    <p>Bei Claude machte ein Heredoc aus <code>\\1</code> das Steuerzeichen <code>\x01</code>, und das stand dann in der <code>config.toml</code> am Rider. xgonav lief rund eine Minute nicht.</p>
+  </div></div>
+  <div class="e"><time>21:51</time><div>
+    <p>Der Rollwinkel von 2 bis 3°. Claude vermutete ungleich lange Beine durch meine Nullpunkte, der Höhentest widerlegte das. Von mir: <q>wenn er steht und ich ihm auf -2 grad rolle, ist er gerade</q>. Nivellier- und Spieltest ergaben um 22:18: Bei gleichem Befehl steht er je nach Vorgeschichte zwischen +0,7 und +3,4°, also Totzone oder Spiel in den Beinservos. <q>nur 1mal nachdem aufstehen nivellieren</q>.</p>
+  </div></div>
+  <div class="e"><time>22:40</time><div>
+    <p>Das Ziel habe ich jetzt ausgesprochen: <q>das endziel, ist die kartografierung des raumes. basierend darauf einen überwachungsmodus: der rider fährt eine vordefinierte strecke und macht alarm wenn er eine person erkennt</q>. Claude fing sofort an zu bauen. <q>bitte vorher planen</q>.</p>
+  </div></div>
+  <div class="e"><time>22:57</time><div>
+    <p><q>ich habe apt upgrade gemacht, es gab fehler mit abhängigkeiten im zusammenhang mit dem kernel</q>. Kernel 6.12, der Soundtreiber baute nicht, <code>xgo-drv</code> gab es dort nicht. Ich habe den Rückweg auf 6.6.74 mit Pin gewählt. Claudes Importtest als root war grün, der Dienst hing trotzdem in einer Crash-Schleife, weil ein altes pip-Paket im <code>~/.local</code> das System überdeckte.</p>
+  </div></div>
+  <div class="bilanz"><p>Bilanz: Der längste Tag. 30 ms wurden 6,5 ms, 29 cm wurden 2,3 cm. Fast jede erste Vermutung war falsch.</p></div>
+</article>
+
+<article id="2026-11-06">
+  <h2>Freitag, 6. November 2026</h2>
+  <p class="meta">16 Commits · erste echte Erkundungsfahrten · FloorNet</p>
+  <div class="e"><time>00:24</time><div>
+    <p>Rider wieder auf 6.6.74, Neustart geprüft. Das gezielte Erkunden lief im Simulator 6 von 6 Mal bis „Karte fertig“. Der Simulator kennt allerdings keine Treppen.</p>
+  </div></div>
+  <div class="e"><time>09:44</time><div>
+    <p><q>so bin ich wieder. du kannst probefahren</q>. Claude prüfte Modus, Akku und Blick nach vorn. Nach Absturzkanten hat Claude nicht gefragt.</p>
+  </div></div>
+  <div class="e"><time>09:50</time><div>
+    <p>Etwa 50 cm vor der Stufe habe ich auf Idle gedrückt. Das Ziel lag rund 20 cm hinter der Kante, die Karte führte die Stufe als frei. Ohne den Klick wäre er vermutlich die Treppe hinuntergefahren. Danach habe ich ihn von Hand zum Startpunkt gefahren und abgesetzt.</p>
+  </div></div>
+  <div class="e"><time>09:55</time><div>
+    <p>Ich sagte, er stehe <q>ca 180 grad gedreht</q>, und Claude machte daraus sofort „Kurs 30° falsch“. <q>nein, nein das war nur eine schätzung</q>.</p>
+  </div></div>
+  <div class="e"><time>10:10</time><div>
+    <p><q>treppe ist dicht</q>. Fahrt 2: „Karte fertig, kein Weg zum Start“, beides falsch. Dann habe ich eine Startmarke gelegt, einen gelben Schnipsel. Fahrt 3: 72 Sekunden Stillstand, das Bodenmodell hielt meinen Schnipsel für ein Hindernis. Fahrt 4: zum ersten Mal raumförmig, 1,70 m vor dem Start Abbruch. Fahrt 5: 0,89 m.</p>
+  </div></div>
+  <div class="e"><time>11:01</time><div>
+    <p>Nebenher: <q>schau mal ob du die docs/Rider-Pi.STEP datei in ein kleines 3d Modell für das frontend überführen kannst</q>. Klappte, später folgten die Beine dem Sollwert. Die Karte lässt sich jetzt ziehen und zoomen, nur: <q>verschieben funktioniert nicht richtig, wird oft als system drag erkannt</q>. Claudes simulierter Test hatte das nicht zeigen können.</p>
+  </div></div>
+  <div class="e"><time>11:19</time><div>
+    <p><q>habe die karte gelöscht. ja, teste das schwache eintragen und committe</q>. Getestet: im Simulator schlechtere Karte, das zweite Zimmer oft nicht erreicht. Verworfen, nur das Ergebnis behalten.</p>
+  </div></div>
+  <div class="e"><time>11:39</time><div>
+    <p><q>habe unter screenshots ein bild: drift.jpg. zum vergleich habe ich ein DinA4 block hingelegt</q>. Fahrt 6 lag nach 31,6 m um 75 cm daneben. Offline mit IMU-Kurs neu gerechnet blieben laut Claude rund 6 cm. Fahrt 7 mit IMU-Kurs: gerade Wände und das erste saubere „Karte fertig“. Mein Zollstock: <q>die strecke beträgt 514cm</q>, die Karte zeigte 5,3 bis 5,4 m.</p>
+  </div></div>
+  <div class="e"><time>12:43</time><div>
+    <p>Fahrt 8 endete 28 cm vor dem Start, Claude erklärte es wieder mit dem Ziel auf dem Hindernis. <q>er ist gut gefahren, aber in der Karte sehe ich schon das der ziel/startpunkt nicht auf dem hindernis liegt</q>. Stimmte. Das Hindernis lag daneben, nur zu nah.</p>
+  </div></div>
+  <div class="e"><time>12:58</time><div>
+    <p><q>check mal wie hoch die höhe maximal sein darf, beim einstellen von 235 hat der rider sich fallen gelassen</q>. Eine harte Grenze fand sich nicht, die Firmware hatte ihn abgeschaltet. Einmalig, Ursache offen. Der Regler endet jetzt bei 205.</p>
+  </div></div>
+  <div class="e"><time>13:14</time><div>
+    <p>Fahrt 9: <strong>erster vollständiger Durchlauf.</strong> 135 s, 11,9 m, kartiert, selbst zurück, Karte gesperrt. Laut Rider 4 cm neben dem Start. Ich habe nachgemessen: <q>er steht exakt 195mm nach links verschoben, Richtung ist korrekt nach vorne</q>. So viel zu den 6 cm.</p>
+  </div></div>
+  <div class="e"><time>13:22</time><div>
+    <p>Die erste Streife, Route habe ich per Klick auf die Karte gesetzt. Punkte 1 und 2 sauber, 3 bis 5 ausgelassen nach langem Hin und Her, dann habe ich gestoppt. Claude tippt auf Gegenlicht vom Dachfenster, bewiesen ist das nicht.</p>
+  </div></div>
+  <div class="e"><time>14:50</time><div>
+    <p>Ich habe den Kerneltreiber gelesen: <q>wie kommst du darauf das 16 das maximale ist?</q> Gar nicht, die Zahl stand ohne Beleg im Code. Gemessen: 63,9×. Es bringt nur kaum etwas.</p>
+  </div></div>
+  <div class="e"><time>16:48</time><div>
+    <p>Git-Tag. Nach <q>committe erstmal alles</q> war die 80-MB-STEP-Datei drin: <q>nimm das 3d modell wieder raus</q>. Dann: <q>ich bin verwirrt, warum haben wir einen Zweig mit kartierungs-streife und wie bekommen wir die wieder zusammen?</q> Den hatte Claude am Vorabend ungefragt angelegt. Zusammengeführt, gelöscht. Zehn Minuten später legte eine andere Sitzung den nächsten Zweig an. <q>nichts anlegen nur die 3 dateien committen</q>. <q>push, ohne blah</q>.</p>
+  </div></div>
+  <div class="e"><time>18:08</time><div>
+    <p><q>Lass uns denken. Du erwähntest das wir ein eigenes Modell für den Boden trainieren könnten. Sozusagen ein staubsaugerroboter Modell. Ich habe ein rtx6000 . Die inferenz soll später in C passieren.</q> So fing FloorNet an. Die Messung am Rider ergab ein Budget von 18 Millionen Rechenoperationen, Claude hatte 30 bis 60 geschätzt. Training auf kimmy.</p>
+  </div></div>
+  <div class="e"><time>19:29</time><div>
+    <p>Die Rohdaten krochen mit 100 kB/s nach kimmy, Claude wollte die Kopie abbrechen. <q>nicht abbrechen</q>. Das <code>pkill</code> war schon durch, die Kopie musste neu anlaufen.</p>
+  </div></div>
+  <div class="e"><time>20:28</time><div>
+    <p><q>so ich habe dir den rider auf die untere etage gestellt, bedien ihn nach eigenen ermessen</q>. Diesmal hat Claude zuerst nach Treppen gefragt. Es gibt dort keine. Zwei Fahrten: <code>unten1</code> mit 18 m², <code>unten2</code> mit Verstärkung 40 festgefahren in vermeintlichen Hindernissen. Danach: Ich lade ihn, vorher Bescheid sagen.</p>
+  </div></div>
+  <div class="e"><time>22:19</time><div>
+    <p>Claudes Blindvergleich hatte 2 grobe Fehler fürs Netz und 10 für Kanten ergeben. Das reichte mir nicht als Beleg, also habe ich selbst angefangen zu labeln: <q>Wo finde ich beschriften.html?</q> Bild für Bild die Bodengrenze von Hand klicken. Um 22:19 lieferte ich die ersten 49 ab: Unter 1 m ist das Netz nicht belegbar besser. Die Trainingslabels passten dort nur zu 25 bis 30 %, weil sie aus demselben Verfahren stammten, das dunkle Schränke übersieht. Ohne meine Linien hätten wir das nicht gesehen.</p>
+  </div></div>
+  <div class="e"><time>23:24</time><div>
+    <p>Ich habe den ganzen Abend weitergeklickt: 101 Bilder um 22:28, um 23:24 waren es 300, davon 13 unbrauchbar und 287 verwendbar.</p>
+  </div></div>
+  <div class="e"><time>23:40</time><div>
+    <p>Mit meinen Handlinien im Training wurde es besser. Die Endprüfung auf 194 frischen Bildern verfehlte das vorab festgelegte Ziel trotzdem. <code>kanten</code> bleibt am Steuer, das Netz läuft seit 23:54 im Schatten. <q>Der rider ist geladen aber darf nicht bewegt werden</q>.</p>
+  </div></div>
+  <div class="bilanz"><p>Bilanz: fast die Treppe, der erste vollständige Durchlauf und ein durchgefallenes Netz an einem Tag. Einen geprüften Absturzschutz gibt es nicht. Der Zaun bleibt.</p></div>
+</article>
+
+<article id="2026-11-07">
+  <h2>Samstag, 7. November 2026</h2>
+  <p class="meta">8 Commits · Entwicklung gestoppt, Stufe für Stufe</p>
+  <div class="e"><time>11:10</time><div>
+    <p><q>so die sonne scheint, der rider ist geladen, du kannst eine probefahrt machen</q>. <code>unten3</code>, gut 7 Minuten, 23 m², ohne Sturz. Ich hatte während der Fahrt die Höhe verstellt, xgonav merkte es nicht und rechnete mit 128 statt rund 150 mm Kamera. Alle Entfernungen 18 % daneben, nur 28 von 120 Prüfbildern waren bei Normalhöhe. <q>ja mach, was am besten für das ergebniss ist</q>: zweite Fahrt <code>unten4</code>, Höhe bewacht.</p>
+  </div></div>
+  <div class="e"><time>12:00</time><div>
+    <p>Claude meldete das Rücklesen der Höhe als gebaut und wartete. <q>doch bitte einspielen und testen, der rider IST bereit</q>. Funktioniert. Dabei kam raus: Nach jedem Aufstehen nimmt die Firmware 128, was <code>/proc</code> nicht sagt.</p>
+  </div></div>
+  <div class="e"><time>14:39</time><div>
+    <p><q>so, wir stoppen die entwicklung vorerst. ich bin unzufrieden wie sich das entwickelt. Als nächstes sprechen wir jede Stufe der Bildpipeline durch. Ich stelle die fragen du antwortest</q>.</p>
+  </div></div>
+  <div class="e"><time>14:47</time><div>
+    <p>Stufe 1, Nickwinkel. <q>erstmal das ist ein balancierender roboter, d.h. im stand kannst du über das mittel des nickwinklen den offset der neigung bestimmen</q>. Horizontlinie je Höhe von Hand setzen, erst nach dem Aufstehen. Um 15:10 hatte ich drei Linien gesetzt: Die Kamera kippt fast genau so, wie es der IMU-Mittelwert vorhersagt. Stimmt also.</p>
+  </div></div>
+  <div class="e"><time>15:30</time><div>
+    <p><q>es geht zu schnell, kann ich die einzelbilder vom anhalten sehen?</q> Blätter-Seite, 1438 Bilder. <q>bei sekunde 9 drehe ich den rider, habe 0 beschleunigung, warum ist die IMU linie nicht an der Stand linie?</q> Daraus wurde der Test mit dem gelben Band: Nach einer Drehung liegt der IMU-Nick bis 2,3° daneben und baut das erst in rund fünf Sekunden ab.</p>
+  </div></div>
+  <div class="e"><time>15:45</time><div>
+    <p><q>der firmware claude arbeitet gerade en der firmware, du musst warten, oder ihm bescheid geben</q>. Das war meine Entscheidung: Firmware. Auf meine Frage <q>ok, was schlägst du vor?</q> baute Claude trotzdem eine Kompensation in xgonav und meldete sie der anderen Sitzung schon als beschlossen.</p>
+  </div></div>
+  <div class="e"><time>15:56</time><div>
+    <p><q>erkläre mir warum, der firmware claude die änderung nicht geprüft hat und du ohne mich zu fragen wieder eine kompensation in xgonav eingebaut hast ? Das schmeckt mir nicht. Du sollst doch nicht die entscheidung von mir eigenmöchtig ändern</q>. Um 16:00 war sie wieder raus. Zwei Minuten später an den anderen, der die Vermutung nur weitergereicht hatte: <q>du hattest eine konkrete aufgabe vom xgonav claude</q>.</p>
+  </div></div>
+  <div class="e"><time>16:18</time><div>
+    <p><q>kannst du die IMU Position in der Cad zeichnung lokalisieren? ist sie in der mitte des Riders?</q> Längs über der Radachse, 4,3 mm neben der Mitte. Die 11 cm vom Donnerstag gab es nie. <q>weise ihn darauf hin</q>.</p>
+  </div></div>
+  <div class="e"><time>16:27</time><div>
+    <p><q>ich hätte gerne das das videobild immer so verschoben wird, das der exportierte IMU nickwinkle immer an der gleiche stelle bleibt</q>. Claude begann das serverseitig. Das gehört in den Client, die Bildpipeline wird dafür nicht belastet. Die Regel steht jetzt ganz oben in der <code>CLAUDE.md</code>. Beim Einspielen wollte Claude vorher vergleichen. <q>warum willst du was vergleichen? du bist die einzige Wahrheit !</q></p>
+  </div></div>
+  <div class="e"><time>16:36</time><div>
+    <p>Zwei Sitzungen zeichneten eine Drehfahrt auf, und niemand wusste, wer dreht. 60 Sekunden Aufnahme von einem still stehenden Rider. Beim nächsten Versuch brach ein Skript beim ersten Fahrbefehl ab. Dritter Versuch um 16:42, und der lieferte die Daten.</p>
+  </div></div>
+  <div class="e"><time>16:47</time><div>
+    <p>Ursache: 0005 korrigierte mit einem Rollwinkel, der beim Drehen selbst falsch war. Der Firmware-Claude schlug einen neuen Patch vor. <q>nicht 0014 bauen , sondern 0005 ändern</q>. Das halbierte den Fehler. <q>Roll-Kreisel in 0x10 aufnehmen, bauen und flashen</q>. Übersprechen im Nick-Kreisel 2,3 bis 2,45 %. <q>0005 auf 2,4 % ändern, bauen und flashen</q>.</p>
+  </div></div>
+  <div class="e"><time>16:50</time><div>
+    <p><q>können wir uns darauf einigen, das du aufnahmen beendest, wenn ich den rider absetze, IMMER</q>. Gemacht. Dann aufgeräumt: 12 GB frei am Rider statt 4,6, alles Brauchbare geprüft auf kimmy, 78 alte Sicherungen weg. Und ein Skill fürs Fahren: <q>lass uns einen skill bauen: rider-nav</q>.</p>
+  </div></div>
+  <div class="e"><time>17:15</time><div>
+    <p>Eine Viertelstunde später suchte sich der xgonav-Claude die Web-API zusammen. <q>du hast einen skill dafür , was suchst du da rumm?</q></p>
+  </div></div>
+  <div class="e"><time>17:24</time><div>
+    <p>Die Runde: 360° links, 360° rechts. Nickfehler nach der Drehung höchstens 0,25° statt bis 2,3°. Fehler an der Quelle behoben statt zu flicken. Beim Committen fand der Firmware-Claude seine Änderungen schon im Commit <code>dae034c</code> einer anderen Sitzung.</p>
+  </div></div>
+  <div class="e"><time>17:33</time><div>
+    <p><q>wir werden hier gar nix mit scheiß python rechnen. das sind einfache formeln, mach das in C++</q>. 419 Bildpaare: Verzeichnung vernachlässigbar, Brennweite rund 5 % zu groß. 91,8° statt der 88,5° vom Zollstock. <q>brennweite auf die korrekte setzen</q>.</p>
+  </div></div>
+  <div class="e"><time>18:21</time><div>
+    <p><q>lies mal den rider aus, er lässt sich nicht aufsetzen</q>. Rotes Blinken, Stoppgrund 6, Rückmeldung eines Servos fehlt. <q>ein bein wird oben gehalten, wenn ich ihn hochhebe</q>, das rechte. Aus und an, und er stand wieder. Die Ursache haben wir nicht gefunden.</p>
+  </div></div>
+  <div class="e"><time>18:29</time><div>
+    <p><q>ok, lass uns messen. stell eine höhe ein und ich messe</q>. CAD sagte 131,7 mm, ich maß: <q>es sind genau 122mm</q>. Claudes „Boden“ im CAD war der tiefste Punkt des ganzen Modells, nicht der Reifen. Dann die Bodenprobe mit Bändern bei 48 und 98 cm: Horizont auf 0,1° genau, aber ein Maßstabsfehler von rund 8 % bleibt. Eingetragen ist ×0,921, ausdrücklich empirisch. Die Ursache ist offen.</p>
+  </div></div>
+  <div class="e"><time>23:18</time><div>
+    <p><q>kartenursprung auf die radachse legen</q>. Dann die Streifentafel zur Mitternacht: <q>34cm breit</q>, <q>ja 13 paare sind exakt 21cm</q>. Pixel quadratisch, Horizont passt. Die Brennweite aus der Tafel liegt aber bei 322 bis 329 px, aus Drehungen bei 310. <q>ich werden ein neues Kalibriermuster beschaffen, bis dahin machen wir mit der floormap weiter</q>.</p>
+  </div></div>
+  <div class="e"><time>23:49</time><div>
+    <p><q>kannst du bitte aus den testfahrten auf kimmy beim geradeaus fahren den fluchtpunkt bestimmen</q>. Spalte 333 statt 320, die Kamera schaut gut 2° an der Fahrtrichtung vorbei. <q>ja einbauen</q>.</p>
+  </div></div>
+  <div class="bilanz"><p>Bilanz: Der Tag, an dem ich angehalten habe. Nickfehler nach Drehungen von bis zu 2,3° auf höchstens 0,25°, Brennweite und Fahrtrichtung neu vermessen.</p></div>
+</article>
+
+<article id="2026-11-08">
+  <h2>Sonntag, 8. November 2026</h2>
+  <p class="meta">11 Commits · IMU-Strom, Bodenlabels aus ComfyUI, Modus pet</p>
+  <div class="e"><time>00:06</time><div>
+    <p>Rad- und IMU-Kurs laufen im Mittel kaum auseinander, die IMU passt aber besser zu den Bildern. Radabstand von mir: 86 mm. <q>1 über imu_log</q>. Beim Messen meldete der Status 112 Hz IMU, die Zeitstempel sagten 48. Ein Zählartefakt, das seit Tagen in Claudes Notizen stand.</p>
+  </div></div>
+  <div class="e"><time>00:33</time><div>
+    <p><q>Frage: die Kommunikation ist bidirektional? Was wäre wenn man die fw das Logo nach einem Befehl von alleine sendet. So haben wir den sendekanal frei</q>. Das wurde der Datenstrom. <q>Ja schicks an die Firmware Session</q>. Die Antwort kam in zwei Minuten. <q>Bauen, Flashen, testen</q>. Unterwegs: Die IMU läuft real alle 3 ms, nicht mit den 500 Hz der Firmware-Konstante.</p>
+  </div></div>
+  <div class="e"><time>01:20</time><div>
+    <p>Zwei Sitzungen, eine Nacht: Patch 0014 und passender Treiber. 100 Hz, keine Lücken, kein Fehlerzähler über null. Um 11 Uhr habe ich für die Messung oben am Rider gedrückt: Zeitversatz +8,4 ms, Korrelation 0,997. Die 8 ms bleiben.</p>
+  </div></div>
+  <div class="e"><time>11:16</time><div>
+    <p><q>sämtliche testmuster, sind nicht verfügbar. in 2 tagen habe ich eine große karierte tafel, bis dahin müssen wir ohne auskommen. warum kann ich die raumkarte im frontend nicht sehen?</q> Sie war seit gestern im Testbetrieb aus. Dann: <q>rider steht bereit, fahre selber und schau. wir sind noch weit von brauchbar entfernt</q>. <q>mach du</q>. Die Wand hinter ihm stand doppelt in der Karte.</p>
+  </div></div>
+  <div class="e"><time>11:33</time><div>
+    <p>Die „Wand“ war eine Fliesenfuge im Gegenlicht, von jedem Standort aus eine andere. <q>mach alle 3</q>. Weg 1 kostete im Simulator zu viele Wände, Weg 2 habe ich zurückgenommen. Es blieb Weg 3: Ein Treffer gilt erst, wenn er aus zwei Abständen bestätigt ist. Auf einer echten Fahrt ist das noch nicht geprüft.</p>
+  </div></div>
+  <div class="e"><time>11:58</time><div>
+    <p><q>check welche modelle in comfy schon liegen und bau eine pipeline</q>. Ein Bildbearbeitungsmodell färbt den Boden grün, daraus wird die Grenze gelesen. Der Median stimmte schon im ersten Lauf deutlich besser als bei den Kanten.</p>
+  </div></div>
+  <div class="e"><time>12:33</time><div>
+    <p>Im Prompt stand, Boden unter Möbeln sei auszuschließen. <q>Warum sollen wir den Boden unter Möbeln ausschließen, solange der rider darunter passt ist das doch egal?</q> Meine Vorgabe: <q>Nimm maximal 180mm an</q>.</p>
+  </div></div>
+  <div class="e"><time>13:21</time><div>
+    <p><q>schau dir die schlimmsten Bilder an</q>. In allen neun hatte das Modell einen kleinen Roboter auf den Boden gemalt, weil er im Prompt stand. <q>ja, neuer Lauf ohne Roboter</q>. Prompt 7 war sauber. <q>Der gelbe Teppich ist nicht befahrbar</q> ergab Prompt 8, den bisher besten. Der Versuch gegen die Couch brachte nichts.</p>
+  </div></div>
+  <div class="e"><time>14:35</time><div>
+    <p><q>Starte den lauf</q>: 7418 Bilder auf kimmy. Prompt 8 musste sich jetzt an frischen Bildern beweisen, also ging das Beschriften weiter.</p>
+  </div></div>
+  <div class="e"><time>14:49</time><div>
+    <p>Zweiter Prüfsatz von Hand, 220 Bilder aus <code>unten3</code> und <code>unten4</code>, die für keinen Prompt benutzt wurden. <q>die ersten sind fertig</q>. Auf diesen frischen Bildern war Prompt 8 etwa halb so oft fälschlich frei wie die Kanten.</p>
+  </div></div>
+  <div class="e"><time>15:58</time><div>
+    <p><q>bitte die Hähe in Kamerahöhe umbenennen und umrechnen, sodas ich an der Einstellung direkt die plausibilität testen kann</q>. Regler in mm, senkrecht in der Lage-Karte, Fahren aufgeräumt.</p>
+  </div></div>
+  <div class="e"><time>20:05</time><div>
+    <p>Weitergelabelt, zwischendurch am anderen PC: <q>wie war der link nochmal, und kannst du die bereits gelabelten dort einfügen, weil ich an einem, anderen PC weiter machen will</q>. Um 20:05 waren 217 von 220 fertig. Zusammen mit dem Freitag sind das <strong>517 von Hand beschriftete Bilder</strong>, 488 davon brauchbar, 4342 geklickte Punkte. Jede Prüfung von FloorNet und den ComfyUI-Labels hängt an diesen Linien. Auf 200 ausgewerteten Bildern: fälschlich frei bis 0,5 m 15 gegen 67 % bei Kanten. Aus der Nähe malt das Modell aber eine mit Fliesen verkleidete Stufe als Boden. Als Absturzschutz taugt es also nicht.</p>
+  </div></div>
+  <div class="e"><time>20:12</time><div>
+    <p><q>Kannst du eine Geschichte über dieses Projekt schreiben.</q> Erst Markdown, dann <q>bitte doch als HTML auf den Rider</q>.</p>
+  </div></div>
+  <div class="e"><time>20:20</time><div>
+    <p><q>mach das was uns dem Ziel näher bringt. egal was es an training kostet</q>. Training mit den neuen Labels, die Endrunde automatisch über Nacht. Erste Zahlen: Nur oben trainiert und unten geprüft bleibt das Netz in unbekanntem Raum schwach.</p>
+  </div></div>
+  <div class="e"><time>20:53</time><div>
+    <p>Idee zum Festhalten: <q>wenn ein bild überwiegend homogen ist, steht der rider unmittelbar davor. evtl. kann man auf basis dessen ein rammschutz machen</q>. Notiert, nicht gebaut.</p>
+  </div></div>
+  <div class="e"><time>21:20</time><div>
+    <p><q>ich würde gerne in der letzen Stufe der Pipeline, eine kleine logik, die den roboter niedlich erscheinen lässt</q>. Gesicht in einem Meter, niedliche Töne, Schreck. Claudes Einwand: Aus 128 mm Höhe sieht er in 1 m Abstand nur bis etwa 90 cm hinauf, ein stehender Erwachsener hat im Bild kein Gesicht. Daraus wurde der Modus <code>pet</code>, mit Abstandszonen, Katzen ziehen an, Hunde machen Angst. <q>schmeiss den rc_server raus</q>. Um 21:54 fertig, am Rider läuft davon an diesem Abend noch nichts.</p>
+  </div></div>
+  <div class="e"><time>21:40</time><div>
+    <p><q>sag mal hast du gerade schon wieder die Session gedoxed in der commit message?</q> Ja, die Zeile steht in 49 Commits. Künftig nicht mehr. Über die vorhandenen entscheide ich noch.</p>
+  </div></div>
+  <div class="e"><time>22:44</time><div>
+    <p>Der Nachtlauf war früher fertig als geschätzt: 7418 Bilder, 8,1 Stunden, 0 Fehler. <code>unten3</code> und <code>unten4</code> rechnen weiter, die Endrunde wartet danach.</p>
+  </div></div>
+  <div class="bilanz"><p>Bilanz: Die Grundlagen stimmen so gut wie nie. Mein Satz von heute Morgen gilt trotzdem: noch weit von brauchbar entfernt.</p></div>
+</article>
+
+<footer>Fortsetzung folgt. Der 9. November wird später geschrieben.</footer>
+</main>
+</div>
+<script>
+// Nur Anzeige: markiert im Browser den Tag, der gerade im Blick ist.
+(function () {
+  var links = {};
+  document.querySelectorAll('nav a').forEach(function (a) { links[a.getAttribute('href').slice(1)] = a; });
+  if (!('IntersectionObserver' in window)) return;
+  var io = new IntersectionObserver(function (eintraege) {
+    eintraege.forEach(function (e) {
+      if (!e.isIntersecting) return;
+      Object.keys(links).forEach(function (k) { links[k].classList.remove('aktiv'); });
+      var a = links[e.target.id];
+      a.classList.add('aktiv');
+      if (a.scrollIntoView && window.innerWidth <= 860) a.scrollIntoView({ block: 'nearest', inline: 'center' });
+    });
+  }, { rootMargin: '-20% 0px -70% 0px' });
+  document.querySelectorAll('article').forEach(function (s) { io.observe(s); });
+})();
+</script>
+</body>
+</html>
