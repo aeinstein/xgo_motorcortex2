@@ -31,6 +31,8 @@ echo "Erzeuge Emotionen (einmalig) ..."
 "$DEST/venv/bin/python" tools/eyes.py --gaze "$DEST/eyes_gaze" || echo "Hinweis: Augen-Atlas nicht erzeugt – Modus pet zeigt das Overlay"
 chown -R "$USER_NAME":"$USER_NAME" "$DEST"
 usermod -aG video,audio "$USER_NAME"
+# Dauerhafte Einstellungen aus dem Web (LED-Helligkeit): www-data schreibt, xgonav und rc.local lesen
+install -d -m 2775 -g video /var/lib/xgonav
 
 sed "s/__USER__/$USER_NAME/" deploy/xgonav.service > /etc/systemd/system/xgonav.service
 systemctl daemon-reload

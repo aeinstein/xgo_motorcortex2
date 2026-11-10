@@ -25,7 +25,8 @@
 #   0012 Roll-Trimm aus dem Nivellieren behalten (über Höhenänderungen)
 #   0013 Diagnose-Register 0x10 (Lagefusion Nick/Roll: Beschleunigungswinkel, Abzug 0005, Einfrieren 0006)
 #   0014 IMU-/Rad-Datenstrom an den Pi (Register 0x11 = Rate in Hz, Pakete Typ 0x14)
-#   0015 Integral des Geschwindigkeitsfehlers beim Fahren (Aktion 239 an / 238 aus), sonst bleibt er an Steigungen stehen
+#   0015 Integral beim Fahren als Untergrenze (30 % des Befehls; Aktion 239 an / 238 aus), sonst bleibt er an Steigungen stehen
+#   0016 LED-Helligkeit als globaler Multiplikator zur Laufzeit (Register 0x12 = n/256, !led <n>), Default 32 = Hälfte von 0003
 # Braucht: git, python3 (venv), Internet beim ersten Lauf (PlatformIO lädt Toolchain ~1 GB).
 set -euo pipefail
 

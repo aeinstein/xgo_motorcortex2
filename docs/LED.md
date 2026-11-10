@@ -6,7 +6,7 @@ Stock firmware R-1.1.3 may differ (not analysed).
 
 ## Hardware
 - **4 RGB LEDs** (WS2812/NeoPixel) on **GPIO27** (RMT channel 0), index 0..3.
-- Brightness scaled internally by ~0.5; "full" is usually 200–255.
+- Brightness: every output is multiplied by n/256. Stock ~0.5 (129), patch 0003 fixed 64, patch 0016: n settable at runtime (reg `0x12`, `!led <n>`, Pi: `settings/led_brightness`), default 32, not stored across an ESP restart. Pi side stores the web value in `/var/lib/xgonav/led_brightness` (default 20 % = 51); `rc.local` sets it at boot, xgonav on start flashes 255 for 0.2 s, then sets it. "Full" colour values are usually 200–255.
 
 ## Priority
 Per frame `renderFaultLeds` is tried first, otherwise `renderLeds`:

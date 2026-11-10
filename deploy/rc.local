@@ -4,6 +4,10 @@
 
 stty -F /dev/ttyAMA0 115200 cs8 -cstopb -parenb -brkint -imaxbel -opost -onlcr -isig -icanon -iexten -echo -echoe -echok -echoctl -echoke -ixon -ixoff -icrnl -inlcr -igncr -istrip min 0 time 1
 modprobe xgo-drv
+# LED-Helligkeit aus dem Web (Firmware-Patch 0016 vergisst sie beim ESP-Neustart), sonst 51 = 20 %.
+# xgonav setzt sie beim Start noch einmal (nach dem kurzen Blitz).
+LED=$(cat /var/lib/xgonav/led_brightness 2>/dev/null || echo 51)
+[ -w /proc/XGORider/settings/led_brightness ] && echo "$LED" > /proc/XGORider/settings/led_brightness || true
 st7789_server
 chgrp video /tmp/lcd0
 chmod g+w /tmp/lcd0

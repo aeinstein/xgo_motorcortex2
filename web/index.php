@@ -18,6 +18,9 @@ foreach (@scandir(EMOTION_RAW) ?: [] as $e) {
         $emotionen[] = $e;
     }
 }
+// LED-Helligkeit n/256 (api.php speichert sie, rc.local und xgonav setzen sie), Anzeige in Prozent; ohne Datei 20 %
+$ledN = @file_get_contents('/var/lib/xgonav/led_brightness');
+$ledP = ($ledN !== false && is_numeric(trim($ledN))) ? (int)round(max(0, min(255, (int)trim($ledN))) * 100 / 255) : 20;
 function h(string $s): string { return htmlspecialchars($s, ENT_QUOTES); }
 ?><!doctype html>
 <html lang="de">
@@ -434,6 +437,13 @@ details.extras[open]>summary{margin-bottom:8px}
         <button onclick="ledsAus()">Alle aus</button>
         <button id="strobe" onclick="strobe()">Strobe</button>
       </div>
+    </div>
+    <div class="regler" title="Gilt für alle LEDs, bleibt über Neustarts gespeichert">
+      <label for="ledhell">Helligkeit</label>
+      <input type="range" id="ledhell" min="0" max="100" value="<?= $ledP ?>" step="1"
+        oninput="document.getElementById('ledhell-w').textContent = this.value + ' %'"
+        onchange="befehl('led_brightness', {p: this.value}, true)">
+      <span class="w" id="ledhell-w"><?= $ledP ?> %</span><span class="leer"></span>
     </div>
     <div class="unter">Emotionen (Display)</div>
     <div class="knoepfe">

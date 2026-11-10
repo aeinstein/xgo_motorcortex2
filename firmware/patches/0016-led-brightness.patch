@@ -1,0 +1,89 @@
+diff --git a/firmware/src/board_support.cpp b/firmware/src/board_support.cpp
+index 773c428..de43afa 100644
+--- a/firmware/src/board_support.cpp
++++ b/firmware/src/board_support.cpp
+@@ -59,8 +59,13 @@ Rgb paletteColor(std::uint8_t index) {
+ }
+ // LED-Helligkeit: 64/256 = Hälfte des bisherigen 129/256-Pegels (auf Wunsch, 2026-11-03).
+ // Wert ist der Teiler über 256; 256 = voll, 129 = alt (~50%), 64 = halb davon (~25% voll).
+-constexpr unsigned kLedBrightness256 = 64;
+-std::uint8_t brightnessScale(std::uint8_t channel) { return std::uint8_t((unsigned(channel)*kLedBrightness256)>>8); }
++// Patch 0016: global multiplier for every LED output (user LEDs, status and fault patterns),
++// settable at runtime (register 0x12, !led <n>); n/256, default 32 = half of the former 64.
++// Not stored: back to the default after every restart of the ESP32.
++namespace { volatile std::uint8_t led_brightness256 = kLedBrightnessDefault; }
++void setLedBrightness(std::uint8_t per256) { led_brightness256 = per256; }
++std::uint8_t ledBrightness() { return led_brightness256; }
++std::uint8_t brightnessScale(std::uint8_t channel) { return std::uint8_t((unsigned(channel)*unsigned(led_brightness256))>>8); }
+ bool renderLeds(const LedControl &c,std::uint32_t now,const LedPixels &user,LedPixels &out) {
+     Rgb uniform{};
+     bool fill=true;
+diff --git a/firmware/src/board_support.h b/firmware/src/board_support.h
+index ce7debe..57caf2c 100644
+--- a/firmware/src/board_support.h
++++ b/firmware/src/board_support.h
+@@ -57,6 +57,10 @@ bool renderLeds(const LedControl&,std::uint32_t now_ms,const LedPixels &user,Led
+ // lost, policy fault, ...), solid amber = stopped by a command.  Returns false when nothing is due (no fault, balancing, low battery).
+ bool renderFaultLeds(const LedControl&,std::uint32_t now_ms,LedPixels &out);
+ std::uint8_t brightnessScale(std::uint8_t channel); // original brightness128
++// Patch 0016: global LED multiplier n/256 (0 = dark, 255 = full); 32 = 12.5 %, former fixed value 64.
++constexpr std::uint8_t kLedBrightnessDefault = 32;
++void setLedBrightness(std::uint8_t per256);
++std::uint8_t ledBrightness();
+ 
+ #ifdef ARDUINO
+ class BoardSupport {
+diff --git a/firmware/src/command_protocol.cpp b/firmware/src/command_protocol.cpp
+index 84b15bc..27a6a9e 100644
+--- a/firmware/src/command_protocol.cpp
++++ b/firmware/src/command_protocol.cpp
+@@ -45,7 +45,7 @@ void putAngle(uint8_t *out, float value) {
+ CommandKind commandKind(const CommandEvent &e) {
+     if(e.isRead())return CommandKind::Unknown;
+     switch(e.reg) {
+-    case 0x03:case 0x04:case 0x05:case 0x06:case 0x08:case 0x09:case 0x0a:case 0x11:case 0x13:
++    case 0x03:case 0x04:case 0x05:case 0x06:case 0x08:case 0x09:case 0x0a:case 0x11:case 0x12:case 0x13:
+     case 0x30:case 0x32:case 0x35:case 0x36:case 0x39:case 0x3e:case 0x60:case 0x61:
+     case 0x69:case 0x6a:case 0x6b:case 0x6c:case 0x82:case 0xa0:case 0xa1:case 0xb0:
+     case 0xb3:case 0xb4:case 0xb5:case 0xb6:case 0xb7:case 0xb8:
+@@ -61,6 +61,7 @@ const char *commandName(CommandKind kind) {
+     case CommandKind::UnknownSetting06:return "setting_06_no_known_consumer";
+     case CommandKind::TelemetryStream:return "telemetry_stream";
+     case CommandKind::ImuStream:return "imu_stream";
++    case CommandKind::LedBrightness:return "led_brightness";
+     case CommandKind::PitchCalibration:return "pitch_calibration";
+     case CommandKind::HeadingHold:return "heading_hold";
+     case CommandKind::BleSuffix:return "ble_suffix";
+diff --git a/firmware/src/command_protocol.h b/firmware/src/command_protocol.h
+index 50405e7..eafe741 100644
+--- a/firmware/src/command_protocol.h
++++ b/firmware/src/command_protocol.h
+@@ -7,7 +7,7 @@ enum class Source : uint8_t { Usb = 0, Aux = 1, Ble = 3 };
+ enum class CommandKind : uint8_t {
+     ActionLoop = 0x03, LegCalibration = 0x04, ReservedNoop = 0x05,
+     UnknownSetting06 = 0x06, TelemetryStream = 0x08, PitchCalibration = 0x09,
+-    HeadingHold = 0x0a, ImuStream = 0x11 /* Patch 0014 */, BleSuffix = 0x13, Forward = 0x30,
++    HeadingHold = 0x0a, ImuStream = 0x11 /* Patch 0014 */, LedBrightness = 0x12 /* Patch 0016 */, BleSuffix = 0x13, Forward = 0x30,
+     Turn = 0x32, Height = 0x35, Roll = 0x36, RollWave = 0x39,
+     Action = 0x3e, PositionHoldProtection = 0x60, Leveling = 0x61,
+     Rgb0 = 0x69, Rgb1 = 0x6a, Rgb2 = 0x6b, Rgb3 = 0x6c,
+diff --git a/firmware/src/main.cpp b/firmware/src/main.cpp
+index 576b422..ef82f6f 100644
+--- a/firmware/src/main.cpp
++++ b/firmware/src/main.cpp
+@@ -341,6 +341,7 @@ public:
+         case CommandKind::WheelSlew:policy.setSlewRate(1000.0f+float(value)*18000.0f/255.0f);result("wheel slew updated");break;
+         case CommandKind::YawSlew:yaw_slew_per_second=1000.0f+float(value)*18000.0f/255.0f;result("yaw slew updated");break;
+         case CommandKind::HeadingHold:a.heading_hold=value!=0;break;
++        case CommandKind::LedBrightness:rider::board::setLedBrightness(value);result("led brightness updated");break;   // patch 0016: n/256
+         case CommandKind::BleSuffix:
+             cancelTrim();
+             stop(StopReason::Manual,true);
+@@ -958,6 +959,7 @@ void console(const char* line) {
+     if(!strcmp(line,"!turnhold off")){valueCommand(CommandKind::Action,240);return;}
+     if(!strcmp(line,"!driveint on")){valueCommand(CommandKind::Action,239);return;}
+     if(!strcmp(line,"!driveint off")){valueCommand(CommandKind::Action,238);return;}
++    if(!strncmp(line,"!led ",5)){valueCommand(CommandKind::LedBrightness,int(strtol(line+5,nullptr,10)));return;}   // patch 0016: global LED multiplier n/256
+     if(!strcmp(line,"!neutral")){e.kind=EventKind::Neutral;enqueue(e);return;}
+     if(!strcmp(line,"!odom reset")){e.kind=EventKind::ResetOdometry;enqueue(e);return;}
+     if(!strcmp(line,"!cal begin")){valueCommand(CommandKind::LegCalibration,1);return;}

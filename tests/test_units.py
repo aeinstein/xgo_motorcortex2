@@ -60,6 +60,28 @@ def test_robot_height_mapping():
     assert r.height_mm == pytest.approx(60 + 60 * 200 / 255)   # die Firmware fährt höchstens 200
 
 
+def test_robot_led_start_flash(tmp_path):
+    """Start: kurz 255, danach die gespeicherte Helligkeit; ohne Datei led_default (20 %)."""
+    import dataclasses
+    import time
+    from xgonav.robot import ProcRobot
+
+    (tmp_path / "settings").mkdir()
+    (tmp_path / "settings" / "led_brightness").write_text("-1")
+    gespeichert = tmp_path / "led_gespeichert"
+    for datei, erwartet in ((None, "51"), ("77\n", "77"), ("kaputt", "51")):
+        if datei is not None:
+            gespeichert.write_text(datei)
+        r = ProcRobot(dataclasses.replace(Config().robot, proc_dir=str(tmp_path), led_file=str(gespeichert),
+                                          led_start_s=0.05))
+        writes = []
+        r._write_raw = lambda name, text: writes.append((name, text))   # /proc kürzt, eine Datei nicht
+        r._led_start()
+        assert writes == [("settings/led_brightness", "255")]
+        time.sleep(0.3)
+        assert writes == [("settings/led_brightness", "255"), ("settings/led_brightness", erwartet)]
+
+
 def test_robot_height_readback(tmp_path):
     """Höhe aus /proc: Web-Änderungen übernehmen, nach dem Aufstehen gilt die Mittelstellung der Firmware,
     der alte Inhalt von /proc nicht mehr; danach schreibt das Verhalten seine Höhe neu."""

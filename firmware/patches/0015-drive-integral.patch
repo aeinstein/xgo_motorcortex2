@@ -1,5 +1,5 @@
 diff --git a/firmware/src/control/rider_motion.cpp b/firmware/src/control/rider_motion.cpp
-index 3dc3b79..3972b8d 100644
+index 3dc3b79..c8d566d 100644
 --- a/firmware/src/control/rider_motion.cpp
 +++ b/firmware/src/control/rider_motion.cpp
 @@ -78,7 +78,7 @@ float wheelDistance(std::int32_t first,std::int32_t second) {
@@ -11,26 +11,31 @@ index 3dc3b79..3972b8d 100644
      s.speed.kp=holding?.140000001f:.109999999f;
      s.speed.ki=holding?.000736842107f:.000733333349f;
      s.pitch.kp=37.5f;s.pitch.kd=0;
-@@ -87,7 +87,13 @@ float updateBalance(BalanceState &s,float target,float speed11,float speed21,
+@@ -87,7 +87,18 @@ float updateBalance(BalanceState &s,float target,float speed11,float speed21,
      s.speed.target=target;
      s.speed.measurement=(speed11+speed21)*.5f;
      updatePid(s.speed);
 -    s.pitch.target=s.speed.output;
 +    // Patch 0015: integral while driving (see rider_motion.h). Off -> bit-identical to stock.
 +    if(!drive_integral)s.drive_i=0;
-+    else if(!holding && std::fabs(target)>=1.0f)
-+        s.drive_i=std::max(-kDriveIMax,std::min(kDriveIMax,s.drive_i+s.speed.error*kDriveKi));
-+    else {s.drive_i*=kDriveDecay;if(std::fabs(s.drive_i)<1e-3f)s.drive_i=0;}
++    else {
++        const float dir=target>0?1.0f:-1.0f;
++        // only towards the command, only up to kDriveMinFrac of it; a leftover against the command decays
++        if(!holding && std::fabs(target)>=1.0f && s.drive_i*dir>=0)
++            s.drive_i=dir*std::max(0.0f,std::min(kDriveIMax,
++                s.drive_i*dir+(kDriveMinFrac*target-s.speed.measurement)*dir*kDriveKi));
++        else {s.drive_i*=kDriveDecay;if(std::fabs(s.drive_i)<1e-3f)s.drive_i=0;}
++    }
 +    s.pitch.target=s.drive_i==0?s.speed.output:
 +        std::max(-s.speed.output_limit,std::min(s.speed.output_limit,s.speed.output+s.drive_i));
      s.pitch.measurement=pitch+bias;
      updatePid(s.pitch);
      const float output=std::fma(pitch_rate,rate_gain,s.pitch.output);
 diff --git a/firmware/src/control/rider_motion.h b/firmware/src/control/rider_motion.h
-index fbc89d1..e3fd3f6 100644
+index fbc89d1..445a5f6 100644
 --- a/firmware/src/control/rider_motion.h
 +++ b/firmware/src/control/rider_motion.h
-@@ -35,7 +35,17 @@ void updatePositionHold(HoldState &, std::uint32_t now_ms,
+@@ -35,7 +35,23 @@ void updatePositionHold(HoldState &, std::uint32_t now_ms,
                          float pitch_deg, bool protection=true,
                          bool allow_turn=false, float gain=1350.0f);
  
@@ -41,15 +46,21 @@ index fbc89d1..e3fd3f6 100644
 +// so it is effectively P only: pitch target = 0.11 x (target - speed), at most ~3.5 deg at full
 +// command. A constant load (slight slope, rolling resistance) then stops the Rider although the
 +// full forward command arrives (RiderPi 2026-11-10: speed 0 at forward 32, pitch target 3.6 deg).
-+// While driving, a separate integral is added: no reset on sign change (that would pump on a
-+// slope), clamped to +/-kDriveIMax, decays smoothly without a forward command.
++// While driving, a separate integral is added, but only as a floor: it integrates
++// (kDriveMinFrac x target - speed), acts only in the direction of the command (0..kDriveIMax)
++// and is therefore zero again as soon as the Rider rolls faster than kDriveMinFrac of the
++// command. The first version integrated the full speed error; RiderPi 2026-11-10: wound up
++// during every start, then speed swung 0.51 -> 0.09 -> 0.38 -> 0.16 m/s (period ~5 s) at a
++// constant command and settled at half the speed without it. A leftover against a reversed
++// command and the integral without a command decay smoothly (no jump).
 +constexpr float kDriveKi=0.0003f;    // deg per control call (~3 ms) and unit of speed error
 +constexpr float kDriveIMax=3.0f;     // deg
++constexpr float kDriveMinFrac=0.3f;  // floor speed as a fraction of the command
 +constexpr float kDriveDecay=0.99f;   // per call without forward command (~0.3 s)
  struct Wheels { std::int16_t id11=0, id21=0; };
  float wheelDistance(std::int32_t id11_encoder, std::int32_t second_encoder);
  // 0x400d582c numeric portion. Set forward_target from the PREVIOUS cycle's
-@@ -44,7 +54,8 @@ float wheelDistance(std::int32_t id11_encoder, std::int32_t second_encoder);
+@@ -44,7 +60,8 @@ float wheelDistance(std::int32_t id11_encoder, std::int32_t second_encoder);
  float updateBalance(BalanceState &, float forward_target,
                      float speed11, float speed21, float pitch_deg,
                      float pitch_bias, float pitch_rate_rad_s,

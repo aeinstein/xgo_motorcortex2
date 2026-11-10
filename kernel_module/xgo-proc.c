@@ -246,6 +246,9 @@ static ssize_t settings_read(struct file *file, char __user *user_buf, size_t co
     } else if (strcmp(setting_name, "imu_stream_hz") == 0) {
     	len = snprintf(buffer, sizeof(buffer), "%u\n", XGO_IMU_STREAM_HZ);
 
+    } else if (strcmp(setting_name, "led_brightness") == 0) {
+    	len = snprintf(buffer, sizeof(buffer), "%d\n", XGO_LED_BRIGHTNESS_SET);
+
     } else {
         return -EINVAL; // Ungültiger Zugriff
     }
@@ -411,6 +414,16 @@ static ssize_t settings_write(struct file *file, const char __user *user_buf, si
     	WRITE_ONCE(XGO_IMU_STREAM_HZ, v);
     	pr_info("XGORider: IMU-Strom %u Hz\n", v);
 
+    } else if (strcmp(setting_name, "led_brightness") == 0) {
+    	// Firmware-Patch 0016: Multiplikator n/256 für alle LEDs; die Firmware merkt ihn sich nicht über einen Neustart
+    	unsigned int v;
+    	unsigned char b;
+    	if (kstrtouint(strim(buffer), 10, &v) || v > 255) return -EINVAL;
+    	b = v;
+    	write_serial_data(XGO_LED_BRIGHTNESS, &b, 1);
+    	XGO_LED_BRIGHTNESS_SET = v;
+    	pr_info("XGORider: LED-Helligkeit %u/256\n", v);
+
     } else if (strcmp(setting_name, "wheel_hz") == 0) {
     	unsigned int v;
     	if (kstrtouint(strim(buffer), 10, &v) || v > 200) return -EINVAL;
@@ -550,6 +563,7 @@ static int createFilesystem(){
 	proc_create("imu_hz", 0666, proc_settings, &settings_ops);
 	proc_create("imu_stream_hz", 0666, proc_settings, &settings_ops);
 	proc_create("wheel_hz", 0666, proc_settings, &settings_ops);
+	proc_create("led_brightness", 0666, proc_settings, &settings_ops);
 
 
 	proc_yaw = proc_create("yaw", 0444, proc_imu, &yaw_ops);
@@ -618,6 +632,7 @@ static void destroyFilesystem(){
     remove_proc_entry("imu_hz", proc_settings);
     remove_proc_entry("imu_stream_hz", proc_settings);
     remove_proc_entry("wheel_hz", proc_settings);
+    remove_proc_entry("led_brightness", proc_settings);
     remove_proc_entry("settings", proc_imu);
 
 	remove_proc_entry(PROC_DIR, NULL);

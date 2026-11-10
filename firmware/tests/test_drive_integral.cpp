@@ -5,6 +5,7 @@
 #include "control/rider_motion.h"
 #include <cmath>
 #include <cstdio>
+#include <initializer_list>
 
 using namespace rider::control;
 
@@ -22,18 +23,24 @@ static float step(BalanceState& s, float target, float speed, bool holding, bool
 
 // Grobes Fahrmodell (RiderPi 2026-11-10, Register 0x0e): bei ~2,5 deg Vorlage über das Gleichgewicht
 // steigt die Radgeschwindigkeit in ~1,5 s auf ~50 -> ~0,04 je Takt (3 ms) und Grad. "last" ist die
-// Vorlage, die Steigung/Rollwiderstand fressen. Rückgabe: Geschwindigkeit nach n Takten, größte danach.
-static void fahre(bool on, float last, float target, int n, float& end, float& peak, float& min_late) {
+// Vorlage, die Steigung/Rollwiderstand fressen. traege > 0: die Neigung folgt dem Soll erst mit dieser
+// Zeitkonstante (Takte), wie am echten Rider. Die Schwingung der ersten Fassung (volles Integral) am
+// Rider bildet das Modell nur grob nach; es prüft die Regel, nicht die Abstimmung.
+struct Fahrt { float end, peak, min_late, i_end, i_peak; };
+static Fahrt fahre(bool on, float last, float target, int n, float traege = 0.0f) {
     BalanceState s;
-    float v = 0;
-    peak = 0; min_late = 1e9f;
+    Fahrt f{0, 0, 1e9f, 0, 0};
+    float v = 0, lage = 0;
     for (int k = 0; k < n; ++k) {
         const float p = step(s, target, v, false, on);
-        v += 0.04f * (p - last);
-        if (v > peak) peak = v;
-        if (k > n / 2 && v < min_late) min_late = v;
+        lage = traege > 0 ? lage + (p - lage) / traege : p;
+        v += 0.04f * (lage - last);
+        if (v > f.peak) f.peak = v;
+        if (std::fabs(s.drive_i) > f.i_peak) f.i_peak = std::fabs(s.drive_i);
+        if (k > n / 2 && v < f.min_late) f.min_late = v;
     }
-    end = v;
+    f.end = v; f.i_end = s.drive_i;
+    return f;
 }
 
 int main() {
@@ -52,10 +59,11 @@ int main() {
         check(same, "aus: bitgleich zum Original");
     }
     // Stillstand bei vollem Befehl: Original bleibt bei ~3,5 deg, Patch legt bis 3 deg dazu
+    // (0,3 x 32 x kDriveKi je Takt -> 3 deg nach ~1040 Takten = 3,1 s)
     {
         BalanceState a, b;
         float pa = 0, pb = 0, pb1 = 0;
-        for (int k = 0; k < 1000; ++k) {
+        for (int k = 0; k < 1500; ++k) {
             pa = step(a, 32.0f, 0.0f, false, false);
             pb = step(b, 32.0f, 0.0f, false, true);
             if (k == 332) pb1 = pb;
@@ -63,12 +71,33 @@ int main() {
         std::printf("       Stillstand: Original %.2f deg, Patch %.2f deg (nach 1 s %.2f)\n", pa, pb, pb1);
         check(pa < 3.7f, "Original: höchstens ~3,6 deg Vorlage (I-Anteil wirkungslos)");
         check(std::fabs(pb - (pa + kDriveIMax)) < 0.01f, "Patch: genau kDriveIMax mehr, begrenzt");
-        check(pb1 > pa + 2.5f, "Patch: nach ~1 s (333 Takte) fast ausgeschöpft");
+        check(pb1 > pa + 0.8f && pb1 < pa + 1.1f, "Patch: nach ~1 s (333 Takte) rund 1 deg mehr");
+    }
+    // Rollt er schneller als kDriveMinFrac des Befehls, baut es ab und bleibt bei null (kein Bremsen)
+    {
+        BalanceState s;
+        for (int k = 0; k < 1500; ++k) step(s, 32.0f, 0.0f, false, true);
+        for (int k = 0; k < 300; ++k) step(s, 32.0f, 20.0f, false, true);
+        check(s.drive_i > 1.9f && s.drive_i < 2.2f, "rollt mit 20 bei Befehl 32: baut ab (~1 deg in 0,9 s)");
+        for (int k = 0; k < 1500; ++k) step(s, 32.0f, 20.0f, false, true);
+        check(s.drive_i == 0 && s.pitch.target == s.speed.output, "rollt weiter: null, Originalpfad");
+        for (int k = 0; k < 1500; ++k) step(s, 32.0f, 60.0f, false, true);
+        check(s.drive_i == 0, "schneller als der Befehl: wird nicht negativ");
+    }
+    // Befehl umgekehrt: der Rest gegen die neue Richtung klingt ab, erst dann baut es neu auf
+    {
+        BalanceState s;
+        for (int k = 0; k < 1500; ++k) step(s, 32.0f, 0.0f, false, true);
+        const float i0 = s.drive_i;
+        step(s, -32.0f, 0.0f, false, true);
+        check(s.drive_i > 0.98f * i0 && s.drive_i < i0, "Befehl umgekehrt: ein Takt nur x0,99, kein Sprung");
+        for (int k = 0; k < 3000; ++k) step(s, -32.0f, 0.0f, false, true);
+        check(std::fabs(s.drive_i + kDriveIMax) < 1e-4f, "Befehl umgekehrt: danach -kDriveIMax");
     }
     // Ohne Fahrbefehl oder beim Halten: weich abklingen, nicht springen, kein Aufsummieren
     {
         BalanceState s;
-        for (int k = 0; k < 1000; ++k) step(s, 32.0f, 0.0f, false, true);
+        for (int k = 0; k < 1500; ++k) step(s, 32.0f, 0.0f, false, true);
         const float i0 = s.drive_i;
         step(s, 0.0f, 0.0f, false, true);
         check(s.drive_i > 0.98f * i0 && s.drive_i < i0, "Befehl weg: ein Takt nur x0,99");
@@ -83,29 +112,36 @@ int main() {
     {
         BalanceState s;
         float p = 0;
-        for (int k = 0; k < 1000; ++k) p = step(s, -32.0f, 0.0f, false, true);
+        for (int k = 0; k < 1500; ++k) p = step(s, -32.0f, 0.0f, false, true);
         check(std::fabs(s.drive_i + kDriveIMax) < 1e-4f && p < -6.0f, "rückwärts: -kDriveIMax");
     }
-    // Fahrmodell: ebene Strecke, Last 3,6 deg (wie 2026-11-10 vor dem Start), zu große Last
+    // Fahrmodell: ebene Strecke (auch mit träger Neigung), Last 3,6 deg (wie 2026-11-10 vor dem Start),
+    // kleine Last, zu große Last
     {
-        float e, pk, ml;
-        fahre(false, 0.0f, 32.0f, 3000, e, pk, ml);
-        std::printf("       eben    Original: Ende %5.1f\n", e);
-        fahre(true, 0.0f, 32.0f, 3000, e, pk, ml);
-        std::printf("       eben    Patch:    Ende %5.1f, Spitze %5.1f\n", e, pk);
-        check(std::fabs(e - 32.0f) < 1.0f && pk < 45.0f, "eben: Patch erreicht 32, Überschwingen < 40 %");
-        fahre(false, 3.6f, 32.0f, 3000, e, pk, ml);
-        std::printf("       Last    Original: Ende %5.1f\n", e);
-        check(e < 2.0f, "Last 3,6 deg: Original bleibt stehen (wie am Rider)");
-        fahre(true, 3.6f, 32.0f, 3000, e, pk, ml);
-        std::printf("       Last    Patch:    Ende %5.1f, Spitze %5.1f, zweite Hälfte min %5.1f\n", e, pk, ml);
-        // I am Anschlag (3 deg), Rest trägt P: 0,11 x (32 - v) = 0,6 -> v ~ 26,5
-        check(e > 25.0f && ml > 25.0f && pk < 32.0f, "Last 3,6 deg: Patch fährt weiter (~27 statt 0), ohne Pumpen");
-        fahre(true, 2.5f, 32.0f, 3000, e, pk, ml);
-        std::printf("       Last 2,5 Patch:    Ende %5.1f, Spitze %5.1f, zweite Hälfte min %5.1f\n", e, pk, ml);
-        check(std::fabs(e - 32.0f) < 1.0f && ml > 30.0f && pk < 45.0f, "Last 2,5 deg: Patch erreicht 32, ohne Pumpen");
-        fahre(true, 7.5f, 32.0f, 3000, e, pk, ml);
-        check(e < 1.0f, "Last 7,5 deg (> 3,5 + 3): Patch hilft nicht unbegrenzt");
+        for (float traege : {0.0f, 100.0f}) {
+            const Fahrt o = fahre(false, 0.0f, 32.0f, 3000, traege), p = fahre(true, 0.0f, 32.0f, 3000, traege);
+            std::printf("       eben (Trägheit %3.0f) Original: Ende %5.1f, Spitze %5.1f | Patch: Ende %5.1f, Spitze %5.1f, I höchstens %.2f\n",
+                        traege, o.end, o.peak, p.end, p.peak, p.i_peak);
+            check(std::fabs(p.end - o.end) < 0.1f && p.i_end == 0, "eben: Patch endet wie das Original, Integral null");
+            check(p.peak < o.peak + 2.0f && p.i_peak < 1.0f, "eben: Anfahren kaum anders (Spitze < +2, Integral < 1 deg)");
+        }
+        Fahrt f = fahre(false, 3.6f, 32.0f, 3000);
+        std::printf("       Last 3,6 Original: Ende %5.1f\n", f.end);
+        check(f.end < 2.0f, "Last 3,6 deg: Original bleibt stehen (wie am Rider)");
+        f = fahre(true, 3.6f, 32.0f, 6000);
+        std::printf("       Last 3,6 Patch:    Ende %5.1f, Spitze %5.1f, zweite Hälfte min %5.1f, I %.2f\n", f.end, f.peak, f.min_late, f.i_end);
+        // Untergrenze 0,3 x 32 = 9,6: P trägt 0,11 x 22,4 = 2,5 deg, das Integral den Rest (1,1 deg)
+        check(std::fabs(f.end - 9.6f) < 0.5f && f.min_late > 9.0f && f.peak < 12.0f,
+              "Last 3,6 deg: Patch rollt mit der Untergrenze (~9,6 statt 0), ohne Pumpen");
+        f = fahre(true, 3.6f, 32.0f, 6000, 100.0f);
+        std::printf("       Last 3,6 Patch, träge: Ende %5.1f, Spitze %5.1f, zweite Hälfte min %5.1f\n", f.end, f.peak, f.min_late);
+        check(std::fabs(f.end - 9.6f) < 0.5f && f.min_late > 8.5f && f.peak < 18.0f, "Last 3,6 deg, träge Neigung: schwingt sich ein");
+        const Fahrt o = fahre(false, 1.0f, 32.0f, 3000);
+        f = fahre(true, 1.0f, 32.0f, 3000);
+        std::printf("       Last 1,0 Original: Ende %5.1f | Patch: Ende %5.1f, I %.2f\n", o.end, f.end, f.i_end);
+        check(std::fabs(f.end - o.end) < 0.1f && f.i_end == 0, "Last 1 deg: über der Untergrenze, Patch wie Original");
+        f = fahre(true, 7.5f, 32.0f, 3000);
+        check(f.end < 1.0f, "Last 7,5 deg (> 3,5 + 3): Patch hilft nicht unbegrenzt");
     }
     std::printf(fail ? "FEHLER\n" : "ok\n");
     return fail;

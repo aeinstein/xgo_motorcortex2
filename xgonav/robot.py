@@ -309,6 +309,29 @@ class ProcRobot(Robot):
             log.warning("Kernel ohne motion_timeout_ms – bei Absturz fährt der Rider weiter! "
                         "Treiber aus kernel_module/ bauen und laden.")
         self._emergency_stop()
+        self._led_start()
+
+    def gespeicherte_led(self) -> int:
+        """Im Web gespeicherte LED-Helligkeit (0..255), sonst led_default."""
+        try:
+            with open(self.cfg.led_file) as f:
+                return max(0, min(255, int(f.read().strip())))
+        except (OSError, ValueError):
+            return self.cfg.led_default
+
+    def _led_start(self) -> None:
+        # Einmal beim Start: kurz volle Helligkeit als Zeichen, dann der gespeicherte Wert (setzt ihn auch nach
+        # einem ESP-Neustart wieder, den rc.local nicht sieht). Kein Aufwand je Bild.
+        if not os.path.exists(self._path("settings/led_brightness")):
+            log.info("Treiber ohne settings/led_brightness – LED-Helligkeit bleibt")
+            return
+        n = self.gespeicherte_led()
+        if self.cfg.led_start_s <= 0 or not self.write_setting("led_brightness", 255):
+            self.write_setting("led_brightness", n)
+            return
+        t = threading.Timer(self.cfg.led_start_s, self.write_setting, ("led_brightness", n))
+        t.daemon = True
+        t.start()
 
     def _teardown(self) -> None:
         for fd in self._fds.values():

@@ -80,6 +80,7 @@ cat /proc/XGORider/serial_stats; cat /proc/XGORider/imu
 | `imu_hz` | 50 | 0..200, 0 = off |
 | `imu_stream_hz` | 0 | 0..250; > 0 = firmware stream (0014), polling only as fallback |
 | `wheel_hz` | 25 | 0..200, 0 = off; effective ≤ `imu_hz`, as integer divider |
+| `led_brightness` | −1 (never written) | 0..255: global LED multiplier n/256 of firmware patch 0016 (reg 0x12; firmware default 32, former fixed value 64). Sent once on write; the firmware forgets it on an ESP restart, the file then still shows the last written value. Older firmware ignores it |
 | `force_yaw` | 0 | 0/1 |
 | `low_batt_level` | 8 | 0..100 % |
 | `shutdown_on_low_batt` | 1 | battery < level → `orderly_poweroff` |

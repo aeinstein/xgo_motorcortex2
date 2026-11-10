@@ -39,6 +39,12 @@ class RobotCfg:
     height_min_mm: float = 60.0
     height_max_mm: float = 120.0   # min/max legen nur die Skala mm -> u8 fest
     height_limit_u8: int = 205     # höchster Sollwert; bei 235 Stopp 252 (2026-11-06, Ursache offen)
+    # LED-Helligkeit (Firmware-Patch 0016, n/256, settings/led_brightness). Das Web speichert sie in led_file,
+    # rc.local setzt sie beim Booten. Beim Start blitzt xgonav led_start_s lang mit 255 (Zeichen „läuft“),
+    # danach wieder der gespeicherte Wert; 0 = ohne Blitz, nur setzen.
+    led_file: str = "/var/lib/xgonav/led_brightness"
+    led_default: int = 51          # 20 %, solange nichts gespeichert ist
+    led_start_s: float = 0.2
 
 
 @dataclass

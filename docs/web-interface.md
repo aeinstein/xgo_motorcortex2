@@ -23,7 +23,7 @@
 | Kamera | exposure (ms, auto), gain (1–63.9×, auto), actual values |
 | Horizont (only with `[horizon] enabled`) | stand reference state, rows stand/IMU/image, image − IMU, ego ok share; green line ±1/±5 px, *Für diese Kamerahöhe speichern*, table (shown as camera height, stored per `height_mm`) with delete; checkbox *Bild am IMU-Nick festhalten* (browser shifts the `<img>` by `row_stand − row_imu` via CSS, no server cost; stored in `localStorage`) |
 | Verlauf (collapsed) | history charts, see below |
-| Extras (collapsed) | actions 1–6, 4 LEDs + all off + strobe, display emotions |
+| Extras (collapsed) | actions 1–6, 4 LEDs + all off + strobe, brightness slider (persistent), display emotions |
 | System | shutdown (confirm dialog) |
 
 Live data: one WebSocket `/xgonav/live` (see below) instead of polling; HTTP `a=status` only at load and after
@@ -77,6 +77,7 @@ GET only for `status`, `route`, `horizon`; all commands POST. Parameters are val
 | `POST ?a=horizon_cal&row=..` | xgonav `/horizon/cal` | 0..479.9 |
 | `POST ?a=horizon_delete&h=..` | xgonav `/horizon/delete` | mm |
 | `POST ?a=led&i=0..3&c=%23rrggbb` | `/proc/XGORider/leds/<i>` | |
+| `POST ?a=led_brightness&p=0..100` | `/var/lib/xgonav/led_brightness`, then `/proc/XGORider/settings/led_brightness` | percent → n = p·255/100; persistent, set at boot (`rc.local`) and on xgonav start |
 | `POST ?a=action&n=..` | `/proc/XGORider/action` | 1..6, 253, 254, 255; 254 first calls xgonav `/stop?nur=pet` (ends mode `pet`, so it cannot stand up by itself) |
 | `POST ?a=height&h=..` | `/proc/XGORider/height` | 61..205 |
 | `POST ?a=roll&deg=..` | `/proc/XGORider/roll` | −20..20 |

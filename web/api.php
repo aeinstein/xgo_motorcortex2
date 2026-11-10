@@ -22,6 +22,8 @@
  *   POST api.php?a=record&on=0|1              (Rohaufzeichnung; schreibt nur, solange der Rider balanciert)
  *   POST api.php?a=drive&v=-1..1&w=-1..1      (nur Modus manual, alle 0,2 s senden)
  *   POST api.php?a=led&i=0..3&c=%23rrggbb
+ *   POST api.php?a=led_brightness&p=0..100    (Prozent; n = p·255/100 nach /proc und dauerhaft nach LED_FILE,
+ *                                            das rc.local beim Booten und xgonav beim Start setzen)
  *   POST api.php?a=action&n=1..6|253|254|255 (R-1.1.6+Patch: 255 = Arm/aufstehen, 254 = Disarm/Not-Stopp,
  *                                            253 = Aufspringen aus dem Liegen (!standup); 1..6 Aktionen)
  *   POST api.php?a=height&h=61..255         (u8; darunter nicht, siehe Höhengrenzen)
@@ -49,6 +51,7 @@ const PROC = '/proc/XGORider';
 const EMOTION = '/opt/xgonav/tools/emotion.sh';         // Player (RGB565-Rohbilder statt ffmpeg)
 const EMOTION_RAW = '/opt/xgonav/emotions';             // tools/eyes.py, von deploy/install.sh erzeugt
 const HEIGHT_MIN = 61;                                   // u8; ~10 mm über dem Minimum, dazu ~4 mm fürs Ausrichten (ein Bein tiefer)
+const LED_FILE = '/var/lib/xgonav/led_brightness';      // n/256 (Firmware-Patch 0016), deploy/install.sh legt den Ordner an
 const HEIGHT_MAX = 205;                                 // u8; Firmware nähme 255, bei 235 Stopp 252 (2026-11-06, Ursache offen)
 
 header('Content-Type: application/json; charset=utf-8');
@@ -218,6 +221,14 @@ switch ($a) {
             antwort(400, json_encode(['error' => 'Farbe ungültig']));
         }
         proc("leds/$i", strtolower($c));
+    case 'led_brightness':
+        $n = (int)round(zahl('p', 0, 100) * 255 / 100);
+        // Erst speichern (über eine Hilfsdatei, damit rc.local/xgonav nie eine halbe Datei lesen), dann setzen
+        $tmp = LED_FILE . '.neu';
+        if (@file_put_contents($tmp, "$n\n") === false || !@rename($tmp, LED_FILE)) {
+            antwort(500, json_encode(['error' => 'Speichern nach ' . LED_FILE . ' fehlgeschlagen (Ordner da, www-data in Gruppe video?)']));
+        }
+        proc('settings/led_brightness', (string)$n);
     case 'action':
         $n = (int)zahl('n', 1, 255);
         // 0 ist bei R-1.1.6 nur "keine Aktion" (kein Stopp) – nicht anbieten, sonst verwechselbar

@@ -53,6 +53,9 @@ Default = `config.py`. RiderPi = `deploy/config.example.toml` (blank = default).
 | `kernel_watchdog_ms` | 1000 | 1000 | `settings/motion_timeout_ms` |
 | `height_min_mm` / `height_max_mm` | 60 / 120 | | scale mm → u8 (0..255) |
 | `height_limit_u8` | 205 | | highest setpoint (≈ 108 mm; firmware clamps at 200 ≈ 107 mm); see `limitations.md` |
+| `led_file` | `/var/lib/xgonav/led_brightness` | | LED brightness n/256 stored by the web UI; `deploy/rc.local` writes it at boot |
+| `led_default` | 51 | | used while `led_file` is missing (20 %) |
+| `led_start_s` | 0.2 | | on start: 255 for this long (sign that xgonav runs), then `led_file`; 0 = set only. One-off, no per-frame cost |
 
 ### `[camera]`
 | Key | Default | RiderPi | Note |

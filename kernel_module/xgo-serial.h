@@ -97,6 +97,7 @@ static struct task_struct *imu_thread;
 // IMU/Rad-Strom (Firmware-Patch 0014): die Firmware sendet ohne Anfrage aus ihrer Regelschleife, mit eigener
 // Messzeit t_us. settings/imu_stream_hz > 0 schaltet ihn ein (imu_loop schreibt die Rate jede Sekunde neu, die
 // Firmware schaltet nach 5 s ohne Byte vom Pi und nach Neustart ab); solange Pakete kommen, wird nicht abgefragt.
+static int XGO_LED_BRIGHTNESS_SET = -1;         // zuletzt geschriebene LED-Helligkeit (n/256), -1 = nie: Firmware-Default 32
 static unsigned int XGO_IMU_STREAM_HZ = 0;      // 0 = Abfrage wie bisher
 static atomic_t stat_stream = ATOMIC_INIT(0);
 static atomic_t stat_stream_gaps = ATOMIC_INIT(0);
