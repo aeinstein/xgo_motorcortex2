@@ -1,0 +1,155 @@
+diff --git a/firmware/src/control/rider_motion.cpp b/firmware/src/control/rider_motion.cpp
+index 3dc3b79..3972b8d 100644
+--- a/firmware/src/control/rider_motion.cpp
++++ b/firmware/src/control/rider_motion.cpp
+@@ -78,7 +78,7 @@ float wheelDistance(std::int32_t first,std::int32_t second) {
+ 
+ float updateBalance(BalanceState &s,float target,float speed11,float speed21,
+                     float pitch,float bias,float pitch_rate,float height,
+-                    bool holding,Wheels &w) {
++                    bool holding,Wheels &w,bool drive_integral) {
+     s.speed.kp=holding?.140000001f:.109999999f;
+     s.speed.ki=holding?.000736842107f:.000733333349f;
+     s.pitch.kp=37.5f;s.pitch.kd=0;
+@@ -87,7 +87,13 @@ float updateBalance(BalanceState &s,float target,float speed11,float speed21,
+     s.speed.target=target;
+     s.speed.measurement=(speed11+speed21)*.5f;
+     updatePid(s.speed);
+-    s.pitch.target=s.speed.output;
++    // Patch 0015: integral while driving (see rider_motion.h). Off -> bit-identical to stock.
++    if(!drive_integral)s.drive_i=0;
++    else if(!holding && std::fabs(target)>=1.0f)
++        s.drive_i=std::max(-kDriveIMax,std::min(kDriveIMax,s.drive_i+s.speed.error*kDriveKi));
++    else {s.drive_i*=kDriveDecay;if(std::fabs(s.drive_i)<1e-3f)s.drive_i=0;}
++    s.pitch.target=s.drive_i==0?s.speed.output:
++        std::max(-s.speed.output_limit,std::min(s.speed.output_limit,s.speed.output+s.drive_i));
+     s.pitch.measurement=pitch+bias;
+     updatePid(s.pitch);
+     const float output=std::fma(pitch_rate,rate_gain,s.pitch.output);
+diff --git a/firmware/src/control/rider_motion.h b/firmware/src/control/rider_motion.h
+index fbc89d1..e3fd3f6 100644
+--- a/firmware/src/control/rider_motion.h
++++ b/firmware/src/control/rider_motion.h
+@@ -35,7 +35,17 @@ void updatePositionHold(HoldState &, std::uint32_t now_ms,
+                         float pitch_deg, bool protection=true,
+                         bool allow_turn=false, float gain=1350.0f);
+ 
+-struct BalanceState { Pid speed=speedPid(), pitch=pitchPid(); };
++// Patch 0015: drive_i = integral of the speed error while driving (degrees of pitch target).
++struct BalanceState { Pid speed=speedPid(), pitch=pitchPid(); float drive_i=0; };
++// Patch 0015: the stock speed PI clamps its integral at 100 (ki 0.00073 -> at most 0.07 deg),
++// so it is effectively P only: pitch target = 0.11 x (target - speed), at most ~3.5 deg at full
++// command. A constant load (slight slope, rolling resistance) then stops the Rider although the
++// full forward command arrives (RiderPi 2026-11-10: speed 0 at forward 32, pitch target 3.6 deg).
++// While driving, a separate integral is added: no reset on sign change (that would pump on a
++// slope), clamped to +/-kDriveIMax, decays smoothly without a forward command.
++constexpr float kDriveKi=0.0003f;    // deg per control call (~3 ms) and unit of speed error
++constexpr float kDriveIMax=3.0f;     // deg
++constexpr float kDriveDecay=0.99f;   // per call without forward command (~0.3 s)
+ struct Wheels { std::int16_t id11=0, id21=0; };
+ float wheelDistance(std::int32_t id11_encoder, std::int32_t second_encoder);
+ // 0x400d582c numeric portion. Set forward_target from the PREVIOUS cycle's
+@@ -44,7 +54,8 @@ float wheelDistance(std::int32_t id11_encoder, std::int32_t second_encoder);
+ float updateBalance(BalanceState &, float forward_target,
+                     float speed11, float speed21, float pitch_deg,
+                     float pitch_bias, float pitch_rate_rad_s,
+-                    float filtered_height, bool holding, Wheels &);
++                    float filtered_height, bool holding, Wheels &,
++                    bool drive_integral=false);   // Patch 0015
+ // 0x400d4fd4; called before the command filters are advanced.
+ void addWheelSpeedCorrection(Wheels &, float filtered_forward,
+                              float filtered_turn, float speed11, float speed21);
+diff --git a/firmware/src/main.cpp b/firmware/src/main.cpp
+index fd8d17b..576b422 100644
+--- a/firmware/src/main.cpp
++++ b/firmware/src/main.cpp
+@@ -101,6 +101,8 @@ volatile float yaw_slew_per_second=20000.0f;
+ // Patch 0008: hold the wheel centre also while turning on the spot (action 241 on / 240 off, !turnhold on|off).
+ // Patch 0010: on by default (RiderPi 2026-11-05: wheel centre <= 2.3 cm per turn instead of up to 29 cm).
+ volatile bool turn_hold_enabled=true;
++// Patch 0015: integral of the speed error while driving (action 239 on / 238 off, !driveint on|off), default on.
++volatile bool drive_integral_enabled=true;
+ float yaw_command_filtered=0;
+ bool yaw_filter_init=false;
+ uint32_t last_filter_us=0;
+@@ -354,6 +356,7 @@ public:
+         case CommandKind::HeightWave:a.command.height_period=value;a.height_phase=value?10:0;break;
+         case CommandKind::Action:if(value==255)arm();else if(value==254)emergencyStop();else if(value==253)standup();
+             else if(value==241||value==240){turn_hold_enabled=value==241;result(value==241?"turn hold on":"turn hold off");}
++            else if(value==239||value==238){drive_integral_enabled=value==239;result(value==239?"drive integral on":"drive integral off");}
+             else if(!leg_calibrating)actions.request(value,now);
+             break;
+         case CommandKind::PositionHoldProtection:a.hold_protection=value!=0;break;
+@@ -667,7 +670,7 @@ public:
+         else if(request.command.height>200)request.command.height=200;
+ #endif
+         request.roll_phase=a.roll_phase;request.height_phase=a.height_phase;
+-        request.leveling=a.leveling;request.heading_hold=a.heading_hold;request.hold_protection=a.hold_protection;request.turn_hold=turn_hold_enabled;request.heading_term_limit=heading_limit;
++        request.leveling=a.leveling;request.heading_hold=a.heading_hold;request.hold_protection=a.hold_protection;request.turn_hold=turn_hold_enabled;request.drive_integral=drive_integral_enabled;request.heading_term_limit=heading_limit;
+         s.motion=controller.step(in,request);a.roll_phase=request.roll_phase;a.height_phase=request.height_phase;
+         diag_ctrl11=s.motion.wheels.id11;diag_ctrl21=s.motion.wheels.id21;
+         if(!s.motion.valid){actions.requestMode(252,true);stop(StopReason::InvalidControl,true);result("invalid control output; stop latched");}
+@@ -775,7 +778,7 @@ public:
+         put(16,i16(controller.pitchTarget()*100.0f));put(18,i16(controller.pitchMeasured()*100.0f));
+         put(20,i16(s.motion.hold.correction*10.0f));
+         d[22]=s.motion.hold.mode;
+-        d[23]=uint8_t((driving?1:0)|(lift_acting?2:0)|(turnHoldFlag()?4:0));
++        d[23]=uint8_t((driving?1:0)|(lift_acting?2:0)|(turnHoldFlag()?4:0)|(drive_integral_enabled?8:0));   // patch 0015: bit3 drive integral
+         put(24,wrap_mm(s.motion.physical_position));put(26,wrap_mm(controller.holdPosition()));
+         put(28,i16(s.motion.command.filtered_forward*10.0f));put(30,i16(s.motion.command.filtered_turn*10.0f));
+     }
+@@ -953,6 +956,8 @@ void console(const char* line) {
+     if(!strcmp(line,"!standup")){valueCommand(CommandKind::Action,253);return;}
+     if(!strcmp(line,"!turnhold on")){valueCommand(CommandKind::Action,241);return;}
+     if(!strcmp(line,"!turnhold off")){valueCommand(CommandKind::Action,240);return;}
++    if(!strcmp(line,"!driveint on")){valueCommand(CommandKind::Action,239);return;}
++    if(!strcmp(line,"!driveint off")){valueCommand(CommandKind::Action,238);return;}
+     if(!strcmp(line,"!neutral")){e.kind=EventKind::Neutral;enqueue(e);return;}
+     if(!strcmp(line,"!odom reset")){e.kind=EventKind::ResetOdometry;enqueue(e);return;}
+     if(!strcmp(line,"!cal begin")){valueCommand(CommandKind::LegCalibration,1);return;}
+diff --git a/firmware/src/motion_controller.cpp b/firmware/src/motion_controller.cpp
+index b202a01..21603a4 100644
+--- a/firmware/src/motion_controller.cpp
++++ b/firmware/src/motion_controller.cpp
+@@ -14,6 +14,7 @@ void MotionController::resetHold(uint32_t now) {
+ void MotionController::resetStoppedPid() {
+     balance_.speed.previous_error=balance_.speed.integral=0;
+     balance_.pitch.previous_error=balance_.pitch.integral=0;
++    balance_.drive_i=0;   // Patch 0015
+ }
+ MotionResult MotionController::step(const MotionInput& i,MotionRequest& request) {
+     MotionResult o;
+@@ -37,7 +38,8 @@ MotionResult MotionController::step(const MotionInput& i,MotionRequest& request)
+                                     i.pitch_deg,i.roll_deg,command_.filtered_height,i.pitch_trim);
+     previous_mode_=i.mode;
+     o.balance=control::updateBalance(balance_,next_forward_,i.speed11,i.speed21,
+-              i.pitch_deg,o.bias,i.pitch_rate_rad_s,command_.filtered_height,hold_.mode==2,o.wheels);
++              i.pitch_deg,o.bias,i.pitch_rate_rad_s,command_.filtered_height,hold_.mode==2,o.wheels,
++              request.drive_integral);
+     control::addWheelSpeedCorrection(o.wheels,command_.filtered_forward,command_.filtered_turn,i.speed11,i.speed21);
+     control::updateCommandTargets(command_,command);
+     // Patch 0008: switching the feedback changes the units of hold_.position -> start over.
+diff --git a/firmware/src/motion_controller.h b/firmware/src/motion_controller.h
+index fb6b8fe..364aa38 100644
+--- a/firmware/src/motion_controller.h
++++ b/firmware/src/motion_controller.h
+@@ -15,6 +15,8 @@ struct MotionRequest {
+     // Rider turns in place instead of drifting (RiderPi 2026-11-05: up to 27 cm per 3 s turn).
+     // Effective gain unchanged: 675 per metre of real travel = original 1350 on half the travel.
+     bool turn_hold=false;
++    // Patch 0015: integral of the speed error while driving (rider_motion.h, kDriveKi).
++    bool drive_integral=false;
+ };
+ struct MotionInput {
+     uint32_t now_ms=0;
+@@ -49,7 +51,9 @@ public:
+     uint8_t holdMode() const {return hold_.mode;}
+     // Patch 0007 (Diagnose-Register 0x0e): Soll-Neigung = Ausgang des Geschwindigkeitsreglers (°)
+     // und gemessene Neigung + Bias, die der Neigungsregler sieht.
+-    float pitchTarget() const {return balance_.speed.output;}
++    // Patch 0015: including the driving integral (= speed.output while it is zero).
++    float pitchTarget() const {return balance_.pitch.target;}
++    float driveIntegral() const {return balance_.drive_i;}
+     float pitchMeasured() const {return balance_.pitch.measurement;}
+     float holdPosition() const {return hold_.position;}
+ private:
