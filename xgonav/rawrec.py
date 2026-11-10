@@ -7,11 +7,17 @@ beginnt ein neues Unterverzeichnis. Nach einem Neustart von xgonav ist er wieder
 Kosten am Pi: aus = kein Thread (erst das erste Einschalten startet ihn). An, aber Rider liegt = fünf
 Attributabfragen je Sekunde. Beim Aufzeichnen ein JPEG je Bild in diesem Thread auf [cpu] render_cpus, nie in
 der Hauptschleife; kommt er nicht nach, fehlen Bilder (idx zeigt die Lücken), die Bildpipeline wartet nie.
+
+Je Bild stehen in meta.jsonl auch die IMU- und Radproben seit dem letzten Bild ("imu": t, Roll, Nick, Kurs
+in Grad; "raeder": t, Weg links, rechts in m; t = CLOCK_MONOTONIC wie die Bildzeit). Damit rechnet
+tools/map_replay.py Kurs und Roll zur Bildzeit nach. Sie kommen aus den Puffern, die imu.py und wheels.py
+ohnehin führen (~4 Proben je Bild bei 100 Hz), gelesen in diesem Thread.
 """
 from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import shutil
 import threading
@@ -40,7 +46,11 @@ def raw_run_dir(base: str) -> str:
             name = f"{stamp}-{n}"
 
 
-def _meta_zeile(snap, name: str) -> str:
+PROBEN_VORLAUF_S = 0.2      # erstes Bild einer Aufnahme: Proben ab so lange vor der Bildzeit
+
+
+def _meta_zeile(snap, name: str, imu=None, raeder=None) -> str:
+    """imu: Proben (t, roll, pitch, yaw in rad), raeder: (t, s_links, s_rechts in m); None = Quelle fehlt."""
     st = snap.stats
     return json.dumps({
         "idx": snap.idx, "t": round(snap.t, 4), "file": name,
@@ -57,6 +67,9 @@ def _meta_zeile(snap, name: str) -> str:
         "tracks_all": [{"id": t.id, "cls": t.cls, "hits": t.hits, "seen": round(snap.t - t.t_seen, 2),
                         "box": [round(v, 1) for v in t.box]} for t in snap.tracks_all],
         "fs": snap.fs_diag, "cam": snap.cam_meta,
+        "imu": None if imu is None else [[round(t, 4), round(math.degrees(r), 3), round(math.degrees(p), 3),
+                                          round(math.degrees(y), 3)] for t, r, p, y in imu],
+        "raeder": None if raeder is None else [[round(t, 4), round(l, 5), round(r, 5)] for t, l, r in raeder],
     }) + "\n"
 
 
@@ -75,6 +88,7 @@ class RawRecorder:
         self._wake = threading.Event()
         self._th: threading.Thread | None = None
         self._t_platz = 0.0
+        self._t_imu = self._t_rad = 0.0     # Zeit der letzten geschriebenen Probe
 
     def schalten(self, an: bool) -> None:
         if an:
@@ -147,6 +161,7 @@ class RawRecorder:
             self.bilder = 0
             self._meta = open(os.path.join(self.ordner, "meta.jsonl"), "x", buffering=1)
             self._t_platz = now
+            self._t_imu = self._t_rad = snap.t - PROBEN_VORLAUF_S
             log.info("Rohaufzeichnung nach %s", self.ordner)
         elif now - self._t_platz >= 1.0:
             self._t_platz = now
@@ -154,7 +169,18 @@ class RawRecorder:
         name = "%06d.jpg" % snap.idx
         if not cv2.imwrite(os.path.join(self.ordner, name), snap.frame, [cv2.IMWRITE_JPEG_QUALITY, 92]):
             raise OSError("JPEG nicht geschrieben: " + name)
-        self._meta.write(_meta_zeile(snap, name))
+        imu = raeder = None
+        src = getattr(self.app, "imu", None)
+        if src is not None:
+            imu = src.since(self._t_imu)
+            if imu:
+                self._t_imu = imu[-1][0]
+        src = getattr(self.app, "wheels", None)
+        if src is not None:
+            raeder = src.since(self._t_rad)
+            if raeder:
+                self._t_rad = raeder[-1][0]
+        self._meta.write(_meta_zeile(snap, name, imu, raeder))
         self.bilder += 1
 
     def _schliessen(self) -> None:

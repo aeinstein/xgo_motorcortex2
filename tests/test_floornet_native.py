@@ -94,6 +94,40 @@ def test_logits_und_zeilen_wie_pytorch(kern, i):
     assert np.abs(rows - N.decode(want)[0].numpy()).max() < 0.05
 
 
+def _logits_mit_zacken(seed):
+    """Glatte Grenze mit Rauschen; jede 7. Spalte hat einen höheren Gipfel woanders, teils mit Rest am alten Platz."""
+    rng = np.random.default_rng(seed)
+    lg = rng.normal(0.0, 1.0, (N.NBINS, N.NCOLS)).astype(np.float32)
+    lage = (30 + 8 * np.sin(np.arange(N.NCOLS) / 9.0 + seed)).round().astype(int)
+    for x in range(N.NCOLS):
+        lg[lage[x] - 1:lage[x] + 2, x] += np.array([4.0, 8.0, 5.0], np.float32)
+        if x % 7 == 3:
+            lg[lage[x] - 1:lage[x] + 2, x] -= rng.uniform(0.0, 4.0)
+            fern = (lage[x] + rng.integers(12, 30)) % N.NBINS
+            lg[fern, x] += 9.0
+    return lg
+
+
+@pytest.mark.parametrize("px", [0.0, N.OUTLIER_PX, 5.0])
+def test_auswertung_wie_pytorch_auch_mit_zacken(kern, px):
+    net, *_ = kern
+    net.set_outlier(px, N.OUTLIER_RATIO)
+    try:
+        anders = 0
+        for seed in range(20):
+            lg = _logits_mit_zacken(seed)
+            t = torch.from_numpy(lg)[None]
+            rows = net.decode(lg)
+            assert np.abs(rows - N.decode(t, px, N.OUTLIER_RATIO)[0].numpy()).max() < 0.05
+            anders += int((np.abs(rows - N.decode(t)[0].numpy()) > 1.0).sum())
+        assert (anders > 10) == (px > 0), anders                                   # mit px = 0 bleibt alles, sonst greift es
+        for img in _bilder():                                                # und auf der Netzausgabe selbst
+            rows, lg = net.logits(img)
+            assert np.abs(rows - N.decode(torch.from_numpy(lg)[None], px, N.OUTLIER_RATIO)[0].numpy()).max() < 0.05
+    finally:
+        net.set_outlier(0.0, N.OUTLIER_RATIO)
+
+
 def test_gleiche_eingabe_gleiches_ergebnis(kern):
     net, *_ = kern
     a, b, img = _bilder()[0], _bilder()[1], _bilder()[2]

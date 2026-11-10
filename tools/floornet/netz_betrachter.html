@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FloorNet Netzergebnis</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin: 0; height: 100%; background: #111; color: #ddd; font: 14px system-ui, sans-serif; }
+  #kopf { padding: 8px 12px; display: flex; gap: 16px; align-items: baseline; flex-wrap: wrap; }
+  #id { font-size: 18px; font-weight: 600; color: #fff; }
+  #hilfe { margin-left: auto; color: #888; }
+  select { background: #222; color: #ddd; border: 1px solid #444; font: inherit; padding: 2px 4px; }
+  #bilder { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; padding: 0 6px; }
+  #bilder.mitplan { grid-template-columns: repeat(3, 1fr); }
+  #text { padding: 0 12px 6px; color: #fc6; min-height: 1.3em; font-family: ui-monospace, monospace; }
+  #planfig { display: none; }
+  .mitplan #planfig { display: block; }
+  #plan { aspect-ratio: auto; max-height: 80vh; object-fit: contain; }
+  figure { margin: 0; min-width: 0; }
+  figcaption { padding: 2px 0 4px; color: #aaa; }
+  img, canvas { display: block; width: 100%; aspect-ratio: 4 / 3; background: #000; }
+</style>
+</head>
+<body>
+<div id="kopf">
+  <span id="id"></span><span id="pos"></span>
+  <label>Netz <select id="lauf"></select></label>
+  <label>Fahrt <select id="fahrt"></select></label>
+  <span id="hilfe">← voriges · nächstes → · Bild auf/ab ±20 · F Fläche an/aus · K Karte an/aus</span>
+</div>
+<div id="text"></div>
+<div id="bilder">
+  <figure><figcaption>Eingabebild</figcaption><img id="original" alt="Eingabebild"></figure>
+  <figure><figcaption>Netzergebnis: türkis frei, magenta Grenze<span id="legende"></span></figcaption><canvas id="netz" width="640" height="480"></canvas></figure>
+  <figure id="planfig"><figcaption>Raumkarte (Endstand): weiß belegt, grau frei; gelb Rider und Blickfeld, blau gefahrener Weg</figcaption><canvas id="plan"></canvas></figure>
+</div>
+<script>
+"use strict";
+// Daten aus tools/floornet/netz_js.py: netz/index.js (Läufe, Fahrten), netz/<lauf>/<fahrt>.js (Bildnamen, Grenzzeilen).
+// Adresse: #<lauf>/<fahrt>/<bild>. Gezeichnet wird hier, am Rechner mit den Daten liegt nur die Zahlenliste.
+// Daten aus tools/floornet/fahrt_js.py haben zusätzlich: karte (Raumkarte ins Bild geworfen, Zeile je Spalte oder null),
+// text (Statuszeile je Bild), pose (x, y in m, Kurs in Grad) und plan (Kartenbild von oben mit Lage).
+const DATEN = "netz/";
+const B = 640, H = 480;
+let netze = {}, D = null, pos = 0, flaeche = true, karte = true;
+const elLauf = document.getElementById("lauf"), elFahrt = document.getElementById("fahrt");
+const cv = document.getElementById("netz"), cx = cv.getContext("2d");
+const bild = new Image(), planBild = new Image();
+const pv = document.getElementById("plan"), px = pv.getContext("2d");
+
+function laden(url, fertig) {
+  const s = document.createElement("script");
+  s.src = url + "?" + Date.now();
+  s.onload = () => { fertig(true); s.remove(); };
+  s.onerror = () => { fertig(false); s.remove(); };
+  document.head.appendChild(s);
+}
+
+function fuellen(el, werte, wahl) {
+  el.textContent = "";
+  for (const w of werte) {
+    const o = document.createElement("option");
+    o.value = o.textContent = w;
+    el.appendChild(o);
+  }
+  if (werte.includes(wahl)) el.value = wahl;
+}
+
+function pfad(i) { return "data/rider/fahrt/" + D.fahrt + "/" + D.files[i]; }
+
+function zeichnen() {
+  cx.clearRect(0, 0, B, H);
+  if (!D || !bild.complete || !bild.naturalWidth) return;
+  cx.drawImage(bild, 0, 0, B, H);
+  const zeile = D.rows[pos], n = zeile.length;
+  const pkt = [];
+  for (let c = 0; c < n; c++) if (zeile[c] !== null) pkt.push([(c + 0.5) * B / n, zeile[c]]);
+  if (!pkt.length) return;
+  pkt.unshift([0, pkt[0][1]]);
+  pkt.push([B, pkt[pkt.length - 1][1]]);
+  if (flaeche) {
+    cx.beginPath();
+    cx.moveTo(0, H);
+    for (const [x, y] of pkt) cx.lineTo(x, y);
+    cx.lineTo(B, H);
+    cx.closePath();
+    cx.fillStyle = "rgba(0, 200, 255, 0.4)";
+    cx.fill();
+  }
+  cx.beginPath();
+  pkt.forEach(([x, y], i) => i ? cx.lineTo(x, y) : cx.moveTo(x, y));
+  cx.strokeStyle = "#f0f";
+  cx.lineWidth = 2;
+  cx.stroke();
+  if (karte && D.karte) {                          // Raumkarte: je Spalte die erste belegte Zelle
+    const k = D.karte[pos], m = k.length;
+    cx.strokeStyle = cx.fillStyle = "#ff0";
+    cx.lineWidth = 2;
+    for (let c = 0; c < m; c++) {
+      if (k[c] === null) continue;
+      const x = (c + 0.5) * B / m;
+      cx.fillRect(x - 2, k[c] - 2, 4, 4);
+      if (c + 1 < m && k[c + 1] !== null && Math.abs(k[c + 1] - k[c]) < 40) {
+        cx.beginPath(); cx.moveTo(x, k[c]); cx.lineTo(x + B / m, k[c + 1]); cx.stroke();
+      }
+    }
+  }
+}
+
+function planZeichnen() {
+  if (!D || !D.plan || !planBild.complete || !planBild.naturalWidth) return;
+  const P = D.plan;
+  pv.width = planBild.naturalWidth; pv.height = planBild.naturalHeight;
+  px.drawImage(planBild, 0, 0);
+  const zu = (x, y) => [(x - P.x0) / P.m_px, (P.y1 - y) / P.m_px];
+  px.strokeStyle = "#39f"; px.lineWidth = 2; px.beginPath();
+  for (let i = 0; i <= pos; i++) { const [a, b] = zu(D.pose[i][0], D.pose[i][1]); i ? px.lineTo(a, b) : px.moveTo(a, b); }
+  px.stroke();
+  const [x, y, grad] = D.pose[pos], th = grad * Math.PI / 180, h = P.hfov * Math.PI / 360;
+  const kx = x + P.vor * Math.cos(th), ky = y + P.vor * Math.sin(th);
+  const [a, b] = zu(kx, ky);
+  px.strokeStyle = px.fillStyle = "#ff0"; px.lineWidth = 1.5; px.beginPath();
+  for (const w of [th + h, th - h]) { px.moveTo(a, b); px.lineTo(...zu(kx + 2.5 * Math.cos(w), ky + 2.5 * Math.sin(w))); }
+  px.stroke();
+  px.beginPath(); px.arc(...zu(x, y), 5, 0, 7); px.fill();
+}
+
+function zeigen(p) {
+  if (!D) return;
+  pos = Math.max(0, Math.min(D.files.length - 1, p));
+  document.getElementById("original").src = bild.src = pfad(pos);
+  document.getElementById("id").textContent = D.fahrt + "/" + D.files[pos].replace(/\.jpg$/, "");
+  document.getElementById("pos").textContent = (pos + 1) + " / " + D.files.length;
+  document.getElementById("text").textContent = D.text ? D.text[pos] : "";
+  planZeichnen();
+  history.replaceState(null, "", "#" + D.lauf + "/" + D.fahrt + "/" + D.files[pos]);
+  for (const d of [1, 2, 3, -1]) if (D.files[pos + d]) new Image().src = pfad(pos + d);
+}
+
+function fahrtLaden(datei) {                     // datei: Bild, bei dem begonnen wird; fehlt es, bleibt die Stelle
+  const lauf = elLauf.value, fahrt = elFahrt.value;
+  const anteil = D && D.files.length > 1 ? pos / (D.files.length - 1) : 0;
+  const gleich = D && D.fahrt === fahrt ? D.files[pos] : datei;
+  laden(DATEN + lauf + "/" + fahrt + ".js", (ok) => {
+    if (!ok || !window.NETZ) { document.getElementById("id").textContent = "Daten fehlen: " + lauf + "/" + fahrt; return; }
+    D = window.NETZ;
+    document.getElementById("bilder").classList.toggle("mitplan", !!D.plan);
+    document.getElementById("legende").textContent = D.karte ? ", gelb Raumkarte" : "";
+    if (D.plan) planBild.src = DATEN + lauf + "/" + D.plan.bild + "?" + Date.now();
+    const i = D.files.indexOf(gleich);
+    zeigen(i >= 0 ? i : Math.round(anteil * (D.files.length - 1)));
+  });
+}
+
+function laufGewaehlt(fahrt, datei) {
+  fuellen(elFahrt, netze[elLauf.value] || [], fahrt || elFahrt.value);
+  fahrtLaden(datei);
+}
+
+bild.onload = zeichnen;
+planBild.onload = planZeichnen;
+elLauf.onchange = () => laufGewaehlt();          // gleiches Bild im anderen Netz, wenn es dort vorliegt
+elFahrt.onchange = () => { D = null; fahrtLaden(); };
+addEventListener("keydown", (e) => {
+  const schritt = { ArrowRight: 1, ArrowLeft: -1, PageDown: 20, PageUp: -20 }[e.key];
+  if (schritt) { zeigen(pos + schritt); e.preventDefault(); }
+  if (e.key === "f" || e.key === "F") { flaeche = !flaeche; zeichnen(); }
+  if (e.key === "k" || e.key === "K") { karte = !karte; zeichnen(); }
+});
+laden(DATEN + "index.js", (ok) => {
+  netze = (ok && window.NETZE) || {};
+  const namen = Object.keys(netze);
+  if (!namen.length) { document.getElementById("id").textContent = "Keine Daten: netz/index.js fehlt oder ist leer"; return; }
+  const [lauf, fahrt, datei] = decodeURIComponent(location.hash.slice(1)).split("/");
+  fuellen(elLauf, namen, lauf);
+  laufGewaehlt(fahrt, datei);
+});
+</script>
+</body>
+</html>

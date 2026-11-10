@@ -34,7 +34,7 @@ Single device: RiderPi, CM4 2 GB, kernel 6.6.74+rpt-rpi-v8, OV5647 wide-angle, f
 
 | Item | Value |
 |---|---|
-| HFOV | 91.8° (f ≈ 310 px @ 640 px, from turns vs IMU heading 2026-11-07; the earlier 88.5° made image angles ~5 % too small); default and simulator use it. Camera height re-measured while balancing (`cam_h_u8`); floor check at 0.48 / 0.98 m showed f·h 7.9 % too large, corrected empirically (height × 0.921), cause open (vertical focal length or height) |
+| HFOV | 91.8° (f ≈ 310 px @ 640 px, from turns vs IMU heading 2026-11-07; the earlier 88.5° made image angles ~5 % too small); default and simulator use it. Camera height re-measured while balancing (`cam_h_u8`); the tape check at 0.48 / 0.98 m (2026-11-07) showed f·h 7.9 % too large and was corrected by height × 0.921 until 2026-11-10; the floor grid then confirmed the measured height, factor dropped, floor distances with it not driven yet |
 | Distortion | ≤ 4 px in x 40–571 (corners not measured) |
 | Height | 128 mm at body height 85 mm (`mount_offset_mm = 43`) |
 | Tilt | 1.39° at IMU pitch −2.7° (R-1.1.3) |

@@ -49,6 +49,39 @@ def test_decode_trifft_das_fach_und_parabel_verschiebt_es():
     assert c[30] < N.decode(lo)[0, 0].item() < c[31]
 
 
+def _zacke():
+    """Alle Spalten Gipfel in Fach 30; Spalte 40 höher in Fach 50 mit zweitem Gipfel in 30, Spalte 20 nur in 50."""
+    lo = torch.zeros(1, N.NBINS, N.NCOLS)
+    lo[0, 30, :] = 10.0
+    lo[0, 50, 40], lo[0, 30, 40] = 10.0, 9.5
+    lo[0, 50, 20], lo[0, 30, 20] = 10.0, 0.0
+    return lo
+
+
+def test_decode_laesst_zacken_ohne_auftrag_stehen():
+    c = N.bin_centers()
+    assert c[50] - c[30] > N.OUTLIER_PX
+    got = N.decode(_zacke())[0]
+    assert got[40].item() == pytest.approx(c[50], abs=1e-3) and got[20].item() == pytest.approx(c[50], abs=1e-3)
+
+
+def test_decode_nimmt_zacke_mit_zweitem_gipfel_heraus():
+    c = N.bin_centers()
+    roh = N.decode(_zacke())[0]
+    got = N.decode(_zacke(), N.OUTLIER_PX, N.OUTLIER_RATIO)[0]
+    assert got[40].item() == pytest.approx(c[30], abs=1e-3)                  # zweiter Gipfel beim Nachbarwert: dorthin
+    assert got[20].item() == pytest.approx(c[50], abs=1e-3)                  # nichts beim Nachbarwert: bleibt (Hindernis)
+    andere = [x for x in range(N.NCOLS) if x not in (20, 40)]
+    assert torch.equal(got[andere], roh[andere])
+
+
+def test_decode_laesst_breite_stufe_stehen():
+    lo = torch.zeros(1, N.NBINS, N.NCOLS)
+    lo[0, 30, :40], lo[0, 50, 40:] = 10.0, 10.0
+    lo[0, 30, 40:], lo[0, 50, :40] = 9.5, 9.5                               # zweiter Gipfel überall, aber kein Ausreißer
+    assert torch.equal(N.decode(lo, N.OUTLIER_PX, N.OUTLIER_RATIO), N.decode(lo))
+
+
 @pytest.mark.parametrize("b", [0, N.NBINS - 1])
 def test_decode_am_rand_bleibt_im_bereich(b):
     lo = torch.zeros((1, N.NBINS, N.NCOLS))
@@ -63,6 +96,25 @@ def test_fold_rechnet_dasselbe():
         want = m(x)
     got = N.run_ops(N.fold(m), x)
     assert torch.abs(want - got).max().item() < 1e-3
+
+
+def test_variante_mit_dilatation_und_zusatzblock():
+    """Standardnetz bleibt, wie es ist; fold() rechnet auch die Variante richtig."""
+    assert N.FloorNet().variant == {"dil": [1, 1], "extra": 0}
+    std = sum(p.numel() for p in N.FloorNet().parameters())
+    torch.manual_seed(0)
+    m = N.FloorNet(dil=(2, 3), extra=1)
+    assert sum(p.numel() for p in N.FloorNet(dil=(2, 3)).parameters()) == std     # Dilatation kostet nichts
+    assert sum(p.numel() for p in m.parameters()) > std
+    m.train()
+    for _ in range(5):
+        m(torch.rand(8, 3, N.IN_H, N.IN_W) - 0.5)
+    m.eval()
+    x = torch.rand(2, 3, N.IN_H, N.IN_W) - 0.5
+    with torch.no_grad():
+        want = m(x)
+    assert want.shape == (2, N.NBINS, N.NCOLS)
+    assert torch.abs(want - N.run_ops(N.fold(m), x)).max().item() < 1e-3
 
 
 def test_fold_haelt_die_vorgaben_des_kerns_ein():

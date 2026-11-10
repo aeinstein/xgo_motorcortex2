@@ -44,6 +44,7 @@ class WheelOdom:
         self._thread: threading.Thread | None = None
         self.rate_hz = 0.0
         self.paused = False                 # Ruhemodus: nicht lesen, nur selten aufwachen
+        self.idle = False                   # abgesetzt: nicht lesen (cfg.read_idle = false)
         self.resets = 0                    # erkannte ESP32-Neustarts / Sprünge
 
     # ---- Lebenszyklus -------------------------------------------------
@@ -54,6 +55,17 @@ class WheelOdom:
         self._thread.start()
         return True
 
+    def set_idle(self, on: bool) -> None:
+        """Abgesetzt (on) nicht lesen. Danach zählt die erste Probe als Anfang: Was die Räder dazwischen drehten
+        (getragen, geschoben), ist kein gefahrener Weg."""
+        on = bool(on) and not getattr(self.cfg, "read_idle", False)
+        if on == self.idle:
+            return
+        if not on:
+            with self._lock:
+                self._last = None
+        self.idle = on
+
     def close(self) -> None:
         self._stop.set()
         if self._thread:
@@ -61,8 +73,8 @@ class WheelOdom:
 
     def _run(self) -> None:
         n0, t0 = 0, time.monotonic()
-        while not self._stop.wait(1.0 if self.paused else 1.0 / self.cfg.poll_hz):
-            if self.paused:
+        while not self._stop.wait(1.0 if self.paused else 0.2 if self.idle else 1.0 / self.cfg.poll_hz):
+            if self.paused or self.idle:
                 self.rate_hz = 0.0
                 n0, t0 = 0, time.monotonic()
                 continue
@@ -105,6 +117,16 @@ class WheelOdom:
         """(t, s_links, s_rechts) der neuesten Probe."""
         with self._lock:
             return self._hist[-1] if self._hist else None
+
+    def since(self, t0: float) -> list[tuple[float, float, float]]:
+        """Proben nach t0 als (t, s_links, s_rechts in m), älteste zuerst (für die Rohaufzeichnung)."""
+        with self._lock:
+            out = []
+            for p in reversed(self._hist):
+                if p[0] <= t0:
+                    break
+                out.append(p)
+            return out[::-1]
 
     def fresh(self, now: float) -> bool:
         p = self.latest()

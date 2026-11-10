@@ -67,7 +67,8 @@ class CameraCfg:
     # Kamerahöhe (Linsenmitte über Boden, mm) = a + b * Höhen-Sollwert u8, [a, b]. RiderPi 2026-11-07 im Stand
     # gemessen: u8 106/150/200 -> 122/125/132,5 mm -> [109.4, 0.1126]. Die Körperhöhe in mm (60..120 über
     # 0..255) steigt doppelt so schnell wie die echte; darum nicht Körperhöhe + Offset. Leer = mount_offset_mm.
-    # Bodenprobe 0,48/0,98 m: f·h 7,9 % zu groß, Rider-Wert daher x0,921 = [100.8, 0.1037] (Ursache offen).
+    # Gitter am Boden 2026-11-10 bestätigt die Gerade (u8 128: 124-126 mm, u8 205: 131-133 mm); der Faktor
+    # 0,921 aus der Klebeband-Probe vom 2026-11-07 ist damit raus.
     cam_h_u8: list = field(default_factory=list)
     # Linsenmitte vor der Radachse (mm). Ursprung von Merkkarte und Raumkarte ist die Radachse (dort dreht der
     # Rider, dort zählen Räder und Sicherheitsradius); Bodenpunkte werden um diesen Versatz nach vorn eingetragen.
@@ -89,6 +90,9 @@ class ImuCfg:
     # IMU/Rad-Strom der Firmware (Patch 0014) mit eigener Messzeit statt Abfrage; > 0 wird beim Start nach
     # settings/imu_stream_hz geschrieben (Treiber mit Strom-Unterstützung). Ohne Strom fragt der Treiber wie bisher ab.
     stream_hz: int = 0
+    # Abgesetzt (Rider balanciert nicht) braucht niemand 100 Hz: Strom und Lesen auf diese Rate, beim Aufstehen wieder
+    # stream_hz und poll_s. Spart am CM4 ~6 % eines Kerns (2026-11-10). 0 = nie umschalten.
+    idle_hz: int = 5
     pitch_sign: int = 0            # 0 = automatisch aus Bild-Korrelation, sonst +1/-1
     time_offset_ms: float | None = None   # None = automatisch
     pitch_ref_deg: float = 0.0     # IMU-Rohpitch bei der Kamerakalibrierung (calibrate.py wall)
@@ -224,9 +228,14 @@ class FreespaceCfg:
     # Bodenmodell-Thread mit (threaded = true) und erscheint im Overlay, entscheidet aber nichts. "" = aus.
     shadow_net: str = ""
     # Wer entscheidet: "method" (das Verfahren oben, FloorNet rechnet höchstens mit) oder "net" (FloorNet liefert die
-    # Grenze für Karten und Regelung, das Verfahren rechnet im Schatten mit und bleibt im Overlay). "net" braucht
-    # shadow_net und threaded; fehlt das Netz oder fällt es aus, entscheidet wieder das Verfahren.
+    # Grenze für Karten und Regelung allein; das Verfahren wird dann weder gerechnet noch gezeichnet). "net" braucht
+    # shadow_net und threaded; fehlt das Netz oder fällt es aus, rechnet und entscheidet wieder das Verfahren.
     primary: str = "method"
+    # FloorNet, einzelne Zacken herausnehmen (1-3 Spalten breite Sprünge an senkrechten Kanten): Weicht eine Spalte um
+    # mehr als net_outlier_px Vollbildzeilen vom Median der 7 Spalten um sie ab und liegt beim Medianwert mindestens
+    # net_outlier_ratio der Masse ihres eigenen Gipfels, gilt das beste Fach beim Medianwert. 0 = aus.
+    net_outlier_px: float = 25.0
+    net_outlier_ratio: float = 0.3
     edge_fallback_free: float = 0.98
     edge_thin: bool = True         # dünne Linien vorher entfernen (Fugen – aber auch Kontaktschatten)
     edge_k: int = 3                # Zeilen je Seite für den Stufenvergleich (Arbeitsauflösung)
@@ -338,6 +347,9 @@ class OdomCfg:
     scale_left: float = 1.0
     scale_right: float = 1.0
     poll_hz: float = 25.0              # wheels_log lesen (Treiber puffert 64 Proben)
+    # Abgesetzt (Rider balanciert nicht) werden die Räder nicht gelesen; die Pose bleibt dann stehen, auch wenn er
+    # von Hand gerollt wird. Beim Aufstehen beginnt das Lesen neu, ohne den Weg dazwischen. true = immer lesen.
+    read_idle: bool = False
     max_age_s: float = 0.3             # älter -> Rückfall auf den Fahrbefehl
     max_jump_ticks: int = 2048         # größerer Sprung zwischen zwei Proben = Neustart/Fehler
     # Kurs für Verhalten (explore) und Merkkarte: "räder" (wenn frisch, sonst Kamera) oder "kamera".

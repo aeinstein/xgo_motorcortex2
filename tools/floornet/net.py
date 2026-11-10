@@ -5,6 +5,10 @@ unten grob. Vorgaben des C++-Kerns: nach der tiefenweisen Faltung kein ReLU und 
 ReLU der 1x1-Schicht, Kanalzahlen durch 8 teilbar. BatchNorm gibt es nur im Training, fold() rechnet sie in
 die Gewichte ein; was dabei nach der tiefenweisen Faltung als Konstante bleibt, wandert in den Bias der
 folgenden 1x1-Schicht.
+
+Varianten (2026-11-10, nur Training und Auswertung; der C++-Kern und export.py kennen nur das Standardnetz):
+dil = waagerechte Dilatation der tiefenweisen Faltung in Block 5 und 6 (mehr seitlicher Kontext, gleiche Rechenzeit),
+extra = weitere Residualblöcke auf 80 x 11 hinter Block 6 (je ~2 MMACs).
 """
 from __future__ import annotations
 
@@ -41,8 +45,33 @@ def bin_centers() -> np.ndarray:
     return (e[:-1] + e[1:]) / 2
 
 
-def decode(logits: torch.Tensor) -> torch.Tensor:
-    """Logits (N, NBINS, NCOLS) -> Vollbildzeile (N, NCOLS): bestes Fach mit Parabel, wie im C++-Kern."""
+OUTLIER_PX, OUTLIER_RATIO, OUTLIER_COLS, OUTLIER_BINS = 25.0, 0.3, 7, 2     # wie xgonav/config.py und floornet.cpp
+
+
+def decode(logits: torch.Tensor, outlier_px: float = 0.0, outlier_ratio: float = OUTLIER_RATIO) -> torch.Tensor:
+    """Logits (N, NBINS, NCOLS) -> Vollbildzeile (N, NCOLS): bestes Fach mit Parabel, wie im C++-Kern.
+
+    outlier_px > 0 nimmt einzelne Zacken heraus (am Rider [freespace] net_outlier_px): Weicht eine Spalte um mehr
+    als outlier_px vom Median der OUTLIER_COLS Spalten um sie ab und liegt beim Medianwert mindestens outlier_ratio
+    der Masse ihres eigenen Gipfels (je 2 * OUTLIER_BINS + 1 Fächer), gilt das beste Fach beim Medianwert."""
+    row = _peak(logits)
+    if outlier_px <= 0:
+        return row
+    h = OUTLIER_COLS // 2
+    med = F.pad(row[:, None, :], (h, h), mode="replicate")[:, 0].unfold(1, OUTLIER_COLS, 1).median(dim=2).values
+    centers = torch.as_tensor(bin_centers(), dtype=logits.dtype, device=logits.device)
+    best = logits.argmax(dim=1)
+    nb = (centers[None, :, None] - med[:, None, :]).abs().argmin(dim=1)
+    p = torch.softmax(logits, dim=1).permute(0, 2, 1)                       # N, NCOLS, NBINS
+    win = F.avg_pool1d(p, 2 * OUTLIER_BINS + 1, 1, OUTLIER_BINS).permute(0, 2, 1)     # Rand zählt als 0
+    swap = ((row - med).abs() > outlier_px) & \
+           (win.gather(1, nb[:, None]).squeeze(1) >= outlier_ratio * win.gather(1, best[:, None]).squeeze(1))
+    bins = torch.arange(NBINS, device=logits.device)[None, :, None]
+    near = _peak(logits.masked_fill((bins - nb[:, None, :]).abs() > OUTLIER_BINS, -1e9))
+    return torch.where(swap, near, row)
+
+
+def _peak(logits: torch.Tensor) -> torch.Tensor:
     best = logits.argmax(dim=1)
     i = best.clamp(1, NBINS - 2).unsqueeze(1)
     c, l, r = logits.gather(1, i).squeeze(1), logits.gather(1, i - 1).squeeze(1), logits.gather(1, i + 1).squeeze(1)
@@ -60,9 +89,10 @@ def decode(logits: torch.Tensor) -> torch.Tensor:
 class DS(nn.Module):
     """Tiefenweise 3x3 (ohne ReLU und Bias), dann 1x1 mit ReLU; Residuum vor dem ReLU."""
 
-    def __init__(self, cin: int, cout: int, stride=(1, 1), residual: bool = False):
+    def __init__(self, cin: int, cout: int, stride=(1, 1), residual: bool = False, dil: int = 1):
         super().__init__()
-        self.dw = nn.Conv2d(cin, cin, 3, stride=stride, padding=1, groups=cin, bias=False)
+        self.dw = nn.Conv2d(cin, cin, 3, stride=stride, padding=(1, dil), dilation=(1, dil), groups=cin, bias=False)
+        self.dil = dil
         self.bn_d = nn.BatchNorm2d(cin)
         self.pw = nn.Conv2d(cin, cout, 1)
         self.bn_p = nn.BatchNorm2d(cout)
@@ -75,15 +105,16 @@ class DS(nn.Module):
 
 
 class FloorNet(nn.Module):
-    def __init__(self):
+    def __init__(self, dil=(1, 1), extra: int = 0):
         super().__init__()
+        self.variant = {"dil": [int(d) for d in dil], "extra": int(extra)}
         self.stem = nn.Conv2d(3, 12, 3, stride=2, padding=1)
         self.bn_stem = nn.BatchNorm2d(12)
         self.blocks = nn.ModuleList([
             DS(12, 24, (2, 2)),
             DS(24, 32, (2, 1)), DS(32, 32, residual=True),
-            DS(32, 48, (2, 1)), DS(48, 48, residual=True), DS(48, 48, residual=True),
-        ])
+            DS(32, 48, (2, 1)), DS(48, 48, residual=True, dil=dil[0]), DS(48, 48, residual=True, dil=dil[1]),
+        ] + [DS(48, 48, residual=True) for _ in range(extra)])
         self.head1 = nn.Conv2d(48 * 11, 32, 1)
         self.bn_h1 = nn.BatchNorm2d(32)
         self.head2 = nn.Conv2d(32, 32, (1, 3), padding=(0, 1), groups=32)
@@ -99,6 +130,20 @@ class FloorNet(nn.Module):
         x = F.relu(self.bn_h1(self.head1(x)))
         x = F.relu(self.bn_h2(self.head2(x)))
         return self.out(x).squeeze(2)
+
+
+def load_net(lauf: str, dev=None) -> "FloorNet":
+    """Netz eines Laufs laden: floornet.pt, Variante aus netz.json (fehlt sie: Standardnetz)."""
+    import json
+    import os
+    v = {}
+    p = os.path.join(lauf, "netz.json")
+    if os.path.exists(p):
+        with open(p, encoding="utf-8") as f:
+            v = json.load(f)
+    net = FloorNet(tuple(v.get("dil", (1, 1))), int(v.get("extra", 0)))
+    net.load_state_dict(torch.load(os.path.join(lauf, "floornet.pt"), map_location=dev or "cpu"))
+    return net.to(dev) if dev is not None else net
 
 
 def _fold(conv: nn.Conv2d, bn: nn.BatchNorm2d):
@@ -119,7 +164,7 @@ def fold(m: FloorNet) -> list[dict]:
     ops.append({"kind": "stem", "w": w, "b": b, "stride": (2, 2), "relu": True})
     for bl in m.blocks:
         wd, cd = _fold(bl.dw, bl.bn_d)
-        ops.append({"kind": "dw", "w": wd, "b": None, "stride": bl.stride, "relu": False})
+        ops.append({"kind": "dw", "w": wd, "b": None, "stride": bl.stride, "relu": False, "dil": bl.dil})
         wp, bp = _fold(bl.pw, bl.bn_p)
         # Konstante der tiefenweisen Faltung durch die 1x1-Schicht schieben
         g = bl.bn_p.weight / torch.sqrt(bl.bn_p.running_var + bl.bn_p.eps)
@@ -144,7 +189,8 @@ def run_ops(ops: list[dict], x: torch.Tensor) -> torch.Tensor:
             x = F.conv2d(x, op["w"], op["b"], stride=op["stride"], padding=1)
         elif k == "dw":
             res = x
-            x = F.conv2d(x, op["w"], None, stride=op["stride"], padding=1, groups=x.shape[1])
+            d = op.get("dil", 1)
+            x = F.conv2d(x, op["w"], None, stride=op["stride"], padding=(1, d), dilation=(1, d), groups=x.shape[1])
         elif k == "pw":
             x = F.conv2d(x, op["w"], op["b"])
             if op.get("res"):

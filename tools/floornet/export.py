@@ -51,6 +51,8 @@ def layer_arrays(ops: list[dict]) -> list[np.ndarray]:
 
 def write(net: FloorNet, path: str) -> np.ndarray:
     """Datei schreiben, Rückgabe: erwartete Logits des Testbilds."""
+    if net.variant != {"dil": [1, 1], "extra": 0}:
+        raise ValueError("Der C++-Kern kennt nur das Standardnetz, nicht die Variante %s" % net.variant)
     net = net.cpu().eval()
     ops = fold(net)
     logits = run_ops(ops, to_input(test_frame()))[0].numpy().astype(np.float32)

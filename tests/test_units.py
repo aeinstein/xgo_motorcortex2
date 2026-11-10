@@ -789,6 +789,7 @@ def test_paused_pipeline_keeps_pose_from_wheels():
     (sonst stand die Pose still und „Zum Start“ zielte danach daneben)."""
     import math
     from xgonav.app import App
+    import threading
     from xgonav.wheels import WheelOdom
     cfg = Config(); cfg.output.web_port = 0; cfg.detector.enabled = False
     robot = SimRobot(cfg.robot)
@@ -1100,6 +1101,7 @@ def test_freespace_worker_matches_direct_update():
 def test_wheel_odometry_wrap_reset_and_signs():
     import math
     from xgonav.config import OdomCfg
+    import threading
     from xgonav.wheels import WheelOdom
     cfg = OdomCfg()
     w = WheelOdom(cfg)
@@ -1395,6 +1397,75 @@ def test_proc_imu_requests_stream(tmp_path):
     (tmp_path / "settings" / "imu_stream_hz").write_text("0\n")
     assert ProcImu(cfg.imu)._open()
     assert (tmp_path / "settings" / "imu_stream_hz").read_text() == "100"
+
+
+def test_proc_imu_idle_rate(tmp_path):
+    """Abgesetzt: Strom und Lesen mit [imu] idle_hz, beim Aufstehen wieder stream_hz und poll_s."""
+    from xgonav.imu import ProcImu
+    (tmp_path / "settings").mkdir()
+    (tmp_path / "imu_log").write_text("")
+    (tmp_path / "settings" / "imu_hz").write_text("50\n")
+    sp = tmp_path / "settings" / "imu_stream_hz"
+    sp.write_text("0\n")
+    cfg = Config()
+    cfg.imu.proc_dir = str(tmp_path)
+    cfg.imu.stream_hz = 100
+    imu = ProcImu(cfg.imu)
+    assert imu._open() and sp.read_text() == "100" and imu._wait_s() == cfg.imu.poll_s
+    imu.set_idle(True)
+    assert sp.read_text() == "5" and imu._wait_s() == pytest.approx(0.2)
+    sp.write_text("77")
+    imu.set_idle(True)                                   # kein Wechsel: nichts geschrieben
+    assert sp.read_text() == "77"
+    imu.set_idle(True, force=True)                       # nach dem Ruhemodus
+    assert sp.read_text() == "5"
+    imu.set_idle(False)
+    assert sp.read_text() == "100" and imu._wait_s() == cfg.imu.poll_s
+    imu.paused = True
+    assert imu._wait_s() == 1.0
+    cfg.imu.idle_hz = 0                                  # abgeschaltet: bleibt bei voller Rate
+    imu.paused = False
+    imu.set_idle(True)
+    assert sp.read_text() == "100" and not imu.idle
+    cfg.imu.idle_hz, cfg.imu.stream_hz = 5, 0            # ohne Strom: nur seltener lesen, Treiber unberührt
+    sp.write_text("0")
+    imu.set_idle(True)
+    assert sp.read_text() == "0" and imu._wait_s() == pytest.approx(0.2)
+
+
+def test_wheels_idle_reads_nothing_and_restarts_without_gap():
+    """Abgesetzt werden die Räder nicht gelesen; was sie dazwischen drehten, zählt danach nicht als Weg."""
+    import threading
+    from xgonav.wheels import WheelOdom
+
+    class _W(WheelOdom):
+        polls = 0
+        def _poll(self):
+            self.polls += 1
+            return 0
+
+    cfg = Config()
+    w = _W(cfg.odom)
+    w.add(1, 1.0, 0, 0)
+    w.add(2, 1.1, 1024, 1024)
+    s0 = w.latest()[1]
+    assert s0 > 0.1
+    w.set_idle(True)
+    w._thread = threading.Thread(target=w._run, daemon=True)
+    w._thread.start()
+    time.sleep(0.5)
+    assert w.polls == 0 and w.rate_hz == 0.0
+    w.set_idle(False)
+    time.sleep(0.3)
+    assert w.polls > 0
+    w.close()
+    w.add(3, 9.0, 5000, 5000)                            # im Sitzen geschoben: kein Weg
+    assert w.latest()[1] == pytest.approx(s0)
+    w.add(4, 9.1, 6024, 6024)                            # danach zählt es wieder
+    assert w.latest()[1] == pytest.approx(2 * s0)
+    cfg.odom.read_idle = True
+    w.set_idle(True)
+    assert not w.idle
 
 
 def test_gridmap_driven_path_is_free():

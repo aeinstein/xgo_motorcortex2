@@ -56,12 +56,16 @@ def main() -> int:
     ap.add_argument("--out", required=True)
     ap.add_argument("--jobs", type=int, default=4)
     ap.add_argument("--min_run", type=int, default=1, help="Fahrten mit weniger Bildern auslassen")
+    ap.add_argument("--fahrten", default="", help="nur diese Fahrten, mit Komma getrennt (z. B. Prüffahrten in ein eigenes Verzeichnis)")
     a = ap.parse_args()
     cv2.setNumThreads(1)
     os.makedirs(a.out, exist_ok=True)
     runs, bad = collect(a.stage3, a.jobs)
+    only = {r for r in a.fahrten.split(",") if r}
     total = 0
     for run, frames in sorted(runs.items()):
+        if only and run not in only:
+            continue
         z = np.load(os.path.join(a.labels, run + ".npz"), allow_pickle=False)
         d, count = Z.build_run(run, frames, str(z["geom"]), str(z["source_dir"]), str(z["wohnung"]))
         print("%-10s %5d von %5d Bildern, verworfen: %s" % (run, len(d["files"]), len(frames), count or "-"), flush=True)

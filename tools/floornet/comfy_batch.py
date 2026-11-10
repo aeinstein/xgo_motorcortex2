@@ -8,6 +8,12 @@ ohne Modell neu rechnen. Der Seed ist fest (SEED), damit dasselbe Bild dieselbe 
   python comfy_batch.py --prompt prompt8.txt --runs explore2,...,unten2 --step 8 --out labels_comfy8
   python comfy_batch.py --prompt prompt8.txt --ids ids_nah.txt --out labels_comfy8_nah
   python comfy_batch.py --prompt prompt9.txt --ids ids_g0h.txt --edits stage1_g0h --nur_edits --eingang g0h --out stage1_g0h   # nur fehlende
+  python comfy_batch.py --prompt prompt10.txt --ids ids.txt --edits stage1_hd --nur_edits --eingang auto --dunkel_aus stage1_g0h --out stage1_hd
+
+--eingang auto wählt die Kette je Bild (Nutzer 2026-11-10): Helligkeit ab --hell_ab (60) = helle Szene, das Bild geht
+unverändert ins Modell; darunter G0h. Für dunkle Bilder wird eine vorhandene G0h-Bearbeitung aus --dunkel_aus verlinkt
+statt neu gerechnet (gleicher Prompt und Seed ergeben dasselbe Bild). Welche Kette ein Bild bekam, steht in
+<out>/eingang.jsonl.
 """
 from __future__ import annotations
 
@@ -81,6 +87,36 @@ def g0h_png(path: str) -> bytes:
 
 
 EINGANG = {"farbe": None, "grau": gray_png, "g0h": g0h_png}
+HELL_AB = 60.0      # Nutzer 2026-11-10
+HELL_ZEILE = 137    # ab hier sieht das FloorNet das Bild (net.py), darüber liegen Fenster und Lampen
+
+
+def helligkeit(o: np.ndarray) -> float:
+    """Mittlerer Grauwert (0..255) des unteren Bildteils, Maß für die Trennung helle/dunkle Szene."""
+    return float(cv2.cvtColor(o, cv2.COLOR_BGR2GRAY)[HELL_ZEILE * o.shape[0] // 480:].mean())
+
+
+def kette(path: str, hell_ab: float = HELL_AB) -> tuple[str, float]:
+    """Eingang für --eingang auto: (farbe oder g0h, Helligkeit)."""
+    h = helligkeit(cv2.imread(path))
+    return ("farbe" if h >= hell_ab else "g0h"), h
+
+
+def link_edit(quelle: str, target: str) -> bool:
+    """Vorhandene Bearbeitung ins Archiv übernehmen (harter Link, sonst Kopie). False, wenn sie fehlt oder unlesbar ist."""
+    if not os.path.exists(quelle) or cv2.imread(quelle, cv2.IMREAD_COLOR) is None:
+        return False
+    os.makedirs(os.path.dirname(target), exist_ok=True)
+    tmp = target + ".tmp"
+    if os.path.exists(tmp):
+        os.remove(tmp)
+    try:
+        os.link(quelle, tmp)
+    except OSError:
+        with open(quelle, "rb") as fi, open(tmp, "wb") as fo:
+            fo.write(fi.read())
+    os.replace(tmp, target)
+    return True
 
 
 def edit_and_keep(path: str, prompt: str, target: str, eingang: str = "farbe") -> np.ndarray:
@@ -118,7 +154,10 @@ def main() -> int:
     ap.add_argument("--out", required=True)
     ap.add_argument("--edits", default="", help="Archiv der Bearbeitungen, Default <out>/edits")
     ap.add_argument("--nur_edits", action="store_true", help="nur fehlende Bearbeitungen erzeugen, keine Masken, kein rows.jsonl")
-    ap.add_argument("--eingang", choices=sorted(EINGANG), default="farbe", help="Bild vor dem Upload wandeln (wird nicht gespeichert); g0h: Grünkanal 0 mit Helligkeit des Graubildes")
+    ap.add_argument("--eingang", choices=sorted(EINGANG) + ["auto"], default="farbe", help="Bild vor dem Upload wandeln (wird nicht gespeichert); g0h: Grünkanal 0 mit Helligkeit des Graubildes; "
+                                                                                    "auto: je Bild farbe (hell) oder g0h (dunkel)")
+    ap.add_argument("--hell_ab", type=float, default=HELL_AB, help="--eingang auto: ab dieser Helligkeit (0..255, unterer Bildteil) farbe")
+    ap.add_argument("--dunkel_aus", default="", help="--eingang auto: Archiv mit G0h-Bearbeitungen, die für dunkle Bilder verlinkt statt neu gerechnet werden")
     a = ap.parse_args()
     prompt = open(a.prompt, encoding="utf-8").read().strip()
     edits = a.edits or os.path.join(a.out, "edits")
@@ -139,15 +178,25 @@ def main() -> int:
         todo += [run + "/" + f for f in files[::a.step]]
     n_all = len(todo)
     todo = missing_edits(todo, edits) if a.nur_edits else [k for k in todo if k not in done]
-    json.dump({"prompt": prompt, "runs": a.runs, "step": a.step, "seed": SEED, "eingang": a.eingang}, open(os.path.join(a.out, "info.json"), "w"))
+    json.dump({"prompt": prompt, "runs": a.runs, "step": a.step, "seed": SEED, "eingang": a.eingang,
+               **({"hell_ab": a.hell_ab, "dunkel_aus": a.dunkel_aus} if a.eingang == "auto" else {})}, open(os.path.join(a.out, "info.json"), "w"))
     print("zu rechnen: %d (fertig: %d)" % (len(todo), n_all - len(todo)), flush=True)
-    t_start, fehler = time.time(), 0
-    with open(rows_path, "a") as fo:
+    t_start, fehler, verlinkt = time.time(), 0, 0
+    with open(rows_path, "a") as fo, open(os.path.join(a.out, "eingang.jsonl") if a.eingang == "auto" else os.devnull, "a") as fe:
         for j, k in enumerate(todo):
             run, f = k.split("/", 1)
             t0 = time.time()
             try:
-                edit = edit_and_keep(os.path.join(DATA, run, f), prompt, edit_path(edits, k), a.eingang)
+                eingang, edit = a.eingang, None
+                if eingang == "auto":
+                    eingang, hell = kette(os.path.join(DATA, run, f), a.hell_ab)
+                    if eingang == "g0h" and a.dunkel_aus and link_edit(edit_path(a.dunkel_aus, k), edit_path(edits, k)):
+                        edit = cv2.imread(edit_path(edits, k), cv2.IMREAD_COLOR)
+                        verlinkt += 1
+                    fe.write(json.dumps({"id": k, "eingang": eingang, "hell": round(hell, 1), "verlinkt": edit is not None}) + "\n")
+                    fe.flush()
+                if edit is None:
+                    edit = edit_and_keep(os.path.join(DATA, run, f), prompt, edit_path(edits, k), eingang)
             except Exception as e:                       # einzelnes Bild: weiter, am Ende zählen
                 fehler += 1
                 print("FEHLER %s: %s" % (k, e), flush=True)
@@ -165,7 +214,8 @@ def main() -> int:
                 el = time.time() - t_start
                 print("%d/%d  %.2f s je Bild  Rest %.1f h  Fehler %d" % (j + 1, len(todo), el / (j + 1),
                                                                       el / (j + 1) * (len(todo) - j - 1) / 3600, fehler), flush=True)
-    print("FERTIG %d Bilder, Fehler %d, %.1f h" % (len(todo), fehler, (time.time() - t_start) / 3600), flush=True)
+    print("FERTIG %d Bilder, Fehler %d, %.1f h%s" % (len(todo), fehler, (time.time() - t_start) / 3600,
+                                                     ", davon %d verlinkt" % verlinkt if a.eingang == "auto" else ""), flush=True)
     return 0
 
 

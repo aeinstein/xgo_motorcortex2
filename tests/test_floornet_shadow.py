@@ -101,9 +101,17 @@ class _EstNetz(_Est):
     """Wie _Est, mit den Maßen des echten Bodenmodells (160 x 120, Maßstab 4)."""
     W, H, scale = 160, 120, 4.0
 
+    cfg = Config().freespace
+    geo = None
+    _net_mask = None
+    diag: dict = {}
+    updates = 0
+
     def update(self, *a):
+        type(self).updates += 1
         return FreeSpace(sectors=[0.5] * 5, columns=np.full(160, 0.5, np.float32), horizon_row=60.0, valid=True)
 
+    from_net = FreeSpaceEstimator.from_net
     adopt_net = FreeSpaceEstimator.adopt_net
 
 
@@ -133,18 +141,20 @@ def test_net_to_columns_ist_umkehrbar_und_begrenzt():
     assert back == pytest.approx(rows[30:].repeat(2), abs=1e-3)
 
 
-def test_netz_entscheidet_und_verfahren_bleibt_als_schatten():
+def test_netz_entscheidet_allein_und_verfahren_rechnet_nicht():
+    _EstNetz.updates = 0
     w, fs = _einmal_primaer(_Net())
     assert fs.src == "net" and w.net is not None
     want = (120 - 300.0 / 4.0) / 60.0
     assert fs.columns == pytest.approx(want)
     assert fs.sectors == pytest.approx([want] * 5)
-    assert fs.shadow_columns == pytest.approx(0.5)
+    assert fs.horizon_row == 60.0 and fs.mask.shape == (120, 160) and fs.valid
+    assert _EstNetz.updates == 0 and w.ms == 0.0 and w.est.diag == {"src": "net"}
 
 
 def test_fehler_im_netz_laesst_das_verfahren_entscheiden():
     w, fs = _einmal_primaer(_Net(fail=True))
-    assert w.net is None and fs.src == "method" and fs.shadow_columns is None
+    assert w.net is None and fs.src == "method"
     assert fs.columns == pytest.approx(0.5) and fs.net_rows is None
 
 
@@ -157,11 +167,17 @@ def test_ungueltige_zeilen_schalten_das_netz_ab():
     assert w.net is None and fs.src == "method" and fs.columns == pytest.approx(0.5)
 
 
-def test_overlay_zeigt_verfahren_gelb_und_netz_magenta():
+def test_overlay_zeigt_nur_das_netz_wenn_es_entscheidet():
     frame = np.zeros((480, 640, 3), np.uint8)
     fs = FreeSpace(sectors=[0.5] * 5, columns=net_to_columns(np.full(NCOLS, 300.0, np.float32), 60.0, 120, 160, 4.0),
                    horizon_row=60.0, mask=np.zeros((120, 160), np.uint8), valid=True, src="net",
-                   shadow_columns=np.full(160, 0.5, np.float32), net_rows=np.full(NCOLS, 300.0, np.float32))
+                   net_rows=np.full(NCOLS, 300.0, np.float32))
+    img = render(Snapshot(frame=frame, free=fs), text=False)
+    assert (img[:, 320] == (255, 0, 255)).all(axis=1)[300]
+    assert not (img == (0, 255, 255)).all(axis=2).any()          # keine gelbe Linie
+    # Entscheidet das Verfahren, bleibt seine Linie gelb und das Netz (Schatten) magenta
+    fs = FreeSpace(sectors=[0.5] * 5, columns=np.full(160, 0.5, np.float32), horizon_row=60.0,
+                   mask=np.zeros((120, 160), np.uint8), valid=True, net_rows=np.full(NCOLS, 300.0, np.float32))
     img = render(Snapshot(frame=frame, free=fs), text=False)
     assert (img[:, 320] == (255, 0, 255)).all(axis=1)[300]
     assert (img[:, 320] == (0, 255, 255)).all(axis=1)[int((120 - 0.5 * 60) * 4)]

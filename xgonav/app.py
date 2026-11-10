@@ -133,13 +133,15 @@ class App:
         shadow = None
         if self.fse is not None and cfg.freespace.shadow_net:
             if cfg.freespace.threaded:
-                shadow = FloorNet.load(cfg.freespace.shadow_net)
+                shadow = FloorNet.load(cfg.freespace.shadow_net, cfg.freespace.net_outlier_px,
+                                       cfg.freespace.net_outlier_ratio)
             else:
                 log.warning("[floornet] braucht freespace.threaded: aus")
         net_primary = cfg.freespace.primary == "net" and shadow is not None
         if cfg.freespace.primary == "net":
             if net_primary:
-                log.info("[floornet] Netz entscheidet, Verfahren %s rechnet im Schatten", cfg.freespace.method)
+                log.info("[floornet] Netz entscheidet allein, Verfahren %s rechnet nur bei Ausfall des Netzes",
+                         cfg.freespace.method)
             elif self.fse is not None:
                 log.warning("[floornet] primary = net, aber kein Netz: Verfahren %s entscheidet", cfg.freespace.method)
         self.fs_worker = FreeSpaceWorker(self.fse, cfg.cpu.freespace_cpus, shadow, net_primary) \
@@ -302,7 +304,19 @@ class App:
             for src in (self.imu, self.wheels):
                 if src is not None:
                     src.paused = False
+            self._imu_idle_tick(force=True)       # die zurückgeschriebene Rate passt evtl. nicht mehr zum Zustand
             log.info("Ruhemodus aus, Bildverarbeitung bleibt aus")
+
+    def _imu_idle_tick(self, force: bool = False) -> None:
+        """Abgesetzt: IMU-Strom auf [imu] idle_hz, Räder nicht lesen; balancierend volle Rate. Im Ruhemodus ist
+        beides ganz aus."""
+        if self.ruhe:
+            return
+        idle = not self.robot.state.balancing
+        if self.imu is not None:
+            self.imu.set_idle(idle, force)
+        if self.wheels is not None:
+            self.wheels.set_idle(idle)
 
     def reset_floor(self, hold_s: float = 0.0) -> None:
         """Bodenmodell neu lernen lassen; hold_s: so lange vorher kein Bodenmodell rechnen
@@ -443,6 +457,7 @@ class App:
             self._cmd = Command(0.0, 0.0, None, "Ruhemodus")
             time.sleep(self.cfg.ruhe.tick_s)
             return
+        self._imu_idle_tick()
         self._paused_odom()
         if self.behavior.name not in self.NO_CAMERA:
             self._pet_leave()
@@ -488,6 +503,7 @@ class App:
         tm.mark("det")
 
         bal = self.robot.state.balancing
+        self._imu_idle_tick()
         if bal and self._was_balancing is False:
             # aufgestanden: Kamera sieht den Boden jetzt aus anderer Höhe/Lage. Ein im Liegen
             # gelerntes Modell passte am RiderPi danach nie mehr (Nachführung nur bei passender
@@ -1001,11 +1017,11 @@ def render(snap: Snapshot, text: bool = True) -> np.ndarray | None:
         sc = W / len(fs.columns)
         span = (fs.mask.shape[0] - fs.horizon_row)
         fh = fs.mask.shape[0]
-        # Gelb bleibt das Verfahren, auch wenn das Netz entscheidet (dann dünn, die Netzlinie ist unten magenta)
-        cols = fs.shadow_columns if fs.shadow_columns is not None else fs.columns
-        for a, b in column_runs(cols):               # unbekannte Spalten (NaN): Lücke
+        # Gelb ist das Verfahren; entscheidet das Netz, gibt es nur dessen Linie (unten, magenta)
+        cols = fs.columns
+        for a, b in (column_runs(cols) if fs.src != "net" else ()):   # unbekannte Spalten (NaN): Lücke
             pts = [(int(i * sc), int((fh - cols[i] * span) * H / fh)) for i in range(a, b)]
-            cv2.polylines(img, [np.array(pts, np.int32)], False, (0, 255, 255), 1 if fs.shadow_columns is not None else 2)
+            cv2.polylines(img, [np.array(pts, np.int32)], False, (0, 255, 255), 2)
         hy = int(fs.horizon_row * H / fh)
         cv2.line(img, (0, hy), (W, hy), (255, 255, 0), 1)
         n = len(fs.sectors)

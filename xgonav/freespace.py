@@ -50,8 +50,6 @@ class FreeSpace:
     net_rows: np.ndarray | None = None
     # Woher columns und sectors stammen: "method" (Verfahren aus der Konfig) oder "net" (FloorNet).
     src: str = "method"
-    # Bei src = "net": die Grenze des Verfahrens, nur zum Ansehen.
-    shadow_columns: np.ndarray | None = None
 
     @property
     def center(self) -> float:
@@ -165,6 +163,7 @@ class FreeSpaceEstimator:
         self._bins = [bins, bins]
         self._ranges = [0, 180, 0, 256]
         self.diag: dict = {}                        # Diagnose des letzten update() (Rohaufzeichnung)
+        self._net_mask: np.ndarray | None = None    # leere Maske für from_net()
         self._sgain: np.ndarray | None = None      # Korrektur der Linsenabschattung (H, W, 3)
         self._srel: np.ndarray | None = None       # zuverlässige Pixel (bool), alle Kanäle
         self._bgonly: np.ndarray | None = None     # nur Blau+Grün messbar -> Modell ohne Rot
@@ -681,9 +680,19 @@ class FreeSpaceEstimator:
         out[hit] = np.minimum(out[hit], val[hit])
         return out, int(hit.sum())
 
+    def from_net(self, rows: np.ndarray, pitch_dev: float = 0.0) -> FreeSpace:
+        """FloorNet allein: FreeSpace nur aus seinen Zeilen, ohne das Verfahren zu rechnen (kein update()).
+        Horizont wie in update(); die Maske ist leer (nur ihre Größe wird gebraucht)."""
+        hz_full = self.geo.horizon_row(pitch_dev) if self.geo else self.H * self.scale / 2
+        horizon = min(max(float(hz_full / self.scale), self.H * 0.2), self.H * 0.8)
+        if self._net_mask is None:
+            self._net_mask = np.zeros((self.H, self.W), np.uint8)
+        fs = FreeSpace([1.0] * self.cfg.sectors, None, horizon, self._net_mask, True, None, pitch_dev)
+        self.adopt_net(fs, rows)
+        return fs
+
     def adopt_net(self, fs: FreeSpace, rows: np.ndarray) -> None:
-        """FloorNet entscheidet: columns und sectors aus seinen Zeilen, das Verfahren bleibt als Schatten erhalten."""
-        fs.shadow_columns = fs.columns
+        """columns und sectors aus den Zeilen des Netzes (auch für den Vergleich auf Aufnahmen)."""
         fs.columns = net_to_columns(rows, fs.horizon_row, self.H, self.W, self.scale)
         n = len(fs.sectors)
         ex = np.linspace(0, self.W, n + 1).astype(int)
@@ -723,7 +732,7 @@ class FreeSpaceWorker:
     def __init__(self, est: FreeSpaceEstimator, cpus=None, net=None, net_primary: bool = False):
         self.est = est
         self.net = net                     # FloorNet oder None
-        self.net_primary = net_primary     # True: Das Netz entscheidet, das Verfahren rechnet im Schatten
+        self.net_primary = net_primary     # True: Das Netz entscheidet allein, das Verfahren rechnet nicht mit
         self.net_ms = 0.0
         self.cpus = list(cpus or [])
         self._cond = threading.Condition()
@@ -770,35 +779,58 @@ class FreeSpaceWorker:
                     return
                 job, self._job = self._job, None
             self.busy = True
-            t0 = time.perf_counter()
-            try:
-                fs = self.est.update(*job[:3])
-                fs.pose = job[3]
-            except Exception:
-                log.exception("Bodenmodell fehlgeschlagen")
-                fs = None
-            ms = (time.perf_counter() - t0) * 1000
-            self.ms = 0.8 * self.ms + 0.2 * ms if self.ms else ms
-            if fs is not None and self.net is not None:
-                self._run_net(fs, job[0])
+            fs = None
+            if self.net is not None and self.net_primary:
+                fs = self._run_net_only(job)          # None: Netz ausgefallen, ab jetzt rechnet das Verfahren
+            if fs is None:
+                t0 = time.perf_counter()
+                try:
+                    fs = self.est.update(*job[:3])
+                    fs.pose = job[3]
+                except Exception:
+                    log.exception("Bodenmodell fehlgeschlagen")
+                    fs = None
+                ms = (time.perf_counter() - t0) * 1000
+                self.ms = 0.8 * self.ms + 0.2 * ms if self.ms else ms
+                if fs is not None and self.net is not None:
+                    self._run_net(fs, job[0])
             self.busy = False
             if fs is not None:
                 with self._cond:
                     self._result = fs
 
+    def _run_net_only(self, job) -> FreeSpace | None:
+        """FloorNet entscheidet allein; das Verfahren wird nicht gerechnet. Fällt das Netz aus, ist es ab dann aus
+        und das Verfahren übernimmt (None)."""
+        import time
+        t0 = time.perf_counter()
+        try:
+            rows = self.net.run(job[0])
+            if not np.isfinite(rows).all():
+                raise ValueError("FloorNet liefert ungültige Zeilen")
+            fs = self.est.from_net(rows, job[1])
+            fs.net_rows = rows
+            fs.pose = job[3]
+        except Exception:
+            log.exception("FloorNet fehlgeschlagen: aus, das Verfahren entscheidet")
+            self.net = None
+            return None
+        ms = (time.perf_counter() - t0) * 1000
+        self.net_ms = 0.8 * self.net_ms + 0.2 * ms if self.net_ms else ms
+        self.ms = 0.0
+        self.est.diag = {"src": "net"}
+        return fs
+
     def _run_net(self, fs: FreeSpace, bgr) -> None:
-        """FloorNet rechnen. Ein Fehler darf das Bodenmodell nicht treffen: Dann ist das Netz aus, das Verfahren entscheidet."""
+        """FloorNet im Schatten rechnen (das Verfahren entscheidet). Ein Fehler darf das Bodenmodell nicht treffen:
+        Dann ist das Netz aus."""
         import time
         t0 = time.perf_counter()
         try:
             rows = self.net.run(bgr)
-            if self.net_primary:
-                if not np.isfinite(rows).all():
-                    raise ValueError("FloorNet liefert ungültige Zeilen")
-                self.est.adopt_net(fs, rows)
             fs.net_rows = rows
         except Exception:
-            log.exception("FloorNet fehlgeschlagen: aus, das Verfahren entscheidet")
+            log.exception("FloorNet (Schatten) fehlgeschlagen: aus")
             self.net = None
             return
         ms = (time.perf_counter() - t0) * 1000

@@ -1,6 +1,6 @@
 # FloorNet
 
-Self-trained network for the floor boundary, one row per image column. **Status: shadow mode only.** It runs next to `kanten`, is drawn in the overlay in magenta and makes no decisions. The network trained on ComfyUI labels (2026-11-09, on the Rider since then) reaches the preset goal on other runs of the same rooms but misses it in a room it has not seen (see below), so `kanten` still decides.
+Self-trained network for the floor boundary, one row per image column. **Status: decides on the RiderPi since 2026-11-10 (`primary = "net"`, `kanten` no longer computed there), not driven yet; default is shadow mode.** In shadow mode it runs next to `kanten`, is drawn in the overlay in magenta and makes no decisions. The network trained on ComfyUI labels (2026-11-09, on the Rider since then) reaches the preset goal on other runs of the same rooms but misses it in a room it has not seen (see below), so `kanten` still decides.
 
 ## Network
 
@@ -50,7 +50,16 @@ python tools/floornet/eval_hand.py hand.json --labels labels/ --lauf run/:streif
 python tools/floornet/export.py run/floornet.pt --out models/floornet.bin
 ```
 
-Then `[freespace] shadow_net = "models/floornet.bin"`, needs `threaded = true`. Training takes about a minute on the GPU. `[freespace] primary = "net"` lets the network decide; `[grid] net_row_bias` replaces `row_bias` then.
+Then `[freespace] shadow_net = "models/floornet.bin"`, needs `threaded = true`. Training takes about a minute on the GPU. `[freespace] primary = "net"` lets the network decide alone (`method` is then not computed and not drawn, it only takes over if the network fails); `[grid] net_row_bias` replaces `row_bias` then. RiderPi: set since 2026-11-10, not driven.
+
+Spike removal in the decoder (`[freespace] net_outlier_px`, default 25, 0 = off; `net.decode(logits, outlier_px, outlier_ratio)` in PyTorch, `decode` in `native/floornet.cpp`, both tested against each other): the raw output has 1–3 column wide jumps at vertical high-contrast edges, the output there is bimodal. A column further than `net_outlier_px` rows from the median of the 7 columns around it takes the best bin within ±2 bins of that median, if the probability mass there (5 bins) is at least `net_outlier_ratio` (0.3) of the mass at its own peak. Columns without a second peak keep their value (narrow obstacles). Cost on the Rider: a 7-value median per column, `exp` only in outlier columns.
+
+| explore10–12 (never trained), 4551 frames | < 1 m falsely free / blocked | frames with spike down / up |
+|---|---|---|
+| plain decode | 5.4 / 6.2 % | 6.1 / 2.1 % |
+| spike removal | 5.4 / 5.8 % | 1.0 / 0.6 % |
+
+Spike = column more than 25 rows from the 7-column median; the count includes real narrow obstacles. Measured 2026-11-10 with the deployed net against Stage3 labels; on the Rider not yet run.
 
 With ComfyUI labels (`comfy_batch.py`, see below), replacing `label.py` and `handmap.py`:
 

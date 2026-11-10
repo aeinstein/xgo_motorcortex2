@@ -184,7 +184,7 @@ Header button **Ruhe** (with confirmation). Only the web UI wakes it (**Wecken**
 
 | Colour | Meaning |
 |---|---|
-| yellow | floor boundary per column |
+| yellow | floor boundary per column from `method`; absent when FloorNet decides (`primary = "net"`) |
 | cyan | horizon (pitch-compensated); with `[horizon]`: horizon from IMU only |
 | white / magenta / green | `[horizon]`: stand horizon of this height / IMU + image pitch since last IMU re-anchor (used for distances) / line being set |
 | orange | `[horizon]`: raw driver pitch (newest `imu_log` sample, no time alignment to the frame), value in degrees at the left |

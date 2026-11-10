@@ -301,8 +301,8 @@ details.extras[open]>summary{margin-bottom:8px}
     <div class="legende" id="l-lage" title="Gier 0° = Kurs beim Start des ESP32; + = links. Roll + = rechts tief, Nick + = vorn tief"></div>
     <details class="hilfe"><summary>Kamerahöhe und Roll</summary>
       <p>Kamerahöhe: Rechenwert der Bodengeometrie aus <code>cam_h_u8</code> (Linsenmitte über Boden, Sollwert u8
-        im Tooltip), die Beine brauchen danach etwa 1 s. Enthalten ist die Korrektur ×0,921 aus der Bodenprobe; der
-        Zollstock zeigt deshalb rund 8 % mehr, solange deren Ursache offen ist. Oberhalb von u8 200 ändert sich nichts
+        im Tooltip), die Beine brauchen danach etwa 1 s. Der Wert entspricht der Messung mit dem Zollstock
+        (Gitter am Boden 2026-11-10). Oberhalb von u8 200 ändert sich nichts
         mehr. Untere Grenze mit Abstand zum Minimum; in Folgen/Erkunden setzt xgonav die Höhe selbst.</p>
       <p>Roll: + = rechts.</p>
     </details>

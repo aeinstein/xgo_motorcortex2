@@ -223,3 +223,26 @@ def test_build_run_fields(tmp_path):
     # Spalte über dem Bereich des Netzes zählt nicht, der Rest ist exakt
     assert d["kind"][0, 3] == Z.IGNORE and d["kind"][0, 4] == Z.EXACT
     assert abs(d["th"][0] - np.pi / 2) < 1e-9 and abs(d["pitch"][0] - 0.25) < 1e-6
+
+
+def test_kette_waehlt_nach_helligkeit_und_verlinkt_dunkle(tmp_path):
+    hell = np.full((480, 640, 3), 61, np.uint8)
+    hell[:137] = 0                                   # oben dunkel zählt nicht
+    dunkel = np.full((480, 640, 3), 59, np.uint8)
+    dunkel[:137] = 255                               # helles Fenster oben macht die Szene nicht hell
+    cv2.imwrite(str(tmp_path / "h.png"), hell)
+    cv2.imwrite(str(tmp_path / "d.png"), dunkel)
+    assert B.kette(str(tmp_path / "h.png")) == ("farbe", 61.0)
+    assert B.kette(str(tmp_path / "d.png")) == ("g0h", 59.0)
+    assert B.kette(str(tmp_path / "d.png"), 50)[0] == "farbe"
+    # Dunkle Bilder: vorhandene Bearbeitung übernehmen, fehlende oder kaputte nicht
+    alt, neu = str(tmp_path / "alt"), str(tmp_path / "neu")
+    os.makedirs(os.path.join(alt, "r"))
+    cv2.imwrite(B.edit_path(alt, "r/000001.jpg"), hell)
+    with open(B.edit_path(alt, "r/000002.jpg"), "wb") as fo:
+        fo.write(b"kaputt")
+    assert B.link_edit(B.edit_path(alt, "r/000001.jpg"), B.edit_path(neu, "r/000001.jpg"))
+    assert (cv2.imread(B.edit_path(neu, "r/000001.jpg")) == hell).all() and os.path.exists(B.edit_path(alt, "r/000001.jpg"))
+    assert not B.link_edit(B.edit_path(alt, "r/000002.jpg"), B.edit_path(neu, "r/000002.jpg"))
+    assert not B.link_edit(B.edit_path(alt, "r/000003.jpg"), B.edit_path(neu, "r/000003.jpg"))
+    assert B.missing_edits(["r/000001.jpg", "r/000002.jpg"], neu) == ["r/000002.jpg"]

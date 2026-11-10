@@ -39,11 +39,11 @@ Status JSON: `odom.src` = `räder` | `befehl`, `odom.m` = total distance.
 | Range | hits 0.15–`max_range_m` 1.25 m, free rays to `free_range_m` 1.5 m, RiderPi 1.1 m (one image row at 2 m is ~40 cm; a step was seen as floor from > 1 m on 2026-11-06, simulator with 1.1: floor known 0.43–0.83, occupied precision 0.84–0.92); "free to horizon" columns mark free up to 1.5 m only |
 | Confirmation | `confirm_dr_m` (RiderPi 0.2 m, ± `confirm_cells` 2): occupied only after hits on the same spot from two ranges ≥ 0.2 m apart. RiderPi 2026-11-08: the window sill mirrored in the tiles was entered at 0.56 m from the start and 0.82 m from 0.72 m further on (d = D·h_cam/(h_edge + h_cam)), i.e. a second wall. Simulator explore 120 s: walls 82 % → 73 %, precision 0.90 → 0.93, 0 collisions. Tried and dropped the same day: hits only up to 0.7 m (walls 25 %, explore ended early) and a half-resolution edge band (the 4 cm test compares a mean over the segment, so resolution hardly matters; tape at 0.98 m unchanged) |
 | Row correction | `row_bias` (working rows, + = farther): default 1.5 from the simulator (boundary below the true one); RiderPi −1.0 (tape at 0.48 m, 2026-11-07: boundary ~1 row above the edge). Room map only, the local map uses the raw boundary. Wall base not checked yet |
-| Pitch, pose | those of the captured image (`FreeSpace.pitch_dev`, `.pose`), not of the later frame the result arrives in |
-| Filter | only while balancing and below `max_turn_dps` 40 °/s |
+| Pitch, pose | pitch of the captured image (`FreeSpace.pitch_dev`); pose (`.pose`) as of the last control step before that image was processed, not of the later frame the result arrives in. Not interpolated to the capture time: while turning the pose is older than the image by an unmeasured amount (40 °/s × 50 ms = 2°) |
+| Filter | only while balancing and below `max_turn_dps` 40 °/s; the rate is the wheel heading (`odom.yaw_source`) at the control step in which the result arrives, not at capture |
 | Driven path | `driven_free_r_m` 0.10 m around the path counts as free |
 | Unknown | columns without measurable floor (lens shading) stay unknown |
-| Thread | `GridWorker` (cores = `cpu.freespace_cpus`), pose at capture time passed along |
+| Thread | `GridWorker` (cores = `cpu.freespace_cpus`), the pose handed to the floor model is passed along |
 | Use | display; path planning for modes `home` and `explore` |
 | Drift | no correction (no markers); drifts over time |
 

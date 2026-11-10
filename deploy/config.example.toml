@@ -30,8 +30,8 @@ hfov_deg = 91.8       # [K] aus Drehungen gegen IMU-Kurs (2026-11-07, f 310 px);
 exposure_us = 20000      # Standard (Nutzer 2026-11-03): 20 ms bei Verstärkung 16
 analogue_gain = 16.0     # OV5647 1..63,9; Automatik nur bis 8; über ~8x kein besserer Rauschabstand
 mount_offset_mm = 43.0   # nur ohne cam_h_u8: Kamerahöhe = Körperhöhe + Offset
-cam_h_u8 = [100.8, 0.1037]   # [K] Kamerahöhe = a + b·u8; gemessen [109.4, 0.1126] (u8 106/150/200 -> 122/125/132,5 mm),
-                             # x0,921 aus Bodenprobe 0,48/0,98 m (2026-11-07): f·h war 7,9 % zu groß, Ursache offen
+cam_h_u8 = [109.4, 0.1126]   # [K] Kamerahöhe = a + b·u8; gemessen u8 106/150/200 -> 122/125/132,5 mm; Gitter am Boden
+                             # 2026-11-10 bestätigt (u8 128: 124-126, u8 205: 131-133 mm); der Faktor 0,921 vom 2026-11-07 ist raus
 cam_fwd_mm = 36.0        # [K] Linse vor der Radachse (CAD 36,9; Bodenprobe 34/41); Kartenursprung = Radachse
 cx_offset_px = 13.0      # [K] Fahrtrichtung bei Spalte 333: Fluchtpunkt Geradeausfahrt, 8 Fahrten 45 m (2026-11-08)
 tilt_deg = 5.18          # [K] Zollstock 2026-11-04, gilt zusammen mit imu.pitch_ref_deg
@@ -62,7 +62,9 @@ conf = 0.35
 classes = ["person", "chair", "couch", "dining table", "potted plant", "bed", "dog", "cat"]
 
 [freespace]
-# primary = "net"       # FloorNet entscheidet, kanten rechnet im Schatten; braucht shadow_net und threaded, nicht gefahren
+# net_outlier_px = 25.0 ist Standard: einzelne Zacken der FloorNet-Grenze herausnehmen (0 = aus), docs/floornet.md
+# primary = "net"       # FloorNet entscheidet allein, das Verfahren (method) rechnet nur bei Ausfall des Netzes;
+                        # braucht shadow_net und threaded. Am RiderPi seit 2026-11-10 gesetzt, nicht gefahren
 method = "kanten"        # Bodengrenze aus Stufenkanten; replay 2026-11-04: Fehlalarme 0,2–16 % statt 25–53 % (Farbe)
 # edge_log_s = 16 und edge_glare = true sind Standard (2026-11-05): dunkle Wände/Möbel werden
 # erkannt, Lampenschein auf glänzendem Boden gilt als unbekannt statt als Hindernis.

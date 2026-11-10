@@ -136,3 +136,53 @@ def test_abschalten_und_kein_platz(tmp_path):
     assert "10 MB" in st["fehler"] and not st["laeuft"]
     assert len(laeufe(base)) == 1                   # kein leeres zweites Verzeichnis
     rec.beenden()
+
+
+def test_proben_seit_dem_letzten_bild_stehen_genau_einmal_in_der_meta(tmp_path):
+    import math
+
+    from xgonav.config import ImuCfg, OdomCfg
+    from xgonav.imu import ImuSource
+    from xgonav.wheels import WheelOdom
+
+    app, base = FakeApp(), str(tmp_path / "fahrt")
+    app.imu, app.wheels = ImuSource(ImuCfg()), WheelOdom(OdomCfg())
+    seq = [0]
+
+    def bild():                                     # je Bild zwei IMU-Proben und eine Radprobe, Zeit wie das Bild
+        app.idx += 1
+        t = 100.0 + app.idx * 0.04
+        for dt in (-0.02, -0.01):
+            seq[0] += 1
+            app.imu.add(seq[0], t + dt, math.radians(1.5), math.radians(-2.0), math.radians(seq[0] * 0.5))
+        app.wheels.add(app.idx, t - 0.01, app.idx * 100, app.idx * 100)
+        snap = Snapshot(frame=np.zeros((8, 8, 3), np.uint8), idx=app.idx, t=t, stats={"balancing": True})
+        with app.snap_cond:
+            app.snapshot = snap
+            app.snap_cond.notify_all()
+
+    app.bild = bild
+    rec = RawRecorder(app, base)
+    rec.schalten(True)
+    assert bilder_bis(app, rec, 5)
+    rec.beenden()
+    zeilen = [json.loads(z) for z in open(os.path.join(base, laeufe(base)[0], "meta.jsonl"))]
+    imu = [p for z in zeilen for p in z["imu"]]
+    rad = [p for z in zeilen for p in z["raeder"]]
+    ti = [p[0] for p in imu]
+    assert ti == sorted(set(ti)) and len(ti) >= 2 * len(zeilen) - 1      # keine doppelt, keine Lücke
+    assert all(b - a < 0.035 for a, b in zip(ti, ti[1:]))
+    assert imu[0][1:3] == [1.5, -2.0] and abs(imu[1][3] - imu[0][3] - 0.5) < 1e-6   # Grad
+    assert ti[0] > zeilen[0]["t"] - 0.2                                  # nichts von lange vor der Aufnahme
+    tr = [p[0] for p in rad]
+    assert tr == sorted(set(tr)) and rad[-1][1] > rad[0][1] >= 0.0       # Weg in m, fortlaufend
+
+
+def test_ohne_imu_und_raeder_bleiben_die_felder_leer(tmp_path):
+    app, base = FakeApp(), str(tmp_path / "fahrt")
+    rec = RawRecorder(app, base)
+    rec.schalten(True)
+    assert bilder_bis(app, rec, 1)
+    rec.beenden()
+    z = json.loads(open(os.path.join(base, laeufe(base)[0], "meta.jsonl")).readline())
+    assert z["imu"] is None and z["raeder"] is None

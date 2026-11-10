@@ -2,14 +2,16 @@
 // tools/floornet/net.py, Rechnung in floornet_kern.h. Über ctypes aus xgonav/floornet.py.
 //
 // Eingabe Vollbild 640x480 BGR, Ausgabe je Spalte (80) die Vollbildzeile der Bodengrenze: bestes Zeilenfach,
-// mit Parabel verfeinert, wie net.decode. Die Datei enthält einen Testvektor: fn_selftest rechnet ein künstliches
+// mit Parabel verfeinert, einzelne Zacken auf Wunsch herausgenommen (fn_set_outlier), wie net.decode. Die Datei enthält einen Testvektor: fn_selftest rechnet ein künstliches
 // Bild und vergleicht die Logits mit PyTorch.
 #include <cstdint>
 #include <cstdio>
 
 #if defined(__aarch64__)
 
+#include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <memory>
 
 #include "floornet_kern.h"
@@ -18,9 +20,11 @@ using namespace fn_kern;
 
 namespace {
 
-constexpr int kAbi = 1;
+constexpr int kAbi = 2;
 constexpr uint32_t kVersion = 1;
 constexpr int kDown = 2, kNcols = 80, kBins = 64, kHead = 32;
+constexpr int kOutCols = 7, kOutBins = 2;      // wie net.OUTLIER_COLS, net.OUTLIER_BINS
+constexpr float kMasked = -1e9f;               // Fach außerhalb des Fensters, wie masked_fill in net.decode
 
 struct Stage { int c, sy, sx, n; };
 
@@ -28,6 +32,7 @@ struct Handle {
     Net net;
     float centers[kBins];
     std::vector<float> test;     // erwartete Logits des Testbilds: [Fach][Spalte]
+    float out_px = 0.f, out_ratio = 0.3f;      // Zacken herausnehmen, 0 = aus
 };
 
 bool read_floats(FILE* f, std::vector<float>& v, size_t n) {
@@ -109,27 +114,57 @@ bool load_net(FILE* f, Net& net) {
     return ok;
 }
 
-// Beste Spalte je Fach, wie net.decode.
+// Bestes Fach der Spalte x unter den Fächern lo..hi, mit Parabel; Fächer außerhalb zählen als kMasked.
+float peak(const Handle& h, const Tensor& out, int x, int lo, int hi, int* best_out) {
+    int best = lo;
+    float bv = out.row(lo, 0)[x];
+    for (int c = lo + 1; c <= hi; ++c) {
+        const float v = out.row(c, 0)[x];
+        if (v > bv) { bv = v; best = c; }
+    }
+    float frac = 0.f;
+    if (best > 0 && best < kBins - 1) {
+        const float l = best - 1 >= lo ? out.row(best - 1, 0)[x] : kMasked;
+        const float r = best + 1 <= hi ? out.row(best + 1, 0)[x] : kMasked;
+        const float den = l - 2.f * bv + r;
+        if (den < -1e-6f) frac = std::max(-0.5f, std::min(0.5f, 0.5f * (l - r) / den));
+    }
+    if (best_out) *best_out = best;
+    const float pos = float(best) + frac;
+    const int a = std::max(0, std::min(kBins - 1, int(std::floor(pos))));
+    const int b = std::min(kBins - 1, a + 1);
+    const float t = pos - float(a);
+    return h.centers[a] * (1.f - t) + h.centers[b] * t;
+}
+
+// Grenzzeile je Spalte, wie net.decode: bestes Fach; mit out_px > 0 gilt für eine Spalte, die um mehr als out_px
+// vom Median ihrer kOutCols Nachbarn abweicht, das beste Fach beim Medianwert, wenn dort mindestens out_ratio der
+// Masse ihres eigenen Gipfels liegt.
 void decode(const Handle& h, float* rows) {
     const Tensor& out = h.net.t.back();
+    int best[kNcols];
+    for (int x = 0; x < kNcols; ++x) rows[x] = peak(h, out, x, 0, kBins - 1, &best[x]);
+    if (!(h.out_px > 0.f)) return;
+    float raw[kNcols];
+    std::memcpy(raw, rows, sizeof(raw));
     for (int x = 0; x < kNcols; ++x) {
-        int best = 0;
-        float bv = out.row(0, 0)[x];
-        for (int c = 1; c < kBins; ++c) {
-            const float v = out.row(c, 0)[x];
-            if (v > bv) { bv = v; best = c; }
-        }
-        float frac = 0.f;
-        if (best > 0 && best < kBins - 1) {
-            const float l = out.row(best - 1, 0)[x], r = out.row(best + 1, 0)[x];
-            const float den = l - 2.f * bv + r;
-            if (den < -1e-6f) frac = std::max(-0.5f, std::min(0.5f, 0.5f * (l - r) / den));
-        }
-        const float pos = float(best) + frac;
-        const int lo = std::max(0, std::min(kBins - 1, int(std::floor(pos))));
-        const int hi = std::min(kBins - 1, lo + 1);
-        const float t = pos - float(lo);
-        rows[x] = h.centers[lo] * (1.f - t) + h.centers[hi] * t;
+        float v[kOutCols];
+        for (int k = 0; k < kOutCols; ++k) v[k] = raw[std::max(0, std::min(kNcols - 1, x + k - kOutCols / 2))];
+        std::nth_element(v, v + kOutCols / 2, v + kOutCols);
+        const float med = v[kOutCols / 2];
+        if (!(std::fabs(raw[x] - med) > h.out_px)) continue;
+        int nb = 0;
+        for (int c = 1; c < kBins; ++c)
+            if (std::fabs(h.centers[c] - med) < std::fabs(h.centers[nb] - med)) nb = c;
+        const float top = out.row(best[x], 0)[x];
+        auto mass = [&](int b) {             // Summe der Wahrscheinlichkeiten um Fach b, bis auf den gemeinsamen Nenner
+            float s = 0.f;
+            for (int c = std::max(0, b - kOutBins); c <= std::min(kBins - 1, b + kOutBins); ++c)
+                s += std::exp(out.row(c, 0)[x] - top);
+            return s;
+        };
+        if (mass(nb) >= h.out_ratio * mass(best[x]))
+            rows[x] = peak(h, out, x, std::max(0, nb - kOutBins), std::min(kBins - 1, nb + kOutBins), nullptr);
     }
 }
 
@@ -174,6 +209,14 @@ void* fn_new(const char* path) {
 
 void fn_free(void* h) { delete static_cast<Handle*>(h); }
 
+// Zacken herausnehmen: px = Abweichung vom Median der Nachbarspalten in Vollbildzeilen (0 = aus), ratio = nötige
+// Masse beim Medianwert gegenüber dem eigenen Gipfel.
+void fn_set_outlier(void* hp, float px, float ratio) {
+    Handle& h = *static_cast<Handle*>(hp);
+    h.out_px = px;
+    h.out_ratio = ratio;
+}
+
 // bgr: Vollbild 640x480, stride Byte je Zeile. rows: kNcols Werte. logits: optional kBins * kNcols ([Fach][Spalte]).
 void fn_run(void* hp, const uint8_t* bgr, int stride, float* rows, float* logits) {
     Handle& h = *static_cast<Handle*>(hp);
@@ -183,6 +226,14 @@ void fn_run(void* hp, const uint8_t* bgr, int stride, float* rows, float* logits
         const Tensor& out = h.net.t.back();
         for (int c = 0; c < kBins; ++c) std::memcpy(logits + size_t(c) * kNcols, out.row(c, 0), sizeof(float) * kNcols);
     }
+}
+
+// Nur die Auswertung, für Tests: logits ([Fach][Spalte]) ersetzen die Netzausgabe, rows wie fn_run.
+void fn_decode(void* hp, const float* logits, float* rows) {
+    Handle& h = *static_cast<Handle*>(hp);
+    Tensor& out = h.net.t.back();
+    for (int c = 0; c < kBins; ++c) std::memcpy(out.row(c, 0), logits + size_t(c) * kNcols, sizeof(float) * kNcols);
+    decode(h, rows);
 }
 
 // Größter relativer Fehler der Logits auf dem Testbild gegen PyTorch.

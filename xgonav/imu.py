@@ -42,6 +42,7 @@ class ImuSource:
         self._thread: threading.Thread | None = None
         self.rate_hz = 0.0
         self.paused = False             # Ruhemodus: nicht lesen, nur selten aufwachen
+        self.idle = False               # abgesetzt: Strom und Lesen nur mit cfg.idle_hz
         self._cache = None
 
     def start(self) -> bool:
@@ -50,6 +51,22 @@ class ImuSource:
         self._thread = threading.Thread(target=self._run, name="imu", daemon=True)
         self._thread.start()
         return True
+
+    def set_idle(self, on: bool, force: bool = False) -> None:
+        """Abgesetzt (on) nur noch cfg.idle_hz, sonst volle Rate. force schreibt die Rate auch ohne Wechsel
+        (nach dem Ruhemodus, der die Treiber-Einstellung selbst zurückschreibt)."""
+        on = bool(on) and getattr(self.cfg, "idle_hz", 0) > 0
+        if on == self.idle and not force:
+            return
+        self.idle = on
+        self._set_stream(self.cfg.idle_hz if on else self.cfg.stream_hz)
+
+    def _wait_s(self) -> float:
+        if self.paused:
+            return 1.0
+        if self.idle:
+            return 1.0 / self.cfg.idle_hz
+        return getattr(self.cfg, "poll_s", 0.05)
 
     def close(self) -> None:
         self._stop.set()
@@ -100,6 +117,17 @@ class ImuSource:
         with self._lock:
             return (self._t[-1], self._r[-1], self._p[-1]) if self._t else None
 
+    def since(self, t0: float) -> list[tuple[float, float, float, float]]:
+        """Proben nach t0 als (t, roll, pitch, yaw in rad), älteste zuerst (für die Rohaufzeichnung)."""
+        with self._lock:
+            n = 0
+            for t in reversed(self._t):
+                if t <= t0:
+                    break
+                n += 1
+            k = len(self._t) - n
+            return [(self._t[i], self._r[i], self._p[i], self._y[i]) for i in range(k, len(self._t))]
+
     def latest_yaw(self) -> tuple[float, float] | None:
         """(t, Kurs rad links +) der neuesten Probe mit Kurs, sonst None."""
         with self._lock:
@@ -109,7 +137,7 @@ class ImuSource:
 
     def _run(self) -> None:
         n0, t0 = 0, time.monotonic()
-        while not self._stop.wait(1.0 if self.paused else getattr(self.cfg, "poll_s", 0.05)):
+        while not self._stop.wait(self._wait_s()):
             if self.paused:
                 self.rate_hz = 0.0
                 n0, t0 = 0, time.monotonic()
@@ -126,6 +154,7 @@ class ImuSource:
 
     def _open(self) -> bool: ...
     def _poll(self) -> int: return 0
+    def _set_stream(self, hz: int) -> None: ...
 
 
 class ProcImu(ImuSource):
@@ -151,6 +180,18 @@ class ProcImu(ImuSource):
         elif self.cfg.stream_hz:
             log.warning("Treiber kennt keinen IMU-Strom (settings/imu_stream_hz fehlt) – Abfrage wie bisher")
         return True
+
+    def _set_stream(self, hz: int) -> None:
+        """Stromrate im Treiber umstellen; nur wenn der Strom genutzt wird (stream_hz > 0) und der Treiber ihn kennt."""
+        sp = os.path.join(self.cfg.proc_dir, "settings", "imu_stream_hz")
+        if not self.cfg.stream_hz or not os.path.exists(sp):
+            return
+        try:
+            with open(sp, "w") as f:
+                f.write(str(int(hz)))
+            log.info("IMU-Strom %d Hz (%s)", hz, "abgesetzt" if self.idle else "balanciert")
+        except OSError as e:
+            log.warning("imu_stream_hz nicht gesetzt: %s", e)
 
     def _poll(self) -> int:
         with open(self.path) as f:

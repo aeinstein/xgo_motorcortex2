@@ -269,6 +269,8 @@ def main() -> int:
     ap.add_argument("--near_m", type=float, default=0.5)
     ap.add_argument("--near_share", type=float, default=0.3)
     ap.add_argument("--smooth_w", type=float, default=0.0, help="Gewicht der Strafe für Sprünge zwischen Nachbarspalten")
+    ap.add_argument("--dil", default="1,1", help="waagerechte Dilatation in Block 5 und 6 (net.py, Varianten)")
+    ap.add_argument("--extra", type=int, default=0, help="weitere Residualblöcke auf 80 x 11")
     a = ap.parse_args()
     torch.manual_seed(a.seed)
     os.makedirs(a.out, exist_ok=True)
@@ -291,7 +293,9 @@ def main() -> int:
     print("Bilder %d, davon mit Handlinie %d, nah %d, je Epoche %d" % (len(hand), hand.sum(), near.sum(), len(order)), flush=True)
     centers = torch.as_tensor(bin_centers(), dtype=torch.float32, device=dev)
 
-    net = FloorNet().to(dev)
+    net = FloorNet(tuple(int(d) for d in a.dil.split(",")), a.extra).to(dev)
+    with open(os.path.join(a.out, "netz.json"), "w", encoding="utf-8") as f:
+        json.dump(net.variant, f)
     print("Parameter:", sum(p.numel() for p in net.parameters()), flush=True)
     opt = torch.optim.AdamW(net.parameters(), lr=a.lr, weight_decay=1e-4)
     steps = a.epochs * (len(order) // a.bs)
