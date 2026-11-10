@@ -44,6 +44,8 @@ sudo ln -s ../sites-available/xgonav /etc/nginx/sites-enabled/
 sudo rm /etc/nginx/sites-enabled/default
 sudo usermod -aG video www-data
 sudo install -m 0440 deploy/sudoers-xgonav-poweroff /etc/sudoers.d/xgonav-poweroff && sudo visudo -c
+sudo install -m 0755 deploy/xgo-ruhe /usr/local/sbin/xgo-ruhe
+sudo install -m 0440 deploy/sudoers-xgonav-ruhe /etc/sudoers.d/xgonav-ruhe && sudo visudo -c
 sudo nginx -t && sudo systemctl restart php8.2-fpm nginx
 ```
 
@@ -89,6 +91,7 @@ sudo systemctl enable --now xgonav
 |---|---|
 | Emotions → `/tmp/lcd0` | group `video` |
 | Shutdown | `/etc/sudoers.d/xgonav-poweroff`: `www-data ALL=(root) NOPASSWD: /usr/bin/systemctl poweroff` |
+| Sleep mode | `/usr/local/sbin/xgo-ruhe` (governor, display), `/etc/sudoers.d/xgonav-ruhe`: `www-data` may run only `xgo-ruhe on` / `xgo-ruhe off` |
 | LEDs, actions, height, roll | `/proc/XGORider/*` is mode 0666 |
 
 ## nginx (`deploy/nginx-xgonav.conf`)

@@ -342,7 +342,8 @@ class DetectorWorker:
                     return
             with self._cond:
                 while not self._stop.is_set() and not self._ready():
-                    self._cond.wait(0.02)
+                    # submit/close wecken über notify; kurz warten muss er nur auf max_wait_s eines Kandidaten
+                    self._cond.wait(0.02 if self._cand is not None else 1.0)
                 if self._stop.is_set():
                     return
                 frame, _, _ = self._cand

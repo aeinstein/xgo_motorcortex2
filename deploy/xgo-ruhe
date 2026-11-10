@@ -1,0 +1,44 @@
+#!/bin/sh
+# Ruhemodus, Teil mit root-Rechten: CPU-Takt und Display. Aufruf nur über api.php (sudo-Regel
+# deploy/sudoers-xgonav-ruhe), installiert nach /usr/local/sbin/xgo-ruhe (deploy/install-all.sh).
+#   xgo-ruhe on    Governor sichern, alle Kerne auf powersave, Display schlafen (SIGUSR1 an st7789_server)
+#   xgo-ruhe off   Governor zurück (ohne Sicherung: ondemand), Display wach (SIGUSR2)
+# xgonav selbst (Abfragen, Threads) schaltet POST /ruhe; das ruft api.php getrennt auf.
+set -u
+SICHERUNG=/run/xgo-ruhe.gov
+
+governor() {   # governor <name>: auf alle Kerne schreiben
+    for f in /sys/devices/system/cpu/cpu[0-9]*/cpufreq/scaling_governor; do
+        [ -w "$f" ] && echo "$1" > "$f"
+    done
+}
+
+case "${1:-}" in
+    on)
+        f=/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor
+        if [ -r "$f" ] && [ ! -f "$SICHERUNG" ]; then
+            cat "$f" > "$SICHERUNG"
+        fi
+        governor powersave
+        pkill -USR1 -x st7789_server
+        echo "Ruhe an"
+        ;;
+    off)
+        alt=ondemand
+        if [ -f "$SICHERUNG" ]; then
+            alt=$(cat "$SICHERUNG")
+            rm -f "$SICHERUNG"
+        fi
+        case "$alt" in
+            powersave|"") alt=ondemand ;;
+        esac
+        governor "$alt"
+        pkill -USR2 -x st7789_server
+        echo "Ruhe aus ($alt)"
+        ;;
+    *)
+        echo "Aufruf: xgo-ruhe on|off" >&2
+        exit 2
+        ;;
+esac
+exit 0

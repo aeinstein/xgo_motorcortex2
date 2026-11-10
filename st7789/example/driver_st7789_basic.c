@@ -699,6 +699,30 @@ uint8_t st7789_basic_display_off(void)
 }
 
 /**
+ * @brief     Ruhemodus: Anzeige aus und Controller schlafen legen (DISPOFF + SLPIN) bzw. aufwecken
+ * @param[in] on 1 = schlafen, 0 = wach (SLPOUT wartet selbst 200 ms, dann DISPON)
+ * @return    status code
+ *            - 0 success
+ *            - 1 failed
+ */
+uint8_t st7789_basic_sleep(uint8_t on)
+{
+    if (on != 0)
+    {
+        if (st7789_display_off(&gs_handle) != 0)
+        {
+            return 1;
+        }
+        return st7789_sleep_in(&gs_handle) != 0;
+    }
+    if (st7789_sleep_out(&gs_handle) != 0)
+    {
+        return 1;
+    }
+    return st7789_display_on(&gs_handle) != 0;
+}
+
+/**
  * @brief     basic example draw a string
  * @param[in] x coordinate x
  * @param[in] y coordinate y

@@ -223,6 +223,10 @@ class FreespaceCfg:
     # FloorNet im Schattenbetrieb (xgonav/floornet.py): Gewichte, z. B. "models/floornet.bin". Rechnet im
     # Bodenmodell-Thread mit (threaded = true) und erscheint im Overlay, entscheidet aber nichts. "" = aus.
     shadow_net: str = ""
+    # Wer entscheidet: "method" (das Verfahren oben, FloorNet rechnet höchstens mit) oder "net" (FloorNet liefert die
+    # Grenze für Karten und Regelung, das Verfahren rechnet im Schatten mit und bleibt im Overlay). "net" braucht
+    # shadow_net und threaded; fehlt das Netz oder fällt es aus, entscheidet wieder das Verfahren.
+    primary: str = "method"
     edge_fallback_free: float = 0.98
     edge_thin: bool = True         # dünne Linien vorher entfernen (Fugen – aber auch Kontaktschatten)
     edge_k: int = 3                # Zeilen je Seite für den Stufenvergleich (Arbeitsauflösung)
@@ -295,6 +299,8 @@ class OutputCfg:
     web_fps: int = 10
     lcd_fifo: str = "/tmp/lcd0"    # "" = aus
     lcd_fps: int = 15             # CM4 gemessen: kostet die Hauptschleife nichts Messbares
+    record_dir: str = "~/fahrt"   # Rohaufzeichnung (Knopf in der Oberfläche): je Aufnahme ein Unterverzeichnis
+    record_min_free_mb: int = 500 # darunter schaltet sie sich ab
 
 
 @dataclass
@@ -360,7 +366,9 @@ class GridCfg:
     # Simulator-Sweep 2026-11-05: 1,5. RiderPi (Klebeband 0,48 m, 2026-11-07): Grenze ~1 Zeile ÜBER der
     # Kante (weiter weg) -> dort -1,0. Negativ = Grenze näher heranholen.
     row_bias: float = 1.5
-    column_step: int = 2               # jede k-te Spalte des Bodenmodells (160 Spalten)
+    # Dasselbe, wenn FloorNet entscheidet (freespace.primary = "net"): Es ist auf Handlinien trainiert, nicht auf die Kanten.
+    net_row_bias: float = 0.0
+    column_step: int = 2              # jede k-te Spalte des Bodenmodells (160 Spalten)
     l_free: float = -0.4               # Log-Odds je Beobachtung
     l_occ: float = 0.5                 # zwei Treffer bis "belegt" (l_show): ein Ausreißer sperrt nichts
     free_margin_m: float = 0.10        # Freistrahl endet so weit vor der Grenze (Messrauschen)
@@ -553,6 +561,14 @@ class PetCfg:
 
 
 @dataclass
+class RuheCfg:
+    # Ruhemodus (Web-Knopf „Ruhe“): abgesetzt, Bildverarbeitung aus, Treiber fragt nichts mehr ab, xgonav
+    # wacht nur noch selten auf. CPU-Takt und Display schaltet deploy/xgo-ruhe (root, über api.php).
+    tick_s: float = 1.0                # Hauptschleife und robot-Thread: so oft aufwachen
+    sleep_ms_on_loop: int = 1000       # Treiber-Hauptschleife (Zustand, Akku); normal 200
+
+
+@dataclass
 class CpuCfg:
     # CPU-Pinning (Linux). Leer = nicht pinnen. Am RiderPi: Hauptschleife samt Kamera,
     # OpenCV-Workern und Rest des Systems auf 0-1, YOLO auf 2-3 (Aufrufer + Pool-Thread).
@@ -587,6 +603,7 @@ class Config:
     explore: ExploreCfg = field(default_factory=ExploreCfg)
     patrol: PatrolCfg = field(default_factory=PatrolCfg)
     pet: PetCfg = field(default_factory=PetCfg)
+    ruhe: RuheCfg = field(default_factory=RuheCfg)
     control_hz: float = 20.0
 
     @classmethod

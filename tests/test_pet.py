@@ -5,6 +5,7 @@ import sys
 import wave
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -14,7 +15,7 @@ from xgonav.behaviors import World, make_behavior  # noqa: E402
 from xgonav.config import BehaviorCfg, Config, PetCfg, RobotCfg  # noqa: E402
 from xgonav.emotion import LCD_FRAME_BYTES, load_gaze  # noqa: E402
 from xgonav.geometry import CamGeometry  # noqa: E402
-from xgonav.pet import LID_OPEN, LID_SHUT, Pet, PetBrain, Seen, Sense  # noqa: E402
+from xgonav.pet import GAZE_BINS, GAZE_CENTER, LID_OPEN, LID_SHUT, Pet, PetBrain, Seen, Sense  # noqa: E402
 from xgonav.robot import SimRobot  # noqa: E402
 from xgonav.tracker import Track  # noqa: E402
 
@@ -306,7 +307,7 @@ def test_ohnmacht_augen_langsam_auf_dann_aufspringen():
     assert auf[0] == LID_SHUT and auf[-1] == LID_OPEN
     assert len(set(auf)) == 5                             # langsam über alle Stellungen
     blick = {l[2] for l in lids if l[0] == "lugen"}
-    assert min(blick) < 3 < max(blick)                    # schaut sich um
+    assert min(blick) < GAZE_CENTER < max(blick)                    # schaut sich um
     b.want_stand_up = False
     b.update(Sense(t=t, balancing=True))
     assert b.state == "settle"
@@ -439,7 +440,55 @@ def test_liegend_nur_ausdruck():
         evs += b.drain()
         t += 0.05
     assert all(a.v == 0 and a.w == 0 and a.height_mm is None for a in acts)
-    assert ("sound", "gefunden", False) in evs and b.gaze[0] > 3      # links vom Rider = rechts im Bild
+    assert ("sound", "gefunden", False) in evs and b.gaze[0] > GAZE_CENTER      # links vom Rider = rechts im Bild
+
+
+def test_liegend_reagiert_nur_beim_auftauchen():
+    b = brain()
+    da = lambda t: [seen(dist=None, t=t, vs=0.0)]
+    def zaehle(t0, t1, who):
+        t, _, evs = run(b, t0, t1, who, balancing=False, fw_mode=254)
+        return t, sum(e == ("sound", "gefunden", False) for e in evs)
+    t, n = zaehle(0.0, 60.0, da)
+    assert n == 1                            # eine Minute durchgehend zu sehen
+    # Kurzer Aussetzer des Detektors zählt nicht als weg
+    t, n = zaehle(t, t + 1.0, None)
+    t, n2 = zaehle(t, t + 20.0, da)
+    assert n + n2 == 0
+    # Wirklich weg und wieder da: noch einmal
+    t, _ = zaehle(t, t + 15.0, None)
+    t, n = zaehle(t, t + 20.0, da)
+    assert n == 1
+
+
+def test_nach_langem_liegen_aufgestellt_bleibt_er_stehen():
+    b = brain()
+    t, _, _ = run(b, 0.0, b.cfg.timeout_s + 60.0, dt=0.5, balancing=False, fw_mode=254)
+    t, _, evs = run(b, t, t + b.cfg.settle_s + 5.0)
+    assert b.state == "wach" and not b.want_set_down and not b.want_idle
+    assert ("emotion", "sleep", False) not in evs
+
+
+def test_blick_gleitet_stufenweise():
+    b = brain(gestures=False)
+    t, blick = 0.0, []
+    while t < 2.0:
+        bearing = -0.8 if t < 1.0 else 0.8
+        b.update(Sense(t=t, seen=[seen(dist=2.0, t=t, bearing=bearing, vs=0.0)]))
+        blick.append(b.gaze[0])
+        t += 0.05
+    assert max(abs(x - y) for x, y in zip(blick, blick[1:])) == 1   # nie mehr als eine Stufe je Regelschritt
+    assert set(blick) == set(range(GAZE_BINS))                      # alle Stufen, ganz links bis ganz rechts
+
+
+def test_lidschlag_oeffnet_und_schliesst_stufenweise():
+    b = brain()
+    t, lider = 0.0, []
+    while t < 8.0:
+        b.update(Sense(t=t))
+        lider.append(b.gaze[1])
+        t += 0.05
+    assert max(abs(x - y) for x, y in zip(lider, lider[1:])) == 1
 
 
 def test_guck_guck():
@@ -497,7 +546,7 @@ def test_blick_folgt_und_blinzelt():
         b.update(Sense(t=t))
         lids.add(b.gaze[1])
         t += 0.05
-    assert lids == {LID_OPEN, LID_SHUT}
+    assert lids == {0, 1, 2, 3, 4}              # Lidschlag über alle Stellungen
 
 
 def test_config_und_make_behavior():
@@ -543,12 +592,22 @@ def load_tool(name):
 
 def test_augen_atlas(tmp_path):
     assert load_gaze(str(tmp_path / "fehlt")) is None
-    assert load_tool("eyes").write_gaze(tmp_path / "g", (0, 225, 210)) == 35
+    assert load_tool("eyes").write_gaze(tmp_path / "g", (0, 225, 210)) == GAZE_BINS * 5
     atlas = load_gaze(str(tmp_path / "g"))
-    assert len(atlas) == 35 and all(len(v) == LCD_FRAME_BYTES for v in atlas.values())
-    assert len(set(atlas.values())) == 35    # jede Stellung sieht anders aus
+    assert len(atlas) == GAZE_BINS * 5 and all(len(v) == LCD_FRAME_BYTES for v in atlas.values())
+    assert len(set(atlas.values())) == GAZE_BINS * 5    # jede Stellung sieht anders aus
     (tmp_path / "g" / "g3_l0.raw").write_bytes(b"kurz")
     assert load_gaze(str(tmp_path / "g")) is None
+
+
+def test_augen_atlas_im_stil_der_emotionen():
+    eyes = load_tool("eyes")
+    neutral = eyes.render((dict(), eyes.neutral(), eyes.neutral()))
+    # Geradeaus offen ist genau das Bild, mit dem jede Emotion beginnt und endet: kein Sprung beim Wechsel
+    assert np.array_equal(eyes.gaze_alpha(GAZE_CENTER, 0), neutral)
+    # Keine Pupille: Das Auge ist ein volles Rechteck, die Fläche ändert sich mit dem Blick kaum
+    for g in (0, GAZE_BINS - 1):
+        assert abs(eyes.gaze_alpha(g, 0).sum() / neutral.sum() - 1.0) < 0.02
 
 
 def test_toene(tmp_path):

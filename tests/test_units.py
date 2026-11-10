@@ -971,14 +971,14 @@ def test_raw_run_dir_keeps_previous_recording(tmp_path):
     """Jeder Start bekommt ein eigenes Verzeichnis, auch bei gleicher Uhrzeit."""
     import os
     from unittest import mock
-    from xgonav.__main__ import _raw_run_dir
+    from xgonav.rawrec import raw_run_dir
     base = tmp_path / "neu" / "fahrt"
     with mock.patch("time.strftime", return_value="20261106-150000"):
-        a = _raw_run_dir(str(base))
+        a = raw_run_dir(str(base))
         with open(os.path.join(a, "000000.jpg"), "w") as f:
             f.write("alt")
-        b = _raw_run_dir(str(base))
-        c = _raw_run_dir(str(base))
+        b = raw_run_dir(str(base))
+        c = raw_run_dir(str(base))
     assert os.path.basename(a) == "20261106-150000"
     assert os.path.basename(b) == "20261106-150000-2" and os.path.basename(c) == "20261106-150000-3"
     with open(os.path.join(a, "000000.jpg")) as f:
@@ -2418,3 +2418,39 @@ def test_arc_check_stops_at_zone():
     assert c.v == 0 and "Sperrzone" in c.status
     c = app._arc_check(Command(-0.1, 0.0, 100.0, "x"))
     assert "Sperrzone" not in c.status
+
+
+def test_ruhe_mode():
+    """Ruhemodus: absetzen, Bildverarbeitung aus, Treiber-Abfragen aus, keine Fahrbefehle; Wecken stellt nur
+    die Abfragen wieder her (bleibt liegen, Bildverarbeitung aus)."""
+    import threading
+    from xgonav.app import App, ModeNotAllowed
+    cfg = Config(); cfg.output.web_port = 0; cfg.detector.enabled = False
+    cfg.ruhe.tick_s = 0.2
+    robot = SimRobot(cfg.robot)
+    robot.settings.update({"imu_hz": "50", "imu_stream_hz": "100", "sleep_ms_on_loop": "200"})  # wheel_hz fehlt
+    app = App(cfg, robot, SimWorld(cfg.camera, robot, None, start=(1.0, 1.5, 0.0)), imu=None)
+    app.imu = None
+    th = threading.Thread(target=app.run, kwargs={"duration": 6.0}, daemon=True)
+    th.start()
+    time.sleep(1.0)
+    assert app.pipeline_on and robot.state.balancing
+    app.set_ruhe(True)
+    assert app.ruhe and not app.pipeline_on and not robot.state.balancing
+    assert robot.settings == {"imu_hz": "0", "imu_stream_hz": "0", "sleep_ms_on_loop": "1000"}
+    with pytest.raises(ModeNotAllowed):
+        app.set_pipeline(True)
+    with pytest.raises(ModeNotAllowed):
+        app.set_mode("manual")
+    time.sleep(0.5)
+    n = len(robot.writes)
+    idx = app.snapshot.idx
+    time.sleep(1.0)
+    assert len(robot.writes) == n                        # kein Keepalive, keine Fahrbefehle
+    assert app.snapshot.idx == idx and app.mode == "idle"
+    app.set_ruhe(False)
+    assert not app.ruhe and robot.ruhe_tick_s is None
+    assert robot.settings == {"imu_hz": "50", "imu_stream_hz": "100", "sleep_ms_on_loop": "200"}
+    time.sleep(0.5)
+    assert not app.pipeline_on and not robot.state.balancing   # Wecken startet nichts
+    app.stop(); th.join(timeout=5)

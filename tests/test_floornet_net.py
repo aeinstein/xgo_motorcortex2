@@ -176,3 +176,41 @@ def test_band_bericht_erkennt_fernes_und_nahes():
     assert block["block"] == 1.0 and block["frei"] == 0.0
     gleich = T.band_report(label, label, kind, pitch, g)["0.5-1.0"]
     assert gleich["frei"] == 0.0 and gleich["block"] == 0.0 and gleich["med_cm"] < 0.1
+
+
+def test_near_frames_by_share_of_close_columns():
+    geo = {"H": 480, "f": 328.49, "tilt_deg": 5.18, "cam_h": 0.128}
+    nah = T.row_dist(geo, np.array([[440.0]], np.float32), np.zeros(1, np.float32))[0, 0]
+    assert nah < 0.5
+    row = np.full((3, 80), 260.0, np.float32)
+    row[1, :30] = 440.0     # 37,5 % der Spalten nah
+    row[2, :10] = 440.0     # 12,5 %
+    run = {"geom": geo, "row": row, "pitch": np.zeros(3, np.float32), "kind": np.full((3, 80), T.EXACT, np.uint8)}
+    assert T.near_frames(run, 0.5, 0.3).tolist() == [False, True, False]
+    # Spalten ohne Label zählen nicht
+    run["kind"][1, :30] = T.IGNORE
+    assert T.near_frames(run, 0.5, 0.3).tolist() == [False, False, False]
+
+
+def test_smooth_loss_ignores_jumps_the_label_has():
+    centers = torch.as_tensor(N.bin_centers(), dtype=torch.float32)
+    k = len(centers)
+    ziel = torch.full((1, 80), float(centers[10]))
+    ziel[0, 40:] = float(centers[50])
+    kind = torch.full((1, 80), T.EXACT, dtype=torch.uint8)
+
+    def logits_for(rows):
+        i = torch.as_tensor([int(torch.argmin((centers - r).abs())) for r in rows[0]])
+        lg = torch.full((1, k, 80), -50.0)
+        lg[0, i, torch.arange(80)] = 50.0
+        return lg
+
+    assert float(T.smooth_loss(logits_for(ziel), ziel, kind, centers)) < 1e-3
+    glatt = torch.full((1, 80), float(centers[10]))
+    spitze = glatt.clone()
+    spitze[0, 20:25] = float(centers[50])
+    assert float(T.smooth_loss(logits_for(spitze), glatt, kind, centers)) > 0.05
+    # Sprung über eine Spalte ohne Label zählt nicht
+    kind2 = kind.clone()
+    kind2[0, 20:25] = T.IGNORE
+    assert float(T.smooth_loss(logits_for(spitze), glatt, kind2, centers)) < 1e-3

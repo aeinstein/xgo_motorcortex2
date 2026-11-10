@@ -26,8 +26,9 @@ from .config import PetCfg, RobotCfg
 log = logging.getLogger(__name__)
 
 RETREAT_CAP_M, CREEP_CAP_M, ROLL_CAP_DEG = 0.30, 1.0, 12.0
-GAZE_BINS = 7                        # Blickrichtungen im Augen-Atlas (tools/eyes.py --gaze)
+GAZE_BINS = 11                       # Blickrichtungen im Augen-Atlas (tools/eyes.py --gaze): 10 Stufen, ungerade für eine exakte Mitte
 GAZE_CENTER = GAZE_BINS // 2
+BLINK_S = 0.4                        # Lidschlag über alle Lidstellungen; 20 Hz Regelschritt: je 50 ms eine Stufe
 GAZE_RANGE = math.radians(45.0)      # Peilung bei voll ausgelenktem Blick
 GAZE_LIDS = 5                        # Lidstellungen im Atlas, 0 = offen .. 4 = zu
 LID_OPEN, LID_HALF, LID_SHUT = 0, 2, 4
@@ -121,6 +122,7 @@ class PetBrain:
         self._gone_done = True
         self._seen_t = None                  # letzte Begegnung (irgendein Ziel)
         self._bored_t = 0.0
+        self._lying_seen_t = -1e9             # liegend zuletzt jemanden gesehen
         self._dozing = False
         self._nudge: collections.deque = collections.deque()
         self._move_t = -1e9
@@ -132,7 +134,8 @@ class PetBrain:
         self._peek_t = 0.0                   # Augen gehen seit dann auf
         self._clear_t: float | None = None   # niemand im Bild seit dann
         self._next_blink = 0.0
-        self._blink_until = 0.0
+        self._blink_t = -1e9
+        self._gaze_goal = GAZE_CENTER         # dorthin gleitet der Blick, eine Stufe je Regelschritt
         self._next_glance = 0.0
 
     # ---- Ausgabe ----------------------------------------------------------
@@ -660,6 +663,7 @@ class PetBrain:
     def _settle(self, s: Sense) -> Act:
         """Aufschwung, Nivellier-Impuls und Standreferenz abwarten; Höhe steht nach dem Aufstehen auf 128."""
         if s.t - self._state_t >= self.cfg.settle_s:
+            self._seen_t = s.t                 # Die Zeit im Liegen zählt nicht als allein, sonst setzt er sich gleich wieder ab
             self._set_state("wach", s.t)
         return Act()
 
@@ -668,8 +672,12 @@ class PetBrain:
         if s.balancing:
             self._blind_until = s.t + self.cfg.settle_s
             self._set_state("settle", s.t)
-        elif self.target is not None and self._ready("liegend", s.t, 10.0):
-            self._react(s.t, "surprised", "gefunden")
+        elif self.target is not None:
+            # Nur beim Auftauchen: Wer die ganze Zeit zu sehen ist, löst nichts mehr aus. Kurze Aussetzer des Detektors
+            # zählen nicht als weg (gone_s), die Abklingzeit fängt das Kommen und Gehen an der Bildkante ab.
+            if s.t - self._lying_seen_t >= self.cfg.gone_s and self._ready("liegend", s.t, 10.0):
+                self._react(s.t, "surprised", "gefunden")
+            self._lying_seen_t = s.t
         return Act()
 
     def _aus(self, s: Sense) -> Act:
@@ -678,30 +686,35 @@ class PetBrain:
     # ---- Augen ------------------------------------------------------------
     def _update_gaze(self, s: Sense) -> None:
         t = s.t
-        gx, lid = self.gaze
+        goal = self._gaze_goal
         if self.state == "lugen" and self.target is None:
             # schaut langsam nach links und rechts
-            gx = GAZE_CENTER + int(round(GAZE_CENTER * 0.8 * math.sin(2 * math.pi * (t - self._peek_t) / 3.0)))
+            goal = GAZE_CENTER + int(round(GAZE_CENTER * 0.8 * math.sin(2 * math.pi * (t - self._peek_t) / 3.0)))
         elif self.target is not None:
             # Links vom Rider ist für den, der ihn anschaut, rechts im Bild
             raw = GAZE_CENTER + clamp(self.target.bearing / GAZE_RANGE, -1.0, 1.0) * GAZE_CENTER
-            if abs(raw - gx) > 0.6:                          # Hysterese, sonst zittert der Blick
-                gx = int(round(raw))
+            if abs(raw - goal) > 0.6:                        # Hysterese, sonst zittert der Blick
+                goal = int(round(raw))
         elif t >= self._next_glance:
             self._next_glance = t + self.rng.uniform(3.0, 7.0)
-            gx = clamp(GAZE_CENTER + self.rng.choice((-2, -1, 0, 0, 1, 2)), 0, GAZE_BINS - 1)
+            goal = GAZE_CENTER + self.rng.choice((-3, -1, 0, 0, 1, 3))
+        self._gaze_goal = goal
+        gx = self.gaze[0]
+        gx += (goal > gx) - (goal < gx)                      # gleitet, springt nicht
         if t >= self._next_blink:
-            self._blink_until = t + 0.14
-            self._next_blink = t + self.rng.uniform(2.0, 6.0)
+            self._blink_t = t
+            self._next_blink = t + BLINK_S + self.rng.uniform(2.0, 6.0)
+        x = (t - self._blink_t) / BLINK_S
+        closing = 1.0 - abs(2.0 * x - 1.0) if 0.0 <= x < 1.0 else 0.0     # 0 -> 1 -> 0 über den Lidschlag
         if self.state in ("nap", "ab", "aus"):
             lid = LID_SHUT
         elif self.state == "lugen":
             x = clamp((t - self._peek_t) / max(self.cfg.eyes_open_s, 1e-3), 0.0, 1.0)
             lid = LID_SHUT if self.target is not None else int(round(LID_SHUT * (1.0 - x)))
         elif self._dozing or self.state == "liegt":
-            lid = LID_HALF if t >= self._blink_until else LID_SHUT
+            lid = LID_HALF + int(round((LID_SHUT - LID_HALF) * closing))
         else:
-            lid = LID_SHUT if t < self._blink_until else LID_OPEN
+            lid = LID_OPEN + int(round((LID_SHUT - LID_OPEN) * closing))
         self.gaze = (int(gx), lid)
 
     def info(self) -> dict:

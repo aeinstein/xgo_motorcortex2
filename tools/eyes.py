@@ -250,7 +250,9 @@ def angry(t: float, T: float):
 
 def cute(t: float, T: float):
     e = envelope(t, T, 0.4, 0.4)
-    z = dict(w=96, h=96, r=1.0, pupil=0.72, ppy=0.08, hl=1.0, sc=1.0 + 0.03 * math.sin(2 * math.pi * 1.5 * t))
+    # große runde Augen ohne Pupille, Unterrand leicht lächelnd, sanftes Wippen
+    hops = 0.03 * math.sin(2 * math.pi * 1.5 * t)
+    z = dict(w=100, h=100, r=1.0, bcurve=0.16, dy=-4 * hops / 0.03, sc=1.0 + hops)
     l, r = pose(neutral(), z, e), pose(neutral(), z, e)
     # in der Mitte kurz fröhlich zukneifen (^ ^)
     hap = smooth((t - 1.45) / 0.15) * (1 - smooth((t - 2.05) / 0.15))
@@ -418,21 +420,18 @@ def frames(name: str):
 
 
 def gaze_alpha(g: int, lid: int) -> np.ndarray:
-    """Augen des Modus pet (xgonav/pet.py): Blick g 0..6 (3 = Mitte, größer = rechts im Bild), Lid 0 offen bis
-    4 zu (langsames Aufwachen). Runde Augen wie cute, damit der Übergang zu den Emotionen nicht springt."""
-    x = (g - 3) / 3.0
-    z = dict(w=96.0, h=96.0, r=1.0, pupil=0.72, ppx=0.26 * x, ppy=0.08, hl=1.0, dx=14.0 * x)
-    if lid == 4:
-        z.update(pupil=0.0, hl=0.0, blink=1.0)
-    elif lid > 0:
-        z["top"] = 0.24 * lid
-    return render((dict(), neutral(**z), neutral(**z)))
+    """Augen des Modus pet (xgonav/pet.py): Blick g 0..10 (5 = Mitte, größer = rechts im Bild), Lid 0 offen bis
+    4 zu (langsames Aufwachen). Das neutrale Auge ohne Pupille, wie am Anfang und Ende jeder Emotion: Der Blick
+    entsteht, weil das ganze Auge wandert; das Auge in Blickrichtung wird etwas breiter, das andere schmaler."""
+    x = (g - 5) / 5.0
+    z = dict(dx=34.0 * x, blink=0.25 * lid)          # Lid wie der Lidschlag der Emotionen: zur Mitte hin stauchen
+    return render((dict(), neutral(w=NEUTRAL["w"] * (1 - 0.10 * x), **z), neutral(w=NEUTRAL["w"] * (1 + 0.10 * x), **z)))
 
 
 def write_gaze(ziel: Path, farbe: tuple[int, int, int]) -> int:
     ziel.mkdir(parents=True, exist_ok=True)
     n = 0
-    for g in range(7):
+    for g in range(11):
         for lid in range(5):
             (ziel / f"g{g}_l{lid}.raw").write_bytes(to_rgb565(to_bgr(gaze_alpha(g, lid), farbe)))
             n += 1

@@ -43,7 +43,8 @@ class WheelOdom:
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self.rate_hz = 0.0
-        self.resets = 0                     # erkannte ESP32-Neustarts / Sprünge
+        self.paused = False                 # Ruhemodus: nicht lesen, nur selten aufwachen
+        self.resets = 0                    # erkannte ESP32-Neustarts / Sprünge
 
     # ---- Lebenszyklus -------------------------------------------------
     def start(self) -> bool:
@@ -60,7 +61,11 @@ class WheelOdom:
 
     def _run(self) -> None:
         n0, t0 = 0, time.monotonic()
-        while not self._stop.wait(1.0 / self.cfg.poll_hz):
+        while not self._stop.wait(1.0 if self.paused else 1.0 / self.cfg.poll_hz):
+            if self.paused:
+                self.rate_hz = 0.0
+                n0, t0 = 0, time.monotonic()
+                continue
             try:
                 n0 += self._poll()
             except OSError as e:

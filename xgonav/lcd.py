@@ -64,7 +64,7 @@ class LcdOut:
             except OSError:
                 os.close(self._fd)
                 self._fd = None
-        time.sleep(self.period)
+        time.sleep(min(self.period, 0.03))   # schneller als der Regelschritt, sonst fehlen Stufen des Lidschlags; schreibt nur bei Änderung
         return True
 
     def _run(self) -> None:
@@ -72,6 +72,10 @@ class LcdOut:
             time.sleep(0.1)
         while self.app.running:
             t0 = time.monotonic()
+            if self.app.ruhe:                   # Ruhemodus: Display ist aus (deploy/xgo-ruhe), nichts schreiben
+                self._gaze_sent = None
+                time.sleep(1.0)
+                continue
             if emotion_active(self.fifo):
                 # Emotion läuft: FIFO freigeben. Erst wenn alle Schreiber zu sind, setzt
                 # der Daemon seinen Bildanfang zurück (falls ein Player mitten im Bild endete).

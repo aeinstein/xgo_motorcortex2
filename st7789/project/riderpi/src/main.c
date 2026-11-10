@@ -16,6 +16,11 @@ static int framesize = 320 * 240 * 2;
 static char *framebuffer;
 static char *fb_device = "/tmp/lcd0";
 static int running = 1;
+// Ruhemodus (deploy/xgo-ruhe): SIGUSR1 = Anzeige aus + Controller schlafen, SIGUSR2 = wach.
+// Beide Signale sind in allen Threads blockiert und werden im Hauptthread per sigwait angenommen;
+// der Mutex hält SPI-Zugriffe von Lese-Thread (Bild) und Hauptthread (Schlafbefehl) auseinander.
+static pthread_mutex_t spi_lock = PTHREAD_MUTEX_INITIALIZER;
+static volatile int asleep = 0;
 
 /**
  * @brief     signal handler
@@ -67,7 +72,7 @@ static void *read_framebuffer(){
                 // no bytes so reset framepointer
                 total_left = framesize;
                 buffer_pointer = rx;
-                usleep(10000);    // sleep when no data
+                usleep(asleep ? 200000 : 10000);    // sleep when no data (Ruhemodus: seltener)
 
             } else {
                 total_left -= bytes;
@@ -79,7 +84,11 @@ static void *read_framebuffer(){
         memcpy(framebuffer, rx, framesize);
 
         //st7789_interface_debug_print("picture complete\n");
-        st7789_basic_draw_picture_16bits(0, 0, 319, 239, (uint16_t *)framebuffer);
+        pthread_mutex_lock(&spi_lock);
+        if (!asleep) {     // im Ruhemodus Bilder verwerfen
+            st7789_basic_draw_picture_16bits(0, 0, 319, 239, (uint16_t *)framebuffer);
+        }
+        pthread_mutex_unlock(&spi_lock);
 
         //  draw battery level
         //st7789_basic_string(250, 220, "Batt: 10%", 9, 0xFFFF, ST7789_FONT_16);
@@ -118,9 +127,31 @@ int main(void)
     /* set the signal */
     signal(SIGINT, a_sig_handler);
 
+    // SIGUSR1/2 vor dem Start des Lese-Threads blockieren (er erbt die Maske), dann hier annehmen
+    sigset_t power;
+    sigemptyset(&power);
+    sigaddset(&power, SIGUSR1);
+    sigaddset(&power, SIGUSR2);
+    pthread_sigmask(SIG_BLOCK, &power, NULL);
+
     init_framebuffer();
 
     while(1) {
-        sleep(1);
+        int sig;
+        if (sigwait(&power, &sig) != 0) {
+            sleep(1);
+            continue;
+        }
+        int want = (sig == SIGUSR1);
+        pthread_mutex_lock(&spi_lock);
+        if (want != asleep) {
+            if (st7789_basic_sleep(want) == 0) {
+                asleep = want;
+                st7789_interface_debug_print(want ? "st7789: Ruhemodus, Anzeige aus\n" : "st7789: wach\n");
+            } else {
+                st7789_interface_debug_print("st7789: Schlafbefehl fehlgeschlagen\n");
+            }
+        }
+        pthread_mutex_unlock(&spi_lock);
     }
 }

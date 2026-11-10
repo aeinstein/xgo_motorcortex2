@@ -202,6 +202,14 @@ uint8_t st7789_basic_display_on(void);
 uint8_t st7789_basic_display_off(void);
 
 /**
+ * @brief     Ruhemodus: 1 = Anzeige aus + Controller schlafen (DISPOFF, SLPIN), 0 = aufwecken (SLPOUT, DISPON)
+ * @return    status code
+ *            - 0 success
+ *            - 1 failed
+ */
+uint8_t st7789_basic_sleep(uint8_t on);
+
+/**
  * @brief     basic example draw a string
  * @param[in] x coordinate x
  * @param[in] y coordinate y

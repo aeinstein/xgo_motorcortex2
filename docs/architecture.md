@@ -90,4 +90,4 @@ camera.FrameSource ─► egomotion.EgoMotion ─► tracker.Tracker ◄── d
 | Main loop, camera, OpenCV workers | 0–1 |
 | YOLO (NCNN: thread + OpenMP pool on 2–3; onnxruntime: caller on 2, pool on 3) | 2–3 |
 | Free-space worker, grid worker | 2–3 |
-| Web/LCD rendering | 0–3 |
+| Web/LCD rendering, raw recording | 0–3 |

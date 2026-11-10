@@ -134,14 +134,17 @@ if [ "$DO_WEB" = 1 ]; then
         warnung "Weboberfläche nicht aktiviert: Zertifikat/Schlüssel fehlen ($CERT, $KEY). Pfade in deploy/nginx-xgonav.conf anpassen und erneut aufrufen."
     fi
 
-    # Rechte für www-data: Emotionen nach /tmp/lcd0, nur "systemctl poweroff".
+    # Rechte für www-data: Emotionen nach /tmp/lcd0, nur "systemctl poweroff" und "xgo-ruhe on|off".
     usermod -aG video www-data
-    if visudo -cf deploy/sudoers-xgonav-poweroff >/dev/null; then
-        installiere deploy/sudoers-xgonav-poweroff /etc/sudoers.d/xgonav-poweroff 0440
-        visudo -c >/dev/null
-    else
-        warnung "deploy/sudoers-xgonav-poweroff ist ungültig – nicht installiert."
-    fi
+    installiere deploy/xgo-ruhe /usr/local/sbin/xgo-ruhe 0755
+    for regel in poweroff ruhe; do
+        if visudo -cf "deploy/sudoers-xgonav-$regel" >/dev/null; then
+            installiere "deploy/sudoers-xgonav-$regel" "/etc/sudoers.d/xgonav-$regel" 0440
+            visudo -c >/dev/null
+        else
+            warnung "deploy/sudoers-xgonav-$regel ist ungültig – nicht installiert."
+        fi
+    done
 
     nginx -t
     systemctl restart php8.2-fpm nginx

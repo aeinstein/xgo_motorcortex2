@@ -15,8 +15,8 @@
 
 | Area | Content |
 |---|---|
-| Header (sticky) | host, connection, mode, state (balancing/lying), battery (green ≥ 40 %, yellow ≥ 20 %, red < 20 %), pipeline, WLAN (signal dBm: green ≥ −60, yellow ≥ −70, red below; ↓/↑ kB/s of `wlan0`), **STOPP** |
-| Left | camera image (WebSocket), mode selector (Idle · Hand · Follow · Explore · Approach · Zum Start) + target class, pipeline card with start/stop and status tiles, raw status JSON |
+| Header (sticky) | host, connection, mode, state (balancing/lying), battery (green ≥ 40 %, yellow ≥ 20 %, red < 20 %), pipeline, recording (only while switched on), WLAN (signal dBm: green ≥ −60, yellow ≥ −70, red below; ↓/↑ kB/s of `wlan0`), **Ruhe**, **STOPP** |
+| Left | camera image (WebSocket), mode selector (Idle · Hand · Follow · Explore · Approach · Zum Start) + target class, pipeline card with start/stop, Aufzeichnen button and status tiles, raw status JSON |
 | Lage (open by default, right column top) | 3D model of the Rider rotated by roll, pitch, yaw from `imu_log`: CAD model `web/rider-model.bin` via WebGL, legs follow the `height`/`roll` setpoints through the linkage, smoothed ~0.33 s, at minimum while state = 254 (sliders keep their value), see limitations; wheels turn by the encoder ticks from `wheels_log` (1024/rev, `sys` param `wsince`, CAD model only) (built by `tools/step_to_model.py` from `docs/Rider-Pi.STEP`, loaded when Verlauf is first opened); without WebGL or the file, simple boxes on canvas 2D; fixed compass ring on the ground (0° = heading at ESP32 start, + = left), blue line = body forward direction; values below. Samples (50 Hz) replayed smoothly ~0.3 s behind; rotation about the wheel axle. Drag (mouse/touch) to orbit the view (elevation 5–85°), double-click resets; view kept in `localStorage` `xgonav.lage3d`; live (5 s buffer, memory); open/closed kept in `localStorage` `xgonav.lage`. Controls: vertical *Kamerahöhe* slider beside the model (shows the camera height the floor geometry uses, in mm, from `cam_h_gerade`, including the × 0.921 correction, so about 8 % below a folding-rule reading; writes u8 61–205, u8 in the tooltip; shows `u8 …` until xgonav has answered once), roll −20..20° below |
 | Fahren | D-pad, speed 5–100 %, Aufstehen (arm, 255), Neu ausrichten (leveling pulse), Absetzen (disarm, 254) |
 | Raumkarte | room map PNG, view 3/6/10/16 m; mouse: drag to pan, wheel to zoom about the pointer (1 m..`grid.size_m`), double-click recentres on the Rider and follows again (touch: page scrolls, no pan); Start hier (start = pose), Speichern, reset, pose line with distance to start |
@@ -64,6 +64,8 @@ GET only for `status` and `sys`; all commands POST. Parameters are validated; in
 | `POST ?a=mode&name=..&target=..` | xgonav `/mode` | name ∈ idle, manual, follow, explore, approach, home, patrol, pet; target `[a-z ]{1,30}` |
 | `POST ?a=stop` | xgonav `/stop` | |
 | `POST ?a=pipeline&on=0\|1` | xgonav `/pipeline` | |
+| `POST ?a=ruhe&on=0\|1` | xgonav `/ruhe` + `sudo -n /usr/local/sbin/xgo-ruhe on\|off` | always 200; JSON `ok`, `ruhe`, `xgonav`, `system`, `fehler` (both parts are tried even if one fails) |
+| `POST ?a=record&on=0\|1` | xgonav `/record` | |
 | `POST ?a=ausrichten` | xgonav `/level` | 409 if not balancing |
 | `POST ?a=drive&v=..&w=..` | xgonav `/drive` | −1..1; mode `manual` only |
 | `POST ?a=exposure&us=..` | xgonav `/exposure` | 0 = auto, 100..33333 (checked by xgonav) |
@@ -97,7 +99,9 @@ xgonav unreachable → HTTP 502 `xgonav nicht erreichbar`. Exposure/gain changes
 | GET | `/map.png?px=480&view=6[&cx=&cy=]` | room map; px 120..960, view 1..`grid.size_m`; centre `cx`,`cy` in map metres (both or neither; default Rider pose; clamped to ±`grid.size_m`); header `X-Map-View: cx,cy,view,size`; 404 if no map |
 | POST | `/mode?name=..&target=..` | 400 unknown mode, 409 not allowed |
 | POST | `/stop` | standstill, mode idle |
-| POST | `/pipeline?on=0\|1` | stop/start image processing |
+| POST | `/pipeline?on=0\|1` | stop/start image processing; 409 in sleep mode |
+| POST | `/ruhe?on=0\|1` | sleep mode on/off; `/status` field `ruhe` |
+| POST | `/record?on=0\|1` | switch raw recording; `/status` field `aufzeichnung`: `an`, `laeuft`, `ordner`, `bilder`, `fehler` |
 | POST | `/level` | leveling pulse (roll 0, 3 s `roll_balance`); 409 if not balancing |
 | POST | `/drive?v=..&w=..` | 409 if not mode `manual` |
 | POST | `/exposure?us=..`, `/gain?g=..` | 400 if out of range |
@@ -130,6 +134,34 @@ Replaced MJPEG: on weak Wi-Fi, TCP buffers queued up to 20 s of delay.
 `POST /pipeline?on=0`: camera stopped, no image processing, standstill, mode idle. CM4 CPU of the
 service ~340 % → ~4 %. Web stays reachable. After start: drives only once a mode is chosen.
 With full processing, the charging dock current is insufficient to charge.
+
+## Sleep mode (Ruhe)
+
+Header button **Ruhe** (with confirmation). Only the web UI wakes it (**Wecken**).
+
+| Part | On | Wake |
+|---|---|---|
+| Rider | set down (action 254) if balancing | stays lying |
+| xgonav | pipeline off, mode idle, raw recording off; `imu`, `wheels` threads idle; `robot` thread reads state/battery every `ruhe.tick_s` (1 s), no keepalive; no LCD, no emotions, no WebSocket re-encode; pipeline and modes other than idle → 409 | threads resume; pipeline stays off |
+| Driver (`settings/`) | `imu_hz`, `imu_stream_hz`, `wheel_hz` → 0, `sleep_ms_on_loop` → `ruhe.sleep_ms_on_loop` (1000); old values kept in memory | old values written back |
+| CPU (`xgo-ruhe`, root) | governor saved to `/run/xgo-ruhe.gov`, all cores `powersave` | saved governor (fallback `ondemand`) |
+| Display (`xgo-ruhe`) | SIGUSR1 → `st7789_server`: DISPOFF + SLPIN, frames discarded | SIGUSR2: SLPOUT + DISPON, next frame redraws |
+| Page | cover with Wecken + battery; WebSocket closed, no `sys`/map polling, `status` every 5 s | normal polling |
+
+- Backlight (GPIO0 per `constants.h`) is not switched; untested.
+- The ESP32 keeps running (control loop, BLE, amber LEDs).
+- If xgonav restarts during sleep mode, the governor stays `powersave` until **Ruhe** + **Wecken**.
+
+## Raw recording (`xgonav/rawrec.py`)
+
+| Item | Value |
+|---|---|
+| Writes | JPEG (quality 92) + `meta.jsonl` per frame, format for `tools/replay_raw.py` and `tools/floornet/` |
+| Target | `output.record_dir/YYYYMMDD-HHMMSS` (default `~/fahrt`, as service user) |
+| Condition | switch on, state = balancing, pipeline running; only frames newer than the start |
+| Set down | closes the recording; switch stays on, next stand-up starts a new subdirectory, no empty directories |
+| Off by itself | service restart; free space < `output.record_min_free_mb` or write error (reason shown next to the button) |
+| Cost on the Pi | off: no thread. On, lying: 5 attribute reads/s. Recording: one JPEG per frame in its own thread on `render_cpus`, never in the main loop; frames are skipped if it falls behind (gaps in `idx`) |
 
 ## Overlay colours
 

@@ -22,7 +22,7 @@ Unknown section or key in TOML → `KeyError` at load. New parameters go into th
 | `--web-port N` | `output.web_port` (0 = off) |
 | `--no-lcd` | `output.lcd_fifo = ""` |
 | `--record FILE.mp4` | record overlay video |
-| `--record-raw DIR` | raw JPEGs + `meta.jsonl` (for `tools/replay_raw.py`), each start in a new subdirectory `DIR/YYYYMMDD-HHMMSS` |
+| `--record-raw DIR` | raw recording switched on from the start, to `DIR` instead of `output.record_dir` (same as the web button, see `docs/web-interface.md`): JPEGs + `meta.jsonl` (for `tools/replay_raw.py`), only while balancing, each recording in a new subdirectory `DIR/YYYYMMDD-HHMMSS` |
 | `--duration S` | exit after S seconds |
 | `--fast` | video file as fast as possible |
 | `-v` | debug log |
@@ -142,6 +142,7 @@ Default = `config.py`. RiderPi = `deploy/config.example.toml` (blank = default).
 | `restart_hold_s` | 1.0 | | relearn after pipeline start, standing up, exposure/gain change |
 | `method` | `farbe` | `kanten` | floor boundary: `farbe` = color histogram; `kanten` = first step edge from the bottom with a differing patch above (uncorrected image, insensitive to shading and gray-on-gray walls); `beide` = `kanten`, color model where no edge is found |
 | `shadow_net` | `""` | `""` | FloorNet weights (`tools/floornet/export.py`, e.g. `models/floornet.bin`). Runs in the freespace thread (needs `threaded = true`) and is drawn in the overlay in magenta; makes no decisions. Off if the C++ core is missing or its self-test fails |
+| `primary` | `"method"` | `"method"` | Who decides. `"net"`: FloorNet supplies `columns` and `sectors` for maps and control, `method` keeps running in the shadow and stays in the overlay (thin yellow). Needs `shadow_net` and `threaded`. If the network is missing, fails or returns invalid rows, `method` decides again. `/status` `fs_src` shows the source. Not yet driven |
 | `edge_thin` / `edge_k` | true / 3 | | remove thin lines (joints) first; rows per side of the step |
 | `edge_chroma_w` | 2.0 | | weight of LAB a/b vs. L |
 | `edge_step_thr` / `edge_seg_thr` | 35 / 28 | | min step; min deviation of the patch above (min obstacle height) from the floor below |
@@ -179,7 +180,7 @@ Replay of three evening drives (`tools/replay_raw.py`, 2026-11-04), false alarms
 | `height_cruise_mm` / `height_search_mm` / `height_fast_mm` | 85 / 115 / 70 | 85 / 100 / 80 |
 
 ### `[output]`
-`web_host` 127.0.0.1, `web_port` 8088 (0 = off), `web_fps` 10, `lcd_fifo` `/tmp/lcd0` ("" = off), `lcd_fps` 15.
+`web_host` 127.0.0.1, `web_port` 8088 (0 = off), `web_fps` 10, `lcd_fifo` `/tmp/lcd0` ("" = off), `lcd_fps` 15, `record_dir` `~/fahrt` (raw recording), `record_min_free_mb` 500 (below: recording switches itself off).
 
 ### `[emotion]`
 `enabled` true, `dir` `/opt/xgonav/emotions`, `fifo` `/tmp/lcd0`, `gap_s` 5, `lost_s` 2, `battery_low` 20 %, `battery_repeat_s` 300.
@@ -204,6 +205,12 @@ All keys with comments: `PetCfg` in `xgonav/config.py`.
 | `doze_s`, `timeout_s` | 180, 600 | nobody around: doze; set down and `idle` |
 | `gaze_dir` | `/opt/xgonav/eyes_gaze` | eye atlas |
 
+### `[ruhe]` (sleep mode, see [web-interface.md](web-interface.md#sleep-mode-ruhe))
+| Key | Default | Meaning |
+|---|---|---|
+| `tick_s` | 1.0 | main loop and `robot` thread wake-up period in sleep mode |
+| `sleep_ms_on_loop` | 1000 | driver main loop period in sleep mode (normally 200) |
+
 ### `[odom]`
 | Key | Default | RiderPi |
 |---|---|---|
@@ -224,6 +231,7 @@ All keys with comments: `PetCfg` in `xgonav/config.py`.
 | `confirm_dr_m` / `confirm_cells` | 0 (off) / 2; RiderPi 0.2: a hit counts only once the same spot (± cells) was hit from ranges at least this far apart; until then it is a candidate (orange in `/map.png`). Reflections in a glossy floor and seams move with the Rider and are never confirmed; turning on the spot alone confirms nothing |
 | `free_range_m` | 1.5 (free rays up to here); RiderPi 1.1 |
 | `row_bias` | 1.5 working rows (+ = boundary farther, simulator); RiderPi −1.0 (tape at 0.48 m: boundary ~1 row above the edge) |
+| `net_row_bias` | 0: the same when FloorNet decides (`[freespace] primary = "net"`); trained on hand lines, not on `kanten`; not measured at a wall base |
 | `column_step` | 2 |
 | `l_free` / `l_occ` | -0.4 / 0.5 (two hits to `l_show`) |
 | `l_min` / `l_max` / `l_show` | -3.0 / 3.5 / 0.7 |

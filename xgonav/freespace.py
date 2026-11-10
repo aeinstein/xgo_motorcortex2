@@ -46,8 +46,12 @@ class FreeSpace:
     # streuen um Dezimeter (Nicken ±3° bei 2,5 Hz). None = nicht bekannt (Tests, alte Aufrufer).
     pitch_dev: float | None = None
     pose: tuple | None = None
-    # FloorNet im Schattenbetrieb: Grenzzeile je Netzspalte (Vollbild). Geht in keine Entscheidung ein.
+    # FloorNet: Grenzzeile je Netzspalte (Vollbild). Geht nur mit src = "net" in Entscheidungen ein.
     net_rows: np.ndarray | None = None
+    # Woher columns und sectors stammen: "method" (Verfahren aus der Konfig) oder "net" (FloorNet).
+    src: str = "method"
+    # Bei src = "net": die Grenze des Verfahrens, nur zum Ansehen.
+    shadow_columns: np.ndarray | None = None
 
     @property
     def center(self) -> float:
@@ -55,6 +59,14 @@ class FreeSpace:
             return 1.0
         n = len(self.sectors)
         return min(self.sectors[n // 2 - (n % 2 == 0): n // 2 + 1])
+
+
+def net_to_columns(rows: np.ndarray, horizon: float, H: int, W: int, scale: float) -> np.ndarray:
+    """Grenzzeilen des Netzes (Vollbild) -> FreeSpace.columns (W Spalten, 0 = direkt vor uns, 1 = bis zum Horizont).
+    Umkehrung von Zeile = H - Wert * (H - Horizont). Jede Spalte nimmt die Netzspalte, in der sie liegt: Glätten
+    würde Grenzen erfinden."""
+    idx = ((np.arange(W) + 0.5) * len(rows) / W).astype(int)
+    return np.clip((H - np.asarray(rows, np.float32)[idx] / scale) / max(1.0, H - horizon), 0.0, 1.0).astype(np.float32)
 
 
 def _p20(a: np.ndarray) -> float:
@@ -669,6 +681,16 @@ class FreeSpaceEstimator:
         out[hit] = np.minimum(out[hit], val[hit])
         return out, int(hit.sum())
 
+    def adopt_net(self, fs: FreeSpace, rows: np.ndarray) -> None:
+        """FloorNet entscheidet: columns und sectors aus seinen Zeilen, das Verfahren bleibt als Schatten erhalten."""
+        fs.shadow_columns = fs.columns
+        fs.columns = net_to_columns(rows, fs.horizon_row, self.H, self.W, self.scale)
+        n = len(fs.sectors)
+        ex = np.linspace(0, self.W, n + 1).astype(int)
+        fs.sectors = [_p20(fs.columns[ex[i]:ex[i + 1]]) for i in range(n)]
+        fs.known_from = None
+        fs.src = "net"
+
     def block_boxes(self, fs: FreeSpace, boxes) -> None:
         """Erkannte Objekte als Hindernisse eintragen (Unterkante = Fußpunkt)."""
         if fs.columns is None:
@@ -698,9 +720,10 @@ class FreeSpaceWorker:
     Konstanten (W, H, scale) des Schätzers darf die Hauptschleife weiter nutzen, diag wird
     je Lauf durch ein neues dict ersetzt (nie verändert)."""
 
-    def __init__(self, est: FreeSpaceEstimator, cpus=None, net=None):
+    def __init__(self, est: FreeSpaceEstimator, cpus=None, net=None, net_primary: bool = False):
         self.est = est
-        self.net = net                     # FloorNet im Schattenbetrieb oder None
+        self.net = net                     # FloorNet oder None
+        self.net_primary = net_primary     # True: Das Netz entscheidet, das Verfahren rechnet im Schatten
         self.net_ms = 0.0
         self.cpus = list(cpus or [])
         self._cond = threading.Condition()
@@ -757,20 +780,25 @@ class FreeSpaceWorker:
             ms = (time.perf_counter() - t0) * 1000
             self.ms = 0.8 * self.ms + 0.2 * ms if self.ms else ms
             if fs is not None and self.net is not None:
-                self._shadow(fs, job[0])
+                self._run_net(fs, job[0])
             self.busy = False
             if fs is not None:
                 with self._cond:
                     self._result = fs
 
-    def _shadow(self, fs: FreeSpace, bgr) -> None:
-        """FloorNet mitrechnen. Ein Fehler darf das Bodenmodell nicht treffen: Dann ist das Netz aus."""
+    def _run_net(self, fs: FreeSpace, bgr) -> None:
+        """FloorNet rechnen. Ein Fehler darf das Bodenmodell nicht treffen: Dann ist das Netz aus, das Verfahren entscheidet."""
         import time
         t0 = time.perf_counter()
         try:
-            fs.net_rows = self.net.run(bgr)
+            rows = self.net.run(bgr)
+            if self.net_primary:
+                if not np.isfinite(rows).all():
+                    raise ValueError("FloorNet liefert ungültige Zeilen")
+                self.est.adopt_net(fs, rows)
+            fs.net_rows = rows
         except Exception:
-            log.exception("FloorNet fehlgeschlagen, Schattenbetrieb aus")
+            log.exception("FloorNet fehlgeschlagen: aus, das Verfahren entscheidet")
             self.net = None
             return
         ms = (time.perf_counter() - t0) * 1000

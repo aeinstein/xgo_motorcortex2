@@ -128,13 +128,21 @@ class App:
         self._hz_ok = collections.deque(maxlen=100)   # Ego-Motion ok je Bild
         self._hz_info: dict | None = None
         self.fse = FreeSpaceEstimator(cfg.freespace, size, self.geo) if cfg.freespace.enabled else None
+        if cfg.freespace.primary not in ("method", "net"):
+            raise ValueError("freespace.primary muss method oder net sein, nicht %r" % cfg.freespace.primary)
         shadow = None
         if self.fse is not None and cfg.freespace.shadow_net:
             if cfg.freespace.threaded:
                 shadow = FloorNet.load(cfg.freespace.shadow_net)
             else:
-                log.warning("[floornet] Schattenbetrieb braucht freespace.threaded: aus")
-        self.fs_worker = FreeSpaceWorker(self.fse, cfg.cpu.freespace_cpus, shadow) \
+                log.warning("[floornet] braucht freespace.threaded: aus")
+        net_primary = cfg.freespace.primary == "net" and shadow is not None
+        if cfg.freespace.primary == "net":
+            if net_primary:
+                log.info("[floornet] Netz entscheidet, Verfahren %s rechnet im Schatten", cfg.freespace.method)
+            elif self.fse is not None:
+                log.warning("[floornet] primary = net, aber kein Netz: Verfahren %s entscheidet", cfg.freespace.method)
+        self.fs_worker = FreeSpaceWorker(self.fse, cfg.cpu.freespace_cpus, shadow, net_primary) \
             if self.fse is not None and cfg.freespace.threaded else None
         m = cfg.map
         self.lmap = LocalMap(self.geo, self.fse.W, self.fse.H, max_age_s=m.max_age_s, confirm=m.confirm,
@@ -181,6 +189,8 @@ class App:
         self._loop_hist = collections.deque(maxlen=250)   # letzte Schleifenzeiten (ms): p95/max
         self._seg_hist = collections.deque(maxlen=250)    # je Bild: Abschnittszeiten, siehe loop_breakdown()
         self.emotions = None           # emotion.Emotions, von __main__ gesetzt (nur am Rider)
+        self.rawrec = None             # rawrec.RawRecorder, von __main__ gesetzt
+        self._ruhe_saved: dict[str, str] | None = None   # Ruhemodus: alte Treiber-Einstellungen, sonst None
 
     # ------------------------------------------------------------------
     # Diese Modi fahren auf Freiraum zu und verlassen sich auf Bodenmodell + Merkkarte.
@@ -237,6 +247,8 @@ class App:
         """Bildverarbeitung starten/stoppen. Beim Stoppen: Stillstand und Modus idle;
         nach dem Starten bleibt der Rider stehen, bis ein Modus gewählt wird."""
         if on:
+            if self.ruhe:
+                raise ModeNotAllowed("Ruhemodus: erst wecken")
             self.src.resume()
             self.reset_floor(hold_s=self.cfg.freespace.restart_hold_s)
             log.info("Bildverarbeitung gestartet")
@@ -246,6 +258,51 @@ class App:
             self.src.pause()
             self.robot.stop()
             log.info("Bildverarbeitung gestoppt")
+
+    # Treiber-Einstellungen, die der Ruhemodus abschaltet: Wert im Ruhemodus (None = aus RuheCfg)
+    RUHE_SETTINGS = {"imu_hz": 0, "imu_stream_hz": 0, "wheel_hz": 0, "sleep_ms_on_loop": None}
+
+    @property
+    def ruhe(self) -> bool:
+        return self._ruhe_saved is not None
+
+    def set_ruhe(self, on: bool) -> None:
+        """Ruhemodus: absetzen, Bildverarbeitung aus, Treiber fragt nichts mehr ab, alle Threads wachen nur noch
+        selten auf. Wecken stellt nur die Abfragen wieder her; Bildverarbeitung bleibt aus, er bleibt liegen.
+        CPU-Takt und Display schaltet deploy/xgo-ruhe (root, über api.php)."""
+        if on == self.ruhe:
+            return
+        if on:
+            self.set_pipeline(False)
+            if self.robot.state.balancing:
+                self.robot.set_down()
+            if self.rawrec is not None:
+                try:
+                    self.rawrec.schalten(False)
+                except Exception as e:
+                    log.warning("Ruhe: Aufzeichnung nicht gestoppt: %s", e)
+            saved = {}
+            for name, val in self.RUHE_SETTINGS.items():
+                old = self.robot.read_setting(name)
+                if old is None or not old.lstrip("-").isdigit():
+                    continue                      # Treiber kennt die Einstellung nicht
+                saved[name] = old
+                self.robot.write_setting(name, self.cfg.ruhe.sleep_ms_on_loop if val is None else val)
+            self._ruhe_saved = saved
+            for src in (self.imu, self.wheels):
+                if src is not None:
+                    src.paused = True
+            self.robot.ruhe_tick_s = self.cfg.ruhe.tick_s
+            log.info("Ruhemodus an (Treiber: %s)", ", ".join(f"{k} {v}->aus" for k, v in saved.items()) or "-")
+        else:
+            saved, self._ruhe_saved = self._ruhe_saved, None
+            self.robot.ruhe_tick_s = None
+            for name, old in saved.items():
+                self.robot.write_setting(name, old)
+            for src in (self.imu, self.wheels):
+                if src is not None:
+                    src.paused = False
+            log.info("Ruhemodus aus, Bildverarbeitung bleibt aus")
 
     def reset_floor(self, hold_s: float = 0.0) -> None:
         """Bodenmodell neu lernen lassen; hold_s: so lange vorher kein Bodenmodell rechnen
@@ -277,6 +334,8 @@ class App:
         if name == "patrol":
             self.gridmap.lock()
             self.gridmap.relocate_to_start()
+        if self.ruhe and name != "idle":
+            raise ModeNotAllowed("Ruhemodus: erst wecken")
         if not self.pipeline_on and name not in self.NO_CAMERA:
             raise ModeNotAllowed(f"Modus {name} braucht laufende Bildverarbeitung")
         with self._mode_lock:
@@ -380,6 +439,10 @@ class App:
         """Hauptschleife bei gestoppter Bildverarbeitung: Moduswechsel sofort übernehmen;
         im Modus manual mit control_hz regeln (ohne Kamera), sonst Stillstand."""
         self._apply_pending_mode()
+        if self.ruhe:
+            self._cmd = Command(0.0, 0.0, None, "Ruhemodus")
+            time.sleep(self.cfg.ruhe.tick_s)
+            return
         self._paused_odom()
         if self.behavior.name not in self.NO_CAMERA:
             self._pet_leave()
@@ -547,6 +610,7 @@ class App:
                                "pet": self.behavior.info() if self.behavior.name == "pet" else None,
                                "fs_ms": round(self.fs_worker.ms, 1) if self.fs_worker is not None else None,
                                "net_ms": round(self.fs_worker.net_ms, 1) if self.fs_worker is not None and self.fs_worker.net is not None else None,
+                               "fs_src": self._free.src if self._free is not None else None,
                                "grid": None if self.gridmap is None else {
                                    **self.gridmap.stats(),
                                    "ms": round(self.grid_worker.ms, 1) if self.grid_worker else None,
@@ -742,7 +806,7 @@ class App:
             log.error("pet: Zurückstellen fehlgeschlagen: %s", e)
 
     def _emotion_tick(self, person: bool | None) -> None:
-        if self.emotions is not None:
+        if self.emotions is not None and not self.ruhe:
             try:
                 self.emotions.update(time.monotonic(), self.behavior.name, person, self.robot.state.battery)
             except Exception as e:                  # Anzeige darf die Regelung nie stören
@@ -937,9 +1001,11 @@ def render(snap: Snapshot, text: bool = True) -> np.ndarray | None:
         sc = W / len(fs.columns)
         span = (fs.mask.shape[0] - fs.horizon_row)
         fh = fs.mask.shape[0]
-        for a, b in column_runs(fs.columns):         # unbekannte Spalten (NaN): Lücke
-            pts = [(int(i * sc), int((fh - fs.columns[i] * span) * H / fh)) for i in range(a, b)]
-            cv2.polylines(img, [np.array(pts, np.int32)], False, (0, 255, 255), 2)
+        # Gelb bleibt das Verfahren, auch wenn das Netz entscheidet (dann dünn, die Netzlinie ist unten magenta)
+        cols = fs.shadow_columns if fs.shadow_columns is not None else fs.columns
+        for a, b in column_runs(cols):               # unbekannte Spalten (NaN): Lücke
+            pts = [(int(i * sc), int((fh - cols[i] * span) * H / fh)) for i in range(a, b)]
+            cv2.polylines(img, [np.array(pts, np.int32)], False, (0, 255, 255), 1 if fs.shadow_columns is not None else 2)
         hy = int(fs.horizon_row * H / fh)
         cv2.line(img, (0, hy), (W, hy), (255, 255, 0), 1)
         n = len(fs.sectors)
@@ -947,7 +1013,7 @@ def render(snap: Snapshot, text: bool = True) -> np.ndarray | None:
             x0, x1 = int(i * W / n), int((i + 1) * W / n)
             col = (0, int(255 * s), int(255 * (1 - s)))
             cv2.rectangle(img, (x0 + 2, H - 8), (x1 - 2, H - 2), col, -1)
-    if fs is not None and fs.net_rows is not None:       # FloorNet im Schattenbetrieb
+    if fs is not None and fs.net_rows is not None:       # FloorNet
         n = len(fs.net_rows)
         pts = [(int((i + 0.5) * W / n), int(r)) for i, r in enumerate(fs.net_rows)]
         cv2.polylines(img, [np.array(pts, np.int32)], False, (255, 0, 255), 2)

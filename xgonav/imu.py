@@ -41,6 +41,7 @@ class ImuSource:
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self.rate_hz = 0.0
+        self.paused = False             # Ruhemodus: nicht lesen, nur selten aufwachen
         self._cache = None
 
     def start(self) -> bool:
@@ -108,7 +109,11 @@ class ImuSource:
 
     def _run(self) -> None:
         n0, t0 = 0, time.monotonic()
-        while not self._stop.wait(getattr(self.cfg, "poll_s", 0.05)):
+        while not self._stop.wait(1.0 if self.paused else getattr(self.cfg, "poll_s", 0.05)):
+            if self.paused:
+                self.rate_hz = 0.0
+                n0, t0 = 0, time.monotonic()
+                continue
             try:
                 n = self._poll()
             except Exception:

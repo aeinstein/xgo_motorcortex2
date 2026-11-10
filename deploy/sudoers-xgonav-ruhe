@@ -1,0 +1,3 @@
+# Weboberfläche (php-fpm als www-data): Ruhemodus, nur CPU-Takt und Display (deploy/xgo-ruhe).
+# Nach /etc/sudoers.d/xgonav-ruhe, Rechte 0440, vorher mit "visudo -cf <datei>" prüfen.
+www-data ALL=(root) NOPASSWD: /usr/local/sbin/xgo-ruhe on, /usr/local/sbin/xgo-ruhe off

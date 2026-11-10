@@ -60,6 +60,8 @@ $R python3 /root/rider_nav.py zustand
 - Mitschnitt nur, wenn gewünscht: nach dem Aufstehen im Hintergrund
   `$R "nohup python3 /opt/xgonav/tools/record_status.py /tmp/rn-aufnahme-$(date +%H%M%S) 900 > /tmp/rn-aufnahme.log 2>&1 &"`
   (liegt das Werkzeug dort nicht: aus `tools/record_status.py` per scp nach `/root/` und von dort starten).
+- Rohbilder für die Auswertung (`meta.jsonl`, FloorNet) stattdessen über den Knopf „Aufzeichnen“ im Web bzw.
+  `POST /record?on=1|0` (`xgonav/rawrec.py`, schreibt nur balancierend). Nach `ende` wieder ausschalten, wenn gewünscht.
 - **Absetzen beendet die Aufnahme**: `record_status.py` endet selbst, sobald `state` ≠ 1, und startet nicht,
   wenn er liegt. Zweitleser nur über `--neben "…"`. Eigene Mitschnitte genauso an das Absetzen koppeln.
 - Danach Aufnahme per `tar`/scp ins Scratchpad holen, am Rider nur löschen, wenn der Nutzer zustimmt.

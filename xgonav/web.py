@@ -39,7 +39,8 @@ API = {"GET": ["/status", "/ws?nick=1 (WebSocket: Bilder, Bestätigung je Bild; 
                "/frame?after=<idx>&raw=1", "/stream",
                "/map.png?px=480&view=6 (Raumkarte)",
                "/horizon (Horizonttabelle + Stand)"],
-       "POST": ["/mode?name=..&target=..", "/stop", "/pipeline?on=0|1", "/drive?v=..&w=.. (nur Modus manual)",
+       "POST": ["/mode?name=..&target=..", "/stop", "/pipeline?on=0|1", "/ruhe?on=0|1 (Ruhemodus; Wecken startet nichts)", "/record?on=0|1 (Rohaufzeichnung, nur balancierend)",
+                "/drive?v=..&w=.. (nur Modus manual)",
                 "/exposure?us=0|100..33333 (0 = Automatik)", "/gain?g=0|1..63.9 (0 = Automatik)",
                 "/map/reset (Raumkarte leeren, Pose auf 0)", "/level (Beine neu ausrichten, 3 s)",
                 "/horizon/edit?row=.. (Linie einstellen, leer = aus)", "/horizon/cal?row=.. (für diese Höhe speichern)",
@@ -108,7 +109,7 @@ def serve(app: App, host: str, port: int, fps: int, render_cpus=None) -> Threadi
                 return self._send(200, json.dumps({"xgonav": "Schnittstelle, Oberfläche unter /xgonav/ (nginx)", "api": API}).encode())
             if u.path == "/status":
                 s = app.snapshot
-                body = {"mode": app.mode, "pipeline": "läuft" if app.pipeline_on else "gestoppt",
+                body = {"mode": app.mode, "pipeline": "läuft" if app.pipeline_on else "gestoppt", "ruhe": app.ruhe,
                         "status": app._cmd.status if not app.pipeline_on else s.cmd.status, "target": s.cmd.target_id,
                         "cmd": {"v": round(s.sent[0], 3), "w": round(s.sent[1], 3)},
                         "tracks": [{"id": t.id, "cls": t.cls, "conf": round(t.conf, 2),
@@ -144,6 +145,7 @@ def serve(app: App, host: str, port: int, fps: int, render_cpus=None) -> Threadi
                 body["cam_h_gerade"] = [round(x, 4) for x in app.geo.cam_h_line()]
                 body["height_u8"] = None if h is None else app.geo.body_to_u8(h)
                 body["cam_h_mm"] = None if h is None else round(app.geo.cam_h_at(h), 1)
+                body["aufzeichnung"] = None if app.rawrec is None else app.rawrec.status()
                 return self._send(200, json.dumps(body).encode())
             if u.path == "/route":
                 gm = app.gridmap
@@ -184,8 +186,19 @@ def serve(app: App, host: str, port: int, fps: int, render_cpus=None) -> Threadi
                     return self._send(409, b'{"error":"Rider balanciert nicht"}')
                 return self._send(200, b'{"ok":true}')
             if u.path == "/pipeline":
-                app.set_pipeline(q.get("on", ["1"])[0] not in ("0", "false", "aus"))
+                try:
+                    app.set_pipeline(q.get("on", ["1"])[0] not in ("0", "false", "aus"))
+                except ModeNotAllowed as e:
+                    return self._send(409, json.dumps({"error": str(e)}).encode())
                 return self._send(200, json.dumps({"ok": True, "pipeline": app.pipeline_on}).encode())
+            if u.path == "/ruhe":
+                app.set_ruhe(q.get("on", ["1"])[0] not in ("0", "false", "aus"))
+                return self._send(200, json.dumps({"ok": True, "ruhe": app.ruhe}).encode())
+            if u.path == "/record":
+                if app.rawrec is None:
+                    return self._send(404, b'{"error":"keine Aufzeichnung"}')
+                app.rawrec.schalten(q.get("on", ["1"])[0] != "0")
+                return self._send(200, json.dumps({"ok": True, "aufzeichnung": app.rawrec.status()}).encode())
             if u.path == "/drive":
                 try:
                     v, w = float(q.get("v", ["0"])[0]), float(q.get("w", ["0"])[0])
@@ -343,6 +356,8 @@ def serve(app: App, host: str, port: int, fps: int, render_cpus=None) -> Threadi
                         snap = app.snapshot
                     if not app.running:
                         break
+                    if app.ruhe and snap.idx == last:
+                        continue                    # Ruhemodus: kein Bild neu kodieren
                     # bei gestoppter Bildverarbeitung: dasselbe Bild höchstens einmal pro Sekunde
                     img = render(snap, text=False)   # Statuszeilen zeigt die Oberfläche
                     if img is None:

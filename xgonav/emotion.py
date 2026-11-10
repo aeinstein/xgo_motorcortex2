@@ -39,7 +39,7 @@ def active(fifo: str, max_age_s: float = 10.0) -> bool:
 LCD_FRAME_BYTES = 320 * 240 * 2
 
 
-def load_gaze(path: str, bins: int = 7, lids: int = 5) -> dict[tuple[int, int], bytes] | None:
+def load_gaze(path: str, bins: int = 11, lids: int = 5) -> dict[tuple[int, int], bytes] | None:
     """Augen-Atlas aus tools/eyes.py --gaze: {(Blick, Lid): RGB565}. None, wenn etwas fehlt."""
     atlas = {}
     for g in range(bins):

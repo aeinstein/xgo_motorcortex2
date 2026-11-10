@@ -76,6 +76,7 @@ class Robot:
         self._stop_evt = threading.Event()
         self._thread: threading.Thread | None = None
         self.state = RobotState()
+        self.ruhe_tick_s: float | None = None   # Ruhemodus: nur so oft Zustand lesen, nichts schreiben
 
     # ---- öffentliche API -------------------------------------------------
     def start(self) -> None:
@@ -104,6 +105,18 @@ class Robot:
         """Absetzen (Firmware-Aktion 254)."""
         self.stop()
         self._write("action", 254)
+
+    def read_setting(self, name: str) -> str | None:
+        """Treiber-Einstellung /proc/XGORider/settings/<name> lesen; None, wenn es sie nicht gibt."""
+        return self._read_text("settings/" + name)
+
+    def write_setting(self, name: str, value: int | str) -> bool:
+        try:
+            self._write("settings/" + name, value)
+            return True
+        except OSError as e:
+            log.warning("settings/%s nicht gesetzt: %s", name, e)
+            return False
 
     def stand_up(self) -> bool:
         """Aufspringen aus dem Liegen (Firmware-Aktion 253); er rollt dabei ~20 cm vor. Nur vom Modus pet
@@ -166,7 +179,13 @@ class Robot:
     # ---- interne Schleife (50 Hz) ---------------------------------------
     def _loop(self) -> None:
         next_poll = 0.0
-        while not self._stop_evt.wait(0.02):
+        while not self._stop_evt.wait(self.ruhe_tick_s or 0.02):
+            if self.ruhe_tick_s:
+                # Ruhemodus: liegt, kein Keepalive und keine Rampe; Zustand und Akku fürs Web
+                self._poll_state()
+                self._height_tick()
+                self._level_tick(time.monotonic())
+                continue
             now = time.monotonic()
             with self._lock:
                 target = self._target
@@ -258,6 +277,7 @@ class Robot:
 
     # ---- Hardware-Hooks ---------------------------------------------------
     def _setup(self) -> None: ...
+    def _read_text(self, name: str) -> str | None: return None
     def _teardown(self) -> None: ...
     def _write(self, name: str, value: int | str) -> None: raise NotImplementedError
     def _poll_state(self) -> None: ...
@@ -308,6 +328,13 @@ class ProcRobot(Robot):
 
     def _write(self, name: str, value: int | str) -> None:
         self._write_raw(name, str(value))
+
+    def _read_text(self, name: str) -> str | None:
+        try:
+            with open(self._path(name)) as f:
+                return f.read().strip()
+        except OSError:
+            return None
 
     def _read_int(self, name: str) -> int | None:
         try:
@@ -367,9 +394,17 @@ class SimRobot(Robot):
         self._last_t = time.monotonic()
         self._up_at: float | None = None     # Aufspringen läuft, balanciert ab dann
         self.state.mode = 1
+        self.settings: dict[str, str] = {}   # Treiber-Einstellungen (settings/<name>), für Tests vorbelegbar
+
+    def _read_text(self, name: str) -> str | None:
+        if name.startswith("settings/"):
+            return self.settings.get(name[9:])
+        return None
 
     def _write(self, name: str, value: int | str) -> None:
         self.writes.append((time.monotonic(), name, value))
+        if name.startswith("settings/"):
+            self.settings[name[9:]] = str(value)
         if len(self.writes) > 10000:
             del self.writes[:5000]
         if self.log_cmds:

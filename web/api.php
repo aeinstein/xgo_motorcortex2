@@ -19,6 +19,9 @@
  *   POST api.php?a=horizon_delete&h=<mm>      (Eintrag dieser Körperhöhe löschen)
  *   POST api.php?a=stop
  *   POST api.php?a=pipeline&on=0|1
+ *   POST api.php?a=ruhe&on=0|1                (Ruhemodus: xgonav /ruhe + sudo xgo-ruhe on|off für CPU-Takt
+ *                                            und Display; Wecken startet nichts, Rider bleibt liegen)
+ *   POST api.php?a=record&on=0|1              (Rohaufzeichnung; schreibt nur, solange der Rider balanciert)
  *   POST api.php?a=drive&v=-1..1&w=-1..1      (nur Modus manual, alle 0,2 s senden)
  *   POST api.php?a=led&i=0..3&c=%23rrggbb
  *   POST api.php?a=action&n=1..6|253|254|255 (R-1.1.6+Patch: 255 = Arm/aufstehen, 254 = Disarm/Not-Stopp,
@@ -32,6 +35,7 @@
  *   POST api.php?a=pitch_calibration         (Lage: Firmware balanciert im Stand aus und speichert den Trimm)
  *   POST api.php?a=emotion&name=...           (Bildfolge aufs Display)
  *   POST api.php?a=shutdown                   (sudo-Regel: www-data -> systemctl poweroff)
+ *   (sudo-Regel deploy/sudoers-xgonav-ruhe: www-data -> /usr/local/sbin/xgo-ruhe on|off)
  *
  * Fahren geht über xgonav (sonst überschreibt dessen Stillstand die Befehle); LEDs,
  * Aktionen, Höhe, Roll und Kalibrierung schreibt PHP direkt nach /proc/XGORider.
@@ -93,6 +97,29 @@ function xgonav(string $method, string $path): never
         $code = (int)$m[1];
     }
     antwort($code, $body);
+}
+
+// xgonav aufrufen, ohne abzubrechen; HTTP-Code oder 0, wenn xgonav nicht läuft.
+function xgonav_versuch(string $path): int
+{
+    $body = @file_get_contents(XGONAV . $path, false, stream_context_create(['http' => [
+        'method' => 'POST', 'timeout' => 3, 'ignore_errors' => true, 'header' => "Content-Length: 0\r\n",
+    ]]));
+    if ($body === false || !isset($http_response_header[0])
+        || !preg_match('#^HTTP/\S+\s+(\d{3})#', $http_response_header[0], $m)) {
+        return 0;
+    }
+    return (int)$m[1];
+}
+
+// Ruhemodus, root-Teil (CPU-Takt, Display); true bei Erfolg.
+function ruhe_system(bool $an, array &$fehler): bool
+{
+    exec('sudo -n /usr/local/sbin/xgo-ruhe ' . ($an ? 'on' : 'off') . ' 2>&1', $out, $rc);
+    if ($rc !== 0) {
+        $fehler[] = 'xgo-ruhe: ' . implode(' ', $out);
+    }
+    return $rc === 0;
 }
 
 // Messwerte für die Verlaufsanzeige. CPU-Zeiten roh (Jiffies), die Auslastung rechnet der
@@ -248,6 +275,25 @@ switch ($a) {
     case 'pipeline':
         $on = ($_GET['on'] ?? '1') === '0' ? '0' : '1';
         xgonav('POST', '/pipeline?on=' . $on);
+    case 'ruhe':
+        // Einschlafen: erst xgonav (setzt ab, Abfragen aus), dann CPU-Takt runter. Wecken umgekehrt: erst
+        // CPU-Takt hoch. Beides wird versucht, auch wenn ein Teil fehlschlägt (xgonav läuft evtl. nicht).
+        $an = ($_GET['on'] ?? '1') !== '0';
+        $fehler = [];
+        if ($an) {
+            $code = xgonav_versuch('/ruhe?on=1');
+            $sys = ruhe_system(true, $fehler);
+        } else {
+            $sys = ruhe_system(false, $fehler);
+            $code = xgonav_versuch('/ruhe?on=0');
+        }
+        if ($code !== 200) {
+            $fehler[] = $code === 0 ? 'xgonav nicht erreichbar' : "xgonav: HTTP $code";
+        }
+        antwort(200, json_encode(['ok' => $fehler === [], 'ruhe' => $an, 'xgonav' => $code === 200,
+                                  'system' => $sys, 'fehler' => $fehler]));
+    case 'record':
+        xgonav('POST', '/record?on=' . (($_GET['on'] ?? '1') === '0' ? '0' : '1'));
     case 'drive':
         $v = zahl('v', -1, 1);
         $w = zahl('w', -1, 1);

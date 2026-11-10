@@ -266,7 +266,8 @@ class GridMap:
         cols = np.asarray(fs.columns, float)
         idx = np.arange(0, len(cols), max(1, cfg.column_step))     # NaN-Spalten = unbekannt
         v = cols[idx]
-        dist = self.geo.ground_dist_np((self.fh - v * span - cfg.row_bias) * sc, pitch_dev)
+        bias = cfg.net_row_bias if fs.src == "net" else cfg.row_bias
+        dist = self.geo.ground_dist_np((self.fh - v * span - bias) * sc, pitch_dev)
         start = np.full(len(idx), cfg.min_range_m)
         if fs.known_from is not None:
             kf = np.asarray(fs.known_from, float)[idx]

@@ -45,7 +45,7 @@ Stylized eyes only, one color on black (antialiased), same output format as `emo
 ```
 python tools/eyes.py OUTDIR [--color R,G,B] [--only NAME]... [--png] [--preview DIR]
 python tools/eyes.py --list
-python tools/eyes.py --gaze DIR      # eye atlas for mode pet: 7 gaze directions x 5 lid positions, 35 frames, 5.4 MB
+python tools/eyes.py --gaze DIR      # eye atlas for mode pet: 11 gaze positions (10 steps) x 5 lid positions, 55 frames, 8.4 MB
 ```
 
 | Item | Value |
@@ -81,6 +81,8 @@ python tools/eyes.py --gaze DIR      # eye atlas for mode pet: 7 gaze directions
 |---|---|---|
 | `cute` | boot | `rc.local` |
 | `sleep` | shutdown from web UI (before `poweroff`, timeout 10 s) | `api.php` |
+
+Sleep mode (web **Ruhe**): `st7789_server` gets SIGUSR1 (DISPOFF + SLPIN, frames discarded), SIGUSR2 wakes it; xgonav writes nothing and plays no emotions meanwhile.
 | `surprised` | person appears after ≥ `gap_s` (5 s) without person | `xgonav/emotion.py` |
 | `doubt` | mode `follow`, no person for `lost_s` (2 s); once per loss | `xgonav/emotion.py` |
 | `embarrassed` | other modes, no person for `lost_s`; once per loss | `xgonav/emotion.py` |
@@ -122,7 +124,7 @@ Started by hand (web UI „Haustier“, `--mode pet`). Not run on the Rider yet,
 | dog within 2 m (priority over all) | keeps looking, `grievance`, whimper, duck, optional jerk back |
 | dog < 0.5 m or hard scare (with `faint`) | faint, see below |
 
-Eyes follow the bearing of the target and blink (atlas, replaces the overlay on the LCD; written only when changed). Priority: dog, cat, person. Trust (0..1) shifts thresholds; repeated scares weaken (habituation).
+Eyes follow the bearing of the target, gliding one position per control step, and blink through all lid positions in 0.4 s (atlas, neutral eye style without pupils, replaces the overlay on the LCD; written only when changed, checked at ~33 Hz). Priority: dog, cat, person. Trust (0..1) shifts thresholds; repeated scares weaken (habituation).
 
 ### Faint
 

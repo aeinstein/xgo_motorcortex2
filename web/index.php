@@ -77,6 +77,14 @@ button:disabled{cursor:not-allowed;opacity:.5}
 button.aktiv{border-color:var(--akzent);background:#18324f;color:#fff}
 #stop{background:var(--gefahr);border-color:var(--gefahr);color:#fff;font-weight:700;letter-spacing:.06em;padding:8px 22px;font-size:15px}
 #stop:active{background:#b82e33}
+/* --- Ruhemodus: deckt die Seite ab, nur Wecken; die Seite fragt dann nur noch alle 5 s den Status ab */
+#ruhe-knopf{padding:8px 12px;font-size:13px}
+#ruhe-decke{position:fixed;inset:0;z-index:50;display:none;flex-direction:column;align-items:center;justify-content:center;
+  gap:14px;background:rgba(10,11,13,.94);text-align:center;padding:16px}
+#ruhe-decke.an{display:flex}
+#ruhe-decke h2{margin:0;font-size:22px;font-weight:600}
+#ruhe-decke p{margin:0;color:var(--leise);font-size:14px;max-width:420px}
+#ruhe-decke button{padding:12px 34px;font-size:17px;font-weight:600}
 .gefahr{border-color:#6b2a2d;color:#ffb3b5}
 .knoepfe{display:flex;flex-wrap:wrap;gap:6px}
 input,select{font:inherit;color:var(--text);background:var(--karte2);border:1px solid var(--rand2);border-radius:6px;padding:5px 8px}
@@ -192,10 +200,18 @@ details.extras[open]>summary{margin-bottom:8px}
     <span class="pille" id="p-zustand"><span class="lang">Zustand </span><b>-</b></span>
     <span class="pille" id="p-akku"><span class="lang">Akku </span><b>-</b></span>
     <span class="pille" id="p-pip"><span class="lang">Bildverarb. </span><b>-</b></span>
+    <span class="pille" id="p-rec" style="display:none" title="Rohaufzeichnung: schreibt nur, solange der Rider balanciert"><span class="lang">Aufzeichnung </span><b>-</b></span>
     <span class="pille" id="p-wlan" title="WLAN-Empfang (Pegel) und Durchsatz des Riders: ↓ empfangen, ↑ gesendet"><span class="lang">WLAN </span><b>-</b></span>
   </div>
+  <button id="ruhe-knopf" onclick="ruheSchalten(true)" title="Ruhemodus: absetzen, Bildverarbeitung aus, Abfragen aus, CPU-Takt runter, Display aus">Ruhe</button>
   <button id="stop" onclick="befehl('stop')" title="Stillstand, Modus idle">STOPP</button>
 </header>
+<div id="ruhe-decke">
+  <h2>Ruhemodus</h2>
+  <p>Rider liegt, Bildverarbeitung, Abfragen und Display sind aus, CPU-Takt gesenkt. Akku <b id="ruhe-akku">-</b></p>
+  <p id="ruhe-fehler"></p>
+  <button onclick="ruheSchalten(false)" title="CPU-Takt und Abfragen wieder hoch; Bildverarbeitung bleibt aus, Rider bleibt liegen">Wecken</button>
+</div>
 <div id="meldung"></div>
 
 <main>
@@ -217,7 +233,9 @@ details.extras[open]>summary{margin-bottom:8px}
     </div>
   </div>
   <div class="karte">
-    <div class="kopf"><h2>Bildverarbeitung</h2><button id="pip" onclick="pipelineUmschalten()">…</button></div>
+    <div class="kopf"><h2>Bildverarbeitung</h2><span class="leise" id="rec-text"></span>
+      <button id="rec" onclick="aufzeichnungUmschalten()" title="Rohbilder und Metadaten am Rider speichern. Schreibt nur, solange er balanciert; Absetzen beendet die Aufnahme, jedes Aufstehen beginnt eine neue.">Aufzeichnen</button>
+      <button id="pip" onclick="pipelineUmschalten()">…</button></div>
     <div class="kacheln" id="kurz"></div>
     <details class="roh"><summary>Status (roh)</summary><pre id="roh"></pre></details>
   </div>
@@ -479,7 +497,35 @@ function bildVerschieben() {
   const b = $('bild'), H = b.naturalHeight || 480;
   b.style.transform = bildStabil && bildDy ? 'translateY(' + (bildDy / H * 100).toFixed(3) + '%)' : '';
 }
+// Ruhemodus: kein Bild, keine Karte, keine Lage; Status nur alle 5 s (setInterval unten)
+let ruhe = false, statusZeit = 0, bildWs = null;
+function ruheZeigen(an, akku) {
+  $('ruhe-akku').textContent = akku != null ? akku + ' %' : '-';
+  if (an === ruhe) return;
+  ruhe = an;
+  $('ruhe-decke').classList.toggle('an', an);
+  if (an) {
+    if (bildWs) bildWs.close();
+  } else {
+    $('ruhe-fehler').textContent = '';
+    if (!bildWs) bildVerbinden();
+    karteHolen();
+    sysHolen();
+  }
+}
+async function ruheSchalten(an) {
+  if (an && !confirm('Ruhemodus? Der Rider setzt sich ab, Bildverarbeitung aus, CPU-Takt runter.')) return;
+  try {
+    const r = await fetch('api.php?a=ruhe&on=' + (an ? '1' : '0'), {method: 'POST'});
+    const j = await r.json();
+    const f = j.error || (j.fehler && j.fehler.join(' · ')) || '';
+    zeige(f);
+    $('ruhe-fehler').textContent = f;
+  } catch (e) { zeige('keine Verbindung'); }
+  status();
+}
 function bildVerbinden() {
+  if (ruhe) return;
   const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host +
                            location.pathname.replace(/[^/]*$/, '') + 'ws?nick=1');
   ws.binaryType = 'arraybuffer';
@@ -493,7 +539,8 @@ function bildVerbinden() {
     if (bildUrl) URL.revokeObjectURL(bildUrl);
     bildUrl = url;
   };
-  ws.onclose = () => setTimeout(bildVerbinden, 1000);
+  bildWs = ws;
+  ws.onclose = () => { bildWs = null; if (!ruhe) setTimeout(bildVerbinden, 1000); };
 }
 async function befehl(a, p = {}, still = false) {
   const q = new URLSearchParams({a, ...p});
@@ -511,6 +558,26 @@ function streife() {
   return befehl('mode', {name: 'patrol', target: 'person', bestaetigt: 1});
 }
 function pipelineUmschalten() { return befehl('pipeline', {on: aktPipeline === 'läuft' ? 0 : 1}); }
+let aktAufzeichnung = false;
+function aufzeichnungUmschalten() { return befehl('record', {on: aktAufzeichnung ? 0 : 1}); }
+function aufzeichnungZeigen(s) {
+  const a = s.aufzeichnung;
+  $('rec').hidden = !a;
+  if (!a) return;
+  aktAufzeichnung = a.an;
+  const rec = $('rec');
+  rec.textContent = a.an ? 'Aufzeichnung aus' : 'Aufzeichnen';
+  rec.classList.toggle('aktiv', a.an);
+  const ordner = a.ordner ? a.ordner.split('/').pop() : '';
+  let text = '', art = 'warn';
+  if (a.laeuft) { text = a.bilder + ' Bilder'; art = 'schlecht'; }
+  else if (a.an) text = !s.balancing ? 'wartet: liegt' : (s.pipeline !== 'läuft' ? 'wartet: Bildverarb. aus' : 'wartet auf Bild');
+  pille('p-rec', text || '-', art);
+  $('p-rec').style.display = a.an ? '' : 'none';
+  const rt = $('rec-text');
+  rt.textContent = a.fehler ? 'Aufzeichnung aus: ' + a.fehler : (a.laeuft ? '● ' + text + ' · ' + ordner : text);
+  rt.title = a.ordner || '';
+}
 // Horizont im Stand ([horizon] enabled): grüne Linie einstellen und je Körperhöhe speichern
 const HZ_ZUSTAND = {liegt: 'liegt – erst aufstehen', wartet: 'schwingt ein', misst: 'misst Standlage', 'gültig': 'Standreferenz gültig'};
 let hzZeile = null, hzTabelleT = 0;
@@ -602,11 +669,13 @@ function wlanMerken(h) {
 }
 async function status() {
   try {
+    statusZeit = Date.now();
     const r = await fetch('api.php?a=status');
     wlanMerken(r.headers.get('X-Wlan'));
     const s = await r.json();
     if (!r.ok) { hoeheAusStatus = false; zeige(s.error || ('Fehler ' + r.status)); verbindungWeg(); return; }
     verbindungOk();
+    ruheZeigen(!!s.ruhe, s.battery);
     aktModus = s.mode;
     aktPipeline = s.pipeline;
     window.letzterStatus = s;
@@ -628,6 +697,7 @@ async function status() {
     const pip = $('pip');
     pip.textContent = s.pipeline === 'läuft' ? 'Stoppen' : 'Starten';
     pip.classList.toggle('aktiv', s.pipeline !== 'läuft');
+    aufzeichnungZeigen(s);
     if (s.grid) $('karte-pose').textContent =
       'x ' + s.grid.pose[0].toFixed(2) + ' m · y ' + s.grid.pose[1].toFixed(2) + ' m · ' + s.grid.pose[2].toFixed(0) + '° · Start ' + s.grid.zum_start_m.toFixed(2) + ' m · belegt ' + s.grid.belegt_m2 + ' m²';
     const ek = $('karte-erkunden');
@@ -793,6 +863,7 @@ const karte = {cx: null, cy: null, v: 6, bild: null};   // bild: Stand des angez
 let karteUrl = null, karteTimer = null, karteLaeuft = false, karteNochmal = false;
 async function karteHolen() {
   clearTimeout(karteTimer);
+  if (ruhe) return;                                   // Wecken stößt wieder an
   if (karteLaeuft) { karteNochmal = true; return; }
   karteLaeuft = true;
   try {
@@ -1417,6 +1488,7 @@ for (const id of ['hoehe', 'roll']) {
 let sysErstes = true;       // einmal immer: Regler stimmen auch bei zugeklappten Karten
 async function sysHolen() {
   clearTimeout(sysTimer);
+  if (ruhe) return;                                   // Wecken stößt wieder an
   if (!sysErstes && !$('verlauf').open && !$('lagekarte').open) return; // beide zugeklappt: nichts abfragen
   sysErstes = false;
   try {
@@ -1476,7 +1548,7 @@ if (localStorage.getItem('xgonav.verlauf') === '1') $('verlauf').open = true;
 if (localStorage.getItem('xgonav.lage') !== '0') $('lagekarte').open = true;   // Standard: offen
 sysHolen();
 lageStarten();
-setInterval(status, 700);
+setInterval(() => { if (!ruhe || Date.now() - statusZeit >= 5000) status(); }, 700);
 </script>
 </body>
 </html>

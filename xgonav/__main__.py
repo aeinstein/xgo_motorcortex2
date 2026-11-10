@@ -19,6 +19,7 @@ import time
 from .affinity import pin_thread
 from .app import App, render
 from .config import Config
+from .rawrec import RawRecorder
 from .robot import make_robot
 
 
@@ -37,8 +38,8 @@ def main(argv=None) -> int:
     ap.add_argument("--no-lcd", action="store_true")
     ap.add_argument("--record", help="Debug-Overlay als Video speichern (mp4)")
     ap.add_argument("--record-raw", metavar="DIR",
-                    help="Rohbilder (JPEG) + Metadaten (meta.jsonl) für die Auswertung am PC speichern, "
-                         "je Start in einem neuen Unterverzeichnis von DIR")
+                    help="Rohaufzeichnung gleich einschalten (statt Knopf in der Oberfläche): JPEG + meta.jsonl, "
+                         "nur während der Rider balanciert, je Aufnahme ein neues Unterverzeichnis von DIR")
     ap.add_argument("--duration", type=float, help="nach N Sekunden beenden")
     ap.add_argument("--fast", action="store_true", help="Videodatei so schnell wie möglich (nicht Echtzeit)")
     ap.add_argument("-v", "--verbose", action="store_true")
@@ -92,80 +93,20 @@ def main(argv=None) -> int:
     recs = []
     if a.record:
         recs.append(threading.Thread(target=_recorder, args=(app, a.record, cfg.camera.fps), daemon=True))
-    if a.record_raw:
-        recs.append(threading.Thread(target=_raw_recorder, args=(app, a.record_raw), daemon=True))
     for r in recs:
         r.start()
+    app.rawrec = RawRecorder(app, a.record_raw or cfg.output.record_dir, cfg.output.record_min_free_mb,
+                             cfg.cpu.render_cpus)
+    if a.record_raw:
+        app.rawrec.schalten(True)
 
     app.run(duration=a.duration)
     with app.snap_cond:
         app.snap_cond.notify_all()
+    app.rawrec.beenden()
     for r in recs:
         r.join(timeout=5)
     return 0
-
-
-def _raw_run_dir(base: str) -> str:
-    """Neues Unterverzeichnis für diesen Start anlegen. idx beginnt nach jedem Start bei 0, im
-    selben Verzeichnis würden sonst die Bilder der letzten Aufnahme überschrieben."""
-    import os
-    os.makedirs(base, exist_ok=True)
-    stamp = time.strftime("%Y%m%d-%H%M%S")
-    name, n = stamp, 1
-    while True:                # Gleiche Sekunde oder Uhr nach Neustart noch nicht gestellt
-        path = os.path.join(base, name)
-        try:
-            os.mkdir(path)
-            return path
-        except FileExistsError:
-            n += 1
-            name = f"{stamp}-{n}"
-
-
-def _raw_recorder(app: App, base: str) -> None:
-    """Rohbilder + Metadaten je Frame. Läuft hinter der Hauptschleife her und nimmt
-    immer den neuesten Snapshot; kommt es nicht nach, fehlen Frames (idx zeigt Lücken)."""
-    import json
-    import os
-    import cv2
-    outdir = _raw_run_dir(base)
-    logging.getLogger(__name__).info("Rohaufzeichnung nach %s", outdir)
-    meta = open(os.path.join(outdir, "meta.jsonl"), "x", buffering=1)
-    last = -1
-    n = 0
-    while not app.running:
-        time.sleep(0.05)
-    try:
-        while app.running:
-            with app.snap_cond:
-                app.snap_cond.wait_for(lambda: app.snapshot.idx != last or not app.running, timeout=1.0)
-                snap = app.snapshot
-            if snap.idx == last or snap.frame is None:
-                continue
-            last = snap.idx
-            name = "%06d.jpg" % snap.idx
-            cv2.imwrite(os.path.join(outdir, name), snap.frame, [cv2.IMWRITE_JPEG_QUALITY, 92])
-            st = snap.stats
-            meta.write(json.dumps({
-                "idx": snap.idx, "t": round(snap.t, 4), "file": name,
-                "pitch_dev": round(snap.pitch_dev, 6), "pitch_src": st.get("pitch_src"),
-                "sent": [round(snap.sent[0], 4), round(snap.sent[1], 4)],
-                "status": snap.cmd.status, "target": snap.cmd.target_id,
-                "yaw_vis_deg": st.get("yaw_vis_deg"), "balancing": st.get("balancing"),
-                # Kurs/Pose für die Auswertung von explore/home: Räder, IMU (Firmware), Raumkarte
-                "mode": st.get("mode"), "yaw_deg": st.get("yaw_deg"), "yaw_src": st.get("yaw_src"),
-                "yaw_drv": st.get("yaw_drv"), "odom": st.get("odom"), "height_mm": st.get("height_mm"),
-                "pose": (st.get("grid") or {}).get("pose"), "start": (st.get("grid") or {}).get("start"),
-                "tracks": [{"id": t.id, "cls": t.cls, "conf": round(t.conf, 3),
-                            "box": [round(v, 1) for v in t.box]} for t in snap.tracks],
-                "tracks_all": [{"id": t.id, "cls": t.cls, "hits": t.hits, "seen": round(snap.t - t.t_seen, 2),
-                                "box": [round(v, 1) for v in t.box]} for t in snap.tracks_all],
-                "fs": snap.fs_diag, "cam": snap.cam_meta,
-            }) + "\n")
-            n += 1
-    finally:
-        meta.close()
-        logging.getLogger(__name__).info("Rohaufzeichnung: %d Frames in %s", n, outdir)
 
 
 def _recorder(app: App, path: str, fps: int) -> None:
