@@ -62,7 +62,7 @@ python tools/eyes.py --gaze DIR      # eye atlas for mode pet: 11 gaze positions
 | Emotion | Eyes |
 |---|---|
 | `Angry` | lids slanted down toward the center, trembling, two pulses |
-| `cute` | round eyes with big pupils and highlights, head tilt, short `^ ^` squint |
+| `cute` | large round eyes without pupils, smiling lower edge, gentle bob, head tilt, short `^ ^` squint |
 | `doubt` | one eye raised, other squinted, glance right then left |
 | `embarrassed` | darting glances left/right, then trembling `> <` |
 | `grievance` | round pleading eyes looking up, sad lids, quivering lower lid, tear |
