@@ -2,10 +2,8 @@
 /*
  * xgonav – Status und Befehle an die lokale xgonav-Schnittstelle weiterreichen.
  *
- *   GET  api.php?a=status                     (Header X-Wlan: "rx_bytes tx_bytes dBm Qualität" von wlan0,
- *                                              '-' wenn unbekannt; Raten rechnet der Browser)
- *   GET  api.php?a=sys&since=<seq>            (Verlauf: IMU-Proben nach seq, CPU je Kern roh, Temperatur, Akku;
- *                                              direkt aus /proc, läuft auch ohne xgonav)
+ *   GET  api.php?a=status                     (einmalig, z. B. nach Befehlen; laufend kommen Status, CPU, WLAN
+ *                                              und IMU per WebSocket /xgonav/live von tools/live.php)
  *   POST api.php?a=mode&name=follow&target=person
  *   POST api.php?a=map_reset                  (Raumkarte leeren, Pose und Start auf 0)
  *   POST api.php?a=map_start                  (Startpunkt = aktuelle Pose)
@@ -122,96 +120,10 @@ function ruhe_system(bool $an, array &$fehler): bool
     return $rc === 0;
 }
 
-// Messwerte für die Verlaufsanzeige. CPU-Zeiten roh (Jiffies), die Auslastung rechnet der
-// Browser aus der Differenz zweier Abfragen – so bleibt PHP zustandslos.
-function sys(int $since, int $wsince): array
-{
-    // wheels_log: "seq t_ns ticks11 ticks21 fw_ms", letzte 64 Proben (~1,3 s bei 50 Hz), 11 = links
-    $rad = [];
-    $wseq = 0;
-    foreach (@file(PROC . '/wheels_log', FILE_IGNORE_NEW_LINES) ?: [] as $z) {
-        $p = explode(' ', $z);
-        if (count($p) !== 5) {
-            continue;
-        }
-        $wseq = max($wseq, (int)$p[0]);
-        if ((int)$p[0] <= $wsince) {
-            continue;
-        }
-        $rad[] = [(int)$p[0], round((int)$p[1] / 1e6, 1), (int)$p[2], (int)$p[3]];
-    }
-    $imu = [];
-    $seq = 0;                                               // neueste seq; < since = Treiber neu geladen
-    // imu_log: "seq t_ns roll pitch yaw" (Milligrad), letzte 128 Proben (~2,5 s bei 50 Hz)
-    foreach (@file(PROC . '/imu_log', FILE_IGNORE_NEW_LINES) ?: [] as $z) {
-        $p = explode(' ', $z);
-        if (count($p) !== 5) {
-            continue;
-        }
-        $seq = max($seq, (int)$p[0]);
-        if ((int)$p[0] <= $since) {
-            continue;
-        }
-        $imu[] = [(int)$p[0], round((int)$p[1] / 1e6, 1),
-                  round((int)$p[2] / 1000, 1), round((int)$p[3] / 1000, 1), round((int)$p[4] / 1000, 1)];
-    }
-    $cpu = [];
-    foreach (@file('/proc/stat', FILE_IGNORE_NEW_LINES) ?: [] as $z) {
-        if (!preg_match('/^cpu\d+\s/', $z)) {
-            continue;
-        }
-        $f = array_map('intval', array_slice(preg_split('/\s+/', trim($z)), 1, 8));
-        $cpu[] = [array_sum($f), $f[3] + $f[4]];             // [gesamt, idle + iowait]
-    }
-    $temp = @file_get_contents('/sys/class/thermal/thermal_zone0/temp');
-    $load = @file_get_contents('/proc/loadavg');
-    $akku = @file_get_contents(PROC . '/battery');
-    // Sollwerte der Beine, null solange unbekannt (nichts geschrieben seit dem Laden, alter Treiber)
-    $hoehe = trim((string)@file_get_contents(PROC . '/height'));
-    $roll = trim((string)@file_get_contents(PROC . '/roll'));
-    $zustand = trim((string)@file_get_contents(PROC . '/state'));
-    return [
-        't' => (int)round(microtime(true) * 1000),
-        'seq' => $seq,
-        'imu' => $imu,
-        'wseq' => $wseq,
-        'wheels' => $rad,                                   // [seq, t_ms, ticks links, ticks rechts]
-        'cpu' => $cpu,
-        'temp_c' => is_numeric(trim((string)$temp)) ? round((int)$temp / 1000, 1) : null,
-        'load' => $load ? (float)explode(' ', $load)[0] : null,
-        'battery' => is_numeric(trim((string)$akku)) ? (int)$akku : null,
-        'height' => is_numeric($hoehe) ? (int)$hoehe : null,
-        'roll' => is_numeric($roll) ? (int)$roll : null,
-        'state' => is_numeric($zustand) ? (int)$zustand : null,
-        'wlan' => wlan(),                                   // wie Header X-Wlan; Verlauf lückenlos wie die CPU
-    ];
-}
-
-// WLAN für die Kopfleiste: Bytezähler und Empfang, drei kleine Dateien je Statusabfrage (kein Prozessstart,
-// xgonav rechnet nichts). Raten aus der Differenz zweier Abfragen im Browser.
-function wlan(): string
-{
-    $st = '/sys/class/net/wlan0/statistics/';
-    $rx = trim((string)@file_get_contents($st . 'rx_bytes'));
-    $tx = trim((string)@file_get_contents($st . 'tx_bytes'));
-    $dbm = $q = '-';
-    // /proc/net/wireless: "wlan0: 0000   44.  -66.  -256 ..." (Status, Qualität, Pegel dBm, Rauschen)
-    foreach (@file('/proc/net/wireless', FILE_IGNORE_NEW_LINES) ?: [] as $z) {
-        $f = preg_split('/\s+/', trim($z));
-        if (($f[0] ?? '') === 'wlan0:' && count($f) >= 4) {
-            $q = rtrim($f[2], '.');
-            $dbm = rtrim($f[3], '.');
-        }
-    }
-    $ok = fn(string $v) => preg_match('/^-?\d+$/', $v) ? $v : '-';
-    return implode(' ', [$ok($rx), $ok($tx), $ok($dbm), $ok($q)]);
-}
-
 $a = $_GET['a'] ?? '';
 $post = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST';
 
 if ($a === 'status') {
-    header('X-Wlan: ' . wlan());          // auch wenn xgonav nicht antwortet
     xgonav('GET', '/status');
 }
 if ($a === 'route' && !$post) {
@@ -219,9 +131,6 @@ if ($a === 'route' && !$post) {
 }
 if ($a === 'horizon' && !$post) {
     xgonav('GET', '/horizon');
-}
-if ($a === 'sys') {
-    antwort(200, json_encode(sys((int)($_GET['since'] ?? 0), (int)($_GET['wsince'] ?? 0))));
 }
 if (!$post) {
     antwort(405, json_encode(['error' => 'Befehle nur per POST']));

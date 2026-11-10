@@ -17,7 +17,7 @@
 |---|---|
 | Header (sticky) | host, connection, mode, state (balancing/lying), battery (green ≥ 40 %, yellow ≥ 20 %, red < 20 %), pipeline, recording (only while switched on), WLAN (signal dBm: green ≥ −60, yellow ≥ −70, red below; ↓/↑ kB/s of `wlan0`), **Ruhe**, **STOPP** |
 | Left | camera image (WebSocket), mode selector (Idle · Hand · Follow · Explore · Approach · Zum Start) + target class, pipeline card with start/stop, Aufzeichnen button and status tiles, raw status JSON |
-| Lage (open by default, right column top) | 3D model of the Rider rotated by roll, pitch, yaw from `imu_log`: CAD model `web/rider-model.bin` via WebGL, legs follow the `height`/`roll` setpoints through the linkage, smoothed ~0.33 s, at minimum while state = 254 (sliders keep their value), see limitations; wheels turn by the encoder ticks from `wheels_log` (1024/rev, `sys` param `wsince`, CAD model only) (built by `tools/step_to_model.py` from `docs/Rider-Pi.STEP`, loaded when Verlauf is first opened); without WebGL or the file, simple boxes on canvas 2D; fixed compass ring on the ground (0° = heading at ESP32 start, + = left), blue line = body forward direction; values below. Samples (50 Hz) replayed smoothly ~0.3 s behind; rotation about the wheel axle. Drag (mouse/touch) to orbit the view (elevation 5–85°), double-click resets; view kept in `localStorage` `xgonav.lage3d`; live (5 s buffer, memory); open/closed kept in `localStorage` `xgonav.lage`. Controls: vertical *Kamerahöhe* slider beside the model (shows the camera height the floor geometry uses, in mm, from `cam_h_gerade`, including the × 0.921 correction, so about 8 % below a folding-rule reading; writes u8 61–205, u8 in the tooltip; shows `u8 …` until xgonav has answered once), roll −20..20° below |
+| Lage (open by default, right column top) | 3D model of the Rider rotated by roll, pitch, yaw from `imu_log`: CAD model `web/rider-model.bin` via WebGL, legs follow the `height`/`roll` setpoints through the linkage, smoothed ~0.33 s, at minimum while state = 254 (sliders keep their value), see limitations; wheels turn by the encoder ticks from `wheels_log` (1024/rev, live packet `imu.wheels`, CAD model only) (built by `tools/step_to_model.py` from `docs/Rider-Pi.STEP`, loaded when Verlauf is first opened); without WebGL or the file, simple boxes on canvas 2D; fixed compass ring on the ground (0° = heading at ESP32 start, + = left), blue line = body forward direction; values below. Samples replayed smoothly ~0.4 s behind; rotation about the wheel axle. Drag (mouse/touch) to orbit the view (elevation 5–85°), double-click resets; view kept in `localStorage` `xgonav.lage3d`; live (5 s buffer, memory); open/closed kept in `localStorage` `xgonav.lage`. Controls: vertical *Kamerahöhe* slider beside the model (shows the camera height the floor geometry uses, in mm, from `cam_h_gerade`, including the × 0.921 correction, so about 8 % below a folding-rule reading; writes u8 61–205, u8 in the tooltip; shows `u8 …` until xgonav has answered once), roll −20..20° below |
 | Fahren | D-pad, speed 5–100 %, Aufstehen (arm, 255), Neu ausrichten (leveling pulse), Absetzen (disarm, 254) |
 | Raumkarte | room map PNG, view 3/6/10/16 m; mouse: drag to pan, wheel to zoom about the pointer (1 m..`grid.size_m`), double-click recentres on the Rider and follows again (touch: page scrolls, no pan); Start hier (start = pose), Speichern, reset, pose line with distance to start |
 | Kamera | exposure (ms, auto), gain (1–63.9×, auto), actual values |
@@ -26,8 +26,8 @@
 | Extras (collapsed) | actions 1–6, 4 LEDs + all off + strobe, display emotions |
 | System | shutdown (confirm dialog) |
 
-Polling: status every 700 ms, map every 1 s (next request after previous finished), `a=sys` every 250 ms
-only while Lage or Verlauf is open (CPU, temperature, battery taken at most once per second).
+Live data: one WebSocket `/xgonav/live` (see below) instead of polling; HTTP `a=status` only at load and after
+commands. Map every 1 s (next request after previous finished).
 
 ## History (Verlauf)
 
@@ -37,8 +37,8 @@ works without xgonav.
 | Chart | Data | Window | Storage |
 |---|---|---|---|
 | CPU | load per core (%), from `/proc/stat` deltas; temperature + loadavg in heading | 10 min | memory |
-| WLAN | ↓/↑ kB/s from `wlan0` byte-counter deltas, signal dBm (−90…−30), quality /70 in heading; from `a=sys` field `wlan` (1 Hz, no gaps in a hidden tab) and header `X-Wlan` of each status poll (pill; `setInterval` is throttled to 1/min in hidden tabs) | 10 min | memory |
-| Akku | battery % (from status, or `a=sys`), ≤ 1 point / 30 s | 120 min | `localStorage` `xgonav.akku`; button Leeren |
+| WLAN | ↓/↑ kB/s from `wlan0` byte-counter deltas, signal dBm (−90…−30), quality /70 in heading; from live packet field `sys.wlan` (1 Hz, also in a hidden tab) | 10 min | memory |
+| Akku | battery % (from status or `sys`), ≤ 1 point / 30 s | 120 min | `localStorage` `xgonav.akku`; button Leeren |
 
 - Battery is recorded while the page is open, also with the card collapsed. A second open tab merges into the same key.
 - Open/closed state is kept in `localStorage` (`xgonav.verlauf`).
@@ -55,12 +55,11 @@ works without xgonav.
 
 ## `api.php`
 
-GET only for `status` and `sys`; all commands POST. Parameters are validated; invalid → HTTP 400.
+GET only for `status`, `route`, `horizon`; all commands POST. Parameters are validated; invalid → HTTP 400.
 
 | Request | Target | Range |
 |---|---|---|
-| `GET ?a=status` | xgonav `/status`; header `X-Wlan: rx_bytes tx_bytes dBm quality` (`wlan0`, `-` = unknown, also on 502), read from `/sys/class/net` and `/proc/net/wireless`, no process start | |
-| `GET ?a=sys&since=<seq>` | `/proc` direct | JSON `t`, `seq` (newest IMU seq), `imu` `[[seq, t_ms, roll, pitch, yaw], …]` (° , only seq > since), `cpu` `[[total, idle+iowait], …]` per core (jiffies), `temp_c`, `load`, `battery` |
+| `GET ?a=status` | xgonav `/status` (once; live via `/xgonav/live`) | |
 | `POST ?a=mode&name=..&target=..` | xgonav `/mode` | name ∈ idle, manual, follow, explore, approach, home, patrol, pet; target `[a-z ]{1,30}` |
 | `POST ?a=stop` | xgonav `/stop` | |
 | `POST ?a=pipeline&on=0\|1` | xgonav `/pipeline` | |
@@ -124,10 +123,28 @@ Mode rules: `explore`/`approach`/`home` need `freespace.enabled` (else 409); `ho
 | Flow control | client sends `ok` per image; xgonav sends the next (newest) image only after ack |
 | Ack timeout | 10 s → connection closed |
 | Reconnect | client after 1 s |
+| Pipeline state | client connects only while `pipeline` = `läuft` (and not sleep mode), closes otherwise; last image stays dimmed. xgonav sends an unchanged image once, no re-encode |
 | Rate | ≤ `output.web_fps` (10) |
 | Overlay | no status text lines in web frames (~10 ms saved per image) |
 
 Replaced MJPEG: on weak Wi-Fi, TCP buffers queued up to 20 s of delay.
+
+## Live data (WebSocket)
+
+Daemon `tools/live.php` (PHP CLI, unit `xgonav-live.service`, user `www-data`, `Nice=10`), not under `web/`
+(would be callable via php-fpm). Reads `/proc` directly, works without xgonav. One shared read per tick for all tabs.
+
+| Item | Value |
+|---|---|
+| Path | `/xgonav/live` (nginx → `127.0.0.1:8089`) |
+| Idle | no client: blocks in `stream_select`, no `/proc` reads, 0 % CPU |
+| `sys` + `status`, 1 s (sleep mode 5 s) | `sys`: `t`, `cpu` `[[total, idle+iowait], …]` per core (jiffies), `temp_c`, `load`, `battery`, `height`, `roll`, `state`, `wlan` `"rx_bytes tx_bytes dBm quality"` (`-` = unknown); `status`: xgonav `/status` verbatim (timeout 0.5 s) or `null` + `status_fehler` |
+| `imu`, 0.3 s if `state` = 1 (balancing), else 1 s; none in sleep mode | `seq`, `imu` `[[seq, t_ms, roll, pitch, yaw], …]` (°), `wseq`, `wheels` `[[seq, t_ms, ticks_left, ticks_right], …]`, `state`; only samples newer than the last sent per connection |
+| Packing | `sys` and `imu` due together → one text frame `{"sys":…,"status":…,"imu":…}` |
+| Client → server | `imu 0\|1 [since wsince]`: IMU on/off for this connection (Lage closed or tab hidden → 0); since/wsince after reconnect avoid duplicates |
+| Reconnect | client after 1 s |
+| Limit | `imu_log` holds 128 samples: at 1 s while lying, samples are skipped |
+| Env (tests) | `XGO_PROC`, `XGO_LIVE_PORT`, `XGO_STATUS_URL` |
 
 ## Pipeline stop
 
@@ -146,7 +163,7 @@ Header button **Ruhe** (with confirmation). Only the web UI wakes it (**Wecken**
 | Driver (`settings/`) | `imu_hz`, `imu_stream_hz`, `wheel_hz` → 0, `sleep_ms_on_loop` → `ruhe.sleep_ms_on_loop` (1000); old values kept in memory | old values written back |
 | CPU (`xgo-ruhe`, root) | governor saved to `/run/xgo-ruhe.gov`, all cores `powersave` | saved governor (fallback `ondemand`) |
 | Display (`xgo-ruhe`) | SIGUSR1 → `st7789_server`: DISPOFF + SLPIN, frames discarded | SIGUSR2: SLPOUT + DISPON, next frame redraws |
-| Page | cover with Wecken + battery; WebSocket closed, no `sys`/map polling, `status` every 5 s | normal polling |
+| Page | cover with Wecken + battery; image WebSocket closed, no map polling; live packet every 5 s without IMU | normal rates |
 
 - Backlight (GPIO0 per `constants.h`) is not switched; untested.
 - The ESP32 keeps running (control loop, BLE, amber LEDs).

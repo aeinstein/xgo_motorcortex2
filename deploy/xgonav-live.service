@@ -1,0 +1,17 @@
+[Unit]
+Description=xgonav-live - Laufzeitdaten (CPU, WLAN, IMU, Status) per WebSocket für die Weboberfläche
+After=rc-local.service network.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+ExecStart=/usr/bin/php /opt/xgonav/tools/live.php
+Restart=always
+RestartSec=2
+# hinter der Bildpipeline; ohne verbundenen Browser schläft der Dienst ohnehin
+Nice=10
+MemoryMax=64M
+
+[Install]
+WantedBy=multi-user.target

@@ -14,7 +14,7 @@ sudo ./deploy/install-all.sh [--no-driver] [--no-display] [--no-web]
 | Display | builds `st7789/project/riderpi`, installs `/usr/bin/st7789_server`; warns if `st7789_display.service` is enabled |
 | rc.local | installs `/etc/rc.local` and `rc-local.service` |
 | xgonav | runs `deploy/install.sh` |
-| Web | `apt-get install nginx php8.2-fpm`, php-fpm pool, nginx site, `www-data` → group `video`, sudoers rule, restarts php-fpm and nginx |
+| Web | `apt-get install nginx php8.2-fpm php8.2-cli`, php-fpm pool, nginx site, `www-data` → group `video`, sudoers rule, restarts php-fpm and nginx, installs and starts `xgonav-live.service` (`tools/live.php`) |
 
 Behaviour:
 - Files in `/etc` that differ are backed up as `*.bak-<timestamp>`.
@@ -37,7 +37,7 @@ sudo make -C kernel_module && sudo make -C kernel_module install
 make -C st7789/project/riderpi && sudo cp st7789/project/riderpi/st7789_server /usr/bin/
 sudo cp deploy/rc.local /etc/rc.local && sudo cp deploy/rc-local.service /etc/systemd/system/
 sudo ./deploy/install.sh
-sudo apt-get install -y nginx php8.2-fpm
+sudo apt-get install -y nginx php8.2-fpm php8.2-cli
 sudo cp deploy/php-fpm-xgonav.conf /etc/php/8.2/fpm/pool.d/xgonav.conf    # listen.owner = nginx user
 sudo cp deploy/nginx-xgonav.conf /etc/nginx/sites-available/xgonav
 sudo ln -s ../sites-available/xgonav /etc/nginx/sites-enabled/
@@ -47,6 +47,7 @@ sudo install -m 0440 deploy/sudoers-xgonav-poweroff /etc/sudoers.d/xgonav-powero
 sudo install -m 0755 deploy/xgo-ruhe /usr/local/sbin/xgo-ruhe
 sudo install -m 0440 deploy/sudoers-xgonav-ruhe /etc/sudoers.d/xgonav-ruhe && sudo visudo -c
 sudo nginx -t && sudo systemctl restart php8.2-fpm nginx
+sudo cp deploy/xgonav-live.service /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable --now xgonav-live
 ```
 
 Reload driver without reboot (set UART flags first, see [driver.md](driver.md)):
@@ -102,6 +103,7 @@ sudo systemctl enable --now xgonav
 | `/` | redirect to `/xgonav/` |
 | `/xgonav/` | `/opt/xgonav/web/` (PHP via php-fpm) |
 | `/xgonav/ws`, `/xgonav/frame`, `/xgonav/stream`, `/xgonav/map.png` | proxied to xgonav `127.0.0.1:8088` |
+| `/xgonav/live` | WebSocket, proxied to `xgonav-live` `127.0.0.1:8089` |
 
 ## YOLO model (PC/GPU server only, not on the Pi)
 

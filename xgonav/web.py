@@ -356,9 +356,8 @@ def serve(app: App, host: str, port: int, fps: int, render_cpus=None) -> Threadi
                         snap = app.snapshot
                     if not app.running:
                         break
-                    if app.ruhe and snap.idx == last:
-                        continue                    # Ruhemodus: kein Bild neu kodieren
-                    # bei gestoppter Bildverarbeitung: dasselbe Bild höchstens einmal pro Sekunde
+                    if (app.ruhe or not app.pipeline_on) and snap.idx == last:
+                        continue                    # Ruhe/Bildverarbeitung aus: dasselbe Bild nicht neu kodieren
                     img = render(snap, text=False)   # Statuszeilen zeigt die Oberfläche
                     if img is None:
                         continue

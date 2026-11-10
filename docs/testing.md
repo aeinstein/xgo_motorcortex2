@@ -11,6 +11,7 @@ python3 -m venv .venv && .venv/bin/pip install "opencv-python-headless>=4.6" "nu
 | `python -m pytest -q tests/` | 56 unit tests (`tests/test_units.py`; 5 need the C++ core, skipped without it); `slow` excluded via `pytest.ini` | ~2 s |
 | `python -m pytest -q -m slow tests/` | 4 closed-loop simulator tests (`tests/test_closed_loop.py`) | ~150 s |
 | `python -m pytest -q tests/test_units.py -k imu_sync` | single test | |
+| `python -m pytest -q tests/test_live_ws.py` | `tools/live.php`: WebSocket rates (0.3 s / 1 s), IMU filter per connection, `imu 0`; skipped without `php` in PATH | ~10 s |
 | `python -m pytest -q tests/test_pet.py` | mode `pet`: synthetic distance tracks, budgets, every stand-up condition | <1 s |
 | `python tests/sim_run.py pet 35 --wheels --imu [--animal person\|cat\|dog] [--speed 2.5] [--set pet.faint=True]` | mode `pet`: target walks straight at the Rider | |
 | `python tests/sim_run.py follow 40 [out.mp4]` | scenario, optional overlay video | |

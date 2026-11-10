@@ -114,6 +114,7 @@ details.hilfe p{margin:4px 0 0}
 /* --- Bild und Modus */
 #bild-rahmen{overflow:hidden;background:#000;border:1px solid var(--rand);border-radius:var(--r)}
 #bild{width:100%;height:auto;aspect-ratio:4/3;object-fit:contain;display:block;background:#000}
+#bild.aus{opacity:.35}
 .modus{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .segment{display:inline-flex;border:1px solid var(--rand2);border-radius:7px;overflow:hidden;flex-wrap:wrap}
 .segment button{border:0;border-radius:0;border-right:1px solid var(--rand2);margin:0}
@@ -497,21 +498,20 @@ function bildVerschieben() {
   const b = $('bild'), H = b.naturalHeight || 480;
   b.style.transform = bildStabil && bildDy ? 'translateY(' + (bildDy / H * 100).toFixed(3) + '%)' : '';
 }
-// Ruhemodus: kein Bild, keine Karte, keine Lage; Status nur alle 5 s (setInterval unten)
-let ruhe = false, statusZeit = 0, bildWs = null;
+// Ruhemodus: kein Bild, keine Karte, keine Lage; Status nur alle 5 s (drosselt tools/live.php selbst)
+let ruhe = false, bildWs = null, liveWs = null;
 function ruheZeigen(an, akku) {
   $('ruhe-akku').textContent = akku != null ? akku + ' %' : '-';
   if (an === ruhe) return;
   ruhe = an;
   $('ruhe-decke').classList.toggle('an', an);
   if (an) {
-    if (bildWs) bildWs.close();
+    bildSoll(false);
   } else {
     $('ruhe-fehler').textContent = '';
-    if (!bildWs) bildVerbinden();
     karteHolen();
-    sysHolen();
   }
+  liveImu();
 }
 async function ruheSchalten(an) {
   if (an && !confirm('Ruhemodus? Der Rider setzt sich ab, Bildverarbeitung aus, CPU-Takt runter.')) return;
@@ -524,8 +524,18 @@ async function ruheSchalten(an) {
   } catch (e) { zeige('keine Verbindung'); }
   status();
 }
+// Bild-WebSocket nur bei laufender Bildverarbeitung (Zustand aus dem Status); gestoppt bleibt das
+// letzte Bild abgedunkelt stehen und xgonav kodiert nichts.
+let bildAn = false;
+function bildSoll(an) {
+  $('bild').classList.toggle('aus', !an);
+  if (an === bildAn) return;
+  bildAn = an;
+  if (an) { if (!bildWs) bildVerbinden(); }
+  else if (bildWs) bildWs.close();
+}
 function bildVerbinden() {
-  if (ruhe) return;
+  if (!bildAn) return;
   const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host +
                            location.pathname.replace(/[^/]*$/, '') + 'ws?nick=1');
   ws.binaryType = 'arraybuffer';
@@ -540,8 +550,37 @@ function bildVerbinden() {
     bildUrl = url;
   };
   bildWs = ws;
-  ws.onclose = () => { bildWs = null; if (!ruhe) setTimeout(bildVerbinden, 1000); };
+  ws.onclose = () => { if (bildWs === ws) bildWs = null; if (bildAn) setTimeout(bildVerbinden, 1000); };
 }
+// Laufzeitdaten per WebSocket (tools/live.php): sys + xgonav-Status 1×/s in einem Paket,
+// IMU + Räder alle 0,3 s, wenn er balanciert, sonst 1×/s. Kein Polling mehr.
+function liveVerbinden() {
+  const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host +
+                           location.pathname.replace(/[^/]*$/, '') + 'live');
+  ws.onopen = () => { liveWs = ws; liveImu(true); };
+  ws.onmessage = ev => {
+    const m = JSON.parse(ev.data);
+    if (m.imu) imuVerarbeiten(m.imu);
+    if (m.sys) {
+      sysVerarbeiten(m.sys);
+      statusZeigen(m.status, m.status_fehler);
+    }
+  };
+  ws.onclose = () => {
+    if (liveWs === ws) liveWs = null;
+    hoeheAusStatus = false; zeige('keine Verbindung zum Rider'); verbindungWeg();
+    setTimeout(liveVerbinden, 1000);
+  };
+}
+// IMU nur, wenn die Lage-Karte offen und der Tab sichtbar ist; since: nach Neuverbinden keine Doppelten
+let liveImuAn = null;
+function liveImu(neu = false) {
+  const an = !ruhe && $('lagekarte').open && !document.hidden;
+  if (!liveWs || (an === liveImuAn && !neu)) return;
+  liveImuAn = an;
+  liveWs.send('imu ' + (an ? 1 : 0) + (neu ? ' ' + imuSeq + ' ' + radSeq : ''));
+}
+document.addEventListener('visibilitychange', () => liveImu());
 async function befehl(a, p = {}, still = false) {
   const q = new URLSearchParams({a, ...p});
   try {
@@ -649,7 +688,7 @@ async function hzLoeschen(mm) {
   if (!confirm('Horizont für ' + mm + ' mm löschen?')) return;
   if (await befehl('horizon_delete', {h: mm})) hzTabelle();
 }
-// WLAN aus dem Header X-Wlan der Statusabfrage ("rx tx dBm Qualität"); Raten hier aus der Differenz
+// WLAN aus dem Live-Paket ("rx tx dBm Qualität"); Raten hier aus der Differenz
 const wlan = [];            // [t_ms, ↓ kB/s, ↑ kB/s, dBm, Qualität]
 let wlanVorher = null;
 function wlanMerken(h) {
@@ -667,15 +706,20 @@ function wlanMerken(h) {
   pille('p-wlan', (dbm != null ? dbm + ' dBm' : '-') + (ab != null ? ' · ↓' + kb(ab) + ' ↑' + kb(auf) + ' kB/s' : ''),
         dbm == null ? '' : dbm >= -60 ? 'gut' : dbm >= -70 ? 'warn' : 'schlecht');
 }
+// Status einmalig per HTTP (Start, nach Befehlen); laufend kommt er mit dem Live-Paket
 async function status() {
   try {
-    statusZeit = Date.now();
     const r = await fetch('api.php?a=status');
-    wlanMerken(r.headers.get('X-Wlan'));
     const s = await r.json();
-    if (!r.ok) { hoeheAusStatus = false; zeige(s.error || ('Fehler ' + r.status)); verbindungWeg(); return; }
+    statusZeigen(r.ok ? s : null, s.error || ('Fehler ' + r.status));
+  } catch (e) { statusZeigen(null, 'keine Verbindung zu xgonav'); }
+}
+function statusZeigen(s, fehler) {
+  try {
+    if (!s) { hoeheAusStatus = false; bildSoll(false); zeige(fehler || 'keine Verbindung zu xgonav'); verbindungWeg(); return; }
     verbindungOk();
     ruheZeigen(!!s.ruhe, s.battery);
+    bildSoll(!s.ruhe && s.pipeline === 'läuft');
     aktModus = s.mode;
     aktPipeline = s.pipeline;
     window.letzterStatus = s;
@@ -722,7 +766,7 @@ async function status() {
     }
     belichtStatus(s.exposure);
     gainStatus(s.exposure);
-  } catch (e) { hoeheAusStatus = false; zeige('keine Verbindung zu xgonav'); verbindungWeg(); }
+  } catch (e) { console.error(e); }
 }
 
 // --- Handsteuerung: solange gedrückt alle 200 ms senden; xgonav hält nach 0,5 s ohne Sollwert an
@@ -1025,7 +1069,7 @@ let radSeq = 0, radRoh = null, radJetzt = null;
 // --- Lage als 3D-Modell (eigene Projektion, keine Bibliothek): Ring und Kurslinie im Canvas 2D, darüber
 // das CAD-Modell rider-model.bin per WebGL (tools/step_to_model.py); ohne das die Quader in MODELL. Körper-KS: x vorn,
 // y links, z hoch (cm). Firmware: Roll + = rechts tief, Nick + = vorn tief, Gier + = links.
-const LAGE_VERZUG = 300;    // ms hinter der neuesten Probe abspielen (Abfrage alle 250 ms)
+const LAGE_VERZUG = 400;    // ms hinter der neuesten Probe abspielen (Live-Paket alle 300 ms)
 const ACHSE = [0, 0, 3.2];  // um die Radachse drehen: Räder bleiben am Boden
 function quader(c, l, farbe) {
   const [x, y, z] = c, [a, b, h] = l.map(v => v / 2);
@@ -1460,15 +1504,15 @@ function verlaufZeichnen() {
          {von: jetzt - AKKU_MS, bis: jetzt, ymin: 0, ymax: 100, einheit: '%', luecke: 5 * 60e3, xText: uhr,
           xs: 30 * 60e3, nk: 0});
 }
-let sysTimer = null;
 // Offen/zu merken, damit der Verlauf nach dem Neuladen gleich weiterläuft
 function verlaufUmschalten() {
   try { localStorage.setItem('xgonav.verlauf', $('verlauf').open ? '1' : '0'); } catch (e) {}
-  if ($('verlauf').open) sysHolen();
+  if ($('verlauf').open) verlaufZeichnen();
 }
 function lageUmschalten() {
   try { localStorage.setItem('xgonav.lage', $('lagekarte').open ? '1' : '0'); } catch (e) {}
-  if ($('lagekarte').open) { sysHolen(); lageStarten(); }
+  liveImu();
+  if ($('lagekarte').open) lageStarten();
 }
 // Regler zeigen den Sollwert aus dem Treiber (auch wenn xgonav oder ein anderer Tab ihn setzt).
 // Nicht während der Nutzer zieht und kurz danach: Die Antwort kann noch den alten Wert enthalten.
@@ -1485,55 +1529,46 @@ for (const id of ['hoehe', 'roll']) {
   window.addEventListener('pointerup', () => { if (el._zieht) los(); });
   window.addEventListener('pointercancel', () => { if (el._zieht) los(); });
 }
-let sysErstes = true;       // einmal immer: Regler stimmen auch bei zugeklappten Karten
-async function sysHolen() {
-  clearTimeout(sysTimer);
-  if (ruhe) return;                                   // Wecken stößt wieder an
-  if (!sysErstes && !$('verlauf').open && !$('lagekarte').open) return; // beide zugeklappt: nichts abfragen
-  sysErstes = false;
-  try {
-    const r = await fetch('api.php?a=sys&since=' + imuSeq + '&wsince=' + radSeq, {cache: 'no-store'});
-    const s = await r.json();
-    if (r.ok) {
-      if (s.seq < imuSeq) { lage.length = 0; imuSeq = 0; lageOff = null; }  // Treiber neu geladen
-      for (const p of s.imu) { lage.push([p[1], p[2], p[3], p[4]]); imuSeq = p[0]; }
-      if (s.wseq != null) {
-        if (s.wseq < radSeq) { radPuffer.length = 0; radSeq = 0; radRoh = null; }   // Treiber neu geladen
-        const d32 = d => ((d + 2 ** 31) % 2 ** 32 + 2 ** 32) % 2 ** 32 - 2 ** 31;  // wie _wrap32 in wheels.py
-        for (const p of s.wheels || []) {
-          const v = radPuffer.length && radRoh ? [radPuffer[radPuffer.length - 1][1] + d32(p[2] - radRoh[0]), radPuffer[radPuffer.length - 1][2] + d32(p[3] - radRoh[1])] : [p[2], p[3]];
-          radPuffer.push([p[1], ...v]); radRoh = [p[2], p[3]]; radSeq = p[0];
-        }
-        if (radPuffer.length) abschneiden(radPuffer, radPuffer[radPuffer.length - 1][0] - LAGE_MS);
-      }
-      if (lage.length) {
-        abschneiden(lage, lage[lage.length - 1][0] - LAGE_MS);
-        // Treiberzeit -> Browserzeit: kleinster Abstand (frischeste Probe), langsam nachführen
-        const off = performance.now() - lage[lage.length - 1][0];
-        lageOff = lageOff == null || off < lageOff || Math.abs(off - lageOff) > 2000 ? off : lageOff + (off - lageOff) * 0.02;
-      }
-      if (s.height != null) { beinSoll.h = s.height; if (!hoeheAusStatus) hoeheSetzen(s.height); }
-      if (s.roll != null) { beinSoll.r = s.roll; reglerSetzen('roll', s.roll, s.roll + '°'); }
-      beinSoll.abgesetzt = s.state === 254;
-      const jetzt = Date.now();
-      if (!cpuVorher || jetzt - cpuZeit >= 1000) {         // CPU, Temperatur, Akku: 1 Hz
-        if (cpuVorher && cpuVorher.length === s.cpu.length)
-          cpu.push([jetzt, s.cpu.map((c, k) => {
-            const dt = c[0] - cpuVorher[k][0];
-            return dt > 0 ? Math.max(0, Math.min(100, 100 * (1 - (c[1] - cpuVorher[k][1]) / dt))) : 0;
-          })]);
-        cpuVorher = s.cpu; cpuZeit = jetzt;
-        abschneiden(cpu, jetzt - CPU_MS);
-        $('v-temp').textContent = (s.temp_c != null ? s.temp_c.toFixed(1) + ' °C' : '') +
-                                  (s.load != null ? ' · Last ' + s.load.toFixed(2) : '');
-        akkuMerken(s.battery);
-        wlanMerken(s.wlan);   // Verlauf aus derselben Abfrage wie die CPU: setInterval(status) drosselt
-                              // der Browser im Hintergrund auf 1×/min, diese Kette nur auf 1×/s
-        verlaufZeichnen();
-      }
+// IMU + Räder aus dem Live-Paket; der Server liefert je Verbindung nur neue Proben
+function imuVerarbeiten(s) {
+  if (s.seq < imuSeq) { lage.length = 0; imuSeq = 0; lageOff = null; }  // Treiber neu geladen
+  for (const p of s.imu) { if (p[0] > imuSeq) { lage.push([p[1], p[2], p[3], p[4]]); imuSeq = p[0]; } }
+  if (s.wseq != null) {
+    if (s.wseq < radSeq) { radPuffer.length = 0; radSeq = 0; radRoh = null; }   // Treiber neu geladen
+    const d32 = d => ((d + 2 ** 31) % 2 ** 32 + 2 ** 32) % 2 ** 32 - 2 ** 31;  // wie _wrap32 in wheels.py
+    for (const p of s.wheels || []) {
+      if (p[0] <= radSeq) continue;
+      const v = radPuffer.length && radRoh ? [radPuffer[radPuffer.length - 1][1] + d32(p[2] - radRoh[0]), radPuffer[radPuffer.length - 1][2] + d32(p[3] - radRoh[1])] : [p[2], p[3]];
+      radPuffer.push([p[1], ...v]); radRoh = [p[2], p[3]]; radSeq = p[0];
     }
-  } catch (e) { /* Rider weg: beim nächsten Mal wieder */ }
-  sysTimer = setTimeout(sysHolen, 250);                    // Lage live; IMU-Ring hält ~2,5 s
+    if (radPuffer.length) abschneiden(radPuffer, radPuffer[radPuffer.length - 1][0] - LAGE_MS);
+  }
+  if (lage.length) {
+    abschneiden(lage, lage[lage.length - 1][0] - LAGE_MS);
+    // Treiberzeit -> Browserzeit: kleinster Abstand (frischeste Probe), langsam nachführen
+    const off = performance.now() - lage[lage.length - 1][0];
+    lageOff = lageOff == null || off < lageOff || Math.abs(off - lageOff) > 2000 ? off : lageOff + (off - lageOff) * 0.02;
+  }
+  if (s.state != null) beinSoll.abgesetzt = s.state === 254;
+}
+// CPU, Temperatur, Akku, WLAN, Beine: 1×/s aus dem Live-Paket (auch im Hintergrund, Verlauf bleibt lückenlos)
+function sysVerarbeiten(s) {
+  if (s.height != null) { beinSoll.h = s.height; if (!hoeheAusStatus) hoeheSetzen(s.height); }
+  if (s.roll != null) { beinSoll.r = s.roll; reglerSetzen('roll', s.roll, s.roll + '°'); }
+  beinSoll.abgesetzt = s.state === 254;
+  const jetzt = Date.now();
+  if (cpuVorher && cpuVorher.length === s.cpu.length)
+    cpu.push([jetzt, s.cpu.map((c, k) => {
+      const dt = c[0] - cpuVorher[k][0];
+      return dt > 0 ? Math.max(0, Math.min(100, 100 * (1 - (c[1] - cpuVorher[k][1]) / dt))) : 0;
+    })]);
+  cpuVorher = s.cpu; cpuZeit = jetzt;
+  abschneiden(cpu, jetzt - CPU_MS);
+  $('v-temp').textContent = (s.temp_c != null ? s.temp_c.toFixed(1) + ' °C' : '') +
+                            (s.load != null ? ' · Last ' + s.load.toFixed(2) : '');
+  akkuMerken(s.battery);
+  wlanMerken(s.wlan);
+  verlaufZeichnen();
 }
 // Fadenkreuz: Maus und Touch
 document.querySelectorAll('.diag').forEach(cv => {
@@ -1541,14 +1576,12 @@ document.querySelectorAll('.diag').forEach(cv => {
   cv.addEventListener('pointerleave', () => { cv._hx = null; verlaufZeichnen(); });
 });
 window.addEventListener('resize', verlaufZeichnen);
-bildVerbinden();
 karteHolen();
 status();
 if (localStorage.getItem('xgonav.verlauf') === '1') $('verlauf').open = true;
 if (localStorage.getItem('xgonav.lage') !== '0') $('lagekarte').open = true;   // Standard: offen
-sysHolen();
+liveVerbinden();
 lageStarten();
-setInterval(() => { if (!ruhe || Date.now() - statusZeit >= 5000) status(); }, 700);
 </script>
 </body>
 </html>

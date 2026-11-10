@@ -88,7 +88,7 @@ schritt "xgonav nach /opt/xgonav (deploy/install.sh)"
 # ---------------------------------------------------------------- Web
 if [ "$DO_WEB" = 1 ]; then
     schritt "Weboberfläche: nginx (TLS auf 443), php-fpm"
-    apt-get install -y nginx php8.2-fpm
+    apt-get install -y nginx php8.2-fpm php8.2-cli
 
     # php-fpm-Socket muss dem Benutzer gehören, unter dem nginx läuft.
     NGINX_USER=$(awk '$1 == "user" { sub(";", "", $2); print $2; exit }' /etc/nginx/nginx.conf)
@@ -148,6 +148,12 @@ if [ "$DO_WEB" = 1 ]; then
 
     nginx -t
     systemctl restart php8.2-fpm nginx
+
+    # Laufzeitdaten per WebSocket (/xgonav/live): eigener PHP-CLI-Dienst statt Polling über php-fpm
+    installiere deploy/xgonav-live.service /etc/systemd/system/xgonav-live.service
+    systemctl daemon-reload
+    systemctl enable xgonav-live >/dev/null 2>&1
+    systemctl restart xgonav-live
 fi
 
 # ---------------------------------------------------------------- Ende
