@@ -61,9 +61,9 @@ def workflow(img_name: str, prompt: str, seed: int) -> dict:
     }
 
 
-def upload(path: str, name: str) -> str:
-    """Bild per /upload/image an ComfyUI (multipart, ohne Zusatzpakete)."""
-    data = open(path, "rb").read()
+def upload(path: str | bytes, name: str) -> str:
+    """Bild (Pfad oder fertig kodierte Bytes) per /upload/image an ComfyUI (multipart, ohne Zusatzpakete)."""
+    data = path if isinstance(path, bytes) else open(path, "rb").read()
     b = uuid.uuid4().hex
     body = (f"--{b}\r\nContent-Disposition: form-data; name=\"overwrite\"\r\n\r\ntrue\r\n"
             f"--{b}\r\nContent-Disposition: form-data; name=\"subfolder\"\r\n\r\nfloornet\r\n"
@@ -100,11 +100,16 @@ def run_edit(path: str, name: str, seed: int = 1) -> np.ndarray:
         time.sleep(0.5)
 
 
-def floor_mask(edit: np.ndarray) -> np.ndarray:
-    """Grüne Pixel (Bodenfarbe des Modells) in 640x480."""
+def floor_mask(edit: np.ndarray, min_gruen: int | None = None) -> np.ndarray:
+    """Grüne Pixel (Bodenfarbe des Modells) in 640x480. min_gruen: statt der Helligkeit G - max(R, B) prüfen."""
     e = cv2.resize(edit, (W, H), interpolation=cv2.INTER_AREA)
     hsv = cv2.cvtColor(e, cv2.COLOR_BGR2HSV)
-    m = (np.abs(hsv[..., 0].astype(int) - 60) <= 12) & (hsv[..., 1] >= 120) & (hsv[..., 2] >= 90)
+    # V ab 30: Schatten auf dem Boden malt das Modell dunkelgrün, darunter ist der Farbton nur noch Rauschen
+    hell = hsv[..., 2] >= 30
+    if min_gruen is not None:
+        ei = e.astype(int)
+        hell = ei[..., 1] - np.maximum(ei[..., 0], ei[..., 2]) >= min_gruen
+    m = (np.abs(hsv[..., 0].astype(int) - 60) <= 12) & (hsv[..., 1] >= 120) & hell
     m = cv2.morphologyEx(m.astype(np.uint8), cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
     return m.astype(bool)
 

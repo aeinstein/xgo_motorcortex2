@@ -43,6 +43,9 @@ from xgonav.gridmap import GridMap  # noqa: E402
 IGNORE, EXACT, ATLEAST = 0, 1, 2
 MOVABLE = {"person", "dog", "cat"}
 ACTIVE_MODES = {"explore", "patrol", "manual", "home", "follow", "approach"}
+# Nick aus der IMU: Komplementärfilter ("imu") oder seit dem Horizont-Modul (2026-11-07) IMU gegen die
+# Standreferenz je Aufstehen, mit Bildanteil ("stand+bild") oder ohne ("stand"). Nicht: "bild" allein.
+IMU_PITCH = {"imu", "stand", "stand+bild"}
 NCOLS = 80                 # Spalten je Bild (8 Vollbild-Pixel), wie die Netzausgabe
 JUMP_M = 0.12              # größerer Posesprung zwischen zwei Bildern: nicht mehr dieselbe Bahn
 MAX_TURN_DPS = 30.0        # Kurs ist nur mit ~5 Hz bekannt: bei schneller Drehung passt die Pose nicht zum Bild
@@ -95,7 +98,7 @@ def select_segment(ms: list[dict]) -> list[dict]:
         return []
     segs, cur, last = [], [], None
     for m in ms[first:]:
-        ok = m.get("pose") and m.get("yaw_drv") is not None and m.get("balancing") and m.get("pitch_src") == "imu"
+        ok = m.get("pose") and m.get("yaw_drv") is not None and m.get("balancing") and m.get("pitch_src") in IMU_PITCH
         if ok and last is not None and math.hypot(m["pose"][0] - last[0], m["pose"][1] - last[1]) > JUMP_M:
             ok = False
         if ok:

@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FloorNet Betrachter</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin: 0; height: 100%; background: #111; color: #ddd; font: 14px system-ui, sans-serif; }
+  #kopf { padding: 8px 12px; display: flex; gap: 16px; align-items: baseline; }
+  #id { font-size: 18px; font-weight: 600; color: #fff; }
+  #hilfe { margin-left: auto; color: #888; }
+  #bilder { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; padding: 0 6px; }
+  figure { margin: 0; min-width: 0; }
+  figcaption { padding: 2px 0 4px; color: #aaa; }
+  img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: contain; background: #000; }
+  /* Original x Maske: weiß bleibt das Original, Schwarz wird durch die 20-%-Schicht zu 20 % Grau, also 20 % Helligkeit */
+  .ueber { position: relative; isolation: isolate; }
+  .mal { position: absolute; inset: 0; mix-blend-mode: multiply; }
+  .hebt { position: absolute; inset: 0; background: #fff; opacity: 0.2; }
+</style>
+</head>
+<body>
+<div id="kopf"><span id="id"></span><span id="pos"></span><span id="wahl"></span><span id="hilfe">← voriges · nächstes →</span></div>
+<div id="bilder">
+  <figure><figcaption>Original</figcaption><img id="original" alt="Original"></figure>
+  <figure><figcaption id="titel1"></figcaption><img id="stage1" alt="Stage1"></figure>
+  <figure><figcaption id="titel2"></figcaption><img id="stage2" alt="Stage2"></figure>
+  <figure id="fig3" hidden><figcaption>Stage3: von unten bis zum ersten Schwarz</figcaption><img id="stage3" alt="Stage3"></figure>
+  <figure id="fig4" hidden><figcaption>Original, außerhalb von Stage3 auf 20 % Helligkeit</figcaption><div class="ueber"><img id="ueber_original" alt="Original"><div class="mal"><img id="ueber_stage3" alt="Stage3"><div class="hebt"></div></div></div></figure>
+</div>
+<script>
+"use strict";
+const ANSICHTEN = {
+  g0h: { name: "Prompt 10, G0 + Graubild-Helligkeit", stage1: "stage1_g0h", stage2: "stage2_g0h", stage3: "stage3_g0h", maske: "Grünvorsprung ≥ 30" },
+  p8: { name: "Prompt 8", stage1: "stage1", stage2: "stage2", maske: "V ≥ 30" },
+};
+const wahl = new URLSearchParams(location.search).get("v");
+const ansicht = ANSICHTEN[wahl] ? wahl : "g0h";
+const A = ANSICHTEN[ansicht];
+document.title = "FloorNet " + A.name;
+document.getElementById("titel1").textContent = A.name + ": grün";
+document.getElementById("titel2").textContent = A.name + ": Maske (" + A.maske + ")";
+if (A.stage3) {
+  document.getElementById("fig3").hidden = false;
+  document.getElementById("fig4").hidden = false;
+}
+let ids = [];
+const quellen = (id) => ({
+  original: "data/rider/fahrt/" + id + ".jpg",
+  stage1: A.stage1 + "/" + id + ".png",
+  stage2: A.stage2 + "/" + id + ".png",
+  ...(A.stage3 ? { stage3: A.stage3 + "/" + id + ".png" } : {}),
+});
+let pos = 0;
+
+function wahlZeigen() {                    // Umschalten behält das Bild, wenn es dort auch vorliegt
+  const ziel = document.getElementById("wahl");
+  ziel.textContent = "";
+  for (const k in ANSICHTEN) {
+    const el = document.createElement(k === ansicht ? "strong" : "a");
+    el.textContent = ANSICHTEN[k].name;
+    if (k !== ansicht) { el.href = "?v=" + k + location.hash; el.style.color = "#8cf"; }
+    el.style.marginRight = "12px";
+    ziel.appendChild(el);
+  }
+}
+
+function zeigen(p) {
+  if (!ids.length) {
+    document.getElementById("id").textContent = "Keine Bilder: " + (A.stage3 || A.stage2) + "/index.js fehlt oder ist leer";
+    wahlZeigen();
+    return;
+  }
+  pos = Math.max(0, Math.min(ids.length - 1, p));
+  const id = ids[pos];
+  const q = quellen(id);
+  for (const name in q) document.getElementById(name).src = q[name];
+  if (A.stage3) {
+    document.getElementById("ueber_original").src = q.original;
+    document.getElementById("ueber_stage3").src = q.stage3;
+  }
+  document.getElementById("id").textContent = id;
+  document.getElementById("pos").textContent = (pos + 1) + " / " + ids.length;
+  history.replaceState(null, "", "#" + id);
+  wahlZeigen();
+  for (const d of [1, 2, 3, -1]) {         // Nachbarn vorladen
+    const n = ids[pos + d];
+    if (n) for (const u of Object.values(quellen(n))) new Image().src = u;
+  }
+}
+
+function ausUrl() {
+  const i = ids.indexOf(decodeURIComponent(location.hash.slice(1)));
+  zeigen(i >= 0 ? i : 0);
+}
+
+addEventListener("keydown", (e) => {
+  if (e.key === "ArrowRight") { zeigen(pos + 1); e.preventDefault(); }
+  if (e.key === "ArrowLeft") { zeigen(pos - 1); e.preventDefault(); }
+});
+addEventListener("hashchange", ausUrl);
+const liste = document.createElement("script");
+liste.src = (A.stage3 || A.stage2) + "/index.js?" + Date.now();   // Liste wächst, solange gerechnet wird
+liste.onload = () => { ids = window.BILDER || []; ausUrl(); };
+liste.onerror = ausUrl;
+document.head.appendChild(liste);
+</script>
+</body>
+</html>

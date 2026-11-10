@@ -49,13 +49,16 @@ def _decode_one(args):
     return cv2.resize(img[top:CROP_Y + CROP_H], (IN_W, IN_H + MARGIN), interpolation=cv2.INTER_AREA)
 
 
-def load_run(npz: str, cache: str, dist: float, yaw: float, pool, min_labeled: float = 0.6) -> dict:
-    """Gewählte Bilder einer Fahrt: Fächer (uint8, N x H x W x 3) und Labels. Bilder liegen im Zwischenspeicher."""
+def load_run(npz: str, cache: str, dist: float, yaw: float, pool, min_labeled: float = 0.6, only_hand: bool = False) -> dict:
+    """Gewählte Bilder einer Fahrt: Fächer (uint8, N x H x W x 3) und Labels. Bilder liegen im Zwischenspeicher.
+    only_hand: nur Bilder mit eigener Handlinie, ohne die über die Karte übertragenen."""
     d = np.load(npz, allow_pickle=False)
     run = str(d["run"])
     hand = d["hand"] if "hand" in d.files else np.zeros(len(d["x"]), bool)
-    idx = np.union1d(pick(d["x"], d["y"], d["th"], d["rate"], d["kind"], dist, yaw, min_labeled), np.nonzero(hand)[0]).astype(int)
-    path = os.path.join(cache, "%s_%s.npy" % (run, hashlib.md5(idx.tobytes()).hexdigest()[:10]))
+    idx = np.nonzero(hand)[0] if only_hand else np.union1d(
+        pick(d["x"], d["y"], d["th"], d["rate"], d["kind"], dist, yaw, min_labeled), np.nonzero(hand)[0]).astype(int)
+    # Schlüssel aus den Dateinamen: Label-Dateien derselben Fahrt können verschiedene Bilder an gleicher Stelle haben
+    path = os.path.join(cache, "%s_%s.npy" % (run, hashlib.md5(d["files"][idx].tobytes()).hexdigest()[:10]))
     top = CROP_Y - MARGIN * DOWN
     if os.path.exists(path):
         imgs = np.load(path)
@@ -135,6 +138,20 @@ def column_loss(logits, row, kind, centers, sigma: float = 3.0, far_w: float = 0
     ex, al = kind == EXACT, kind == ATLEAST
     loss = (ce + far_w * far) * ex.float() + atleast_w * least * al.float()
     return loss.sum() / (ex.float() + atleast_w * al.float()).sum().clamp_min(1.0)
+
+
+def smooth_loss(logits, row, kind, centers, delta: float = 8.0):
+    """Sprünge zwischen Nachbarspalten, die das Label nicht hat. Erwartete Zeile, Huber in Vielfachen von delta (px)."""
+    want = (F.softmax(logits, dim=1) * centers[None, :, None]).sum(dim=1)
+    both = (kind[:, 1:] == EXACT) & (kind[:, :-1] == EXACT)
+    d = ((want[:, 1:] - want[:, :-1]) - (row[:, 1:] - row[:, :-1])) / delta
+    return (F.huber_loss(d, torch.zeros_like(d), reduction="none") * both.float()).sum() / both.float().sum().clamp_min(1.0)
+
+
+def near_frames(run: dict, near_m: float, share: float) -> np.ndarray:
+    """Nahaufnahmen: Bilder, in denen mindestens dieser Anteil der Spalten eine Grenze näher als near_m hat."""
+    with np.errstate(invalid="ignore"):
+        return ((row_dist(run["geom"], run["row"], run["pitch"]) < near_m) & (run["kind"] == EXACT)).mean(axis=1) >= share
 
 
 def row_dist(geo: dict, row, pitch):
@@ -243,10 +260,15 @@ def main() -> int:
     ap.add_argument("--hand_train", default="", help="Fahrten aus --hand_labels, mit Komma getrennt")
     ap.add_argument("--hand_repeat", type=int, default=8, help="so oft zählt ein Bild mit eigener Handlinie")
     ap.add_argument("--hand_min_labeled", type=float, default=0.3)
+    ap.add_argument("--hand_only", type=int, default=0, help="1: nur Bilder mit eigener Handlinie, nichts über die Karte Übertragenes")
     ap.add_argument("--far_atleast", type=float, default=0.0)
     ap.add_argument("--cap_atleast", type=float, default=0.0)
     ap.add_argument("--far_w", type=float, default=0.5)
     ap.add_argument("--atleast_w", type=float, default=0.5)
+    ap.add_argument("--near_repeat", type=int, default=1, help="so oft zählt eine Nahaufnahme")
+    ap.add_argument("--near_m", type=float, default=0.5)
+    ap.add_argument("--near_share", type=float, default=0.3)
+    ap.add_argument("--smooth_w", type=float, default=0.0, help="Gewicht der Strafe für Sprünge zwischen Nachbarspalten")
     a = ap.parse_args()
     torch.manual_seed(a.seed)
     os.makedirs(a.out, exist_ok=True)
@@ -255,7 +277,7 @@ def main() -> int:
         train = [load_run(os.path.join(a.labels, r + ".npz"), a.cache, a.dist, a.yaw, pool) for r in a.train.split(",") if r]
         for r in train:
             soften(r, a.far_atleast, a.cap_atleast)
-        train += [load_run(os.path.join(a.hand_labels, r + ".npz"), a.cache, a.dist, a.yaw, pool, a.hand_min_labeled)
+        train += [load_run(os.path.join(a.hand_labels, r + ".npz"), a.cache, a.dist, a.yaw, pool, a.hand_min_labeled, bool(a.hand_only))
                   for r in a.hand_train.split(",") if r]
         val = [load_run(os.path.join(a.labels, r + ".npz"), a.cache, a.dist, a.yaw, pool) for r in a.val.split(",") if r]
     print("Training:", {r["run"]: len(r["imgs"]) for r in train}, "Prüfung:", {r["run"]: len(r["imgs"]) for r in val}, flush=True)
@@ -264,8 +286,9 @@ def main() -> int:
     kind = torch.as_tensor(np.concatenate([r["kind"] for r in train]), device=dev)
     # Bilder mit eigener Handlinie mehrfach: Sie sind die einzige Quelle der Wahrheit
     hand = np.concatenate([r["hand"] for r in train])
-    order = torch.as_tensor(np.repeat(np.arange(len(hand)), np.where(hand, a.hand_repeat, 1)), device=dev)
-    print("Bilder %d, davon mit Handlinie %d, je Epoche %d" % (len(hand), hand.sum(), len(order)), flush=True)
+    near = np.concatenate([near_frames(r, a.near_m, a.near_share) for r in train])
+    order = torch.as_tensor(np.repeat(np.arange(len(hand)), np.maximum(np.where(hand, a.hand_repeat, 1), np.where(near, a.near_repeat, 1))), device=dev)
+    print("Bilder %d, davon mit Handlinie %d, nah %d, je Epoche %d" % (len(hand), hand.sum(), near.sum(), len(order)), flush=True)
     centers = torch.as_tensor(bin_centers(), dtype=torch.float32, device=dev)
 
     net = FloorNet().to(dev)
@@ -281,7 +304,10 @@ def main() -> int:
         for i in range(len(order) // a.bs):
             b = perm[i * a.bs:(i + 1) * a.bs]
             xb, rb, kb = augment(x[b], row[b], kind[b], bool(a.norm))
-            loss = column_loss(net(xb), rb, kb, centers, far_w=a.far_w, atleast_w=a.atleast_w)
+            lg = net(xb)
+            loss = column_loss(lg, rb, kb, centers, far_w=a.far_w, atleast_w=a.atleast_w)
+            if a.smooth_w:
+                loss = loss + a.smooth_w * smooth_loss(lg, rb, kb, centers)
             opt.zero_grad(set_to_none=True)
             loss.backward()
             opt.step()
