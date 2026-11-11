@@ -183,3 +183,108 @@ def test_overlay_zeigt_nur_das_netz_wenn_es_entscheidet():
 
 def test_primaer_ist_ab_werk_das_verfahren():
     assert Config().freespace.primary == "method"
+
+
+# ---- ZeilenGlaetter: Kante über die Zeit beruhigen ----
+
+def _geo():
+    from xgonav.geometry import CamGeometry
+    return CamGeometry(640, 480, 91.8, tilt_deg=2.0, mount_offset_mm=0.0, body_height_mm=110.0, cam_fwd_mm=30.0)
+
+
+def _zeilen(geo, punkte, pose, pitch=0.0):
+    """Weltpunkte am Boden -> Grenzzeilen (NCOLS) aus Sicht von pose; Spalten ohne Punkt 300."""
+    rows = np.full(NCOLS, 300.0, np.float32)
+    for wx, wy in punkte:
+        dx, dy = wx - pose[0], wy - pose[1]
+        vor = dx * np.cos(pose[2]) + dy * np.sin(pose[2]) - geo.cam_fwd
+        links = -dx * np.sin(pose[2]) + dy * np.cos(pose[2])
+        x = geo.cx - geo.f * links / vor
+        if vor > 0.05 and 0 <= x < 640:
+            rows[int(x // 8)] = geo.H / 2 + geo.f * np.tan(np.arctan2(geo.cam_h, vor) + np.radians(geo.tilt_deg) + pitch)
+    return rows
+
+
+def test_glaetter_nimmt_einzelnen_ausreisser_im_stand_heraus():
+    from xgonav.floornet import ZeilenGlaetter
+    geo, g = _geo(), ZeilenGlaetter(3)
+    ruhig = np.full(NCOLS, 350.0, np.float32)
+    pose = (1.0, 2.0, 0.5)
+    assert np.array_equal(g.glaetten(ruhig, pose, 0.0, 0.0, geo), ruhig)        # erstes Bild: unverändert
+    g.glaetten(ruhig, pose, 0.0, 0.083, geo)
+    zacke = ruhig.copy()
+    zacke[40] = 470.0
+    assert np.allclose(g.glaetten(zacke, pose, 0.0, 0.166, geo), ruhig, atol=0.5)
+    # bleibt die Stufe, gilt sie ab dem zweiten Bild
+    assert g.glaetten(zacke, pose, 0.0, 0.25, geo)[40] == pytest.approx(470.0, abs=0.5)
+
+
+def test_worker_glaettet_nur_auf_wunsch_und_haelt_die_rohen_zeilen():
+    class _Folge(_Net):
+        def __init__(self):
+            super().__init__()
+            self.k = 0
+
+        def run(self, bgr):
+            self.k += 1
+            return np.full(NCOLS, 460.0 if self.k == 3 else 350.0, np.float32)      # drittes Bild: Ausreißer
+
+    def lauf(n):
+        est = _EstNetz()
+        est.geo = _geo()
+        w = FreeSpaceWorker(est, net=_Folge(), net_primary=True, net_smooth_n=n)
+        w.start()
+        out = []
+        for k in range(3):
+            w.offer(np.zeros((480, 640, 3), np.uint8), 0.0, [], (0.0, 0.0, 0.0), 0.083 * k)
+            t0, fs = time.monotonic(), None
+            while fs is None and time.monotonic() - t0 < 2.0:
+                fs = w.poll()
+                time.sleep(0.005)
+            out.append(fs)
+        w.close()
+        return out
+
+    roh = lauf(0)[2]
+    assert roh.net_rows[0] == 460.0 and roh.net_rows_raw is None
+    glatt = lauf(3)
+    assert glatt[0].net_rows[0] == 350.0
+    assert glatt[2].net_rows == pytest.approx(350.0, abs=0.5) and glatt[2].net_rows_raw[0] == 460.0
+    assert glatt[2].columns == pytest.approx(glatt[1].columns, abs=0.01) and glatt[2].src == "net"
+
+
+def test_glaetter_mittelt_nie_bei_zwei_werten():
+    from xgonav.floornet import ZeilenGlaetter
+    geo, g = _geo(), ZeilenGlaetter(3)
+    a, b = np.full(NCOLS, 350.0, np.float32), np.full(NCOLS, 400.0, np.float32)
+    g.glaetten(a, (0, 0, 0), 0.0, 0.0, geo)
+    assert np.array_equal(g.glaetten(b, (0, 0, 0), 0.0, 0.083, geo), b)         # 2 Werte: der aktuelle, kein Mittel
+
+
+@pytest.mark.parametrize("pose1,pitch1", [((0.0, 0.0, 0.2), 0.0), ((0.1, 0.0, 0.0), 0.0), ((0.05, 0.02, -0.1), 0.02)])
+def test_glaetter_rechnet_feste_bodenpunkte_auf_ihre_zeile_um(pose1, pitch1):
+    from xgonav.floornet import ZeilenGlaetter
+    geo = _geo()
+    punkte = [(0.6 + 0.004 * i, -0.4 + 0.008 * i) for i in range(100)]          # schräge Kante am Boden
+    alt = _zeilen(geo, punkte, (0.0, 0.0, 0.0))
+    neu = _zeilen(geo, punkte, pose1, pitch1)
+    um = ZeilenGlaetter.umrechnen(alt, (0.0, 0.0, 0.0), 0.0, pose1, pitch1, geo)
+    ziel = np.isfinite(um) & (neu != 300.0)
+    assert ziel.sum() >= 15
+    # Spaltenraster 8 px: an einer schrägen Kante bis zu einer Spalte Versatz, also einige Zeilen
+    assert np.median(np.abs(um[ziel] - neu[ziel])) < 3.0
+
+
+def test_glaetter_setzt_bei_posensprung_luecke_und_fehlender_pose_zurueck():
+    from xgonav.floornet import ZeilenGlaetter
+    geo = _geo()
+    a, b = np.full(NCOLS, 350.0, np.float32), np.full(NCOLS, 420.0, np.float32)
+    for pose, t in (((2.0, 0.0, 0.0), 0.166), ((0.0, 0.0, 0.0), 2.0), (None, 0.166)):
+        g = ZeilenGlaetter(3)
+        g.glaetten(a, (0.0, 0.0, 0.0), 0.0, 0.0, geo)
+        g.glaetten(a, (0.0, 0.0, 0.0), 0.0, 0.083, geo)
+        assert np.array_equal(g.glaetten(b, pose, 0.0, t, geo), b)
+    assert Config().freespace.net_smooth_n == 0                                  # ab Werk aus
+    g = ZeilenGlaetter(1)                                                        # n = 1: aus
+    g.glaetten(a, (0.0, 0.0, 0.0), 0.0, 0.0, geo)
+    assert np.array_equal(g.glaetten(b, (0.0, 0.0, 0.0), 0.0, 0.083, geo), b)

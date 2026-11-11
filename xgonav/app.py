@@ -144,7 +144,10 @@ class App:
                          cfg.freespace.method)
             elif self.fse is not None:
                 log.warning("[floornet] primary = net, aber kein Netz: Verfahren %s entscheidet", cfg.freespace.method)
-        self.fs_worker = FreeSpaceWorker(self.fse, cfg.cpu.freespace_cpus, shadow, net_primary) \
+        if net_primary and cfg.freespace.net_smooth_n > 1:
+            log.info("[floornet] Kante über %d Netzbilder beruhigt (net_smooth_n)", cfg.freespace.net_smooth_n)
+        self.fs_worker = FreeSpaceWorker(self.fse, cfg.cpu.freespace_cpus, shadow, net_primary,
+                                         cfg.freespace.net_smooth_n if net_primary else 0) \
             if self.fse is not None and cfg.freespace.threaded else None
         m = cfg.map
         self.lmap = LocalMap(self.geo, self.fse.W, self.fse.H, max_age_s=m.max_age_s, confirm=m.confirm,
@@ -595,7 +598,7 @@ class App:
                 self._free = r
             if f.idx % 2 == 0 or self._free is None:
                 self.fs_worker.offer(f.bgr, pitch_dev, [t.box for t in self.tracker.tracks],
-                                     self.gridmap.pose() if self.gridmap is not None else None)
+                                     self.gridmap.pose() if self.gridmap is not None else None, f.t)
         elif self.fse is not None and (f.idx % 2 == 0 or self._free is None):
             self._free = self.fse.update(f.bgr, pitch_dev, [t.box for t in self.tracker.tracks])
             self._free.pose = self.gridmap.pose() if self.gridmap is not None else None

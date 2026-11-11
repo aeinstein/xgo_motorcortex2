@@ -48,6 +48,8 @@ class FreeSpace:
     pose: tuple | None = None
     # FloorNet: Grenzzeile je Netzspalte (Vollbild). Geht nur mit src = "net" in Entscheidungen ein.
     net_rows: np.ndarray | None = None
+    # Mit net_smooth_n: Ausgabe des Netzes vor dem Glätten über die Zeit (net_rows ist dann die geglättete).
+    net_rows_raw: np.ndarray | None = None
     # Woher columns und sectors stammen: "method" (Verfahren aus der Konfig) oder "net" (FloorNet).
     src: str = "method"
 
@@ -729,10 +731,14 @@ class FreeSpaceWorker:
     Konstanten (W, H, scale) des Schätzers darf die Hauptschleife weiter nutzen, diag wird
     je Lauf durch ein neues dict ersetzt (nie verändert)."""
 
-    def __init__(self, est: FreeSpaceEstimator, cpus=None, net=None, net_primary: bool = False):
+    def __init__(self, est: FreeSpaceEstimator, cpus=None, net=None, net_primary: bool = False, net_smooth_n: int = 0):
         self.est = est
         self.net = net                     # FloorNet oder None
         self.net_primary = net_primary     # True: Das Netz entscheidet allein, das Verfahren rechnet nicht mit
+        self.smooth = None                 # Kante über die Zeit beruhigen (nur wenn das Netz entscheidet)
+        if net_smooth_n > 1:
+            from .floornet import ZeilenGlaetter
+            self.smooth = ZeilenGlaetter(net_smooth_n)
         self.net_ms = 0.0
         self.cpus = list(cpus or [])
         self._cond = threading.Condition()
@@ -756,10 +762,11 @@ class FreeSpaceWorker:
         if self.net is not None and not (self._thread and self._thread.is_alive()):
             self.net.close()
 
-    def offer(self, bgr, pitch_dev: float, boxes, pose=None) -> None:
-        """pose: Kartenpose zum Bild, wird dem Ergebnis mitgegeben."""
+    def offer(self, bgr, pitch_dev: float, boxes, pose=None, t: float | None = None) -> None:
+        """pose: Kartenpose zum Bild, wird dem Ergebnis mitgegeben. t: Aufnahmezeit (s, monoton), für das Glätten."""
+        import time
         with self._cond:
-            self._job = (bgr, pitch_dev, list(boxes), pose)
+            self._job = (bgr, pitch_dev, list(boxes), pose, time.monotonic() if t is None else t)
             self._cond.notify()
 
     def poll(self) -> FreeSpace | None:
@@ -808,8 +815,13 @@ class FreeSpaceWorker:
             rows = self.net.run(job[0])
             if not np.isfinite(rows).all():
                 raise ValueError("FloorNet liefert ungültige Zeilen")
+            roh = rows
+            if self.smooth is not None:
+                rows = self.smooth.glaetten(roh, job[3], job[1], job[4], getattr(self.est, "geo", None))
             fs = self.est.from_net(rows, job[1])
             fs.net_rows = rows
+            if self.smooth is not None:
+                fs.net_rows_raw = roh
             fs.pose = job[3]
         except Exception:
             log.exception("FloorNet fehlgeschlagen: aus, das Verfahren entscheidet")

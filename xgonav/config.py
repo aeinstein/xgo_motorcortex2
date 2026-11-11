@@ -242,6 +242,11 @@ class FreespaceCfg:
     # net_outlier_ratio der Masse ihres eigenen Gipfels, gilt das beste Fach beim Medianwert. 0 = aus.
     net_outlier_px: float = 25.0
     net_outlier_ratio: float = 0.3
+    # FloorNet, Kante über die Zeit beruhigen (floornet.ZeilenGlaetter, nur mit primary = "net"): die letzten
+    # net_smooth_n Ausgaben werden über Pose und Nicken auf das aktuelle Bild umgerechnet, je Spalte gilt der Median.
+    # 3: ein Ausreißer in einem einzelnen Bild verschwindet, ein neues Hindernis erscheint ein Netzbild (83 ms) später.
+    # 0 oder 1 = aus. Braucht die Kartenpose; ohne sie gilt die Ausgabe unverändert.
+    net_smooth_n: int = 0
     edge_fallback_free: float = 0.98
     edge_thin: bool = True         # dünne Linien vorher entfernen (Fugen – aber auch Kontaktschatten)
     edge_k: int = 3                # Zeilen je Seite für den Stufenvergleich (Arbeitsauflösung)

@@ -63,6 +63,8 @@ classes = ["person", "chair", "couch", "dining table", "potted plant", "bed", "d
 
 [freespace]
 # net_outlier_px = 25.0 ist Standard: einzelne Zacken der FloorNet-Grenze herausnehmen (0 = aus), docs/floornet.md
+# net_smooth_n = 3      # FloorNet-Kante über 3 Netzbilder beruhigen (Median je Spalte nach Umrechnen mit Pose und
+                        # Nicken); nur mit primary = "net", 0 = aus (Standard), docs/floornet.md
 # primary = "net"       # FloorNet entscheidet allein, das Verfahren (method) rechnet nur bei Ausfall des Netzes;
                         # braucht shadow_net und threaded. Am RiderPi seit 2026-11-10 gesetzt, nicht gefahren
 method = "kanten"        # Bodengrenze aus Stufenkanten; replay 2026-11-04: Fehlalarme 0,2–16 % statt 25–53 % (Farbe)

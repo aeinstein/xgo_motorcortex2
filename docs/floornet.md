@@ -176,6 +176,18 @@ The table below is the network of 2026-11-06; the current one has the same struc
 
 The drive rows come from different scenes and light; they are not a clean comparison. The plan goal p95 < 15 ms is missed while driving.
 
+## Smoothing over time (2026-11-11)
+
+`[freespace] net_smooth_n` (`xgonav/floornet.py`, `ZeilenGlaetter`; default 0 = off, not on the Rider yet): the last n network outputs are mapped onto the current frame through the floor plane (map pose, pitch), the median per column counts. No retraining, numpy on n × 80 values. Measured with `tools/floornet/glaetten_eval.py` on explore10–12 (4 551 frames, every second camera frame, network `lauf_stage3`, stage 3 labels of prompt 10):
+
+| Variant | Jumps > 20 rows to the previous frame | Median jump | < 1 m falsely free | < 1 m falsely blocked |
+|---|---|---|---|---|
+| raw | 1.12 % | 0.6 rows | 6.20 % | 4.85 % |
+| n = 3 | 0.61 % | 0.2 rows | 6.40 % | 4.63 % |
+| n = 5 | 0.51 % | 0.2 rows | 6.68 % | 4.48 % |
+
+The rise of "falsely free" comes almost only from explore10 (0.5–1 m: 13.1 → 14.7 → 16.1 %). Persistent errors stay; it only removes outliers in time.
+
 ## Labels from ComfyUI (2026-11-08)
 
 ComfyUI on kimmy (service `comfyui`, ~29 GB VRAM next to LM Studio) has only image generation and editing models, no segmentation or depth. Qwen-Image-Edit 2511 with the 4-step Lightning LoRA recolours the floor green; the green mask gives the boundary per column (lowest run of floor from the bottom, gaps up to 6 rows bridged). 3.6 s per frame, first load 2.5 min.
