@@ -17,6 +17,12 @@ Per frame `renderFaultLeds` is tried first, otherwise `renderLeds`:
 Fault colour depends on `last_stop_reason` (`ledFaultFor(driving,last_stop)`), normal display on
 `mode` and drive/action values. All fields are in `!status` (`mode`, `reason`, `last_stop_reason`, `driving`).
 
+## Power-on / ESP reset
+
+| Colour | Pattern | Meaning |
+|---|---|---|
+| **Pink** (R192 G0 B63), steady, all 4 | constant | **Just powered on / ESP reset.** `BoardSupport::begin()` sets the user LEDs once to palette index 234 (`fillPalette(0,4,234)`) and shows them. In mode 253 nothing redraws, so pink stays until a fault/stop colour, balancing (user LEDs, still pink by default), driving (green) or written user LEDs. |
+
 ## Fault / stop colours (Rider NOT standing, servos usually released)
 
 | Colour | Pattern | Meaning (LedFault ← stop reason) |
@@ -36,7 +42,7 @@ Fault colour depends on `last_stop_reason` (`ledFaultFor(driving,last_stop)`), n
 
 | Colour | When | Meaning |
 |---|---|---|
-| **User LEDs** (default: rainbow palette) | standing/balancing, not driving | Idle. Colours via `!rgb` / registers 0x69–0x6c. |
+| **User LEDs** (default: pink, palette 234, all 4 the same) | standing/balancing, not driving | Idle. Colours via `!rgb` / registers 0x69–0x6c. |
 | **Green, direction-dependent** | driving (\|forward\|>5 or \|turn\|>5) | Forward → LEDs 0&3, backward → 1&2, left/right turn → two LEDs each. |
 
 ## Action animations (during an action, `mode 1`)
@@ -56,7 +62,7 @@ Fault colour depends on `last_stop_reason` (`ledFaultFor(driving,last_stop)`), n
 | 250 | battery empty / shutdown | red blinking (battery timing) |
 | 251 | actuator fault / flash stop | red slow blink (Other) |
 | 252 | policy/control fault | red slow blink (Other) |
-| 253 | after flash / ready but disarmed / neutral | no fault colour (LEDs unchanged / user LEDs) |
+| 253 | after flash / ready but disarmed / neutral | no fault colour (LEDs unchanged: pink after power-on) |
 | 254 | manual stop | amber |
 | 255 | leg calibration running | (calibration mode) |
 
@@ -65,7 +71,8 @@ Fault colour depends on `last_stop_reason` (`ledFaultFor(driving,last_stop)`), n
 - **Amber** = deliberately stopped.
 - **Green** = driving (direction).
 - **Blue** = trim / roll wave.
-- **Colourful, steady** = idle (user LEDs).
+- **Pink** = just powered on / ESP reset, or idle with default user LEDs.
+- **Other steady colour** = idle (user LEDs set via `!rgb` / `leds/0..3`).
 
 Read state live: `!status` → `mode`, `driving`, `reason`, `last_stop_reason`. Set LEDs (visible only when idle):
 `!rgb <index 0..3> <r> <g> <b>` or registers 0x69–0x6c (`/proc/XGORider/leds/0..3`).
