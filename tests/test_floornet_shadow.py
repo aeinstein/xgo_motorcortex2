@@ -15,8 +15,6 @@ from xgonav.app import Snapshot, render  # noqa: E402
 from xgonav.config import Config  # noqa: E402
 from xgonav.floornet import NCOLS, FloorNet  # noqa: E402
 from xgonav.freespace import FreeSpace, FreeSpaceEstimator, FreeSpaceWorker, net_to_columns  # noqa: E402
-from xgonav.geometry import CamGeometry  # noqa: E402
-from xgonav.gridmap import GridMap  # noqa: E402
 
 
 class _Est:
@@ -184,20 +182,4 @@ def test_overlay_zeigt_nur_das_netz_wenn_es_entscheidet():
 
 
 def test_primaer_ist_ab_werk_das_verfahren():
-    assert Config().freespace.primary == "method" and Config().grid.net_row_bias == 0.0
-
-
-def test_raumkarte_nimmt_den_versatz_der_quelle():
-    cfg = Config()
-    cfg.grid.row_bias, cfg.grid.net_row_bias, cfg.grid.native = 8.0, 0.0, False
-    geo = CamGeometry.from_cfg(cfg)
-    gefunden = {}
-    for src in ("method", "net"):
-        gm = GridMap(cfg.grid, geo, 160, 120)
-        for _ in range(5):
-            fs = FreeSpace(sectors=[0.3] * 5, columns=np.full(160, 0.3, np.float32), horizon_row=60.0, valid=True, src=src)
-            gm.add_freespace(fs, 0.0, (0.0, 0.0, 0.0))
-        occ = gm.occupied_cells(0.0)
-        gefunden[src] = float(np.median(occ[:, 0]))
-    # Positiver row_bias legt die Grenze höher im Bild, also weiter weg; der Netzversatz 0 nicht
-    assert gefunden["method"] > gefunden["net"] + 0.02
+    assert Config().freespace.primary == "method"

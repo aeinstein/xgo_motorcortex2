@@ -156,6 +156,12 @@ switch ($a) {
         xgonav('POST', '/map/start');
     case 'map_save':
         xgonav('POST', '/map/save');
+    case 'map_pose':
+        $aktion = $_GET['aktion'] ?? '';
+        if (!in_array($aktion, ['start', 'hier', 'verwerfen'], true)) {
+            antwort(400, json_encode(['error' => 'unbekannte Aktion']));
+        }
+        xgonav('POST', '/map/pose?aktion=' . $aktion);
     case 'map_lock':
         xgonav('POST', '/map/lock?on=' . (($_GET['on'] ?? '1') === '0' ? '0' : '1'));
     case 'route':

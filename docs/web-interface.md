@@ -72,6 +72,7 @@ GET only for `status`, `route`, `horizon`; all commands POST. Parameters are val
 | `POST ?a=map_reset` | xgonav `/map/reset` | |
 | `POST ?a=map_start` | xgonav `/map/start` | |
 | `POST ?a=map_save` | xgonav `/map/save` | |
+| `POST ?a=map_pose&aktion=start\|hier\|verwerfen` | xgonav `/map/pose` | confirm or discard the pose in the room map (`[reloc] enabled`) |
 | `GET ?a=horizon` | xgonav `/horizon` | |
 | `POST ?a=horizon_edit&row=..` | xgonav `/horizon/edit` | 0..479.9, empty = off |
 | `POST ?a=horizon_cal&row=..` | xgonav `/horizon/cal` | 0..479.9 |
@@ -108,6 +109,7 @@ xgonav unreachable → HTTP 502 `xgonav nicht erreichbar`. Exposure/gain changes
 | POST | `/map/reset` | clear room map, pose = start = 0 |
 | POST | `/map/start` | start point = current pose |
 | POST | `/map/save` | save now to `grid.file`; 404 if no map or no file |
+| POST | `/map/pose?aktion=start\|hier\|verwerfen` | `start`: Rider stands on the start point, pose jumps there; `hier`: shown pose is right; `verwerfen`: pose unknown (needs `[reloc] enabled`). 409 while lying, during `home`/`patrol`/`explore` |
 | GET | `/horizon` | horizon table + `stand` (same as `/status` `horizon`); 409 if `[horizon]` off |
 | POST | `/horizon/edit?row=..` | green line in the overlay (full-frame row), empty = off |
 | POST | `/horizon/cal?row=..` | store row for the body height of the stand reference; 409 without valid stand reference |

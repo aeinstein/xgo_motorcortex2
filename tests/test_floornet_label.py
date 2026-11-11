@@ -138,9 +138,9 @@ def test_nah_gilt_die_kantenzeile_wenn_sie_zur_karte_passt():
     kanten = near + 6.0                                                      # 6 px ~ 1 cm vor dem Label
     rows = np.array([[near, near, near, far]], np.float32)
     kinds = np.array([[L.EXACT, L.ATLEAST, L.EXACT, L.EXACT]], np.uint8)
-    kr = np.array([[kanten + 4.0, kanten + 4.0, float(L.ground_row(g, 0.8, 0.02)) + 4.0, far + 20.0]], np.float32)
-    out = L.snap_near(rows, kinds, kr, g, p, bias_px=4.0)
-    assert out[0, 0] == pytest.approx(kanten)                                # nah, passt, um den Versatz korrigiert
+    kr = np.array([[kanten, kanten, float(L.ground_row(g, 0.8, 0.02)), far + 20.0]], np.float32)
+    out = L.snap_near(rows, kinds, kr, g, p)
+    assert out[0, 0] == pytest.approx(kanten)                                # nah, passt: Kantenzeile gilt
     assert out[0, 1] == pytest.approx(near)                                  # ATLEAST bleibt
     assert out[0, 2] == pytest.approx(near)                                  # Kanten 0,4 m daneben: Karte gilt
     assert out[0, 3] == pytest.approx(far)                                   # Ferne: Karte ist feiner

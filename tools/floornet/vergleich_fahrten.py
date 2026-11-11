@@ -2,7 +2,7 @@
 """FloorNet: Netz und Verfahren (kanten) als Entscheider über aufgezeichnete Fahrten vergleichen, ohne Fahrt am Rider.
 
   python tools/floornet/vergleich_fahrten.py DATEN/unten4 --config rider/config.toml --net lauf/ --out vgl/ \\
-      --hand hand.json --set grid.row_bias=-1
+      --hand hand.json --set grid.max_range_m=1.0
 
 Beide Spuren bekommen dieselben Bilder, denselben Nick und dieselbe Bahn und durchlaufen je eine Merkkarte und eine
 Raumkarte wie in App._step. Das Netz muss die Fahrt nicht im Training gehabt haben (--net wie bei eval_hand.py).

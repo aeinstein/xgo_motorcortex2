@@ -85,6 +85,10 @@ class GridMap:
             self.plan: list[tuple[float, float]] = []             # geplanter Weg (nur Anzeige, von App)
             self.map_id = secrets.token_hex(4)                    # Route und Zonen gehören zu genau dieser Karte
             self.locked = False                                   # gesperrt: Beobachtungen ändern die Karte nicht
+            # False: Die Pose in der Karte ist unbekannt (getragen, gefallen, Neustart). Dann ändert nichts die
+            # Karte und der Weg wird nicht aufgezeichnet; die Pose läuft weiter mit (Anzeige). Setzt nur App.
+            self.pose_ok = True
+            self.saved_pose: tuple | None = None                  # Pose beim letzten Speichern (aus der Datei)
             self.route: list[tuple[float, float]] = []            # Wegpunkte der Streife (xgonav/route.py)
             self.route_loop = False
             self.zones: list[list[tuple[float, float]]] = []      # Sperrzonen: Eckpunkte, gelten für alle Modi
@@ -118,12 +122,30 @@ class GridMap:
                 cv2.polylines(m, [px], True, 1, thickness=2 * rad + 1)
         return m.astype(bool)
 
+    def set_pose_ok(self, ok: bool) -> None:
+        """Pose gültig oder unbekannt. Beim Gültigwerden beginnt der Weg neu: Was dazwischen lag, ist unbekannt."""
+        with self._lock:
+            if ok and not self.pose_ok:
+                self.path = [(self.x, self.y)]
+            self.pose_ok = ok
+
+    def set_pose(self, pose: tuple) -> None:
+        with self._lock:
+            self.x, self.y, self.th = (float(v) for v in pose)
+            self.path = [(self.x, self.y)]
+
+    def empty(self) -> bool:
+        """Noch nichts eingetragen: Dann legt die Karte ihr KS selbst fest, die Pose kann nicht falsch sein."""
+        with self._lock:
+            return not bool(np.any(self.lo))
+
     def relocate_to_start(self) -> None:
         """Der Nutzer bestätigt: Der Rider steht am Startpunkt. Die Pose springt dorthin, die Drift ist weg."""
         with self._lock:
             d = math.hypot(self.x - self.start[0], self.y - self.start[1])
             self.x, self.y, self.th = self.start
             self.path = [(self.x, self.y)]
+            self.pose_ok = True
         log.info("Pose auf den Startpunkt gesetzt (%.2f m Korrektur)", d)
 
     def set_start(self) -> None:
@@ -138,6 +160,7 @@ class GridMap:
         with self._lock:
             lo = self.lo.copy()
             start = np.array(self.start, np.float64)
+            pose = np.array((self.x, self.y, self.th), np.float64)
             path_pts = np.array(self.path, np.float64).reshape(-1, 2)
             key = (self.updates, self.start)
             map_id, locked = self.map_id, self.locked
@@ -147,7 +170,7 @@ class GridMap:
         try:
             with open(tmp, "wb") as f:
                 np.savez_compressed(f, lo=lo.astype(np.float16), res=self.res, n=self.n,
-                                    start=start, path=path_pts, map_id=map_id, locked=locked, **extra)
+                                    start=start, path=path_pts, map_id=map_id, locked=locked, pose=pose, **extra)
             os.replace(tmp, path)
         except OSError as e:
             log.warning("Raumkarte nicht gespeichert (%s): %s", path, e)
@@ -181,6 +204,7 @@ class GridMap:
                 start = tuple(float(v) for v in d["start"])
                 map_id = str(d["map_id"]) if "map_id" in d.files else secrets.token_hex(4)
                 locked = bool(d["locked"]) if "locked" in d.files else False
+                saved_pose = tuple(float(v) for v in d["pose"]) if "pose" in d.files else None
                 cand = tuple(d[k] for k in ("rmin", "rmax", "conf")) if "conf" in d.files else None
         except (OSError, KeyError, ValueError) as e:
             log.warning("Raumkarte %s nicht geladen: %s", path, e)
@@ -199,6 +223,7 @@ class GridMap:
             self.path = [(start[0], start[1])]
             self.plan = []
             self.map_id, self.locked = map_id, locked
+            self.saved_pose = saved_pose
             self.route, self.route_loop, self.zones = [], False, []
             self._stats = None
             self._saved_key = (self.updates, self.start)
@@ -214,7 +239,7 @@ class GridMap:
             self.y += ds * math.sin(mid)
             self.th += dyaw
             px, py = self.path[-1]
-            if math.hypot(self.x - px, self.y - py) > 0.05:
+            if self.pose_ok and math.hypot(self.x - px, self.y - py) > 0.05:
                 self.path.append((self.x, self.y))
                 if len(self.path) > 5000:
                     del self.path[:1000]
@@ -227,7 +252,7 @@ class GridMap:
 
     def _clear_disk(self, x: float, y: float, r: float) -> None:
         """Wo der Rider stand oder fuhr, ist Boden. Aufrufer hält das Lock."""
-        if r <= 0 or self.locked:
+        if r <= 0 or self.locked or not self.pose_ok:
             return
         k = int(math.ceil(r / self.res))
         rc, cc = (int(v) for v in self.cell(x, y))
@@ -254,20 +279,18 @@ class GridMap:
         with self._lock:
             return self.x, self.y, self.th
 
-    def add_freespace(self, fs: FreeSpace, pitch_dev: float,
-                      pose: tuple[float, float, float] | None = None) -> None:
-        """Beobachtung eintragen. pose = (x, y, th) zum Zeitpunkt der Aufnahme (GridWorker
-        rechnet später, der Rider ist dann schon weiter); None = aktuelle Pose."""
-        if fs is None or fs.columns is None or self.locked:
-            return
+    def _rays(self, fs: FreeSpace, pitch_dev: float):
+        """Strahlen einer Beobachtung im Kamera-KS: je genutzter Spalte Peilung (links +), Länge bis zur
+        Bodengrenze, Ende und Anfang des Freistrahls (alle entlang der Peilung, m), dazu ok (Freistrahl
+        vorhanden) und hit (Treffer bis max_range_m). Nur Geometrie, ohne Lock; auch der Kartenabgleich
+        (reloc.py) rechnet damit, damit beide dieselben Punkte sehen."""
         cfg = self.cfg
         sc = self.geo.W / self.fw
         span = self.fh - fs.horizon_row
         cols = np.asarray(fs.columns, float)
         idx = np.arange(0, len(cols), max(1, cfg.column_step))     # NaN-Spalten = unbekannt
         v = cols[idx]
-        bias = cfg.net_row_bias if fs.src == "net" else cfg.row_bias
-        dist = self.geo.ground_dist_np((self.fh - v * span - bias) * sc, pitch_dev)
+        dist = self.geo.ground_dist_np((self.fh - v * span) * sc, pitch_dev)
         start = np.full(len(idx), cfg.min_range_m)
         if fs.known_from is not None:
             kf = np.asarray(fs.known_from, float)[idx]
@@ -291,6 +314,16 @@ class GridMap:
         bear, rad = self._bear[key]
         dist, free_len, start = dist * rad, free_len * rad, start * rad
         ok = np.isfinite(free_len) & (free_len > start)
+        return idx, bear, dist, free_len, start, ok, hit
+
+    def add_freespace(self, fs: FreeSpace, pitch_dev: float,
+                      pose: tuple[float, float, float] | None = None) -> None:
+        """Beobachtung eintragen. pose = (x, y, th) zum Zeitpunkt der Aufnahme (GridWorker
+        rechnet später, der Rider ist dann schon weiter); None = aktuelle Pose."""
+        if fs is None or fs.columns is None or self.locked or not self.pose_ok:
+            return
+        cfg = self.cfg
+        idx, bear, dist, free_len, start, ok, hit = self._rays(fs, pitch_dev)
         with self._lock:
             px, py, pth = pose if pose is not None else (self.x, self.y, self.th)
             # Pose = Radachse; die Strahlen beginnen am Kamerafußpunkt cam_fwd davor
@@ -382,10 +415,11 @@ class GridMap:
             pose = [round(self.x, 3), round(self.y, 3), round(math.degrees(self.th), 1)]
             sx, sy, sth = self.start
             home = math.hypot(self.x - sx, self.y - sy)
+            pose_ok = self.pose_ok
         if self._stats is None or now - self._stats_t > max_age_s:
             self._stats, self._stats_t = self._count(), now
         return {"pose": pose, "start": [round(sx, 3), round(sy, 3), round(math.degrees(sth), 1)],
-                "zum_start_m": round(home, 2), **self._stats}
+                "zum_start_m": round(home, 2), "pose_ok": pose_ok, **self._stats}
 
     def _count(self) -> dict:
         with self._lock:
@@ -414,6 +448,7 @@ class GridMap:
             plan = list(self.plan)
             sx, sy, sth = self.start
             route, loop, zones = list(self.route), self.route_loop, list(self.zones)
+            pose_ok = self.pose_ok
         n_px = max(1, int(round(view_m / self.res)))                   # Zellen je Bildkante
         k = px / n_px
         mx, my = center if center is not None else (x, y)
@@ -456,7 +491,10 @@ class GridMap:
         tip = to_px(x + 0.18 * math.cos(th), y + 0.18 * math.sin(th))
         lft = to_px(x + 0.08 * math.cos(th + 2.4), y + 0.08 * math.sin(th + 2.4))
         rgt = to_px(x + 0.08 * math.cos(th - 2.4), y + 0.08 * math.sin(th - 2.4))
-        cv2.fillPoly(img, [np.array([tip, lft, rgt], np.int32)], (40, 40, 220))
+        if pose_ok:
+            cv2.fillPoly(img, [np.array([tip, lft, rgt], np.int32)], (40, 40, 220))
+        else:                                                            # Pose unbekannt: nur der Umriss
+            cv2.polylines(img, [np.array([tip, lft, rgt], np.int32)], True, (40, 40, 220), 2)
         cv2.line(img, (10, px - 12), (10 + int(round(1.0 / self.res * k)), px - 12), (220, 120, 0), 3)
         cv2.putText(img, "1 m", (12, px - 18), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (220, 120, 0), 1, cv2.LINE_AA)
         return img, mx, my, n_px * self.res

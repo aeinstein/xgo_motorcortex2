@@ -237,8 +237,6 @@ All keys with comments: `PetCfg` in `xgonav/config.py`.
 | `min_range_m` / `max_range_m` | 0.15 / 1.25 (hits only up to here) |
 | `confirm_dr_m` / `confirm_cells` | 0 (off) / 2; RiderPi 0.2: a hit counts only once the same spot (± cells) was hit from ranges at least this far apart; until then it is a candidate (orange in `/map.png`). Reflections in a glossy floor and seams move with the Rider and are never confirmed; turning on the spot alone confirms nothing |
 | `free_range_m` | 1.5 (free rays up to here); RiderPi 1.1 |
-| `row_bias` | 1.5 working rows (+ = boundary farther, simulator); RiderPi −1.0 (tape at 0.48 m: boundary ~1 row above the edge) |
-| `net_row_bias` | 0: the same when FloorNet decides (`[freespace] primary = "net"`); trained on hand lines, not on `kanten`; not measured at a wall base |
 | `column_step` | 2 |
 | `l_free` / `l_occ` | -0.4 / 0.5 (two hits to `l_show`) |
 | `l_min` / `l_max` / `l_show` | -3.0 / 3.5 / 0.7 |
@@ -249,6 +247,14 @@ All keys with comments: `PetCfg` in `xgonav/config.py`.
 | `native` | true: enter rays in the C++ core (`xgonav/native/gridfast.cpp`) if built; same map as numpy (CM4 1.5 → 0.1 ms per observation) |
 | `file` | `""` (off); RiderPi example: `/opt/xgonav/raumkarte.npz` |
 | `save_every_s` | 60.0 (only if changed; also on exit) |
+
+### `[reloc]` (pose state, map matching)
+
+| Key | Default | Meaning |
+|---|---|---|
+| `enabled` | `false` | pose state: unknown after set-down, fall, restart; map locked until confirmed in the web UI (`docs/mapping.md`) |
+| `blind_s` | 2.0 | balancing this long without fresh wheel data: pose unknown |
+| `track` and the rest | | map matching, read only by the offline tools so far (`xgonav/config.py`, `RelocCfg`) |
 
 ### `[home]` (return to start)
 | Key | Default | Meaning |

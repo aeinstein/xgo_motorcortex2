@@ -36,7 +36,6 @@ from pick import pick  # noqa: E402
 
 IGNORE, EXACT, ATLEAST = 0, 1, 2
 MARGIN = 12                 # Eingabezeilen Vorrat oberhalb des Ausschnitts, für den simulierten Nick
-BIAS_PX = 6.0               # grid.row_bias: fester Versatz der Kanten (1,5 Zeilen zu je 4 px)
 BANDS = ((0.0, 0.5), (0.5, 1.0), (1.0, 1.5), (1.5, 2.5))
 FAR_M = 0.15                # Abweichung, ab der eine Grenze als falsch zählt (Plan, Schritt 3)
 
@@ -198,7 +197,7 @@ def evaluate(net, runs: list[dict], dev, norm: bool = False) -> dict:
         pr = predict(net, r, dev, norm)
         idx = np.linspace(0, r["kanten"].shape[1] - 1, NCOLS).round().astype(int)
         res[r["run"]] = {"netz": band_report(pr, r["row"], r["kind"], r["pitch"], r["geom"]),
-                         "kanten": band_report(r["kanten"][:, idx] - BIAS_PX, r["row"], r["kind"], r["pitch"], r["geom"])}
+                         "kanten": band_report(r["kanten"][:, idx],r["row"], r["kind"], r["pitch"], r["geom"])}
     return res
 
 

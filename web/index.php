@@ -381,7 +381,14 @@ details.extras[open]>summary{margin-bottom:8px}
       <button onclick="befehl('map_start')" title="Startpunkt = aktuelle Pose">Start hier</button>
       <button onclick="befehl('map_save')" title="Raumkarte jetzt speichern ([grid] file)">Speichern</button>
       <button onclick="befehl('map_reset')">Zurücksetzen</button>
+      <button id="karte-pose-weg" hidden onclick="befehl('map_pose', {aktion: 'verwerfen'})" title="Der Rider wurde versetzt: Die Karte wird nicht mehr beschrieben, bis der Standort bestätigt ist">Pose verwerfen</button>
     </div>
+    <p id="karte-pose-warn" class="hinweis" hidden>
+      <strong>Pose unbekannt</strong> <span id="karte-pose-grund"></span>. Die Karte wird nicht beschrieben, „Zum Start“, Streife und Erkunden sind gesperrt;
+      Sperrzonen gelten an falscher Stelle.
+      <button onclick="poseBestaetigen('start')" title="Die Pose springt auf den Startpunkt">Steht am Startpunkt</button>
+      <button onclick="poseBestaetigen('hier')" title="Der Rider wurde nicht versetzt">Pose stimmt</button>
+    </p>
     <div id="karte-rahmen" title="ziehen: verschieben · Mausrad: zoomen · Doppelklick: zurück zum Rider">
       <img id="karte" alt="Raumkarte" width="320" height="320" draggable="false">
       <svg id="karte-punkte" viewBox="0 0 1 1" preserveAspectRatio="none"></svg>
@@ -606,6 +613,13 @@ function streife() {
   if (!confirm('Steht der Rider (aufgestanden) am Startpunkt, in Startrichtung? Die Pose springt dann dorthin. Sind Treppen und Kanten abgesperrt?')) return;
   return befehl('mode', {name: 'patrol', target: 'person', bestaetigt: 1});
 }
+function poseBestaetigen(aktion) {
+  const frage = aktion === 'start'
+    ? 'Steht der Rider (aufgestanden) am Startpunkt, in Startrichtung? Die Pose springt dann dorthin.'
+    : 'Steht der Rider (aufgestanden) genau dort, wo ihn die Karte zeigt, in dieser Richtung?';
+  if (!confirm(frage)) return;
+  return befehl('map_pose', {aktion});
+}
 function pipelineUmschalten() { return befehl('pipeline', {on: aktPipeline === 'läuft' ? 0 : 1}); }
 let aktAufzeichnung = false;
 function aufzeichnungUmschalten() { return befehl('record', {on: aktAufzeichnung ? 0 : 1}); }
@@ -769,6 +783,10 @@ function statusZeigen(s, fehler) {
         + (p.ausgelassen.length ? ' · ausgelassen: ' + p.ausgelassen.join(', ') : '') + (p.ende ? ' · ' + p.ende : '');
     }
     if (s.grid) {
+      const poseWeg = s.grid.pose_ok === false;
+      $('karte-pose-warn').hidden = !poseWeg;
+      $('karte-pose-grund').textContent = s.grid.pose_grund ? '(' + s.grid.pose_grund + ')' : '';
+      $('karte-pose-weg').hidden = !s.grid.reloc || poseWeg;
       karteGesperrt = !!s.grid.gesperrt;
       const ks = $('karte-sperre');
       ks.textContent = karteGesperrt ? 'Karte entsperren' : 'Karte sperren';

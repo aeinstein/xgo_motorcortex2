@@ -250,13 +250,12 @@ def cast_labels(gm: GridMap, geo: CamGeometry, x, y, th, pitch, ncols: int = NCO
     return rows, kinds
 
 
-def snap_near(rows, kinds, kanten_rows, geo: CamGeometry, pitch, bias_px: float, d_max: float = SNAP_D_M,
+def snap_near(rows, kinds, kanten_rows, geo: CamGeometry, pitch, d_max: float = SNAP_D_M,
               tol_m: float = SNAP_TOL_M) -> np.ndarray:
     """Nahbereich genauer: Das 5-cm-Raster ist dort gröber als das Bild (bei 0,3 m rund 23 Zeilen). Die Karte
-    sagt, dass dort etwas steht; liegt die Kantenzeile dieses Bildes in der Nähe, gilt sie. bias_px ist der
-    feste Versatz der Kanten (grid.row_bias), den auch die Karte abzieht. Rückgabe: neue Zeilen."""
+    sagt, dass dort etwas steht; liegt die Kantenzeile dieses Bildes in der Nähe, gilt sie. Rückgabe: neue Zeilen."""
     idx = np.linspace(0, kanten_rows.shape[1] - 1, rows.shape[1]).round().astype(int)
-    kr = kanten_rows[:, idx] - bias_px
+    kr = kanten_rows[:, idx]
     pitch = np.asarray(pitch)[:, None]
     near = row_dist(geo, rows, pitch)
     with np.errstate(invalid="ignore"):
@@ -342,7 +341,7 @@ def process(job: tuple) -> dict:
     idx = np.array(used)
     pitch = np.array([ms[i]["pitch_dev"] for i in used], np.float32)
     rows, kinds = cast_labels(gm, geo, x[idx], y[idx], th[idx], pitch)
-    rows = snap_near(rows, kinds, kanten_rows, geo, pitch, cfg.grid.row_bias * geo.W / kanten_rows.shape[1])
+    rows = snap_near(rows, kinds, kanten_rows, geo, pitch)
     for k, i in enumerate(used):
         kinds[k][movable_columns(ms[i], geo.W, NCOLS)] = IGNORE
     os.makedirs(out_dir, exist_ok=True)

@@ -379,13 +379,6 @@ class GridCfg:
     # Simulator explore 120 s: Wände 82 % (aus) / 57 % (±1 Zelle) / 73 % (±2 Zellen), Präzision 0,90 / 0,95 / 0,93.
     confirm_dr_m: float = 0.0
     confirm_cells: int = 2
-    # Das Bodenmodell meldet die Grenze so viele Zeilen (seiner Auflösung) unterhalb der wahren
-    # (Stufenfilter, Erosion). Nur für die Raumkarte; die Merkkarte behält das als Sicherheitsrand.
-    # Simulator-Sweep 2026-11-05: 1,5. RiderPi (Klebeband 0,48 m, 2026-11-07): Grenze ~1 Zeile ÜBER der
-    # Kante (weiter weg) -> dort -1,0. Negativ = Grenze näher heranholen.
-    row_bias: float = 1.5
-    # Dasselbe, wenn FloorNet entscheidet (freespace.primary = "net"): Es ist auf Handlinien trainiert, nicht auf die Kanten.
-    net_row_bias: float = 0.0
     column_step: int = 2              # jede k-te Spalte des Bodenmodells (160 Spalten)
     l_free: float = -0.4               # Log-Odds je Beobachtung
     l_occ: float = 0.5                 # zwei Treffer bis "belegt" (l_show): ein Ausreißer sperrt nichts
@@ -601,6 +594,62 @@ class CpuCfg:
 
 
 @dataclass
+class RelocCfg:
+    # Kartenabgleich (reloc.py): Pose in der Raumkarte aus der Bodengrenze der letzten Sekunden.
+    # Rechnet im eigenen Thread, nichts in der Bildschleife. Aus = alles wie bisher.
+    enabled: bool = False              # Zustand "Pose unbekannt", Kartensperre, Modus locate
+    track: bool = False                # laufender Abgleich während der Fahrt
+    # Puffer der Bodengrenze (Punkte im Roboter-KS): so viele Sekunden und so viel Weg zurück
+    window_s: float = 8.0
+    window_m: float = 3.0
+    hit_res_m: float = 0.05            # Treffer auf dieses Raster ausgedünnt
+    free_step_m: float = 0.2           # Freiproben in diesem Abstand auf dem Freistrahl
+    free_res_m: float = 0.10           # und auf dieses Raster ausgedünnt
+    far_m: float = 0.8                 # Treffergewicht 1 / (1 + (d / far_m)²): der Grenzfehler wächst mit d²
+    # laufender Abgleich: höchstens so oft und nur nach so viel Weg oder Drehung
+    every_s: float = 2.0
+    min_move_m: float = 0.2
+    min_turn_deg: float = 20.0
+    # Referenzfeld: Breite der Wand (m), Strafe für Treffer auf bekannt freiem Boden, für Freiproben
+    # auf Belegtem (free_weight) und auf Unbekanntem (free_weight x unknown_weight)
+    sigma_m: float = 0.10
+    miss_weight: float = 0.5
+    free_weight: float = 0.5
+    unknown_weight: float = 0.3
+    # lokale Suche um die Odometrie-Pose
+    search_m: float = 0.30
+    search_deg: float = 8.0
+    step_deg: float = 1.0
+    # Güte: darunter gilt "unsicher" und es wird nichts korrigiert
+    min_points: int = 60               # ausgedünnte Treffer in kartiertem Gebiet (etwa 3 m Wand)
+    min_hit_frac: float = 0.55         # Anteil davon, der an einer Wand der Karte liegt
+    unique_ratio: float = 0.85         # zweitbeste Lage höchstens so gut wie die beste (nur globale Suche)
+    max_slide_m: float = 0.15          # Streuung der fast gleich guten Lagen; darüber gleitet der Abgleich
+    # Korrektur je Abgleich: Anteil, Deckel, Totband; über hold_m Rest wird nichts eingetragen
+    gain: float = 0.6
+    max_step_m: float = 0.08
+    max_step_deg: float = 3.0
+    deadband_m: float = 0.02
+    deadband_deg: float = 0.5
+    hold_m: float = 0.10
+    hold_deg: float = 3.0
+    # Erkunden: Abgleich nur gegen einen Kartenstand, der mindestens so alt ist (sonst bestätigt
+    # sich die Karte selbst); neuer Stand alle ref_every_s
+    ref_age_s: float = 12.0
+    ref_every_s: float = 10.0
+    # globale Suche (Lokalisieren): Raster, beste Kandidaten zum Verfeinern
+    global_step_deg: float = 3.0
+    global_res_m: float = 0.10
+    global_top: int = 8
+    global_known_frac: float = 0.7     # so viel vom Scan muss in kartiertem Gebiet liegen
+    # Modus locate: Rundumblick 360° + so viel, Abbruch bei so viel Verschiebung, Versuche
+    scan_extra_deg: float = 30.0
+    max_shift_m: float = 0.15
+    tries: int = 2
+    blind_s: float = 2.0               # balancierend so lange ohne frische Raddaten: Pose unbekannt
+
+
+@dataclass
 class Config:
     robot: RobotCfg = field(default_factory=RobotCfg)
     camera: CameraCfg = field(default_factory=CameraCfg)
@@ -617,6 +666,7 @@ class Config:
     cpu: CpuCfg = field(default_factory=CpuCfg)
     odom: OdomCfg = field(default_factory=OdomCfg)
     grid: GridCfg = field(default_factory=GridCfg)
+    reloc: RelocCfg = field(default_factory=RelocCfg)
     home: HomeCfg = field(default_factory=HomeCfg)
     explore: ExploreCfg = field(default_factory=ExploreCfg)
     patrol: PatrolCfg = field(default_factory=PatrolCfg)

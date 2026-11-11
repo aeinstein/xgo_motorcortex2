@@ -1199,7 +1199,6 @@ def test_gridmap_wall_and_turn():
     from xgonav.geometry import CamGeometry
     from xgonav.gridmap import GridMap
     cfg = Config()
-    cfg.grid.row_bias = 0.0                                     # hier zählt die reine Geometrie
     g = CamGeometry(640, 480, 91.0, 1.39, 43.0, 85.0)
     m = GridMap(cfg.grid, g, 160, 120)
     hz = g.horizon_row(0) / 4
@@ -1238,7 +1237,6 @@ def test_gridmap_range_hits_and_margin():
     """Ein Treffer reicht nicht für "belegt", Treffer nur bis max_range_m, Freistrahl weiter und mit Rand."""
     from xgonav.gridmap import GridMap
     cfg = Config()
-    cfg.grid.row_bias = 0.0
     g = CamGeometry(640, 480, 91.0, 1.39, 43.0, 85.0)
     m = GridMap(cfg.grid, g, 160, 120)
     near = _wall_fs(g, 1.0)
@@ -1254,13 +1252,6 @@ def test_gridmap_range_hits_and_margin():
     r, c = np.nonzero(far.lo < -cfg.grid.l_show)
     xs = (c + 0.5 - far.n / 2) * far.res
     assert 1.3 < xs.max() < cfg.grid.free_range_m + 0.1         # frei nur bis free_range_m
-    # row_bias schiebt die Grenze nach hinten
-    biased = Config()
-    b = GridMap(biased.grid, g, 160, 120)
-    for _ in range(2):
-        b.add_freespace(near, 0.0)
-    plain = m.occupied_cells()[:, 0].mean()
-    assert b.occupied_cells()[:, 0].mean() > plain + 0.05
 
 
 def test_localmap_origin_is_wheel_axle():

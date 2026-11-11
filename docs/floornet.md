@@ -52,7 +52,7 @@ python tools/floornet/eval_hand.py hand.json --labels labels/ --lauf run/:streif
 python tools/floornet/export.py run/floornet.pt --out models/floornet.bin
 ```
 
-Then `[freespace] shadow_net = "models/floornet.bin"`, needs `threaded = true`. Training takes about a minute on the GPU. `[freespace] primary = "net"` lets the network decide alone (`method` is then not computed and not drawn, it only takes over if the network fails); `[grid] net_row_bias` replaces `row_bias` then. RiderPi: set since 2026-11-10, not driven.
+Then `[freespace] shadow_net = "models/floornet.bin"`, needs `threaded = true`. Training takes about a minute on the GPU. `[freespace] primary = "net"` lets the network decide alone (`method` is then not computed and not drawn, it only takes over if the network fails). RiderPi: set since 2026-11-10, not driven.
 
 Spike removal in the decoder (`[freespace] net_outlier_px`, default 25, 0 = off; `net.decode(logits, outlier_px, outlier_ratio)` in PyTorch, `decode` in `native/floornet.cpp`, both tested against each other): the raw output has 1–3 column wide jumps at vertical high-contrast edges, the output there is bimodal. A column further than `net_outlier_px` rows from the median of the 7 columns around it takes the best bin within ±2 bins of that median, if the probability mass there (5 bins) is at least `net_outlier_ratio` (0.3) of the mass at its own peak. Columns without a second peak keep their value (narrow obstacles). Cost on the Rider: a 7-value median per column, `exp` only in outlier columns.
 
@@ -70,10 +70,10 @@ python tools/floornet/comfy_npz.py labels_comfy8/rows.jsonl --labels labels/ --o
 python tools/floornet/hand_npz.py hand.json --labels labels/ --runs unten3,unten3b --out labels_hand_mix/
 python tools/floornet/train.py --labels labels_npz/ --out run/ --train explore2,unten1 --val "" --dist 0.005 --yaw 0.5 --epochs 100 \
     --far_w 2 --hand_labels labels_hand_mix/ --hand_train unten3,unten3b --hand_only 1 --hand_repeat 8
-python tools/floornet/eval_hand.py hand.json --labels labels/ --lauf run/:unten4 --hoehe pruefsatz3/hoehe.json [--bias -4]
+python tools/floornet/eval_hand.py hand.json --labels labels/ --lauf run/:unten4 --hoehe pruefsatz3/hoehe.json
 ```
 
-`eval_hand.py --bias` sets the offset of the `kanten` row; the default (6 px) is the old `row_bias` 1.5, the Rider now has −1, which is −4.
+All `kanten` figures on this page were measured with the `kanten` row shifted up by the former `[grid] row_bias` (1.5 rows = 6 px unless stated, Rider −1 = −4 px). `row_bias` was removed on 2026-11-11; the tools now compare the raw `kanten` row, so new figures are not comparable.
 
 ## Labels
 
@@ -122,9 +122,9 @@ Same network size. Labels: Prompt 8 on every 8th frame of all runs (9763 labelle
 | | False free | False blocked | Ratio free [95 %] | Ratio blocked [95 %] |
 |---|---|---|---|---|
 | Network | 21.1–22.0 % | 3.0–3.8 % | | |
-| `kanten`, old `row_bias` 1.5 | 49.4 % | 7.3 % | 0.43–0.45 [0.28–0.62] | 0.41–0.53 [0.25–0.93] |
-| `kanten`, Rider `row_bias` −1 | 47.4 % | 19.4 % | 0.45–0.46 [0.28–0.67] | 0.15–0.20 [0.09–0.32] |
-| Older network `lauf_end`, vs. old `row_bias` | 29.4 % | 11.3 % | 0.59 [0.44–0.77] | 1.56 [1.08–2.39] |
+| `kanten`, shifted +6 px (former `row_bias` 1.5) | 49.4 % | 7.3 % | 0.43–0.45 [0.28–0.62] | 0.41–0.53 [0.25–0.93] |
+| `kanten`, shifted −4 px (former Rider `row_bias` −1) | 47.4 % | 19.4 % | 0.45–0.46 [0.28–0.67] | 0.15–0.20 [0.09–0.32] |
+| Older network `lauf_end`, vs. `kanten` shifted +6 px | 29.4 % | 11.3 % | 0.59 [0.44–0.77] | 1.56 [1.08–2.39] |
 
 Goal reached by the point estimate. False blocked is clearly under 1.0; for false free the interval still reaches above 0.5.
 
@@ -140,7 +140,7 @@ Goal reached by the point estimate. False blocked is clearly under 1.0; for fals
 | Trained on | Tested on | Network free / blocked | `kanten` free / blocked | Ratio |
 |---|---|---|---|---|
 | upstairs only, 2 hand-line runs | test set 3, 200 frames | 39.3–42.9 / 4.7–5.3 % | 52.4 / 6.0 % | 0.75–0.82 / 0.77–0.87 |
-| same, Rider `row_bias` −1, 1 training run | same | 41.4 / 4.8 % | 50.0 / 18.5 % | 0.83 / 0.26 |
+| same, `kanten` shifted −4 px (former Rider `row_bias` −1), 1 training run | same | 41.4 / 4.8 % | 50.0 / 18.5 % | 0.83 / 0.26 |
 | downstairs only | `explore9`, `streife1`, 138 frames, older hand-line rule | 16.5–22.2 / 9.3–14.2 % | 22.3 / 6.0 % | 0.74–1.00 / 1.54–2.37 |
 
 Goal missed in both directions. Both floors are still one home; a foreign home is not measured.
@@ -190,6 +190,8 @@ python comfy_batch.py --prompt comfy_prompt8.txt --ids ids_alle.txt --edits edit
 `comfy_batch.py` keeps every edit (`<edits>/<run>/<frame>.png`), so masks can be recomputed without the model. Seed fixed (`SEED` = 1, as for all Prompt 8 masks).
 
 Chosen 2026-11-09 by inspecting edits: Prompt 10 (`comfy_prompt10.txt`; Prompt 9 without its rug sentence, which made the model invent dark mats in dark frames, while the real rugs in 4 test frames stayed unpainted without it) with `--eingang g0h` (green channel 0, larger of R and B set to the grey value; colour kept for rugs, dark green-tinted frames not black), mask with hue and saturation as before and green lead G − max(R, B) ≥ 30 (`stage2.py --gruen 30`), then `stage3.py`. The green channel alone (G > 0) fails: the image decoder leaves small green values on unpainted pixels. Low thresholds count the faint green shimmer the model adds to walls next to the floor (`unten2/002400`: walls up to 48, floor from 170). Every input variant invents something somewhere; no hand-line numbers for this input yet.
+
+Prompt 11 (2026-11-11, `comfy_prompt11.txt`): Prompt 10 painted rugs and things lying on the floor green. Added: "Only the bare floor surface itself is recolored. Everything that lies or stands on it, including rugs, stays unchanged." Chosen by the user on 73 test frames against two variants with the old rug sentence (both invented mats in dark frames and cut out the flat chair mat, which counts as floor). Same prompt for bright (colour) and dark (G0h) frames; run `stage1_p11` over all frames that are not standing frames (9 731).
 
 | Prompt rule | Finding (287 hand frames of the development set) |
 |---|---|

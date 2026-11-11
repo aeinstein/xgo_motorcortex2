@@ -153,8 +153,15 @@ class App:
         # Raumkarte (Welt-KS ab Startpose), nur Anzeige
         self.gridmap = GridMap(cfg.grid, self.geo, self.fse.W, self.fse.H) \
             if self.fse is not None and cfg.grid.enabled else None
+        self.pose_grund = ""             # warum die Pose in der Raumkarte unbekannt ist ("" = gültig)
+        self._pose_bal: bool | None = None
+        self._pose_wheels_t = 0.0
         if self.gridmap is not None and cfg.grid.file and os.path.exists(cfg.grid.file):
-            self.gridmap.load(cfg.grid.file)
+            if self.gridmap.load(cfg.grid.file) and cfg.reloc.enabled:
+                # Wo der Rider beim Beenden stand, ist die beste Vermutung; ob er noch dort steht, weiß niemand
+                if self.gridmap.saved_pose is not None:
+                    self.gridmap.set_pose(self.gridmap.saved_pose)
+                self._pose_unbekannt("Neustart: Standort nicht bestätigt")
             route_load(cfg.grid.file, self.gridmap)
         self.grid_worker = GridWorker(self.gridmap, cfg.cpu.freespace_cpus, save_path=cfg.grid.file,
                                       save_every_s=cfg.grid.save_every_s) \
@@ -199,12 +206,77 @@ class App:
     # Ohne Freiraum-Erkennung hielten sie alles für frei und stoppten nur per TTC.
     NEEDS_FREESPACE = {"explore", "approach", "home", "patrol"}
 
-    def _check_mode(self, name: str) -> None:
+    # Diese Modi fahren nach der Raumkarte: Mit unbekannter Pose führen sie irgendwohin.
+    NEEDS_POSE = {"home", "patrol", "explore"}
+
+    def _pose_unbekannt(self, grund: str) -> None:
+        """Die Pose in der Raumkarte gilt nicht mehr (getragen, gefallen, Neustart). Die Karte wird nicht mehr
+        beschrieben, bis der Standort bestätigt ist; Fahrten nach der Karte enden. Eine leere Karte legt ihr
+        KS selbst fest, dort gibt es nichts zu verlieren. Nur mit [reloc] enabled."""
+        gm = self.gridmap
+        if not self.cfg.reloc.enabled or gm is None or not gm.pose_ok or gm.empty():
+            return
+        gm.set_pose_ok(False)
+        self.pose_grund = grund
+        log.warning("Pose in der Raumkarte unbekannt (%s): Karte wird nicht mehr beschrieben", grund)
+        b = getattr(self, "behavior", None)
+        if b is not None and b.name in self.NEEDS_POSE:
+            log.warning("Modus %s endet: Pose unbekannt", b.name)
+            with self._mode_lock:
+                self._pending_mode = ("idle", None)
+
+    def _pose_watch(self, now: float) -> None:
+        """Ereignisse, nach denen die Pose nicht mehr stimmt: abgesetzt oder gefallen (beim Aufstehen rollt er
+        vor, liegend zählen die Räder nicht, und er kann getragen worden sein); balancierend länger als
+        reloc.blind_s ohne frische Raddaten. Kosten: zwei Vergleiche je Regelschritt."""
+        if not self.cfg.reloc.enabled or self.gridmap is None:
+            return
+        bal = self.robot.state.balancing
+        if self._pose_bal and not bal:
+            self._pose_unbekannt("abgesetzt oder gefallen")
+        if bal and not self._pose_bal:
+            self._pose_wheels_t = now
+        self._pose_bal = bal
+        w = self.wheels
+        if bal and w is not None and self.cfg.odom.source != "command":
+            if w.fresh(now):
+                self._pose_wheels_t = now
+            elif now - self._pose_wheels_t > self.cfg.reloc.blind_s:
+                self._pose_unbekannt("keine Raddaten")
+
+    def set_pose_state(self, aktion: str) -> None:
+        """Web: "start" = der Rider steht am Startpunkt (Pose springt dorthin), "hier" = die angezeigte Pose
+        stimmt, "verwerfen" = sie stimmt nicht mehr."""
+        gm = self.gridmap
+        if gm is None:
+            raise ModeNotAllowed("keine Raumkarte")
+        if aktion == "verwerfen":
+            if not self.cfg.reloc.enabled:
+                raise ModeNotAllowed("[reloc] enabled ist aus")
+            self._pose_unbekannt("vom Nutzer verworfen")
+            return
+        if aktion not in ("start", "hier"):
+            raise KeyError(aktion)
+        if self.behavior.name in self.NEEDS_POSE:
+            raise ModeNotAllowed("nicht während der Fahrt nach der Karte")
+        if not self.robot.state.balancing:
+            raise ModeNotAllowed("erst aufstehen: beim Aufstehen rollt er noch vor")
+        if aktion == "start":
+            gm.relocate_to_start()
+        else:
+            gm.set_pose_ok(True)
+        self.pose_grund = ""
+        log.info("Pose in der Raumkarte bestätigt (%s)", "am Startpunkt" if aktion == "start" else "wie angezeigt")
+
+    def _check_mode(self, name: str, confirmed: bool = False) -> None:
         if name in self.NEEDS_FREESPACE and self.fse is None:
             raise ModeNotAllowed(f"Modus {name} braucht die Freiraum-Erkennung (freespace.enabled)")
         if name == "home" and getattr(self, "gridmap", None) is None:
             raise ModeNotAllowed("Modus home braucht die Raumkarte ([grid] enabled)")
         gm = getattr(self, "gridmap", None)
+        # Streife mit Bestätigung setzt die Pose selbst auf den Startpunkt
+        if name in self.NEEDS_POSE and gm is not None and not gm.pose_ok and not (name == "patrol" and confirmed):
+            raise ModeNotAllowed("Pose in der Karte unbekannt: erst den Standort bestätigen (Raumkarte)")
         if name == "explore" and gm is not None and gm.locked:
             raise ModeNotAllowed("Karte ist gesperrt: erst entsperren oder neu anfangen")
         if name == "patrol":
@@ -277,6 +349,7 @@ class App:
         if on:
             self.set_pipeline(False)
             if self.robot.state.balancing:
+                self._pose_unbekannt("abgesetzt (Ruhemodus)")
                 self.robot.set_down()
             if self.rawrec is not None:
                 try:
@@ -342,12 +415,13 @@ class App:
         """confirmed: Der Nutzer hat bestätigt, dass der Rider am Startpunkt steht (Streife: ohne Wiederfinden
         gilt beim Laden Pose = Start)."""
         self._make(name, target)  # validiert (KeyError)
-        self._check_mode(name)
+        self._check_mode(name, confirmed)
         if name == "patrol" and not confirmed:
             raise ModeNotAllowed("Streife: bitte bestätigen, dass der Rider am Startpunkt steht")
         if name == "patrol":
             self.gridmap.lock()
             self.gridmap.relocate_to_start()
+            self.pose_grund = ""
         if self.ruhe and name != "idle":
             raise ModeNotAllowed("Ruhemodus: erst wecken")
         if not self.pipeline_on and name not in self.NO_CAMERA:
@@ -453,6 +527,7 @@ class App:
         """Hauptschleife bei gestoppter Bildverarbeitung: Moduswechsel sofort übernehmen;
         im Modus manual mit control_hz regeln (ohne Kamera), sonst Stillstand."""
         self._apply_pending_mode()
+        self._pose_watch(time.monotonic())
         if self.ruhe:
             self._cmd = Command(0.0, 0.0, None, "Ruhemodus")
             time.sleep(self.cfg.ruhe.tick_s)
@@ -542,6 +617,7 @@ class App:
             # Der Bild-Kurs verfälscht bei Vorwärtsfahrt (Tiefenunterschiede landen im
             # Drehmodell, gemessen 2026-11-04: −8,9° bzw. +3° auf 2 m geradeaus).
             ds = self._odom_ds(now, dt)
+            self._pose_watch(now)
             dyaw_vis = self.vis_yaw - self._yaw_at_ctrl
             self._yaw_at_ctrl = self.vis_yaw
             use_wheels = self.cfg.odom.yaw_source == "räder" and self._wheel_dyaw is not None
@@ -629,6 +705,7 @@ class App:
                                "fs_src": self._free.src if self._free is not None else None,
                                "grid": None if self.gridmap is None else {
                                    **self.gridmap.stats(),
+                                   "reloc": self.cfg.reloc.enabled, "pose_grund": self.pose_grund,
                                    "ms": round(self.grid_worker.ms, 1) if self.grid_worker else None,
                                    "verworfen": self.grid_worker.dropped if self.grid_worker else 0},
                                "odom": {"src": self.odom_src, "m": round(self.odom_m, 2),

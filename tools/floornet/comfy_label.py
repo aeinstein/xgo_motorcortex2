@@ -26,7 +26,6 @@ import numpy as np
 
 URL = "http://127.0.0.1:8188"
 NCOLS, W, H = 80, 640, 480
-BIAS_PX = 6.0          # wie train.py: fester Versatz der Kanten
 FAR = 0.15             # wie eval_hand.py
 PROMPT = os.environ.get("FN_PROMPT") or (
     "Recolor the floor to solid pure green (#00FF00). The floor is every part of the ground the camera sees, up to "
@@ -208,7 +207,7 @@ def main() -> int:
         rows = np.array(res[k]["rows"], np.float32)
         hr, ok = polyline_rows(hd[k]["pts"])
         kidx = np.linspace(0, d["kanten_row"].shape[1] - 1, NCOLS).round().astype(int)
-        kr = d["kanten_row"][i][kidx] - BIAS_PX
+        kr = d["kanten_row"][i][kidx]
         geo = json.loads(str(d["geom"]))
         if k in body:                                   # Labels rechnen mit 85 mm Körperhöhe (eval_hand.py)
             geo["cam_h"] = geo["cam_h"] + (body[k] - 85.0) / 1000.0

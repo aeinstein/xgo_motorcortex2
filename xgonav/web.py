@@ -42,7 +42,7 @@ API = {"GET": ["/status", "/ws?nick=1 (WebSocket: Bilder, Bestätigung je Bild; 
        "POST": ["/mode?name=..&target=..", "/stop", "/pipeline?on=0|1", "/ruhe?on=0|1 (Ruhemodus; Wecken startet nichts)", "/record?on=0|1 (Rohaufzeichnung, nur balancierend)",
                 "/drive?v=..&w=.. (nur Modus manual)",
                 "/exposure?us=0|100..33333 (0 = Automatik)", "/gain?g=0|1..63.9 (0 = Automatik)",
-                "/map/reset (Raumkarte leeren, Pose auf 0)", "/level (Beine neu ausrichten, 3 s)",
+                "/map/reset (Raumkarte leeren, Pose auf 0)", "/map/pose?aktion=start|hier|verwerfen (Standort bestätigen)", "/level (Beine neu ausrichten, 3 s)",
                 "/horizon/edit?row=.. (Linie einstellen, leer = aus)", "/horizon/cal?row=.. (für diese Höhe speichern)",
                 "/horizon/delete?h=<mm>"]}
 
@@ -239,6 +239,14 @@ def serve(app: App, host: str, port: int, fps: int, render_cpus=None) -> Threadi
                 if app.gridmap is None:
                     return self._send(404, b'{"error":"keine Raumkarte"}')
                 app.gridmap.set_start()
+                return self._send(200, b'{"ok":true}')
+            if u.path == "/map/pose":
+                try:
+                    app.set_pose_state(q.get("aktion", [""])[0])
+                except KeyError:
+                    return self._send(400, json.dumps({"error": "aktion: start, hier oder verwerfen"}).encode())
+                except ModeNotAllowed as e:
+                    return self._send(409, json.dumps({"error": str(e)}).encode())
                 return self._send(200, b'{"ok":true}')
             if u.path == "/map/save":
                 if app.gridmap is None or not app.cfg.grid.file:

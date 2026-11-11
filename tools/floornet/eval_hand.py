@@ -112,8 +112,6 @@ def main() -> int:
     ap.add_argument("--norm", type=int, default=0)
     ap.add_argument("--far", type=float, default=0.15)
     ap.add_argument("--hoehe", default="", help="JSON Gruppe -> Bild-IDs (hoehe.json des Prüfsatzes)")
-    ap.add_argument("--bias", type=float, default=None, help="Versatz der Kantenzeile in px nach oben, Default train.BIAS_PX; "
-                                                             "Rider seit 2026-11-07 row_bias -1, also -4")
     ap.add_argument("--pred_shift", type=float, default=0.0, help="Vorhersage des Netzes so viele px näher (nach unten) legen")
     a = ap.parse_args()
 
@@ -164,7 +162,7 @@ def main() -> int:
         if a.median == 3:
             pr[:, 1:-1] = np.median(np.stack([pr[:, :-2], pr[:, 1:-1], pr[:, 2:]]), axis=0)
         kidx = np.linspace(0, d["kanten_row"].shape[1] - 1, NCOLS).round().astype(int)
-        kr = d["kanten_row"][idx][:, kidx] - (T.BIAS_PX if a.bias is None else a.bias)
+        kr = d["kanten_row"][idx][:, kidx]
         if a.minimum:
             pr = np.fmax(pr, kr)    # größere Zeile = näher; unbekannte Kanten (NaN) zählen nicht
         rows = np.stack([hand[run + "/" + f][0] for f in files])

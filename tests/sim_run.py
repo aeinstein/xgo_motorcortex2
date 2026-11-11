@@ -89,7 +89,8 @@ def run(mode="follow", secs=25.0, video=None, shake=1.0, quiet=True, imu=False, 
                            "pitch_cap": pd, "pitch_ins": app.last_pitch_dev,
                            "pose_cap": pose, "pose_ins": app.gridmap.pose(),
                            "balancing": robot.state.balancing, "v": robot.command[0], "w": robot.command[1],
-                           "body_h": app.geo.body_height_mm, "truth": (world.x, world.y, world.th)})
+                           "body_h": app.geo.body_height_mm, "truth": (world.x, world.y, world.th),
+                           "t": time.monotonic()})
             add(fs, pd, pose)
         app.gridmap.add_freespace = add_rec
     if video:

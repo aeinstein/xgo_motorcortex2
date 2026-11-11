@@ -19,7 +19,9 @@ verwendet. Eine Variante ist "name:schlüssel=wert,..." und ändert die Basis:
   roll=GRAD|imu    Grenzzeile je Spalte um diesen Roll gedreht; imu = Roll aus den Proben der Aufnahme
                    (nur Aufnahmen mit IMU-Proben), abzüglich --roll-ref
   kurs=imu         Kurs zur Bildzeit aus den IMU-Proben der Aufnahme statt aus der Posenfolge
-  grid.X=WERT      Parameter aus [grid], z. B. grid.row_bias=1.5
+  grid.X=WERT      Parameter aus [grid], z. B. grid.max_range_m=1.5
+  abgleich=1       laufender Kartenabgleich (xgonav/reloc.py): Pose alle paar Sekunden auf die Karte legen;
+                   reloc.X=WERT stellt ihn ein, z. B. reloc.gain=1.0
 
 Grenzen: Die aufgezeichnete Pose ist die der Raumkarte nach dem Regelschritt des Bildes, also selbst
 eine Treppe mit etwa 12 Stufen je Sekunde. Wie alt sie gegenüber dem Bild ist, steht nicht in der
@@ -44,12 +46,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent / "floornet"))
 
 from label import load_cfg, load_run, make_geo, select_segment, trajectory  # noqa: E402
 from xgonav.freespace import FreeSpaceEstimator  # noqa: E402
+from xgonav import reloc  # noqa: E402
 from xgonav.gridmap import GridMap  # noqa: E402
 from xgonav.localmap import mask_movable  # noqa: E402
 
 PRESETS = ["basis:", "pose_bild:versatz=0", "frueh:versatz=-85", "spaet:versatz=40",
            "sperre_aufnahme:quelle=pose", "sperre20:quelle=pose,sperre=20",
-           "bias+1.5:grid.row_bias=1.5", "bias0:grid.row_bias=0", "ohne_bestaetigung:grid.confirm_dr_m=0",
+           "ohne_bestaetigung:grid.confirm_dr_m=0",
            "roll+1:roll=1", "roll-1:roll=-1"]
 STILL_S = 0.2          # Posenfolge: so lange unverändert gilt als Stillstand, nicht als Stufe der Treppe
 
@@ -187,10 +190,17 @@ def rechne(t, bahn: Bahn, views: dict, pitch, cfg, geo, fw: int, fh: int, varian
         x0, y0, th0 = bahn.at(t[0])
         gm.x, gm.y, gm.th = float(x0), float(y0), float(th0)
         gm.path = [(gm.x, gm.y)]
+        ab = Abgleich(dataclasses.replace(cfg.reloc), p, gcfg) if p.get("abgleich", "0") not in ("0", "") else None
         n_in = n_sperre = 0
+        kb = np.empty((len(t), 3))               # Bahn, wie sie die Karte sieht (mit Abgleich korrigiert)
+        j0 = 0
         for i in sorted(views):
             j = min(i + ankunft, len(t) - 1)
-            _fahre(gm, float(bahn.x[j]), float(bahn.y[j]), float(bahn.th[j]))
+            k = ab.k if ab else (0.0, 0.0, 0.0)
+            for q in range(j0, j + 1):
+                kb[q] = reloc.anwenden(k, (bahn.x[q], bahn.y[q], bahn.th[q]))
+            j0 = max(j0, j + 1)
+            _fahre(gm, *(float(v) for v in kb[j]))
             rate = rate_rad[j] if quelle == "rad" else rate_pose[i]
             if rate > sperre:
                 n_sperre += 1
@@ -201,16 +211,100 @@ def rechne(t, bahn: Bahn, views: dict, pitch, cfg, geo, fw: int, fh: int, varian
             view = views[i]
             if roll:
                 view = roll_spalten(view, geo, fw, fh, float(roll_imu[i]) if roll == "imu" else float(roll))
-            gm.add_freespace(view, float(pitch[i]), (px, py, pth))
+            if ab and not ab.schritt(gm, float(t[i]), (px, py, pth), view, float(pitch[i])):
+                continue                    # Rest der Korrektur noch zu groß: nichts eintragen
+            gm.add_freespace(view, float(pitch[i]), reloc.anwenden(ab.k, (px, py, pth)) if ab else (px, py, pth))
             n_in += 1
-        _fahre(gm, float(bahn.x[-1]), float(bahn.y[-1]), float(bahn.th[-1]))
+        k = ab.k if ab else (0.0, 0.0, 0.0)
+        for q in range(j0, len(t)):
+            kb[q] = reloc.anwenden(k, (bahn.x[q], bahn.y[q], bahn.th[q]))
+        _fahre(gm, *(float(v) for v in kb[-1]))
         zellen, zw = doppelt(gm)
         kand = 0 if gm.conf is None else int((np.isfinite(gm.rmin) & ~gm.conf & (gm.lo <= gcfg.l_show)).sum())
-        breite, stellen = quer(gm, bahn)
-        out.append((name, gm, {"eingetragen": n_in, "gesperrt": n_sperre, "belegte Zellen": zellen,
-                               "Zwischenzellen": zw, "Kandidaten": kand, "Breite quer m": breite,
-                               "Stellen quer": stellen, "Parameter": p}))
+        breite, stellen = quer(gm, Bahn(t, kb[:, 0], kb[:, 1], kb[:, 2]))
+        z = {"eingetragen": n_in, "gesperrt": n_sperre, "belegte Zellen": zellen, "Zwischenzellen": zw,
+             "Kandidaten": kand, "Breite quer m": breite, "Stellen quer": stellen, "Parameter": p}
+        if ab:
+            z["Abgleich"] = ab.bericht((float(bahn.x[-1]), float(bahn.y[-1]), float(bahn.th[-1])))
+        out.append((name, gm, z))
     return out
+
+
+class Abgleich:
+    """Laufender Kartenabgleich wie am Rider geplant (xgonav/reloc.py), hier Bild für Bild nachgespielt:
+    Punkte der Bodengrenze sammeln, alle every_s gegen einen mindestens ref_age_s alten Kartenstand
+    legen, die Korrektur k gedämpft nachziehen. k gilt für alles Folgende: Pose der Karte = k ∘ Odometrie."""
+
+    def __init__(self, rc, p: dict, gcfg, feld=None):
+        """feld: feste Referenz (fertige, gesperrte Karte) statt der Kartenstände der laufenden Fahrt."""
+        self.fest = feld
+        for key, v in p.items():
+            if key.startswith("reloc."):
+                cur = getattr(rc, key[6:])
+                setattr(rc, key[6:], v.lower() in ("1", "true", "ja") if isinstance(cur, bool) else type(cur)(v))
+        self.rc, self.gcfg = rc, gcfg
+        self.k = (0.0, 0.0, 0.0)
+        self.puffer = reloc.ScanPuffer(rc)
+        self.staende: list = []              # (Zeit, Kopie der Karte)
+        self._feld = (None, None)            # (Zeit des Stands, Feld)
+        self.t_ab, self.p_ab = -1e9, None    # letzter Abgleich: Zeit, Odometrie-Pose
+        self.halten = False
+        self.n = self.n_ok = self.n_teil = self.n_halt = 0
+        self.gruende: dict = {}
+        self.summe_m = self.summe_deg = 0.0
+
+    def schritt(self, gm: GridMap, t: float, odo: tuple, view, pitch: float) -> bool:
+        """Eine Beobachtung mit ihrer Odometrie-Pose. False = nicht eintragen."""
+        rc = self.rc
+        self.puffer.add(t, odo, *reloc.scan_punkte(gm, view, pitch, rc))
+        if self.fest is None and (not self.staende or t - self.staende[-1][0] >= rc.ref_every_s):
+            self.staende.append((t, gm.lo.copy()))
+            alt = [s for s in self.staende if t - s[0] >= rc.ref_age_s]
+            self.staende = alt[-1:] + [s for s in self.staende if t - s[0] < rc.ref_age_s]
+        bewegt = self.p_ab is None or math.hypot(odo[0] - self.p_ab[0], odo[1] - self.p_ab[1]) >= rc.min_move_m \
+            or abs(odo[2] - self.p_ab[2]) >= math.radians(rc.min_turn_deg)
+        if t - self.t_ab < rc.every_s or not bewegt:
+            return self._eintragen()
+        if self.fest is not None:
+            self._feld = (0.0, self.fest)
+        else:
+            ref = next((s for s in reversed(self.staende) if t - s[0] >= rc.ref_age_s), None)
+            if ref is None:
+                return self._eintragen()
+            if self._feld[0] != ref[0]:
+                self._feld = (ref[0], reloc.Feld(ref[1], gm.res, self.gcfg.l_show, rc))
+        self.t_ab, self.p_ab = t, odo
+        ist = reloc.anwenden(self.k, odo)
+        e = reloc.abgleich_lokal(self._feld[1], self.puffer.scan(odo), ist, rc)
+        self.n += 1
+        if not e.ok:
+            self.gruende[e.grund] = self.gruende.get(e.grund, 0) + 1
+            self.halten = False
+            return self._eintragen()
+        self.n_ok += 1
+        self.n_teil += e.teil
+        neu = reloc.schritt(ist, e.pose, rc)
+        if neu is None:
+            neu = ist
+        else:
+            self.summe_m += math.hypot(neu[0] - ist[0], neu[1] - ist[1])
+            self.summe_deg += abs(math.degrees(neu[2] - ist[2]))
+            self.k = reloc.korrektur(odo, neu)
+        self.halten = math.hypot(e.pose[0] - neu[0], e.pose[1] - neu[1]) > rc.hold_m \
+            or abs(e.pose[2] - neu[2]) > math.radians(rc.hold_deg)
+        return self._eintragen()
+
+    def _eintragen(self) -> bool:
+        self.n_halt += self.halten
+        return not self.halten
+
+    def bericht(self, ende: tuple) -> dict:
+        e = reloc.anwenden(self.k, ende)
+        return {"Abgleiche": self.n, "angenommen": self.n_ok, "davon nur quer": self.n_teil,
+                "unsicher": self.gruende, "nicht eingetragen": int(self.n_halt),
+                "Korrekturen m": round(self.summe_m, 3), "Korrekturen Grad": round(self.summe_deg, 1),
+                "Endpose verschoben m": round(math.hypot(e[0] - ende[0], e[1] - ende[1]), 3),
+                "Endkurs verschoben Grad": round(math.degrees(e[2] - ende[2]), 1)}
 
 
 def bild(ergebnis, bahn: Bahn, px: int = 480, je_zeile: int = 4) -> np.ndarray:
@@ -240,9 +334,17 @@ def imu_proben(ms: list[dict]):
     return a[:, 0], a[:, 1], fortlaufend_deg(a[:, 3])
 
 
-def fahrt(d: str, cfg, varianten, out: str, bahn_quelle: str = "pose", roll_ref: float = 0.0,
-          imu_versatz_ms: float = 0.0, px: int = 480) -> dict:
-    run = Path(d).name
+def lade(d: str, cfg, bahn_quelle: str = "pose", roll_ref: float = 0.0, imu_versatz_ms: float = 0.0,
+         netz: str = "") -> dict:
+    """Eine Rohaufnahme laden und die Bodengrenze je Bild rechnen (jedes zweite, wie live): alles, was
+    rechne() braucht. Auch tools/reloc_eval.py arbeitet damit. netz: Gewichte von FloorNet; dann kommt
+    die Grenze allein aus dem Netz (wie am Rider mit freespace.primary = "net", braucht den C++-Kern)."""
+    net = None
+    if netz:
+        from xgonav.floornet import FloorNet
+        net = FloorNet.load(netz, cfg.freespace.net_outlier_px, cfg.freespace.net_outlier_ratio)
+        if net is None:
+            raise SystemExit("FloorNet %s nicht ladbar (C++-Kern xgonav/native/libxgofast.so?)" % netz)
     geo = make_geo(cfg)
     ms = select_segment(load_run(d))
     if len(ms) < 10:
@@ -276,19 +378,33 @@ def fahrt(d: str, cfg, varianten, out: str, bahn_quelle: str = "pose", roll_ref:
         img = cv2.imread(os.path.join(d, m["file"]))
         if img is None:
             continue
-        fs = fse.update(img, m["pitch_dev"], [tr["box"] for tr in m.get("tracks_all", m.get("tracks", []))])
+        if net is not None:
+            fs = fse.from_net(net.run(img), m["pitch_dev"])
+        else:
+            fs = fse.update(img, m["pitch_dev"], [tr["box"] for tr in m.get("tracks_all", m.get("tracks", []))])
         tracks = m.get("tracks", [])
         free = dataclasses.replace(fs, sectors=list(fs.sectors), columns=fs.columns.copy())
         fse.block_boxes(free, [tr["box"] for tr in tracks if tr.get("id") != m.get("target")])
         views[i] = mask_movable(free, [(tr.get("cls"), tr["box"]) for tr in tracks], geo.W, geo.H)
     pitch = np.array([m["pitch_dev"] for m in ms], float)
-    erg = rechne(t, bahn, views, pitch, cfg, geo, fse.W, fse.H, varianten, rate_rad, roll_imu, kurs_imu)
+    return {"t": t, "bahn": bahn, "views": views, "pitch": pitch, "geo": geo, "fw": fse.W, "fh": fse.H,
+            "rate_rad": rate_rad, "roll_imu": roll_imu, "kurs_imu": kurs_imu, "imu": imu is not None, "bilder": len(ms)}
+
+
+def fahrt(d: str, cfg, varianten, out: str, bahn_quelle: str = "pose", roll_ref: float = 0.0,
+          imu_versatz_ms: float = 0.0, px: int = 480, netz: str = "") -> dict:
+    run = Path(d).name
+    f = lade(d, cfg, bahn_quelle, roll_ref, imu_versatz_ms, netz)
+    t, bahn = f["t"], f["bahn"]
+    x, y, th = bahn.x, bahn.y, bahn.th
+    erg = rechne(t, bahn, f["views"], f["pitch"], cfg, f["geo"], f["fw"], f["fh"], varianten, f["rate_rad"],
+                 f["roll_imu"], f["kurs_imu"])
     os.makedirs(out, exist_ok=True)
     cv2.imwrite(os.path.join(out, run + "_karten.png"), bild(erg, bahn, px, 4 if px <= 480 else 2))
-    res = {"Fahrt": run, "Bilder": len(ms), "Sekunden": round(float(t[-1] - t[0]), 1),
+    res = {"Fahrt": run, "Bilder": f["bilder"], "Sekunden": round(float(t[-1] - t[0]), 1),
            "Strecke m": round(float(np.hypot(np.diff(x), np.diff(y)).sum()), 2),
            "Drehung Grad": round(float(np.abs(np.diff(np.degrees(th))).sum()), 0),
-           "Bahn": bahn_quelle, "IMU-Proben": imu is not None,
+           "Bahn": bahn_quelle, "IMU-Proben": f["imu"],
            "Varianten": {name: z for name, _, z in erg}}
     with open(os.path.join(out, run + ".json"), "w", encoding="utf-8") as f:
         json.dump(res, f, ensure_ascii=False, indent=1)
@@ -308,12 +424,13 @@ def main() -> int:
     ap.add_argument("--roll-ref", type=float, default=0.0, help="IMU-Roll bei waagerechtem Bild (Grad)")
     ap.add_argument("--imu-versatz-ms", type=float, default=0.0, help="IMU-Zeit = Bildzeit + so viel")
     ap.add_argument("--set", action="append", default=[], metavar="ABSCHNITT.SCHLÜSSEL=WERT")
+    ap.add_argument("--netz", default="", help="Bodengrenze allein aus FloorNet mit diesen Gewichten (wie am Rider)")
     a = ap.parse_args()
     cfg = load_cfg(a.config, a.set)
-    specs = (["basis:"] if a.nur else PRESETS + ["roll_imu:roll=imu", "kurs_imu:kurs=imu"]) + a.variante
+    specs = (["basis:"] if a.nur else PRESETS + ["roll_imu:roll=imu", "kurs_imu:kurs=imu", "abgleich:abgleich=1"]) + a.variante
     varianten = [parse_variante(s) for s in specs]
     for d in a.dirs:
-        res = fahrt(d, cfg, varianten, a.out, a.bahn, a.roll_ref, a.imu_versatz_ms, a.px)
+        res = fahrt(d, cfg, varianten, a.out, a.bahn, a.roll_ref, a.imu_versatz_ms, a.px, a.netz)
         print(json.dumps(res, ensure_ascii=False, indent=1))
     return 0
 

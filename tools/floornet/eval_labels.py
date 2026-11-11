@@ -56,8 +56,6 @@ def main() -> int:
     ap.add_argument("--labels", required=True, help="Stage3-Label-Dateien der Prüffahrten (stage3_npz.py)")
     ap.add_argument("--fahrten", required=True, help="mit Komma getrennt")
     ap.add_argument("--kanten", default="", help="Dateien von label.py derselben Fahrten")
-    ap.add_argument("--bias", type=float, default=None, help="Versatz der Kantenzeile in px nach oben, Default train.BIAS_PX; "
-                                                             "Rider seit 2026-11-07 row_bias -1, also -4")
     ap.add_argument("--cache", default=os.path.expanduser("~/floornet/cache"))
     ap.add_argument("--dist", type=float, default=0.005)
     ap.add_argument("--yaw", type=float, default=0.5)
@@ -74,14 +72,13 @@ def main() -> int:
     net = load_net(a.lauf, dev)
     with Pool(12) as pool:
         runs = [T.load_run(os.path.join(a.labels, r + ".npz"), a.cache, a.dist, a.yaw, pool) for r in a.fahrten.split(",") if r]
-    bias = T.BIAS_PX if a.bias is None else a.bias
     res, total = {}, {"netz": np.zeros(3), "kanten": np.zeros(3), "netz*": np.zeros(3)}
     for r in runs:
         pr = T.predict(net, r, dev, bool(a.norm))
         kr = np.full_like(pr, np.nan)
         if a.kanten:
-            kr = kanten_rows(os.path.join(a.kanten, r["run"] + ".npz"), r["files"], NCOLS) - bias
-            r["kanten"] = kr + bias         # für tiles: rohe Zeile, hier schon auf NCOLS Spalten
+            kr = kanten_rows(os.path.join(a.kanten, r["run"] + ".npz"), r["files"], NCOLS)
+            r["kanten"] = kr                # für tiles: hier schon auf NCOLS Spalten
         res[r["run"]] = {"netz": T.band_report(pr, r["row"], r["kind"], r["pitch"], r["geom"]),
                          "kanten": T.band_report(kr, r["row"], r["kind"], r["pitch"], r["geom"])}
         # netz*: nur Spalten, in denen auch Kanten eine Grenze nennt, sonst zählen beide über verschiedene Spalten

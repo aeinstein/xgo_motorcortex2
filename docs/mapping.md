@@ -38,7 +38,6 @@ Status JSON: `odom.src` = `räder` | `befehl`, `odom.m` = total distance.
 | Clamp | −3.0 .. +3.5; shown as free/occupied beyond ±0.7 |
 | Range | hits 0.15–`max_range_m` 1.25 m, free rays to `free_range_m` 1.5 m, RiderPi 1.1 m (one image row at 2 m is ~40 cm; a step was seen as floor from > 1 m on 2026-11-06, simulator with 1.1: floor known 0.43–0.83, occupied precision 0.84–0.92); "free to horizon" columns mark free up to 1.5 m only |
 | Confirmation | `confirm_dr_m` (RiderPi 0.2 m, ± `confirm_cells` 2): occupied only after hits on the same spot from two ranges ≥ 0.2 m apart. RiderPi 2026-11-08: the window sill mirrored in the tiles was entered at 0.56 m from the start and 0.82 m from 0.72 m further on (d = D·h_cam/(h_edge + h_cam)), i.e. a second wall. Simulator explore 120 s: walls 82 % → 73 %, precision 0.90 → 0.93, 0 collisions. Tried and dropped the same day: hits only up to 0.7 m (walls 25 %, explore ended early) and a half-resolution edge band (the 4 cm test compares a mean over the segment, so resolution hardly matters; tape at 0.98 m unchanged) |
-| Row correction | `row_bias` (working rows, + = farther): default 1.5 from the simulator (boundary below the true one); RiderPi −1.0 (tape at 0.48 m, 2026-11-07: boundary ~1 row above the edge). Room map only, the local map uses the raw boundary. Wall base not checked yet |
 | Pitch, pose | pitch of the captured image (`FreeSpace.pitch_dev`); pose (`.pose`) as of the last control step before that image was processed, not of the later frame the result arrives in. Not interpolated to the capture time: while turning the pose is older than the image by an unmeasured amount (40 °/s × 50 ms = 2°) |
 | Filter | only while balancing and below `max_turn_dps` 40 °/s; the rate is the wheel heading (`odom.yaw_source`) at the control step in which the result arrives, not at capture |
 | Driven path | `driven_free_r_m` 0.10 m around the path counts as free |
@@ -80,7 +79,7 @@ Status JSON `grid`: `pose [x m, y m, yaw °]`, `start [x m, y m, yaw °]`, `zum_
 | Save | every `grid.save_every_s` (60 s) if changed, in the `GridWorker` thread; on exit; web „Speichern“ / `POST /map/save` |
 | Write | `<file>.tmp` + rename (atomic) |
 | Load | at xgonav start if the file exists; resolution/size mismatch → ignored with warning |
-| Pose after load | **= start point**. No relocalisation: place the Rider on the start point (same heading) before starting xgonav |
+| Pose after load | **= start point**. No relocalisation: place the Rider on the start point (same heading) before starting xgonav. With `[reloc] enabled`: pose = pose at the last save, state "unknown" until confirmed |
 
 ### Return to start (`--mode home`, `xgonav/planner.py`)
 
@@ -150,3 +149,41 @@ With 8 phantom spots (`--phantoms 8`, two rooms): 0 collisions in 4 runs, 3 comp
 2026-11-06, `free_range_m` 1.1, driven ground passable, `avoid_r_m` 0.3 (one room, two rooms, with and without 8 phantoms): 12 of 12 to „Karte fertig“, 0 collisions, 142–204 s, 24–36 m, floor known 0.78–0.88, walls 0.77–0.94, occupied precision 0.86–0.94, free outside 0.01–0.07 m².
 
 Tried and dropped 2026-11-06: weak hits beyond `max_range_m` (up to 1.75–2.25 m, +0.1–0.2 per image). RiderPi recordings: obstacles in the map 3–13 s earlier (median), little added. Simulator (18 runs): occupied precision 0.64–0.84, and in the two-room scene 7 of 9 runs saw at most 0.69 of the floor, 5 of them about 0.40; 0 collisions.
+
+## Pose state (`[reloc] enabled`, default off)
+
+Built 2026-11-11, simulator and unit tests only; not installed on the Rider.
+
+| Item | Behaviour |
+|---|---|
+| Pose becomes unknown | xgonav start with a loaded map; balancing -> not balancing (set down, fall, rest mode); balancing > `blind_s` (2 s) without fresh wheel data; web "Pose verwerfen". Never on an empty map |
+| While unknown | nothing is entered into the map, driven path not recorded, driven ground not cleared; pose keeps integrating (display, hollow triangle). `home`, `patrol`, `explore` refuse to start and end if running. `manual`, `follow`, `approach`, `pet`, `idle` stay allowed |
+| Valid again | web "Steht am Startpunkt" (pose jumps to the start point), "Pose stimmt" (shown pose kept), patrol start with confirmation, `/map/reset`. Only while balancing: standing up rolls ~24 cm |
+| Not done | keep-out zones are checked at the wrong place while the pose is unknown (web shows a note); buttons are not greyed out, xgonav answers 409 |
+| Cost on the Pi | two comparisons per control step |
+
+## Map matching (`xgonav/reloc.py`, offline only so far)
+
+Matching itself is not wired into the app yet; only the pose state below is. Tools: `tools/map_replay.py` (variant `abgleich=1`), `tools/reloc_eval.py`, `tools/map_eval.py reloc` (`docs/testing.md`).
+
+| Part | What |
+|---|---|
+| Scan | floor boundary points of the last seconds in the robot frame (`ScanPuffer`), same rays as `GridMap.add_freespace`; hits weighted 1 / (1 + (d / 0.8 m)²), samples on the free rays |
+| Field | from a map state: closeness to the nearest wall (sigma 0.10 m); hits on known free floor and free samples through walls cost |
+| `abgleich_lokal` | window ±0.30 m, ±8° around the odometry pose, one `cv2.matchTemplate` per heading. Corridor (pose slides along one direction): corrects across and heading only |
+| `suche_global` | whole map, 3° / 0.10 m, best 8 refined; accepted only if unique |
+| "unsure" | too little wall, too little known area, does not fit, slides, ambiguous, peak at the window border |
+| While mapping | reference = map state at least 12 s old; nothing is entered while the remaining correction exceeds 0.10 m / 3° |
+
+Measured 2026-11-11 (PC; boundary from FloorNet `floornet_s3.bin`, 8 raw recordings, simulator with drift 3 % distance, 2 % turn, 0.1 °/s):
+
+| Case | Result |
+|---|---|
+| Simulator, second drive against the finished map of the first | mean pose error 0.56 -> 0.25 m (`raum`), 0.78 -> 0.13 m (`zwei`) |
+| Simulator, global search, 15 s pieces of the second drive | 4 right, 0 wrong, 18 unsure of 22 (square rooms: corners look alike); 30 s pieces in `raum`: 7 right, 0 wrong, 5 unsure |
+| Real recordings, matching while mapping | cells between double walls 1949 -> 1532 over 8 drives (explore6: 472 -> 286, end pose moved 0.76 m; measured drift of that drive 0.75 m); part of the drop is observations not entered |
+| Real recordings, global search, piece cut out | 5 right, 9 wrong, 98 unsure of 112: explore sees most places once, the rest of the map does not know the piece |
+| Real recordings, global search, piece kept in the map (upper bound) | 32 right, 4 wrong (all explore6, wheel heading), 76 unsure |
+| Time on the PC | field 2 ms, local match 3 ms, global search 42-75 ms; not measured on the Pi |
+
+Open: two drives through the same room in one map frame (real test of the global search), timing on the Pi.

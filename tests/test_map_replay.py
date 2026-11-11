@@ -18,7 +18,6 @@ FW, FH = 160, 120
 def _cfg():
     cfg = Config()
     cfg.grid.native = False
-    cfg.grid.row_bias = 0.0
     return cfg
 
 
@@ -59,7 +58,7 @@ def _belegt(gm):
 
 def test_parse_variante():
     assert M.parse_variante("basis:") == ("basis", {})
-    assert M.parse_variante("a:versatz=-40, grid.row_bias=1.5") == ("a", {"versatz": "-40", "grid.row_bias": "1.5"})
+    assert M.parse_variante("a:versatz=-40, grid.max_range_m=1.5") == ("a", {"versatz": "-40", "grid.max_range_m": "1.5"})
 
 
 def test_wand_liegt_richtig_mit_pose_des_bildes():
@@ -85,11 +84,11 @@ def test_sperre_wie_app_und_zur_bildzeit():
     assert frei[2]["gesperrt"] == 0
 
 
-def test_grid_parameter_und_bias():
-    a, b = _karten(["null:versatz=0,sperre=1000", "bias:versatz=0,sperre=1000,grid.row_bias=1.5"])
-    # Bias +1,5 Zeilen schiebt die Wand weiter weg
-    assert _belegt(b[1])[:, 0].mean() > _belegt(a[1])[:, 0].mean() + 0.05
-    assert a[1].cfg.row_bias == 0.0 and b[1].cfg.row_bias == 1.5
+def test_grid_parameter():
+    a, b = _karten(["null:versatz=0,sperre=1000", "kurz:versatz=0,sperre=1000,grid.max_range_m=0.5"])
+    # Wand bei 1 m: mit Treffern nur bis 0,5 m wird nichts belegt
+    assert len(_belegt(a[1])) > 0 and len(_belegt(b[1])) == 0
+    assert a[1].cfg.max_range_m == Config().grid.max_range_m and b[1].cfg.max_range_m == 0.5
 
 
 def test_stuetzstellen_treppe_und_stillstand():
