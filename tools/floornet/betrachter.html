@@ -38,6 +38,7 @@
   <select id="fahrt" title="Fahrt (Tasten , und . springen zur vorigen/nächsten)"></select>
   <button id="zurueck" type="button" title="voriges Bild (←)">◀</button>
   <button id="vor" type="button" title="nächstes Bild (→)">▶</button>
+  <button id="lauf" type="button" title="Durchlauf vorwärts, so schnell die Bilder vollständig geladen sind (Leertaste)">▶▶ Lauf (Leertaste)</button>
   <span id="id"></span><span id="pos"></span><span id="marke"></span>
   <span id="rechts">
     <button id="aus" type="button"></button>
@@ -45,7 +46,7 @@
     <label title="auch Standbilder und untaugliche zeigen (Taste A)"><input id="alle" type="checkbox"> alle zeigen</label>
   </span>
 </div>
-<div id="fuss"><span id="zahl"></span><span id="meldung"></span><span id="tasten">← → Bild · , . Fahrt · X untauglich · G gesichtete zeigen · A alle zeigen</span></div>
+<div id="fuss"><span id="zahl"></span><span id="tempo"></span><span id="meldung"></span><span id="tasten">Leertaste Lauf · ← → Bild ·, . Fahrt · X untauglich · G gesichtete zeigen · A alle zeigen</span></div>
 <div id="bilder">
   <figure><figcaption>Original</figcaption><img id="original" alt="Original"></figure>
   <figure><figcaption id="titel1"></figcaption><img id="stage1" alt="Stage1"></figure>
@@ -141,12 +142,26 @@ function knopfZeigen(id) {
 function melden(id) {                       // Bild als gesichtet merken (einmal je Bild)
   if (gemeldet.has(id)) return;
   gemeldet.add(id);
-  fetch("gesichtet", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ansicht, id }) })
-    .then((r) => { if (!r.ok) throw new Error(r.status); })
-    .catch(() => {
-      gemeldet.delete(id);
-      document.getElementById("meldung").textContent = "gesichtet nicht gespeichert (läuft betrachter_server.py?)";
-    });
+  offen.push(id);
+  if (!sendeUhr) sendeUhr = setTimeout(senden, 1000);       // gesammelt, höchstens einmal je Sekunde
+}
+
+const offen = [];                           // gesichtet, aber noch nicht an den Server gemeldet
+let sendeUhr = 0;
+
+function senden(zumSchluss) {               // offene Meldungen abschicken; zumSchluss: Seite wird gerade verlassen
+  clearTimeout(sendeUhr);
+  sendeUhr = 0;
+  while (offen.length) {
+    const teil = offen.splice(0, 400);
+    fetch("gesichtet", { method: "POST", headers: { "Content-Type": "application/json" },
+                         body: JSON.stringify({ ansicht, ids: teil }), keepalive: zumSchluss === true })
+      .then((r) => { if (!r.ok) throw new Error(r.status); })
+      .catch(() => {
+        for (const i of teil) gemeldet.delete(i);
+        document.getElementById("meldung").textContent = "gesichtet nicht gespeichert (läuft betrachter_server.py?)";
+      });
+  }
 }
 
 async function aussortieren() {             // aktuelles Bild von Hand aussortieren oder zurückholen
@@ -170,6 +185,8 @@ async function aussortieren() {             // aktuelles Bild von Hand aussortie
 }
 
 function zeigen(p) {
+  stand++;
+  fertig = false;
   document.getElementById("alle").checked = zeigeAlle;
   document.getElementById("gesichtet").checked = zeigeGesehen;
   document.getElementById("aus").hidden = !ids.length;
@@ -197,11 +214,85 @@ function zeigen(p) {
   document.getElementById("zahl").textContent = "aussortiert: " + weg.filter((g) => g === "steht").length + " Standbilder, " +
     weg.filter((g) => g === "hand").length + " untauglich · gesichtet: " + gemeldet.size + " von " + alle.length;
   history.replaceState(null, "", "#" + id);
-  for (const d of [1, 2, 3, -1]) {         // Nachbarn vorladen
-    const n = ids[pos + d];
-    if (n) for (const u of Object.values(quellen(n))) new Image().src = u;
+  const nah = new Set();                    // Nachbarn vorladen, den Rest des Vorrats freigeben
+  for (let d = -1; d <= VORAUS; d++) if (ids[pos + d]) { nah.add(ids[pos + d]); if (d) laden(ids[pos + d]); }
+  for (const k of vorrat.keys()) if (!nah.has(k)) vorrat.delete(k);
+}
+
+// ---- Durchlauf: das nächste Bild erst, wenn vom jetzigen alle Teile geladen und gezeichnet sind ----
+const VORAUS = 8;                           // so viele Bilder im Voraus laden
+const vorrat = new Map();                   // ID -> { p: Promise, bilder: [Image] }; hält die geladenen Bilder im Speicher
+let stand = 0;                              // zählt jedes zeigen(); ein wartender Schritt merkt daran, dass er überholt wurde
+let fertig = true;                          // aktuelles Bild vollständig gezeichnet
+let beschaeftigt = false;                   // ein Schritt wartet gerade
+let laeuft = false;                         // Durchlauf (Leertaste)
+
+function laden(id) {                        // alle Dateien eines Bildes laden; scheitert mit dem Namen der fehlenden Datei
+  let v = vorrat.get(id);
+  if (!v) {
+    const bilder = Object.values(quellen(id)).map((u) => { const b = new Image(); b.src = u; return b; });
+    v = { bilder, p: Promise.all(bilder.map((b) => b.decode().catch(() => { throw new Error(b.src.replace(location.origin + "/", "")); }))) };
+    v.p.catch(() => {});                    // Fehler meldet, wer darauf wartet
+    vorrat.set(id, v);
+  }
+  return v.p;
+}
+
+async function gezeichnet() {               // wartet, bis alle sichtbaren Bilder dekodiert und einmal gezeichnet sind
+  const s = stand;
+  await Promise.all([...document.querySelectorAll("#bilder figure:not([hidden]) img")].map((b) => b.decode()));
+  await new Promise(requestAnimationFrame);
+  await new Promise(requestAnimationFrame);    // der erste Aufruf liegt vor dem Zeichnen, der zweite danach
+  if (s === stand) fertig = true;
+  return s === stand;
+}
+
+async function schritt(d) {                 // ein Bild weiter (d = ±1), ohne etwas zu verschlucken. true: gezeigt und gezeichnet
+  const ziel = pos + d;
+  if (beschaeftigt || ziel < 0 || ziel >= ids.length) return false;
+  beschaeftigt = true;
+  const id = ids[ziel];
+  try {
+    if (!fertig) await gezeichnet().catch(() => {});      // erst das jetzige zu Ende
+    const s = stand;
+    try {
+      await laden(id);
+    } catch (e) {
+      if (s === stand && ids[ziel] === id) { vorrat.delete(id); zeigen(ziel); meldung("nicht geladen: " + e.message); }
+      return false;
+    }
+    if (s !== stand || ids[ziel] !== id) return false;    // inzwischen woanders hingesprungen
+    zeigen(ziel);
+    return await gezeichnet().catch(() => false);
+  } finally {
+    beschaeftigt = false;
   }
 }
+
+const meldung = (t) => { document.getElementById("meldung").textContent = t; };
+
+function laufZeigen(tempo) {
+  document.getElementById("lauf").textContent = laeuft ? "■ Stopp (Leertaste)" : "▶▶ Lauf (Leertaste)";
+  document.getElementById("tempo").textContent = laeuft && tempo ? "Lauf: " + tempo.toFixed(1) + " Bilder/s" : "";
+}
+
+async function lauf() {                     // vorwärts, so schnell die Bilder vollständig da sind
+  if (laeuft) return;
+  laeuft = true;
+  meldung("");
+  laufZeigen();
+  let n = 0, t0 = performance.now();
+  while (laeuft && await schritt(1)) {
+    n++;
+    const t = performance.now();
+    if (t - t0 >= 1000) { laufZeigen(n * 1000 / (t - t0)); n = 0; t0 = t; }
+  }
+  laeuft = false;
+  laufZeigen();
+  senden();
+}
+
+function stopp() { laeuft = false; }
 
 function ausUrl() {                         // Bild aus der Adresse; ist es ausgeblendet, wird das Nötige eingeschaltet
   const id = decodeURIComponent(location.hash.slice(1));
@@ -217,8 +308,13 @@ function ausUrl() {                         // Bild aus der Adresse; ist es ausg
 
 addEventListener("keydown", (e) => {
   if (e.target.tagName === "SELECT" || e.ctrlKey || e.altKey || e.metaKey) return;      // Auswahllisten und Browserkürzel in Ruhe lassen
-  if (e.key === "ArrowRight") { zeigen(pos + 1); e.preventDefault(); }
-  if (e.key === "ArrowLeft") { zeigen(pos - 1); e.preventDefault(); }
+  if (e.key === " ") { if (laeuft) stopp(); else lauf(); e.preventDefault(); return; }
+  if (["ArrowRight", "ArrowLeft", ",", ".", "x", "X", "Delete", "a", "A", "g", "G"].includes(e.key)) stopp();
+  if (e.key === "ArrowRight" || e.key === "ArrowLeft") {  // gehaltene Taste wartet auf das vollständige Bild, ein Druck springt sofort
+    const d = e.key === "ArrowRight" ? 1 : -1;
+    if (e.repeat) schritt(d); else zeigen(pos + d);
+    e.preventDefault();
+  }
   if (e.key === "," || e.key === ".") { fahrtWeiter(e.key === "." ? 1 : -1); e.preventDefault(); }
   if (e.key === "x" || e.key === "X" || e.key === "Delete") { aussortieren(); e.preventDefault(); }
   if (e.key === "a" || e.key === "A") { zeigeAlle = !zeigeAlle; listeBauen(ids[pos]); e.preventDefault(); }
@@ -230,6 +326,10 @@ document.getElementById("zurueck").addEventListener("click", (e) => { zeigen(pos
 document.getElementById("vor").addEventListener("click", (e) => { zeigen(pos + 1); e.target.blur(); });
 document.getElementById("fahrt").addEventListener("change", (e) => { zurFahrt(e.target.value); e.target.blur(); });
 document.getElementById("aus").addEventListener("click", (e) => { aussortieren(); e.target.blur(); });
+document.getElementById("lauf").addEventListener("click", (e) => { if (laeuft) stopp(); else lauf(); e.target.blur(); });
+document.getElementById("kopf").addEventListener("pointerdown", (e) => { if (e.target.id !== "lauf") stopp(); }, true);
+document.addEventListener("visibilitychange", () => { if (document.hidden) { stopp(); senden(true); } });
+addEventListener("pagehide", () => senden(true));
 addEventListener("hashchange", ausUrl);
 const liste = document.createElement("script");
 liste.src = (A.stage3 || A.stage2) + "/index.js?" + Date.now();   // Liste wächst, solange gerechnet wird

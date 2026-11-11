@@ -241,6 +241,24 @@ def test_betrachter_server_appends_valid_ids_only(tmp_path):
         assert post({"ansicht": "x", "id": "r/000001"}, pfad="gesichtet") == 400
         with urllib.request.urlopen(url + "stage1_hd/gesichtet.txt", timeout=5) as r:
             assert r.read().decode() == "r/000001\nr/000001\n" and r.headers["Cache-Control"] == "no-store"
+        # Sammelmeldung: untaugliche IDs fallen weg, der Rest wird geschrieben
+        req = urllib.request.Request(url + "gesichtet", json.dumps({"ansicht": "hd", "ids": ["r/000001", "r/000002", "../x", 5]}).encode(),
+                                     {"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=5) as r:
+            assert json.loads(r.read()) == {"ok": True, "fehler": "", "n": 1, "ausgelassen": 3}
+        assert post({"ansicht": "x", "ids": ["r/000001"]}, pfad="gesichtet") == 400
+        assert post({"ansicht": "hd", "ids": ["r/000001"] * 501}, pfad="gesichtet") == 400
+        assert (tmp_path / "stage1_hd" / "gesichtet.txt").read_text(encoding="utf-8") == "r/000001\n" * 3
+        # Verbindung bleibt offen; Stage1-Bilder dürfen im Zwischenspeicher bleiben, fehlende nicht
+        import http.client
+        c = http.client.HTTPConnection("127.0.0.1", srv.server_address[1], timeout=5)
+        for pfad, code, cache in (("/stage1_hd/r/000001.png", 200, "max-age=86400"), ("/stage1_hd/r/000002.png", 404, None),
+                                  ("/geheim.txt", 200, None)):
+            c.request("GET", pfad)
+            r = c.getresponse()
+            r.read()
+            assert (r.status, r.getheader("Cache-Control"), r.version) == (code, cache, 11)
+        c.close()
     finally:
         srv.shutdown()
         srv.server_close()

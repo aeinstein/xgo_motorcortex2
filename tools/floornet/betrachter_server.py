@@ -26,51 +26,87 @@ HAND = "aus_hand.txt"                                                   # wie st
 GESICHTET = "gesichtet.txt"                                             # nur für den Betrachter
 ZIELE = {"/aus": HAND, "/gesichtet": GESICHTET}
 ID = re.compile(r"[A-Za-z0-9_-]+/[0-9]+")
+MAX_IDS, MAX_BYTES = 500, 20000                                         # Sammelmeldung von /gesichtet
 _lock = threading.Lock()
 
 
-def eintragen(root: str, ansicht: str, bild: str, aus: bool, datei: str = HAND) -> str:
-    """Zeile an die Liste datei hängen. Rückgabe: Fehlertext oder "" bei Erfolg."""
+def pruefen(root: str, ansicht: str, bild: str) -> str:
+    """Fehlertext, wenn Ansicht oder ID nicht taugen, sonst ""."""
     if ansicht not in STAGE1:
         return "unbekannte Ansicht"
     if not isinstance(bild, str) or not ID.fullmatch(bild):
         return "ungültige ID"
-    ziel = os.path.join(root, STAGE1[ansicht])
-    if not os.path.exists(os.path.join(ziel, bild + ".png")):
+    if not os.path.exists(os.path.join(root, STAGE1[ansicht], bild + ".png")):
         return "Bild gibt es in dieser Ansicht nicht"
-    with _lock, open(os.path.join(ziel, datei), "a", encoding="utf-8", newline="\n") as f:
-        f.write(("" if aus else "-") + bild + "\n")
     return ""
 
 
+def eintragen(root: str, ansicht: str, bild: str, aus: bool, datei: str = HAND) -> str:
+    """Zeile an die Liste datei hängen. Rückgabe: Fehlertext oder "" bei Erfolg."""
+    fehler = pruefen(root, ansicht, bild)
+    if not fehler:
+        with _lock, open(os.path.join(root, STAGE1[ansicht], datei), "a", encoding="utf-8", newline="\n") as f:
+            f.write(("" if aus else "-") + bild + "\n")
+    return fehler
+
+
+def eintragen_viele(root: str, ansicht: str, bilder: list, datei: str = GESICHTET) -> tuple[str, int]:
+    """Mehrere IDs auf einmal anhängen; untaugliche fallen weg. Rückgabe: Fehlertext und Zahl der geschriebenen."""
+    if ansicht not in STAGE1:
+        return "unbekannte Ansicht", 0
+    if len(bilder) > MAX_IDS:
+        return "zu viele IDs", 0
+    gut = [b for b in bilder if not pruefen(root, ansicht, b)]
+    if gut:
+        with _lock, open(os.path.join(root, STAGE1[ansicht], datei), "a", encoding="utf-8", newline="\n") as f:
+            f.write("".join(b + "\n" for b in gut))
+    return "", len(gut)
+
+
 class Handler(SimpleHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"               # Verbindung bleibt offen: je Bild 4–5 Dateien ohne neuen Aufbau
+
     def do_POST(self) -> None:
         n = int(self.headers.get("Content-Length") or 0)
         # application/json verlangt bei fremden Seiten eine Vorabfrage, die hier niemand beantwortet
-        if not 0 < n <= 1000:
+        if not 0 < n <= MAX_BYTES:
             self.close_connection = True
-            self.send_error(400, "nur POST /aus mit kurzem JSON")
+            self.send_error(400, "nur POST /aus oder /gesichtet mit kurzem JSON")
             return
         roh = self.rfile.read(n)                # erst lesen, sonst reißt die Verbindung beim Ablehnen ab
         if self.path not in ZIELE or self.headers.get("Content-Type", "").split(";")[0].strip() != "application/json":
-            self.send_error(400, "nur POST /aus mit JSON")
+            self.send_error(400, "nur POST /aus oder /gesichtet mit JSON")
             return
+        antwort: dict = {}
         try:
             d = json.loads(roh)
-            aus = self.path != "/aus" or bool(d.get("aus", True))       # gesichtet kennt kein Zurückholen
-            fehler = eintragen(self.directory, d.get("ansicht"), d.get("id"), aus, ZIELE[self.path])
+            if self.path == "/gesichtet" and isinstance(d.get("ids"), list):
+                fehler, antwort["n"] = eintragen_viele(self.directory, d.get("ansicht"), d["ids"])
+                antwort["ausgelassen"] = len(d["ids"]) - antwort["n"]
+            else:
+                aus = self.path != "/aus" or bool(d.get("aus", True))   # gesichtet kennt kein Zurückholen
+                fehler = eintragen(self.directory, d.get("ansicht"), d.get("id"), aus, ZIELE[self.path])
         except (ValueError, AttributeError):
             fehler = "kein JSON-Objekt"
-        body = json.dumps({"ok": not fehler, "fehler": fehler}, ensure_ascii=False).encode("utf-8")
+        body = json.dumps({"ok": not fehler, "fehler": fehler, **antwort}, ensure_ascii=False).encode("utf-8")
         self.send_response(400 if fehler else 200)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
 
+    def send_response(self, code: int, message: str | None = None) -> None:
+        self._code = code
+        super().send_response(code, message)
+
     def end_headers(self) -> None:
-        if getattr(self, "path", "").split("?")[0].endswith((HAND, GESICHTET, "index.js")):        # Listen ändern sich, nie aus dem Zwischenspeicher
+        pfad = getattr(self, "path", "").split("?")[0]
+        if pfad.endswith((HAND, GESICHTET, "index.js")):                # Listen ändern sich, nie aus dem Zwischenspeicher
             self.send_header("Cache-Control", "no-store")
+        elif getattr(self, "_code", 0) == 200 and self.command == "GET" and (
+                (pfad.startswith("/data/") and pfad.endswith(".jpg"))
+                or (pfad.endswith(".png") and pfad.split("/")[1] in STAGE1.values())):
+            self.send_header("Cache-Control", "max-age=86400")          # Originale und Stage1 ändern sich nie; Masken schon
         super().end_headers()
 
 
