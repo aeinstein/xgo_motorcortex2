@@ -5,6 +5,7 @@ import sys
 
 import cv2
 import numpy as np
+import pytest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "tools", "floornet"))
@@ -196,6 +197,34 @@ def test_stages_drop_sorted_out_frames_everywhere(tmp_path):
     (s3 / "info.json").write_text((s2 / "info.json").read_text(encoding="utf-8"), encoding="utf-8")
     runs, bad, weg = SN.collect(str(s3), 1, str(data))
     assert bad == 0 and list(runs["r"]) == ["000000.jpg", "000002.jpg"] and weg == {"r": 2}
+
+
+def test_stage3_npz_geometrie_aus_konfig_und_koerperhoehe_der_fahrt(tmp_path, monkeypatch, capsys):
+    from xgonav.config import Config
+    cfg = Config()
+    cfg.camera.cam_h_u8 = [109.4, 0.1126]
+    g = json.loads(SN.geometrie(cfg, 90.0))
+    assert g["W"] == 640 and g["f"] == pytest.approx(320 / np.tan(np.radians(cfg.camera.hfov_deg) / 2))
+    assert g["cam_h"] == pytest.approx(0.1238, abs=0.0005)                       # 109,4 + 0,1126 * 127,5
+    assert json.loads(SN.geometrie(cfg, None))["cam_h"] != g["cam_h"] or cfg.behavior.height_cruise_mm == 90.0
+    # ganzer Lauf ohne Dateien von label.py: Körperhöhe aus meta.jsonl, Quelle aus --data
+    data, s3 = tmp_path / "data", tmp_path / "s3"
+    (data / "r").mkdir(parents=True)
+    (s3 / "r").mkdir(parents=True)
+    with open(data / "r" / "meta.jsonl", "w", encoding="utf-8") as f:
+        for i in range(3):
+            cv2.imwrite(str(data / "r" / ("%06d.jpg" % i)), np.full((480, 640, 3), 120, np.uint8))
+            m = np.zeros((480, 640), np.uint8)
+            m[300:] = 255
+            cv2.imwrite(str(s3 / "r" / ("%06d.png" % i)), m)
+            f.write(json.dumps({"file": "%06d.jpg" % i, "balancing": True, "height_mm": 100.0, "pose": [float(i), 0.0, 0.0]}) + "\n")
+    assert SN.koerperhoehe(str(data / "r")) == 100.0
+    monkeypatch.setattr(sys, "argv", ["stage3_npz.py", str(s3), "--out", str(tmp_path / "out"), "--data", str(data), "--jobs", "1"])
+    assert SN.main() == 0
+    d = np.load(tmp_path / "out" / "r.npz")
+    assert len(d["files"]) == 3 and str(d["source_dir"]) == os.path.abspath(str(data / "r"))
+    assert json.loads(str(d["geom"]))["cam_h"] == pytest.approx(json.loads(SN.geometrie(Config(), 100.0))["cam_h"])
+    assert d["row"][0] == pytest.approx(300.0)
 
 
 def test_betrachter_server_appends_valid_ids_only(tmp_path):
