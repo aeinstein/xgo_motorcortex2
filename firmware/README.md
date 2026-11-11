@@ -51,7 +51,6 @@ to that binary: 1 245 136 bytes, SHA-256 `0e5c0887e1d70ad6071ace20870bcaa887a810
 ## Flash (manual, after review)
 
 ```
-python -m esptool --port <PORT> --baud 115200 read-flash 0 0x400000 backup.bin   # full backup first
 python -m esptool --port <PORT> --baud 115200 write-flash 0x10000 firmware/out/app0.bin
 ```
 
@@ -60,6 +59,7 @@ python -m esptool --port <PORT> --baud 115200 write-flash 0x10000 firmware/out/a
 | Only app0 (`0x10000`) | partition table identical to stock Rider2 |
 | Never write `0x310000–0x32ffff` | leg zero points (`0x310000`), BLE name (`0x320000`), pitch trim (`0x321000`) |
 | Never write spiffs | |
+| No full backup (`read-flash`) before flashing | enough backups exist (~30) |
 | USB port changes after resets (COM3 ↔ COM4) | check port before each esptool call |
 | After flash: disarmed (`reason: startup`) | action 255 (web: Aufstehen) to balance; wheels start once upright |
 
