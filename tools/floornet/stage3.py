@@ -36,6 +36,17 @@ def make_mask(job: tuple[str, str]) -> str:
     return "neu"
 
 
+def aus_regeln(stufe: str) -> dict:
+    """Handliste und Standbild-Schwellen aus info.json einer Stufe (von stage2.py dort eingetragen), als Argumente
+    für stage2.write_index und stage2.aussortiert. Fehlen sie, wird nichts aussortiert."""
+    p = os.path.join(stufe, "info.json")
+    d = {}
+    if os.path.exists(p):
+        with open(p, encoding="utf-8") as f:
+            d = json.load(f)
+    return {"hand": d.get("aus_hand", ""), "d_m": float(d.get("steht_m", 0.0)), "w_grad": float(d.get("steht_grad", 0.0))}
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("stage2")
@@ -45,11 +56,13 @@ def main() -> int:
     cv2.setNumThreads(1)
     jobs, n = S2.jobs_for(a.stage2, a.stage3)
     os.makedirs(a.stage3, exist_ok=True)
+    r = aus_regeln(a.stage2)                # was Stage2 aussortiert, gilt hier genauso
     with open(os.path.join(a.stage3, "info.json"), "w", encoding="utf-8") as fo:
-        json.dump({"rechnung": "je Pixelspalte von unten bis zum ersten schwarzen Pixel", "quelle": a.stage2}, fo, ensure_ascii=False)
+        json.dump({"rechnung": "je Pixelspalte von unten bis zum ersten schwarzen Pixel", "quelle": a.stage2,
+                   "aus_hand": r["hand"], "steht_m": r["d_m"], "steht_grad": r["w_grad"]}, fo, ensure_ascii=False)
     with Pool(a.jobs) as pool:
         res = pool.map(make_mask, jobs, chunksize=32)
-    print("Stage2 %d Masken, neu %d, Fehler %d, im Betrachter %d" % (n, res.count("neu"), res.count("fehler"), S2.write_index(a.stage2, a.stage3)))
+    print("Stage2 %d Masken, neu %d, Fehler %d, im Betrachter %d" % (n, res.count("neu"), res.count("fehler"), S2.write_index(a.stage2, a.stage3, S2.DATA, **r)))
     return 0
 
 

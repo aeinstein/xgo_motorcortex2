@@ -7,12 +7,24 @@
 <style>
   :root { color-scheme: dark; }
   html, body { margin: 0; height: 100%; background: #111; color: #ddd; font: 14px system-ui, sans-serif; }
-  #kopf { padding: 8px 12px; display: flex; gap: 16px; align-items: baseline; }
-  #id { font-size: 18px; font-weight: 600; color: #fff; }
-  #hilfe { margin-left: auto; color: #888; }
+  #kopf { padding: 8px 12px 2px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  #kopf select, #kopf button { font: inherit; background: #222; color: #ddd; border: 1px solid #555; border-radius: 4px; padding: 3px 6px; }
+  #kopf button { cursor: pointer; }
+  #ansicht { max-width: 22em; }
+  #id { font-size: 17px; font-weight: 600; color: #fff; font-variant-numeric: tabular-nums; margin-left: 6px; }
+  #pos { color: #aaa; font-variant-numeric: tabular-nums; }
+  #marke { color: #f88; font-weight: 600; }
+  #kopf #aus { background: #522; color: #fff; border-color: #a55; }
+  #kopf #aus:disabled { background: #333; border-color: #555; color: #888; cursor: default; }
+  #rechts { margin-left: auto; display: flex; gap: 10px; align-items: center; color: #aaa; }
+  #rechts label { cursor: pointer; }
+  #fuss { padding: 0 12px 6px; display: flex; gap: 16px; color: #888; font-size: 12px; min-height: 16px; }
+  #meldung { color: #fc6; }
+  #tasten { margin-left: auto; }
   #bilder { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; padding: 0 6px; }
   figure { margin: 0; min-width: 0; }
-  figcaption { padding: 2px 0 4px; color: #aaa; }
+  /* eine Zeile je Titel, sonst stehen die Bilder nicht auf einer Höhe */
+  figcaption { padding: 2px 0 4px; color: #aaa; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: contain; background: #000; }
   /* Original x Maske: weiß bleibt das Original, Schwarz wird durch die 20-%-Schicht zu 20 % Grau, also 20 % Helligkeit */
   .ueber { position: relative; isolation: isolate; }
@@ -21,13 +33,24 @@
 </style>
 </head>
 <body>
-<div id="kopf"><span id="id"></span><span id="pos"></span><span id="wahl"></span><span id="hilfe">← voriges · nächstes →</span></div>
+<div id="kopf">
+  <select id="ansicht" title="Ansicht (behält das Bild, wenn es dort vorliegt)"></select>
+  <select id="fahrt" title="Fahrt (Tasten , und . springen zur vorigen/nächsten)"></select>
+  <button id="zurueck" type="button" title="voriges Bild (←)">◀</button>
+  <button id="vor" type="button" title="nächstes Bild (→)">▶</button>
+  <span id="id"></span><span id="pos"></span><span id="marke"></span>
+  <span id="rechts">
+    <button id="aus" type="button"></button>
+    <label title="auch Standbilder und untaugliche zeigen (Taste A)"><input id="alle" type="checkbox"> alle zeigen</label>
+  </span>
+</div>
+<div id="fuss"><span id="zahl"></span><span id="meldung"></span><span id="tasten">← → Bild · , . Fahrt · X untauglich · A alle zeigen</span></div>
 <div id="bilder">
   <figure><figcaption>Original</figcaption><img id="original" alt="Original"></figure>
   <figure><figcaption id="titel1"></figcaption><img id="stage1" alt="Stage1"></figure>
   <figure><figcaption id="titel2"></figcaption><img id="stage2" alt="Stage2"></figure>
-  <figure id="fig3" hidden><figcaption>Stage3: von unten bis zum ersten Schwarz</figcaption><img id="stage3" alt="Stage3"></figure>
-  <figure id="fig4" hidden><figcaption>Original, außerhalb von Stage3 auf 20 % Helligkeit</figcaption><div class="ueber"><img id="ueber_original" alt="Original"><div class="mal"><img id="ueber_stage3" alt="Stage3"><div class="hebt"></div></div></div></figure>
+  <figure id="fig3" hidden><figcaption title="je Pixelspalte von unten bis zum ersten Schwarz">Stage3: Boden von unten</figcaption><img id="stage3" alt="Stage3"></figure>
+  <figure id="fig4" hidden><figcaption title="außerhalb von Stage3 auf 20 % Helligkeit">Original mit Stage3</figcaption><div class="ueber"><img id="ueber_original" alt="Original"><div class="mal"><img id="ueber_stage3" alt="Stage3"><div class="hebt"></div></div></div></figure>
 </div>
 <script>
 "use strict";
@@ -35,18 +58,25 @@ const ANSICHTEN = {
   g0h: { name: "Prompt 10, G0 + Graubild-Helligkeit", stage1: "stage1_g0h", stage2: "stage2_g0h", stage3: "stage3_g0h", maske: "Grünvorsprung ≥ 30" },
   hd: { name: "Prompt 10, hell (ab 60) Farbbild, dunkel G0h", stage1: "stage1_hd", stage2: "stage2_hd", stage3: "stage3_hd", maske: "Grünvorsprung ≥ 30" },
   p8: { name: "Prompt 8", stage1: "stage1", stage2: "stage2", maske: "V ≥ 30" },
+  // Probelauf 2026-11-11: Teppiche und Dinge auf dem Boden, ~70 Bilder je Fassung
+  t1: { name: "T1 Teppichsatz", stage1: "stage1_t1", stage2: "stage2_t1", stage3: "stage3_t1", maske: "Grünvorsprung ≥ 30" },
+  t2: { name: "T2 Teppich + Dinge + Stuhlmatte", stage1: "stage1_t2", stage2: "stage2_t2", stage3: "stage3_t2", maske: "Grünvorsprung ≥ 30" },
+  t3: { name: "T3 nur blanker Boden", stage1: "stage1_t3", stage2: "stage2_t3", stage3: "stage3_t3", maske: "Grünvorsprung ≥ 30" },
 };
 const wahl = new URLSearchParams(location.search).get("v");
 const ansicht = ANSICHTEN[wahl] ? wahl : "g0h";
 const A = ANSICHTEN[ansicht];
 document.title = "FloorNet " + A.name;
-document.getElementById("titel1").textContent = A.name + ": grün";
-document.getElementById("titel2").textContent = A.name + ": Maske (" + A.maske + ")";
+document.getElementById("titel1").textContent = "Stage1: ComfyUI";
+document.getElementById("titel2").textContent = "Stage2: Maske (" + A.maske + ")";
 if (A.stage3) {
   document.getElementById("fig3").hidden = false;
   document.getElementById("fig4").hidden = false;
 }
-let ids = [];
+let alle = [];                              // alle Bilder der Ansicht, zeitlich sortiert
+let aus = {};                               // aussortiert: ID -> "steht" (Standbild) oder "hand" (untauglich)
+let zeigeAlle = false;                      // auch Aussortierte zeigen (Taste A)
+let ids = [];                               // was gerade durchgeklickt wird
 const quellen = (id) => ({
   original: "data/rider/fahrt/" + id + ".jpg",
   stage1: A.stage1 + "/" + id + ".png",
@@ -55,26 +85,83 @@ const quellen = (id) => ({
 });
 let pos = 0;
 
-function wahlZeigen() {                    // Umschalten behält das Bild, wenn es dort auch vorliegt
-  const ziel = document.getElementById("wahl");
-  ziel.textContent = "";
-  for (const k in ANSICHTEN) {
-    const el = document.createElement(k === ansicht ? "strong" : "a");
-    el.textContent = ANSICHTEN[k].name;
-    if (k !== ansicht) { el.href = "?v=" + k + location.hash; el.style.color = "#8cf"; }
-    el.style.marginRight = "12px";
-    ziel.appendChild(el);
+const wahlAnsicht = document.getElementById("ansicht");
+for (const k in ANSICHTEN) wahlAnsicht.add(new Option(ANSICHTEN[k].name, k, false, k === ansicht));
+wahlAnsicht.addEventListener("change", () => { location.href = "?v=" + wahlAnsicht.value + location.hash; });
+
+function listeBauen(bleibBei) {             // ids neu bilden; bleibBei: ID, bei der (oder dem nächsten danach) es weitergeht
+  ids = zeigeAlle ? alle : alle.filter((i) => !aus[i]);
+  let p = 0;
+  if (bleibBei) {
+    const ab = alle.indexOf(bleibBei);
+    p = ids.findIndex((i) => alle.indexOf(i) >= ab);
+    if (p < 0) p = ids.length - 1;
   }
+  fahrtenZeigen();
+  zeigen(p);
+}
+
+const fahrtVon = (id) => id.split("/")[0];
+
+function fahrtenZeigen() {                  // Auswahlliste: Fahrten in der Reihenfolge der Liste, mit Bildzahl
+  const zahl = new Map();
+  for (const i of ids) zahl.set(fahrtVon(i), (zahl.get(fahrtVon(i)) || 0) + 1);
+  const wahl = document.getElementById("fahrt");
+  wahl.textContent = "";
+  for (const [f, n] of zahl) wahl.add(new Option(f + " (" + n + ")", f));
+}
+
+function zurFahrt(f) {                      // erstes Bild dieser Fahrt
+  const p = ids.findIndex((i) => fahrtVon(i) === f);
+  if (p >= 0) zeigen(p);
+}
+
+function fahrtWeiter(d) {                   // vorige (-1) oder nächste (+1) Fahrt; zurück geht erst an den Anfang der jetzigen
+  const wahl = document.getElementById("fahrt");
+  const erste = ids.findIndex((i) => fahrtVon(i) === wahl.value);
+  if (d < 0 && pos > erste) { zeigen(erste); return; }
+  const o = wahl.options[wahl.selectedIndex + d];
+  if (o) zurFahrt(o.value);
+}
+
+function knopfZeigen(id) {
+  const grund = aus[id];
+  const knopf = document.getElementById("aus");
+  knopf.textContent = grund === "hand" ? "Zurückholen (X)" : "Untauglich (X)";
+  knopf.disabled = grund === "steht";
+  document.getElementById("marke").textContent = grund === "hand" ? "untauglich" : grund === "steht" ? "Standbild" : "";
+}
+
+async function aussortieren() {             // aktuelles Bild von Hand aussortieren oder zurückholen
+  const id = ids[pos];
+  if (!id || aus[id] === "steht") return;
+  const raus = aus[id] !== "hand";
+  const meldung = document.getElementById("meldung");
+  try {
+    const r = await fetch("aus", { method: "POST", headers: { "Content-Type": "application/json" },
+                                   body: JSON.stringify({ ansicht, id, aus: raus }) });
+    const d = await r.json();
+    if (!d.ok) throw new Error(d.fehler);
+  } catch (e) {
+    meldung.textContent = "nicht gespeichert: " + (e.message || e) + " (läuft betrachter_server.py?)";
+    return;
+  }
+  meldung.textContent = "";
+  if (raus) aus[id] = "hand"; else delete aus[id];
+  const nach = alle[alle.indexOf(id) + (raus && !zeigeAlle ? 1 : 0)] || id;
+  listeBauen(nach);
 }
 
 function zeigen(p) {
   if (!ids.length) {
     document.getElementById("id").textContent = "Keine Bilder: " + (A.stage3 || A.stage2) + "/index.js fehlt oder ist leer";
-    wahlZeigen();
+    document.getElementById("aus").hidden = true;
     return;
   }
   pos = Math.max(0, Math.min(ids.length - 1, p));
   const id = ids[pos];
+  knopfZeigen(id);
+  document.getElementById("fahrt").value = fahrtVon(id);
   const q = quellen(id);
   for (const name in q) document.getElementById(name).src = q[name];
   if (A.stage3) {
@@ -82,29 +169,61 @@ function zeigen(p) {
     document.getElementById("ueber_stage3").src = q.stage3;
   }
   document.getElementById("id").textContent = id;
+  const weg = Object.values(aus);
   document.getElementById("pos").textContent = (pos + 1) + " / " + ids.length;
+  document.getElementById("zahl").textContent = "aussortiert: " + weg.filter((g) => g === "steht").length + " Standbilder, " +
+    weg.filter((g) => g === "hand").length + " untauglich";
+  document.getElementById("alle").checked = zeigeAlle;
   history.replaceState(null, "", "#" + id);
-  wahlZeigen();
   for (const d of [1, 2, 3, -1]) {         // Nachbarn vorladen
     const n = ids[pos + d];
     if (n) for (const u of Object.values(quellen(n))) new Image().src = u;
   }
 }
 
-function ausUrl() {
-  const i = ids.indexOf(decodeURIComponent(location.hash.slice(1)));
+function ausUrl() {                         // Bild aus der Adresse; ist es aussortiert, werden alle gezeigt
+  const id = decodeURIComponent(location.hash.slice(1));
+  if (aus[id] && !zeigeAlle && alle.includes(id)) { zeigeAlle = true; ids = alle; fahrtenZeigen(); }
+  const i = ids.indexOf(id);
   zeigen(i >= 0 ? i : 0);
 }
 
 addEventListener("keydown", (e) => {
+  if (e.target.tagName === "SELECT" || e.ctrlKey || e.altKey || e.metaKey) return;      // Auswahllisten und Browserkürzel in Ruhe lassen
   if (e.key === "ArrowRight") { zeigen(pos + 1); e.preventDefault(); }
   if (e.key === "ArrowLeft") { zeigen(pos - 1); e.preventDefault(); }
+  if (e.key === "," || e.key === ".") { fahrtWeiter(e.key === "." ? 1 : -1); e.preventDefault(); }
+  if (e.key === "x" || e.key === "X" || e.key === "Delete") { aussortieren(); e.preventDefault(); }
+  if (e.key === "a" || e.key === "A") { zeigeAlle = !zeigeAlle; listeBauen(ids[pos]); e.preventDefault(); }
 });
+document.getElementById("alle").addEventListener("change", (e) => { zeigeAlle = e.target.checked; listeBauen(ids[pos]); e.target.blur(); });
+document.getElementById("zurueck").addEventListener("click", (e) => { zeigen(pos - 1); e.target.blur(); });
+document.getElementById("vor").addEventListener("click", (e) => { zeigen(pos + 1); e.target.blur(); });
+document.getElementById("fahrt").addEventListener("change", (e) => { zurFahrt(e.target.value); e.target.blur(); });
+document.getElementById("aus").addEventListener("click", (e) => { aussortieren(); e.target.blur(); });
 addEventListener("hashchange", ausUrl);
 const liste = document.createElement("script");
 liste.src = (A.stage3 || A.stage2) + "/index.js?" + Date.now();   // Liste wächst, solange gerechnet wird
-liste.onload = () => { ids = window.BILDER || []; ausUrl(); };
-liste.onerror = ausUrl;
+async function start() {
+  alle = window.BILDER || [];
+  aus = { ...(window.AUS || {}) };
+  try {                                    // Handliste gilt sofort, der Index erst nach dem nächsten Lauf von stage2/stage3
+    const r = await fetch(A.stage1 + "/aus_hand.txt?" + Date.now());
+    if (r.ok) {
+      for (const k in aus) if (aus[k] === "hand") delete aus[k];
+      const hand = new Set();
+      for (const z of (await r.text()).split(/\r?\n/).map((t) => t.trim())) {
+        if (z.startsWith("-")) hand.delete(z.slice(1)); else if (z) hand.add(z);
+      }
+      for (const i of alle) if (hand.has(i)) aus[i] = "hand";
+    }
+  } catch (e) { /* ohne Liste gilt der Index */ }
+  ids = alle.filter((i) => !aus[i]);
+  fahrtenZeigen();
+  ausUrl();
+}
+liste.onload = start;
+liste.onerror = start;
 document.head.appendChild(liste);
 </script>
 </body>

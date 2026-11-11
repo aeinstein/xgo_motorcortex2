@@ -88,8 +88,8 @@ def test_stage3_rows_swallow_thin_keep_shoe_and_reach_build_run(tmp_path):
     assert r[29] == 300 and r[37] == 300
     assert r.dtype == np.float32
 
-    runs, bad = SN.collect(str(tmp_path / "s3"), 1)
-    assert bad == 0 and list(runs["r"]) == ["000001.jpg"]
+    runs, bad, weg = SN.collect(str(tmp_path / "s3"), 1, str(tmp_path))
+    assert bad == 0 and list(runs["r"]) == ["000001.jpg"] and weg == {}
     src = tmp_path / "fahrt"
     src.mkdir()
     cv2.imwrite(str(src / "000001.jpg"), np.full((48, 64, 3), 120, np.uint8))
@@ -129,7 +129,127 @@ def test_stage2_index_lists_only_complete_frames(tmp_path):
             (d / n).write_bytes(b"x")
     # b ohne Original, c ohne Stage1
     assert S2.write_index(str(s1), str(s2), str(data)) == 2
-    assert (s2 / "index.js").read_text(encoding="utf-8") == 'window.BILDER = ["r/a", "r/d"];\n'
+    assert (s2 / "index.js").read_text(encoding="utf-8") == 'window.BILDER = ["r/a", "r/d"];\nwindow.AUS = {};\n'
+
+
+def _fahrt_mit_posen(data, posen):
+    (data / "r").mkdir(parents=True, exist_ok=True)
+    with open(data / "r" / "meta.jsonl", "w", encoding="utf-8") as f:
+        for i, p in enumerate(posen):
+            f.write(json.dumps({"file": "%06d.jpg" % i, **({"pose": p} if p else {})}) + "\n")
+    return ["%06d" % i for i in range(len(posen))]
+
+
+def test_stehend_keeps_first_and_every_move_or_turn(tmp_path):
+    # steht, kriecht 1 cm je Bild, dreht auf der Stelle über die 360°-Grenze, ein Bild ohne Pose, steht wieder
+    posen = [[0, 0, 0], [0.001, 0, 0.5], [0.01, 0, 0], [0.02, 0, 0], [0.03, 0, 0], [0.04, 0, 0],
+             [0.04, 0, 179], [0.04, 0, -179], [0.04, 0, -176.5], None, [0.04, 0, -176.5], [0.045, 0, -176]]
+    stems = _fahrt_mit_posen(tmp_path, posen)
+    aus = S2.stehend(S2.posen(str(tmp_path), "r"), stems, 0.03, 3.0)
+    #  0 bleibt, 1-3 zu nah, 4 (3 cm) bleibt, 5 zu nah, 6 (179°) bleibt, 7 (2° weiter) zu nah, 8 (4,5°) bleibt,
+    #  9 ohne Pose bleibt, 10 bleibt (nach der Lücke neu), 11 zu nah
+    assert sorted(aus) == ["000001", "000002", "000003", "000005", "000007", "000011"]
+    assert S2.stehend(S2.posen(str(tmp_path), "r"), stems, 0.0, 0.0) == set()
+    assert S2.stehend({}, stems) == set()                      # Fahrt ohne Posen: nichts fällt weg
+
+
+def test_hand_liste_last_line_wins(tmp_path):
+    p = tmp_path / "aus_hand.txt"
+    p.write_text("r/000001\nr/000002\n-r/000001\n\nr/000003\n-r/000003\nr/000003\n", encoding="utf-8")
+    assert S2.hand_liste(str(p)) == {"r/000002", "r/000003"}
+    assert S2.hand_liste(str(tmp_path / "fehlt.txt")) == set() and S2.hand_liste("") == set()
+
+
+def test_aussortiert_hand_first_then_next_frame_moves_up(tmp_path):
+    stems = _fahrt_mit_posen(tmp_path, [[0, 0, 0]] * 3 + [[1, 0, 0]])
+    ids = ["r/" + s for s in stems]
+    assert S2.aussortiert(ids, str(tmp_path)) == {"r/000001": "steht", "r/000002": "steht"}
+    hand = tmp_path / "aus_hand.txt"
+    hand.write_text("r/000000\n", encoding="utf-8")
+    # das behaltene Bild der Standfolge ist untauglich: das nächste rückt nach
+    assert S2.aussortiert(ids, str(tmp_path), str(hand)) == {"r/000000": "hand", "r/000002": "steht"}
+
+
+def test_stages_drop_sorted_out_frames_everywhere(tmp_path):
+    data = tmp_path / "data"
+    stems = _fahrt_mit_posen(data, [[0, 0, 0], [0, 0, 0], [1, 0, 0], [2, 0, 0]])
+    s1, s2, s3 = tmp_path / "s1", tmp_path / "s2", tmp_path / "s3"
+    for d in (s1 / "r", s2 / "r", s3 / "r"):
+        d.mkdir(parents=True)
+    m = np.zeros((480, 640), np.uint8)
+    m[300:, :] = 255
+    for s in stems:
+        (s1 / "r" / (s + ".png")).write_bytes(b"x")
+        (data / "r" / (s + ".jpg")).write_bytes(b"x")
+        cv2.imwrite(str(s2 / "r" / (s + ".png")), m)
+        cv2.imwrite(str(s3 / "r" / (s + ".png")), m)
+    hand = s1 / S2.HAND
+    hand.write_text("r/000003\n", encoding="utf-8")
+    assert S2.write_index(str(s1), str(s2), str(data), str(hand), 0.03, 3.0) == 2
+    js = (s2 / "index.js").read_text(encoding="utf-8")
+    assert '"r/000001": "steht"' in js and '"r/000003": "hand"' in js and js.count("r/000002") == 1
+    # Stage3 und die Label-Dateien lesen die Regeln aus info.json der Stufe davor
+    (s2 / "info.json").write_text(json.dumps({"aus_hand": str(hand), "steht_m": 0.03, "steht_grad": 3.0}), encoding="utf-8")
+    r = S3.aus_regeln(str(s2))
+    assert r == {"hand": str(hand), "d_m": 0.03, "w_grad": 3.0}
+    assert S3.aus_regeln(str(tmp_path / "leer")) == {"hand": "", "d_m": 0.0, "w_grad": 0.0}
+    (s3 / "info.json").write_text((s2 / "info.json").read_text(encoding="utf-8"), encoding="utf-8")
+    runs, bad, weg = SN.collect(str(s3), 1, str(data))
+    assert bad == 0 and list(runs["r"]) == ["000000.jpg", "000002.jpg"] and weg == {"r": 2}
+
+
+def test_betrachter_server_appends_valid_ids_only(tmp_path):
+    import threading
+    import urllib.error
+    import urllib.request
+    from functools import partial
+    from http.server import ThreadingHTTPServer
+
+    import betrachter_server as BS
+
+    (tmp_path / "stage1_hd" / "r").mkdir(parents=True)
+    (tmp_path / "stage1_hd" / "r" / "000001.png").write_bytes(b"x")
+    (tmp_path / "geheim.txt").write_text("x", encoding="utf-8")
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), partial(BS.Handler, directory=str(tmp_path)))
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    url = "http://127.0.0.1:%d/" % srv.server_address[1]
+
+    def post(d, typ="application/json", pfad="aus"):
+        req = urllib.request.Request(url + pfad, json.dumps(d).encode(), {"Content-Type": typ})
+        try:
+            with urllib.request.urlopen(req, timeout=5) as r:
+                return r.status
+        except urllib.error.HTTPError as e:
+            return e.code
+
+    try:
+        assert post({"ansicht": "hd", "id": "r/000001", "aus": True}) == 200
+        assert post({"ansicht": "hd", "id": "r/000001", "aus": False}) == 200
+        assert post({"ansicht": "hd", "id": "r/000001"}) == 200
+        assert post({"ansicht": "hd", "id": "r/000002"}) == 400                 # Bild gibt es nicht
+        assert post({"ansicht": "hd", "id": "../geheim"}) == 400
+        assert post({"ansicht": "hd", "id": "r/000001\n-x/1"}) == 400
+        assert post({"ansicht": "x", "id": "r/000001"}) == 400
+        assert post(["r/000001"]) == 400
+        assert post({"ansicht": "hd", "id": "r/000001"}, typ="text/plain") == 400
+        assert post({"ansicht": "hd", "id": "r/000001"}, pfad="stage1_hd/aus_hand.txt") == 400
+        with urllib.request.urlopen(url + "stage1_hd/aus_hand.txt", timeout=5) as r:        # Dateien wie bisher
+            assert r.read().decode() == "r/000001\n-r/000001\nr/000001\n" and r.headers["Cache-Control"] == "no-store"
+    finally:
+        srv.shutdown()
+        srv.server_close()
+    assert S2.hand_liste(str(tmp_path / "stage1_hd" / S2.HAND)) == {"r/000001"}
+
+
+def test_ids_fahrt_every_second_without_standing(tmp_path, capsys, monkeypatch):
+    import ids_fahrt as IF
+
+    stems = _fahrt_mit_posen(tmp_path, [[0, 0, 0]] * 6 + [[1, 0, 0], [1, 0, 0], [2, 0, 0]])
+    for s in stems:
+        (tmp_path / "r" / (s + ".jpg")).write_bytes(b"x")
+    monkeypatch.setattr(sys, "argv", ["ids_fahrt.py", "r", "--data", str(tmp_path)])
+    assert IF.main() == 0
+    assert capsys.readouterr().out.split() == ["r/000000.jpg", "r/000006.jpg", "r/000008.jpg"]
 
 
 def test_stage2_writes_floor_mask_and_skips_existing(tmp_path):

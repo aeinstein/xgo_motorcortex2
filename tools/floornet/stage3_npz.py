@@ -23,6 +23,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import comfy_label as C  # noqa: E402
 import comfy_npz as Z  # noqa: E402
+import stage2 as S2  # noqa: E402
+import stage3 as S3  # noqa: E402
 
 
 def rows_of(path: str) -> np.ndarray | None:
@@ -33,9 +35,19 @@ def rows_of(path: str) -> np.ndarray | None:
     return C.mask_rows(m > 0)
 
 
-def collect(stage3: str, jobs: int) -> tuple[dict, int]:
-    """Fahrt -> {Datei.jpg: Zeilen}; dazu die Zahl nicht lesbarer Masken."""
+def _id(path: str) -> str:
+    return "/".join(path.replace("\\", "/").split("/")[-2:])[:-4]
+
+
+def collect(stage3: str, jobs: int, data: str = S2.DATA) -> tuple[dict, int, dict]:
+    """Fahrt -> {Datei.jpg: Zeilen}; dazu die Zahl nicht lesbarer Masken und je Fahrt die Zahl der aussortierten
+    (Standbilder, Handliste des Betrachters; Regeln aus <stage3>/info.json, siehe stage2.py)."""
     paths = sorted(glob.glob(os.path.join(stage3, "*", "*.png")))
+    aus = S2.aussortiert([_id(p) for p in paths], data, **S3.aus_regeln(stage3))
+    weg: dict = {}
+    for i in aus:
+        weg[i.split("/")[0]] = weg.get(i.split("/")[0], 0) + 1
+    paths = [p for p in paths if _id(p) not in aus]
     with Pool(jobs) as pool:
         res = pool.map(rows_of, paths, chunksize=32)
     out: dict = {}
@@ -46,7 +58,7 @@ def collect(stage3: str, jobs: int) -> tuple[dict, int]:
             continue
         run, name = p.replace("\\", "/").split("/")[-2:]
         out.setdefault(run, {})[name[:-4] + ".jpg"] = r
-    return out, bad
+    return out, bad, weg
 
 
 def main() -> int:
@@ -60,7 +72,7 @@ def main() -> int:
     a = ap.parse_args()
     cv2.setNumThreads(1)
     os.makedirs(a.out, exist_ok=True)
-    runs, bad = collect(a.stage3, a.jobs)
+    runs, bad, weg = collect(a.stage3, a.jobs)
     only = {r for r in a.fahrten.split(",") if r}
     total = 0
     for run, frames in sorted(runs.items()):
@@ -68,7 +80,8 @@ def main() -> int:
             continue
         z = np.load(os.path.join(a.labels, run + ".npz"), allow_pickle=False)
         d, count = Z.build_run(run, frames, str(z["geom"]), str(z["source_dir"]), str(z["wohnung"]))
-        print("%-10s %5d von %5d Bildern, verworfen: %s" % (run, len(d["files"]), len(frames), count or "-"), flush=True)
+        print("%-10s %5d von %5d Bildern, verworfen: %s, vorher aussortiert %d" % (
+            run, len(d["files"]), len(frames), count or "-", weg.get(run, 0)), flush=True)
         if len(d["files"]) >= a.min_run:
             tmp = os.path.join(a.out, run + ".tmp.npz")
             np.savez_compressed(tmp, **d)
