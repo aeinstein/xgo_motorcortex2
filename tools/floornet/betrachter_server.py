@@ -6,7 +6,9 @@ Aussortieren untauglicher Bilder an.
 
 POST /aus mit JSON {"ansicht": "hd", "id": "explore10/005514", "aus": true}: hängt die ID an die Handliste
 <stage1 der Ansicht>/aus_hand.txt an ("aus": false schreibt "-id", holt das Bild also zurück). Gelöscht wird nichts;
-stage2.py, stage3.py und stage3_npz.py lesen die Liste. Ohne Anmeldung, nur fürs Heimnetz.
+stage2.py, stage3.py und stage3_npz.py lesen die Liste. POST /gesichtet mit {"ansicht", "id"} hängt die ID an
+<stage1>/gesichtet.txt an; die liest nur der Betrachter (schon gezeigte Bilder nach dem Neuladen ausblenden).
+Ohne Anmeldung, nur fürs Heimnetz.
 """
 from __future__ import annotations
 
@@ -19,14 +21,16 @@ import threading
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
-STAGE1 = {"hd": "stage1_hd", "g0h": "stage1_g0h", "p8": "stage1", "t1": "stage1_t1", "t2": "stage1_t2", "t3": "stage1_t3"}      # wie ANSICHTEN in betrachter.html
+STAGE1 = {"p11": "stage1_p11", "hd": "stage1_hd", "g0h": "stage1_g0h", "p8": "stage1", "t1": "stage1_t1", "t2": "stage1_t2", "t3": "stage1_t3"}      # wie ANSICHTEN in betrachter.html
 HAND = "aus_hand.txt"                                                   # wie stage2.HAND
+GESICHTET = "gesichtet.txt"                                             # nur für den Betrachter
+ZIELE = {"/aus": HAND, "/gesichtet": GESICHTET}
 ID = re.compile(r"[A-Za-z0-9_-]+/[0-9]+")
 _lock = threading.Lock()
 
 
-def eintragen(root: str, ansicht: str, bild: str, aus: bool) -> str:
-    """Zeile an die Handliste hängen. Rückgabe: Fehlertext oder "" bei Erfolg."""
+def eintragen(root: str, ansicht: str, bild: str, aus: bool, datei: str = HAND) -> str:
+    """Zeile an die Liste datei hängen. Rückgabe: Fehlertext oder "" bei Erfolg."""
     if ansicht not in STAGE1:
         return "unbekannte Ansicht"
     if not isinstance(bild, str) or not ID.fullmatch(bild):
@@ -34,7 +38,7 @@ def eintragen(root: str, ansicht: str, bild: str, aus: bool) -> str:
     ziel = os.path.join(root, STAGE1[ansicht])
     if not os.path.exists(os.path.join(ziel, bild + ".png")):
         return "Bild gibt es in dieser Ansicht nicht"
-    with _lock, open(os.path.join(ziel, HAND), "a", encoding="utf-8", newline="\n") as f:
+    with _lock, open(os.path.join(ziel, datei), "a", encoding="utf-8", newline="\n") as f:
         f.write(("" if aus else "-") + bild + "\n")
     return ""
 
@@ -48,12 +52,13 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_error(400, "nur POST /aus mit kurzem JSON")
             return
         roh = self.rfile.read(n)                # erst lesen, sonst reißt die Verbindung beim Ablehnen ab
-        if self.path != "/aus" or self.headers.get("Content-Type", "").split(";")[0].strip() != "application/json":
+        if self.path not in ZIELE or self.headers.get("Content-Type", "").split(";")[0].strip() != "application/json":
             self.send_error(400, "nur POST /aus mit JSON")
             return
         try:
             d = json.loads(roh)
-            fehler = eintragen(self.directory, d.get("ansicht"), d.get("id"), bool(d.get("aus", True)))
+            aus = self.path != "/aus" or bool(d.get("aus", True))       # gesichtet kennt kein Zurückholen
+            fehler = eintragen(self.directory, d.get("ansicht"), d.get("id"), aus, ZIELE[self.path])
         except (ValueError, AttributeError):
             fehler = "kein JSON-Objekt"
         body = json.dumps({"ok": not fehler, "fehler": fehler}, ensure_ascii=False).encode("utf-8")
@@ -64,7 +69,7 @@ class Handler(SimpleHTTPRequestHandler):
         self.wfile.write(body)
 
     def end_headers(self) -> None:
-        if getattr(self, "path", "").split("?")[0].endswith((HAND, "index.js")):        # Listen ändern sich, nie aus dem Zwischenspeicher
+        if getattr(self, "path", "").split("?")[0].endswith((HAND, GESICHTET, "index.js")):        # Listen ändern sich, nie aus dem Zwischenspeicher
             self.send_header("Cache-Control", "no-store")
         super().end_headers()
 

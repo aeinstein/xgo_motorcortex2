@@ -235,6 +235,12 @@ def test_betrachter_server_appends_valid_ids_only(tmp_path):
         assert post({"ansicht": "hd", "id": "r/000001"}, pfad="stage1_hd/aus_hand.txt") == 400
         with urllib.request.urlopen(url + "stage1_hd/aus_hand.txt", timeout=5) as r:        # Dateien wie bisher
             assert r.read().decode() == "r/000001\n-r/000001\nr/000001\n" and r.headers["Cache-Control"] == "no-store"
+        assert post({"ansicht": "hd", "id": "r/000001"}, pfad="gesichtet") == 200           # gesichtet: eigene Liste
+        assert post({"ansicht": "hd", "id": "r/000001", "aus": False}, pfad="gesichtet") == 200     # kein Zurückholen
+        assert post({"ansicht": "hd", "id": "r/000002"}, pfad="gesichtet") == 400
+        assert post({"ansicht": "x", "id": "r/000001"}, pfad="gesichtet") == 400
+        with urllib.request.urlopen(url + "stage1_hd/gesichtet.txt", timeout=5) as r:
+            assert r.read().decode() == "r/000001\nr/000001\n" and r.headers["Cache-Control"] == "no-store"
     finally:
         srv.shutdown()
         srv.server_close()

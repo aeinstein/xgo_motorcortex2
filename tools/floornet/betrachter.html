@@ -41,10 +41,11 @@
   <span id="id"></span><span id="pos"></span><span id="marke"></span>
   <span id="rechts">
     <button id="aus" type="button"></button>
+    <label title="auch schon gesichtete Bilder zeigen (Taste G); ausgeblendet werden sie erst beim Neuladen"><input id="gesichtet" type="checkbox"> gesichtete zeigen</label>
     <label title="auch Standbilder und untaugliche zeigen (Taste A)"><input id="alle" type="checkbox"> alle zeigen</label>
   </span>
 </div>
-<div id="fuss"><span id="zahl"></span><span id="meldung"></span><span id="tasten">← → Bild · , . Fahrt · X untauglich · A alle zeigen</span></div>
+<div id="fuss"><span id="zahl"></span><span id="meldung"></span><span id="tasten">← → Bild · , . Fahrt · X untauglich · G gesichtete zeigen · A alle zeigen</span></div>
 <div id="bilder">
   <figure><figcaption>Original</figcaption><img id="original" alt="Original"></figure>
   <figure><figcaption id="titel1"></figcaption><img id="stage1" alt="Stage1"></figure>
@@ -57,6 +58,7 @@
 const ANSICHTEN = {
   g0h: { name: "Prompt 10, G0 + Graubild-Helligkeit", stage1: "stage1_g0h", stage2: "stage2_g0h", stage3: "stage3_g0h", maske: "Grünvorsprung ≥ 30" },
   hd: { name: "Prompt 10, hell (ab 60) Farbbild, dunkel G0h", stage1: "stage1_hd", stage2: "stage2_hd", stage3: "stage3_hd", maske: "Grünvorsprung ≥ 30" },
+  p11: { name: "Prompt 11 (nur blanker Boden), hell Farbbild, dunkel G0h", stage1: "stage1_p11", stage2: "stage2_p11", stage3: "stage3_p11", maske: "Grünvorsprung ≥ 30" },
   p8: { name: "Prompt 8", stage1: "stage1", stage2: "stage2", maske: "V ≥ 30" },
   // Probelauf 2026-11-11: Teppiche und Dinge auf dem Boden, ~70 Bilder je Fassung
   t1: { name: "T1 Teppichsatz", stage1: "stage1_t1", stage2: "stage2_t1", stage3: "stage3_t1", maske: "Grünvorsprung ≥ 30" },
@@ -76,7 +78,11 @@ if (A.stage3) {
 let alle = [];                              // alle Bilder der Ansicht, zeitlich sortiert
 let aus = {};                               // aussortiert: ID -> "steht" (Standbild) oder "hand" (untauglich)
 let zeigeAlle = false;                      // auch Aussortierte zeigen (Taste A)
+let gesehen = new Set();                    // beim Laden schon gesichtet: ausgeblendet, solange zeigeGesehen aus ist
+const gemeldet = new Set();                 // gesichtet.txt samt dem, was in dieser Sitzung dazukam (blendet erst nach Neuladen aus)
+let zeigeGesehen = false;                   // auch Gesichtete zeigen (Taste G)
 let ids = [];                               // was gerade durchgeklickt wird
+const sichtbar = (i) => (zeigeAlle || !aus[i]) && (zeigeGesehen || !gesehen.has(i));
 const quellen = (id) => ({
   original: "data/rider/fahrt/" + id + ".jpg",
   stage1: A.stage1 + "/" + id + ".png",
@@ -90,7 +96,7 @@ for (const k in ANSICHTEN) wahlAnsicht.add(new Option(ANSICHTEN[k].name, k, fals
 wahlAnsicht.addEventListener("change", () => { location.href = "?v=" + wahlAnsicht.value + location.hash; });
 
 function listeBauen(bleibBei) {             // ids neu bilden; bleibBei: ID, bei der (oder dem nächsten danach) es weitergeht
-  ids = zeigeAlle ? alle : alle.filter((i) => !aus[i]);
+  ids = alle.filter(sichtbar);
   let p = 0;
   if (bleibBei) {
     const ab = alle.indexOf(bleibBei);
@@ -132,6 +138,17 @@ function knopfZeigen(id) {
   document.getElementById("marke").textContent = grund === "hand" ? "untauglich" : grund === "steht" ? "Standbild" : "";
 }
 
+function melden(id) {                       // Bild als gesichtet merken (einmal je Bild)
+  if (gemeldet.has(id)) return;
+  gemeldet.add(id);
+  fetch("gesichtet", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ansicht, id }) })
+    .then((r) => { if (!r.ok) throw new Error(r.status); })
+    .catch(() => {
+      gemeldet.delete(id);
+      document.getElementById("meldung").textContent = "gesichtet nicht gespeichert (läuft betrachter_server.py?)";
+    });
+}
+
 async function aussortieren() {             // aktuelles Bild von Hand aussortieren oder zurückholen
   const id = ids[pos];
   if (!id || aus[id] === "steht") return;
@@ -153,14 +170,20 @@ async function aussortieren() {             // aktuelles Bild von Hand aussortie
 }
 
 function zeigen(p) {
+  document.getElementById("alle").checked = zeigeAlle;
+  document.getElementById("gesichtet").checked = zeigeGesehen;
+  document.getElementById("aus").hidden = !ids.length;
   if (!ids.length) {
-    document.getElementById("id").textContent = "Keine Bilder: " + (A.stage3 || A.stage2) + "/index.js fehlt oder ist leer";
-    document.getElementById("aus").hidden = true;
+    document.getElementById("id").textContent = !alle.length ? "Keine Bilder: " + (A.stage3 || A.stage2) + "/index.js fehlt oder ist leer"
+      : zeigeGesehen ? "Keine Bilder (A zeigt auch aussortierte)" : "Alles gesichtet – G zeigt sie wieder";
+    document.getElementById("pos").textContent = "";
+    document.getElementById("marke").textContent = "";
     return;
   }
   pos = Math.max(0, Math.min(ids.length - 1, p));
   const id = ids[pos];
   knopfZeigen(id);
+  melden(id);
   document.getElementById("fahrt").value = fahrtVon(id);
   const q = quellen(id);
   for (const name in q) document.getElementById(name).src = q[name];
@@ -172,8 +195,7 @@ function zeigen(p) {
   const weg = Object.values(aus);
   document.getElementById("pos").textContent = (pos + 1) + " / " + ids.length;
   document.getElementById("zahl").textContent = "aussortiert: " + weg.filter((g) => g === "steht").length + " Standbilder, " +
-    weg.filter((g) => g === "hand").length + " untauglich";
-  document.getElementById("alle").checked = zeigeAlle;
+    weg.filter((g) => g === "hand").length + " untauglich · gesichtet: " + gemeldet.size + " von " + alle.length;
   history.replaceState(null, "", "#" + id);
   for (const d of [1, 2, 3, -1]) {         // Nachbarn vorladen
     const n = ids[pos + d];
@@ -181,9 +203,14 @@ function zeigen(p) {
   }
 }
 
-function ausUrl() {                         // Bild aus der Adresse; ist es aussortiert, werden alle gezeigt
+function ausUrl() {                         // Bild aus der Adresse; ist es ausgeblendet, wird das Nötige eingeschaltet
   const id = decodeURIComponent(location.hash.slice(1));
-  if (aus[id] && !zeigeAlle && alle.includes(id)) { zeigeAlle = true; ids = alle; fahrtenZeigen(); }
+  if (alle.includes(id) && !ids.includes(id)) {
+    if (aus[id]) zeigeAlle = true;
+    if (gesehen.has(id)) zeigeGesehen = true;
+    ids = alle.filter(sichtbar);
+    fahrtenZeigen();
+  }
   const i = ids.indexOf(id);
   zeigen(i >= 0 ? i : 0);
 }
@@ -195,7 +222,9 @@ addEventListener("keydown", (e) => {
   if (e.key === "," || e.key === ".") { fahrtWeiter(e.key === "." ? 1 : -1); e.preventDefault(); }
   if (e.key === "x" || e.key === "X" || e.key === "Delete") { aussortieren(); e.preventDefault(); }
   if (e.key === "a" || e.key === "A") { zeigeAlle = !zeigeAlle; listeBauen(ids[pos]); e.preventDefault(); }
+  if (e.key === "g" || e.key === "G") { zeigeGesehen = !zeigeGesehen; listeBauen(ids[pos]); e.preventDefault(); }
 });
+document.getElementById("gesichtet").addEventListener("change", (e) => { zeigeGesehen = e.target.checked; listeBauen(ids[pos]); e.target.blur(); });
 document.getElementById("alle").addEventListener("change", (e) => { zeigeAlle = e.target.checked; listeBauen(ids[pos]); e.target.blur(); });
 document.getElementById("zurueck").addEventListener("click", (e) => { zeigen(pos - 1); e.target.blur(); });
 document.getElementById("vor").addEventListener("click", (e) => { zeigen(pos + 1); e.target.blur(); });
@@ -218,7 +247,13 @@ async function start() {
       for (const i of alle) if (hand.has(i)) aus[i] = "hand";
     }
   } catch (e) { /* ohne Liste gilt der Index */ }
-  ids = alle.filter((i) => !aus[i]);
+  try {                                    // schon Gesichtetes; das Bild aus der Adresse bleibt, dort geht es weiter
+    const r = await fetch(A.stage1 + "/gesichtet.txt?" + Date.now());
+    if (r.ok) for (const z of (await r.text()).split(/\r?\n/)) if (z.trim()) gemeldet.add(z.trim());
+  } catch (e) { /* ohne Liste ist nichts gesichtet */ }
+  gesehen = new Set(gemeldet);
+  gesehen.delete(decodeURIComponent(location.hash.slice(1)));
+  ids = alle.filter(sichtbar);
   fahrtenZeigen();
   ausUrl();
 }
