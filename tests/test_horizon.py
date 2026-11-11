@@ -115,7 +115,9 @@ def test_app_horizont_folgt_imu_ohne_verzoegerung(tmp_path):
     cfg.horizon.settle_s, cfg.horizon.window_s, cfg.horizon.max_std_deg = 0.3, 2.0, 5.0
     cfg.imu.pitch_sign, cfg.imu.time_offset_ms = -1, -8.0      # wie SimImu: Vorzeichen -1, Stempel 8 ms früh
     robot = SimRobot(cfg.robot)
-    world = SimWorld(cfg.camera, robot, None, start=(1.0, 1.5, 0.0))
+    # shake 4: im Stand nickt der Simulator nur ein Viertel so stark wie in Fahrt (sim.STAND_FACTOR); der Test
+    # braucht einen Hub deutlich über dem Rauschen der Sim-IMU (0,05°)
+    world = SimWorld(cfg.camera, robot, None, start=(1.0, 1.5, 0.0), shake=4.0)
     app = App(cfg, robot, world, imu=SimImu(world, cfg.imu))
     th = threading.Thread(target=app.run, kwargs={"duration": 8.0}, daemon=True)
     th.start()

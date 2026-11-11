@@ -166,7 +166,7 @@ Replay of three evening drives (`tools/replay_raw.py`, 2026-11-04), false alarms
 2026-11-05 (`edge_log_s` 16, `edge_glare`): replay 0 / 0 / 54 % — follow11 now sees the kitchen cabinet side 0.16 m beside the path and the 0.33 m gray wall it missed before; the replay counts these as false alarms (person far). Manual test cases (19 frames): 17 OK (before 13). Cost +0.2 ms per call on a PC.
 
 ### `[map]` (short-term local map)
-`max_age_s` 4.0, `confirm` 1 (RiderPi 3), `confirm_radius_m` 0.08, `yaw_source` `odom` (RiderPi `imu`): heading for moving the points; `odom` = like `[odom] yaw_source` (wheels, else camera), `imu` = firmware heading from `imu_log` (~50 Hz), falls back to `odom` when the IMU is missing or older than `imu.max_age_s`. RiderPi 2026-11-08, full turns against images: IMU 0.997, wheels 0.992 of the true angle; per turn the two differ randomly by ~2° (p90 ~8°). Status: `lmap_yaw_src`.
+`max_age_s` 4.0, `confirm` 1 (RiderPi 3), `confirm_radius_m` 0.08, `radius_m` 0.18 (path check: a confirmed point closer than this to the arc brakes), `radius_tight_m` 0.08 (same while the path follower drives a tight spot, `home.tight_m`; Rider half width 5.8 cm per CAD), `yaw_source` `odom` (RiderPi `imu`): heading for moving the points; `odom` = like `[odom] yaw_source` (wheels, else camera), `imu` = firmware heading from `imu_log` (~50 Hz), falls back to `odom` when the IMU is missing or older than `imu.max_age_s`. RiderPi 2026-11-08, full turns against images: IMU 0.997, wheels 0.992 of the true angle; per turn the two differ randomly by ~2° (p90 ~8°). Status: `lmap_yaw_src`.
 
 ### `[behavior]`
 | Key | Default | RiderPi |
@@ -237,6 +237,7 @@ All keys with comments: `PetCfg` in `xgonav/config.py`.
 | `resolution_m` / `size_m` | 0.05 / 16.0 |
 | `min_range_m` / `max_range_m` | 0.15 / 1.25 (hits only up to here) |
 | `confirm_dr_m` / `confirm_cells` | 0 (off) / 2; RiderPi 0.2: a hit counts only once the same spot (± cells) was hit from ranges at least this far apart; until then it is a candidate (orange in `/map.png`). Reflections in a glossy floor and seams move with the Rider and are never confirmed; turning on the spot alone confirms nothing |
+| `mark_blocking` | true | `LocalMap` points the path check brakes for are entered as confirmed and occupied (what stops the Rider is on the map); free rays remove them again if the spot is later seen free |
 | `free_range_m` | 1.5 (free rays up to here); RiderPi 1.1 |
 | `column_step` | 2 |
 | `l_free` / `l_occ` | -0.4 / 0.5 (two hits to `l_show`) |
@@ -260,8 +261,13 @@ All keys with comments: `PetCfg` in `xgonav/config.py`.
 ### `[home]` (return to start)
 | Key | Default | Meaning |
 |---|---|---|
-| `inflate_m` | 0.18 | occupied cells inflated, blocked for planning |
+| `inflate_m` | 0.23 | normal clearance to occupied cells; also margin of no-go zones and the cleared disc around the pose |
 | `clear_cost` | 4.0 | extra cost near obstacles (fades out at 2 × `inflate_m`) |
+| `squeeze_m` / `squeeze_cost` | 0.09 / 20 | cells closer than `inflate_m` are not blocked but cost this much more; blocked only below `squeeze_m` (cell centre distance; 0.09 = direct neighbours at 5 cm cells, a 25 cm gap stays open in any grid position). The path squeezes through only if there is no other way. 0 = off (gaps from ~0.45 m, as until 2026-11-11) |
+| `tight_m` | 0.21 | tight spot: occupied map cell closer than this to the pose or to the path up to 0.45 m ahead (0 = off) |
+| `tight_lookahead_m` / `tight_v` | 0.2 / 0.6 | tight spot: lookahead, speed factor |
+| `tight_turn_enter_deg` / `tight_turn_exit_deg` | 30 / 10 | tight spot: turn in place thresholds |
+| `tight_center` / `tight_center_max_deg` | true / 30 | tight spot: aim at the middle between the nearest confirmed `LocalMap` points left and right ahead, if within this angle of the path direction (status „Lücke“) |
 | `unknown_cost` | 3.0 | extra cost for unknown cells |
 | `margin_m` | 1.5 | search area = pose, start, driven path + margin |
 | `lookahead_m` | 0.5 | pure pursuit |
@@ -269,7 +275,7 @@ All keys with comments: `PetCfg` in `xgonav/config.py`.
 | `replan_s` | 2.0 | replan interval (also after 3 s without progress) |
 | `keep_factor` | 1.2 | keep the current path while free and ≤ factor × new path + 0.3 m (not after getting stuck) |
 | `use_localmap` | true | confirmed `LocalMap` points (same as the path check) are obstacles for planning |
-| `v` | 0.15 | normalised speed |
+| `v` | 0.15 | normalised speed (`home`, `patrol`; `explore` uses `explore.v`) |
 | `kp_turn` | 1.5 | 1/s, turn rate per heading error (follow uses `behavior.kp_turn`) |
 | `turn_enter_deg` / `turn_exit_deg` | 75 / 25 | turn in place above enter until below exit; otherwise drive the curve (speed ≥ 30 %) |
 | `align_heading` / `align_tol_deg` | true / 10 | turn to start heading at goal |

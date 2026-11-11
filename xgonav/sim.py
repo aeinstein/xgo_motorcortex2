@@ -64,12 +64,28 @@ class Person:
             self.y += dy / d * s
 
 
+# Nicken des balancierenden Riders, gemessen an den IMU-Proben (92 Hz) von sieben Rohfahrten am RiderPi
+# (2026-11-10/11, zusammen ~1060 s, Fenster 4 s). Standardabweichung des Nickens in Fahrt, Median / 90 %:
+# 0,5–1,5 Hz 0,94 / 2,10°, 1,5–4 Hz 0,33 / 0,94°, 4–8 Hz 0,12 / 0,26°, 8–15 Hz 0,05 / 0,16°; im Stand etwa
+# ein Viertel bis ein Sechstel davon (0,16 / 0,09 / 0,04 / 0,02°). Stärkste Linie bei 0,5–0,75 Hz, nicht bei
+# 2,5 Hz. Die Werte hier liegen zwischen Median und 90 % (Sinus-Amplitude = 1,41 x Standardabweichung).
+# Bis 2026-11-11 standen hier 3,0° bei 2,5 Hz, 1,5° bei 6,1 Hz, 0,5° bei 9,3 Hz und 0,3° bei 13,1 Hz, auch im
+# Stand: bei 2,5 Hz etwa sechsmal, bei 6 Hz etwa neunmal so viel wie gemessen.
+NICK = ((0.8, 1.0), (2.5, 0.6), (6.1, 0.2), (9.3, 0.1), (13.1, 0.05))     # (Hz, Grad) in Fahrt
+STAND_FACTOR = 0.25                                                        # Anteil davon im Stand
+# Neigung beim Beschleunigen: gemessen 8,9° je m/s² (r = 0,98, Radwege gegen IMU), Beschleunigung p95 0,40 m/s².
+# Begrenzt, weil der Simulator ohne --dyn die Geschwindigkeit sprunghaft ändert (sonst 20° und mehr).
+ACC_DEG = 9.0
+ACC_CLIP = 0.5
+
+
 @dataclass
 class SimScene:
     size: float = 6.0
     boxes: list = field(default_factory=lambda: [(2.0, 3.6, 2.7, 4.3), (4.2, 0.9, 4.8, 2.6)])
     wall_h: float = 1.0
     box_h: float = 0.6
+    robot_r: float = 0.12              # Kollisionsradius (rund); der echte Rider ist 11,5 cm breit, 13,3 cm lang
 
     def segments(self):
         s = self.size
@@ -79,7 +95,8 @@ class SimScene:
             seg += [(x1, y1, x2, y1, k), (x2, y1, x2, y2, k), (x2, y2, x1, y2, k), (x1, y2, x1, y1, k)]
         return np.array(seg, np.float64)
 
-    def collides(self, x: float, y: float, r: float = 0.12) -> bool:
+    def collides(self, x: float, y: float, r: float | None = None) -> bool:
+        r = self.robot_r if r is None else r
         if x < r or y < r or x > self.size - r or y > self.size - r:
             return True
         # runder Roboter: Abstand zum nächsten Punkt der Kiste (an den Ecken nicht quadratisch,
@@ -92,6 +109,9 @@ SCENES = {
     "raum": SimScene,
     # zwei Zimmer, dazwischen eine Wand mit 0,8 m breiter Tür (Wände als flache Kisten)
     "zwei": lambda: SimScene(boxes=[(3.0, 0.0, 3.1, 2.6), (3.0, 3.4, 3.1, 6.0), (1.2, 4.4, 1.9, 5.1), (4.3, 0.9, 4.9, 1.8)]),
+    # wie "zwei", aber die Tür nur 25 cm breit; Kollisionsradius wie der echte Rider (halbe Länge 7 cm)
+    "spalt": lambda: SimScene(boxes=[(3.0, 0.0, 3.1, 2.875), (3.0, 3.125, 3.1, 6.0), (1.2, 4.4, 1.9, 5.1),
+                                     (4.3, 0.9, 4.9, 1.8)], robot_r=0.07),
 }
 
 
@@ -196,6 +216,7 @@ class SimWorld(FrameSource):
         self._t0 = None
         self._prev_v = 0.0
         self._acc_lp = 0.0
+        self._mot = STAND_FACTOR
         self.pitch = 0.0
         self._pitch_prev = 0.0
         self._rng = np.random.default_rng(7)
@@ -250,9 +271,12 @@ class SimWorld(FrameSource):
             self.person.step(t, dt)
         acc = (v - self._prev_v) / max(dt, 1e-3)
         self._prev_v = v
-        self._acc_lp = 0.7 * self._acc_lp + 0.3 * float(np.clip(acc, -2, 2))
+        self._acc_lp = 0.7 * self._acc_lp + 0.3 * float(np.clip(acc, -ACC_CLIP, ACC_CLIP))
+        # Im Stand pendelt der Rider nur etwa ein Viertel so stark wie in Fahrt; Übergang über ~0,5 s
+        ziel = 1.0 if abs(v) > 0.03 or abs(w) > 0.2 else STAND_FACTOR
+        self._mot += (ziel - self._mot) * min(1.0, dt / 0.5)
         self.pitch = self.pitch_truth(t)
-        self.yaw_jit = self.shake * math.radians(0.8) * math.sin(2 * math.pi * 1.7 * t)
+        self.yaw_jit = self.shake * self._mot * math.radians(0.8) * math.sin(2 * math.pi * 1.7 * t)
         cam_h = ((self.robot.height_mm or 85.0) + self.mount) / 1000.0
         self.cam_h = cam_h
         self.log.append({"t": t, "x": self.x, "y": self.y, "th": self.th, "v": v, "w": w,
@@ -276,12 +300,10 @@ class SimWorld(FrameSource):
 
     def pitch_truth(self, t: float) -> float:
         """Kameranicken (rad, + = hoch) zur Zeit t (s seit Start), zeitkontinuierlich:
-        Balancier-Pendeln + Vibration + Neigung beim Beschleunigen."""
-        return self.shake * (math.radians(3.0) * math.sin(2 * math.pi * 2.5 * t)
-                             + math.radians(1.5) * math.sin(2 * math.pi * 6.1 * t + 1)
-                             + math.radians(0.5) * math.sin(2 * math.pi * 9.3 * t + 2)
-                             + math.radians(0.3) * math.sin(2 * math.pi * 13.1 * t + 3)
-                             - math.radians(4.0) * self._acc_lp / 2)
+        Balancier-Pendeln + Vibration + Neigung beim Beschleunigen. Amplituden siehe NICK."""
+        return self.shake * (self._mot * sum(math.radians(a) * math.sin(2 * math.pi * f * t + i)
+                                             for i, (f, a) in enumerate(NICK))
+                             - math.radians(ACC_DEG) * self._acc_lp)
 
     def _render(self, t: float, dt: float):
         W, H = self.cfg.width // self.rs, self.cfg.height // self.rs

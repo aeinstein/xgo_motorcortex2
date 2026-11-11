@@ -56,6 +56,7 @@ class Robot:
     def __init__(self, cfg: RobotCfg):
         self.cfg = cfg
         self.forward_gain = 1.0              # App: manual_forward_gain in der Handsteuerung, sonst 1
+        self.max_v_fwd: float | None = None  # App: Grenze vorwärts statt cfg.max_v (Modus explore), sonst None
         self._lock = threading.Lock()
         self._target = (0.0, 0.0)
         self._cur = (0.0, 0.0)
@@ -92,7 +93,7 @@ class Robot:
         self._teardown()
 
     def drive(self, v: float, w: float) -> None:
-        v = max(-self.cfg.max_v, min(self.cfg.max_v, v))
+        v = max(-self.cfg.max_v, min(self.max_v_fwd or self.cfg.max_v, v))
         w = max(-self.cfg.max_w, min(self.cfg.max_w, w))
         with self._lock:
             self._target = (v, w)

@@ -192,16 +192,20 @@ class LocalMap:
             return C[LocalMap._distinct(near, obs[nb]) >= confirm]
         return run
 
-    def arc_clearance(self, v_mps: float, w_rads: float, horizon_s: float = 1.0, steps: int = 10) -> float:
+    def arc_clearance(self, v_mps: float, w_rads: float, horizon_s: float = 1.0, steps: int = 10,
+                      radius: float | None = None, hit_out: list | None = None) -> float:
         """Freie Strecke (m) entlang des Bogens, bevor ein (bestätigter) Punkt näher als radius kommt.
         Punkte, die schon jetzt innerhalb von radius liegen (z. B. Schrankseite neben dem Rider),
-        blockieren nur, wenn die Bahn ihnen noch näher kommt – sonst käme der Rider nie wieder weg."""
+        blockieren nur, wenn die Bahn ihnen noch näher kommt – sonst käme der Rider nie wieder weg.
+        radius: statt des eigenen (Engstelle, [map] radius_tight_m). hit_out: bekommt die Punkte (N x 2,
+        Rider-KS), die die Bahn sperren."""
         if abs(v_mps) < 1e-3:
             return math.inf
-        pts = self.confirmed_points(abs(v_mps) * horizon_s + self.radius)
+        radius = self.radius if radius is None else radius
+        pts = self.confirmed_points(abs(v_mps) * horizon_s + radius)
         if not len(pts):
             return math.inf
-        lim = np.minimum(self.radius, np.hypot(pts[:, 0], pts[:, 1]) - ESCAPE_TOL_M)
+        lim = np.minimum(radius, np.hypot(pts[:, 0], pts[:, 1]) - ESCAPE_TOL_M)
         x = y = th = 0.0
         dt = horizon_s / steps
         s = 0.0
@@ -210,9 +214,28 @@ class LocalMap:
             x += v_mps * math.cos(th) * dt
             y += v_mps * math.sin(th) * dt
             s += abs(v_mps) * dt
-            if (np.hypot(pts[:, 0] - x, pts[:, 1] - y) < lim).any():
+            near = np.hypot(pts[:, 0] - x, pts[:, 1] - y) < lim
+            if near.any():
+                if hit_out is not None:
+                    hit_out.append(pts[near])
                 return s
         return math.inf
+
+    def gap_center(self, ahead_m: float = 0.45, side_m: float = 0.30, max_width_m: float = 0.5) -> tuple | None:
+        """Mitte (x, y im Rider-KS) zwischen dem nächsten bestätigten Punkt links und rechts voraus, None wenn
+        eine Seite fehlt oder die Lücke breiter als max_width_m ist. Für die Durchfahrt enger Stellen: Die
+        Merkkarte misst die Kanten jetzt, die Raumkarte liegt dort um Zentimeter daneben."""
+        p = self.confirmed_points(ahead_m + side_m)
+        if not len(p):
+            return None
+        p = p[(p[:, 0] > 0.0) & (p[:, 0] < ahead_m) & (np.abs(p[:, 1]) < side_m)]
+        le, ri = p[p[:, 1] > 0], p[p[:, 1] <= 0]
+        if not len(le) or not len(ri):
+            return None
+        a, b = le[np.argmin(le[:, 1])], ri[np.argmax(ri[:, 1])]
+        if a[1] - b[1] > max_width_m:
+            return None
+        return float((a[0] + b[0]) / 2), float((a[1] + b[1]) / 2)
 
     def side_min(self) -> tuple[float, float]:
         """Nächstes Hindernis links/rechts (seitlich hinter dem Sichtfeld)."""

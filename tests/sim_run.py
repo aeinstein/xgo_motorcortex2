@@ -1,8 +1,10 @@
-"""Closed-Loop-Szenarien im Simulator. python3 tests/sim_run.py follow|explore|home [sekunden] [video.mp4] [--imu] [--fs-thread] [--wheels] [--kanten] [--dyn] [--rider] [--scene raum|zwei] [--set a.b=wert]
+"""Closed-Loop-Szenarien im Simulator. python3 tests/sim_run.py follow|explore|home [sekunden] [video.mp4] [--imu] [--fs-thread] [--wheels] [--kanten] [--dyn] [--rider] [--scene raum|zwei|spalt] [--video-step n] [--set a.b=wert]
 
 home: erste Hälfte explore, dann Modus home (zurück zum Startpunkt der Raumkarte).
 --dyn: Trägheit wie am RiderPi (Totzone, Nachlaufen der Drehung, Rückrollen beim Anfahren).
---rider: Einstellungen des RiderPi statt der Defaults (RIDER), Tempo wie gemessen."""
+--rider: Einstellungen des RiderPi statt der Defaults (RIDER), Tempo wie gemessen, mit IMU (Vorzeichen und Zeitversatz
+bekannt wie am Rider). Ohne IMU bleibt die langsame Neigung beim Beschleunigen (sim.ACC_DEG) unbemerkt und die
+Raumkarte zeichnet Wände dicker: eine 25-cm-Lücke blieb so in 4 von 5 Läufen zu (2026-11-11)."""
 import logging, math, sys, threading, time
 sys.path.insert(0, ".")
 import numpy as np
@@ -15,7 +17,8 @@ from xgonav.sim import FakeDetector, Person, Phantoms, SCENES, SimImu, SimWheels
 # (gemessen 2026-11-05: ~27 cm/s bei 0,15)
 RIDER = {"robot.vx_limit": 1.8, "robot.max_v": 0.15, "robot.max_w": 0.30, "robot.reverse_gain": 2.0, "behavior.turn_w": 0.21,
          "behavior.search_w": 0.07, "behavior.search_timeout_s": 10.0, "behavior.height_fast_mm": 80.0,
-         "behavior.height_search_mm": 100.0, "map.confirm": 3}
+         "behavior.height_search_mm": 100.0, "map.confirm": 3,
+         "imu.pitch_sign": -1, "imu.time_offset_ms": -8.0}     # wie SimImu: Vorzeichen -1, Stempel 8 ms früh
 RIDER_VX = 1.8
 
 
@@ -44,7 +47,7 @@ def pick_route(gm, cfg, n=3):
 
 
 def run(mode="follow", secs=25.0, video=None, shake=1.0, quiet=True, imu=False, fs_thread=False, wheels=False, vx_true=None, method=None, dyn=False,
-        overrides=None, scene="raum", record=None, phantoms=0, animal="person", speed=None):
+        overrides=None, scene="raum", record=None, phantoms=0, animal="person", speed=None, video_step=1):
     """overrides: siehe apply_overrides. record: Liste, bekommt je Eintrag in die Raumkarte die Beobachtung
     (tools/map_eval.py spielt sie offline ab); dafür trägt die Karte im Regelschritt ein.
     animal, speed (m/s): nur Modus pet, wer auf den Rider zukommt (person, cat, dog)."""
@@ -104,9 +107,12 @@ def run(mode="follow", secs=25.0, video=None, shake=1.0, quiet=True, imu=False, 
                     s = app.snapshot
                 if s.idx == last: continue
                 last = s.idx
+                # Nur jedes video_step-te Bild zeichnen: Das Zeichnen hält die GIL, bei jedem Bild stört es die
+                # Hauptschleife so, dass die Karte Wände 15-20 cm zu nah einträgt (2026-11-11, vier Läufe)
+                if s.idx % video_step: continue
                 img = render(s)
                 if img is None: continue
-                if vw is None: vw = cv2.VideoWriter(video, cv2.VideoWriter_fourcc(*"mp4v"), 20, (img.shape[1], img.shape[0]))
+                if vw is None: vw = cv2.VideoWriter(video, cv2.VideoWriter_fourcc(*"mp4v"), 20 / video_step, (img.shape[1], img.shape[0]))
                 vw.write(img)
             vw and vw.release()
         th = threading.Thread(target=rec, daemon=True); th.start()
@@ -202,17 +208,18 @@ def run(mode="follow", secs=25.0, video=None, shake=1.0, quiet=True, imu=False, 
 if __name__ == "__main__":
     mode = sys.argv[1] if len(sys.argv) > 1 else "follow"
     secs = float(sys.argv[2]) if len(sys.argv) > 2 and not sys.argv[2].startswith("--") else 25
-    args = [a for i, a in enumerate(sys.argv) if i >= 3 and not a.startswith("--") and sys.argv[i - 1] not in ("--set", "--scene", "--phantoms", "--animal", "--speed")]
+    args = [a for i, a in enumerate(sys.argv) if i >= 3 and not a.startswith("--") and sys.argv[i - 1] not in ("--set", "--scene", "--phantoms", "--animal", "--speed", "--video-step")]
     rider = "--rider" in sys.argv
     ov = dict(RIDER) if rider else {}
     for i, a in enumerate(sys.argv):
         if a == "--set":
             k, v = sys.argv[i + 1].split("=")
             ov[k] = eval(v, {})
-    print(run(mode, secs, args[0] if args else None, imu="--imu" in sys.argv, fs_thread="--fs-thread" in sys.argv,
+    print(run(mode, secs, args[0] if args else None, imu="--imu" in sys.argv or rider, fs_thread="--fs-thread" in sys.argv,
               wheels="--wheels" in sys.argv, method="kanten" if "--kanten" in sys.argv else None,
               dyn="--dyn" in sys.argv, overrides=ov, vx_true=RIDER_VX if rider else None,
               scene=sys.argv[sys.argv.index("--scene") + 1] if "--scene" in sys.argv else "raum",
+              video_step=int(sys.argv[sys.argv.index("--video-step") + 1]) if "--video-step" in sys.argv else 1,
               phantoms=int(sys.argv[sys.argv.index("--phantoms") + 1]) if "--phantoms" in sys.argv else 0,
               animal=sys.argv[sys.argv.index("--animal") + 1] if "--animal" in sys.argv else "person",
               speed=float(sys.argv[sys.argv.index("--speed") + 1]) if "--speed" in sys.argv else None))

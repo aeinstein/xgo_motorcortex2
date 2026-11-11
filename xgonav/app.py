@@ -93,6 +93,10 @@ class _Marks:
         return {"seg": self.seg, "wall": (self.t - self.t0) * 1000, "cpu": (self.c - self.c0) * 1000,
                 "gc": _GC_MS[0] - self.gc0, "fs_ran": self.fs_ran}
 
+# Bahnprüfung: zusätzlicher Bremsabstand je m/s über ARC_FAST_MPS (siehe App._arc_check)
+ARC_FAST_MPS, ARC_FAST_K = 0.3, 0.8
+
+
 class App:
     def __init__(self, cfg: Config, robot: Robot, source: FrameSource | None = None,
                  imu: ImuSource | None = None, wheels: WheelOdom | None = None):
@@ -151,7 +155,7 @@ class App:
             if self.fse is not None and cfg.freespace.threaded else None
         m = cfg.map
         self.lmap = LocalMap(self.geo, self.fse.W, self.fse.H, max_age_s=m.max_age_s, confirm=m.confirm,
-                             confirm_radius_m=m.confirm_radius_m) if self.fse else None
+                             confirm_radius_m=m.confirm_radius_m, radius_m=m.radius_m) if self.fse else None
         self._fs_in_map = None
         # Raumkarte (Welt-KS ab Startpose), nur Anzeige
         self.gridmap = GridMap(cfg.grid, self.geo, self.fse.W, self.fse.H) \
@@ -517,6 +521,8 @@ class App:
     def _drive(self, cmd: Command) -> None:
         """Fahrbefehl an den Roboter; der Vorwärtsfaktor gilt nur in der Handsteuerung."""
         self.robot.forward_gain = self.cfg.robot.manual_forward_gain if self.behavior.name == "manual" else 1.0
+        # explore fährt mit explore.v, auch wenn robot.max_v darunter liegt (dort für follow und Handsteuerung)
+        self.robot.max_v_fwd = max(self.cfg.robot.max_v, self.cfg.explore.v) if self.behavior.name == "explore" else None
         self.robot.drive(cmd.v, cmd.w)
 
     def _manual_cmd(self) -> Command:
@@ -659,6 +665,10 @@ class App:
                     self.gridmap.maybe_save(self.cfg.grid.file, self.cfg.grid.save_every_s)
                 w.pose, w.goal = self.gridmap.pose(), self.gridmap.start
                 if hasattr(self.behavior, "want_plan"):
+                    if self.cfg.home.tight_m > 0:           # Engstellen: der Wegfolger fragt nur bei Bedarf
+                        w.wall_fn = self.gridmap.wall_dist
+                        if self.lmap is not None and self.cfg.home.tight_center:
+                            w.gap_fn = self.lmap.gap_center
                     self._plan_tick(w)
             # approach erkundet mit derselben Logik, bis das Ziel in Sicht ist
             if self.lmap is not None and self.behavior.name in ("explore", "approach"):
@@ -1066,12 +1076,24 @@ class App:
             cmd.status += " | Sperrzone"
             return cmd
         # auch rückwärts: die Karte kennt Hindernisse hinter dem Rider (vorher gesehen)
-        clear = self.lmap.arc_clearance(v, wr, horizon_s=1.2)
-        need = 0.6 * abs(v) + 0.08
+        # Engstelle (Wegfolger): kleinerer Radius, sonst bremst die Bahnprüfung vor jeder Lücke unter ~0,36 m
+        hits: list = []
+        clear = self.lmap.arc_clearance(v, wr, horizon_s=1.2,
+                                        radius=self.cfg.map.radius_tight_m if cmd.extra.get("tight") else None,
+                                        hit_out=hits)
+        # Über 0,3 m/s (nur explore mit explore.v) mehr Abstand: Latenz und Nachlaufen kosten dann doppelt so
+        # viel Weg; im Simulator berührte er sonst 1-2 Mal je 300 s ein Hindernis mit Resttempo (2026-11-11)
+        need = 0.6 * abs(v) + 0.08 + ARC_FAST_K * max(0.0, abs(v) - ARC_FAST_MPS)
         if clear < need:
             k = max(0.0, (clear - 0.05) / need)
             cmd.v *= k
             cmd.status += " | Bahn %.2fm" % clear
+            if gm is not None and hits and self.cfg.grid.mark_blocking:
+                # Wofür er bremst, kommt in die Raumkarte (wenige Punkte, einmal je Regelschritt beim Bremsen)
+                x, y, th = gm.pose()
+                c, s = math.cos(th), math.sin(th)
+                p = hits[0]
+                gm.mark_blocking(np.column_stack([x + p[:, 0] * c - p[:, 1] * s, y + p[:, 0] * s + p[:, 1] * c]))
         return cmd
 
 

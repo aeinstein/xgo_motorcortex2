@@ -268,11 +268,40 @@ class GridMap:
             self.rmax[r0:r1, c0:c1][disk] = -np.inf
             self.conf[r0:r1, c0:c1][disk] = False
 
+    def mark_blocking(self, pts: np.ndarray) -> int:
+        """Hindernispunkte (N x 2, Welt-m), vor denen die Bahnprüfung gerade bremst: gelten als bestätigt und
+        belegt. Sonst bremste er vor Hindernissen, die die Karte nie zeigte, weil sie nur aus einem Abstand
+        getroffen wurden (confirm_dr_m; RiderPi 2026-11-11: 1382 unbestätigte Zellen bei 1192 belegten).
+        Sieht er die Stelle später frei, bauen die Freistrahlen sie wieder ab. Rückgabe: Zellen."""
+        if self.locked or not self.pose_ok or pts is None or not len(pts):
+            return 0
+        r, c = self.cell(pts[:, 0], pts[:, 1])
+        m = (r >= 0) & (r < self.n) & (c >= 0) & (c < self.n)
+        lin = np.unique(r[m] * self.n + c[m])
+        with self._lock:
+            if self.conf is not None:
+                self.conf.flat[lin] = True
+            self.lo.flat[lin] = np.maximum(self.lo.flat[lin], self.cfg.l_show + self.cfg.l_occ)
+        return int(lin.size)
+
     def cell(self, x, y):
         """Welt-Meter -> Zellindizes (Zeile, Spalte); Kartenmitte = Ursprung."""
         c = np.floor(np.asarray(x) / self.res + self.n / 2).astype(np.int64)
         r = np.floor(np.asarray(y) / self.res + self.n / 2).astype(np.int64)
         return r, c
+
+    def wall_dist(self, x: float, y: float, reach_m: float) -> float:
+        """Abstand (m) von (x, y) zur Mitte der nächsten belegten Zelle, inf wenn keine näher als reach_m.
+        Nur ein Fenster um den Punkt (bei 0,3 m 13 x 13 Zellen)."""
+        r, c = (int(k) for k in self.cell(x, y))
+        k = int(math.ceil(reach_m / self.res))
+        r0, c0 = max(0, r - k), max(0, c - k)
+        with self._lock:
+            rr, cc = np.nonzero(self.lo[r0:r + k + 1, c0:c + k + 1] > self.cfg.l_show)
+        if not len(rr):
+            return math.inf
+        d = np.hypot((cc + c0 + 0.5 - self.n / 2) * self.res - x, (rr + r0 + 0.5 - self.n / 2) * self.res - y).min()
+        return float(d) if d < reach_m else math.inf
 
     # ---- Eintragen ----------------------------------------------------
     def pose(self) -> tuple[float, float, float]:

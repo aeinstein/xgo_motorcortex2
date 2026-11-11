@@ -45,7 +45,10 @@ def test_explore_no_collisions():
 def test_follow_with_imu_autosync():
     r = run("follow", 30.0, imu=True)
     ok, sign, off_ms, corr = r["imu_sync"]
-    assert ok and sign == -1 and abs(off_ms + 8) <= 4   # Simulator: Vorzeichen -1, Versatz -8 ms
+    # Simulator: Vorzeichen -1, Versatz -8 ms. Mit dem am Rider gemessenen Nicken (sim.NICK, vor allem 0,8 Hz)
+    # trifft die Suche den Versatz nur noch auf 8-16 ms (vier Läufe 2026-11-11: 0, +4, +4, +8 ms); mit dem früheren
+    # 3°-Nicken bei 2,5 Hz waren es 4 ms.
+    assert ok and sign == -1 and abs(off_ms + 8) <= 20
     assert r["collisions"] == 0
 
 
@@ -58,22 +61,30 @@ def test_home_returns_to_start():
     assert r["home_end_m"] < 0.35       # echte Endpose nahe der echten Startpose
 
 
+# Navigation im Simulator ruht seit 2026-11-11 (Nutzer: deaktiviert lassen, bis es an der Navigationslogik weitergeht).
+# Mit dem am Rider gemessenen Nicken (sim.NICK) zeichnet die Raumkarte Wände zu nah; test_explore_maps_room war
+# schon vorher rot (Bodenabdeckung 0,79 statt 0,8), Streife stieß unter Last zweimal an.
+NAV_RUHT = pytest.mark.skip(reason="Navigationslogik ruht seit 2026-11-11, siehe Kommentar")
+
+
+@NAV_RUHT
 @pytest.mark.slow
 def test_patrol_route_after_mapping():
-    # Kartieren, drei Punkte wählen, abfahren, zum Start; wie am Rider, ohne echten IMU-Kurs
+    # Kartieren, drei Punkte wählen, abfahren, zum Start; wie am Rider (IMU für das Nicken, Kurs aus den Rädern)
     from sim_run import RIDER, RIDER_VX
-    r = run("patrol", 420.0, wheels=True, method="kanten", fs_thread=True, dyn=True, vx_true=RIDER_VX, overrides=RIDER)
+    r = run("patrol", 600.0, wheels=True, imu=True, method="kanten", fs_thread=True, dyn=True, vx_true=RIDER_VX, overrides=RIDER)
     assert r["collisions"] == 0 and r["route_fehler"] == [] and r["streife_s"] is not None
     p = r["explore"]
     assert p["zustand"] == "fertig" and p["erreicht"] == 3 and p["ausgelassen"] == []
     assert "am Start" in p["ende"] and r["karte_gesperrt"]
 
 
+@NAV_RUHT
 @pytest.mark.slow
 def test_explore_maps_room():
-    # Bis „Karte fertig“ (2-4 min): mit Rider-Einstellungen, kanten, Rädern und Trägheit
+    # Bis „Karte fertig“ (3-5 min, zuletzt die Engstellen): mit Rider-Einstellungen, kanten, Rädern und Trägheit
     from sim_run import RIDER, RIDER_VX
-    r = run("explore", 300.0, wheels=True, method="kanten", fs_thread=True, dyn=True, vx_true=RIDER_VX, overrides=RIDER)
+    r = run("explore", 450.0, wheels=True, imu=True, method="kanten", fs_thread=True, dyn=True, vx_true=RIDER_VX, overrides=RIDER)
     g = r["grid"]
     assert r["collisions"] == 0
     assert r["status"].startswith("Karte fertig") and r["fertig_s"] is not None

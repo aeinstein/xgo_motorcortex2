@@ -52,16 +52,31 @@ def cost_map(lo: np.ndarray, res: float, l_show: float, cfg: HomeCfg,
     # Abstand jeder Zelle (m) zur nächsten belegten Zelle
     dist = cv2.distanceTransform((~occ).astype(np.uint8), cv2.DIST_L2, 5) * res if occ.any() \
         else np.full(lo.shape, np.inf, np.float32)
-    blocked = dist < cfg.inflate_m
+    hard = cfg.squeeze_m if 0 < cfg.squeeze_m < cfg.inflate_m else cfg.inflate_m
+    blocked = dist < hard
     if driven is not None:
         opened = driven
         if extra_occ is not None and extra_occ.any():
-            opened = driven & (cv2.distanceTransform((~extra_occ).astype(np.uint8), cv2.DIST_L2, 5) * res >= cfg.inflate_m)
+            opened = driven & (cv2.distanceTransform((~extra_occ).astype(np.uint8), cv2.DIST_L2, 5) * res >= hard)
         blocked[opened] = False
     near = np.clip(1.0 - (dist - cfg.inflate_m) / max(cfg.inflate_m, 1e-3), 0.0, 1.0)
     unknown = (lo >= -l_show) & ~occ
     cost = 1.0 + cfg.clear_cost * near + cfg.unknown_cost * unknown
+    if hard < cfg.inflate_m:                                # Engstelle: befahrbar, aber teuer
+        tight = dist < cfg.inflate_m
+        if driven is not None:
+            # Wo er schon durchgefahren ist, kostet die Engstelle nichts extra: Sonst nahm er ~10 m Umweg über
+            # den Startpunkt statt ~6 m zurück durch den Durchgang von eben (RiderPi 2026-11-11)
+            tight &= ~opened
+        cost = cost + cfg.squeeze_cost * tight
     return blocked, cost.astype(np.float32)
+
+
+def squeeze_zone(cost: np.ndarray, cfg: HomeCfg) -> np.ndarray:
+    """Zellen der Kostenkarte, die nur als Engstelle befahrbar sind (näher als inflate_m an Belegtem)."""
+    if not 0 < cfg.squeeze_m < cfg.inflate_m:
+        return np.zeros(cost.shape, bool)
+    return cost >= 1.0 + cfg.clear_cost + cfg.squeeze_cost - 1e-3
 
 
 def astar(blocked: np.ndarray, cost: np.ndarray, s: tuple[int, int], g: tuple[int, int]) -> list[tuple[int, int]] | None:
@@ -134,7 +149,13 @@ def shortcut(cells: list[tuple[int, int]], blocked: np.ndarray, cost: np.ndarray
                 n = int(max(abs(b[0] - a[0]), abs(b[1] - a[1]))) + 1
                 rr = np.rint(np.linspace(a[0], b[0], n)).astype(int)
                 cc = np.rint(np.linspace(a[1], b[1], n)).astype(int)
-                if cost[rr, cc].max() <= cost[seg[:, 0], seg[:, 1]].max() + 1e-3:
+                # Auch in der Summe nicht teurer: Durch eine enge Lücke (dort gelten die höchsten Kosten) erlaubte
+                # das Maximum allein jede Abkürzung schräg an der Wand entlang auf die Lücke zu.
+                d = np.hypot(np.diff(seg[:, 0]), np.diff(seg[:, 1]))
+                cs = cost[seg[:, 0], seg[:, 1]]
+                weg = float((d * (cs[:-1] + cs[1:]) / 2).sum())
+                gerade = float(cost[rr, cc].mean()) * math.hypot(b[0] - a[0], b[1] - a[1])
+                if cost[rr, cc].max() <= cs.max() + 1e-3 and gerade <= 1.02 * weg + 1e-3:
                     break
             j -= 1
         out.append(cells[j])

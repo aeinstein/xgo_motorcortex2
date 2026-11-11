@@ -52,7 +52,7 @@ def replay(d: str, cfg: Config, objects: bool = True, person_min: float = 1.2, v
     geo = CamGeometry.from_cfg(cfg)
     fse = FreeSpaceEstimator(cfg.freespace, (W, H), geo)
     lmap = LocalMap(geo, fse.W, fse.H, max_age_s=cfg.map.max_age_s, confirm=cfg.map.confirm,
-                    confirm_radius_m=cfg.map.confirm_radius_m)
+                    confirm_radius_m=cfg.map.confirm_radius_m, radius_m=cfg.map.radius_m)
     blockers = []
     v_chk = cfg.robot.max_v * cfg.robot.vx_limit
     need = 0.6 * v_chk + 0.08

@@ -45,7 +45,7 @@ FloorNet tests (`tests/test_floornet_*.py`): those that need torch are skipped o
 | Feature | Value |
 |---|---|
 | Rendering | raycasting, room with boxes, walking person |
-| Camera motion | pitch oscillation 2.5 Hz + acceleration tilt, heading jitter, motion blur |
+| Camera motion | pitch oscillation from IMU samples of seven RiderPi drives (2026-11-10/11, ~1060 s at 92 Hz): driving 1.0° at 0.8 Hz, 0.6° at 2.5 Hz, 0.2° at 6.1 Hz, 0.1° at 9.3 Hz, 0.05° at 13.1 Hz, standing a quarter of that (`sim.NICK`, `STAND_FACTOR`); acceleration tilt 9°/(m/s²), clipped at 0.5 m/s²; heading jitter 0.8° at 1.7 Hz (standing a quarter); motion blur. Until 2026-11-11: 3° at 2.5 Hz, 1.5° at 6.1 Hz, also standing |
 | FOV | 91.8° (default, = real RiderPi camera) |
 | Detector | `FakeDetector`: ground-truth boxes, 180 ms latency, 5 Hz |
 | Robot | `SimRobot`: integrates heading, logs writes; drive commands move the camera |

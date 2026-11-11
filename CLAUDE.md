@@ -24,7 +24,7 @@ python -m pytest -q -m slow tests/               # Closed-Loop im Simulator (6 T
 python -m pytest -q tests/test_units.py -k imu_sync   # einzelner Test
 
 python tests/sim_run.py follow 40 out.mp4        # Szenario im Simulator, optional mit Overlay-Video
-python tests/sim_run.py explore 300 --wheels --kanten --fs-thread --dyn --rider [--scene zwei] [--phantoms 8]   # Raum kartieren wie am Rider
+python tests/sim_run.py explore 300 --wheels --kanten --fs-thread --dyn --rider [--scene zwei|spalt] [--phantoms 8]   # Raum kartieren wie am Rider (spalt: Tür nur 25 cm)
 python tools/map_eval.py record a.pkl; python tools/map_eval.py eval a.pkl --set grid.max_range_m=1.0,1.5 --rays   # Karte offline messen
 python tests/sim_run.py home 60 --wheels         # 30 s erkunden, dann zurück zum Start (--dyn: Trägheit wie am Rider)
 python tests/sim_run.py follow 40 --imu          # mit simulierter IMU (Vorzeichen -1, Versatz -8 ms absichtlich falsch)
@@ -89,7 +89,7 @@ Hardware-nahe Teile haben je eine echte und eine Sim-Implementierung mit gleiche
 
 ### Simulator
 
-`xgonav/sim.py` rendert per Raycasting einen Raum mit Kisten und einer laufenden Person, inklusive Nicken (2,5 Hz + Beschleunigungsneigung), Kurszittern und Bewegungsunschärfe. Fahrbefehle des `SimRobot` bewegen die Kamera. Der Simulator ist die einzige Validierung; neue Verhaltens- oder Schätzlogik sollte dort gegen die Ground Truth (`SimWorld.log`, `collisions`) geprüft werden, nicht nur in Unit-Tests.
+`xgonav/sim.py` rendert per Raycasting einen Raum mit Kisten und einer laufenden Person, inklusive Nicken (Amplituden aus IMU-Proben echter Fahrten, `sim.NICK`, im Stand ein Viertel; dazu Beschleunigungsneigung), Kurszittern und Bewegungsunschärfe. Fahrbefehle des `SimRobot` bewegen die Kamera. Der Simulator ist die einzige Validierung; neue Verhaltens- oder Schätzlogik sollte dort gegen die Ground Truth (`SimWorld.log`, `collisions`) geprüft werden, nicht nur in Unit-Tests.
 
 ### Treiber und Display
 

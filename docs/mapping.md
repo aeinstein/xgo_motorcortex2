@@ -38,6 +38,7 @@ Status JSON: `odom.src` = `räder` | `befehl`, `odom.m` = total distance.
 | Clamp | −3.0 .. +3.5; shown as free/occupied beyond ±0.7 |
 | Range | hits 0.15–`max_range_m` 1.25 m, free rays to `free_range_m` 1.5 m, RiderPi 1.1 m (one image row at 2 m is ~40 cm; a step was seen as floor from > 1 m on 2026-11-06, simulator with 1.1: floor known 0.43–0.83, occupied precision 0.84–0.92); "free to horizon" columns mark free up to 1.5 m only |
 | Confirmation | `confirm_dr_m` (RiderPi 0.2 m, ± `confirm_cells` 2): occupied only after hits on the same spot from two ranges ≥ 0.2 m apart. RiderPi 2026-11-08: the window sill mirrored in the tiles was entered at 0.56 m from the start and 0.82 m from 0.72 m further on (d = D·h_cam/(h_edge + h_cam)), i.e. a second wall. Simulator explore 120 s: walls 82 % → 73 %, precision 0.90 → 0.93, 0 collisions. Tried and dropped the same day: hits only up to 0.7 m (walls 25 %, explore ended early) and a half-resolution edge band (the 4 cm test compares a mean over the segment, so resolution hardly matters; tape at 0.98 m unchanged) |
+| Braking | points the path check brakes for count as confirmed and occupied at once (`grid.mark_blocking`). RiderPi 2026-11-11: the Rider braked for obstacles the map never showed (1382 unconfirmed cells, 1192 occupied) |
 | Pitch, pose | pitch of the captured image (`FreeSpace.pitch_dev`); pose (`.pose`) as of the last control step before that image was processed, not of the later frame the result arrives in. Not interpolated to the capture time: while turning the pose is older than the image by an unmeasured amount (40 °/s × 50 ms = 2°) |
 | Filter | only while balancing and below `max_turn_dps` 40 °/s; the rate is the wheel heading (`odom.yaw_source`) at the control step in which the result arrives, not at capture |
 | Driven path | `driven_free_r_m` 0.10 m around the path counts as free |
@@ -86,12 +87,14 @@ Status JSON `grid`: `pose [x m, y m, yaw °]`, `start [x m, y m, yaw °]`, `zum_
 | Item | Value |
 |---|---|
 | Planner | A* (8-neighbour) on map cells, search area = pose, start, driven path + `home.margin_m` |
-| Blocked | occupied cells (`> l_show`) inflated by `home.inflate_m` 0.18 m; cleared within that radius around pose and goal (drift) |
-| Cost | 1 + `clear_cost` near obstacles + `unknown_cost` for unknown cells; line-of-sight shortcut only if not more expensive |
+| Blocked | occupied cells (`> l_show`) inflated by `home.squeeze_m` 0.09 m (direct neighbours); cells within `home.inflate_m` 0.23 m cost `squeeze_cost` 20 more (not on the driven path), so the path squeezes through only if there is no other way. Cleared within `inflate_m` around pose and goal (drift) |
+| Narrowest gap | 25 cm clear width (Rider 11.5 cm wide per CAD): planner needs ≥ 3 free cells in the middle, path check in a tight spot `map.radius_tight_m` 0.08 m needs ≥ 16 cm between confirmed points. Simulator scene `spalt` 2026-11-11: passed without contact, ≤ 2 cm off centre, when the map showed the gap open; in 1 of 6 runs the map drew it 10 cm wide and it was skipped. **Not driven on the Rider** |
+| Cost | 1 + `clear_cost` near obstacles + `unknown_cost` for unknown cells; line-of-sight shortcut only if not more expensive (maximum and sum) |
 | Thread | `PlannerWorker` (cores = `cpu.freespace_cpus`); replan every `replan_s` 2 s and after 3 s without 5 cm progress |
 | Path keeping | current path kept while free and ≤ `keep_factor` × new + 0.3 m; dropped after getting stuck |
 | Local obstacles | confirmed `LocalMap` points within 1.5 m (what `_arc_check` brakes for) are blocked for planning (`use_localmap`) |
 | Following | pure pursuit, lookahead 0.5 m, `home.kp_turn` 1.5/s; turn in place only above 75° error until below 25°, otherwise drive the curve at ≥ 30 % speed |
+| Tight spot | occupied map cell within `tight_m` 0.21 m of the pose or of the path up to 0.45 m ahead (normal paths keep 0.23 m): lookahead 0.2 m, speed × 0.6, turn in place above 30° until below 10°, path check with `map.radius_tight_m` 0.08 m instead of 0.18 m, and aim at the middle between the nearest confirmed `LocalMap` points left and right ahead (the room map places a narrow gap centimetres off). Cost on the Pi: four 11 × 11 cell windows per control step while following a path |
 | Goal | within `arrive_m` 0.15 m, then turn to start heading (`align_heading`), status „am Start angekommen“, stands |
 | Failure | `max_fail` 3 consecutive plans without path → stop, „kein Weg zum Start“ |
 | Safety | `safety()` and `_arc_check()` apply as in `explore` |
@@ -106,9 +109,9 @@ Status JSON `grid`: `pose [x m, y m, yaw °]`, `start [x m, y m, yaw °]`, `zum_
 | Map id | `map_id` in the npz; a route file with another id is ignored |
 | Route file | `<grid.file>.route.json`: points, `loop`, zones, written atomically together with the map |
 | Point check | on known floor, outside `inflate_m`, reachable from the start, outside zones; otherwise the route is rejected with a message |
-| No-go zones | polygons in map coordinates. Planner and frontier never enter them plus `inflate_m`, `_arc_check` stops an arc that would come within 0.18 m (moving away stays allowed). All modes except manual. They drift with the pose: **no replacement for a physical barrier** |
+| No-go zones | polygons in map coordinates. Planner and frontier never enter them plus `inflate_m`, `_arc_check` stops an arc that would come within `map.radius_m` 0.18 m (moving away stays allowed). All modes except manual. They drift with the pose: **no replacement for a physical barrier** |
 | Patrol | points in order, `pause_s` 1.5 s each; stuck: replan, then back up and skip the point; contact, `max_fail` plans without a way or `point_timeout_s` 90 s: skip. No point reached in a lap, or end of a non-loop route: to the start |
-| Near enough | stuck within `home.near_m` 0.5 m of a target counts as arrived: the 0.18 m clearance can make a free target unreachable |
+| Near enough | stuck within `home.near_m` 0.5 m of a target counts as arrived: the path check clearance can make a free target unreachable |
 | Start | only standing and with user confirmation that the Rider is at the start point: the pose jumps to the start, which removes drift. Battery ≥ 40 %. Back at 30 %, set down at 15 % (action 254) |
 | Status JSON | `patrol`: `zustand`, `punkt`, `von`, `runde`, `erreicht`, `ausgelassen`, `ende`; `grid`: `gesperrt`, `map_id`, `route`, `zonen` |
 
@@ -117,8 +120,11 @@ Status JSON `grid`: `pose [x m, y m, yaw °]`, `start [x m, y m, yaw °]`, `zum_
 | Item | Value |
 |---|---|
 | Start | one full turn at `explore.scan_w` |
-| Frontier | reachable free cell next to unknown; groups ≥ `min_cluster_m` 0.4 m. Reachability from the room map only, the local map only shapes the path |
-| Choice | unknown area within `gain_radius_m` / (drive time + turn time + `base_s`). The goal stays until reached or gone, no switching by score |
+| Speed | `explore.v` 0.20 (≈ 36 cm/s at `vx_limit` 1.8) to goals and back to the start (`home.v` 0.15); exceeds `robot.max_v` in mode `explore` only. Tight spots × `home.tight_v`, wander at `behavior.cruise_v`. Slows down towards the path end unless the next goal is already planned. RiderPi 2026-11-11: two runs at 0.30, no contact |
+| Frontier | reachable free cell next to unknown; groups ≥ `min_cluster_m` 0.4 m. Only when none of those is left: groups close to obstacles (within `home.inflate_m`, e.g. the mouth of a 25 cm gap, 3–5 cells) ≥ `squeeze_cluster_m` 0.15 m with ≥ `min_unknown_m2` 0.05 m² of connected unknown behind. Reachability from the room map only, the local map only shapes the path |
+| Choice | nearest first: smallest drive time + turn time; unknown area within `gain_radius_m` counts as at most `gain_bonus_s` 3 s less (full from `gain_ref_m2` 2 m²). The goal stays until reached or gone and moves with its group, no switching by score. Until 2026-11-11 area / time: on the RiderPi four trips of 3.5–9.6 m across known floor |
+| Near the goal | within `roll_m` 1.0 m: replan every `roll_every_s` 0.4 s, alternating between following the receding frontier and planning the goal after this one (from the goal, without its frontier). On arrival with the frontier in view (± `pass_view_deg` 40°) and that plan ≤ `pass_age_s` 3 s old: drives on without stopping |
+| Tight-only goals | at most `tight_max` 3 per run (holes in drawn walls look like gaps) |
 | Arrival | stops `standoff_m` before the frontier, turns towards it, `settle_s`; no new goal within `avoid_r_m` 0.3 m of the spot |
 | Driven ground | cells within `driven_free_r_m` of the driven path stay passable for the planner despite occupied specks and `inflate_m`; obstacles the local map sees now still block |
 | Contact | command > 0.08 but < 2 cm movement in 2.5 s (normal start-up takes up to 1.8 s): treated as contact, back up and block the goal at once. Wheel slip hides it |

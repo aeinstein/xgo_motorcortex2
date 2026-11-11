@@ -280,6 +280,12 @@ class MapCfg:
     # mindestens confirm Beobachtungen liegen. 1 = jede Einzelbeobachtung zählt (wie bisher).
     confirm: int = 1
     confirm_radius_m: float = 0.08
+    # Sicherheitsradius der Bahnprüfung: ein bestätigter Punkt näher als so an der Bahn bremst (Lücken ab ~0,36 m).
+    radius_m: float = 0.18
+    # Derselbe Radius, solange der Wegfolger eine Engstelle fährt ([home] tight_m). Der Rider ist laut CAD
+    # 11,5 cm breit (halbe Breite 5,8 cm); 0,08 lässt ihn mittig durch eine 25 cm breite Lücke (Punkte bei
+    # ±12,5 cm) mit 4,5 cm Spiel für Kurs und Rauschen.
+    radius_tight_m: float = 0.08
     # Drehung der Merkkarte: "odom" = wie [odom] yaw_source (Räder, sonst Kamera); "imu" = Firmware-Kurs aus imu_log
     # (~50 Hz), bei fehlender/alter IMU wie "odom". RiderPi 2026-11-08, volle Drehungen gegen Bilder: IMU 0,997,
     # Räder 0,992 des wahren Winkels; je Drehung weichen beide zufällig ~2° (p90 ~8°) voneinander ab.
@@ -384,6 +390,9 @@ class GridCfg:
     # Simulator explore 120 s: Wände 82 % (aus) / 57 % (±1 Zelle) / 73 % (±2 Zellen), Präzision 0,90 / 0,95 / 0,93.
     confirm_dr_m: float = 0.0
     confirm_cells: int = 2
+    # Punkte der Merkkarte, vor denen die Bahnprüfung bremst, gelten in der Raumkarte als bestätigt und belegt
+    # (auch ohne confirm_dr_m): Was ihn bremst, steht in der Karte, und der Planer fährt darum herum.
+    mark_blocking: bool = True
     column_step: int = 2              # jede k-te Spalte des Bodenmodells (160 Spalten)
     l_free: float = -0.4               # Log-Odds je Beobachtung
     l_occ: float = 0.5                 # zwei Treffer bis "belegt" (l_show): ein Ausreißer sperrt nichts
@@ -417,9 +426,29 @@ class HomeCfg:
     # sonst plant der Planer genau an ihre Bremsgrenze
     inflate_m: float = 0.23
     clear_cost: float = 4.0            # Zusatzkosten nahe an Hindernissen (fällt bis 2*inflate_m ab)
+    # Engstellen: Zellen näher als inflate_m sind nicht gesperrt, sondern kosten squeeze_cost mehr; gesperrt ist
+    # erst näher als squeeze_m (Abstand der Zellmitten). 0,09 sperrt bei 5-cm-Zellen nur die direkten Nachbarn
+    # belegter Zellen: eine 25 cm breite Lücke (4–5 freie Zellen je nach Lage im Raster) bleibt offen. Der Weg
+    # geht nur hindurch, wenn es sonst keinen gibt (0,5 m Engstelle kosten wie 10 m Umweg). 0 = aus (wie bis
+    # 2026-11-11: Lücken erst ab ~0,45 m). Sperrzonen und das Freiräumen um die Pose rechnen weiter mit inflate_m.
+    squeeze_m: float = 0.09
+    squeeze_cost: float = 20.0
     unknown_cost: float = 3.0          # unbekannte Zellen kosten so viel mehr als freie
     margin_m: float = 1.5              # Suchgebiet = Pose, Start, gefahrener Weg + Rand
     lookahead_m: float = 0.5
+    # Engstelle: belegte Zelle der Raumkarte näher als tight_m an der Pose oder am Weg bis 0,45 m voraus (0 = aus;
+    # unter inflate_m, damit normale Wege sie nicht auslösen). Dann kurzer Vorausblick, langsamer, schon bei
+    # kleinem Fehler auf der Stelle drehen und Bahnprüfung mit [map] radius_tight_m: Mit 0,5 m Vorausblick
+    # schnitt er die Kurve vor einer 25-cm-Lücke und stieß schräg an die Wandecke (Simulator 2026-11-11).
+    tight_m: float = 0.21
+    tight_lookahead_m: float = 0.2
+    tight_v: float = 0.6               # Faktor auf v
+    tight_turn_enter_deg: float = 30.0
+    tight_turn_exit_deg: float = 10.0
+    # In der Engstelle auf die Mitte zwischen den Kanten der Merkkarte links und rechts voraus zielen, wenn sie
+    # höchstens so weit von der Wegrichtung abweicht. Die Raumkarte legt eine 25-cm-Lücke um Zentimeter daneben.
+    tight_center: bool = True
+    tight_center_max_deg: float = 30.0
     arrive_m: float = 0.15
     # Festgefahren, aber so nah am Ziel: gilt als angekommen. Der Sicherheitsabstand der Bahnprüfung (0,18 m) lässt
     # ihn nicht an ein Ziel, neben dem etwas liegt, auch wenn das Ziel selbst frei ist (RiderPi 2026-11-06)
@@ -452,11 +481,36 @@ class ExploreCfg:
     # Modus explore: Frontiers der Raumkarte anfahren (frontier.py), bis nichts Unbekanntes mehr
     # erreichbar ist. Weg und Lenkung wie home ([home]).
     scan_w: float = 0.07               # Rundumblick am Anfang (langsam: unter grid.max_turn_dps)
+    # Tempo auf dem Weg zur nächsten Stelle und zurück zum Start (normiert, statt home.v 0,15; Nutzer 2026-11-11:
+    # erst 0,30, nach zwei Fahrten am RiderPi 0,20). Gilt über robot.max_v hinaus, nur im Modus explore; in
+    # Engstellen weiter mal home.tight_v, das reaktive Befreien bleibt bei behavior.cruise_v.
+    v: float = 0.20
     min_cluster_m: float = 0.4         # kleinere Frontier-Gruppen zählen nicht
-    gain_radius_m: float = 1.2         # Nutzen: unbekannte Fläche in diesem Umkreis des Ziels
-    travel_mps: float = 0.27           # Fahrzeit-Schätzung
+    # Erst wenn sonst kein Ziel mehr bleibt, zählen auch Gruppen dicht an Hindernissen (näher als home.inflate_m,
+    # z. B. die Öffnung einer 25-cm-Lücke: in der Karte nur 3–5 Zellen breit) ab dieser Größe, wenn dahinter
+    # mindestens min_unknown_m2 zusammenhängend unbekannt ist (kein einzelnes Loch im bekannten Boden)
+    squeeze_cluster_m: float = 0.15
+    min_unknown_m2: float = 0.05
+    # Zielwahl: die Stelle mit der kleinsten Fahrzeit + Drehzeit zuerst. Viel Unbekanntes am Ziel (Fläche im
+    # Umkreis gain_radius_m, voll ab gain_ref_m2) zählt wie höchstens gain_bonus_s weniger Zeit.
+    gain_radius_m: float = 1.2
+    gain_ref_m2: float = 2.0
+    gain_bonus_s: float = 3.0
+    travel_mps: float = 0.35           # Fahrzeit-Schätzung (v 0,20 x vx_limit 1,8 = 0,36)
     turn_dps: float = 40.0             # Drehzeit-Schätzung
-    base_s: float = 3.0                # feste Zeit je Ziel: sonst gewinnt immer das Nächste
+    # Näher als roll_m am Ziel: alle roll_every_s neu planen statt alle home.replan_s. Die Grenze weicht beim
+    # Anfahren zurück, das Ziel wandert mit, und er hält nicht alle 0,7-1 m an (RiderPi 2026-11-11: 26 Halte
+    # in 348 s).
+    roll_m: float = 1.0
+    roll_every_s: float = 0.4
+    # Im selben Takt plant er dort abwechselnd schon das übernächste Ziel (ab dem Ziel, ohne dessen Stelle). Liegt
+    # die Stelle beim Erreichen im Bild (± pass_view_deg) und ist dieser Plan höchstens pass_age_s alt, fährt er
+    # ohne Halt weiter; sonst wie bisher hindrehen, settle_s schauen, neu suchen.
+    pass_view_deg: float = 40.0
+    pass_age_s: float = 3.0
+    # Höchstens so viele Ziele, die nur in Engstellen liegen (Stufe 1), je Erkundung: In einer echten Karte
+    # sind das meist Löcher in gezeichneten Wänden (RiderPi 2026-11-11: 17-25 solche Stellen am Ende).
+    tight_max: int = 3
     standoff_m: float = 0.3            # so weit vor der Frontier anhalten
     start_free_r_m: float = 0.2        # um den Startpunkt gilt der Boden als frei
     reach_m: float = 0.25              # Ziel gilt als erreicht

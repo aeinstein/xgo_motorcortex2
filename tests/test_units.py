@@ -856,6 +856,17 @@ def test_drive_gains():
     r._cur = (0.15, 0.0); r._send(time.monotonic() + 30)
     assert r._sent[0] == 128 + round(0.30 * 127)          # 166: Handsteuerung wie rückwärts
     assert r._target[0] == pytest.approx(0.15)            # max_v begrenzt den Sollwert davor
+    # explore darf vorwärts bis explore.v über max_v hinaus, rückwärts und andere Modi nicht
+    App._drive(app, Command(1.0, 0.0))
+    assert r._target[0] == pytest.approx(0.15)
+    app.behavior.name = "explore"
+    App._drive(app, Command(1.0, 0.0))
+    assert r._target[0] == pytest.approx(cfg.explore.v) and cfg.explore.v > cfg.robot.max_v
+    App._drive(app, Command(-1.0, 0.0))
+    assert r._target[0] == pytest.approx(-0.15)
+    app.behavior.name = "follow"
+    App._drive(app, Command(1.0, 0.0))
+    assert r._target[0] == pytest.approx(0.15)
 
 
 def test_level_pulse():
@@ -1691,6 +1702,78 @@ def test_planner_avoids_wall_and_reports_no_path():
     assert plan(m, (0.0, 0.0), (2.0, 0.0), hc) is None
 
 
+def test_planner_takes_25cm_gap_not_15cm():
+    """Wand quer mit Lücke: 25 cm lichte Weite ist in jeder Lage zum 5-cm-Raster offen, 10 cm nie."""
+    from xgonav.planner import plan
+    from xgonav.localmap import LocalMap
+
+    def weg(breite: float, versatz: float):
+        cfg, m = _grid()
+        r0, c0 = (int(k) for k in m.cell(-1.0, -1.0))
+        r1, c1 = (int(k) for k in m.cell(1.0, 1.0))
+        m.lo[r0 - 1:r1 + 2, c0 - 1:c1 + 2] = 3.0                # geschlossener Raum 2 x 2 m
+        m.lo[r0:r1 + 1, c0:c1 + 1] = -3.0
+        _, c = m.cell(0.0, 0.0)
+        for y in np.arange(-1.0, 1.0, 0.01):                    # Wand bei x = 0, Lücke um y = versatz
+            if abs(y - versatz) >= breite / 2:
+                m.lo[int(m.cell(0.0, float(y))[0]), int(c)] = 3.0
+        return plan(m, (-0.6, 0.0), (0.6, 0.0), cfg.home)
+
+    for versatz in (0.0, 0.01, 0.02, 0.03, 0.04):
+        assert weg(0.25, versatz) is not None, versatz
+        assert weg(0.10, versatz) is None, versatz
+    # Gibt es daneben eine breite Öffnung, nimmt der Weg die, auch wenn er länger ist
+    cfg, m = _grid()
+    r0, c0 = (int(k) for k in m.cell(-1.0, -1.0))
+    r1, c1 = (int(k) for k in m.cell(1.0, 1.0))
+    m.lo[r0 - 1:r1 + 2, c0 - 1:c1 + 2] = 3.0
+    m.lo[r0:r1 + 1, c0:c1 + 1] = -3.0
+    for y in np.arange(-1.0, 1.0, 0.01):
+        if abs(y) >= 0.125 and not 0.3 <= y <= 0.9:              # Lücke 25 cm bei y = 0, 60 cm bei y = 0,6
+            m.lo[int(m.cell(0.0, float(y))[0]), int(m.cell(0.0, 0.0)[1])] = 3.0
+    p = plan(m, (-0.6, 0.0), (0.6, 0.0), cfg.home)
+    assert p is not None and max(y for _, y in p) > 0.45
+    # Bahnprüfung: mittig durch 25 cm nur mit dem Radius für Engstellen frei, 15 cm bremst auch dann
+    geo = CamGeometry(640, 480, 91.0, 0.0, 43.0, 85.0)
+    for breite, frei in ((0.25, True), (0.15, False)):
+        lm = LocalMap(geo, 160, 120, confirm=1, radius_m=cfg.map.radius_m)
+        lm.pts = np.array([[0.3, breite / 2], [0.3, -breite / 2]])
+        lm.t = np.zeros(2); lm.obs = np.array([1, 2])
+        assert lm.arc_clearance(0.25, 0.0, 1.2) < math.inf
+        assert (lm.arc_clearance(0.25, 0.0, 1.2, radius=cfg.map.radius_tight_m) == math.inf) == frei
+
+
+def test_tight_spot_steers_to_gap_center():
+    """Engstelle: Wandabstand aus der Raumkarte, Lückenmitte aus der Merkkarte, Wegfolger zielt darauf."""
+    from xgonav.behaviors import PathFollower, World
+    from xgonav.localmap import LocalMap
+    cfg, m = _grid()
+    assert m.wall_dist(0.0, 0.0, 0.25) == math.inf
+    r, c = (int(k) for k in m.cell(0.1, 0.0))
+    m.lo[r, c] = 3.0
+    assert abs(m.wall_dist(0.0, 0.0, 0.25) - 0.125) < 0.04
+    assert m.wall_dist(-0.3, 0.0, 0.25) == math.inf
+    lm = LocalMap(CamGeometry(640, 480, 91.0, 0.0, 43.0, 85.0), 160, 120, confirm=1)
+    lm.pts = np.array([[0.3, 0.16], [0.3, 0.30], [0.3, -0.09], [0.3, -0.25]])
+    lm.t = np.zeros(4); lm.obs = np.arange(4)
+    gx, gy = lm.gap_center()
+    assert abs(gx - 0.3) < 1e-9 and abs(gy - 0.035) < 1e-9          # zwischen den innersten Punkten
+    lm.pts = lm.pts[:2]; lm.t = np.zeros(2); lm.obs = np.arange(2)
+    assert lm.gap_center() is None                                   # nur eine Seite
+    f = PathFollower(cfg.behavior, cfg.robot, cfg.home)
+    f.set_path([(0.0, 0.0), (2.0, 0.0)])
+    welt = lambda **k: World(t=0.0, dt=0.05, W=640, H=480, hfov=1.6, ego=None, tracks=[], free=None, balancing=True,
+                             yaw=0.0, cmd_v=0.0, pose=(0.0, 0.0, 0.0), **k)
+    nah = lambda px, py, reach: 0.15 if px > 0.4 else math.inf       # Wand erst am Weg voraus
+    frei = f.drive(welt(wall_fn=lambda *a: math.inf, gap_fn=lambda: (0.3, 0.035)), "x")
+    eng = f.drive(welt(wall_fn=nah, gap_fn=lambda: (0.3, 0.035)), "x")
+    assert frei.w == 0.0 and not frei.extra["tight"]
+    assert eng.w > 0.0 and "Lücke" in eng.status and eng.extra["tight"]   # Weg geradeaus, Lücke 3,5 cm links
+    assert 0.0 < eng.v < frei.v
+    quer = f.drive(welt(wall_fn=nah, gap_fn=lambda: (0.1, 0.25)), "x")   # Lücke weit neben dem Weg: Weg gilt
+    assert "Lücke" not in quer.status and quer.w == 0.0
+
+
 def test_planner_keeps_path_and_plans_around_obstacles():
     """Bisheriger Weg bleibt, solange frei und nicht viel länger (sonst sprang am RiderPi die
     Zielrichtung); Merkkarten-Punkte sperren wie belegte Zellen."""
@@ -1961,6 +2044,76 @@ def test_map_explore_scan_then_goal_then_face():
     assert b.state == "ziel"
 
 
+def test_map_explore_passes_goal_without_stop_when_next_is_planned():
+    """Kurz vor dem Ziel plant er abwechselnd das übernächste; liegt die Stelle im Bild, fährt er ohne Halt weiter."""
+    cfg, b = _explore_ready()
+    assert b.want_plan(0.0)
+    b.set_path(_plan())                                        # Ziel (1.0, 0), Stelle (1.3, 0)
+    assert b.step(_ex_world(0.1, (0.3, 0.0, 0.0))).v > 0       # 0,7 m vor dem Ziel: nah
+    assert b.want_plan(0.1 + cfg.explore.roll_every_s + 0.01) and b._req == "next"
+    nxt = _plan(goal=(2.0, 0.3), frontier=(2.3, 0.3))
+    nxt.path = [(1.0, 0.0), (2.0, 0.3)]
+
+    class P:                                                   # Planer: merkt den Auftrag
+        def request_fn(self, fn, *a):
+            self.a = a
+            return 1
+    p = P()
+    b._cleared = True
+    b.request_plan(p, None, _ex_world(0.6, (0.3, 0.0, 0.0)), None)
+    assert p.a[1] == (1.0, 0.0, 0.0) and (1.3, 0.0, cfg.explore.avoid_r_m) in p.a[5] and p.a[6] is None   # ab dem Ziel, ohne dessen Stelle
+    b.set_path(nxt)
+    assert b.frontier == (1.3, 0.0) and b._next is nxt         # nur gemerkt
+    c = b.step(_ex_world(1.0, (0.8, 0.0, 0.0)))                # Ziel erreicht, Stelle voraus
+    assert c.v > 0 and b.state == "ziel" and b.visited == [(1.3, 0.0)]
+    assert b.frontier == (2.3, 0.3) and b.f.path == nxt.path and b._next is None
+    # Ohne Vorausplan oder mit der Stelle im Rücken: hindrehen und schauen wie bisher
+    cfg, b = _explore_ready()
+    b.want_plan(0.0)
+    b.set_path(_plan())
+    c = b.step(_ex_world(1.0, (0.8, 0.0, 0.0)))
+    assert c.v == 0 and b.state == "face"
+
+
+def test_cost_map_no_squeeze_cost_on_driven_path():
+    """Wo er schon durchgefahren ist, kostet die Engstelle nichts extra (sonst Umweg statt Rückweg)."""
+    from xgonav.planner import cost_map
+    cfg = Config()
+    lo = np.full((40, 40), cfg.grid.l_min, np.float32)
+    lo[:, 17] = lo[:, 23] = cfg.grid.l_max                    # Gang, 25 cm frei zwischen den Wänden
+    driven = np.zeros(lo.shape, bool)
+    driven[:20, 19:22] = True
+    _, cost = cost_map(lo.copy(), 0.05, cfg.grid.l_show, cfg.home, None, driven)
+    assert cost[30, 20] >= cfg.home.squeeze_cost               # nicht gefahren: teuer
+    assert cost[10, 20] < 2.0 + cfg.home.clear_cost            # gefahren: nur der Abstandszuschlag
+
+
+def test_gridmap_mark_blocking_confirms_and_occupies():
+    """Punkte, vor denen die Bahnprüfung bremst, sind in der Raumkarte bestätigt und belegt."""
+    from xgonav.gridmap import GridMap
+    cfg = Config()
+    cfg.grid.confirm_dr_m = 0.2
+    m = GridMap(cfg.grid, CamGeometry(640, 480, 91.0, 1.39, 43.0, 85.0), 160, 120)
+    pts = np.array([[0.62, 0.11], [0.63, 0.12], [0.80, -0.30]])
+    assert m.mark_blocking(pts) == 2
+    r, c = m.cell(pts[:, 0], pts[:, 1])
+    assert (m.lo[r, c] > cfg.grid.l_show).all() and m.conf[r, c].all()
+    assert len(m.occupied_cells()) == 2
+    m.locked = True
+    assert m.mark_blocking(np.array([[1.5, 0.0]])) == 0        # gesperrte Karte bleibt unverändert
+
+
+def test_localmap_arc_clearance_reports_blocking_points():
+    from xgonav.localmap import LocalMap
+    lm = LocalMap(CamGeometry(640, 480, 91.0, 0.0, 43.0, 85.0), 160, 120, confirm=1)
+    lm.pts = np.array([[0.5, 0.0], [0.5, 0.6]])
+    lm.t = np.zeros(2)
+    lm.obs = np.zeros(2, np.int64)
+    hits: list = []
+    assert lm.arc_clearance(0.5, 0.0, horizon_s=1.2, hit_out=hits) < 0.5
+    assert len(hits) == 1 and hits[0].tolist() == [[0.5, 0.0]]
+
+
 def _explore_ready():
     from xgonav.behaviors import MapExplore
     cfg = Config()
@@ -2201,7 +2354,7 @@ def _driven_room():
     r1, c1 = (int(k) for k in m.cell(2.0, 1.0))
     m.lo[r0 - 1:r1 + 1, c0 - 1:c1 + 1] = cfg.grid.l_max                 # geschlossene Wände
     m.lo[r0:r1, c0:c1] = cfg.grid.l_min
-    for y in np.arange(-1.0, 1.0, 0.3):                              # Flecken bei x = 0 alle 30 cm
+    for y in np.arange(-1.0, 1.0, 0.15):                             # Flecken bei x = 0 alle 15 cm (Lücken 10 cm)
         r, c = m.cell(0.0, float(y))
         m.lo[int(r), int(c)] = cfg.grid.l_max
     return cfg, m
