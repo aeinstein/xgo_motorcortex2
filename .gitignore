@@ -4,6 +4,7 @@ models/*.onnx
 models/*.pt
 models/*_ncnn/
 models/*.bin
+!models/floornet.bin
 *.mp4
 .venv/
 .idea/

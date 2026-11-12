@@ -37,7 +37,7 @@ Constraints from the kernel: no ReLU and no bias after the depthwise convolution
 | `tools/floornet/hand_npz.py` | hand lines → label files holding only frames with their own line, no map; for `train.py --hand_only 1` |
 | `tools/floornet/vergleich_fahrten.py` | network and `kanten` as deciders over recorded runs: jumps, flicker, stops, path blocks, maps; no Rider needed |
 | `tools/floornet/net.py`, `train.py` | network, folding, training (GPU) |
-| `tools/floornet/export.py` | weights and test vector for the C++ core (`models/floornet.bin`, gitignored) |
+| `tools/floornet/export.py` | weights and test vector for the C++ core (`models/floornet.bin`; the repo holds `lauf_p11a`, the network on the RiderPi since 2026-11-11) |
 | `tools/floornet/bench_kern.cpp` | timing of untrained variants on the CM4 |
 | `xgonav/floornet.py` | ctypes wrapper; off if the core is missing or the self-test fails |
 | `tests/neon_shim/arm_neon.h` | the NEON intrinsics as plain C++, so `tests/test_floornet_native.py` runs without ARM (result only, not speed) |
