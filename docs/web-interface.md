@@ -24,10 +24,23 @@
 | Horizont (only with `[horizon] enabled`) | stand reference state, rows stand/IMU/image, image − IMU, ego ok share; green line ±1/±5 px, *Für diese Kamerahöhe speichern*, table (shown as camera height, stored per `height_mm`) with delete; checkbox *Bild am IMU-Nick festhalten* (browser shifts the `<img>` by `row_stand − row_imu` via CSS, no server cost; stored in `localStorage`) |
 | Verlauf (collapsed) | history charts, see below |
 | Extras (collapsed) | actions 1–6, 4 LEDs + all off + strobe, brightness slider (persistent), display emotions |
-| System | shutdown (confirm dialog) |
+| System | **Einstellungen** (modal, see below), shutdown (confirm dialog) |
 
 Live data: one WebSocket `/xgonav/live` (see below) instead of polling; HTTP `a=status` only at load and after
 commands. Map every 1 s (next request after previous finished).
+
+## Einstellungen (settings modal)
+
+| Item | Value |
+|---|---|
+| Fields | all of `xgonav/config.py` (402), categories Hardware · Wahrnehmung · Karten · Verhalten · Ausgabe → TOML sections; help text = comments from `config.py` |
+| Schema | `web/config-schema.json`, generated on the PC by `python tools/config_schema.py`; `test_config_schema_aktuell` fails if stale |
+| Editing | line-based: only changed lines rewritten, indentation and comments kept; new keys appended to their section with `# Web <date>`; *Default* removes the line. Multi-line values: read-only (ssh) |
+| Check | browser (type), PHP (schema type), `Config.load` (same as service start) |
+| Backup | before every write: `/var/lib/xgonav/config-backup/config.toml.<stamp>`, last 50 kept, restore from the modal |
+| Takes effect | after restart of xgonav (button *Neu starten* / *Speichern und neu starten*) |
+| Rights | `config.toml` group `video`, 0664 (`deploy/install.sh`); sudoers `deploy/sudoers-xgonav-restart` |
+| Pi cost | none in the pipeline; per save one Python start (~50 ms) |
 
 ## History (Verlauf)
 
@@ -86,6 +99,10 @@ GET only for `status`, `route`, `horizon`; all commands POST. Parameters are val
 | `POST ?a=pitch_calibration` | `settings/pitch_calibration` | API only, no UI button |
 | `POST ?a=emotion&name=..` | `tools/emotion.sh play` | name must exist in `/opt/xgonav/emotions` |
 | `POST ?a=shutdown` | plays `sleep` emotion, `sudo systemctl poweroff` | |
+| `GET ?a=config` | schema `web/config-schema.json` + values parsed from `/opt/xgonav/config.toml` + backups | JSON `schema`, `werte`, `unlesbar`, `hash`, `schreibbar`, `sicherungen` |
+| `POST ?a=config_save&hash=..` | rewrites changed lines of `config.toml` | body JSON `{"section.key": value\|null}` (null = remove line → default; top level: `allgemein.control_hz`); type-checked against schema, then `Config.load` via `/opt/xgonav/venv/bin/python`; 409 if file changed since `hash` |
+| `POST ?a=config_restore&name=..&hash=..` | copies a backup back | name `config.toml.YYYYMMDD-HHMMSS[-n]` |
+| `POST ?a=restart[&trotzdem=1]` | `sudo -n systemctl --no-block restart xgonav` | 409 in Ruhe (always) or while mode ≠ idle / balancing / recording (unless `trotzdem=1`) |
 
 xgonav unreachable → HTTP 502 `xgonav nicht erreichbar`. Exposure/gain changes last until xgonav restarts.
 

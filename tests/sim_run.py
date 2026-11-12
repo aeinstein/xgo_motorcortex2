@@ -53,7 +53,7 @@ def run(mode="follow", secs=25.0, video=None, shake=1.0, quiet=True, imu=False, 
     (tools/map_eval.py spielt sie offline ab); dafür trägt die Karte im Regelschritt ein.
     animal, speed (m/s): nur Modus pet, wer auf den Rider zukommt (person, cat, dog)."""
     logging.basicConfig(level=logging.WARNING if quiet else logging.INFO)
-    cfg = Config()
+    cfg = Config.neutral()
     home = mode == "home"
     patrol = mode == "patrol"                # erst kartieren, dann Streife
     cfg.behavior.mode = "explore" if home or patrol else mode

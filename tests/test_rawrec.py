@@ -141,12 +141,12 @@ def test_abschalten_und_kein_platz(tmp_path):
 def test_proben_seit_dem_letzten_bild_stehen_genau_einmal_in_der_meta(tmp_path):
     import math
 
-    from xgonav.config import ImuCfg, OdomCfg
+    from xgonav.config import Config
     from xgonav.imu import ImuSource
     from xgonav.wheels import WheelOdom
 
     app, base = FakeApp(), str(tmp_path / "fahrt")
-    app.imu, app.wheels = ImuSource(ImuCfg()), WheelOdom(OdomCfg())
+    app.imu, app.wheels = ImuSource(Config.neutral().imu), WheelOdom(Config.neutral().odom)
     seq = [0]
 
     def bild():                                     # je Bild zwei IMU-Proben und eine Radprobe, Zeit wie das Bild

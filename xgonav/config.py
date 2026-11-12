@@ -11,20 +11,20 @@ from pathlib import Path
 class RobotCfg:
     proc_dir: str = "/proc/XGORider"
     # Mapping laut XGO-Lib: u8 = 255/(2*L) * (v + L); 128 ~ Stillstand
-    vx_limit: float = 1.5          # Einheit der Firmware bei u8=0/255
+    vx_limit: float = 1.8          # Einheit der Firmware bei u8=0/255
     vyaw_limit_dps: float = 360.0  # Grad/s bei u8=0/255
     # Sicherheitsgrenzen für den Autonomiebetrieb (Anteil des Vollausschlags)
-    max_v: float = 0.25            # ~0.37 Firmware-Einheiten
-    max_w: float = 0.25            # ~90 °/s
+    max_v: float = 0.15            # ~0.37 Firmware-Einheiten
+    max_w: float = 0.30            # ~90 °/s
     # Rückwärts war 2026-11-02 viel schwächer (2 s mit u8 109 ~4 cm, mit 147 vorwärts 86 cm), daher
     # werden negative v beim Senden mit reverse_gain multipliziert; max_v begrenzt davor den
     # Sollwert. 1.0 = symmetrisch. Mit den Firmware-Patches vom 2026-11-05 setzt die Firmware beide
     # Richtungen gleich um (Sollwert -> Raddrehzahl 2,67 vorwärts, 2,65 rückwärts).
-    reverse_gain: float = 1.0
+    reverse_gain: float = 2.0
     # Derselbe Faktor vorwärts, nur in der Handsteuerung. Die autonomen Modi bleiben bei 1: im
     # Simulator (--dyn, 2026-11-05) gab Faktor 2 dort 1 Kollision in 8 Läufen und Zum Start kam nur
     # noch 1 von 4 Mal an (Faktor 1: 0 Kollisionen, 4 von 4); die Freiraum-Schwellen passen nicht dazu.
-    manual_forward_gain: float = 1.0
+    manual_forward_gain: float = 2.0
     # Geschwindigkeitsregelung: Die Firmware regelt die Fahrgeschwindigkeit praktisch nur proportional, auf
     # Teppich bleibt der Rider deshalb unter dem Soll. Mit speed_ctrl vergleicht xgonav im Regelschritt Soll
     # (gesendeter Wert x vx_limit) und Ist (Räder), beide über speed_ctrl_window_s gemittelt, und stellt den
@@ -45,7 +45,7 @@ class RobotCfg:
     # aus, danach bleibt er so stehen (dauerhaft an schwankt er mehr). Auslöser: einmal nach jedem
     # Aufstehen (level_after_standup) und der Knopf im Web (POST /level).
     level_pulse_s: float = 3.0
-    level_after_standup: bool = False
+    level_after_standup: bool = True
     accel_v: float = 0.8           # max. Änderung von v pro Sekunde (normiert)
     accel_w: float = 2.0
     keepalive_s: float = 0.3       # Sollwert periodisch neu schreiben
@@ -72,33 +72,33 @@ class CameraCfg:
     # 640x480 ist 2x2 gebinnt + 2x2 übersprungen, und der Kernel-Treiber (6.6) gibt dafür eine
     # ~6 % zu kleine Pixelrate an: der Sensor läuft dann 26,5 statt 25 fps. 1296x972 ist reines
     # 2x2-Binning (weniger Rauschen), Zeitbasis stimmt; der ISP skaliert auf width x height.
-    sensor_mode: str = ""
+    sensor_mode: str = "1296x972"
     # Sensorausschnitt [x, y, w, h] in Vollbild-Pixeln (ScalerCrop); leer = ganzer Modus.
     # [16, 0, 2560, 1920] = Ausschnitt des 640x480-Modus, damit hfov/tilt/shading.json gültig bleiben.
-    scaler_crop: list = field(default_factory=list)
+    scaler_crop: list = field(default_factory=lambda: [16, 0, 2560, 1920])
     # Bilddauer-Korrektur, nur nötig im 640x480-Modus (dort ~1.061): angefragt = 1/fps * Faktor.
     frame_clock_corr: float = 1.0
-    exposure_us: int = 4000        # kurze Belichtung gegen Bewegungsunschärfe; 0 = Auto
-    analogue_gain: float = 0.0     # feste Verstärkung 1..63,9 (OV5647); 0 = Auto
+    exposure_us: int = 20000        # kurze Belichtung gegen Bewegungsunschärfe; 0 = Auto
+    analogue_gain: float = 16.0     # feste Verstärkung 1..63,9 (OV5647); 0 = Auto
     # RiderPi: aus Drehungen gegen den IMU-Kurs gemessen (2026-11-07, f = 310 px @ 640, 304–313 in drei
     # Aufnahmen; Verzeichnung vernachlässigbar). Der Zollstock (88,5°) legt nur f·h fest. RPi Cam v1 hätte 62,2.
     hfov_deg: float = 91.8
     # Geometrie für Entfernung per Bodenebene (KALIBRIEREN, siehe README)
-    mount_offset_mm: float = 45.0  # Kamerahöhe über Boden = Körperhöhe + Offset (nur ohne cam_h_u8)
+    mount_offset_mm: float = 43.0  # Kamerahöhe über Boden = Körperhöhe + Offset (nur ohne cam_h_u8)
     # Kamerahöhe (Linsenmitte über Boden, mm) = a + b * Höhen-Sollwert u8, [a, b]. RiderPi 2026-11-07 im Stand
     # gemessen: u8 106/150/200 -> 122/125/132,5 mm -> [109.4, 0.1126]. Die Körperhöhe in mm (60..120 über
     # 0..255) steigt doppelt so schnell wie die echte; darum nicht Körperhöhe + Offset. Leer = mount_offset_mm.
     # Gitter am Boden 2026-11-10 bestätigt die Gerade (u8 128: 124-126 mm, u8 205: 131-133 mm); der Faktor
     # 0,921 aus der Klebeband-Probe vom 2026-11-07 ist damit raus.
-    cam_h_u8: list = field(default_factory=list)
+    cam_h_u8: list = field(default_factory=lambda: [109.4, 0.1126])
     # Linsenmitte vor der Radachse (mm). Ursprung von Merkkarte und Raumkarte ist die Radachse (dort dreht der
     # Rider, dort zählen Räder und Sicherheitsradius); Bodenpunkte werden um diesen Versatz nach vorn eingetragen.
     # RiderPi: CAD 36,9, Bodenprobe 34/41 -> 36. 0 = Kamera auf der Achse (Simulator rendert dann wie bisher).
-    cam_fwd_mm: float = 0.0
+    cam_fwd_mm: float = 36.0
     # Spalte der Fahrtrichtung minus Bildmitte (px bei width): gedrehter Einbau oder verschobene optische Mitte,
     # für Peilungen gleich. RiderPi: Fluchtpunkt bei Geradeausfahrt (8 Fahrten, 45 m, 2026-11-08) Spalte 333 -> 13.
-    cx_offset_px: float = 0.0
-    tilt_deg: float = 0.0        # >0 = Kamera schaut nach oben
+    cx_offset_px: float = 13.0
+    tilt_deg: float = 5.18        # >0 = Kamera schaut nach oben
     loop_file: bool = True         # Videodatei endlos abspielen (Replay)
     realtime_file: bool = True     # Videodatei in Echtzeit statt so schnell wie möglich
 
@@ -110,13 +110,13 @@ class ImuCfg:
     imu_hz: int = 50               # wird beim Start nach settings/imu_hz geschrieben
     # IMU/Rad-Strom der Firmware (Patch 0014) mit eigener Messzeit statt Abfrage; > 0 wird beim Start nach
     # settings/imu_stream_hz geschrieben (Treiber mit Strom-Unterstützung). Ohne Strom fragt der Treiber wie bisher ab.
-    stream_hz: int = 0
+    stream_hz: int = 100
     # Abgesetzt (Rider balanciert nicht) braucht niemand 100 Hz: Strom und Lesen auf diese Rate, beim Aufstehen wieder
     # stream_hz und poll_s. Spart am CM4 ~6 % eines Kerns (2026-11-10). 0 = nie umschalten.
     idle_hz: int = 5
     pitch_sign: int = 0            # 0 = automatisch aus Bild-Korrelation, sonst +1/-1
     time_offset_ms: float | None = None   # None = automatisch
-    pitch_ref_deg: float = 0.0     # IMU-Rohpitch bei der Kamerakalibrierung (calibrate.py wall)
+    pitch_ref_deg: float = -4.43     # IMU-Rohpitch bei der Kamerakalibrierung (calibrate.py wall)
     sigma_deg: float = 0.3         # Restunsicherheit der Nicklage mit IMU
     min_corr: float = 0.6
     sync_range_ms: float = 100.0
@@ -177,8 +177,8 @@ class DetectorCfg:
     max_wait_s: float = 0.25       # spätestens dann auch unscharfe Frames nehmen
     # Höchstrate der Detektion. 0 = ohne Pause (CM4: ~7 Hz bei 140 ms/Bild, ~2 Kerne).
     # 5 Hz spart rund ein Drittel davon; der Simulator-Detektor liefert ebenfalls 5 Hz.
-    max_hz: float = 0.0
-    classes: list[str] = field(default_factory=list)  # leer = alle COCO-Klassen
+    max_hz: float = 5.0
+    classes: list[str] = field(default_factory=lambda: ["person", "chair", "couch", "dining table", "potted plant", "bed", "dog", "cat"])  # leer = alle COCO-Klassen
 
 
 @dataclass
@@ -193,11 +193,11 @@ class FreespaceCfg:
     enabled: bool = True
     # Bodenmodell in eigenem Thread (FreeSpaceWorker): nimmt der Hauptschleife jedes 2. Bild
     # ~13 ms ab (CM4); das Ergebnis kommt dafür ein Bild später an. False = wie früher im Takt.
-    threaded: bool = False
+    threaded: bool = True
     width: int = 160
-    sample_rows: float = 0.18      # Höhe der Boden-Referenz (Anteil der Bildhöhe)
+    sample_rows: float = 0.34      # Höhe der Boden-Referenz (Anteil der Bildhöhe)
     sample_bottom: float = 0.0     # Abstand der Referenz vom unteren Bildrand (Anteil der Bildhöhe)
-    sample_cols: float = 0.30      # mittlerer Bildanteil
+    sample_cols: float = 0.5       # mittlerer Bildanteil
     sectors: int = 5
     hist_bins: int = 16
     floor_thresh: float = 0.08     # Rückprojektions-Schwelle
@@ -214,8 +214,8 @@ class FreespaceCfg:
     # Linsenabschattung (tools/calibrate.py shading -> JSON). "" = aus (Simulator).
     # Pixel, die mehr als shading_max_gain Verstärkung bräuchten, gelten als unzuverlässig
     # und nie als Hindernis (RiderPi: untere Ecken, äußere Ränder).
-    shading_file: str = ""
-    shading_max_gain: float = 8.0
+    shading_file: str = "shading.json"
+    shading_max_gain: float = 5.0
     # Spalten, in denen zwischen Horizont und unterem Rand weniger als dieser Anteil messbar ist
     # (Linsenabschattung: am RiderPi je ~32 von 160 Spalten am Rand gar nicht), gelten als
     # unbekannt (NaN) statt "frei bis Horizont". Den nicht messbaren Streifen unten in den
@@ -244,14 +244,14 @@ class FreespaceCfg:
     # graue Wand über grauem Boden). Das Farbmodell lernt in beiden Fällen weiter (Rand unten).
     # "beide": Kanten, und wo diese in einer Spalte nichts finden (frei bis edge_fallback_free),
     # das Farbmodell (Nutzer: Farbe im Dunkeln besser, Kanten im Hellen).
-    method: str = "farbe"
+    method: str = "kanten"
     # FloorNet im Schattenbetrieb (xgonav/floornet.py): Gewichte, z. B. "models/floornet.bin". Rechnet im
     # Bodenmodell-Thread mit (threaded = true) und erscheint im Overlay, entscheidet aber nichts. "" = aus.
-    shadow_net: str = ""
+    shadow_net: str = "models/floornet.bin"
     # Wer entscheidet: "method" (das Verfahren oben, FloorNet rechnet höchstens mit) oder "net" (FloorNet liefert die
     # Grenze für Karten und Regelung allein; das Verfahren wird dann weder gerechnet noch gezeichnet). "net" braucht
     # shadow_net und threaded; fehlt das Netz oder fällt es aus, rechnet und entscheidet wieder das Verfahren.
-    primary: str = "method"
+    primary: str = "net"
     # FloorNet, einzelne Zacken herausnehmen (1-3 Spalten breite Sprünge an senkrechten Kanten): Weicht eine Spalte um
     # mehr als net_outlier_px Vollbildzeilen vom Median der 7 Spalten um sie ab und liegt beim Medianwert mindestens
     # net_outlier_ratio der Masse ihres eigenen Gipfels, gilt das beste Fach beim Medianwert. 0 = aus.
@@ -261,7 +261,7 @@ class FreespaceCfg:
     # net_smooth_n Ausgaben werden über Pose und Nicken auf das aktuelle Bild umgerechnet, je Spalte gilt der Median.
     # 3: ein Ausreißer in einem einzelnen Bild verschwindet, ein neues Hindernis erscheint ein Netzbild (83 ms) später.
     # 0 oder 1 = aus. Braucht die Kartenpose; ohne sie gilt die Ausgabe unverändert.
-    net_smooth_n: int = 0
+    net_smooth_n: int = 3
     edge_fallback_free: float = 0.98
     edge_thin: bool = True         # dünne Linien vorher entfernen (Fugen – aber auch Kontaktschatten)
     edge_k: int = 3                # Zeilen je Seite für den Stufenvergleich (Arbeitsauflösung)
@@ -293,7 +293,7 @@ class MapCfg:
     max_age_s: float = 4.0         # Kartenpunkte so lange behalten
     # Ein Punkt blockiert die Bahn erst, wenn in seiner Nähe (confirm_radius_m) Punkte aus
     # mindestens confirm Beobachtungen liegen. 1 = jede Einzelbeobachtung zählt (wie bisher).
-    confirm: int = 1
+    confirm: int = 3
     confirm_radius_m: float = 0.08
     # Sicherheitsradius der Bahnprüfung: ein bestätigter Punkt näher als so an der Bahn bremst (Lücken ab ~0,36 m).
     radius_m: float = 0.18
@@ -304,7 +304,7 @@ class MapCfg:
     # Drehung der Merkkarte: "odom" = wie [odom] yaw_source (Räder, sonst Kamera); "imu" = Firmware-Kurs aus imu_log
     # (~50 Hz), bei fehlender/alter IMU wie "odom". RiderPi 2026-11-08, volle Drehungen gegen Bilder: IMU 0,997,
     # Räder 0,992 des wahren Winkels; je Drehung weichen beide zufällig ~2° (p90 ~8°) voneinander ab.
-    yaw_source: str = "odom"
+    yaw_source: str = "imu"
     # Mitdrehen, Eintragen (freiräumen, ausdünnen, vergessen), Bestätigen und Bahnprüfung im C++-Kern
     # (xgonav/native/navfast.cpp), wenn gebaut; gleiches Ergebnis wie numpy
     native: bool = True
@@ -314,26 +314,26 @@ class MapCfg:
 class BehaviorCfg:
     mode: str = "idle"             # idle | follow | explore | approach | home
     target_class: str = "person"
-    follow_dist_m: float = 1.2
+    follow_dist_m: float = 0.9
     approach_dist_m: float = 0.5
     kp_turn: float = 2.5           # 1/s: Soll-Drehrate = kp * Winkelfehler
     kd_turn: float = 0.25          # s
     kp_dist: float = 0.35          # normiertes v pro Meter Abstandsfehler
-    dist_deadband: float = 0.15    # m
+    dist_deadband: float = 0.10    # m
     ff_dist: float = 0.8           # Vorsteuerung mit geschätzter Zielgeschwindigkeit
     cruise_v: float = 0.15
     backup_v: float = 0.10
-    search_w: float = 0.12
-    turn_w: float = 0.18           # Erkunden: Drehrate beim Wegdrehen (früher fest 1,5 x search_w)
+    search_w: float = 0.07
+    turn_w: float = 0.21           # Erkunden: Drehrate beim Wegdrehen (früher fest 1,5 x search_w)
     lost_search_s: float = 1.0
-    search_timeout_s: float = 20.0
+    search_timeout_s: float = 10.0
     blocked_free: float = 0.22     # Freiraum im Zentrum darunter = blockiert
     slow_free: float = 0.55        # darunter proportional abbremsen
     ttc_avoid_s: float = 1.2       # Erkunden: Time-to-contact darunter -> ausweichen
     ttc_stop_s: float = 0.8        # Sicherheitsschicht: darunter keine Vorwärtsfahrt
     height_cruise_mm: float = 85.0
-    height_search_mm: float = 115.0
-    height_fast_mm: float = 70.0
+    height_search_mm: float = 100.0
+    height_fast_mm: float = 80.0
 
 
 @dataclass
@@ -341,7 +341,7 @@ class OutputCfg:
     web_host: str = "127.0.0.1"    # Schnittstelle nur lokal; Oberfläche über nginx (web/, deploy/nginx-xgonav.conf)
     web_port: int = 8088           # 0 = aus
     web_fps: int = 10
-    lcd_fifo: str = "/tmp/lcd0"    # "" = aus
+    lcd_fifo: str = ""             # "" = aus
     lcd_fps: int = 15             # CM4 gemessen: kostet die Hauptschleife nichts Messbares
     record_dir: str = "~/fahrt"   # Rohaufzeichnung (Knopf in der Oberfläche): je Aufnahme ein Unterverzeichnis
     record_min_free_mb: int = 500 # darunter schaltet sie sich ab
@@ -379,8 +379,8 @@ class OdomCfg:
     ticks_per_rev: int = 1024          # am Rider gemessen (1 U von Hand: 1029 / 1043)
     # Faktor je Rad auf den Weg (tools/calibrate_odom.py): ungleiche Reifen/Schlupf. Für die
     # Strecke zählt der Mittelwert, für den Kurs der Unterschied (2 % = ~1,3° je 10 cm).
-    scale_left: float = 1.0
-    scale_right: float = 1.0
+    scale_left: float = 1.0073
+    scale_right: float = 1.0087
     poll_hz: float = 25.0              # wheels_log lesen (Treiber puffert 64 Proben)
     # Abgesetzt (Rider balanciert nicht) werden die Räder nicht gelesen; die Pose bleibt dann stehen, auch wenn er
     # von Hand gerollt wird. Beim Aufstehen beginnt das Lesen neu, ohne den Weg dazwischen. true = immer lesen.
@@ -406,7 +406,7 @@ class GridCfg:
     # Rider und werden so nie belegt (Anzeige: orange). Aus Drehungen auf der Stelle allein entsteht nichts.
     # 0 = aus (jeder Treffer zählt). RiderPi 0.2 (2026-11-08: Fensterunterkante gespiegelt, doppelte Wand).
     # Simulator explore 120 s: Wände 82 % (aus) / 57 % (±1 Zelle) / 73 % (±2 Zellen), Präzision 0,90 / 0,95 / 0,93.
-    confirm_dr_m: float = 0.0
+    confirm_dr_m: float = 0.2
     confirm_cells: int = 2
     # Punkte der Merkkarte, vor denen die Bahnprüfung bremst, gelten in der Raumkarte als bestätigt und belegt
     # (auch ohne confirm_dr_m): Was ihn bremst, steht in der Karte, und der Planer fährt darum herum.
@@ -416,7 +416,7 @@ class GridCfg:
     l_occ: float = 0.5                 # zwei Treffer bis "belegt" (l_show): ein Ausreißer sperrt nichts
     free_margin_m: float = 0.10        # Freistrahl endet so weit vor der Grenze (Messrauschen)
     free_margin_quad: float = 0.05     # dazu so viel x Entfernung² (der Fehler wächst quadratisch)
-    free_range_m: float = 1.5          # Freistrahlen bis hierhin (Treffer nur bis max_range_m); 0 = wie max_range_m
+    free_range_m: float = 1.1          # Freistrahlen bis hierhin (Treffer nur bis max_range_m); 0 = wie max_range_m
     driven_free_r_m: float = 0.10      # gefahrener Weg gilt so breit als frei; 0 = aus
     max_turn_dps: float = 40.0         # bei schnellerer Drehung nichts eintragen (Unschärfe, Pose)
     occ_free_factor: float = 0.5       # schon belegte Zellen baut ein Freistrahl nur so stark ab
@@ -426,7 +426,7 @@ class GridCfg:
     view_m: float = 6.0                # Bildausschnitt für die Anzeige
     # Drehung der Kartenpose: "räder" (Rad-Odometrie, sonst Kamera), "kamera" (Ego-Motion) oder "imu" (Firmware-Kurs
     # aus imu_log, ist der zu alt die 5-Hz-Treppe aus /proc yaw, sonst wie "räder"). RiderPi 2026-11-06, 32 m: mit Rädern 75 cm Fehler (Schlupf beim Drehen), mit IMU ~6 cm.
-    yaw_source: str = "räder"
+    yaw_source: str = "imu"
     # Eintragen in eigenem Thread (GridWorker, Kerne wie [cpu] freespace_cpus); False = im Regelschritt
     threaded: bool = True
     # Strahlen im C++-Kern eintragen (xgonav/native/gridfast.cpp), wenn gebaut; gleiches Ergebnis wie numpy
@@ -663,22 +663,22 @@ class RuheCfg:
 class CpuCfg:
     # CPU-Pinning (Linux). Leer = nicht pinnen. Am RiderPi: Hauptschleife samt Kamera,
     # OpenCV-Workern und Rest des Systems auf 0-1, YOLO auf 2-3 (Aufrufer + Pool-Thread).
-    main_cpus: list = field(default_factory=list)
-    detector_cpus: list = field(default_factory=list)
+    main_cpus: list = field(default_factory=lambda: [0, 1])
+    detector_cpus: list = field(default_factory=lambda: [2, 3])
     # Threads, die Bilder für die Oberfläche zeichnen und kodieren (WebSocket, /frame, /stream).
     # Leer = erben main_cpus. Am RiderPi alle Kerne: neben YOLO ist auf 2-3 noch Luft, und
     # auf 0-1 verdrängten sie sonst die Hauptschleife (p95 39 -> 47 ms gemessen).
-    render_cpus: list = field(default_factory=list)
+    render_cpus: list = field(default_factory=lambda: [0, 1, 2, 3])
     # Bodenmodell-Thread ([freespace] threaded). Leer = erben main_cpus.
-    freespace_cpus: list = field(default_factory=list)
+    freespace_cpus: list = field(default_factory=lambda: [2, 3])
 
 
 @dataclass
 class RelocCfg:
     # Kartenabgleich (reloc.py): Pose in der Raumkarte aus der Bodengrenze der letzten Sekunden.
     # Rechnet im eigenen Thread, nichts in der Bildschleife. Aus = alles wie bisher.
-    enabled: bool = False              # Zustand "Pose unbekannt", Kartensperre, Modus locate
-    track: bool = False                # laufender Abgleich während der Fahrt
+    enabled: bool = True               # Zustand "Pose unbekannt", Kartensperre, Modus locate
+    track: bool = True                 # laufender Abgleich während der Fahrt
     # Puffer der Bodengrenze (Punkte im Roboter-KS): so viele Sekunden und so viel Weg zurück
     window_s: float = 8.0
     window_m: float = 3.0
@@ -729,6 +729,25 @@ class RelocCfg:
     blind_s: float = 2.0               # balancierend so lange ohne frische Raddaten: Pose unbekannt
 
 
+# Die Defaults oben sind seit 2026-11-12 die Werte des RiderPi (/opt/xgonav/config.toml ohne Testbetrieb und
+# ohne Pfade unter /opt). Simulator und Tests rechnen mit dem früheren neutralen Stand: Config.neutral().
+NEUTRAL = {"robot.vx_limit": 1.5, "robot.max_v": 0.25, "robot.max_w": 0.25, "robot.reverse_gain": 1.0,
+           "robot.manual_forward_gain": 1.0, "robot.level_after_standup": False, "camera.sensor_mode": "",
+           "camera.scaler_crop": [], "camera.exposure_us": 4000, "camera.analogue_gain": 0.0,
+           "camera.mount_offset_mm": 45.0, "camera.cam_h_u8": [], "camera.cam_fwd_mm": 0.0,
+           "camera.cx_offset_px": 0.0, "camera.tilt_deg": 0.0, "imu.stream_hz": 0, "imu.pitch_ref_deg": 0.0,
+           "detector.max_hz": 0.0, "detector.classes": [], "freespace.threaded": False,
+           "freespace.sample_rows": 0.18, "freespace.sample_cols": 0.3, "freespace.shading_file": "",
+           "freespace.shading_max_gain": 8.0, "freespace.method": "farbe", "freespace.shadow_net": "",
+           "freespace.primary": "method", "freespace.net_smooth_n": 0, "map.confirm": 1, "map.yaw_source": "odom",
+           "behavior.follow_dist_m": 1.2, "behavior.dist_deadband": 0.15, "behavior.search_w": 0.12,
+           "behavior.turn_w": 0.18, "behavior.search_timeout_s": 20.0, "behavior.height_search_mm": 115.0,
+           "behavior.height_fast_mm": 70.0, "output.lcd_fifo": "/tmp/lcd0", "cpu.main_cpus": [],
+           "cpu.detector_cpus": [], "cpu.render_cpus": [], "cpu.freespace_cpus": [], "odom.scale_left": 1.0,
+           "odom.scale_right": 1.0, "grid.confirm_dr_m": 0.0, "grid.free_range_m": 1.5, "grid.yaw_source": "räder",
+           "reloc.enabled": False, "reloc.track": False}
+
+
 @dataclass
 class Config:
     robot: RobotCfg = field(default_factory=RobotCfg)
@@ -753,6 +772,16 @@ class Config:
     pet: PetCfg = field(default_factory=PetCfg)
     ruhe: RuheCfg = field(default_factory=RuheCfg)
     control_hz: float = 20.0
+
+    @classmethod
+    def neutral(cls) -> "Config":
+        """Stand vor den RiderPi-Defaults (NEUTRAL): Kamera ohne Neigung und Kalibrierung, Farbmodell, keine
+        CPU-Bindung, Kartenabgleich aus. Für Simulator und Tests; tests/sim_run.py --rider setzt Rider-Werte darauf."""
+        cfg = cls()
+        for name, wert in NEUTRAL.items():
+            abschnitt, key = name.split(".")
+            setattr(getattr(cfg, abschnitt), key, list(wert) if isinstance(wert, list) else wert)
+        return cfg
 
     @classmethod
     def load(cls, path: str | Path | None) -> "Config":

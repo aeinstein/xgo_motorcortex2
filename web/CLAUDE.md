@@ -12,6 +12,7 @@ Weboberfläche des RiderPi in PHP (`web/index.php`, `web/api.php`) hinter nginx 
 - Bilder per WebSocket `/xgonav/ws` direkt von xgonav, mit Bestätigung je Bild.
 - Laufzeitdaten (CPU, WLAN, IMU, xgonav-Status) ohne Polling per WebSocket `/xgonav/live` vom PHP-CLI-Dienst `tools/live.php` (`xgonav-live.service`, Port 8089; 1 s, IMU 0,3 s balancierend); schläft ohne Browser.
 - Emotionen erzeugt `tools/eyes.py` nach `/opt/xgonav/emotions`.
+- Einstellungen (Modal im Kasten „System“): `api.php?a=config|config_save|config_restore|restart`, Zeilen-Editor `konfig.inc.php`, Schema `config-schema.json` (nach Änderungen an `xgonav/config.py`: `python tools/config_schema.py`, sonst schlägt `test_config_schema_aktuell` fehl). Sicherungen in `/var/lib/xgonav/config-backup`, `config.toml` Gruppe video 0664, sudoers `deploy/sudoers-xgonav-restart`.
 
 ## Schnittstelle zu xgonav
 

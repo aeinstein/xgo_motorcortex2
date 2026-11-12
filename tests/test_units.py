@@ -27,7 +27,7 @@ def test_u8_mapping():
 
 
 def test_robot_ramp_clamp_and_watchdog():
-    cfg = Config().robot
+    cfg = Config.neutral().robot
     r = SimRobot(cfg)
     r.start()
     try:
@@ -50,7 +50,7 @@ def test_robot_ramp_clamp_and_watchdog():
 
 
 def test_robot_height_mapping():
-    r = SimRobot(Config().robot)
+    r = SimRobot(Config.neutral().robot)
     r.set_height(60)
     r.set_height(90)
     r.set_height(120)   # begrenzt auf height_limit_u8
@@ -72,7 +72,7 @@ def test_robot_led_start_flash(tmp_path):
     for datei, erwartet in ((None, "51"), ("77\n", "77"), ("kaputt", "51")):
         if datei is not None:
             gespeichert.write_text(datei)
-        r = ProcRobot(dataclasses.replace(Config().robot, proc_dir=str(tmp_path), led_file=str(gespeichert),
+        r = ProcRobot(dataclasses.replace(Config.neutral().robot, proc_dir=str(tmp_path), led_file=str(gespeichert),
                                           led_start_s=0.05))
         writes = []
         r._write_raw = lambda name, text: writes.append((name, text))   # /proc kürzt, eine Datei nicht
@@ -93,7 +93,7 @@ def test_robot_height_readback(tmp_path):
 
     for name, text in (("height", ""), ("state", "1"), ("yaw", "0"), ("battery", "90"), ("buttons", "0")):
         setze(name, text)
-    r = ProcRobot(dataclasses.replace(Config().robot, proc_dir=str(tmp_path)))
+    r = ProcRobot(dataclasses.replace(Config.neutral().robot, proc_dir=str(tmp_path)))
     mm = r.height_u8_to_mm
 
     def takt():
@@ -126,7 +126,7 @@ def test_app_geometry_follows_robot_height():
     """Die Bodengeometrie rechnet mit dem gültigen Höhen-Sollwert, auch wenn ihn nicht xgonav setzte."""
     import threading
     from xgonav.app import App
-    cfg = Config(); cfg.output.web_port = 0; cfg.detector.enabled = False
+    cfg = Config.neutral(); cfg.output.web_port = 0; cfg.detector.enabled = False
     robot = SimRobot(cfg.robot)
     world = SimWorld(cfg.camera, robot, None, start=(1.0, 1.5, 0.0))
     app = App(cfg, robot, world, imu=None)
@@ -147,7 +147,7 @@ def test_app_geometry_follows_robot_height():
 
 # ---------------------------------------------------------------- Ego-Motion
 def test_egomotion_rotation_vs_sim():
-    cfg = Config()
+    cfg = Config.neutral()
     r = SimRobot(cfg.robot)
     r._cur = (0.1, 0.05)
     r._height_mm = 85
@@ -176,7 +176,7 @@ def test_egomotion_native_matches_python():
     from xgonav.egomotion import _native_lib
     if _native_lib() is None:
         pytest.skip("C++-Kern nicht gebaut (make -C xgonav/native)")
-    cfg = Config()
+    cfg = Config.neutral()
     r = SimRobot(cfg.robot)
     r._cur = (0.1, 0.05)
     r._height_mm = 85
@@ -207,7 +207,7 @@ def test_ego_fast_paths_match_opencv():
     if lib is None:
         pytest.skip("C++-Kern nicht gebaut (make -C xgonav/native)")
     rng = np.random.default_rng(5)
-    cfg = Config()
+    cfg = Config.neutral()
     r = SimRobot(cfg.robot)
     r._cur = (0.1, 0.05)
     r._height_mm = 85
@@ -262,7 +262,7 @@ def test_ground_distance_roundtrip():
 def test_cam_h_from_height_u8():
     """[camera] cam_h_u8: Kamerahöhe als Gerade über den Höhen-Sollwert (Messung 2026-11-07), leer = alt."""
     from xgonav.robot import FW_HEIGHT_STANDUP_U8
-    cfg = Config()
+    cfg = Config.neutral()
     cfg.camera.cam_h_u8 = [109.4, 0.1126]
     g = CamGeometry.from_cfg(cfg)
     for u, soll in ((106, 121.34), (150, 126.29), (200, 131.92), (FW_HEIGHT_STANDUP_U8, 123.81)):
@@ -277,7 +277,7 @@ def test_cam_h_from_height_u8():
 def test_cam_h_display_matches_geometry(gerade):
     """Anzeige im Web: Gerade und cam_h_at müssen dasselbe ergeben wie die Bodengeometrie (cam_h)."""
     from xgonav.robot import SimRobot
-    cfg = Config()
+    cfg = Config.neutral()
     cfg.camera.cam_h_u8 = gerade
     g = CamGeometry.from_cfg(cfg)
     r = SimRobot(cfg.robot)
@@ -298,7 +298,7 @@ def test_status_camera_height_fields():
     import urllib.request
     from xgonav.app import App
     from xgonav.web import serve
-    cfg = Config(); cfg.output.web_port = 0; cfg.detector.enabled = False
+    cfg = Config.neutral(); cfg.output.web_port = 0; cfg.detector.enabled = False
     cfg.camera.cam_h_u8 = [100.8, 0.1037]
     robot = SimRobot(cfg.robot)
     app = App(cfg, robot, SimWorld(cfg.camera, robot, None, start=(1.0, 1.5, 0.0)), imu=None)
@@ -331,7 +331,7 @@ def test_object_dist_ignores_clipped_edges():
 
 # ---------------------------------------------------------------- Tracker
 def test_tracker_follows_shift_and_keeps_id():
-    tr = Tracker(Config().tracker, (640, 480))
+    tr = Tracker(Config.neutral().tracker, (640, 480))
     tr.update([Detection((100, 100, 200, 300), "person", 0.9)], now=0.0)
     tid = tr.tracks[0].id
     A = np.eye(3)
@@ -345,7 +345,7 @@ def test_tracker_follows_shift_and_keeps_id():
 
 
 def test_tracker_prunes_lost():
-    cfg = Config().tracker
+    cfg = Config.neutral().tracker
     tr = Tracker(cfg, (640, 480))
     tr.update([Detection((100, 100, 200, 300), "person", 0.9)], now=0.0)
     tr.prune(cfg.max_lost_s + 0.1)
@@ -445,7 +445,7 @@ def test_ncnn_metadata_and_model_fallback(tmp_path):
 def _sync_scenario(sign, off_ms, noise_deg=0.05, still=False):
     from xgonav.config import ImuCfg
     from xgonav.imu import ImuSource, ImuSync
-    cfg = ImuCfg()
+    cfg = Config.neutral().imu
     imu = ImuSource(cfg)
     sync = ImuSync(cfg)
     rng = np.random.default_rng(0)
@@ -482,7 +482,7 @@ def test_imu_sync_needs_motion():
 # ---------------------------------------------------------------- App
 def _app(freespace: bool, mode: str = "idle"):
     from xgonav.app import App
-    cfg = Config()
+    cfg = Config.neutral()
     cfg.freespace.enabled = freespace
     cfg.behavior.mode = mode
     cfg.output.web_port = 0
@@ -570,7 +570,7 @@ def test_freespace_flat_spot_vs_upright_object():
     """Flacher Fleck nah vorn (Fuge, Astloch) ist kein Hindernis, aufrechter Gegenstand schon."""
     from xgonav.freespace import FreeSpaceEstimator
     geo = CamGeometry(640, 480, 91.0, 1.39, 43.0, 85.0)
-    est = FreeSpaceEstimator(Config().freespace, (640, 480), geo)
+    est = FreeSpaceEstimator(Config.neutral().freespace, (640, 480), geo)
     floor = np.full((120, 160), 255, np.uint8)
     floor[106:114, 70:90] = 0          # 8 Zeilen, darüber wieder Boden
     floor[60:100, 100:110] = 0         # steht auf, reicht über den Horizont
@@ -581,7 +581,7 @@ def test_freespace_flat_spot_vs_upright_object():
 
 def _kanten_est(**kw):
     from xgonav.freespace import FreeSpaceEstimator
-    cfg = Config()
+    cfg = Config.neutral()
     cfg.freespace.method = "kanten"
     cfg.freespace.shading_file = ""
     for k, v in kw.items():
@@ -647,7 +647,7 @@ def test_kanten_native_matches_numpy():
     for _ in range(4):
         n = rng.integers(0, 256, (480, 640, 3), dtype=np.uint8)
         imgs.append(cv2.GaussianBlur(n, (0, 0), 6) if _ % 2 else n)
-    cfg = Config()
+    cfg = Config.neutral()
     r = SimRobot(cfg.robot)
     r._cur = (0.1, 0.05)
     r._height_mm = 85
@@ -711,7 +711,7 @@ def test_localmap_confirm_counts_on_insert():
 def test_freespace_missing_shading_file_is_tolerated(tmp_path):
     """Frische Installation ohne shading.json: Warnung statt Absturz, ohne Korrektur."""
     from xgonav.freespace import FreeSpaceEstimator
-    cfg = Config()
+    cfg = Config.neutral()
     cfg.freespace.shading_file = str(tmp_path / "gibtsnicht.json")
     est = FreeSpaceEstimator(cfg.freespace, (640, 480), CamGeometry(640, 480, 91.0))
     assert est._sgain is None and est._srel is None
@@ -722,7 +722,7 @@ def test_pipeline_pause_and_resume():
     import threading
     from xgonav.app import App
     from xgonav.sim import Person
-    cfg = Config(); cfg.output.web_port = 0; cfg.detector.enabled = False
+    cfg = Config.neutral(); cfg.output.web_port = 0; cfg.detector.enabled = False
     robot = SimRobot(cfg.robot)
     world = SimWorld(cfg.camera, robot, Person([(3.0, 1.5), (3.5, 3.0)], speed=0.3), start=(1.0, 1.5, 0.0))
     app = App(cfg, robot, world, imu=None)
@@ -748,7 +748,7 @@ def test_manual_drive_and_deadman():
     """Handsteuerung: nur im Modus manual; ohne neue Sollwerte nach 0,5 s Stillstand."""
     import threading
     from xgonav.app import App, ModeNotAllowed
-    cfg = Config(); cfg.output.web_port = 0; cfg.detector.enabled = False
+    cfg = Config.neutral(); cfg.output.web_port = 0; cfg.detector.enabled = False
     robot = SimRobot(cfg.robot)
     world = SimWorld(cfg.camera, robot, None, start=(1.0, 1.5, 0.0))
     app = App(cfg, robot, world, imu=None)
@@ -775,7 +775,7 @@ def test_manual_without_pipeline():
     kamerabasierte Modi bleiben gesperrt."""
     import threading
     from xgonav.app import App, ModeNotAllowed
-    cfg = Config(); cfg.output.web_port = 0; cfg.detector.enabled = False
+    cfg = Config.neutral(); cfg.output.web_port = 0; cfg.detector.enabled = False
     robot = SimRobot(cfg.robot)
     world = SimWorld(cfg.camera, robot, None, start=(1.0, 1.5, 0.0))
     app = App(cfg, robot, world, imu=None)
@@ -813,7 +813,7 @@ def test_paused_pipeline_keeps_pose_from_wheels():
     from xgonav.app import App
     import threading
     from xgonav.wheels import WheelOdom
-    cfg = Config(); cfg.output.web_port = 0; cfg.detector.enabled = False
+    cfg = Config.neutral(); cfg.output.web_port = 0; cfg.detector.enabled = False
     robot = SimRobot(cfg.robot)
     wh = WheelOdom(cfg.odom)
     app = App(cfg, robot, SimWorld(cfg.camera, robot, None), imu=None, wheels=wh)
@@ -843,7 +843,7 @@ def test_drive_gains():
     from types import SimpleNamespace as NS
     from xgonav.app import App
     from xgonav.behaviors import Command
-    cfg = Config(); cfg.robot.reverse_gain = 2.0; cfg.robot.manual_forward_gain = 2.0; cfg.robot.max_v = 0.15
+    cfg = Config.neutral(); cfg.robot.reverse_gain = 2.0; cfg.robot.manual_forward_gain = 2.0; cfg.robot.max_v = 0.15
     r = SimRobot(cfg.robot)
     r._cur = (-0.15, 0.0); r._send(time.monotonic() + 10)
     assert r._sent[0] == 128 - round(0.30 * 127)          # 90
@@ -871,7 +871,7 @@ def test_drive_gains():
 
 def test_level_pulse():
     """Impuls einmal je Aufstehen, nach dem Aufschwung und auf Knopfdruck; liegend nicht."""
-    cfg = Config(); cfg.robot.level_after_standup = True; cfg.robot.level_pulse_s = 3.0
+    cfg = Config.neutral(); cfg.robot.level_after_standup = True; cfg.robot.level_pulse_s = 3.0
     r = SimRobot(cfg.robot)
     sent = lambda: [(w[1], w[2]) for w in r.writes if w[1] in ("roll", "roll_balance")]
     puls = [("roll", 0), ("roll_balance", 1), ("roll_balance", 0)]
@@ -906,7 +906,7 @@ def test_level_pulse():
     r._level_tick(74.6)
     r._level_tick(77.7)
     assert sent() == puls * 3                             # nächstes Aufstehen wieder einmal
-    r0 = SimRobot(Config().robot)                         # Default: automatisch nie, Knopf geht
+    r0 = SimRobot(Config.neutral().robot)                         # Default: automatisch nie, Knopf geht
     r0.state.balancing = False
     r0._level_tick(0.0)
     r0.state.balancing = True
@@ -1023,7 +1023,7 @@ def test_raw_run_dir_keeps_previous_recording(tmp_path):
 def test_gain_runtime_limits():
     from xgonav.camera import FrameSource
     from xgonav.config import CameraCfg
-    src = FrameSource(CameraCfg())
+    src = FrameSource(Config.neutral().camera)
     assert src.gain == 0.0                              # Default: Automatik
     assert src.set_gain(4) == 4.0 and src.gain == 4.0
     assert src.set_gain(16) == 16.0 and src.set_gain(63.9) == 63.9
@@ -1110,8 +1110,8 @@ def test_freespace_worker_matches_direct_update():
         im = np.full((480, 640, 3), 120, np.uint8)
         im[:200] = (30, 90, 160)
         imgs.append(np.clip(im + rng.integers(-6, 7, im.shape), 0, 255).astype(np.uint8))
-    direct = FreeSpaceEstimator(FreespaceCfg(), (640, 480))
-    w = FreeSpaceWorker(FreeSpaceEstimator(FreespaceCfg(), (640, 480)))
+    direct = FreeSpaceEstimator(Config.neutral().freespace, (640, 480))
+    w = FreeSpaceWorker(FreeSpaceEstimator(Config.neutral().freespace, (640, 480)))
     w.start()
     try:
         assert w.poll() is None
@@ -1136,7 +1136,7 @@ def test_wheel_odometry_wrap_reset_and_signs():
     from xgonav.config import OdomCfg
     import threading
     from xgonav.wheels import WheelOdom
-    cfg = OdomCfg()
+    cfg = Config.neutral().odom
     w = WheelOdom(cfg)
     mpt = math.pi * 0.060 / 1024
     w.add(1, 0.00, 2**31 - 100, -50, 1000)              # kurz vor dem int32-Überlauf
@@ -1161,7 +1161,7 @@ def test_wheel_odometry_wrap_reset_and_signs():
 def test_wheel_speed_window():
     from xgonav.config import OdomCfg
     from xgonav.wheels import WheelOdom
-    w = WheelOdom(OdomCfg())
+    w = WheelOdom(Config.neutral().odom)
     k = 1.0 / w.m_per_tick
     assert w.speed(0.3) is None                          # keine Proben
     for i in range(10):                                  # 0,18 s mit 0,25 m/s
@@ -1189,10 +1189,10 @@ def _speed_ctrl_fahrt(abzug=0.0, v_cmd=0.2, on=True, secs=9.0):
     from xgonav.config import OdomCfg
     from xgonav.robot import SpeedCtrl
     from xgonav.wheels import WheelOdom
-    cfg = Config().robot
+    cfg = Config.neutral().robot
     cfg.vx_limit, cfg.speed_ctrl = 1.8, on
     r = SimRobot(cfg)
-    sc, w = SpeedCtrl(cfg), WheelOdom(OdomCfg())
+    sc, w = SpeedCtrl(cfg), WheelOdom(Config.neutral().odom)
     tau, nmp, h = SimWorld.DYN_TAU_V, SimWorld.DYN_NMP_S, 0.004
     cur = vf = s = 0.0
     vs = []
@@ -1231,7 +1231,7 @@ def test_speed_ctrl_reaches_setpoint():
 def test_speed_ctrl_rules():
     """Korrektur 0 ohne Raddaten, unter dem Totband und bei Richtungswechsel; begrenzt; Stopp bleibt 128."""
     from xgonav.robot import FW_DEADBAND, SpeedCtrl
-    cfg = Config().robot
+    cfg = Config.neutral().robot
     cfg.vx_limit, cfg.speed_ctrl, cfg.speed_ctrl_lag_s = 1.8, True, 0.0
     sc = SpeedCtrl(cfg)
     t = 0.0
@@ -1324,7 +1324,7 @@ def test_gridmap_wall_and_turn():
     from xgonav.freespace import FreeSpace
     from xgonav.geometry import CamGeometry
     from xgonav.gridmap import GridMap
-    cfg = Config()
+    cfg = Config.neutral()
     g = CamGeometry(640, 480, 91.0, 1.39, 43.0, 85.0)
     m = GridMap(cfg.grid, g, 160, 120)
     hz = g.horizon_row(0) / 4
@@ -1362,7 +1362,7 @@ def _wall_fs(g, dist):
 def test_gridmap_range_hits_and_margin():
     """Ein Treffer reicht nicht für "belegt", Treffer nur bis max_range_m, Freistrahl weiter und mit Rand."""
     from xgonav.gridmap import GridMap
-    cfg = Config()
+    cfg = Config.neutral()
     g = CamGeometry(640, 480, 91.0, 1.39, 43.0, 85.0)
     m = GridMap(cfg.grid, g, 160, 120)
     near = _wall_fs(g, 1.0)
@@ -1417,7 +1417,7 @@ def test_localmap_origin_is_wheel_axle():
 def test_gridmap_rays_start_ahead_of_axle():
     """Raumkarte: Pose = Radachse, Strahlen beginnen cam_fwd davor (gleich wie verschobene Pose ohne Versatz)."""
     from xgonav.gridmap import GridMap
-    cfg = Config()
+    cfg = Config.neutral()
     g0 = CamGeometry(640, 480, 91.0, 1.39, 43.0, 85.0)
     g36 = CamGeometry(640, 480, 91.0, 1.39, 43.0, 85.0, cam_fwd_mm=36.0)
     fs = _wall_fs(g0, 1.0)
@@ -1432,7 +1432,7 @@ def test_gridmap_rays_start_ahead_of_axle():
 def test_sim_camera_ahead_of_axle():
     """Simulator: mit cam_fwd_mm rendert die Kamera vor der Radachse (Achse = Pose, Kollision, Räder)."""
     import dataclasses
-    cfg = Config()
+    cfg = Config.neutral()
     imgs = []
     for off, x in ((36.0, 1.0), (0.0, 1.036)):
         cam = dataclasses.replace(cfg.camera, cam_fwd_mm=off)
@@ -1458,7 +1458,7 @@ def test_cx_offset_bearing_maps_and_sim():
     a.add_freespace(wall, 0.0, 0.0); b.add_freespace(wall, 0.0, 0.0)
     assert np.allclose(b.pts[:, 0], a.pts[:, 0])
     assert np.allclose(b.pts[:, 1] - a.pts[:, 1], b.pts[:, 0] * 13.0 / g13.f)        # Peilung um 13 px gedreht
-    cfg = Config()
+    cfg = Config.neutral()
     m0, m13 = GridMap(cfg.grid, g0, 160, 120), GridMap(cfg.grid, g13, 160, 120)
     for _ in range(3):
         m0.add_freespace(wall, 0.0); m13.add_freespace(wall, 0.0)
@@ -1477,7 +1477,7 @@ def test_imu_yaw_unwrap_and_localmap_yaw_source():
     """imu_log-Kurs: über ±180° stetig; [map] yaw_source "imu" dreht die Merkkarte damit, alte IMU -> Räder."""
     from xgonav.app import App
     from xgonav.imu import ImuSource
-    cfg = Config()
+    cfg = Config.neutral()
     imu = ImuSource(cfg.imu)
     assert imu.latest_yaw() is None
     t0 = time.monotonic()
@@ -1506,7 +1506,7 @@ def test_imu_yaw_unwrap_and_localmap_yaw_source():
 def test_proc_imu_reads_only_new_lines(tmp_path):
     """imu_log ist ein Ringpuffer: je Lesen nur die neuen Zeilen übernehmen, in seq-Reihenfolge."""
     from xgonav.imu import ProcImu
-    cfg = Config()
+    cfg = Config.neutral()
     cfg.imu.proc_dir = str(tmp_path)
     imu = ProcImu(cfg.imu)
     imu.path = str(tmp_path / "imu_log")
@@ -1528,7 +1528,7 @@ def test_proc_imu_requests_stream(tmp_path):
     (tmp_path / "settings").mkdir()
     (tmp_path / "imu_log").write_text("")
     (tmp_path / "settings" / "imu_hz").write_text("50\n")
-    cfg = Config()
+    cfg = Config.neutral()
     cfg.imu.proc_dir = str(tmp_path)
     cfg.imu.stream_hz = 100
     assert ProcImu(cfg.imu)._open()                      # alter Treiber: Datei fehlt, nur Warnung
@@ -1546,7 +1546,7 @@ def test_proc_imu_idle_rate(tmp_path):
     (tmp_path / "settings" / "imu_hz").write_text("50\n")
     sp = tmp_path / "settings" / "imu_stream_hz"
     sp.write_text("0\n")
-    cfg = Config()
+    cfg = Config.neutral()
     cfg.imu.proc_dir = str(tmp_path)
     cfg.imu.stream_hz = 100
     imu = ProcImu(cfg.imu)
@@ -1583,7 +1583,7 @@ def test_wheels_idle_reads_nothing_and_restarts_without_gap():
             self.polls += 1
             return 0
 
-    cfg = Config()
+    cfg = Config.neutral()
     w = _W(cfg.odom)
     w.add(1, 1.0, 0, 0)
     w.add(2, 1.1, 1024, 1024)
@@ -1609,7 +1609,7 @@ def test_wheels_idle_reads_nothing_and_restarts_without_gap():
 
 def test_gridmap_driven_path_is_free():
     from xgonav.gridmap import GridMap
-    cfg = Config()
+    cfg = Config.neutral()
     m = GridMap(cfg.grid, CamGeometry(640, 480, 91.0, 1.39, 43.0, 85.0), 160, 120)
     r, c = m.cell(0.3, 0.0)
     m.lo[int(r), int(c)] = cfg.grid.l_max                       # angeblich belegt, liegt auf dem Weg
@@ -1625,7 +1625,7 @@ def test_freespace_keeps_pitch_and_pose_of_capture():
     der Aufnahme, sonst streut die Entfernung um Dezimeter (2026-11-05)."""
     from xgonav.freespace import FreeSpaceEstimator, FreeSpaceWorker
     from xgonav.localmap import mask_movable
-    cfg = Config()
+    cfg = Config.neutral()
     g = CamGeometry(640, 480, 91.0, 1.39, 43.0, 85.0)
     est = FreeSpaceEstimator(cfg.freespace, (640, 480), g)
     w = FreeSpaceWorker(est)
@@ -1648,7 +1648,7 @@ def test_gridworker_uses_pose_of_observation():
     from xgonav.freespace import FreeSpace
     from xgonav.geometry import CamGeometry
     from xgonav.gridmap import GridMap, GridWorker
-    cfg = Config()
+    cfg = Config.neutral()
     g = CamGeometry(640, 480, 91.0, 1.39, 43.0, 85.0)
     hz = g.horizon_row(0) / 4
     ys = np.arange(int(hz * 4) + 1, 480)
@@ -1680,7 +1680,7 @@ def test_gridmap_native_matches_numpy():
     from xgonav.gridmap import GridMap, _grid_lib
     if _grid_lib() is None:
         pytest.skip("C++-Kern nicht gebaut (make -C xgonav/native)")
-    cfg = Config()
+    cfg = Config.neutral()
     g = CamGeometry(640, 480, 91.0, 1.39, 43.0, 85.0)
     mn = GridMap(cfg.grid, g, 160, 120)
     mp = GridMap(replace(cfg.grid, native=False), g, 160, 120)
@@ -1710,7 +1710,7 @@ def test_gridmap_confirm_from_two_distances(tmp_path):
     Stelle (immer gleiche Entfernung): nie belegt, nur Kandidat. Gefahrener Weg löscht Kandidaten."""
     from dataclasses import replace
     from xgonav.gridmap import GridMap
-    cfg = Config()
+    cfg = Config.neutral()
     g = CamGeometry(640, 480, 91.0, 1.39, 43.0, 85.0)
     m = GridMap(replace(cfg.grid, confirm_dr_m=0.2, native=False), g, 160, 120)
     ang = np.radians(np.linspace(-3, 3, 7))
@@ -1763,7 +1763,7 @@ def test_gridmap_confirm_from_two_distances(tmp_path):
 # ---------------------------------------------------------------- Startpunkt, Speichern, Heimfahrt
 def _grid():
     from xgonav.gridmap import GridMap
-    cfg = Config()
+    cfg = Config.neutral()
     return cfg, GridMap(cfg.grid, CamGeometry(640, 480, 91.0, 1.39, 43.0, 85.0), 160, 120)
 
 
@@ -1916,7 +1916,7 @@ def test_home_turns_in_place_only_for_large_errors():
     drehen erst ab turn_enter_deg und dann bis unter turn_exit_deg."""
     from xgonav.behaviors import Home, World
     from xgonav.egomotion import EgoResult
-    cfg = Config()
+    cfg = Config.neutral()
     b = Home(cfg.behavior, cfg.robot, cfg.home)
     b.set_path([(0.0, 0.0), (3.0, 0.0)])
 
@@ -1935,7 +1935,7 @@ def test_home_turns_in_place_only_for_large_errors():
 def test_home_behavior_steers_and_arrives():
     from xgonav.behaviors import Home, World
     from xgonav.egomotion import EgoResult
-    cfg = Config()
+    cfg = Config.neutral()
     b = Home(cfg.behavior, cfg.robot, cfg.home)
 
     def world(pose, t=0.0):
@@ -1974,7 +1974,7 @@ def test_freespace_reset_and_dark_sample():
     import numpy as np
     from xgonav.config import FreespaceCfg
     from xgonav.freespace import FreeSpaceEstimator
-    cfg = FreespaceCfg()
+    cfg = Config.neutral().freespace
     est = FreeSpaceEstimator(cfg, (640, 480))
     floor = np.full((480, 640, 3), (90, 110, 130), np.uint8)       # gleichmäßiger Boden
     floor[:200] = (200, 60, 40)                                     # Wand oben, andere Farbe
@@ -1999,7 +1999,7 @@ def _room_map(door=False):
     """Bekannter Raum 2,4 x 2,4 m um den Ursprung, Wände belegt; door: 0,8 m Lücke in der +x-Wand
     (dahinter unbekannt)."""
     from xgonav.gridmap import GridMap
-    cfg = Config()
+    cfg = Config.neutral()
     m = GridMap(cfg.grid, CamGeometry(640, 480, 91.0, 1.39, 43.0, 85.0), 160, 120)
     r0, c0 = (int(v) for v in m.cell(-1.2, -1.2))
     r1, c1 = (int(v) for v in m.cell(1.2, 1.2))
@@ -2091,7 +2091,7 @@ def test_pathfollower_detour_is_not_stuck():
     """Umweg: Luftlinie zum Ziel wächst, der Rider kommt aber voran. Stehen: gilt als fest."""
     from xgonav.behaviors import PathFollower, World
     from xgonav.egomotion import EgoResult
-    cfg = Config()
+    cfg = Config.neutral()
     f = PathFollower(cfg.behavior, cfg.robot, cfg.home)
     f.set_path([(0.0, 0.0), (-3.0, 0.0), (-3.0, 3.0), (3.0, 3.0)])
 
@@ -2110,7 +2110,7 @@ def test_pathfollower_small_error_still_steers():
     """Unter ~11° Fehler läge der Lenkbefehl unter der Totzone der Firmware (u8 128 ± 6)."""
     from xgonav.behaviors import PathFollower, World
     from xgonav.egomotion import EgoResult
-    cfg = Config()
+    cfg = Config.neutral()
     f = PathFollower(cfg.behavior, cfg.robot, cfg.home)
     f.set_path([(0.0, 0.0), (3.0, 0.0)])
 
@@ -2136,7 +2136,7 @@ def _plan(goal=(1.0, 0.0), frontier=(1.3, 0.0), clusters=1, avoided=0, known=5.0
 
 def test_map_explore_scan_then_goal_then_face():
     from xgonav.behaviors import MapExplore
-    cfg = Config()
+    cfg = Config.neutral()
     b = MapExplore(cfg.behavior, cfg.robot, cfg.home, cfg.explore)
     th, t = 0.0, 0.0
     c = b.step(_ex_world(t, (0.0, 0.0, th)))
@@ -2193,7 +2193,7 @@ def test_map_explore_passes_goal_without_stop_when_next_is_planned():
 def test_cost_map_no_squeeze_cost_on_driven_path():
     """Wo er schon durchgefahren ist, kostet die Engstelle nichts extra (sonst Umweg statt Rückweg)."""
     from xgonav.planner import cost_map
-    cfg = Config()
+    cfg = Config.neutral()
     lo = np.full((40, 40), cfg.grid.l_min, np.float32)
     lo[:, 17] = lo[:, 23] = cfg.grid.l_max                    # Gang, 25 cm frei zwischen den Wänden
     driven = np.zeros(lo.shape, bool)
@@ -2206,7 +2206,7 @@ def test_cost_map_no_squeeze_cost_on_driven_path():
 def test_gridmap_mark_blocking_confirms_and_occupies():
     """Punkte, vor denen die Bahnprüfung bremst, sind in der Raumkarte bestätigt und belegt."""
     from xgonav.gridmap import GridMap
-    cfg = Config()
+    cfg = Config.neutral()
     cfg.grid.confirm_dr_m = 0.2
     m = GridMap(cfg.grid, CamGeometry(640, 480, 91.0, 1.39, 43.0, 85.0), 160, 120)
     pts = np.array([[0.62, 0.11], [0.63, 0.12], [0.80, -0.30]])
@@ -2231,7 +2231,7 @@ def test_localmap_arc_clearance_reports_blocking_points():
 
 def _explore_ready():
     from xgonav.behaviors import MapExplore
-    cfg = Config()
+    cfg = Config.neutral()
     b = MapExplore(cfg.behavior, cfg.robot, cfg.home, cfg.explore)
     b.state = "ziel"
     return cfg, b
@@ -2366,7 +2366,7 @@ def test_blocking_boxes_skip_furniture_target_and_stale():
     person = Track("person", 100, 300, 50, 200, 0.8, 10.0)
     target = Track("person", 400, 300, 50, 200, 0.8, 10.0)
     alt = Track("chair", 200, 300, 50, 80, 0.8, 9.0)
-    boxes = blocking_boxes([bed, person, target, alt], target.id, 10.1, FreespaceCfg().no_block_cls)
+    boxes = blocking_boxes([bed, person, target, alt], target.id, 10.1, Config.neutral().freespace.no_block_cls)
     assert boxes == [person.box]
 
 
@@ -2380,7 +2380,7 @@ def _world_at(t, pose):
 def test_home_gives_up_when_stuck():
     """Hindernis im Weg: Neuplanen hilft nicht, Fahrt endet mit Meldung statt endlos zu warten."""
     from xgonav.behaviors import Home
-    cfg = Config()
+    cfg = Config.neutral()
     b = Home(cfg.behavior, cfg.robot, cfg.home)
     pose = (1.0, 0.0, math.pi)
     assert b.want_plan(0.0)
@@ -2398,7 +2398,7 @@ def test_home_gives_up_when_stuck():
 
 def test_home_stuck_counter_resets_with_progress():
     from xgonav.behaviors import Home
-    cfg = Config()
+    cfg = Config.neutral()
     b = Home(cfg.behavior, cfg.robot, cfg.home)
     far, near = (3.0, 0.0, math.pi), (2.0, 0.0, math.pi)
     assert b.want_plan(0.0)
@@ -2415,7 +2415,7 @@ def test_home_stuck_counter_resets_with_progress():
 
 def test_map_explore_home_stuck_finishes_with_message():
     from xgonav.behaviors import MapExplore
-    cfg = Config()
+    cfg = Config.neutral()
     b = MapExplore(cfg.behavior, cfg.robot, cfg.home, cfg.explore)
     pose = (1.0, 0.0, math.pi)
     b.state, b.reason = "heim", "Karte fertig"
@@ -2462,7 +2462,7 @@ def _driven_room():
     """Raum mit Fleckenreihe quer: Mit Abstand kommt nur durch, wer weiß, dass er dort gefahren ist."""
     from xgonav.gridmap import GridMap
     from dataclasses import replace
-    cfg = Config()
+    cfg = Config.neutral()
     geo = CamGeometry(640, 480, 88.5, 5.18, 43.0, 85.0)
     m = GridMap(replace(cfg.grid, native=False, file=""), geo, 160, 120)
     r0, c0 = (int(k) for k in m.cell(-2.0, -1.0))
@@ -2514,7 +2514,7 @@ def test_plan_falls_back_without_localmap():
 def test_pathfollower_detects_pressing_quickly():
     from xgonav.behaviors import PathFollower, World
     from xgonav.egomotion import EgoResult
-    cfg = Config()
+    cfg = Config.neutral()
     f = PathFollower(cfg.behavior, cfg.robot, cfg.home)
     f.set_path([(0.0, 0.0), (3.0, 0.0)])
 
@@ -2534,7 +2534,7 @@ def test_pathfollower_detects_pressing_quickly():
 
 def test_map_explore_contact_blocks_goal_at_once():
     from xgonav.behaviors import MapExplore
-    cfg = Config()
+    cfg = Config.neutral()
     b = MapExplore(cfg.behavior, cfg.robot, cfg.home, cfg.explore)
     pose = (1.0, 0.0, 0.0)
     b.state, b.frontier, b.goal, b.t_goal = "ziel", (3.0, 0.0), (2.7, 0.0), 0.0
@@ -2567,7 +2567,7 @@ def test_grid_heading_from_imu():
 
 def test_home_stuck_near_goal_counts_as_arrived():
     from xgonav.behaviors import Home, MapExplore
-    cfg = Config()
+    cfg = Config.neutral()
     pose = (0.28, 0.0, math.pi)
     h = Home(cfg.behavior, cfg.robot, cfg.home)
     assert h.want_plan(0.0)
@@ -2585,7 +2585,7 @@ def test_home_stuck_near_goal_counts_as_arrived():
 
 def _patrol(points, loop=False):
     from xgonav.behaviors import Patrol
-    cfg = Config()
+    cfg = Config.neutral()
     b = Patrol(cfg.behavior, cfg.robot, cfg.home, cfg.patrol)
     b.set_route(points, loop)
     return cfg, b
@@ -2657,7 +2657,7 @@ def test_patrol_battery_home_and_set_down():
 def _route_map():
     from xgonav.gridmap import GridMap
     from dataclasses import replace
-    cfg = Config()
+    cfg = Config.neutral()
     geo = CamGeometry(640, 480, 88.5, 5.18, 43.0, 85.0)
     m = GridMap(replace(cfg.grid, native=False, file=""), geo, 160, 120)
     r0, c0 = (int(k) for k in m.cell(-3.0, -3.0))
@@ -2777,7 +2777,7 @@ def test_ruhe_mode():
     die Abfragen wieder her (bleibt liegen, Bildverarbeitung aus)."""
     import threading
     from xgonav.app import App, ModeNotAllowed
-    cfg = Config(); cfg.output.web_port = 0; cfg.detector.enabled = False
+    cfg = Config.neutral(); cfg.output.web_port = 0; cfg.detector.enabled = False
     cfg.ruhe.tick_s = 0.2
     robot = SimRobot(cfg.robot)
     robot.settings.update({"imu_hz": "50", "imu_stream_hz": "100", "sleep_ms_on_loop": "200"})  # wheel_hz fehlt
@@ -2806,3 +2806,12 @@ def test_ruhe_mode():
     time.sleep(0.5)
     assert not app.pipeline_on and not robot.state.balancing   # Wecken startet nichts
     app.stop(); th.join(timeout=5)
+
+
+# ---------------------------------------------------------------- Weboberfläche: Einstellungen
+def test_config_schema_aktuell():
+    """web/config-schema.json passt zu xgonav/config.py (sonst: python tools/config_schema.py)."""
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
+    import config_schema
+    assert (Path(config_schema.ZIEL).read_text(encoding="utf-8") == config_schema.text()), \
+        "web/config-schema.json veraltet: python tools/config_schema.py"

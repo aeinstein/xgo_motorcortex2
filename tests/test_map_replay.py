@@ -16,7 +16,7 @@ FW, FH = 160, 120
 
 
 def _cfg():
-    cfg = Config()
+    cfg = Config.neutral()
     cfg.grid.native = False
     return cfg
 
@@ -88,7 +88,7 @@ def test_grid_parameter():
     a, b = _karten(["null:versatz=0,sperre=1000", "kurz:versatz=0,sperre=1000,grid.max_range_m=0.5"])
     # Wand bei 1 m: mit Treffern nur bis 0,5 m wird nichts belegt
     assert len(_belegt(a[1])) > 0 and len(_belegt(b[1])) == 0
-    assert a[1].cfg.max_range_m == Config().grid.max_range_m and b[1].cfg.max_range_m == 0.5
+    assert a[1].cfg.max_range_m == Config.neutral().grid.max_range_m and b[1].cfg.max_range_m == 0.5
 
 
 def test_stuetzstellen_treppe_und_stillstand():

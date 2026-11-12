@@ -193,6 +193,55 @@ details.extras[open]>summary{margin-bottom:8px}
 /* senkrecht, oben = hoch; touch-action: Ziehen verschiebt nicht die Seite */
 #hoehe{writing-mode:vertical-lr;direction:rtl;flex:1 1 0;min-height:0;min-width:0;width:32px;touch-action:none}
 #lagekarte>.regler{margin-top:8px}
+
+/* --- Einstellungen (Modal): alles im Browser, am Rider nur Lesen/Schreiben der config.toml */
+#einst{width:min(1100px,calc(100vw - 16px));height:min(88vh,900px);max-width:none;max-height:none;padding:0;
+  background:var(--karte);color:var(--text);border:1px solid var(--rand2);border-radius:10px}
+#einst[open]{display:flex;flex-direction:column}
+#einst::backdrop{background:rgba(5,6,8,.7)}
+.ei-kopf,.ei-fuss{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px 12px;border-bottom:1px solid var(--rand)}
+.ei-fuss{border-bottom:0;border-top:1px solid var(--rand)}
+.ei-kopf h2{margin:0;font-size:15px;font-weight:600;flex:1;min-width:120px}
+#ei-suche{width:min(260px,100%)}
+.ei-kopf label{font-size:13px;color:var(--leise);display:flex;gap:5px;align-items:center;cursor:pointer}
+.ei-rumpf{flex:1;min-height:0;display:grid;grid-template-columns:200px 1fr}
+#ei-nav{overflow:auto;border-right:1px solid var(--rand);padding:6px 0}
+#ei-nav .kat{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--leise);padding:8px 12px 3px}
+#ei-nav button{display:flex;width:100%;border:0;border-radius:0;background:none;text-align:left;padding:5px 12px 5px 18px;font-size:13px;gap:6px}
+#ei-nav button.aktiv{background:#18324f;color:#fff}
+#ei-nav button .n{margin-left:auto;color:var(--leise);font-size:11px;font-variant-numeric:tabular-nums}
+#ei-nav button .n.ae{color:var(--warn)}
+#ei-felder{overflow:auto;padding:4px 14px 14px}
+#ei-felder h3{font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#a9b4c2;margin:14px 0 2px}
+#ei-felder .doc{font-size:12px;color:var(--leise);margin:0 0 6px}
+.ei-feld{display:grid;grid-template-columns:minmax(150px,230px) minmax(0,1fr) auto;gap:2px 10px;align-items:center;
+  padding:7px 0;border-bottom:1px solid var(--rand)}
+.ei-feld .key{font:12.5px ui-monospace,Consolas,monospace;overflow-wrap:anywhere}
+.ei-feld .marke{font:10.5px system-ui,sans-serif;padding:0 5px;border-radius:4px;margin-left:5px;vertical-align:1px}
+.ei-feld .gesetzt{background:#22324a;color:#9cc7ff}
+.ei-feld .geaendert{background:#4a3a17;color:#f0c46a}
+.ei-feld input[type=text]{width:100%;font:13px ui-monospace,Consolas,monospace}
+.ei-feld input.falsch{border-color:var(--gefahr);background:#2a1416}
+.ei-feld input[type=checkbox]{width:18px;height:18px;accent-color:var(--akzent);justify-self:start}
+.ei-feld .zurueck{padding:2px 8px;font-size:12px}
+.ei-feld .hilfe{grid-column:1/-1;font-size:12px;color:var(--leise)}
+.ei-feld .hilfe i{font-style:normal;color:#6f7885}
+.ei-feld.gesperrt{opacity:.55}
+#ei-info{flex:1;font-size:13px;color:var(--leise);min-width:160px}
+#ei-info.warn{color:#f0c46a}
+#ei-sich{padding:0 12px 10px;font-size:13px}
+#ei-sich summary{cursor:pointer;color:var(--leise)}
+#ei-sich ul{list-style:none;margin:6px 0 0;padding:0;max-height:22vh;overflow:auto}
+#ei-sich li{display:flex;gap:8px;align-items:center;padding:3px 0;font-variant-numeric:tabular-nums}
+#ei-sich li button{padding:1px 8px;font-size:12px}
+@media (max-width:700px){
+  .ei-rumpf{grid-template-columns:1fr;grid-template-rows:auto 1fr}
+  #ei-nav{display:flex;overflow-x:auto;border-right:0;border-bottom:1px solid var(--rand);padding:0}
+  #ei-nav .kat{display:none}
+  #ei-nav button{width:auto;white-space:nowrap;padding:8px 10px}
+  .ei-feld{grid-template-columns:minmax(0,1fr) auto}
+  .ei-feld .key{grid-column:1/-1}
+}
 </style>
 </head>
 <body>
@@ -463,11 +512,32 @@ details.extras[open]>summary{margin-bottom:8px}
     <div class="kopf"><h2>System</h2>
       <!-- Kalibrier-Knöpfe gesperrt (2026-11-02): Speichern bei schlaffen Beinen hat die
            Beinnullpunkte im ESP32-Flash überschrieben. Erst mit geführtem Ablauf wieder freigeben. -->
+      <button onclick="einstOeffnen()" title="Alle Einstellungen aus config.toml ändern (mit Sicherung), xgonav neu starten">Einstellungen</button>
       <button id="aus" class="gefahr" onclick="herunterfahren()">Herunterfahren</button>
     </div>
   </section>
 </div>
 </main>
+<dialog id="einst" aria-labelledby="ei-titel">
+  <div class="ei-kopf">
+    <h2 id="ei-titel">Einstellungen</h2>
+    <input id="ei-suche" type="search" placeholder="Suchen (Schlüssel, Text)" aria-label="Einstellungen durchsuchen" oninput="einstZeigen()">
+    <label><input type="checkbox" id="ei-nurgesetzt" onchange="einstZeigen()">nur in config.toml gesetzte</label>
+    <button onclick="einstSchliessen()" aria-label="Schließen">✕</button>
+  </div>
+  <div class="ei-rumpf">
+    <nav id="ei-nav"></nav>
+    <div id="ei-felder"></div>
+  </div>
+  <details id="ei-sich"><summary>Sicherungen</summary><ul id="ei-sich-liste"></ul></details>
+  <div class="ei-fuss">
+    <span id="ei-info">-</span>
+    <button onclick="einstVerwerfen()" title="Nicht gespeicherte Änderungen verwerfen">Verwerfen</button>
+    <button id="ei-speichern" onclick="einstSpeichern(false)">Speichern</button>
+    <button id="ei-speichern-neu" onclick="einstSpeichern(true)" class="aktiv">Speichern und neu starten</button>
+    <button onclick="einstNeustart()" title="xgonav neu starten: liest config.toml neu ein">Neu starten</button>
+  </div>
+</dialog>
 <script>
 // Kennzahlen-Kacheln; Modus, Bildverarbeitung, Akku und Zustand stehen in der Kopfleiste
 const felder = [
@@ -926,6 +996,241 @@ function aufspringen() {
 }
 function herunterfahren() {
   if (confirm('Rider wirklich herunterfahren?')) befehl('shutdown');
+}
+
+// ---------------------------------------------------------------- Einstellungen (Modal)
+// Schema (web/config-schema.json aus xgonav/config.py), Werte und Sicherungen holt api.php?a=config einmal beim
+// Öffnen; Formular, Suche und Prüfen laufen hier im Browser. Gespeichert werden nur Änderungen
+// ({"abschnitt.key": Wert | null}, null = Zeile entfernen, dann gilt der Default aus config.py).
+const einst = {d: null, felder: {}, aend: {}, falsch: {}, ab: null, neustart: false};
+const eiName = (ab, f) => ab + '.' + f.key;
+const eiGleich = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+function eiDatei(ab, f) { const w = einst.d.werte[ab]; return w && f.key in w ? {da: true, v: w[f.key]} : {da: false, v: f.default}; }
+// Wert, der nach dem Speichern gilt
+function eiWert(ab, f) {
+  const n = eiName(ab, f);
+  if (n in einst.aend) return einst.aend[n] === null ? f.default : einst.aend[n];
+  return eiDatei(ab, f).v;
+}
+function eiText(f, v) {
+  if (v === null || v === undefined) return '';
+  if (f.typ === 'liste') return v.join(', ');
+  return String(v);
+}
+// Eingabe lesen; wirft mit Meldung, wenn sie nicht zum Typ passt
+function eiLesen(f, t) {
+  t = t.trim();
+  const zahl = s => {
+    s = s.replace(',', '.');
+    if (!/^[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?$/.test(s)) throw 'Zahl erwartet';
+    return Number(s);
+  };
+  if (f.typ === 'int') { if (!/^[-+]?\d+$/.test(t)) throw 'ganze Zahl erwartet'; return Number(t); }
+  if (f.typ === 'float') { if (t === '' && f.nullbar) return null; return zahl(t); }
+  if (f.typ === 'str') return t;
+  if (f.typ === 'liste') {
+    if (t.replace(/^\[|\]$/g, '').trim() === '') return [];
+    const teile = t.replace(/^\[|\]$/g, '').split(',').map(s => s.trim().replace(/^["']|["']$/g, ''));
+    return f.elem === 'str' ? teile : teile.map(zahl);
+  }
+  throw 'Typ unbekannt';
+}
+function eiSetzen(ab, f, v) {
+  const n = eiName(ab, f), datei = eiDatei(ab, f);
+  delete einst.falsch[n];
+  if (v === null) {                                   // auf Default
+    if (datei.da) einst.aend[n] = null; else delete einst.aend[n];
+  } else if (eiGleich(v, datei.v) && (datei.da || eiGleich(v, f.default))) {
+    delete einst.aend[n];                             // wie in der Datei bzw. Default ohne Eintrag
+  } else {
+    einst.aend[n] = v;
+  }
+  einstInfo();
+}
+function eiZeile(ab, f) {
+  const n = eiName(ab, f), datei = eiDatei(ab, f);
+  const unl = (einst.d.unlesbar[ab] || {})[f.key];
+  const z = document.createElement('div');
+  z.className = 'ei-feld' + (unl ? ' gesperrt' : '');
+  const geaendert = n in einst.aend;
+  const gesetzt = geaendert ? einst.aend[n] !== null : datei.da;
+  z.innerHTML = '<div class="key">' + esc(ab === einst.d.schema.oben ? f.key : n) +
+    (gesetzt ? '<span class="marke gesetzt" title="steht in config.toml">gesetzt</span>' : '') +
+    (geaendert ? '<span class="marke geaendert">' + (einst.aend[n] === null ? 'wird Default' : 'geändert') + '</span>' : '') + '</div>';
+  let inp;
+  const v = eiWert(ab, f);
+  if (f.typ === 'bool') {
+    inp = document.createElement('input'); inp.type = 'checkbox'; inp.checked = !!v;
+    inp.onchange = () => { eiSetzen(ab, f, inp.checked); einstZeigen(); };
+  } else {
+    inp = document.createElement('input'); inp.type = 'text'; inp.value = einst.falsch[n] ?? eiText(f, v);
+    inp.spellcheck = false; inp.autocomplete = 'off';
+    if (f.typ === 'int' || f.typ === 'float') inp.inputMode = 'decimal';
+    if (n in einst.falsch) inp.classList.add('falsch');
+    inp.onchange = () => {
+      try { eiSetzen(ab, f, eiLesen(f, inp.value)); einstZeigen(); }
+      catch (e) { einst.falsch[n] = inp.value; inp.classList.add('falsch'); inp.title = e; einstInfo(); }
+    };
+  }
+  inp.setAttribute('aria-label', n);
+  if (unl || !einst.d.schreibbar) inp.disabled = true;
+  z.appendChild(inp);
+  const zb = document.createElement('button');
+  zb.className = 'zurueck'; zb.textContent = 'Default';
+  zb.title = 'Default aus config.py: ' + (eiText(f, f.default) || '(leer)') + ' – entfernt die Zeile aus config.toml';
+  zb.disabled = !!unl || !einst.d.schreibbar || (!gesetzt && !(n in einst.falsch));
+  zb.onclick = () => { eiSetzen(ab, f, null); einstZeigen(); };
+  z.appendChild(zb);
+  const h = document.createElement('div');
+  h.className = 'hilfe';
+  h.innerHTML = (unl ? '<b>In config.toml nicht lesbar (' + esc(unl) + '), nur per ssh änderbar.</b> ' : '') + esc(f.hilfe || '') +
+    ' <i>Default: ' + esc(eiText(f, f.default) || '(leer)') + (datei.da && !eiGleich(datei.v, eiWert(ab, f)) ? ' · in Datei: ' + esc(eiText(f, datei.v)) : '') + '</i>';
+  z.appendChild(h);
+  return z;
+}
+function einstNav() {
+  const nav = $('ei-nav');
+  nav.innerHTML = '';
+  for (const k of einst.d.schema.kategorien) {
+    const t = document.createElement('div'); t.className = 'kat'; t.textContent = k.name; nav.appendChild(t);
+    for (const a of k.abschnitte) {
+      const b = document.createElement('button');
+      const nAend = Object.keys(einst.aend).filter(n => n.startsWith(a.name + '.')).length;
+      const nGes = Object.keys(einst.d.werte[a.name] || {}).length;
+      b.innerHTML = esc(a.name) + '<span class="n' + (nAend ? ' ae' : '') + '" title="gesetzt / Felder' +
+        (nAend ? ', ungespeichert geändert' : '') + '">' + (nAend ? nAend + '✎ ' : '') + nGes + '/' + a.felder.length + '</span>';
+      b.classList.toggle('aktiv', !$('ei-suche').value.trim() && a.name === einst.ab);
+      b.onclick = () => { einst.ab = a.name; $('ei-suche').value = ''; einstZeigen(); $('ei-felder').scrollTop = 0; };
+      nav.appendChild(b);
+    }
+  }
+  nav.querySelector('button.aktiv')?.scrollIntoView({block: 'nearest', inline: 'nearest'});
+}
+function einstZeigen() {
+  if (!einst.d) return;
+  const such = $('ei-suche').value.trim().toLowerCase(), nur = $('ei-nurgesetzt').checked;
+  const box = $('ei-felder'), oben = box.scrollTop;
+  box.innerHTML = '';
+  let n = 0;
+  for (const k of einst.d.schema.kategorien) for (const a of k.abschnitte) {
+    if (!such && a.name !== einst.ab) continue;
+    const felder = a.felder.filter(f => {
+      const name = eiName(a.name, f);
+      if (nur && !eiDatei(a.name, f).da && !(name in einst.aend)) return false;
+      return !such || (name + ' ' + (f.hilfe || '')).toLowerCase().includes(such);
+    });
+    if (!felder.length && such) continue;
+    const h = document.createElement('h3'); h.textContent = (such ? k.name + ' · ' : '') + '[' + a.name + ']'; box.appendChild(h);
+    if (a.doc) { const p = document.createElement('p'); p.className = 'doc'; p.textContent = a.doc; box.appendChild(p); }
+    for (const f of felder) { box.appendChild(eiZeile(a.name, f)); n++; }
+  }
+  if (!n) box.insertAdjacentHTML('beforeend', '<p class="leise">' + (such ? 'Nichts gefunden.' : 'Keine Einträge.') + '</p>');
+  if (!such) box.scrollTop = oben;
+  einstNav();
+  einstInfo();
+}
+function einstInfo() {
+  const nA = Object.keys(einst.aend).length, nF = Object.keys(einst.falsch).length, info = $('ei-info');
+  let t, warn = false;
+  if (!einst.d) t = 'lädt …';
+  else if (!einst.d.schreibbar) { t = einst.d.datei + ' ist nicht schreibbar (Gruppe video, 0664: deploy/install.sh)'; warn = true; }
+  else if (nF) { t = nF + ' ungültige Eingabe' + (nF > 1 ? 'n' : ''); warn = true; }
+  else if (nA) t = nA + ' ungespeicherte Änderung' + (nA > 1 ? 'en' : '') + ' – wirkt erst nach Neustart';
+  else if (einst.neustart) { t = 'Gespeichert. Wirkt erst nach Neustart von xgonav.'; warn = true; }
+  else t = 'Keine Änderungen. ' + einst.d.datei;
+  info.textContent = t;
+  info.classList.toggle('warn', warn);
+  $('ei-speichern').disabled = $('ei-speichern-neu').disabled = !nA || nF > 0 || !einst.d?.schreibbar;
+}
+function einstSicherungen() {
+  const ul = $('ei-sich-liste');
+  ul.innerHTML = '';
+  const liste = einst.d.sicherungen;
+  $('ei-sich').querySelector('summary').textContent = 'Sicherungen (' + liste.length + ')';
+  for (const s of liste) {
+    const li = document.createElement('li');
+    li.innerHTML = '<span>' + new Date(s.zeit * 1000).toLocaleString('de-DE') + '</span><code>' + esc(s.name) + '</code>';
+    const b = document.createElement('button');
+    b.textContent = 'Zurückspielen';
+    b.disabled = !einst.d.schreibbar;
+    b.onclick = async () => {
+      if (!confirm('config.toml durch die Sicherung ' + s.name + ' ersetzen? Der jetzige Stand wird vorher gesichert. Wirkt nach Neustart.')) return;
+      const j = await einstPost('config_restore', {name: s.name, hash: einst.d.hash});
+      if (j) { einst.neustart = true; await einstLaden(); zeige(''); }
+    };
+    li.appendChild(b);
+    ul.appendChild(li);
+  }
+  if (!liste.length) ul.innerHTML = '<li class="leise">noch keine</li>';
+}
+async function einstPost(a, p, body) {
+  try {
+    const r = await fetch('api.php?' + new URLSearchParams({a, ...p}), {method: 'POST', body,
+      headers: body ? {'Content-Type': 'application/json'} : {}});
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) { j.status = r.status; throw j; }
+    return j;
+  } catch (e) {
+    if (e && e.status === 409 && e.grund) throw e;     // Neustart: Rückfrage beim Aufrufer
+    alert((e && e.error) || 'keine Verbindung');
+    return null;
+  }
+}
+async function einstLaden() {
+  try {
+    const r = await fetch('api.php?a=config');
+    const j = await r.json();
+    if (!r.ok) throw j.error || ('Fehler ' + r.status);
+    einst.d = j;
+  } catch (e) { $('ei-info').textContent = 'Laden fehlgeschlagen: ' + e; return false; }
+  einst.aend = {}; einst.falsch = {};
+  if (!einst.ab) einst.ab = eiErster();
+  einstSicherungen();
+  einstZeigen();
+  return true;
+}
+function eiErster() { return einst.d.schema.kategorien[0].abschnitte[0].name; }
+async function einstOeffnen() {
+  $('einst').showModal();
+  if (!Object.keys(einst.aend).length) { einst.d = null; einstInfo(); await einstLaden(); }
+  else einstZeigen();                                 // ungespeicherte Änderungen bleiben beim Schließen erhalten
+}
+function einstSchliessen() { $('einst').close(); }
+function einstVerwerfen() {
+  if (Object.keys(einst.aend).length && !confirm('Alle ungespeicherten Änderungen verwerfen?')) return;
+  einst.aend = {}; einst.falsch = {};
+  einstZeigen();
+}
+async function einstSpeichern(neustarten) {
+  const zeilen = [];
+  for (const k of einst.d.schema.kategorien) for (const a of k.abschnitte) for (const f of a.felder) {
+    const n = eiName(a.name, f);
+    if (!(n in einst.aend)) continue;
+    const alt = eiDatei(a.name, f);
+    zeilen.push(n + ': ' + (alt.da ? eiText(f, alt.v) || '(leer)' : '(Default ' + (eiText(f, f.default) || 'leer') + ')') + ' → ' +
+      (einst.aend[n] === null ? '(Default ' + (eiText(f, f.default) || 'leer') + ')' : eiText(f, einst.aend[n]) || '(leer)'));
+  }
+  if (!confirm('In config.toml schreiben (vorher Sicherung):\n\n' + zeilen.join('\n') + (neustarten ? '\n\nDanach xgonav neu starten.' : ''))) return;
+  const j = await einstPost('config_save', {hash: einst.d.hash}, JSON.stringify(einst.aend));
+  if (!j) return;
+  einst.neustart = true;
+  await einstLaden();
+  if (neustarten) await einstNeustart(true);
+}
+async function einstNeustart(ohneFrage = false) {
+  if (!ohneFrage && !confirm('xgonav neu starten? Er liest dabei config.toml neu ein; Bild und Status sind einige Sekunden weg.')) return;
+  let j;
+  try { j = await einstPost('restart', {}); }
+  catch (e) {
+    if (!confirm(e.error + '.\n\nTrotzdem neu starten? Laufende Fahrt, Aufzeichnung und Modus enden.')) return;
+    try { j = await einstPost('restart', {trotzdem: 1}); } catch (e2) { alert(e2.error); return; }
+  }
+  if (!j) return;
+  einst.neustart = false;
+  einstInfo();
+  $('ei-info').textContent = 'xgonav startet neu …';
+  zeige('xgonav startet neu …');
+  setTimeout(() => { if (/startet neu/.test($('meldung').textContent)) zeige(''); }, 15000);
 }
 
 // Raumkarte: einmal pro Sekunde neu laden, nächstes Bild erst nach dem vorigen. Verschieben und Zoomen

@@ -72,7 +72,7 @@ Grundprinzipien, die sich durch alle Module ziehen:
 
 ### Konfiguration
 
-`xgonav/config.py` enthält alle Defaults als verschachtelte Dataclasses. `deploy/config.example.toml` überschreibt nur Abweichungen; unbekannte Schlüssel lösen beim Laden einen `KeyError` aus. Neue Parameter gehören also zuerst in die Dataclass. CLI-Flags in `__main__.py` überschreiben wiederum die TOML.
+`xgonav/config.py` enthält alle Defaults als verschachtelte Dataclasses. Seit 2026-11-12 sind das die Werte des RiderPi (ohne Horizont-Testbetrieb und `/opt`-Pfade); Simulator (`tests/sim_run.py`) und Tests nehmen `Config.neutral()` (`NEUTRAL`, der frühere Stand), neue Tests also `Config.neutral()` statt `Config()`. `deploy/config.example.toml` überschreibt nur Abweichungen; unbekannte Schlüssel lösen beim Laden einen `KeyError` aus. Neue Parameter gehören also zuerst in die Dataclass. CLI-Flags in `__main__.py` überschreiben wiederum die TOML.
 
 ### Austauschbare Backends
 

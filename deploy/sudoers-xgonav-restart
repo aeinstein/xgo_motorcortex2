@@ -1,0 +1,3 @@
+# Weboberfläche (php-fpm als www-data): nur xgonav neu starten (Einstellungen, api.php?a=restart).
+# Nach /etc/sudoers.d/xgonav-restart, Rechte 0440, vorher mit "visudo -cf <datei>" prüfen.
+www-data ALL=(root) NOPASSWD: /usr/bin/systemctl --no-block restart xgonav

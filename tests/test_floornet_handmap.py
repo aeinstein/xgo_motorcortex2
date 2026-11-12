@@ -19,7 +19,7 @@ from xgonav.gridmap import GridMap  # noqa: E402
 
 
 def _cfg():
-    c = Config()
+    c = Config.neutral()
     c.camera.hfov_deg, c.camera.tilt_deg, c.camera.mount_offset_mm = 88.5, 5.18, 43.0
     c.grid.native = False
     return c

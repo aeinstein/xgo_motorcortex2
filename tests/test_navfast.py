@@ -38,7 +38,7 @@ def _gleich(a, b) -> bool:
 
 def _karte(rng, n=120, waende=14, loecher=0.0):
     """Zufällige Raumkarte (Log-Odds): bekannter Boden, Wandstücke, außen und in Flecken unbekannt."""
-    cfg = Config()
+    cfg = Config.neutral()
     lo = np.full((n, n), cfg.grid.l_min, np.float32)
     lo[:6], lo[-6:], lo[:, :6], lo[:, -6:] = 0.0, 0.0, 0.0, 0.0
     for _ in range(waende):
@@ -98,7 +98,7 @@ def test_plan_matches_python():
     """planner.plan über den Kern liefert denselben Weg in Weltpunkten."""
     from xgonav.gridmap import GridMap
     from xgonav.planner import plan
-    cfg = Config()
+    cfg = Config.neutral()
     m = GridMap(replace(cfg.grid, native=False, file=""), CamGeometry(640, 480, 91.0, 1.39, 43.0, 85.0), 160, 120)
     rng = np.random.default_rng(2)
     n0 = m.n // 2 - 60
@@ -136,7 +136,7 @@ def test_frontier_groups_match_python():
     Engstellen-Zone."""
     from xgonav.frontier import _groups_py
     rng = np.random.default_rng(9)
-    cfg = Config()
+    cfg = Config.neutral()
     codes = set()
     for k in range(40):
         h, w = (int(v) for v in rng.integers(40, 110, 2))
@@ -163,7 +163,7 @@ def test_next_goal_matches_python():
     """frontier.next_goal über den Kern: dasselbe Ziel, derselbe Weg."""
     from xgonav.frontier import next_goal
     from xgonav.gridmap import GridMap
-    cfg = Config()
+    cfg = Config.neutral()
     rng = np.random.default_rng(4)
     ziele = 0
     for k in range(12):
@@ -284,7 +284,7 @@ def test_localmap_add_edge_cases_match_numpy():
 def test_wall_dist_matches_numpy():
     """Wandabstand der Raumkarte: Fenster am Rand, außerhalb der Karte, mit und ohne Wand in Reichweite."""
     from xgonav.gridmap import GridMap
-    cfg = Config()
+    cfg = Config.neutral()
     geo = CamGeometry(640, 480, 91.0, 1.39, 43.0, 85.0)
     mn = GridMap(replace(cfg.grid, file=""), geo, 160, 120)
     mp = GridMap(replace(cfg.grid, native=False, file=""), geo, 160, 120)
@@ -306,7 +306,7 @@ def test_path_target_matches_python():
     """Zielpunkt des Wegfolgers: Projektion auf den Weg, Vorausblick über Ecken und über das Ende hinaus,
     Abschnitte der Länge null."""
     from xgonav.behaviors import PathFollower
-    cfg = Config()
+    cfg = Config.neutral()
     fn = PathFollower(cfg.behavior, cfg.robot, cfg.home)
     fp = PathFollower(cfg.behavior, cfg.robot, replace(cfg.home, native=False))
     rng = np.random.default_rng(8)
@@ -331,7 +331,7 @@ def test_gridmap_observe_matches_numpy():
     from xgonav.gridmap import GridMap, _grid_lib
     if _grid_lib() is None:
         pytest.skip("Raumkarten-Kern nicht gebaut (make -C xgonav/native)")
-    cfg = Config()
+    cfg = Config.neutral()
     for dr, schritt in ((0.2, 2), (0.0, 1)):
         geo = CamGeometry(640, 480, 91.0, 1.39, 43.0, 85.0, cam_fwd_mm=30.0)
         gc = replace(cfg.grid, confirm_dr_m=dr, column_step=schritt, file="")

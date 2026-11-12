@@ -51,7 +51,7 @@ def rundumblick(lo, pose, rmax=1.25, rausch=0.03, ausreisser=0.1, seed=1, winkel
             free.append((f * math.cos(a), f * math.sin(a)))
     hits = np.array(hits).reshape(-1, 2)
     w = 1.0 / (1.0 + (np.hypot(hits[:, 0], hits[:, 1]) / 0.8) ** 2)
-    cfg = Config().reloc
+    cfg = Config.neutral().reloc
     hits, w = reloc._duenn(hits, cfg.hit_res_m, w)
     free, _ = reloc._duenn(np.array(free).reshape(-1, 2), cfg.free_res_m)
     return reloc.Scan(hits, w, free)
@@ -64,7 +64,7 @@ FLUR = [(-4, -0.6), (4, -0.6), (4, 0.6), (-4, 0.6)]
 
 
 def _feld(lo):
-    return reloc.Feld(lo, RES, L_SHOW, Config().reloc)
+    return reloc.Feld(lo, RES, L_SHOW, Config.neutral().reloc)
 
 
 def _fehler(a, b):
@@ -73,7 +73,7 @@ def _fehler(a, b):
 
 def test_reloc_global_findet_lage():
     """Ecke mit Kiste davor: die Lage ist eindeutig und wird auf 5 cm / 2° gefunden."""
-    cfg = Config().reloc
+    cfg = Config.neutral().reloc
     lo = karte(L_RAUM, [KISTE])
     wahr = (-1.35, -0.85, math.radians(30))
     e = reloc.suche_global(_feld(lo), rundumblick(lo, wahr), cfg)
@@ -86,14 +86,14 @@ def test_reloc_global_findet_lage():
 def test_reloc_global_gleiche_ecken_mehrdeutig():
     """Leeres Rechteck: alle vier Ecken sehen gleich aus. Er darf keine annehmen."""
     lo = karte(RECHTECK)
-    e = reloc.suche_global(_feld(lo), rundumblick(lo, (-0.9, -0.4, 0.3)), Config().reloc)
+    e = reloc.suche_global(_feld(lo), rundumblick(lo, (-0.9, -0.4, 0.3)), Config.neutral().reloc)
     assert not e.ok and e.grund == "mehrdeutig", (e.grund, e.kandidaten)
 
 
 def test_reloc_flur_gleitet():
     """Flur: längs ist die Lage unbestimmt. Global unsicher; lokal wird nur quer und der Kurs
     korrigiert, längs bleibt die Odometrie."""
-    cfg = Config().reloc
+    cfg = Config.neutral().reloc
     lo = karte(FLUR)
     wahr = (0.3, 0.1, math.radians(5))
     scan = rundumblick(lo, wahr)
@@ -109,7 +109,7 @@ def test_reloc_flur_gleitet():
 
 
 def test_reloc_lokal_zieht_drift_nach():
-    cfg = Config().reloc
+    cfg = Config.neutral().reloc
     lo = karte(L_RAUM, [KISTE])
     wahr = (-1.35, -0.85, math.radians(30))
     scan = rundumblick(lo, wahr, seed=3)
@@ -123,7 +123,7 @@ def test_reloc_lokal_zieht_drift_nach():
 
 
 def test_reloc_zu_wenig_wand():
-    cfg = Config().reloc
+    cfg = Config.neutral().reloc
     lo = karte(L_RAUM, [KISTE])
     feld = _feld(lo)
     mitte = rundumblick(lo, (-0.6, 0.0, 0.0))                   # Raummitte: fast keine Wand in Reichweite
@@ -137,7 +137,7 @@ def test_reloc_zu_wenig_wand():
 def test_reloc_freistrahl_trennt_seiten():
     """Eine Wand von vorn oder von hinten gesehen ergibt dieselben Treffer. Die Freiproben liegen
     nur von der richtigen Seite auf freiem Boden."""
-    cfg = Config().reloc
+    cfg = Config.neutral().reloc
     lo = np.zeros((N, N), np.float32)
     cv2.fillPoly(lo, [_px([(-1.5, -1.0), (1.5, -1.0), (1.5, 1.0), (-1.5, 1.0)])], -2.0)
     cv2.line(lo, tuple(_px([(-1.5, 1.0)])[0, 0]), tuple(_px([(1.5, 1.0)])[0, 0]), 2.0, 1)
@@ -155,7 +155,7 @@ def test_reloc_freistrahl_trennt_seiten():
 
 
 def test_reloc_puffer_und_schritt():
-    cfg = Config().reloc
+    cfg = Config.neutral().reloc
     p = reloc.ScanPuffer(cfg, window_s=5.0, window_m=1.0)
     pkt = np.array([[1.0, 0.0]])
     p.add(0.0, (0.0, 0.0, 0.0), pkt, np.ones(1), np.zeros((0, 2)))
@@ -181,7 +181,7 @@ def test_reloc_scan_punkte_wie_karte():
     from xgonav.freespace import FreeSpace
     from xgonav.geometry import CamGeometry
     from xgonav.gridmap import GridMap
-    cfg = Config()
+    cfg = Config.neutral()
     g = CamGeometry(640, 480, 91.0, 1.39, 43.0, 85.0)
     m = GridMap(cfg.grid, g, 160, 120)
     hz = g.horizon_row(0) / 4
@@ -215,7 +215,7 @@ def test_gridmap_pose_unbekannt_sperrt_karte(tmp_path):
     weiter mit. Die Pose wird mitgespeichert, nach dem Laden gilt trotzdem der Startpunkt."""
     from xgonav.geometry import CamGeometry
     from xgonav.gridmap import GridMap
-    cfg = Config()
+    cfg = Config.neutral()
     g = CamGeometry(640, 480, 91.0, 1.39, 43.0, 85.0)
     m = GridMap(cfg.grid, g, 160, 120)
     fs = _wand_fs(g)
@@ -249,7 +249,7 @@ def _app_reloc(enabled=True, file=""):
     from xgonav.app import App
     from xgonav.robot import SimRobot
     from xgonav.sim import SimWorld
-    cfg = Config()
+    cfg = Config.neutral()
     cfg.output.web_port = 0
     cfg.reloc.enabled = enabled
     cfg.grid.file = file
@@ -319,7 +319,7 @@ def test_nachfuehrung_zieht_kartenpose_nach(monkeypatch):
     Abgleichen gegen die gesperrte Karte stimmt sie wieder. Ohne Weg oder zu früh wird nicht abgeglichen."""
     import threading
     from types import SimpleNamespace as NS
-    cfg = Config().reloc
+    cfg = Config.neutral().reloc
     lo = karte(L_RAUM, [KISTE])
     gm = NS(lo=lo, res=RES, locked=True, map_id="t", _lock=threading.Lock())
     # nahe der Raumecke: Mitten vor einer einzelnen Wand ist die Lage längs der Wand nicht bestimmbar, dort
@@ -350,7 +350,7 @@ def test_gridmap_shift_pose_und_worker_abgleich():
     'nicht eintragen' lässt die Karte unverändert."""
     from xgonav.gridmap import GridMap, GridWorker
     from xgonav.geometry import CamGeometry
-    cfg = Config()
+    cfg = Config.neutral()
     geo = CamGeometry(640, 480, 91.0, 1.39, 43.0, 85.0)
     g = GridMap(cfg.grid, geo, 160, 120)
     g.x, g.y, g.th = 1.0, 0.0, 0.0

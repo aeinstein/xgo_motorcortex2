@@ -108,7 +108,7 @@ def test_app_horizont_folgt_imu_ohne_verzoegerung(tmp_path):
     from xgonav.app import App
     from xgonav.robot import SimRobot
     from xgonav.sim import SimImu, SimWorld
-    cfg = Config(); cfg.output.web_port = 0; cfg.detector.enabled = False
+    cfg = Config.neutral(); cfg.output.web_port = 0; cfg.detector.enabled = False
     cfg.freespace.enabled = False
     cfg.horizon.enabled = True
     cfg.horizon.file = str(tmp_path / "horizont.json")

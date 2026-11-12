@@ -1,0 +1,2618 @@
+{
+ "oben": "allgemein",
+ "kategorien": [
+  {
+   "name": "Hardware",
+   "abschnitte": [
+    {
+     "name": "robot",
+     "doc": "",
+     "felder": [
+      {
+       "key": "proc_dir",
+       "typ": "str",
+       "default": "/proc/XGORider",
+       "hilfe": ""
+      },
+      {
+       "key": "vx_limit",
+       "typ": "float",
+       "default": 1.8,
+       "hilfe": "Mapping laut XGO-Lib: u8 = 255/(2*L) * (v + L); 128 ~ Stillstand Einheit der Firmware bei u8=0/255"
+      },
+      {
+       "key": "vyaw_limit_dps",
+       "typ": "float",
+       "default": 360.0,
+       "hilfe": "Grad/s bei u8=0/255"
+      },
+      {
+       "key": "max_v",
+       "typ": "float",
+       "default": 0.15,
+       "hilfe": "Sicherheitsgrenzen für den Autonomiebetrieb (Anteil des Vollausschlags) ~0.37 Firmware-Einheiten"
+      },
+      {
+       "key": "max_w",
+       "typ": "float",
+       "default": 0.3,
+       "hilfe": "~90 °/s"
+      },
+      {
+       "key": "reverse_gain",
+       "typ": "float",
+       "default": 2.0,
+       "hilfe": "Rückwärts war 2026-11-02 viel schwächer (2 s mit u8 109 ~4 cm, mit 147 vorwärts 86 cm), daher werden negative v beim Senden mit reverse_gain multipliziert; max_v begrenzt davor den Sollwert. 1.0 = symmetrisch. Mit den Firmware-Patches vom 2026-11-05 setzt die Firmware beide Richtungen gleich um (Sollwert -> Raddrehzahl 2,67 vorwärts, 2,65 rückwärts)."
+      },
+      {
+       "key": "manual_forward_gain",
+       "typ": "float",
+       "default": 2.0,
+       "hilfe": "Derselbe Faktor vorwärts, nur in der Handsteuerung. Die autonomen Modi bleiben bei 1: im Simulator (--dyn, 2026-11-05) gab Faktor 2 dort 1 Kollision in 8 Läufen und Zum Start kam nur noch 1 von 4 Mal an (Faktor 1: 0 Kollisionen, 4 von 4); die Freiraum-Schwellen passen nicht dazu."
+      },
+      {
+       "key": "speed_ctrl",
+       "typ": "bool",
+       "default": false,
+       "hilfe": "Geschwindigkeitsregelung: Die Firmware regelt die Fahrgeschwindigkeit praktisch nur proportional, auf Teppich bleibt der Rider deshalb unter dem Soll. Mit speed_ctrl vergleicht xgonav im Regelschritt Soll (gesendeter Wert x vx_limit) und Ist (Räder), beide über speed_ctrl_window_s gemittelt, und stellt den gesendeten Wert nach: Korrektur += (Soll - Ist) / vx_limit x dt / speed_ctrl_ti_s, höchstens +-speed_ctrl_max (normiert). Ohne frische Raddaten, im Stand, unter dem Totband der Firmware und bei Richtungswechsel ist die Korrektur 0. Steht er an einem Hindernis an, drückt er um speed_ctrl_max stärker. speed_ctrl_lag_s: So träge folgt das Soll dem Fahrwert (Anlaufen des Riders), sonst lädt sich die Korrektur bei jedem Anfahren auf. Abgestimmt am Trägheitsmodell des Simulators (sim._dyn, 2026-11-12): ohne Modell 31-46 % Überschwingen beim Anfahren auf ebenem Boden, mit 0,8 s und ti 2 s 5 %; ein Fehlbetrag von 0,04 ist dann nach ~3 s zu 95 % ausgeglichen. Am Rider nicht gefahren."
+      },
+      {
+       "key": "speed_ctrl_window_s",
+       "typ": "float",
+       "default": 0.3,
+       "hilfe": ""
+      },
+      {
+       "key": "speed_ctrl_ti_s",
+       "typ": "float",
+       "default": 2.0,
+       "hilfe": ""
+      },
+      {
+       "key": "speed_ctrl_lag_s",
+       "typ": "float",
+       "default": 0.8,
+       "hilfe": ""
+      },
+      {
+       "key": "speed_ctrl_max",
+       "typ": "float",
+       "default": 0.1,
+       "hilfe": ""
+      },
+      {
+       "key": "level_pulse_s",
+       "typ": "float",
+       "default": 3.0,
+       "hilfe": "Die Beine haben eine Totzone: bei gleichem Befehl steht der Rider je nach Vorgeschichte bei +0,7..+3,4° Roll (2026-11-05). Ein kurzer Impuls der Nivellierung in der Firmware richtet ihn aus, danach bleibt er so stehen (dauerhaft an schwankt er mehr). Auslöser: einmal nach jedem Aufstehen (level_after_standup) und der Knopf im Web (POST /level)."
+      },
+      {
+       "key": "level_after_standup",
+       "typ": "bool",
+       "default": true,
+       "hilfe": ""
+      },
+      {
+       "key": "accel_v",
+       "typ": "float",
+       "default": 0.8,
+       "hilfe": "max. Änderung von v pro Sekunde (normiert)"
+      },
+      {
+       "key": "accel_w",
+       "typ": "float",
+       "default": 2.0,
+       "hilfe": ""
+      },
+      {
+       "key": "keepalive_s",
+       "typ": "float",
+       "default": 0.3,
+       "hilfe": "Sollwert periodisch neu schreiben"
+      },
+      {
+       "key": "stall_timeout_s",
+       "typ": "float",
+       "default": 0.5,
+       "hilfe": "kein drive() mehr -> Stopp (Userspace-Watchdog)"
+      },
+      {
+       "key": "kernel_watchdog_ms",
+       "typ": "int",
+       "default": 1000,
+       "hilfe": "nur wirksam mit Kernel-Patch (settings/motion_timeout_ms)"
+      },
+      {
+       "key": "height_min_mm",
+       "typ": "float",
+       "default": 60.0,
+       "hilfe": ""
+      },
+      {
+       "key": "height_max_mm",
+       "typ": "float",
+       "default": 120.0,
+       "hilfe": "min/max legen nur die Skala mm -> u8 fest"
+      },
+      {
+       "key": "height_limit_u8",
+       "typ": "int",
+       "default": 205,
+       "hilfe": "höchster Sollwert; bei 235 Stopp 252 (2026-11-06, Ursache offen)"
+      },
+      {
+       "key": "led_file",
+       "typ": "str",
+       "default": "/var/lib/xgonav/led_brightness",
+       "hilfe": "LED-Helligkeit (Firmware-Patch 0016, n/256, settings/led_brightness). Das Web speichert sie in led_file, rc.local setzt sie beim Booten. Beim Start blitzt xgonav led_start_s lang mit 255 (Zeichen „läuft“), danach wieder der gespeicherte Wert; 0 = ohne Blitz, nur setzen."
+      },
+      {
+       "key": "led_default",
+       "typ": "int",
+       "default": 51,
+       "hilfe": "20 %, solange nichts gespeichert ist"
+      },
+      {
+       "key": "led_start_s",
+       "typ": "float",
+       "default": 0.2,
+       "hilfe": ""
+      }
+     ]
+    },
+    {
+     "name": "camera",
+     "doc": "",
+     "felder": [
+      {
+       "key": "source",
+       "typ": "str",
+       "default": "picam",
+       "hilfe": "\"picam\", Gerätenummer \"0\" oder Videodatei"
+      },
+      {
+       "key": "width",
+       "typ": "int",
+       "default": 640,
+       "hilfe": ""
+      },
+      {
+       "key": "height",
+       "typ": "int",
+       "default": 480,
+       "hilfe": ""
+      },
+      {
+       "key": "fps",
+       "typ": "int",
+       "default": 24,
+       "hilfe": ""
+      },
+      {
+       "key": "sensor_mode",
+       "typ": "str",
+       "default": "1296x972",
+       "hilfe": "Sensormodus (Rohformat), z. B. \"1296x972\"; leer = libcamera wählt (beim OV5647 640x480). 640x480 ist 2x2 gebinnt + 2x2 übersprungen, und der Kernel-Treiber (6.6) gibt dafür eine ~6 % zu kleine Pixelrate an: der Sensor läuft dann 26,5 statt 25 fps. 1296x972 ist reines 2x2-Binning (weniger Rauschen), Zeitbasis stimmt; der ISP skaliert auf width x height."
+      },
+      {
+       "key": "scaler_crop",
+       "typ": "liste",
+       "elem": "zahl",
+       "default": [
+        16,
+        0,
+        2560,
+        1920
+       ],
+       "hilfe": "Sensorausschnitt [x, y, w, h] in Vollbild-Pixeln (ScalerCrop); leer = ganzer Modus. [16, 0, 2560, 1920] = Ausschnitt des 640x480-Modus, damit hfov/tilt/shading.json gültig bleiben."
+      },
+      {
+       "key": "frame_clock_corr",
+       "typ": "float",
+       "default": 1.0,
+       "hilfe": "Bilddauer-Korrektur, nur nötig im 640x480-Modus (dort ~1.061): angefragt = 1/fps * Faktor."
+      },
+      {
+       "key": "exposure_us",
+       "typ": "int",
+       "default": 20000,
+       "hilfe": "kurze Belichtung gegen Bewegungsunschärfe; 0 = Auto"
+      },
+      {
+       "key": "analogue_gain",
+       "typ": "float",
+       "default": 16.0,
+       "hilfe": "feste Verstärkung 1..63,9 (OV5647); 0 = Auto"
+      },
+      {
+       "key": "hfov_deg",
+       "typ": "float",
+       "default": 91.8,
+       "hilfe": "RiderPi: aus Drehungen gegen den IMU-Kurs gemessen (2026-11-07, f = 310 px @ 640, 304–313 in drei Aufnahmen; Verzeichnung vernachlässigbar). Der Zollstock (88,5°) legt nur f·h fest. RPi Cam v1 hätte 62,2."
+      },
+      {
+       "key": "mount_offset_mm",
+       "typ": "float",
+       "default": 43.0,
+       "hilfe": "Geometrie für Entfernung per Bodenebene (KALIBRIEREN, siehe README) Kamerahöhe über Boden = Körperhöhe + Offset (nur ohne cam_h_u8)"
+      },
+      {
+       "key": "cam_h_u8",
+       "typ": "liste",
+       "elem": "zahl",
+       "default": [
+        109.4,
+        0.1126
+       ],
+       "hilfe": "Kamerahöhe (Linsenmitte über Boden, mm) = a + b * Höhen-Sollwert u8, [a, b]. RiderPi 2026-11-07 im Stand gemessen: u8 106/150/200 -> 122/125/132,5 mm -> [109.4, 0.1126]. Die Körperhöhe in mm (60..120 über 0..255) steigt doppelt so schnell wie die echte; darum nicht Körperhöhe + Offset. Leer = mount_offset_mm. Gitter am Boden 2026-11-10 bestätigt die Gerade (u8 128: 124-126 mm, u8 205: 131-133 mm); der Faktor 0,921 aus der Klebeband-Probe vom 2026-11-07 ist damit raus."
+      },
+      {
+       "key": "cam_fwd_mm",
+       "typ": "float",
+       "default": 36.0,
+       "hilfe": "Linsenmitte vor der Radachse (mm). Ursprung von Merkkarte und Raumkarte ist die Radachse (dort dreht der Rider, dort zählen Räder und Sicherheitsradius); Bodenpunkte werden um diesen Versatz nach vorn eingetragen. RiderPi: CAD 36,9, Bodenprobe 34/41 -> 36. 0 = Kamera auf der Achse (Simulator rendert dann wie bisher)."
+      },
+      {
+       "key": "cx_offset_px",
+       "typ": "float",
+       "default": 13.0,
+       "hilfe": "Spalte der Fahrtrichtung minus Bildmitte (px bei width): gedrehter Einbau oder verschobene optische Mitte, für Peilungen gleich. RiderPi: Fluchtpunkt bei Geradeausfahrt (8 Fahrten, 45 m, 2026-11-08) Spalte 333 -> 13."
+      },
+      {
+       "key": "tilt_deg",
+       "typ": "float",
+       "default": 5.18,
+       "hilfe": ">0 = Kamera schaut nach oben"
+      },
+      {
+       "key": "loop_file",
+       "typ": "bool",
+       "default": true,
+       "hilfe": "Videodatei endlos abspielen (Replay)"
+      },
+      {
+       "key": "realtime_file",
+       "typ": "bool",
+       "default": true,
+       "hilfe": "Videodatei in Echtzeit statt so schnell wie möglich"
+      }
+     ]
+    },
+    {
+     "name": "imu",
+     "doc": "",
+     "felder": [
+      {
+       "key": "enabled",
+       "typ": "bool",
+       "default": true,
+       "hilfe": ""
+      },
+      {
+       "key": "proc_dir",
+       "typ": "str",
+       "default": "/proc/XGORider",
+       "hilfe": ""
+      },
+      {
+       "key": "imu_hz",
+       "typ": "int",
+       "default": 50,
+       "hilfe": "wird beim Start nach settings/imu_hz geschrieben"
+      },
+      {
+       "key": "stream_hz",
+       "typ": "int",
+       "default": 100,
+       "hilfe": "IMU/Rad-Strom der Firmware (Patch 0014) mit eigener Messzeit statt Abfrage; > 0 wird beim Start nach settings/imu_stream_hz geschrieben (Treiber mit Strom-Unterstützung). Ohne Strom fragt der Treiber wie bisher ab."
+      },
+      {
+       "key": "idle_hz",
+       "typ": "int",
+       "default": 5,
+       "hilfe": "Abgesetzt (Rider balanciert nicht) braucht niemand 100 Hz: Strom und Lesen auf diese Rate, beim Aufstehen wieder stream_hz und poll_s. Spart am CM4 ~6 % eines Kerns (2026-11-10). 0 = nie umschalten."
+      },
+      {
+       "key": "pitch_sign",
+       "typ": "int",
+       "default": 0,
+       "hilfe": "0 = automatisch aus Bild-Korrelation, sonst +1/-1"
+      },
+      {
+       "key": "time_offset_ms",
+       "typ": "float",
+       "nullbar": true,
+       "default": null,
+       "hilfe": "None = automatisch"
+      },
+      {
+       "key": "pitch_ref_deg",
+       "typ": "float",
+       "default": -4.43,
+       "hilfe": "IMU-Rohpitch bei der Kamerakalibrierung (calibrate.py wall)"
+      },
+      {
+       "key": "sigma_deg",
+       "typ": "float",
+       "default": 0.3,
+       "hilfe": "Restunsicherheit der Nicklage mit IMU"
+      },
+      {
+       "key": "min_corr",
+       "typ": "float",
+       "default": 0.6,
+       "hilfe": ""
+      },
+      {
+       "key": "sync_range_ms",
+       "typ": "float",
+       "default": 100.0,
+       "hilfe": ""
+      },
+      {
+       "key": "sync_step_ms",
+       "typ": "float",
+       "default": 4.0,
+       "hilfe": ""
+      },
+      {
+       "key": "max_age_s",
+       "typ": "float",
+       "default": 0.3,
+       "hilfe": ""
+      },
+      {
+       "key": "poll_s",
+       "typ": "float",
+       "default": 0.01,
+       "hilfe": "imu_log so oft einlesen (s). Bei 0,05 lag der neueste Wert beim Bild bis ~50 ms zurück (Nick wird dann gehalten, nicht interpoliert). RiderPi: ein Lesen 185 µs (128 Zeilen), geparst werden nur neue Zeilen."
+      }
+     ]
+    },
+    {
+     "name": "odom",
+     "doc": "",
+     "felder": [
+      {
+       "key": "enabled",
+       "typ": "bool",
+       "default": true,
+       "hilfe": "Rad-Odometrie aus /proc/XGORider/wheels_log (Firmware R-1.1.6+Patch, Treiber mit 0x0d/0x0c). source: \"auto\" = Räder, wenn vorhanden und frisch, sonst Fahrbefehl x vx_limit; \"command\" = immer Fahrbefehl (wie früher)."
+      },
+      {
+       "key": "source",
+       "typ": "str",
+       "default": "auto",
+       "hilfe": ""
+      },
+      {
+       "key": "proc_dir",
+       "typ": "str",
+       "default": "/proc/XGORider",
+       "hilfe": ""
+      },
+      {
+       "key": "wheel_diameter_m",
+       "typ": "float",
+       "default": 0.06,
+       "hilfe": "RiderPi, Angabe des Nutzers"
+      },
+      {
+       "key": "track_m",
+       "typ": "float",
+       "default": 0.09,
+       "hilfe": "Spurweite (Abstand der Radaufstandspunkte)"
+      },
+      {
+       "key": "ticks_per_rev",
+       "typ": "int",
+       "default": 1024,
+       "hilfe": "am Rider gemessen (1 U von Hand: 1029 / 1043)"
+      },
+      {
+       "key": "scale_left",
+       "typ": "float",
+       "default": 1.0073,
+       "hilfe": "Faktor je Rad auf den Weg (tools/calibrate_odom.py): ungleiche Reifen/Schlupf. Für die Strecke zählt der Mittelwert, für den Kurs der Unterschied (2 % = ~1,3° je 10 cm)."
+      },
+      {
+       "key": "scale_right",
+       "typ": "float",
+       "default": 1.0087,
+       "hilfe": ""
+      },
+      {
+       "key": "poll_hz",
+       "typ": "float",
+       "default": 25.0,
+       "hilfe": "wheels_log lesen (Treiber puffert 64 Proben)"
+      },
+      {
+       "key": "read_idle",
+       "typ": "bool",
+       "default": false,
+       "hilfe": "Abgesetzt (Rider balanciert nicht) werden die Räder nicht gelesen; die Pose bleibt dann stehen, auch wenn er von Hand gerollt wird. Beim Aufstehen beginnt das Lesen neu, ohne den Weg dazwischen. true = immer lesen."
+      },
+      {
+       "key": "max_age_s",
+       "typ": "float",
+       "default": 0.3,
+       "hilfe": "älter -> Rückfall auf den Fahrbefehl"
+      },
+      {
+       "key": "max_jump_ticks",
+       "typ": "int",
+       "default": 2048,
+       "hilfe": "größerer Sprung zwischen zwei Proben = Neustart/Fehler"
+      },
+      {
+       "key": "yaw_source",
+       "typ": "str",
+       "default": "räder",
+       "hilfe": "Kurs für Verhalten (explore) und Merkkarte: \"räder\" (wenn frisch, sonst Kamera) oder \"kamera\". Der Bild-Kurs verfälscht bei Vorwärtsfahrt (2026-11-04: −8,9° auf 2 m geradeaus)."
+      }
+     ]
+    },
+    {
+     "name": "cpu",
+     "doc": "",
+     "felder": [
+      {
+       "key": "main_cpus",
+       "typ": "liste",
+       "elem": "zahl",
+       "default": [
+        0,
+        1
+       ],
+       "hilfe": "CPU-Pinning (Linux). Leer = nicht pinnen. Am RiderPi: Hauptschleife samt Kamera, OpenCV-Workern und Rest des Systems auf 0-1, YOLO auf 2-3 (Aufrufer + Pool-Thread)."
+      },
+      {
+       "key": "detector_cpus",
+       "typ": "liste",
+       "elem": "zahl",
+       "default": [
+        2,
+        3
+       ],
+       "hilfe": ""
+      },
+      {
+       "key": "render_cpus",
+       "typ": "liste",
+       "elem": "zahl",
+       "default": [
+        0,
+        1,
+        2,
+        3
+       ],
+       "hilfe": "Threads, die Bilder für die Oberfläche zeichnen und kodieren (WebSocket, /frame, /stream). Leer = erben main_cpus. Am RiderPi alle Kerne: neben YOLO ist auf 2-3 noch Luft, und auf 0-1 verdrängten sie sonst die Hauptschleife (p95 39 -> 47 ms gemessen)."
+      },
+      {
+       "key": "freespace_cpus",
+       "typ": "liste",
+       "elem": "zahl",
+       "default": [
+        2,
+        3
+       ],
+       "hilfe": "Bodenmodell-Thread ([freespace] threaded). Leer = erben main_cpus."
+      }
+     ]
+    },
+    {
+     "name": "allgemein",
+     "doc": "Schlüssel auf oberster Ebene (ohne Abschnitt)",
+     "felder": [
+      {
+       "key": "control_hz",
+       "typ": "float",
+       "default": 20.0,
+       "hilfe": ""
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Wahrnehmung",
+   "abschnitte": [
+    {
+     "name": "ego",
+     "doc": "",
+     "felder": [
+      {
+       "key": "proc_width",
+       "typ": "int",
+       "default": 320,
+       "hilfe": "Auflösung für optischen Fluss"
+      },
+      {
+       "key": "max_features",
+       "typ": "int",
+       "default": 150,
+       "hilfe": ""
+      },
+      {
+       "key": "min_features",
+       "typ": "int",
+       "default": 60,
+       "hilfe": ""
+      },
+      {
+       "key": "quality",
+       "typ": "float",
+       "default": 0.01,
+       "hilfe": ""
+      },
+      {
+       "key": "min_distance",
+       "typ": "int",
+       "default": 8,
+       "hilfe": ""
+      },
+      {
+       "key": "ransac_px",
+       "typ": "float",
+       "default": 2.0,
+       "hilfe": ""
+      },
+      {
+       "key": "lk_win",
+       "typ": "int",
+       "default": 11,
+       "hilfe": "Fenster des Lucas-Kanade-Flusses (px, Arbeitsauflösung)"
+      },
+      {
+       "key": "lk_levels",
+       "typ": "int",
+       "default": 3,
+       "hilfe": "Pyramidenstufen über der Basis"
+      },
+      {
+       "key": "lk_iters",
+       "typ": "int",
+       "default": 10,
+       "hilfe": "max. Iterationen je Stufe"
+      },
+      {
+       "key": "lk_fb_check",
+       "typ": "bool",
+       "default": true,
+       "hilfe": "Vorwärts-Rückwärts-Prüfung (zweiter Flussaufruf)"
+      },
+      {
+       "key": "smooth_alpha",
+       "typ": "float",
+       "default": 0.15,
+       "hilfe": "Tiefpass für Stabilisierungsanzeige"
+      },
+      {
+       "key": "native",
+       "typ": "bool",
+       "default": true,
+       "hilfe": "C++-Kern xgonav/native/libxgofast.so nutzen, wenn gebaut (make -C xgonav/native): gleiche Rechnung, aber eine Bildpyramide je Bild statt vier. Fehlt er, rechnet Python."
+      }
+     ]
+    },
+    {
+     "name": "detector",
+     "doc": "",
+     "felder": [
+      {
+       "key": "enabled",
+       "typ": "bool",
+       "default": true,
+       "hilfe": ""
+      },
+      {
+       "key": "model",
+       "typ": "str",
+       "default": "models/yolo11n_256_ncnn",
+       "hilfe": "NCNN-Exportordner (model.ncnn.param/.bin, metadata.yaml) oder .onnx. CM4 2026-11-05: NCNN 93 ms statt 112 ms (onnxruntime), gleiche Boxen. Fehlt das Modell oder das Paket ncnn, wird fallback_model genommen."
+      },
+      {
+       "key": "fallback_model",
+       "typ": "str",
+       "default": "models/yolo11n_256.onnx",
+       "hilfe": ""
+      },
+      {
+       "key": "input_size",
+       "typ": "int",
+       "default": 256,
+       "hilfe": ""
+      },
+      {
+       "key": "conf",
+       "typ": "float",
+       "default": 0.35,
+       "hilfe": ""
+      },
+      {
+       "key": "iou",
+       "typ": "float",
+       "default": 0.45,
+       "hilfe": ""
+      },
+      {
+       "key": "threads",
+       "typ": "int",
+       "default": 2,
+       "hilfe": "CM4 gemessen: 3 Threads verdrängen die Hauptschleife (>33 ms)"
+      },
+      {
+       "key": "sharpness_rel",
+       "typ": "float",
+       "default": 0.6,
+       "hilfe": "Frame nur nehmen, wenn Schärfe >= rel * Median"
+      },
+      {
+       "key": "max_wait_s",
+       "typ": "float",
+       "default": 0.25,
+       "hilfe": "spätestens dann auch unscharfe Frames nehmen"
+      },
+      {
+       "key": "max_hz",
+       "typ": "float",
+       "default": 5.0,
+       "hilfe": "Höchstrate der Detektion. 0 = ohne Pause (CM4: ~7 Hz bei 140 ms/Bild, ~2 Kerne). 5 Hz spart rund ein Drittel davon; der Simulator-Detektor liefert ebenfalls 5 Hz."
+      },
+      {
+       "key": "classes",
+       "typ": "liste",
+       "elem": "str",
+       "default": [
+        "person",
+        "chair",
+        "couch",
+        "dining table",
+        "potted plant",
+        "bed",
+        "dog",
+        "cat"
+       ],
+       "hilfe": "leer = alle COCO-Klassen"
+      }
+     ]
+    },
+    {
+     "name": "tracker",
+     "doc": "",
+     "felder": [
+      {
+       "key": "iou_match",
+       "typ": "float",
+       "default": 0.25,
+       "hilfe": ""
+      },
+      {
+       "key": "max_lost_s",
+       "typ": "float",
+       "default": 1.5,
+       "hilfe": ""
+      },
+      {
+       "key": "min_hits",
+       "typ": "int",
+       "default": 2,
+       "hilfe": ""
+      }
+     ]
+    },
+    {
+     "name": "freespace",
+     "doc": "",
+     "felder": [
+      {
+       "key": "enabled",
+       "typ": "bool",
+       "default": true,
+       "hilfe": ""
+      },
+      {
+       "key": "threaded",
+       "typ": "bool",
+       "default": true,
+       "hilfe": "Bodenmodell in eigenem Thread (FreeSpaceWorker): nimmt der Hauptschleife jedes 2. Bild ~13 ms ab (CM4); das Ergebnis kommt dafür ein Bild später an. False = wie früher im Takt."
+      },
+      {
+       "key": "width",
+       "typ": "int",
+       "default": 160,
+       "hilfe": ""
+      },
+      {
+       "key": "sample_rows",
+       "typ": "float",
+       "default": 0.34,
+       "hilfe": "Höhe der Boden-Referenz (Anteil der Bildhöhe)"
+      },
+      {
+       "key": "sample_bottom",
+       "typ": "float",
+       "default": 0.0,
+       "hilfe": "Abstand der Referenz vom unteren Bildrand (Anteil der Bildhöhe)"
+      },
+      {
+       "key": "sample_cols",
+       "typ": "float",
+       "default": 0.5,
+       "hilfe": "mittlerer Bildanteil"
+      },
+      {
+       "key": "sectors",
+       "typ": "int",
+       "default": 5,
+       "hilfe": ""
+      },
+      {
+       "key": "hist_bins",
+       "typ": "int",
+       "default": 16,
+       "hilfe": ""
+      },
+      {
+       "key": "floor_thresh",
+       "typ": "float",
+       "default": 0.08,
+       "hilfe": "Rückprojektions-Schwelle"
+      },
+      {
+       "key": "edge_weight",
+       "typ": "float",
+       "default": 0.4,
+       "hilfe": "Faktor an Kanten; 0.15 machte Laminatfugen zu Hindernissen (RiderPi)"
+      },
+      {
+       "key": "min_obst_rows",
+       "typ": "int",
+       "default": 6,
+       "hilfe": "Hindernis erst ab so vielen Zeilen Höhe (Arbeitsauflösung, 120 Zeilen)"
+      },
+      {
+       "key": "min_obst_height_m",
+       "typ": "float",
+       "default": 0.04,
+       "hilfe": "Ein Nicht-Boden-Lauf zählt erst, wenn er so hoch ist wie ein aufrechter Gegenstand dieser Höhe an seinem Fußpunkt (oder bis zum Horizont reicht). Flache Flecken, Fugen und Kabel auf dem Boden sind kürzer. 0 = aus. Braucht die Kamerageometrie."
+      },
+      {
+       "key": "no_block_cls",
+       "typ": "liste",
+       "elem": "str",
+       "default": [
+        "bed",
+        "couch",
+        "dining table"
+       ],
+       "hilfe": "Diese Klassen werden nicht als Hindernis eingetragen: Die Box großer Möbel sagt nichts über die Standfläche, ihre Unterkante ist kein Fußpunkt (RiderPi 2026-11-06: \"bed\" vom Bett bis zum unteren Bildrand über die volle Breite, alles blockiert). Das Möbel selbst findet das Bodenmodell."
+      },
+      {
+       "key": "shading_file",
+       "typ": "str",
+       "default": "shading.json",
+       "hilfe": "Linsenabschattung (tools/calibrate.py shading -> JSON). \"\" = aus (Simulator). Pixel, die mehr als shading_max_gain Verstärkung bräuchten, gelten als unzuverlässig und nie als Hindernis (RiderPi: untere Ecken, äußere Ränder)."
+      },
+      {
+       "key": "shading_max_gain",
+       "typ": "float",
+       "default": 5.0,
+       "hilfe": ""
+      },
+      {
+       "key": "min_known_frac",
+       "typ": "float",
+       "default": 0.2,
+       "hilfe": "Spalten, in denen zwischen Horizont und unterem Rand weniger als dieser Anteil messbar ist (Linsenabschattung: am RiderPi je ~32 von 160 Spalten am Rand gar nicht), gelten als unbekannt (NaN) statt \"frei bis Horizont\". Den nicht messbaren Streifen unten in den übrigen Spalten behandelt known_from."
+      },
+      {
+       "key": "bg_model",
+       "typ": "bool",
+       "default": false,
+       "hilfe": "Zweites Bodenmodell ohne Rotkanal für den Rand: Wo Rot nicht mehr messbar ist (Abschattung), Blau und Grün aber bis shading_max_gain_bg korrigierbar sind, entscheidet ein Histogramm aus Grünanteil G/(B+G) und Helligkeit (B+G)/2, gelernt aus derselben Probe. Am RiderPi sind mit allen Kanälen nur ~46 % der Pixel messbar, mit Blau+Grün bis Faktor 8 alle. aus: Fehlalarme in den unteren Ecken bei dunklem Bild (RiderPi 2026-11-04)"
+      },
+      {
+       "key": "min_learn_v",
+       "typ": "float",
+       "default": 12.0,
+       "hilfe": "Probe mit mittlerer Helligkeit (V, nach Abschattungs-Korrektur) darunter wird nicht nachgelernt (z. B. erste Bilder nach dem Kamerastart)."
+      },
+      {
+       "key": "restart_hold_s",
+       "typ": "float",
+       "default": 1.0,
+       "hilfe": "Neu lernen nach Start der Bildverarbeitung, Aufstehen und geänderter Belichtung; so lange vorher kein Bodenmodell rechnen (Belichtung/Lage regeln sich ein). Anlass: Ein Modell aus anderer Lage passte nie mehr (Nachführung nur bei passender Probe) -> alles blockiert."
+      },
+      {
+       "key": "shading_max_gain_bg",
+       "typ": "float",
+       "default": 8.0,
+       "hilfe": ""
+      },
+      {
+       "key": "horizon_wall",
+       "typ": "bool",
+       "default": false,
+       "hilfe": "Horizontregel: Boden liegt nie über dem Horizont. Ist der Streifen knapp darüber (horizon_band_rows Zeilen, horizon_margin_rows Abstand gegen Nickfehler; Arbeitsauflösung) zu horizon_floor_frac \"Boden\", ist die Spalte eine Wand in Bodenfarbe; Fußpunkt = erste senkrechte Helligkeitsstufe >= wall_edge_thr (Grauwerte je Zeile) unter dem Horizont. aus: im Simulator Fehlalarme durch Nickfehler (Boden knapp über dem Horizont)"
+      },
+      {
+       "key": "method",
+       "typ": "str",
+       "default": "kanten",
+       "hilfe": "Verfahren für die Bodengrenze: \"farbe\" (Histogramm der Bodenfarbe, bisher) oder \"kanten\" (erste Stufe von unten, über der es anders aussieht; unempfindlich gegen Abschattung und graue Wand über grauem Boden). Das Farbmodell lernt in beiden Fällen weiter (Rand unten). \"beide\": Kanten, und wo diese in einer Spalte nichts finden (frei bis edge_fallback_free), das Farbmodell (Nutzer: Farbe im Dunkeln besser, Kanten im Hellen)."
+      },
+      {
+       "key": "shadow_net",
+       "typ": "str",
+       "default": "models/floornet.bin",
+       "hilfe": "FloorNet im Schattenbetrieb (xgonav/floornet.py): Gewichte, z. B. \"models/floornet.bin\". Rechnet im Bodenmodell-Thread mit (threaded = true) und erscheint im Overlay, entscheidet aber nichts. \"\" = aus."
+      },
+      {
+       "key": "primary",
+       "typ": "str",
+       "default": "net",
+       "hilfe": "Wer entscheidet: \"method\" (das Verfahren oben, FloorNet rechnet höchstens mit) oder \"net\" (FloorNet liefert die Grenze für Karten und Regelung allein; das Verfahren wird dann weder gerechnet noch gezeichnet). \"net\" braucht shadow_net und threaded; fehlt das Netz oder fällt es aus, rechnet und entscheidet wieder das Verfahren."
+      },
+      {
+       "key": "net_outlier_px",
+       "typ": "float",
+       "default": 25.0,
+       "hilfe": "FloorNet, einzelne Zacken herausnehmen (1-3 Spalten breite Sprünge an senkrechten Kanten): Weicht eine Spalte um mehr als net_outlier_px Vollbildzeilen vom Median der 7 Spalten um sie ab und liegt beim Medianwert mindestens net_outlier_ratio der Masse ihres eigenen Gipfels, gilt das beste Fach beim Medianwert. 0 = aus."
+      },
+      {
+       "key": "net_outlier_ratio",
+       "typ": "float",
+       "default": 0.3,
+       "hilfe": ""
+      },
+      {
+       "key": "net_smooth_n",
+       "typ": "int",
+       "default": 3,
+       "hilfe": "FloorNet, Kante über die Zeit beruhigen (floornet.ZeilenGlaetter, nur mit primary = \"net\"): die letzten net_smooth_n Ausgaben werden über Pose und Nicken auf das aktuelle Bild umgerechnet, je Spalte gilt der Median. 3: ein Ausreißer in einem einzelnen Bild verschwindet, ein neues Hindernis erscheint ein Netzbild (83 ms) später. 0 oder 1 = aus. Braucht die Kartenpose; ohne sie gilt die Ausgabe unverändert."
+      },
+      {
+       "key": "edge_fallback_free",
+       "typ": "float",
+       "default": 0.98,
+       "hilfe": ""
+      },
+      {
+       "key": "edge_thin",
+       "typ": "bool",
+       "default": true,
+       "hilfe": "dünne Linien vorher entfernen (Fugen – aber auch Kontaktschatten)"
+      },
+      {
+       "key": "edge_k",
+       "typ": "int",
+       "default": 3,
+       "hilfe": "Zeilen je Seite für den Stufenvergleich (Arbeitsauflösung)"
+      },
+      {
+       "key": "edge_chroma_w",
+       "typ": "float",
+       "default": 2.0,
+       "hilfe": "Gewicht der LAB-Farbkanäle a/b gegenüber der Helligkeit L"
+      },
+      {
+       "key": "edge_step_thr",
+       "typ": "float",
+       "default": 35.0,
+       "hilfe": "Mindest-Stufe (Summe |ΔL| + w·(|Δa|+|Δb|), 0..255-Skala)"
+      },
+      {
+       "key": "edge_seg_thr",
+       "typ": "float",
+       "default": 28.0,
+       "hilfe": "Mindest-Abweichung des Stücks über der Stufe vom Boden darunter"
+      },
+      {
+       "key": "edge_log_s",
+       "typ": "float",
+       "default": 16.0,
+       "hilfe": "Lichtschein: Spiegelung einer Lampe im glänzenden Boden erzeugt eine Stufe weit vor der Lampe (bei 12,8 cm Kamerahöhe etwa ein Viertel ihrer Entfernung). Erkennung: über der Stufe heller als darunter (>= glare_dl) und zwischen Stufe und Horizont >= glare_px übersteuerte Pixel (Maximum der Kanäle >= glare_v). Solche Spalten gelten als unbekannt (NaN), nicht als frei. Helligkeit für die Stufe logarithmisch (Verhältnis statt Differenz): L' = 255·ln(1+L/s)/ln(1+255/s). Hebt dunkle Szenen an (graue Wand im Dunkeln: L 25 gegen 11), dämpft helle. 0 = linear."
+      },
+      {
+       "key": "edge_glare",
+       "typ": "bool",
+       "default": true,
+       "hilfe": ""
+      },
+      {
+       "key": "glare_v",
+       "typ": "int",
+       "default": 250,
+       "hilfe": ""
+      },
+      {
+       "key": "glare_px",
+       "typ": "int",
+       "default": 2,
+       "hilfe": ""
+      },
+      {
+       "key": "glare_dl",
+       "typ": "float",
+       "default": 8.0,
+       "hilfe": ""
+      },
+      {
+       "key": "glare_spread",
+       "typ": "int",
+       "default": 8,
+       "hilfe": "Schein auf helle Nachbarspalten mit ähnlicher Stufenzeile ausdehnen"
+      },
+      {
+       "key": "native",
+       "typ": "bool",
+       "default": true,
+       "hilfe": "Kantenverfahren im C++-Kern (xgonav/native, make -C xgonav/native), sonst numpy; gleiches Ergebnis"
+      },
+      {
+       "key": "horizon_margin_rows",
+       "typ": "int",
+       "default": 2,
+       "hilfe": ""
+      },
+      {
+       "key": "horizon_band_rows",
+       "typ": "int",
+       "default": 6,
+       "hilfe": ""
+      },
+      {
+       "key": "horizon_floor_frac",
+       "typ": "float",
+       "default": 0.6,
+       "hilfe": ""
+      },
+      {
+       "key": "wall_edge_thr",
+       "typ": "float",
+       "default": 8.0,
+       "hilfe": ""
+      }
+     ]
+    },
+    {
+     "name": "horizon",
+     "doc": "Horizont im Stand (xgonav/horizon.py, docs/calibration.md): IMU-Referenz je Aufstehen, Horizontzeile je Körperhöhe. Aus: Nick wie bisher aus pitch_ref_deg + tilt_deg.",
+     "felder": [
+      {
+       "key": "enabled",
+       "typ": "bool",
+       "default": false,
+       "hilfe": ""
+      },
+      {
+       "key": "file",
+       "typ": "str",
+       "default": "horizont.json",
+       "hilfe": "Tabelle Körperhöhe -> Horizontzeile (vom Web geschrieben)"
+      },
+      {
+       "key": "settle_s",
+       "typ": "float",
+       "default": 3.0,
+       "hilfe": "nach Aufstehen/Höhenänderung warten"
+      },
+      {
+       "key": "window_s",
+       "typ": "float",
+       "default": 3.0,
+       "hilfe": "dann über so lange den IMU-Rohnick mitteln"
+      },
+      {
+       "key": "max_std_deg",
+       "typ": "float",
+       "default": 0.5,
+       "hilfe": "größere Streuung: Fenster verwerfen, neu messen"
+      },
+      {
+       "key": "min_samples",
+       "typ": "int",
+       "default": 50,
+       "hilfe": "IMU-Proben im Fenster (50 Hz -> 150 erwartet)"
+      },
+      {
+       "key": "bild_max_s",
+       "typ": "float",
+       "default": 0.5,
+       "hilfe": "Schnelle Änderungen aus dem Bild: Bildnick ab dem letzten IMU-Wert aufsummiert, spätestens nach bild_max_s wieder auf die IMU gesetzt (aufsummierter Bildnick driftet, 2026-11-07 ~0,13°/min). 0 = nur IMU."
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Karten",
+   "abschnitte": [
+    {
+     "name": "map",
+     "doc": "",
+     "felder": [
+      {
+       "key": "max_age_s",
+       "typ": "float",
+       "default": 4.0,
+       "hilfe": "Kartenpunkte so lange behalten"
+      },
+      {
+       "key": "confirm",
+       "typ": "int",
+       "default": 3,
+       "hilfe": "Ein Punkt blockiert die Bahn erst, wenn in seiner Nähe (confirm_radius_m) Punkte aus mindestens confirm Beobachtungen liegen. 1 = jede Einzelbeobachtung zählt (wie bisher)."
+      },
+      {
+       "key": "confirm_radius_m",
+       "typ": "float",
+       "default": 0.08,
+       "hilfe": ""
+      },
+      {
+       "key": "radius_m",
+       "typ": "float",
+       "default": 0.18,
+       "hilfe": "Sicherheitsradius der Bahnprüfung: ein bestätigter Punkt näher als so an der Bahn bremst (Lücken ab ~0,36 m)."
+      },
+      {
+       "key": "radius_tight_m",
+       "typ": "float",
+       "default": 0.08,
+       "hilfe": "Derselbe Radius, solange der Wegfolger eine Engstelle fährt ([home] tight_m). Der Rider ist laut CAD 11,5 cm breit (halbe Breite 5,8 cm); 0,08 lässt ihn mittig durch eine 25 cm breite Lücke (Punkte bei ±12,5 cm) mit 4,5 cm Spiel für Kurs und Rauschen."
+      },
+      {
+       "key": "yaw_source",
+       "typ": "str",
+       "default": "imu",
+       "hilfe": "Drehung der Merkkarte: \"odom\" = wie [odom] yaw_source (Räder, sonst Kamera); \"imu\" = Firmware-Kurs aus imu_log (~50 Hz), bei fehlender/alter IMU wie \"odom\". RiderPi 2026-11-08, volle Drehungen gegen Bilder: IMU 0,997, Räder 0,992 des wahren Winkels; je Drehung weichen beide zufällig ~2° (p90 ~8°) voneinander ab."
+      },
+      {
+       "key": "native",
+       "typ": "bool",
+       "default": true,
+       "hilfe": "Mitdrehen, Eintragen (freiräumen, ausdünnen, vergessen), Bestätigen und Bahnprüfung im C++-Kern (xgonav/native/navfast.cpp), wenn gebaut; gleiches Ergebnis wie numpy"
+      }
+     ]
+    },
+    {
+     "name": "grid",
+     "doc": "",
+     "felder": [
+      {
+       "key": "enabled",
+       "typ": "bool",
+       "default": true,
+       "hilfe": "Belegungskarte (gridmap.py): Welt-KS ab Startpose, nur Anzeige"
+      },
+      {
+       "key": "resolution_m",
+       "typ": "float",
+       "default": 0.05,
+       "hilfe": ""
+      },
+      {
+       "key": "size_m",
+       "typ": "float",
+       "default": 16.0,
+       "hilfe": "Kantenlänge, Start in der Mitte"
+      },
+      {
+       "key": "max_range_m",
+       "typ": "float",
+       "default": 1.25,
+       "hilfe": "Treffer nur bis hierhin: Kamera nur 12,8 cm hoch, eine Bildzeile sind bei 2 m schon ~40 cm"
+      },
+      {
+       "key": "min_range_m",
+       "typ": "float",
+       "default": 0.15,
+       "hilfe": "davor sieht die Kamera den Boden nicht"
+      },
+      {
+       "key": "confirm_dr_m",
+       "typ": "float",
+       "default": 0.2,
+       "hilfe": "Treffer erst eintragen, wenn dieselbe Stelle (± confirm_cells Zellen) aus Entfernungen getroffen wurde, die sich um mindestens so viel unterscheiden (m). Spiegelungen im glänzenden Boden und Fugen wandern mit dem Rider und werden so nie belegt (Anzeige: orange). Aus Drehungen auf der Stelle allein entsteht nichts. 0 = aus (jeder Treffer zählt). RiderPi 0.2 (2026-11-08: Fensterunterkante gespiegelt, doppelte Wand). Simulator explore 120 s: Wände 82 % (aus) / 57 % (±1 Zelle) / 73 % (±2 Zellen), Präzision 0,90 / 0,95 / 0,93."
+      },
+      {
+       "key": "confirm_cells",
+       "typ": "int",
+       "default": 2,
+       "hilfe": ""
+      },
+      {
+       "key": "mark_blocking",
+       "typ": "bool",
+       "default": true,
+       "hilfe": "Punkte der Merkkarte, vor denen die Bahnprüfung bremst, gelten in der Raumkarte als bestätigt und belegt (auch ohne confirm_dr_m): Was ihn bremst, steht in der Karte, und der Planer fährt darum herum."
+      },
+      {
+       "key": "column_step",
+       "typ": "int",
+       "default": 2,
+       "hilfe": "jede k-te Spalte des Bodenmodells (160 Spalten)"
+      },
+      {
+       "key": "l_free",
+       "typ": "float",
+       "default": -0.4,
+       "hilfe": "Log-Odds je Beobachtung"
+      },
+      {
+       "key": "l_occ",
+       "typ": "float",
+       "default": 0.5,
+       "hilfe": "zwei Treffer bis \"belegt\" (l_show): ein Ausreißer sperrt nichts"
+      },
+      {
+       "key": "free_margin_m",
+       "typ": "float",
+       "default": 0.1,
+       "hilfe": "Freistrahl endet so weit vor der Grenze (Messrauschen)"
+      },
+      {
+       "key": "free_margin_quad",
+       "typ": "float",
+       "default": 0.05,
+       "hilfe": "dazu so viel x Entfernung² (der Fehler wächst quadratisch)"
+      },
+      {
+       "key": "free_range_m",
+       "typ": "float",
+       "default": 1.1,
+       "hilfe": "Freistrahlen bis hierhin (Treffer nur bis max_range_m); 0 = wie max_range_m"
+      },
+      {
+       "key": "driven_free_r_m",
+       "typ": "float",
+       "default": 0.1,
+       "hilfe": "gefahrener Weg gilt so breit als frei; 0 = aus"
+      },
+      {
+       "key": "max_turn_dps",
+       "typ": "float",
+       "default": 40.0,
+       "hilfe": "bei schnellerer Drehung nichts eintragen (Unschärfe, Pose)"
+      },
+      {
+       "key": "occ_free_factor",
+       "typ": "float",
+       "default": 0.5,
+       "hilfe": "schon belegte Zellen baut ein Freistrahl nur so stark ab"
+      },
+      {
+       "key": "l_min",
+       "typ": "float",
+       "default": -3.0,
+       "hilfe": ""
+      },
+      {
+       "key": "l_max",
+       "typ": "float",
+       "default": 3.5,
+       "hilfe": ""
+      },
+      {
+       "key": "l_show",
+       "typ": "float",
+       "default": 0.7,
+       "hilfe": "ab hier \"belegt\"/\"frei\" in Anzeige und Statistik"
+      },
+      {
+       "key": "view_m",
+       "typ": "float",
+       "default": 6.0,
+       "hilfe": "Bildausschnitt für die Anzeige"
+      },
+      {
+       "key": "yaw_source",
+       "typ": "str",
+       "default": "imu",
+       "hilfe": "Drehung der Kartenpose: \"räder\" (Rad-Odometrie, sonst Kamera), \"kamera\" (Ego-Motion) oder \"imu\" (Firmware-Kurs aus imu_log, ist der zu alt die 5-Hz-Treppe aus /proc yaw, sonst wie \"räder\"). RiderPi 2026-11-06, 32 m: mit Rädern 75 cm Fehler (Schlupf beim Drehen), mit IMU ~6 cm."
+      },
+      {
+       "key": "threaded",
+       "typ": "bool",
+       "default": true,
+       "hilfe": "Eintragen in eigenem Thread (GridWorker, Kerne wie [cpu] freespace_cpus); False = im Regelschritt"
+      },
+      {
+       "key": "native",
+       "typ": "bool",
+       "default": true,
+       "hilfe": "Strahlen im C++-Kern eintragen (xgonav/native/gridfast.cpp), wenn gebaut; gleiches Ergebnis wie numpy"
+      },
+      {
+       "key": "file",
+       "typ": "str",
+       "default": "",
+       "hilfe": "Speichern/Laden (npz). Leer = aus. Beim Laden gilt Pose = Startpunkt: der Rider muss vor dem Start von xgonav wieder dort stehen (ohne Marker findet er sich nicht wieder)."
+      },
+      {
+       "key": "save_every_s",
+       "typ": "float",
+       "default": 60.0,
+       "hilfe": "höchstens so oft, und nur bei Änderungen; dazu beim Beenden"
+      }
+     ]
+    },
+    {
+     "name": "reloc",
+     "doc": "",
+     "felder": [
+      {
+       "key": "enabled",
+       "typ": "bool",
+       "default": true,
+       "hilfe": "Kartenabgleich (reloc.py): Pose in der Raumkarte aus der Bodengrenze der letzten Sekunden. Rechnet im eigenen Thread, nichts in der Bildschleife. Aus = alles wie bisher. Zustand \"Pose unbekannt\", Kartensperre, Modus locate"
+      },
+      {
+       "key": "track",
+       "typ": "bool",
+       "default": true,
+       "hilfe": "laufender Abgleich während der Fahrt"
+      },
+      {
+       "key": "window_s",
+       "typ": "float",
+       "default": 8.0,
+       "hilfe": "Puffer der Bodengrenze (Punkte im Roboter-KS): so viele Sekunden und so viel Weg zurück"
+      },
+      {
+       "key": "window_m",
+       "typ": "float",
+       "default": 3.0,
+       "hilfe": ""
+      },
+      {
+       "key": "hit_res_m",
+       "typ": "float",
+       "default": 0.05,
+       "hilfe": "Treffer auf dieses Raster ausgedünnt"
+      },
+      {
+       "key": "free_step_m",
+       "typ": "float",
+       "default": 0.2,
+       "hilfe": "Freiproben in diesem Abstand auf dem Freistrahl"
+      },
+      {
+       "key": "free_res_m",
+       "typ": "float",
+       "default": 0.1,
+       "hilfe": "und auf dieses Raster ausgedünnt"
+      },
+      {
+       "key": "far_m",
+       "typ": "float",
+       "default": 0.8,
+       "hilfe": "Treffergewicht 1 / (1 + (d / far_m)²): der Grenzfehler wächst mit d²"
+      },
+      {
+       "key": "every_s",
+       "typ": "float",
+       "default": 2.0,
+       "hilfe": "laufender Abgleich: höchstens so oft und nur nach so viel Weg oder Drehung"
+      },
+      {
+       "key": "min_move_m",
+       "typ": "float",
+       "default": 0.2,
+       "hilfe": ""
+      },
+      {
+       "key": "min_turn_deg",
+       "typ": "float",
+       "default": 20.0,
+       "hilfe": ""
+      },
+      {
+       "key": "sigma_m",
+       "typ": "float",
+       "default": 0.1,
+       "hilfe": "Referenzfeld: Breite der Wand (m), Strafe für Treffer auf bekannt freiem Boden, für Freiproben auf Belegtem (free_weight) und auf Unbekanntem (free_weight x unknown_weight)"
+      },
+      {
+       "key": "miss_weight",
+       "typ": "float",
+       "default": 0.5,
+       "hilfe": ""
+      },
+      {
+       "key": "free_weight",
+       "typ": "float",
+       "default": 0.5,
+       "hilfe": ""
+      },
+      {
+       "key": "unknown_weight",
+       "typ": "float",
+       "default": 0.3,
+       "hilfe": ""
+      },
+      {
+       "key": "search_m",
+       "typ": "float",
+       "default": 0.3,
+       "hilfe": "lokale Suche um die Odometrie-Pose"
+      },
+      {
+       "key": "search_deg",
+       "typ": "float",
+       "default": 8.0,
+       "hilfe": ""
+      },
+      {
+       "key": "step_deg",
+       "typ": "float",
+       "default": 1.0,
+       "hilfe": ""
+      },
+      {
+       "key": "min_points",
+       "typ": "int",
+       "default": 60,
+       "hilfe": "Güte: darunter gilt \"unsicher\" und es wird nichts korrigiert ausgedünnte Treffer in kartiertem Gebiet (etwa 3 m Wand)"
+      },
+      {
+       "key": "min_hit_frac",
+       "typ": "float",
+       "default": 0.55,
+       "hilfe": "Anteil davon, der an einer Wand der Karte liegt"
+      },
+      {
+       "key": "unique_ratio",
+       "typ": "float",
+       "default": 0.85,
+       "hilfe": "zweitbeste Lage höchstens so gut wie die beste (nur globale Suche)"
+      },
+      {
+       "key": "max_slide_m",
+       "typ": "float",
+       "default": 0.15,
+       "hilfe": "Streuung der fast gleich guten Lagen; darüber gleitet der Abgleich"
+      },
+      {
+       "key": "gain",
+       "typ": "float",
+       "default": 0.6,
+       "hilfe": "Korrektur je Abgleich: Anteil, Deckel, Totband; über hold_m Rest wird nichts eingetragen"
+      },
+      {
+       "key": "max_step_m",
+       "typ": "float",
+       "default": 0.08,
+       "hilfe": ""
+      },
+      {
+       "key": "max_step_deg",
+       "typ": "float",
+       "default": 3.0,
+       "hilfe": ""
+      },
+      {
+       "key": "deadband_m",
+       "typ": "float",
+       "default": 0.02,
+       "hilfe": ""
+      },
+      {
+       "key": "deadband_deg",
+       "typ": "float",
+       "default": 0.5,
+       "hilfe": ""
+      },
+      {
+       "key": "hold_m",
+       "typ": "float",
+       "default": 0.1,
+       "hilfe": ""
+      },
+      {
+       "key": "hold_deg",
+       "typ": "float",
+       "default": 3.0,
+       "hilfe": ""
+      },
+      {
+       "key": "ref_age_s",
+       "typ": "float",
+       "default": 12.0,
+       "hilfe": "Erkunden: Abgleich nur gegen einen Kartenstand, der mindestens so alt ist (sonst bestätigt sich die Karte selbst); neuer Stand alle ref_every_s"
+      },
+      {
+       "key": "ref_every_s",
+       "typ": "float",
+       "default": 10.0,
+       "hilfe": ""
+      },
+      {
+       "key": "global_step_deg",
+       "typ": "float",
+       "default": 3.0,
+       "hilfe": "globale Suche (Lokalisieren): Raster, beste Kandidaten zum Verfeinern"
+      },
+      {
+       "key": "global_res_m",
+       "typ": "float",
+       "default": 0.1,
+       "hilfe": ""
+      },
+      {
+       "key": "global_top",
+       "typ": "int",
+       "default": 8,
+       "hilfe": ""
+      },
+      {
+       "key": "global_known_frac",
+       "typ": "float",
+       "default": 0.7,
+       "hilfe": "so viel vom Scan muss in kartiertem Gebiet liegen"
+      },
+      {
+       "key": "scan_extra_deg",
+       "typ": "float",
+       "default": 30.0,
+       "hilfe": "Modus locate: Rundumblick 360° + so viel, Abbruch bei so viel Verschiebung, Versuche"
+      },
+      {
+       "key": "max_shift_m",
+       "typ": "float",
+       "default": 0.15,
+       "hilfe": ""
+      },
+      {
+       "key": "tries",
+       "typ": "int",
+       "default": 2,
+       "hilfe": ""
+      },
+      {
+       "key": "blind_s",
+       "typ": "float",
+       "default": 2.0,
+       "hilfe": "balancierend so lange ohne frische Raddaten: Pose unbekannt"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Verhalten",
+   "abschnitte": [
+    {
+     "name": "behavior",
+     "doc": "",
+     "felder": [
+      {
+       "key": "mode",
+       "typ": "str",
+       "default": "idle",
+       "hilfe": "idle | follow | explore | approach | home"
+      },
+      {
+       "key": "target_class",
+       "typ": "str",
+       "default": "person",
+       "hilfe": ""
+      },
+      {
+       "key": "follow_dist_m",
+       "typ": "float",
+       "default": 0.9,
+       "hilfe": ""
+      },
+      {
+       "key": "approach_dist_m",
+       "typ": "float",
+       "default": 0.5,
+       "hilfe": ""
+      },
+      {
+       "key": "kp_turn",
+       "typ": "float",
+       "default": 2.5,
+       "hilfe": "1/s: Soll-Drehrate = kp * Winkelfehler"
+      },
+      {
+       "key": "kd_turn",
+       "typ": "float",
+       "default": 0.25,
+       "hilfe": "s"
+      },
+      {
+       "key": "kp_dist",
+       "typ": "float",
+       "default": 0.35,
+       "hilfe": "normiertes v pro Meter Abstandsfehler"
+      },
+      {
+       "key": "dist_deadband",
+       "typ": "float",
+       "default": 0.1,
+       "hilfe": "m"
+      },
+      {
+       "key": "ff_dist",
+       "typ": "float",
+       "default": 0.8,
+       "hilfe": "Vorsteuerung mit geschätzter Zielgeschwindigkeit"
+      },
+      {
+       "key": "cruise_v",
+       "typ": "float",
+       "default": 0.15,
+       "hilfe": ""
+      },
+      {
+       "key": "backup_v",
+       "typ": "float",
+       "default": 0.1,
+       "hilfe": ""
+      },
+      {
+       "key": "search_w",
+       "typ": "float",
+       "default": 0.07,
+       "hilfe": ""
+      },
+      {
+       "key": "turn_w",
+       "typ": "float",
+       "default": 0.21,
+       "hilfe": "Erkunden: Drehrate beim Wegdrehen (früher fest 1,5 x search_w)"
+      },
+      {
+       "key": "lost_search_s",
+       "typ": "float",
+       "default": 1.0,
+       "hilfe": ""
+      },
+      {
+       "key": "search_timeout_s",
+       "typ": "float",
+       "default": 10.0,
+       "hilfe": ""
+      },
+      {
+       "key": "blocked_free",
+       "typ": "float",
+       "default": 0.22,
+       "hilfe": "Freiraum im Zentrum darunter = blockiert"
+      },
+      {
+       "key": "slow_free",
+       "typ": "float",
+       "default": 0.55,
+       "hilfe": "darunter proportional abbremsen"
+      },
+      {
+       "key": "ttc_avoid_s",
+       "typ": "float",
+       "default": 1.2,
+       "hilfe": "Erkunden: Time-to-contact darunter -> ausweichen"
+      },
+      {
+       "key": "ttc_stop_s",
+       "typ": "float",
+       "default": 0.8,
+       "hilfe": "Sicherheitsschicht: darunter keine Vorwärtsfahrt"
+      },
+      {
+       "key": "height_cruise_mm",
+       "typ": "float",
+       "default": 85.0,
+       "hilfe": ""
+      },
+      {
+       "key": "height_search_mm",
+       "typ": "float",
+       "default": 100.0,
+       "hilfe": ""
+      },
+      {
+       "key": "height_fast_mm",
+       "typ": "float",
+       "default": 80.0,
+       "hilfe": ""
+      }
+     ]
+    },
+    {
+     "name": "explore",
+     "doc": "",
+     "felder": [
+      {
+       "key": "scan_w",
+       "typ": "float",
+       "default": 0.07,
+       "hilfe": "Modus explore: Frontiers der Raumkarte anfahren (frontier.py), bis nichts Unbekanntes mehr erreichbar ist. Weg und Lenkung wie home ([home]). Rundumblick am Anfang (langsam: unter grid.max_turn_dps)"
+      },
+      {
+       "key": "v",
+       "typ": "float",
+       "default": 0.2,
+       "hilfe": "Tempo auf dem Weg zur nächsten Stelle und zurück zum Start (normiert, statt home.v 0,15; Nutzer 2026-11-11: erst 0,30, nach zwei Fahrten am RiderPi 0,20). Gilt über robot.max_v hinaus, nur im Modus explore; in Engstellen weiter mal home.tight_v, das reaktive Befreien bleibt bei behavior.cruise_v."
+      },
+      {
+       "key": "min_cluster_m",
+       "typ": "float",
+       "default": 0.4,
+       "hilfe": "kleinere Frontier-Gruppen zählen nicht"
+      },
+      {
+       "key": "squeeze_cluster_m",
+       "typ": "float",
+       "default": 0.15,
+       "hilfe": "Erst wenn sonst kein Ziel mehr bleibt, zählen auch Gruppen dicht an Hindernissen (näher als home.inflate_m, z. B. die Öffnung einer 25-cm-Lücke: in der Karte nur 3–5 Zellen breit) ab dieser Größe, wenn dahinter mindestens min_unknown_m2 zusammenhängend unbekannt ist (kein einzelnes Loch im bekannten Boden)"
+      },
+      {
+       "key": "min_unknown_m2",
+       "typ": "float",
+       "default": 0.05,
+       "hilfe": ""
+      },
+      {
+       "key": "gain_radius_m",
+       "typ": "float",
+       "default": 1.2,
+       "hilfe": "Zielwahl: die Stelle mit der kleinsten Fahrzeit + Drehzeit zuerst. Viel Unbekanntes am Ziel (Fläche im Umkreis gain_radius_m, voll ab gain_ref_m2) zählt wie höchstens gain_bonus_s weniger Zeit."
+      },
+      {
+       "key": "gain_ref_m2",
+       "typ": "float",
+       "default": 2.0,
+       "hilfe": ""
+      },
+      {
+       "key": "gain_bonus_s",
+       "typ": "float",
+       "default": 3.0,
+       "hilfe": ""
+      },
+      {
+       "key": "travel_mps",
+       "typ": "float",
+       "default": 0.35,
+       "hilfe": "Fahrzeit-Schätzung (v 0,20 x vx_limit 1,8 = 0,36)"
+      },
+      {
+       "key": "turn_dps",
+       "typ": "float",
+       "default": 40.0,
+       "hilfe": "Drehzeit-Schätzung"
+      },
+      {
+       "key": "roll_m",
+       "typ": "float",
+       "default": 1.0,
+       "hilfe": "Näher als roll_m am Ziel: alle roll_every_s neu planen statt alle home.replan_s. Die Grenze weicht beim Anfahren zurück, das Ziel wandert mit, und er hält nicht alle 0,7-1 m an (RiderPi 2026-11-11: 26 Halte in 348 s)."
+      },
+      {
+       "key": "roll_every_s",
+       "typ": "float",
+       "default": 0.4,
+       "hilfe": ""
+      },
+      {
+       "key": "pass_view_deg",
+       "typ": "float",
+       "default": 40.0,
+       "hilfe": "Im selben Takt plant er dort abwechselnd schon das übernächste Ziel (ab dem Ziel, ohne dessen Stelle). Liegt die Stelle beim Erreichen im Bild (± pass_view_deg) und ist dieser Plan höchstens pass_age_s alt, fährt er ohne Halt weiter; sonst wie bisher hindrehen, settle_s schauen, neu suchen."
+      },
+      {
+       "key": "pass_age_s",
+       "typ": "float",
+       "default": 3.0,
+       "hilfe": ""
+      },
+      {
+       "key": "tight_max",
+       "typ": "int",
+       "default": 3,
+       "hilfe": "Höchstens so viele Ziele, die nur in Engstellen liegen (Stufe 1), je Erkundung: In einer echten Karte sind das meist Löcher in gezeichneten Wänden (RiderPi 2026-11-11: 17-25 solche Stellen am Ende)."
+      },
+      {
+       "key": "standoff_m",
+       "typ": "float",
+       "default": 0.3,
+       "hilfe": "so weit vor der Frontier anhalten"
+      },
+      {
+       "key": "start_free_r_m",
+       "typ": "float",
+       "default": 0.2,
+       "hilfe": "um den Startpunkt gilt der Boden als frei"
+      },
+      {
+       "key": "reach_m",
+       "typ": "float",
+       "default": 0.25,
+       "hilfe": "Ziel gilt als erreicht"
+      },
+      {
+       "key": "settle_s",
+       "typ": "float",
+       "default": 0.6,
+       "hilfe": "nach Ankunft stehen und schauen (Nicken beruhigen)"
+      },
+      {
+       "key": "keep_dist_m",
+       "typ": "float",
+       "default": 0.5,
+       "hilfe": "altes Ziel besteht, solange Frontier-Zellen so nah sind"
+      },
+      {
+       "key": "goal_timeout_s",
+       "typ": "float",
+       "default": 60.0,
+       "hilfe": "länger an einem Ziel: gilt als festgefahren"
+      },
+      {
+       "key": "no_growth_s",
+       "typ": "float",
+       "default": 120.0,
+       "hilfe": "so lange kaum Zuwachs an bekanntem Boden: Karte gilt als fertig"
+      },
+      {
+       "key": "min_growth_m2",
+       "typ": "float",
+       "default": 0.5,
+       "hilfe": ""
+      },
+      {
+       "key": "avoid_r_m",
+       "typ": "float",
+       "default": 0.3,
+       "hilfe": "Umkreis besuchter und gesperrter Stellen. Mit 0,5 m fiel die letzte Stelle eines Gangs weg, die nur 0,49 m weiter lag als die vorige (RiderPi 2026-11-06, „Karte fertig“ nach 39 s)"
+      },
+      {
+       "key": "wander_s",
+       "typ": "float",
+       "default": 15.0,
+       "hilfe": "Befreiung: so lange reaktiv fahren ..."
+      },
+      {
+       "key": "max_wander",
+       "typ": "int",
+       "default": 3,
+       "hilfe": "... höchstens so oft, dann Stopp mit Meldung"
+      },
+      {
+       "key": "no_goal_limit",
+       "typ": "int",
+       "default": 3,
+       "hilfe": "so viele Suchen ohne Ziel: Karte gilt als fertig"
+      },
+      {
+       "key": "max_s",
+       "typ": "float",
+       "default": 900.0,
+       "hilfe": "Zeitgrenze"
+      },
+      {
+       "key": "min_battery",
+       "typ": "int",
+       "default": 25,
+       "hilfe": "%: darunter beenden und zum Start"
+      },
+      {
+       "key": "return_home",
+       "typ": "bool",
+       "default": true,
+       "hilfe": "am Ende zum Startpunkt fahren"
+      }
+     ]
+    },
+    {
+     "name": "home",
+     "doc": "",
+     "felder": [
+      {
+       "key": "inflate_m",
+       "typ": "float",
+       "default": 0.23,
+       "hilfe": "Modus home: Pfad über die Raumkarte zum Startpunkt (planner.py), Pure Pursuit Belegte Zellen um so viel aufblasen; über dem Radius der Bahnprüfung (localmap, 0,18 m), sonst plant der Planer genau an ihre Bremsgrenze"
+      },
+      {
+       "key": "clear_cost",
+       "typ": "float",
+       "default": 4.0,
+       "hilfe": "Zusatzkosten nahe an Hindernissen (fällt bis 2*inflate_m ab)"
+      },
+      {
+       "key": "squeeze_m",
+       "typ": "float",
+       "default": 0.09,
+       "hilfe": "Engstellen: Zellen näher als inflate_m sind nicht gesperrt, sondern kosten squeeze_cost mehr; gesperrt ist erst näher als squeeze_m (Abstand der Zellmitten). 0,09 sperrt bei 5-cm-Zellen nur die direkten Nachbarn belegter Zellen: eine 25 cm breite Lücke (4–5 freie Zellen je nach Lage im Raster) bleibt offen. Der Weg geht nur hindurch, wenn es sonst keinen gibt (0,5 m Engstelle kosten wie 10 m Umweg). 0 = aus (wie bis 2026-11-11: Lücken erst ab ~0,45 m). Sperrzonen und das Freiräumen um die Pose rechnen weiter mit inflate_m."
+      },
+      {
+       "key": "squeeze_cost",
+       "typ": "float",
+       "default": 20.0,
+       "hilfe": ""
+      },
+      {
+       "key": "unknown_cost",
+       "typ": "float",
+       "default": 3.0,
+       "hilfe": "unbekannte Zellen kosten so viel mehr als freie"
+      },
+      {
+       "key": "margin_m",
+       "typ": "float",
+       "default": 1.5,
+       "hilfe": "Suchgebiet = Pose, Start, gefahrener Weg + Rand"
+      },
+      {
+       "key": "lookahead_m",
+       "typ": "float",
+       "default": 0.5,
+       "hilfe": ""
+      },
+      {
+       "key": "tight_m",
+       "typ": "float",
+       "default": 0.21,
+       "hilfe": "Engstelle: belegte Zelle der Raumkarte näher als tight_m an der Pose oder am Weg bis 0,45 m voraus (0 = aus; unter inflate_m, damit normale Wege sie nicht auslösen). Dann kurzer Vorausblick, langsamer, schon bei kleinem Fehler auf der Stelle drehen und Bahnprüfung mit [map] radius_tight_m: Mit 0,5 m Vorausblick schnitt er die Kurve vor einer 25-cm-Lücke und stieß schräg an die Wandecke (Simulator 2026-11-11)."
+      },
+      {
+       "key": "tight_lookahead_m",
+       "typ": "float",
+       "default": 0.2,
+       "hilfe": ""
+      },
+      {
+       "key": "tight_v",
+       "typ": "float",
+       "default": 0.6,
+       "hilfe": "Faktor auf v"
+      },
+      {
+       "key": "tight_turn_enter_deg",
+       "typ": "float",
+       "default": 30.0,
+       "hilfe": ""
+      },
+      {
+       "key": "tight_turn_exit_deg",
+       "typ": "float",
+       "default": 10.0,
+       "hilfe": ""
+      },
+      {
+       "key": "tight_center",
+       "typ": "bool",
+       "default": true,
+       "hilfe": "In der Engstelle auf die Mitte zwischen den Kanten der Merkkarte links und rechts voraus zielen, wenn sie höchstens so weit von der Wegrichtung abweicht. Die Raumkarte legt eine 25-cm-Lücke um Zentimeter daneben."
+      },
+      {
+       "key": "tight_center_max_deg",
+       "typ": "float",
+       "default": 30.0,
+       "hilfe": ""
+      },
+      {
+       "key": "arrive_m",
+       "typ": "float",
+       "default": 0.15,
+       "hilfe": ""
+      },
+      {
+       "key": "near_m",
+       "typ": "float",
+       "default": 0.5,
+       "hilfe": "Festgefahren, aber so nah am Ziel: gilt als angekommen. Der Sicherheitsabstand der Bahnprüfung (0,18 m) lässt ihn nicht an ein Ziel, neben dem etwas liegt, auch wenn das Ziel selbst frei ist (RiderPi 2026-11-06)"
+      },
+      {
+       "key": "replan_s",
+       "typ": "float",
+       "default": 2.0,
+       "hilfe": ""
+      },
+      {
+       "key": "keep_factor",
+       "typ": "float",
+       "default": 1.2,
+       "hilfe": "alter Weg bleibt, solange frei und <= Faktor x neuer + 0,3 m"
+      },
+      {
+       "key": "use_localmap",
+       "typ": "bool",
+       "default": true,
+       "hilfe": "Hindernisse der Bahnprüfung (Merkkarte) mit einplanen"
+      },
+      {
+       "key": "localmap_reach_m",
+       "typ": "float",
+       "default": 1.0,
+       "hilfe": "nur so nahe: weiter weg misst die Merkkarte zu ungenau"
+      },
+      {
+       "key": "v",
+       "typ": "float",
+       "default": 0.15,
+       "hilfe": "normiert, wie behavior.cruise_v"
+      },
+      {
+       "key": "kp_turn",
+       "typ": "float",
+       "default": 1.5,
+       "hilfe": "Lenkung: am RiderPi rollt der Rider bei jedem Anfahren erst zurück und eine Drehung läuft ~15° nach; ständiges Wechseln zwischen Drehen und Fahren brachte ihn nicht vom Fleck (2026-11-05). Deshalb in Kurven weiterfahren, auf der Stelle nur bei großem Fehler drehen. 1/s (Folgen: behavior.kp_turn)"
+      },
+      {
+       "key": "turn_enter_deg",
+       "typ": "float",
+       "default": 75.0,
+       "hilfe": "ab diesem Winkelfehler auf der Stelle drehen ..."
+      },
+      {
+       "key": "turn_exit_deg",
+       "typ": "float",
+       "default": 25.0,
+       "hilfe": "... bis er darunter ist"
+      },
+      {
+       "key": "min_w",
+       "typ": "float",
+       "default": 0.055,
+       "hilfe": "Kleine Lenkbefehle ignoriert die Firmware (u8 128 ± 6): darunter sonst keine Korrektur unter ~11° Fehler. Ab min_w_err_deg Fehler deshalb mindestens min_w."
+      },
+      {
+       "key": "min_w_err_deg",
+       "typ": "float",
+       "default": 4.0,
+       "hilfe": ""
+      },
+      {
+       "key": "align_heading",
+       "typ": "bool",
+       "default": true,
+       "hilfe": "am Ziel auf den Startkurs drehen"
+      },
+      {
+       "key": "align_tol_deg",
+       "typ": "float",
+       "default": 10.0,
+       "hilfe": ""
+      },
+      {
+       "key": "max_fail",
+       "typ": "int",
+       "default": 3,
+       "hilfe": "so oft kein Weg -> aufgeben"
+      },
+      {
+       "key": "give_up_s",
+       "typ": "float",
+       "default": 20.0,
+       "hilfe": "Festgefahren aufgeben erst nach so viel Zeit ohne 0,3 m Annäherung: Die Merkkarte vergisst nach 4 s, und am RiderPi wäre die Bahn kurz nach dem Abbruch wieder frei gewesen (2026-11-06)"
+      },
+      {
+       "key": "native",
+       "typ": "bool",
+       "default": true,
+       "hilfe": "Wegsuche (A*, Kürzen), Zielpunkt des Wegfolgers und die Schleifen der Frontier-Suche (explore) im C++-Kern (xgonav/native/navfast.cpp), wenn gebaut; gleiches Ergebnis wie Python, die GIL bleibt dabei frei"
+      }
+     ]
+    },
+    {
+     "name": "patrol",
+     "doc": "",
+     "felder": [
+      {
+       "key": "reach_m",
+       "typ": "float",
+       "default": 0.25,
+       "hilfe": "Streife: Route abfahren (xgonav/route.py, Modus patrol) Wegpunkt erreicht"
+      },
+      {
+       "key": "pause_s",
+       "typ": "float",
+       "default": 1.5,
+       "hilfe": "am Wegpunkt stehen und schauen"
+      },
+      {
+       "key": "point_timeout_s",
+       "typ": "float",
+       "default": 90.0,
+       "hilfe": "länger: Wegpunkt auslassen"
+      },
+      {
+       "key": "start_battery",
+       "typ": "int",
+       "default": 40,
+       "hilfe": "%: darunter nicht losfahren"
+      },
+      {
+       "key": "return_battery",
+       "typ": "int",
+       "default": 30,
+       "hilfe": "%: zurück zum Start"
+      },
+      {
+       "key": "down_battery",
+       "typ": "int",
+       "default": 15,
+       "hilfe": "%: sofort absetzen"
+      }
+     ]
+    },
+    {
+     "name": "pet",
+     "doc": "",
+     "felder": [
+      {
+       "key": "zone_far_m",
+       "typ": "float",
+       "default": 3.0,
+       "hilfe": "Modus pet (xgonav/pet.py): reagiert auf Menschen und Tiere, bleibt im Standard auf der Stelle. Abstandszonen der Person (m, Fußpunkt) darüber: nur bemerken"
+      },
+      {
+       "key": "zone_mid_m",
+       "typ": "float",
+       "default": 1.5,
+       "hilfe": "darüber: neugierig; darunter: Freude"
+      },
+      {
+       "key": "zone_close_m",
+       "typ": "float",
+       "default": 0.5,
+       "hilfe": "darunter: schüchtern (wandert mit dem Vertrauen)"
+      },
+      {
+       "key": "kneel_max_m",
+       "typ": "float",
+       "default": 1.9,
+       "hilfe": "Box oben frei und näher: hingekniet (stehend wäre der Kopf nicht im Bild)"
+      },
+      {
+       "key": "zone_hold_s",
+       "typ": "float",
+       "default": 0.5,
+       "hilfe": "so lange stabil, bevor eine Zone zählt"
+      },
+      {
+       "key": "zone_repeat_s",
+       "typ": "float",
+       "default": 15.0,
+       "hilfe": "dieselbe Zone frühestens wieder nach so langer Zeit"
+      },
+      {
+       "key": "startle_mps",
+       "typ": "float",
+       "default": 1.0,
+       "hilfe": "Schreck: Annäherung aus dem Fußpunkt, Geradenanpassung über startle_window_s"
+      },
+      {
+       "key": "startle_heavy_mps",
+       "typ": "float",
+       "default": 1.8,
+       "hilfe": "ab hier volle Stärke"
+      },
+      {
+       "key": "startle_max_m",
+       "typ": "float",
+       "default": 1.6,
+       "hilfe": "Eine Bildzeile sind in 2 m schon 10 cm: weiter weg misst der Fußpunkt zu ungenau (Simulator, 3 px Rauschen: Fehlalarme schon bei 0,3 m/s). Darum eng begrenzt und zusätzlich durch das Wachsen der Box bestätigt. weiter weg erschrickt er nicht"
+      },
+      {
+       "key": "startle_window_s",
+       "typ": "float",
+       "default": 0.8,
+       "hilfe": "bei 4 Hz Detektion ~3 Messungen"
+      },
+      {
+       "key": "startle_min_samples",
+       "typ": "int",
+       "default": 3,
+       "hilfe": ""
+      },
+      {
+       "key": "startle_vs",
+       "typ": "float",
+       "default": 0.5,
+       "hilfe": "Boxbreite muss mit diesem Anteil von Annäherung/Abstand wachsen"
+      },
+      {
+       "key": "startle_s",
+       "typ": "float",
+       "default": 1.4,
+       "hilfe": "Dauer der Reaktion (Abducken, Ruck)"
+      },
+      {
+       "key": "startle_cooldown_s",
+       "typ": "float",
+       "default": 3.0,
+       "hilfe": ""
+      },
+      {
+       "key": "startle_min",
+       "typ": "float",
+       "default": 0.12,
+       "hilfe": "schwächer: nur Augen, kein Abducken"
+      },
+      {
+       "key": "gestures",
+       "typ": "bool",
+       "default": true,
+       "hilfe": "Körper. gestures = false: nur Augen und Töne"
+      },
+      {
+       "key": "height_mm",
+       "typ": "float",
+       "default": 85.0,
+       "hilfe": "falls die Höhe unbekannt ist"
+      },
+      {
+       "key": "duck_mm",
+       "typ": "float",
+       "default": 75.0,
+       "hilfe": "wird auf Minimum + 10 mm angehoben (robot.height_min_mm)"
+      },
+      {
+       "key": "roll_deg",
+       "typ": "float",
+       "default": 8.0,
+       "hilfe": "Kopf schief; höchstens 12"
+      },
+      {
+       "key": "tilt_s",
+       "typ": "float",
+       "default": 1.2,
+       "hilfe": ""
+      },
+      {
+       "key": "wiggle_w",
+       "typ": "float",
+       "default": 0.1,
+       "hilfe": ""
+      },
+      {
+       "key": "wiggle_s",
+       "typ": "float",
+       "default": 1.2,
+       "hilfe": ""
+      },
+      {
+       "key": "turn_kp",
+       "typ": "float",
+       "default": 1.5,
+       "hilfe": "1/s"
+      },
+      {
+       "key": "turn_deadband_deg",
+       "typ": "float",
+       "default": 8.0,
+       "hilfe": ""
+      },
+      {
+       "key": "turn_w",
+       "typ": "float",
+       "default": 0.2,
+       "hilfe": ""
+      },
+      {
+       "key": "turn_min_w",
+       "typ": "float",
+       "default": 0.06,
+       "hilfe": "kleinere Lenkbefehle ignoriert die Firmware"
+      },
+      {
+       "key": "retreat_m",
+       "typ": "float",
+       "default": 0.0,
+       "hilfe": "Budgets, 0 = aus. Rückwärts ist blind und vorwärts sieht das Bodenmodell Stufen zu spät: nur mit Beobachtung und nur, wo keine Treppe ist. Ohne Räder fährt er nie, Obergrenzen 0,30 m / 1,0 m. je Ereignis (RiderPi-Test: 0.12)"
+      },
+      {
+       "key": "retreat_v",
+       "typ": "float",
+       "default": 0.1,
+       "hilfe": ""
+      },
+      {
+       "key": "retreat_max_s",
+       "typ": "float",
+       "default": 1.5,
+       "hilfe": ""
+      },
+      {
+       "key": "retreat_cooldown_s",
+       "typ": "float",
+       "default": 10.0,
+       "hilfe": ""
+      },
+      {
+       "key": "pulse_margin",
+       "typ": "float",
+       "default": 0.85,
+       "hilfe": "Beide Budgets als Zeitimpuls (Budget / Tempo x pulse_margin), die Räder nur als Obergrenze: Beim Stoppbefehl läuft er noch ~0,9 s x Tempo nach (Simulator --dyn nach Messfahrt 2026-11-05), bei 0,18 m/s mehr als das ganze Budget. Über den ganzen Impuls entspricht der Weg dem Integral des Befehls."
+      },
+      {
+       "key": "creep_m",
+       "typ": "float",
+       "default": 0.0,
+       "hilfe": "zur Katze, je Begegnung (RiderPi-Test: 0.4); braucht Bodenmodell + Merkkarte"
+      },
+      {
+       "key": "creep_v",
+       "typ": "float",
+       "default": 0.06,
+       "hilfe": ""
+      },
+      {
+       "key": "animal_conf",
+       "typ": "float",
+       "default": 0.5,
+       "hilfe": "Tiere"
+      },
+      {
+       "key": "animal_hits",
+       "typ": "int",
+       "default": 4,
+       "hilfe": ""
+      },
+      {
+       "key": "dog_fear_m",
+       "typ": "float",
+       "default": 2.0,
+       "hilfe": ""
+      },
+      {
+       "key": "dog_close_m",
+       "typ": "float",
+       "default": 0.5,
+       "hilfe": "näher: Ohnmacht"
+      },
+      {
+       "key": "cat_stop_m",
+       "typ": "float",
+       "default": 0.8,
+       "hilfe": ""
+      },
+      {
+       "key": "animal_repeat_s",
+       "typ": "float",
+       "default": 20.0,
+       "hilfe": ""
+      },
+      {
+       "key": "trust_start",
+       "typ": "float",
+       "default": 0.3,
+       "hilfe": "Vertrauen 0..1 und Schreckpegel"
+      },
+      {
+       "key": "trust_gain",
+       "typ": "float",
+       "default": 0.01,
+       "hilfe": "1/s, während jemand sanft in der Nähe ist"
+      },
+      {
+       "key": "trust_loss",
+       "typ": "float",
+       "default": 0.05,
+       "hilfe": "je Schreck"
+      },
+      {
+       "key": "fright_decay",
+       "typ": "float",
+       "default": 0.05,
+       "hilfe": "1/s"
+      },
+      {
+       "key": "habit_tau_s",
+       "typ": "float",
+       "default": 60.0,
+       "hilfe": "Gewöhnung klingt so schnell ab"
+      },
+      {
+       "key": "faint",
+       "typ": "bool",
+       "default": false,
+       "hilfe": "Ohnmacht: absetzen, nap_s liegen, von selbst aufstehen. Beim Aufspringen rollt er ~20 cm vor: bewusst einschalten, vorne >= 40 cm frei, keine Stufe."
+      },
+      {
+       "key": "faint_level",
+       "typ": "float",
+       "default": 1.0,
+       "hilfe": ""
+      },
+      {
+       "key": "faint_max",
+       "typ": "int",
+       "default": 3,
+       "hilfe": "höchstens so viele in faint_window_s, danach nur Schreck"
+      },
+      {
+       "key": "faint_window_s",
+       "typ": "float",
+       "default": 600.0,
+       "hilfe": ""
+      },
+      {
+       "key": "nap_s",
+       "typ": "float",
+       "default": 10.0,
+       "hilfe": "so lange ganz weg, dann gehen langsam die Augen auf"
+      },
+      {
+       "key": "eyes_open_s",
+       "typ": "float",
+       "default": 3.0,
+       "hilfe": "Augen öffnen, dabei schaut er sich um"
+      },
+      {
+       "key": "clear_s",
+       "typ": "float",
+       "default": 2.5,
+       "hilfe": "so lange niemand im Bild: die Luft ist rein, er springt auf"
+      },
+      {
+       "key": "nap_max_s",
+       "typ": "float",
+       "default": 60.0,
+       "hilfe": "bis dahin nicht rein: bleibt liegen"
+      },
+      {
+       "key": "nap_rest_s",
+       "typ": "float",
+       "default": 2.0,
+       "hilfe": "so lange nach dem Absetzen, bevor die Liegelage als Referenz gilt"
+      },
+      {
+       "key": "nap_tilt_deg",
+       "typ": "float",
+       "default": 5.0,
+       "hilfe": "mehr: hochgehoben, steht nicht von selbst auf"
+      },
+      {
+       "key": "nap_moved_m",
+       "typ": "float",
+       "default": 0.01,
+       "hilfe": ""
+      },
+      {
+       "key": "standup_warn_s",
+       "typ": "float",
+       "default": 1.5,
+       "hilfe": "Aufwachton vor dem Aufspringen"
+      },
+      {
+       "key": "standup_timeout_s",
+       "typ": "float",
+       "default": 8.0,
+       "hilfe": ""
+      },
+      {
+       "key": "settle_s",
+       "typ": "float",
+       "default": 6.0,
+       "hilfe": "danach keine Gesten (Aufschwung, Nivellier-Impuls, Standreferenz)"
+      },
+      {
+       "key": "battery_low",
+       "typ": "int",
+       "default": 20,
+       "hilfe": "%: darunter keine Ohnmacht und kein Aufstehen"
+      },
+      {
+       "key": "peek_s",
+       "typ": "float",
+       "default": 3.0,
+       "hilfe": "Sonst Person so kurz weg und wieder da: Guck-guck"
+      },
+      {
+       "key": "gone_s",
+       "typ": "float",
+       "default": 3.0,
+       "hilfe": "länger weg: schaut hinterher, dann traurig"
+      },
+      {
+       "key": "nudge_m",
+       "typ": "float",
+       "default": 0.05,
+       "hilfe": "so viel Radweg in 0,5 s ohne Fahrbefehl: angestupst"
+      },
+      {
+       "key": "bored_s",
+       "typ": "float",
+       "default": 60.0,
+       "hilfe": ""
+      },
+      {
+       "key": "bored_repeat_s",
+       "typ": "float",
+       "default": 45.0,
+       "hilfe": ""
+      },
+      {
+       "key": "doze_s",
+       "typ": "float",
+       "default": 180.0,
+       "hilfe": "dösen, Detektor auf doze_hz"
+      },
+      {
+       "key": "timeout_s",
+       "typ": "float",
+       "default": 600.0,
+       "hilfe": "so lange niemand: absetzen, Modus idle (Akku)"
+      },
+      {
+       "key": "active_hz",
+       "typ": "float",
+       "default": 4.0,
+       "hilfe": "Detektor in pet; spart gegen ~7 Hz fast die Hälfte"
+      },
+      {
+       "key": "doze_hz",
+       "typ": "float",
+       "default": 1.0,
+       "hilfe": ""
+      },
+      {
+       "key": "gaze_dir",
+       "typ": "str",
+       "default": "/opt/xgonav/eyes_gaze",
+       "hilfe": "von tools/eyes.py --gaze (deploy/install.sh)"
+      }
+     ]
+    },
+    {
+     "name": "emotion",
+     "doc": "Automatische Emotionen (xgonav/emotion.py); nur mit --robot proc.",
+     "felder": [
+      {
+       "key": "enabled",
+       "typ": "bool",
+       "default": true,
+       "hilfe": ""
+      },
+      {
+       "key": "dir",
+       "typ": "str",
+       "default": "/opt/xgonav/emotions",
+       "hilfe": "von tools/emotion.sh build (deploy/install.sh)"
+      },
+      {
+       "key": "fifo",
+       "typ": "str",
+       "default": "/tmp/lcd0",
+       "hilfe": "unabhängig von output.lcd_fifo (Overlay)"
+      },
+      {
+       "key": "gap_s",
+       "typ": "float",
+       "default": 5.0,
+       "hilfe": "surprised erst, wenn so lange keine Person zu sehen war"
+      },
+      {
+       "key": "lost_s",
+       "typ": "float",
+       "default": 2.0,
+       "hilfe": "so lange keine Person: doubt (follow), sonst embarrassed"
+      },
+      {
+       "key": "battery_low",
+       "typ": "int",
+       "default": 20,
+       "hilfe": "% (Treiber schaltet bei 8 % ab); darunter shy"
+      },
+      {
+       "key": "battery_repeat_s",
+       "typ": "float",
+       "default": 300.0,
+       "hilfe": ""
+      },
+      {
+       "key": "sound",
+       "typ": "bool",
+       "default": true,
+       "hilfe": "Geräusche (aplay, Lautsprecher am WM8960): freudig bei Person erkannt, traurig bei Verlust (nach lost_s). WAVs aus tools/sounds.py (deploy/install.sh). \"\" = Standardgerät von ALSA."
+      },
+      {
+       "key": "sound_dir",
+       "typ": "str",
+       "default": "/opt/xgonav/sounds",
+       "hilfe": ""
+      },
+      {
+       "key": "sound_found",
+       "typ": "str",
+       "default": "freude.wav",
+       "hilfe": ""
+      },
+      {
+       "key": "sound_lost",
+       "typ": "str",
+       "default": "trauer.wav",
+       "hilfe": ""
+      },
+      {
+       "key": "sound_device",
+       "typ": "str",
+       "default": "",
+       "hilfe": ""
+      }
+     ]
+    },
+    {
+     "name": "ruhe",
+     "doc": "",
+     "felder": [
+      {
+       "key": "tick_s",
+       "typ": "float",
+       "default": 1.0,
+       "hilfe": "Ruhemodus (Web-Knopf „Ruhe“): abgesetzt, Bildverarbeitung aus, Treiber fragt nichts mehr ab, xgonav wacht nur noch selten auf. Den CPU-Takt schaltet deploy/xgo-ruhe (root), die Schlafaugen spielt api.php. Hauptschleife und robot-Thread: so oft aufwachen"
+      },
+      {
+       "key": "sleep_ms_on_loop",
+       "typ": "int",
+       "default": 1000,
+       "hilfe": "Treiber-Hauptschleife (Zustand, Akku); normal 200"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Ausgabe",
+   "abschnitte": [
+    {
+     "name": "output",
+     "doc": "",
+     "felder": [
+      {
+       "key": "web_host",
+       "typ": "str",
+       "default": "127.0.0.1",
+       "hilfe": "Schnittstelle nur lokal; Oberfläche über nginx (web/, deploy/nginx-xgonav.conf)"
+      },
+      {
+       "key": "web_port",
+       "typ": "int",
+       "default": 8088,
+       "hilfe": "0 = aus"
+      },
+      {
+       "key": "web_fps",
+       "typ": "int",
+       "default": 10,
+       "hilfe": ""
+      },
+      {
+       "key": "lcd_fifo",
+       "typ": "str",
+       "default": "",
+       "hilfe": "\"\" = aus"
+      },
+      {
+       "key": "lcd_fps",
+       "typ": "int",
+       "default": 15,
+       "hilfe": "CM4 gemessen: kostet die Hauptschleife nichts Messbares"
+      },
+      {
+       "key": "record_dir",
+       "typ": "str",
+       "default": "~/fahrt",
+       "hilfe": "Rohaufzeichnung (Knopf in der Oberfläche): je Aufnahme ein Unterverzeichnis"
+      },
+      {
+       "key": "record_min_free_mb",
+       "typ": "int",
+       "default": 500,
+       "hilfe": "darunter schaltet sie sich ab"
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

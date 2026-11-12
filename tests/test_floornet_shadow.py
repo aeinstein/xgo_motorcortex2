@@ -81,7 +81,7 @@ def test_overlay_zeichnet_die_netzlinie():
 
 
 def test_schatten_ist_ab_werk_aus():
-    assert Config().freespace.shadow_net == ""
+    assert Config.neutral().freespace.shadow_net == ""
 
 
 def test_fehlende_bibliothek_oder_datei_gibt_kein_netz(tmp_path, monkeypatch):
@@ -99,7 +99,7 @@ class _EstNetz(_Est):
     """Wie _Est, mit den Maßen des echten Bodenmodells (160 x 120, Maßstab 4)."""
     W, H, scale = 160, 120, 4.0
 
-    cfg = Config().freespace
+    cfg = Config.neutral().freespace
     geo = None
     _net_mask = None
     diag: dict = {}
@@ -182,7 +182,7 @@ def test_overlay_zeigt_nur_das_netz_wenn_es_entscheidet():
 
 
 def test_primaer_ist_ab_werk_das_verfahren():
-    assert Config().freespace.primary == "method"
+    assert Config.neutral().freespace.primary == "method"
 
 
 # ---- ZeilenGlaetter: Kante über die Zeit beruhigen ----
@@ -284,7 +284,7 @@ def test_glaetter_setzt_bei_posensprung_luecke_und_fehlender_pose_zurueck():
         g.glaetten(a, (0.0, 0.0, 0.0), 0.0, 0.0, geo)
         g.glaetten(a, (0.0, 0.0, 0.0), 0.0, 0.083, geo)
         assert np.array_equal(g.glaetten(b, pose, 0.0, t, geo), b)
-    assert Config().freespace.net_smooth_n == 0                                  # ab Werk aus
+    assert Config.neutral().freespace.net_smooth_n == 0                                  # ab Werk aus
     g = ZeilenGlaetter(1)                                                        # n = 1: aus
     g.glaetten(a, (0.0, 0.0, 0.0), 0.0, 0.0, geo)
     assert np.array_equal(g.glaetten(b, (0.0, 0.0, 0.0), 0.0, 0.083, geo), b)

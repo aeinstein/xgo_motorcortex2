@@ -201,7 +201,7 @@ def test_stages_drop_sorted_out_frames_everywhere(tmp_path):
 
 def test_stage3_npz_geometrie_aus_konfig_und_koerperhoehe_der_fahrt(tmp_path, monkeypatch, capsys):
     from xgonav.config import Config
-    cfg = Config()
+    cfg = Config.neutral()
     cfg.camera.cam_h_u8 = [109.4, 0.1126]
     g = json.loads(SN.geometrie(cfg, 90.0))
     assert g["W"] == 640 and g["f"] == pytest.approx(320 / np.tan(np.radians(cfg.camera.hfov_deg) / 2))

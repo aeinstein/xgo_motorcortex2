@@ -37,6 +37,12 @@
  *   POST api.php?a=emotion&name=...           (Bildfolge aufs Display)
  *   POST api.php?a=shutdown                   (sudo-Regel: www-data -> systemctl poweroff)
  *   (sudo-Regel deploy/sudoers-xgonav-ruhe: www-data -> /usr/local/sbin/xgo-ruhe on|off)
+ *   GET  api.php?a=config                     (Einstellungen: Schema, Werte aus config.toml, Sicherungen)
+ *   POST api.php?a=config_save&hash=<sha1>    (Body JSON {"abschnitt.key": Wert|null}; null = Default.
+ *                                            Prüft mit Config.load, sichert nach CONFIG_BACKUP, wirkt nach Neustart)
+ *   POST api.php?a=config_restore&name=<datei>&hash=<sha1>   (Sicherung zurückspielen; aktuelle wird vorher gesichert)
+ *   POST api.php?a=restart[&trotzdem=1]       (xgonav neu starten; 409, wenn er fährt, balanciert oder aufzeichnet;
+ *                                            im Ruhemodus nie. sudo-Regel deploy/sudoers-xgonav-restart)
  *
  * Fahren geht über xgonav (sonst überschreibt dessen Stillstand die Befehle); LEDs,
  * Aktionen, Höhe, Roll und Kalibrierung schreibt PHP direkt nach /proc/XGORider.
@@ -54,6 +60,18 @@ const EMOTION_RAW = '/opt/xgonav/emotions';             // tools/eyes.py, von de
 const HEIGHT_MIN = 61;                                   // u8; ~10 mm über dem Minimum, dazu ~4 mm fürs Ausrichten (ein Bein tiefer)
 const LED_FILE = '/var/lib/xgonav/led_brightness';      // n/256 (Firmware-Patch 0016), deploy/install.sh legt den Ordner an
 const HEIGHT_MAX = 205;                                 // u8; Firmware nähme 255, bei 235 Stopp 252 (2026-11-06, Ursache offen)
+const CONFIG = '/opt/xgonav/config.toml';               // Gruppe video, 0664 (deploy/install.sh)
+const CONFIG_SCHEMA = __DIR__ . '/config-schema.json';  // tools/config_schema.py
+const CONFIG_BACKUP = '/var/lib/xgonav/config-backup';  // je Speichern eine Sicherung, die letzten 50 bleiben
+const CONFIG_PRUEF = '/opt/xgonav/venv/bin/python';     // Config.load wie beim Start von xgonav
+
+require __DIR__ . '/konfig.inc.php';
+
+// Ortszeit des Riders für Sicherungsnamen und Vermerke (php-fpm nimmt sonst UTC)
+$tz = trim((string)@file_get_contents('/etc/timezone'));
+if ($tz !== '' && in_array($tz, timezone_identifiers_list(), true)) {
+    date_default_timezone_set($tz);
+}
 
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
@@ -135,8 +153,98 @@ function ruhe_system(bool $an, array &$fehler): bool
     return $rc === 0;
 }
 
+// ---------------------------------------------------------------- Einstellungen (config.toml)
+function konfig_schema(): array
+{
+    $s = json_decode((string)@file_get_contents(CONFIG_SCHEMA), true);
+    if (!is_array($s)) {
+        antwort(500, json_encode(['error' => 'config-schema.json fehlt (python tools/config_schema.py)']));
+    }
+    return $s;
+}
+
+function konfig_text(): string
+{
+    $t = @file_get_contents(CONFIG);
+    if ($t === false) {
+        antwort(500, json_encode(['error' => CONFIG . ' nicht lesbar']));
+    }
+    return $t;
+}
+
+function konfig_sicherungen(): array
+{
+    $liste = [];
+    foreach (glob(CONFIG_BACKUP . '/config.toml.*') ?: [] as $p) {
+        $liste[] = ['name' => basename($p), 'zeit' => filemtime($p), 'bytes' => filesize($p)];
+    }
+    usort($liste, fn($x, $y) => strcmp($y['name'], $x['name']));
+    return $liste;
+}
+
+// Aktuellen Stand sichern; die ältesten über 50 löschen. Gibt den Namen zurück.
+function konfig_sichern(string $text): string
+{
+    if (!is_dir(CONFIG_BACKUP) && !@mkdir(CONFIG_BACKUP, 02775)) {
+        antwort(500, json_encode(['error' => CONFIG_BACKUP . ' nicht anlegbar (www-data in Gruppe video?)']));
+    }
+    $name = 'config.toml.' . date('Ymd-His');
+    for ($n = 2; file_exists(CONFIG_BACKUP . "/$name"); $n++) {
+        $name = 'config.toml.' . date('Ymd-His') . "-$n";
+    }
+    if (@file_put_contents(CONFIG_BACKUP . "/$name", $text) === false) {
+        antwort(500, json_encode(['error' => 'Sicherung nicht schreibbar']));
+    }
+    foreach (array_slice(konfig_sicherungen(), 50) as $alt) {
+        @unlink(CONFIG_BACKUP . '/' . $alt['name']);
+    }
+    return $name;
+}
+
+// Neuen Text mit Config.load prüfen (wie beim Start), sichern, schreiben. Gibt den Namen der Sicherung zurück.
+function konfig_schreiben(string $alt, string $neu): string
+{
+    $kandidat = CONFIG_BACKUP . '/kandidat.toml';
+    if (!is_dir(CONFIG_BACKUP)) {
+        @mkdir(CONFIG_BACKUP, 02775);
+    }
+    if (@file_put_contents($kandidat, $neu) === false) {
+        antwort(500, json_encode(['error' => 'Prüfdatei nicht schreibbar (' . CONFIG_BACKUP . ')']));
+    }
+    $py = 'import sys; sys.path.insert(0, "/opt/xgonav"); from xgonav.config import Config; Config.load(sys.argv[1])';
+    exec(sprintf('%s -I -c %s %s 2>&1', escapeshellarg(CONFIG_PRUEF), escapeshellarg($py), escapeshellarg($kandidat)),
+         $out, $rc);
+    @unlink($kandidat);
+    if ($rc !== 0) {
+        antwort(400, json_encode(['error' => 'Prüfung mit Config.load fehlgeschlagen: ' . (end($out) ?: "rc $rc")]));
+    }
+    $name = konfig_sichern($alt);
+    // Ordner gehört aeinstein: kein Umbenennen möglich, deshalb an Ort und Stelle (Sicherung liegt vor)
+    if (@file_put_contents(CONFIG, $neu, LOCK_EX) === false) {
+        antwort(500, json_encode(['error' => CONFIG . ' nicht schreibbar (Gruppe video, 0664?)']));
+    }
+    return $name;
+}
+
+// Vom Browser geladener Stand muss noch aktuell sein (sonst hat jemand per ssh oder ein zweiter Browser geändert)
+function konfig_hash_pruefen(string $text): void
+{
+    if (($_GET['hash'] ?? '') !== sha1($text)) {
+        antwort(409, json_encode(['error' => 'config.toml wurde inzwischen geändert – Einstellungen neu laden']));
+    }
+}
+
 $a = $_GET['a'] ?? '';
 $post = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST';
+
+if ($a === 'config' && !$post) {
+    $text = konfig_text();
+    [$werte, $fehler] = konfig_werte(konfig_zerlegen($text));
+    antwort(200, json_encode(['schema' => konfig_schema(), 'werte' => (object)$werte, 'unlesbar' => (object)$fehler,
+                              'hash' => sha1($text), 'datei' => CONFIG, 'schreibbar' => is_writable(CONFIG),
+                              'sicherungen' => konfig_sicherungen()],
+                             JSON_UNESCAPED_UNICODE | JSON_PRESERVE_ZERO_FRACTION));
+}
 
 if ($a === 'status') {
     xgonav('GET', '/status');
@@ -293,6 +401,54 @@ switch ($a) {
         $out = [];
         exec('sudo -n /usr/bin/systemctl poweroff 2>&1', $out, $rc);
         antwort($rc === 0 ? 200 : 500, json_encode($rc === 0 ? ['ok' => true] : ['error' => 'Herunterfahren nicht erlaubt: ' . implode(' ', $out)]));
+    case 'config_save':
+        $aend = json_decode((string)file_get_contents('php://input'), true);
+        if (!is_array($aend) || $aend === [] || array_is_list($aend)) {
+            antwort(400, json_encode(['error' => 'keine Änderungen']));
+        }
+        $fp = fopen(CONFIG_BACKUP . '.lock', 'c');
+        if ($fp) flock($fp, LOCK_EX);             // zwei Browser gleichzeitig: nacheinander
+        $alt = konfig_text();
+        konfig_hash_pruefen($alt);
+        try {
+            $neu = konfig_aendern($alt, konfig_schema_felder(konfig_schema()), $aend, 'Web ' . date('Y-m-d'));
+        } catch (KonfigFehler $e) {
+            antwort(400, json_encode(['error' => $e->getMessage()]));
+        }
+        $name = konfig_schreiben($alt, $neu);
+        antwort(200, json_encode(['ok' => true, 'sicherung' => $name, 'hash' => sha1($neu)]));
+    case 'config_restore':
+        $name = $_GET['name'] ?? '';
+        if (!preg_match('/^config\.toml\.[0-9]{8}-[0-9]{6}(-[0-9]+)?$/', $name) || !is_file(CONFIG_BACKUP . "/$name")) {
+            antwort(400, json_encode(['error' => 'Sicherung unbekannt']));
+        }
+        $fp = fopen(CONFIG_BACKUP . '.lock', 'c');
+        if ($fp) flock($fp, LOCK_EX);
+        $alt = konfig_text();
+        konfig_hash_pruefen($alt);
+        $neu = (string)file_get_contents(CONFIG_BACKUP . "/$name");
+        $gesichert = konfig_schreiben($alt, $neu);
+        antwort(200, json_encode(['ok' => true, 'sicherung' => $gesichert, 'hash' => sha1($neu)]));
+    case 'restart':
+        // Zustand vorher lesen: nicht mitten in einer Fahrt, beim Balancieren oder in einer Aufnahme neu starten,
+        // außer der Nutzer bestätigt es (trotzdem=1). Im Ruhemodus nie: erst wecken (CPU-Takt).
+        $body = @file_get_contents(XGONAV . '/status', false, stream_context_create(['http' => ['timeout' => 2]]));
+        $s = $body === false ? null : json_decode($body, true);
+        if (is_array($s)) {
+            if (!empty($s['ruhe'])) {
+                antwort(409, json_encode(['error' => 'Ruhemodus: erst wecken', 'ruhe' => true]));
+            }
+            $grund = [];
+            if (($s['mode'] ?? 'idle') !== 'idle') $grund[] = 'Modus ' . $s['mode'];
+            if (!empty($s['balancing'])) $grund[] = 'balanciert';
+            if (!empty($s['aufzeichnung']['an'])) $grund[] = 'Aufzeichnung läuft';
+            if ($grund && ($_GET['trotzdem'] ?? '') !== '1') {
+                antwort(409, json_encode(['error' => 'Rider in Benutzung: ' . implode(', ', $grund), 'grund' => $grund]));
+            }
+        }
+        exec('sudo -n /usr/bin/systemctl --no-block restart xgonav 2>&1', $out, $rc);
+        antwort($rc === 0 ? 200 : 500, json_encode($rc === 0 ? ['ok' => true]
+            : ['error' => 'Neustart nicht erlaubt: ' . implode(' ', $out) . ' (deploy/sudoers-xgonav-restart)']));
     default:
         antwort(400, json_encode(['error' => 'unbekannte Aktion']));
 }

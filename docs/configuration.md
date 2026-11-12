@@ -29,7 +29,7 @@ Unknown section or key in TOML → `KeyError` at load. New parameters go into th
 
 ## Parameters
 
-Default = `config.py`. RiderPi = `deploy/config.example.toml` (blank = default). [K] = device-specific, calibrate.
+Default = `config.py`; since 2026-11-12 these are the RiderPi values (`/opt/xgonav/config.toml` without the horizon test mode and `/opt` paths). (sim: …) = `Config.neutral()` (`NEUTRAL` in `config.py`), used by `tests/sim_run.py` and the tests. RiderPi = `deploy/config.example.toml` where it still differs (blank = default). [K] = device-specific, calibrate.
 
 ### top level
 | Key | Default | RiderPi |
@@ -39,13 +39,13 @@ Default = `config.py`. RiderPi = `deploy/config.example.toml` (blank = default).
 ### `[robot]`
 | Key | Default | RiderPi | Unit / note |
 |---|---|---|---|
-| `max_v` | 0.25 | 0.15 | normalised, before the gains; sent 0.12 ≈ 26 cm/s, 0.24 ≈ 50 cm/s |
-| `max_w` | 0.25 | 0.30 | normalised; 0.25 ≈ 90 °/s (firmware scale assumed); RiderPi 0.15 → 0.30 on 2026-11-05 |
-| `manual_forward_gain` | 1.0 | 2.0 | multiplier for positive v, manual mode only (applied after `max_v`) |
-| `reverse_gain` | 1.0 | 2.0 [K] | multiplier for negative v (applied after `max_v`) |
+| `max_v` | 0.15 (sim: 0.25) | | normalised, before the gains; sent 0.12 ≈ 26 cm/s, 0.24 ≈ 50 cm/s |
+| `max_w` | 0.3 (sim: 0.25) | | normalised; 0.25 ≈ 90 °/s (firmware scale assumed); RiderPi 0.15 → 0.30 on 2026-11-05 |
+| `manual_forward_gain` | 2.0 (sim: 1.0) | | multiplier for positive v, manual mode only (applied after `max_v`) |
+| `reverse_gain` | 2.0 (sim: 1.0) | | multiplier for negative v (applied after `max_v`) |
 | `level_pulse_s` | 3.0 | | length of one leveling pulse (roll command 0, firmware `roll_balance` on, then off) |
-| `level_after_standup` | false | true | one pulse after each stand-up, 2.5 s after it; web button „Neu ausrichten“ triggers the same pulse |
-| `vx_limit` | 1.5 | 1.8 | m/s per firmware unit (measured 2026-11-05: command 0.15 → ~27 cm/s); path check, follow prediction, odometry fallback |
+| `level_after_standup` | true (sim: false) | | one pulse after each stand-up, 2.5 s after it; web button „Neu ausrichten“ triggers the same pulse |
+| `vx_limit` | 1.8 (sim: 1.5) | | m/s per firmware unit (measured 2026-11-05: command 0.15 → ~27 cm/s); path check, follow prediction, odometry fallback |
 | `speed_ctrl` | false | | speed control on the wheels: sent value += ∫(target − wheel speed); target = sent value × `vx_limit`. Needs wheel odometry. Zero without fresh wheel data, at standstill, below the firmware dead band (0.05) and on a direction change. Not driven on the RiderPi |
 | `speed_ctrl_window_s` | 0.3 | | s, averaging window for wheel speed and target |
 | `speed_ctrl_ti_s` | 2.0 | | s, integral time |
@@ -68,16 +68,16 @@ Default = `config.py`. RiderPi = `deploy/config.example.toml` (blank = default).
 | `source` | `picam` | `picam` | |
 | `width` × `height` | 640 × 480 | | |
 | `fps` | 24 | 24 | |
-| `sensor_mode` | `""` | `1296x972` | pure 2×2 binning; 640x480 mode runs 26.5 instead of 25 fps |
-| `scaler_crop` | `[]` | `[16, 0, 2560, 1920]` | keeps FOV/tilt/shading of 640x480 mode |
-| `exposure_us` | 4000 | 20000 | 0 = auto; runtime-adjustable from web |
-| `analogue_gain` | 0.0 | 16.0 | 1..63.9, 0 = auto (auto max 8) |
+| `sensor_mode` | `1296x972` (sim: `""`) | | pure 2×2 binning; 640x480 mode runs 26.5 instead of 25 fps |
+| `scaler_crop` | `[16, 0, 2560, 1920]` (sim: `[]`) | | keeps FOV/tilt/shading of 640x480 mode |
+| `exposure_us` | 20000 (sim: 4000) | | 0 = auto; runtime-adjustable from web |
+| `analogue_gain` | 16.0 (sim: 0.0) | | 1..63.9, 0 = auto (auto max 8) |
 | `hfov_deg` | 91.8 | 91.8 [K] | f = 310 px @ 640, from turns vs IMU heading (calibration.md §0) |
-| `mount_offset_mm` | 45 | 43 [K] | camera height = body height + offset; only used without `cam_h_u8` |
-| `cam_h_u8` | `[]` | `[109.4, 0.1126]` [K] | camera height = a + b·u8 (height set-point): measured lens centre while balancing, confirmed by the floor grid 2026-11-10 (calibration.md §2) |
-| `cx_offset_px` | 0 | 13 [K] | column of the driving direction minus image centre (px at `width`); bearings in maps, follow and simulator use `W/2 + cx_offset_px`. RiderPi: focus of expansion while driving straight (calibration.md §0); ego-motion still uses the image centre |
-| `cam_fwd_mm` | 0 | 36 [K] | lens ahead of the wheel axle; map origin is the axle, floor points are entered this far ahead (CAD 36.9, floor check 34/41, pattern 25–35). Simulator renders the camera there too |
-| `tilt_deg` | 0.0 | 1.39 [K] | pair with `imu.pitch_ref_deg` |
+| `mount_offset_mm` | 43.0 (sim: 45.0) | | camera height = body height + offset; only used without `cam_h_u8` |
+| `cam_h_u8` | `[109.4, 0.1126]` (sim: `[]`) | | camera height = a + b·u8 (height set-point): measured lens centre while balancing, confirmed by the floor grid 2026-11-10 (calibration.md §2) |
+| `cx_offset_px` | 13.0 (sim: 0.0) | | column of the driving direction minus image centre (px at `width`); bearings in maps, follow and simulator use `W/2 + cx_offset_px`. RiderPi: focus of expansion while driving straight (calibration.md §0); ego-motion still uses the image centre |
+| `cam_fwd_mm` | 36.0 (sim: 0.0) | | lens ahead of the wheel axle; map origin is the axle, floor points are entered this far ahead (CAD 36.9, floor check 34/41, pattern 25–35). Simulator renders the camera there too |
+| `tilt_deg` | 5.18 (sim: 0.0) | | pair with `imu.pitch_ref_deg` |
 | `frame_clock_corr` | 1.0 | | 640x480 mode: ~1.061 |
 | `loop_file` / `realtime_file` | true / true | | video replay |
 
@@ -86,11 +86,11 @@ Default = `config.py`. RiderPi = `deploy/config.example.toml` (blank = default).
 |---|---|---|---|
 | `enabled` | true | true | needs `imu_log` |
 | `imu_hz` | 50 | 50 | written to `settings/imu_hz` |
-| `stream_hz` | 0 | 100 | > 0: written to `settings/imu_stream_hz` → firmware stream (patch 0014) with the firmware's sample time; driver without it: warning, polling |
+| `stream_hz` | 100 (sim: 0) | | > 0: written to `settings/imu_stream_hz` → firmware stream (patch 0014) with the firmware's sample time; driver without it: warning, polling |
 | `idle_hz` | 5 | 5 | While the Rider is set down (not balancing): stream rate and read rate of the IMU thread; back to `stream_hz` and `poll_s` on stand-up. Saves ~6 % of one core on the CM4. `0` = never switch. Sleep mode still turns the stream off |
 | `pitch_sign` | 0 | | 0 = auto from image correlation (RiderPi: -1) |
 | `time_offset_ms` | None | | None = auto (RiderPi: +4..+8 ms) |
-| `pitch_ref_deg` | 0.0 | -0.5 [K] | raw IMU pitch at camera calibration (R-1.1.3: -2.7) |
+| `pitch_ref_deg` | -4.43 (sim: 0.0) | | raw IMU pitch at camera calibration (R-1.1.3: -2.7) |
 | `min_corr` | 0.6 | | sync accepted above |
 | `sync_range_ms` / `sync_step_ms` | 100 / 4 | | |
 | `poll_s` | 0.01 | | read `imu_log` this often; only new lines are parsed (RiderPi: one read 185 µs for 128 lines). At 0.05 the newest sample was up to ~50 ms older than the frame and the pitch was held, not interpolated |
@@ -123,8 +123,8 @@ Default = `config.py`. RiderPi = `deploy/config.example.toml` (blank = default).
 | `input_size` | 256 | |
 | `conf` / `iou` | 0.35 / 0.45 | |
 | `threads` | 2 | 2 |
-| `max_hz` | 0 (no limit) | 5.0 |
-| `classes` | `[]` (all COCO) | `person` + floor furniture (2026-11-05, as example config): `chair`, `couch`, `dining table`, `potted plant`, `bed`, `dog`, `cat` — non-target boxes block their columns (thin chair legs are invisible to `kanten`) |
+| `max_hz` | 5.0 (sim: 0.0) | |
+| `classes` | `["person", "chair", "couch", "dining table", "potted plant", "bed", "dog", "cat"]` (sim: `[]`) | |
 | `sharpness_rel` / `max_wait_s` | 0.6 / 0.25 | |
 
 ### `[tracker]`
@@ -134,27 +134,27 @@ Default = `config.py`. RiderPi = `deploy/config.example.toml` (blank = default).
 | Key | Default | RiderPi | Note |
 |---|---|---|---|
 | `enabled` | true | | false → only `idle`, `follow`, `manual` allowed |
-| `threaded` | false | true | |
+| `threaded` | true (sim: false) | | |
 | `width` | 160 | | columns |
-| `sample_rows` / `sample_cols` / `sample_bottom` | 0.18 / 0.30 / 0.0 | 0.34 / 0.5 / | floor reference patch |
+| `sample_rows` / `sample_cols` / `sample_bottom` | 0.34 / 0.5 / 0.0 (sim: 0.18 / 0.30 / 0.0) | | floor reference patch |
 | `sectors` | 5 | | |
 | `floor_thresh` | 0.08 | | |
 | `edge_weight` | 0.4 | | |
 | `min_obst_rows` | 6 | | |
 | `min_obst_height_m` | 0.04 | | |
-| `shading_file` | `""` | `shading.json` [K] | |
-| `shading_max_gain` | 8.0 | 5.0 | |
+| `shading_file` | `shading.json` (sim: `""`) | | |
+| `shading_max_gain` | 5.0 (sim: 8.0) | | |
 | `no_block_cls` | bed, couch, dining table | | detector classes not entered as obstacles: their box bottom is no footprint (RiderPi 2026-11-06: "bed" box down to the image bottom blocked everything) |
 | `min_known_frac` | 0.2 | | columns below → unknown |
 | `bg_model` / `shading_max_gain_bg` | false / 8.0 | false | edge model from blue+green where red is unmeasurable; full width, but false obstacles in dark lower corners |
 | `min_learn_v` | 12 | | no learning from (nearly) black samples |
 | `restart_hold_s` | 1.0 | | relearn after pipeline start, standing up, exposure/gain change |
-| `method` | `farbe` | `kanten` | floor boundary: `farbe` = color histogram; `kanten` = first step edge from the bottom with a differing patch above (uncorrected image, insensitive to shading and gray-on-gray walls); `beide` = `kanten`, color model where no edge is found |
-| `shadow_net` | `""` | `""` | FloorNet weights (`tools/floornet/export.py`, e.g. `models/floornet.bin`). Runs in the freespace thread (needs `threaded = true`) and is drawn in the overlay in magenta; makes no decisions. Off if the C++ core is missing or its self-test fails |
-| `primary` | `"method"` | `"net"` | Who decides. `"net"`: FloorNet supplies `columns` and `sectors` for maps and control, alone: `method` is neither computed nor drawn (saves its ~12 ms per floor run on the CM4; overlay shows only the magenta line). Needs `shadow_net` and `threaded`. If the network is missing, fails or returns invalid rows, it stays off and `method` computes and decides from then on. `/status` `fs_src` shows the source. Set on the RiderPi since 2026-11-10, not yet driven |
+| `method` | `kanten` (sim: `farbe`) | | floor boundary: `farbe` = color histogram; `kanten` = first step edge from the bottom with a differing patch above (uncorrected image, insensitive to shading and gray-on-gray walls); `beide` = `kanten`, color model where no edge is found |
+| `shadow_net` | `models/floornet.bin` (sim: `""`) | | FloorNet weights (`tools/floornet/export.py`, e.g. `models/floornet.bin`). Runs in the freespace thread (needs `threaded = true`) and is drawn in the overlay in magenta; makes no decisions. Off if the C++ core is missing or its self-test fails |
+| `primary` | `net` (sim: `method`) | | Who decides. `"net"`: FloorNet supplies `columns` and `sectors` for maps and control, alone: `method` is neither computed nor drawn (saves its ~12 ms per floor run on the CM4; overlay shows only the magenta line). Needs `shadow_net` and `threaded`. If the network is missing, fails or returns invalid rows, it stays off and `method` computes and decides from then on. `/status` `fs_src` shows the source. Set on the RiderPi since 2026-11-10, not yet driven |
 | `net_outlier_px` | `25.0` | `25.0` | FloorNet decoder, spike removal: a column further than this many full-frame rows from the median of the 7 columns around it takes the best bin at that median, if enough probability mass lies there. `0` = plain best bin. See `docs/floornet.md` |
 | `net_outlier_ratio` | `0.3` | `0.3` | Mass (5 bins) required at the median, relative to the mass at the column's own peak |
-| `net_smooth_n` | `0` | | FloorNet boundary smoothed over time, only with `primary = "net"`: the last n outputs are mapped onto the current frame (map pose, pitch) and the median per column counts; never averaged. `3` removes a spike seen in one frame, a new obstacle appears one network frame (83 ms) later. `0`/`1` = off; without a map pose the output passes unchanged (`docs/floornet.md`) |
+| `net_smooth_n` | 3 (sim: 0) | | FloorNet boundary smoothed over time, only with `primary = "net"`: the last n outputs are mapped onto the current frame (map pose, pitch) and the median per column counts; never averaged. `3` removes a spike seen in one frame, a new obstacle appears one network frame (83 ms) later. `0`/`1` = off; without a map pose the output passes unchanged (`docs/floornet.md`) |
 | `edge_thin` / `edge_k` | true / 3 | | remove thin lines (joints) first; rows per side of the step |
 | `edge_chroma_w` | 2.0 | | weight of LAB a/b vs. L |
 | `edge_step_thr` / `edge_seg_thr` | 35 / 28 | | min step; min deviation of the patch above (min obstacle height) from the floor below |
@@ -171,28 +171,28 @@ Replay of three evening drives (`tools/replay_raw.py`, 2026-11-04), false alarms
 2026-11-05 (`edge_log_s` 16, `edge_glare`): replay 0 / 0 / 54 % — follow11 now sees the kitchen cabinet side 0.16 m beside the path and the 0.33 m gray wall it missed before; the replay counts these as false alarms (person far). Manual test cases (19 frames): 17 OK (before 13). Cost +0.2 ms per call on a PC.
 
 ### `[map]` (short-term local map)
-`max_age_s` 4.0, `confirm` 1 (RiderPi 3), `confirm_radius_m` 0.08, `radius_m` 0.18 (path check: a confirmed point closer than this to the arc brakes), `radius_tight_m` 0.08 (same while the path follower drives a tight spot, `home.tight_m`; Rider half width 5.8 cm per CAD), `yaw_source` `odom` (RiderPi `imu`): heading for moving the points; `odom` = like `[odom] yaw_source` (wheels, else camera), `imu` = firmware heading from `imu_log` (~50 Hz), falls back to `odom` when the IMU is missing or older than `imu.max_age_s`. RiderPi 2026-11-08, full turns against images: IMU 0.997, wheels 0.992 of the true angle; per turn the two differ randomly by ~2° (p90 ~8°). Status: `lmap_yaw_src`. `native` true: moving, entering (ground geometry, clear seen floor, thin, forget), confirming and the arc check in the C++ core (`xgonav/native/navfast.cpp`) if built; same result as numpy (CM4, 2000 points: arc check after a new observation 5.8 → 0.4 ms, confirmed points for the planner 94 → 0.6 ms).
+`max_age_s` 4.0, `confirm` 3 (sim: 1), `confirm_radius_m` 0.08, `radius_m` 0.18 (path check: a confirmed point closer than this to the arc brakes), `radius_tight_m` 0.08 (same while the path follower drives a tight spot, `home.tight_m`; Rider half width 5.8 cm per CAD), `yaw_source` `imu` (sim: `odom`): heading for moving the points; `odom` = like `[odom] yaw_source` (wheels, else camera), `imu` = firmware heading from `imu_log` (~50 Hz), falls back to `odom` when the IMU is missing or older than `imu.max_age_s`. RiderPi 2026-11-08, full turns against images: IMU 0.997, wheels 0.992 of the true angle; per turn the two differ randomly by ~2° (p90 ~8°). Status: `lmap_yaw_src`. `native` true: moving, entering (ground geometry, clear seen floor, thin, forget), confirming and the arc check in the C++ core (`xgonav/native/navfast.cpp`) if built; same result as numpy (CM4, 2000 points: arc check after a new observation 5.8 → 0.4 ms, confirmed points for the planner 94 → 0.6 ms).
 
 ### `[behavior]`
 | Key | Default | RiderPi |
 |---|---|---|
 | `mode` | idle | idle |
 | `target_class` | person | person |
-| `follow_dist_m` | 1.2 | 0.9 |
+| `follow_dist_m` | 0.9 (sim: 1.2) | |
 | `approach_dist_m` | 0.5 | 0.5 |
-| `dist_deadband` | 0.15 | 0.10 |
+| `dist_deadband` | 0.1 (sim: 0.15) | |
 | `kp_turn` / `kd_turn` | 2.5 / 0.25 | |
 | `kp_dist` / `ff_dist` | 0.35 / 0.8 | |
 | `cruise_v` / `backup_v` | 0.15 / 0.10 | 0.15 / |
-| `search_w` | 0.12 | 0.07 |
-| `turn_w` (explore: turn away) | 0.18 | 0.21 |
-| `search_timeout_s` | 20 | 10 |
+| `search_w` | 0.07 (sim: 0.12) | |
+| `turn_w` (explore: turn away) | 0.21 (sim: 0.18) | |
+| `search_timeout_s` | 10.0 (sim: 20.0) | |
 | `blocked_free` / `slow_free` | 0.22 / 0.55 | |
 | `ttc_avoid_s` / `ttc_stop_s` | 1.2 / 0.8 | |
-| `height_cruise_mm` / `height_search_mm` / `height_fast_mm` | 85 / 115 / 70 | 85 / 100 / 80 |
+| `height_cruise_mm` / `height_search_mm` / `height_fast_mm` | 85 / 100 / 80 (sim: 85 / 115 / 70) | |
 
 ### `[output]`
-`web_host` 127.0.0.1, `web_port` 8088 (0 = off), `web_fps` 10, `lcd_fifo` `/tmp/lcd0` ("" = off), `lcd_fps` 15, `record_dir` `~/fahrt` (raw recording), `record_min_free_mb` 500 (below: recording switches itself off).
+`web_host` 127.0.0.1, `web_port` 8088 (0 = off), `web_fps` 10, `lcd_fifo` `""` = off (sim: `/tmp/lcd0`), `lcd_fps` 15, `record_dir` `~/fahrt` (raw recording), `record_min_free_mb` 500 (below: recording switches itself off).
 
 ### `[emotion]`
 `enabled` true, `dir` `/opt/xgonav/emotions`, `fifo` `/tmp/lcd0`, `gap_s` 5, `lost_s` 2, `battery_low` 20 %, `battery_repeat_s` 300.
@@ -230,7 +230,7 @@ All keys with comments: `PetCfg` in `xgonav/config.py`.
 | `wheel_diameter_m` | 0.060 | |
 | `track_m` | 0.090 | |
 | `ticks_per_rev` | 1024 | |
-| `scale_left` / `scale_right` | 1.0 / 1.0 | 1.0073 / 1.0087 [K] |
+| `scale_left` / `scale_right` | 1.0073 / 1.0087 [K] (sim: 1.0 / 1.0) | |
 | `poll_hz` / `max_age_s` / `max_jump_ticks` | 25 / 0.3 / 2048 | |
 | `read_idle` | `false` | `false` | `false`: while the Rider is set down (not balancing) the wheel thread reads nothing; the pose stands still even if he is rolled by hand. Reading restarts on stand-up without the travel in between. `true` = always read |
 | `yaw_source` | `räder` | heading for explore + local map; `kamera` = ego-motion only |
@@ -241,15 +241,15 @@ All keys with comments: `PetCfg` in `xgonav/config.py`.
 | `enabled` | true |
 | `resolution_m` / `size_m` | 0.05 / 16.0 |
 | `min_range_m` / `max_range_m` | 0.15 / 1.25 (hits only up to here) |
-| `confirm_dr_m` / `confirm_cells` | 0 (off) / 2; RiderPi 0.2: a hit counts only once the same spot (± cells) was hit from ranges at least this far apart; until then it is a candidate (orange in `/map.png`). Reflections in a glossy floor and seams move with the Rider and are never confirmed; turning on the spot alone confirms nothing |
+| `confirm_dr_m` / `confirm_cells` | 0.2 (sim: 0 = off) / 2: a hit counts only once the same spot (± cells) was hit from ranges at least this far apart; until then it is a candidate (orange in `/map.png`). Reflections in a glossy floor and seams move with the Rider and are never confirmed; turning on the spot alone confirms nothing |
 | `mark_blocking` | true | `LocalMap` points the path check brakes for are entered as confirmed and occupied (what stops the Rider is on the map); free rays remove them again if the spot is later seen free |
-| `free_range_m` | 1.5 (free rays up to here); RiderPi 1.1 |
+| `free_range_m` | 1.1 (sim: 1.5); free rays up to here |
 | `column_step` | 2 |
 | `l_free` / `l_occ` | -0.4 / 0.5 (two hits to `l_show`) |
 | `l_min` / `l_max` / `l_show` | -3.0 / 3.5 / 0.7 |
 | `free_margin_m` / `occ_free_factor` | 0.10 / 0.5 |
 | `view_m` | 6.0 |
-| `yaw_source` | `räder` (wheels), `kamera` or `imu` (firmware heading, RiderPi: from `imu_log`, 100 Hz with the stream; older than `imu.max_age_s` → `/proc` yaw at ~5 Hz; neither → wheels). Status: `grid_yaw_src` (`imu`, `status`, `odom`); see `docs/limitations.md` |
+| `yaw_source` | `imu` (sim: `räder`); `räder` (wheels), `kamera` or `imu` (firmware heading from `imu_log`, 100 Hz with the stream; older than `imu.max_age_s` → `/proc` yaw at ~5 Hz; neither → wheels). Status: `grid_yaw_src` (`imu`, `status`, `odom`); see `docs/limitations.md` |
 | `threaded` | true |
 | `native` | true: one observation in one call in the C++ core (`xgonav/native/gridfast.cpp`) if built: rays from the floor boundary, free rays, hits with `confirm_dr_m`; same map as numpy (CM4 1.64 → 0.18 ms per observation). Also `wall_dist` (`navfast.cpp`) |
 | `file` | `""` (off); RiderPi example: `/opt/xgonav/raumkarte.npz` |
@@ -259,9 +259,9 @@ All keys with comments: `PetCfg` in `xgonav/config.py`.
 
 | Key | Default | Meaning |
 |---|---|---|
-| `enabled` | `false` | pose state: unknown after set-down, fall, restart; map locked until confirmed in the web UI (`docs/mapping.md`) |
+| `enabled` | `true` (sim: `false`) | pose state: unknown after set-down, fall, restart; map locked until confirmed in the web UI (`docs/mapping.md`) |
 | `blind_s` | 2.0 | balancing this long without fresh wheel data: pose unknown |
-| `track` | `false` | running map matching while driving: map pose follows the room map (`docs/mapping.md`, Map matching). Independent of `enabled` |
+| `track` | `true` (sim: `false`) | running map matching while driving: map pose follows the room map (`docs/mapping.md`, Map matching). Independent of `enabled` |
 | `every_s` / `min_move_m` / `min_turn_deg` | 2.0 / 0.2 / 20 | match at most this often and only after this much travel or turn |
 | `max_step_m` / `max_step_deg` / `gain` | 0.08 / 3 / 0.6 | correction per match |
 | `hold_m` / `hold_deg` | 0.10 / 3 | remaining correction above this: nothing is entered into the map |
@@ -293,4 +293,4 @@ All keys with comments: `PetCfg` in `xgonav/config.py`.
 | `native` | true | A*, path shortening, the path follower's target point and the loops of the frontier search (`explore`: wavefront, scoring of the groups) in the C++ core (`xgonav/native/navfast.cpp`) if built; same result as Python, GIL released during the call. CM4 on the saved room map: `plan()` 113 → 7 ms, `next_goal()` 137 → 14 ms (median) |
 
 ### `[cpu]`
-Empty = no pinning. RiderPi: `main_cpus [0,1]`, `detector_cpus [2,3]`, `render_cpus [0,1,2,3]`, `freespace_cpus [2,3]`.
+Default (RiderPi): `main_cpus [0,1]`, `detector_cpus [2,3]`, `render_cpus [0,1,2,3]`, `freespace_cpus [2,3]`. Empty = no pinning (sim).

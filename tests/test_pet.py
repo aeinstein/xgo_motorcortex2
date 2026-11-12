@@ -21,7 +21,7 @@ from xgonav.tracker import Track  # noqa: E402
 
 
 def brain(seed=1, **kw):
-    return PetBrain(PetCfg(**kw), RobotCfg(), seed=seed)
+    return PetBrain(PetCfg(**kw), Config.neutral().robot, seed=seed)
 
 
 def seen(cls="person", dist=1.0, t=0.0, bearing=0.0, top_free=False, vs=None, id_=1, conf=0.9, hits=99, tall=False,
@@ -550,9 +550,9 @@ def test_blick_folgt_und_blinzelt():
 
 
 def test_config_und_make_behavior():
-    p = make_behavior("pet", BehaviorCfg(), RobotCfg(), petcfg=PetCfg(faint=True))
+    p = make_behavior("pet", Config.neutral().behavior, Config.neutral().robot, petcfg=PetCfg(faint=True))
     assert p.name == "pet" and p.pcfg.faint and p.want_stand_up is False
-    c = Config()
+    c = Config.neutral()
     c.apply({"pet": {"retreat_m": 0.12}})
     assert c.pet.retreat_m == 0.12
     with pytest.raises(KeyError):
@@ -560,7 +560,7 @@ def test_config_und_make_behavior():
 
 
 def test_step_aus_world():
-    cfg = Config()
+    cfg = Config.neutral()
     geo = CamGeometry.from_cfg(cfg)
     pet = make_behavior("pet", cfg.behavior, cfg.robot, petcfg=cfg.pet)
     tr = Track("person", 320, 200, 100, 200, 0.9, 1.0)
@@ -576,7 +576,7 @@ def test_step_aus_world():
 
 
 def test_robot_stand_up_nur_aus_dem_liegen():
-    r = SimRobot(RobotCfg())
+    r = SimRobot(Config.neutral().robot)
     assert r.stand_up() is False and not r.writes
     r.set_down()
     assert not r.state.balancing and r.state.mode == 254

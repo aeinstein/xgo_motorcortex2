@@ -64,7 +64,7 @@ def test_gridmap_render_center():
     from xgonav.config import Config
     from xgonav.geometry import CamGeometry
     from xgonav.gridmap import GridMap
-    m = GridMap(Config().grid, CamGeometry(640, 480, 91.0, 1.39, 43.0, 85.0), 160, 120)
+    m = GridMap(Config.neutral().grid, CamGeometry(640, 480, 91.0, 1.39, 43.0, 85.0), 160, 120)
     rot = lambda img: np.argwhere((img[:, :, 2] > 180) & (img[:, :, 1] < 80))
     img, mx, my, kante = m.render(200, 4.0)                      # ohne Mitte: Rider mittig
     assert (mx, my) == (0.0, 0.0) and abs(kante - 4.0) < 1e-9

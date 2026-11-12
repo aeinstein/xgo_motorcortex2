@@ -32,7 +32,7 @@ def test_ground_row_ist_umkehrung_von_ground_dist(d, pitch):
 
 def _grid(g, cells):
     """Karte: überall frei bis 3 m vor dem Start, dazu belegte Zellen."""
-    cfg = GridCfg()
+    cfg = Config.neutral().grid
     cfg.native = False
     gm = GridMap(cfg, g, 160, 120)
     r, c = np.mgrid[0:gm.n, 0:gm.n]
@@ -70,7 +70,7 @@ def test_gedrehter_rider_sieht_die_wand_nicht_mehr_voraus():
 
 def test_unbekanntes_gilt_als_mindestens_frei_oder_nichts():
     g = _geo()
-    cfg = GridCfg()
+    cfg = Config.neutral().grid
     cfg.native = False
     gm = GridMap(cfg, g, 160, 120)
     r, c = np.mgrid[0:gm.n, 0:gm.n]
@@ -124,7 +124,7 @@ def test_karte_verlangt_treffer_aus_zwei_blicken(monkeypatch):
     monkeypatch.setattr(L, "GridMap", Gm)
     monkeypatch.setattr(L.cv2, "imread", lambda *a: np.zeros((480, 640, 3), np.uint8))
     ms = [{"file": "x.jpg", "pitch_dev": 0.0} for _ in x]
-    gm, used, _ = L.build_map("", ms, traj, Config(), _geo())
+    gm, used, _ = L.build_map("", ms, traj, Config.neutral(), _geo())
     assert len(used) == 31
     assert gm.lo[0, 0] == 0.0
     assert gm.lo[0, 1] > 2.0
