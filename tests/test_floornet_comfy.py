@@ -419,3 +419,49 @@ def test_kette_waehlt_nach_helligkeit_und_verlinkt_dunkle(tmp_path):
     assert not B.link_edit(B.edit_path(alt, "r/000002.jpg"), B.edit_path(neu, "r/000002.jpg"))
     assert not B.link_edit(B.edit_path(alt, "r/000003.jpg"), B.edit_path(neu, "r/000003.jpg"))
     assert B.missing_edits(["r/000001.jpg", "r/000002.jpg"], neu) == ["r/000002.jpg"]
+
+
+def test_betrachter_server_neu_malen(tmp_path, monkeypatch):
+    """POST /neu ruft das Werkzeug als eigenen Prozess (hier ein Ersatz) und reicht Seed und Labelzeile durch."""
+    import sys
+    import threading
+    import urllib.error
+    import urllib.request
+    from functools import partial
+    from http.server import ThreadingHTTPServer
+
+    import betrachter_server as BS
+
+    (tmp_path / "stage1_p11" / "r").mkdir(parents=True)
+    (tmp_path / "stage1_p11" / "r" / "000001.png").write_bytes(b"x")
+    ersatz = tmp_path / "ersatz.py"
+    ersatz.write_text("import json, sys\nprint('Rauschen')\n"
+                      "print(json.dumps({'id': sys.argv[-1], 'seed': 7, 'rows': [1.0, 2.0], 'args': sys.argv[1:]}))\n", encoding="utf-8")
+    monkeypatch.setattr(BS, "NEU_CMD", [sys.executable, str(ersatz)])
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), partial(BS.Handler, directory=str(tmp_path)))
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    url = "http://127.0.0.1:%d/neu" % srv.server_address[1]
+
+    def post(d):
+        req = urllib.request.Request(url, json.dumps(d).encode(), {"Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=20) as r:
+                return r.status, json.loads(r.read())
+        except urllib.error.HTTPError as e:
+            return e.code, json.loads(e.read())
+
+    try:
+        code, d = post({"ansicht": "p11", "id": "r/000001"})
+        assert code == 200 and d["ok"] and d["seed"] == 7 and d["rows"] == [1.0, 2.0]
+        assert d["args"] == ["--dir", str(tmp_path), "--prompt", "", "p11", "r/000001"]
+        code, d = post({"ansicht": "p11", "id": "r/000001", "prompt": "t2"})
+        assert code == 200 and d["args"][2:4] == ["--prompt", "t2"]
+        assert post({"ansicht": "p11", "id": "r/000001", "prompt": "../x"})[0] == 400
+        assert post({"ansicht": "p11", "id": "r/000002"})[0] == 400             # Bild gibt es nicht: kein Prozess
+        assert post({"ansicht": "p11", "id": "../x/1"})[0] == 400
+        ersatz.write_text("import sys\nsys.exit('kaputt')\n", encoding="utf-8")
+        code, d = post({"ansicht": "p11", "id": "r/000001"})
+        assert code == 400 and "kaputt" in d["fehler"]
+    finally:
+        srv.shutdown()
+        srv.server_close()

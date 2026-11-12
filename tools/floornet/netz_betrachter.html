@@ -12,9 +12,11 @@
   #hilfe { margin-left: auto; color: #888; }
   select { background: #222; color: #ddd; border: 1px solid #444; font: inherit; padding: 2px 4px; }
   #bilder { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; padding: 0 6px; }
-  #bilder.mitplan { grid-template-columns: repeat(3, 1fr); }
+  #bilder.mitplan, #bilder.mitgruen { grid-template-columns: repeat(3, 1fr); }
   #text { padding: 0 12px 6px; color: #fc6; min-height: 1.3em; font-family: ui-monospace, monospace; }
-  #planfig { display: none; }
+  #planfig, #gruenfig { display: none; }
+  .mitgruen #gruenfig { display: block; }
+  #aus { color: #f66; font-weight: 600; }
   .mitplan #planfig { display: block; }
   #plan { aspect-ratio: auto; max-height: 80vh; object-fit: contain; }
   figure { margin: 0; min-width: 0; }
@@ -24,15 +26,22 @@
 </head>
 <body>
 <div id="kopf">
-  <span id="id"></span><span id="pos"></span>
+  <span id="id"></span><span id="pos"></span><span id="aus"></span>
   <label>Netz <select id="lauf"></select></label>
   <label>Fahrt <select id="fahrt"></select></label>
-  <span id="hilfe">← voriges · nächstes → · Bild auf/ab ±20 · F Fläche an/aus · K Karte an/aus</span>
+  <label id="gesehenwahl" style="display: none"><input type="checkbox" id="gesehen"> Gesichtete zeigen (G)</label>
+  <label id="promptwahl">Prompt für N <select id="prompt">
+    <option value="">1 · Standard (Prompt 11)</option>
+    <option value="t2">2 · Teppich und Dinge einzeln genannt (T2)</option>
+    <option value="t1">3 · Teppichsatz (T1)</option>
+  </select></label>
+  <span id="hilfe">← voriges · nächstes → · Bild auf/ab ±20 · F Fläche an/aus · K Karte an/aus<span id="hilfeaus"> · X aussortieren · U zurückholen · N neu malen (ComfyUI, neuer Seed) · 1–3 Prompt wählen</span></span>
 </div>
 <div id="text"></div>
 <div id="bilder">
   <figure><figcaption>Eingabebild</figcaption><img id="original" alt="Eingabebild"></figure>
   <figure><figcaption>Netzergebnis: türkis frei, magenta Grenze<span id="legende"></span></figcaption><canvas id="netz" width="640" height="480"></canvas></figure>
+  <figure id="gruenfig"><figcaption>ComfyUI-Grünbild</figcaption><img id="gruen" alt="Grünbild"></figure>
   <figure id="planfig"><figcaption>Raumkarte (Endstand): weiß belegt, grau frei; gelb Rider und Blickfeld, blau gefahrener Weg</figcaption><canvas id="plan"></canvas></figure>
 </div>
 <script>
@@ -41,10 +50,20 @@
 // Adresse: #<lauf>/<fahrt>/<bild>. Gezeichnet wird hier, am Rechner mit den Daten liegt nur die Zahlenliste.
 // Daten aus tools/floornet/fahrt_js.py haben zusätzlich: karte (Raumkarte ins Bild geworfen, Zeile je Spalte oder null),
 // text (Statuszeile je Bild), pose (x, y in m, Kurs in Grad) und plan (Kartenbild von oben mit Lage).
+// Prüflisten (z. B. Label gegen Netz) haben zusätzlich: label (Labelzeile je Spalte, grün gezeichnet) und ansicht
+// (Ansicht des Label-Betrachters, z. B. "p11"): dann steht das Grünbild daneben, und X/U schreiben über
+// betrachter_server.py in dessen Handliste (POST /aus), wie im Label-Betrachter. N lässt das Bild von ComfyUI mit
+// neuem Seed neu malen (POST /neu, überschreibt die alte Bearbeitung); Grünbild und Labellinie kommen neu.
+// Jedes gezeigte Bild einer solchen Liste gilt als gesichtet (POST /gesichtet, gesammelt einmal je Sekunde).
+// Listen mit sichten: true (neue Fahrten) blenden schon Gesichtetes beim Laden aus, außer «Gesichtete zeigen» ist an.
 const DATEN = "netz/";
 const B = 640, H = 480;
 let netze = {}, D = null, pos = 0, flaeche = true, karte = true;
+const STAGE1 = { p11: "stage1_p11", hd: "stage1_hd", g0h: "stage1_g0h", p8: "stage1" };   // wie betrachter_server.py
+const aus = new Set();                           // IDs der Handliste der Ansicht von D
 const elLauf = document.getElementById("lauf"), elFahrt = document.getElementById("fahrt");
+const elGesehen = document.getElementById("gesehen");
+const elPrompt = document.getElementById("prompt");   // Varianten: comfy_prompt*.txt neben neu_malen.py
 const cv = document.getElementById("netz"), cx = cv.getContext("2d");
 const bild = new Image(), planBild = new Image();
 const pv = document.getElementById("plan"), px = pv.getContext("2d");
@@ -93,6 +112,19 @@ function zeichnen() {
   cx.strokeStyle = "#f0f";
   cx.lineWidth = 2;
   cx.stroke();
+  if (D.label) {                                   // Label: grün
+    const l = D.label[pos], m = l.length;
+    cx.strokeStyle = "#0f0";
+    cx.lineWidth = 2;
+    cx.beginPath();
+    let an = false;
+    for (let c = 0; c < m; c++) {
+      if (l[c] === null) { an = false; continue; }
+      an ? cx.lineTo((c + 0.5) * B / m, l[c]) : cx.moveTo((c + 0.5) * B / m, l[c]);
+      an = true;
+    }
+    cx.stroke();
+  }
   if (karte && D.karte) {                          // Raumkarte: je Spalte die erste belegte Zelle
     const k = D.karte[pos], m = k.length;
     cx.strokeStyle = cx.fillStyle = "#ff0";
@@ -126,11 +158,92 @@ function planZeichnen() {
   px.beginPath(); px.arc(...zu(x, y), 5, 0, 7); px.fill();
 }
 
+function kennung(i) { return D.fahrt + "/" + D.files[i].replace(/\.jpg$/, ""); }
+
+function ausZeigen() {
+  document.getElementById("aus").textContent = D && D.ansicht && aus.has(kennung(pos)) ? "aussortiert" : "";
+}
+
+function handlisteLaden() {                      // Zeilen "id" (aus) und "-id" (zurückgeholt), die letzte gilt
+  aus.clear();
+  if (!D.ansicht || !STAGE1[D.ansicht]) return;
+  fetch(STAGE1[D.ansicht] + "/aus_hand.txt", { cache: "no-store" }).then((r) => r.ok ? r.text() : "").then((t) => {
+    for (const z of t.split(/\r?\n/)) {
+      const s = z.trim();
+      if (s.startsWith("-")) aus.delete(s.slice(1)); else if (s) aus.add(s);
+    }
+    ausZeigen();
+  }).catch(() => {});
+}
+
+function aussortieren(an) {
+  if (!D || !D.ansicht) return;
+  const id = kennung(pos);
+  fetch("/aus", { method: "POST", headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ ansicht: D.ansicht, id: id, aus: an }) })
+    .then((r) => r.json()).then((d) => {
+      if (!d.ok) { document.getElementById("aus").textContent = "Fehler: " + d.fehler; return; }
+      an ? aus.add(id) : aus.delete(id);
+      ausZeigen();
+    }).catch(() => { document.getElementById("aus").textContent = "Fehler: Server antwortet nicht"; });
+}
+
+const gemeldet = new Set(), offen = new Set();   // gezeigte Bilder -> Gesichtet-Liste der Ansicht (wie betrachter.html)
+
+function gesichtetSenden() {
+  if (!offen.size || !D || !D.ansicht) return;
+  const ids = [...offen].slice(0, 400);
+  ids.forEach((i) => { offen.delete(i); gemeldet.add(i); });
+  fetch("/gesichtet", { method: "POST", headers: { "Content-Type": "application/json" }, keepalive: true,
+                        body: JSON.stringify({ ansicht: D.ansicht, ids: ids }) })
+    .catch(() => ids.forEach((i) => { gemeldet.delete(i); offen.add(i); }));
+}
+setInterval(gesichtetSenden, 1000);
+addEventListener("pagehide", gesichtetSenden);
+
+function neuLaden() {                            // neu.jsonl der Ansicht: neu gemalte Bilder, je Bild gilt die letzte Zeile
+  if (!D.ansicht || !STAGE1[D.ansicht]) return;
+  const d = D;
+  fetch(STAGE1[d.ansicht] + "/neu.jsonl", { cache: "no-store" }).then((r) => r.ok ? r.text() : "").then((t) => {
+    const stelle = new Map(d.files.map((f, i) => [d.fahrt + "/" + f.slice(0, -4), i]));
+    for (const z of t.split(/\r?\n/)) {
+      if (!z.trim()) continue;
+      let e;
+      try { e = JSON.parse(z); } catch (x) { continue; }
+      neuStand.set(e.id, e.seed);                // andere Adresse fürs Grünbild: der Browser hält das alte einen Tag
+      if (stelle.has(e.id) && d.label && Array.isArray(e.rows)) d.label[stelle.get(e.id)] = e.rows;
+    }
+    if (D === d) { zeigen(pos); zeichnen(); }
+  }).catch(() => {});
+}
+
+let malt = false;                               // läuft gerade ein Neu-Malen (nur eines zugleich)
+const neuStand = new Map();                      // ID -> Seed der neuesten Bearbeitung, gegen den Zwischenspeicher
+
+function neuMalen() {
+  if (!D || !D.ansicht || !D.label || malt) return;
+  const id = kennung(pos), i = pos, daten = D, feld = document.getElementById("aus");
+  malt = true;
+  feld.textContent = "ComfyUI malt neu …";
+  fetch("/neu", { method: "POST", headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ ansicht: D.ansicht, id: id, prompt: elPrompt.value }) })
+    .then((r) => r.json()).then((d) => {
+      malt = false;
+      if (!d.ok) { feld.textContent = "Fehler: " + d.fehler; return; }
+      daten.label[i] = d.rows;
+      neuStand.set(id, d.seed);
+      if (D === daten && pos === i) { zeigen(pos); zeichnen(); feld.textContent = "neu gemalt, Seed " + d.seed + ", " + elPrompt.options[elPrompt.selectedIndex].textContent; }
+    }).catch(() => { malt = false; feld.textContent = "Fehler: Server antwortet nicht"; });
+}
+
 function zeigen(p) {
   if (!D) return;
   pos = Math.max(0, Math.min(D.files.length - 1, p));
   document.getElementById("original").src = bild.src = pfad(pos);
-  document.getElementById("id").textContent = D.fahrt + "/" + D.files[pos].replace(/\.jpg$/, "");
+  if (D.ansicht && STAGE1[D.ansicht]) document.getElementById("gruen").src = STAGE1[D.ansicht] + "/" + kennung(pos) + ".png" + (neuStand.has(kennung(pos)) ? "?s=" + neuStand.get(kennung(pos)) : "");
+  ausZeigen();
+  if (D.ansicht && D.label && !gemeldet.has(kennung(pos))) offen.add(kennung(pos));
+  document.getElementById("id").textContent = kennung(pos);
   document.getElementById("pos").textContent = (pos + 1) + " / " + D.files.length;
   document.getElementById("text").textContent = D.text ? D.text[pos] : "";
   planZeichnen();
@@ -145,12 +258,38 @@ function fahrtLaden(datei) {                     // datei: Bild, bei dem begonne
   laden(DATEN + lauf + "/" + fahrt + ".js", (ok) => {
     if (!ok || !window.NETZ) { document.getElementById("id").textContent = "Daten fehlen: " + lauf + "/" + fahrt; return; }
     D = window.NETZ;
+    document.getElementById("gesehenwahl").style.display = D.sichten ? "" : "none";
+    if (D.sichten && !elGesehen.checked) {         // Sichtungsliste: schon Gesichtetes erst holen, dann ausblenden
+      const d = D;
+      fetch(STAGE1[d.ansicht] + "/gesichtet.txt", { cache: "no-store" }).then((r) => r.ok ? r.text() : "").then((t) => {
+        const ges = new Set(t.split(/\s+/));
+        const keep = d.files.map((f, i) => i).filter((i) => !ges.has(d.fahrt + "/" + d.files[i].slice(0, -4)));
+        for (const k of ["files", "rows", "label"]) d[k] = keep.map((i) => d[k][i]);
+        fahrtFertig(lauf, gleich, anteil);
+      }).catch(() => fahrtFertig(lauf, gleich, anteil));
+      return;
+    }
+    fahrtFertig(lauf, gleich, anteil);
+  });
+}
+
+function fahrtFertig(lauf, gleich, anteil) {
+    if (!D.files.length) {
+      document.getElementById("id").textContent = D.fahrt + ": alles gesichtet";
+      document.getElementById("pos").textContent = "";
+      cx.clearRect(0, 0, B, H);
+      return;
+    }
     document.getElementById("bilder").classList.toggle("mitplan", !!D.plan);
-    document.getElementById("legende").textContent = D.karte ? ", gelb Raumkarte" : "";
+    document.getElementById("bilder").classList.toggle("mitgruen", !!(D.ansicht && STAGE1[D.ansicht]));
+    document.getElementById("hilfeaus").style.display = D.ansicht ? "" : "none";
+    document.getElementById("promptwahl").style.display = D.ansicht && D.label ? "" : "none";
+    document.getElementById("legende").textContent = (D.label ? ", grün Label" : "") + (D.karte ? ", gelb Raumkarte" : "");
+    handlisteLaden();
+    neuLaden();
     if (D.plan) planBild.src = DATEN + lauf + "/" + D.plan.bild + "?" + Date.now();
     const i = D.files.indexOf(gleich);
     zeigen(i >= 0 ? i : Math.round(anteil * (D.files.length - 1)));
-  });
 }
 
 function laufGewaehlt(fahrt, datei) {
@@ -162,11 +301,17 @@ bild.onload = zeichnen;
 planBild.onload = planZeichnen;
 elLauf.onchange = () => laufGewaehlt();          // gleiches Bild im anderen Netz, wenn es dort vorliegt
 elFahrt.onchange = () => { D = null; fahrtLaden(); };
+elGesehen.onchange = () => { gesichtetSenden(); D = null; fahrtLaden(); };
 addEventListener("keydown", (e) => {
   const schritt = { ArrowRight: 1, ArrowLeft: -1, PageDown: 20, PageUp: -20 }[e.key];
   if (schritt) { zeigen(pos + schritt); e.preventDefault(); }
   if (e.key === "f" || e.key === "F") { flaeche = !flaeche; zeichnen(); }
   if (e.key === "k" || e.key === "K") { karte = !karte; zeichnen(); }
+  if (e.key === "x" || e.key === "X") aussortieren(true);
+  if (e.key === "u" || e.key === "U") aussortieren(false);
+  if (e.key === "n" || e.key === "N") neuMalen();
+  if ((e.key === "g" || e.key === "G") && D && D.sichten) { elGesehen.checked = !elGesehen.checked; elGesehen.onchange(); }
+  if (D && D.ansicht && "123".includes(e.key) && elPrompt.options[+e.key - 1]) elPrompt.selectedIndex = +e.key - 1;
 });
 laden(DATEN + "index.js", (ok) => {
   netze = (ok && window.NETZE) || {};

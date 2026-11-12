@@ -119,11 +119,11 @@ def link_edit(quelle: str, target: str) -> bool:
     return True
 
 
-def edit_and_keep(path: str, prompt: str, target: str, eingang: str = "farbe") -> np.ndarray:
-    """Wie C.run_edit, mit festem Seed; die Bearbeitung landet in target. Upload-Name je Prozess, parallele Läufe stören sich nicht."""
+def edit_and_keep(path: str, prompt: str, target: str, eingang: str = "farbe", seed: int = SEED) -> np.ndarray:
+    """Wie C.run_edit, mit festem Seed (anderer Seed nur für neu_malen.py); die Bearbeitung landet in target. Upload-Name je Prozess, parallele Läufe stören sich nicht."""
     fn = EINGANG[eingang]
     ref = C.upload(fn(path) if fn else path, "batch_%d.png" % os.getpid())
-    req = urllib.request.Request(C.URL + "/prompt", json.dumps({"prompt": C.workflow(ref, prompt, SEED)}).encode(),
+    req = urllib.request.Request(C.URL + "/prompt", json.dumps({"prompt": C.workflow(ref, prompt, seed)}).encode(),
                                  {"Content-Type": "application/json"})
     pid = json.loads(urllib.request.urlopen(req, timeout=60).read())["prompt_id"]
     t0 = time.time()
