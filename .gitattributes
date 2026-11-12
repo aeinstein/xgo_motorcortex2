@@ -1,0 +1,8 @@
+# Dateien, die auf dem Rider ausgeführt oder von sh/make/sudo/systemd gelesen werden,
+# immer mit LF auschecken (auch unter Windows mit core.autocrlf=true).
+# Mit CRLF bricht z. B. /etc/rc.local am Shebang ab ("/bin/sh: Illegal option -"),
+# dann lädt der Treiber nicht und xgonav startet nicht.
+*.sh        text eol=lf
+deploy/**   text eol=lf
+Makefile    text eol=lf
+*.service   text eol=lf
