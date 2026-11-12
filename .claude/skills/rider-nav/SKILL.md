@@ -12,9 +12,9 @@ Gesteuert wird nur über die **laufende** xgonav-Instanz (lokale Schnittstelle `
 ## Zugang
 
 ```bash
-R="ssh -o IdentitiesOnly=yes -i /c/Users/aeinstein.ITNOX/Documents/aeinstein-ed.pem root@192.168.53.110"
+R="ssh -o IdentitiesOnly=yes -i /c/Users/aeinstein.ITNOX/Documents/aeinstein-ed.pem root@10.10.0.110"
 scp -o IdentitiesOnly=yes -i /c/Users/aeinstein.ITNOX/Documents/aeinstein-ed.pem \
-    .claude/skills/rider-nav/rider_nav.py root@192.168.53.110:/root/rider_nav.py     # einmal je Sitzung/Änderung
+    .claude/skills/rider-nav/rider_nav.py root@10.10.0.110:/root/rider_nav.py     # einmal je Sitzung/Änderung
 $R python3 /root/rider_nav.py zustand
 ```
 
