@@ -90,12 +90,19 @@ def main() -> int:
     ap.add_argument("--wohnung", default="a", help="Kennung der Wohnung in den Label-Dateien (das Training nutzt sie nicht)")
     ap.add_argument("--data", default=S2.DATA, help="Rohaufnahmen, je Fahrt ein Verzeichnis")
     ap.add_argument("--fahrten", default="", help="nur diese Fahrten, mit Komma getrennt (z. B. Prüffahrten in ein eigenes Verzeichnis)")
+    ap.add_argument("--gesichtet", default="", help="Liste des Betrachters (<stage1>/gesichtet.txt, je Zeile Fahrt/Bild): nur diese Bilder")
     a = ap.parse_args()
     from xgonav.config import Config
     cfg = Config.load(a.config)
     cv2.setNumThreads(1)
     os.makedirs(a.out, exist_ok=True)
     runs, bad, weg = collect(a.stage3, a.jobs, a.data)
+    if a.gesichtet:
+        with open(a.gesichtet, encoding="utf-8") as f:
+            ok = {z.strip() for z in f if z.strip()}
+        vorher = sum(len(fr) for fr in runs.values())
+        runs = {run: {n: r for n, r in fr.items() if run + "/" + n[:-4] in ok} for run, fr in runs.items()}
+        print("nicht gesichtet und ausgelassen: %d Bilder" % (vorher - sum(len(fr) for fr in runs.values())), flush=True)
     only = {r for r in a.fahrten.split(",") if r}
     total = 0
     for run, frames in sorted(runs.items()):

@@ -43,6 +43,7 @@ def main() -> int:
     ap.add_argument("--name", default="", help="Name des Laufs im Betrachter, Default Verzeichnisname")
     ap.add_argument("--cache", default=os.path.expanduser("~/floornet/cache"))
     ap.add_argument("--norm", type=int, default=0)
+    ap.add_argument("--ansicht", default="", help="Ansicht des Betrachters (z. B. p11): zeigt daneben das ComfyUI-Grünbild")
     a = ap.parse_args()
 
     import torch
@@ -61,6 +62,8 @@ def main() -> int:
         pr = T.predict(net, r, dev, bool(a.norm))
         rows = [[None if not np.isfinite(v) else round(float(v), 1) for v in zeile] for zeile in pr]
         daten = {"lauf": name, "fahrt": r["run"], "files": [str(f) for f in r["files"]], "rows": rows}
+        if a.ansicht:
+            daten["ansicht"] = a.ansicht
         with open(os.path.join(ziel, r["run"] + ".js"), "w", encoding="utf-8") as f:
             f.write("window.NETZ = " + json.dumps(daten, separators=(",", ":")) + ";\n")
         print("%-10s %5d Bilder" % (r["run"], len(rows)), flush=True)

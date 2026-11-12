@@ -69,6 +69,7 @@ def main() -> int:
     ap.add_argument("--norm", type=int, default=0)
     ap.add_argument("--out", default="", help="Datenverzeichnis von netz_betrachter.html")
     ap.add_argument("--name", default="", help="Name im Betrachter, Default Verzeichnisname des Laufs")
+    ap.add_argument("--ansicht", default="", help="Ansicht des Betrachters (z. B. p11): zeigt daneben das ComfyUI-Grünbild")
     a = ap.parse_args()
 
     import torch
@@ -114,6 +115,8 @@ def main() -> int:
                 os.makedirs(ziel, exist_ok=True)
                 daten = {"lauf": name + "_" + f, "fahrt": r["run"], "files": [str(v) for v in r["files"]],
                          "rows": [[round(float(v), 1) for v in z] for z in zeilen[f]]}
+                if a.ansicht:
+                    daten["ansicht"] = a.ansicht
                 with open(os.path.join(ziel, r["run"] + ".js"), "w", encoding="utf-8") as fh:
                     fh.write("window.NETZ = " + json.dumps(daten, separators=(",", ":")) + ";\n")
         print("%-10s %5d Bilder" % (r["run"], len(r["imgs"])), flush=True)
