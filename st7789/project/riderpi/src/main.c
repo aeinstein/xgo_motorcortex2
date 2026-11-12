@@ -16,7 +16,8 @@ static int framesize = 320 * 240 * 2;
 static char *framebuffer;
 static char *fb_device = "/tmp/lcd0";
 static int running = 1;
-// Ruhemodus (deploy/xgo-ruhe): SIGUSR1 = Anzeige aus + Controller schlafen, SIGUSR2 = wach.
+// SIGUSR1 = Anzeige aus + Controller schlafen, SIGUSR2 = wach. Der Ruhemodus nutzt das nicht mehr (das
+// Display wurde davon nicht dunkel, dort stehen jetzt die Schlafaugen); deploy/xgo-ruhe schickt nur noch SIGUSR2.
 // Beide Signale sind in allen Threads blockiert und werden im Hauptthread per sigwait angenommen;
 // der Mutex hält SPI-Zugriffe von Lese-Thread (Bild) und Hauptthread (Schlafbefehl) auseinander.
 static pthread_mutex_t spi_lock = PTHREAD_MUTEX_INITIALIZER;

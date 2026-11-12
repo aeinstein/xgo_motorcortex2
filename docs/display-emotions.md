@@ -81,8 +81,7 @@ python tools/eyes.py --gaze DIR      # eye atlas for mode pet: 11 gaze positions
 |---|---|---|
 | `cute` | boot | `rc.local` |
 | `sleep` | shutdown from web UI (before `poweroff`, timeout 10 s) | `api.php` |
-
-Sleep mode (web **Ruhe**): `st7789_server` gets SIGUSR1 (DISPOFF + SLPIN, frames discarded), SIGUSR2 wakes it; xgonav writes nothing and plays no emotions meanwhile.
+| `sleep` | sleep mode (web **Ruhe**); closed eyes stay on the display, xgonav writes nothing and plays no emotions meanwhile | `api.php` |
 | `surprised` | person appears after ≥ `gap_s` (5 s) without person | `xgonav/emotion.py` |
 | `doubt` | mode `follow`, no person for `lost_s` (2 s); once per loss | `xgonav/emotion.py` |
 | `embarrassed` | other modes, no person for `lost_s`; once per loss | `xgonav/emotion.py` |

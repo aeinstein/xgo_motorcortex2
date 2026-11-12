@@ -63,7 +63,7 @@ GET only for `status`, `route`, `horizon`; all commands POST. Parameters are val
 | `POST ?a=mode&name=..&target=..` | xgonav `/mode` | name ∈ idle, manual, follow, explore, approach, home, patrol, pet; target `[a-z ]{1,30}` |
 | `POST ?a=stop` | xgonav `/stop` | |
 | `POST ?a=pipeline&on=0\|1` | xgonav `/pipeline` | |
-| `POST ?a=ruhe&on=0\|1` | xgonav `/ruhe` + `sudo -n /usr/local/sbin/xgo-ruhe on\|off` | always 200; JSON `ok`, `ruhe`, `xgonav`, `system`, `fehler` (both parts are tried even if one fails) |
+| `POST ?a=ruhe&on=0\|1` | xgonav `/ruhe` + emotion `sleep` (on only) + `sudo -n /usr/local/sbin/xgo-ruhe on\|off` | always 200; JSON `ok`, `ruhe`, `xgonav`, `system`, `fehler` (both parts are tried even if one fails) |
 | `POST ?a=record&on=0\|1` | xgonav `/record` | |
 | `POST ?a=ausrichten` | xgonav `/level` | 409 if not balancing |
 | `POST ?a=drive&v=..&w=..` | xgonav `/drive` | −1..1; mode `manual` only |
@@ -165,10 +165,11 @@ Header button **Ruhe** (with confirmation). Only the web UI wakes it (**Wecken**
 | xgonav | pipeline off, mode idle, raw recording off; `imu`, `wheels` threads idle; `robot` thread reads state/battery every `ruhe.tick_s` (1 s), no keepalive; no LCD, no emotions, no WebSocket re-encode; pipeline and modes other than idle → 409 | threads resume; pipeline stays off |
 | Driver (`settings/`) | `imu_hz`, `imu_stream_hz`, `wheel_hz` → 0, `sleep_ms_on_loop` → `ruhe.sleep_ms_on_loop` (1000); old values kept in memory | old values written back |
 | CPU (`xgo-ruhe`, root) | governor saved to `/run/xgo-ruhe.gov`, all cores `powersave` | saved governor (fallback `ondemand`) |
-| Display (`xgo-ruhe`) | SIGUSR1 → `st7789_server`: DISPOFF + SLPIN, frames discarded | SIGUSR2: SLPOUT + DISPON, next frame redraws |
+| Display (`api.php`) | plays `sleep` (~4 s, before the governor change); last frame (closed eyes) stays | unchanged until xgonav or an emotion writes the next frame |
 | Page | cover with Wecken + battery; image WebSocket closed, no map polling; live packet every 5 s without IMU | normal rates |
 
-- Backlight (GPIO0 per `constants.h`) is not switched; untested.
+- The display stays on: it cannot be switched off (DISPOFF + SLPIN via SIGUSR1 to `st7789_server` is no longer sent; `xgo-ruhe off` still sends SIGUSR2). Backlight (GPIO0 per `constants.h`) is not switched; untested.
+- `POST ?a=ruhe&on=1` returns after the animation (~4 s).
 - The ESP32 keeps running (control loop, BLE, amber LEDs).
 - If xgonav restarts during sleep mode, the governor stays `powersave` until **Ruhe** + **Wecken**.
 

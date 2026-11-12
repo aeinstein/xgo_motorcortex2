@@ -1,9 +1,12 @@
 #!/bin/sh
-# Ruhemodus, Teil mit root-Rechten: CPU-Takt und Display. Aufruf nur über api.php (sudo-Regel
+# Ruhemodus, Teil mit root-Rechten: CPU-Takt. Aufruf nur über api.php (sudo-Regel
 # deploy/sudoers-xgonav-ruhe), installiert nach /usr/local/sbin/xgo-ruhe (deploy/install-all.sh).
-#   xgo-ruhe on    Governor sichern, alle Kerne auf powersave, Display schlafen (SIGUSR1 an st7789_server)
-#   xgo-ruhe off   Governor zurück (ohne Sicherung: ondemand), Display wach (SIGUSR2)
+#   xgo-ruhe on    Governor sichern, alle Kerne auf powersave
+#   xgo-ruhe off   Governor zurück (ohne Sicherung: ondemand)
 # xgonav selbst (Abfragen, Threads) schaltet POST /ruhe; das ruft api.php getrennt auf.
+# Das Display bleibt an (es lässt sich nicht abschalten): api.php spielt vorher die Schlafaugen ab, das
+# letzte Bild bleibt stehen. SIGUSR2 beim Wecken nur noch für einen Daemon, den ein älterer Stand
+# schlafen gelegt hat.
 set -u
 SICHERUNG=/run/xgo-ruhe.gov
 
@@ -20,7 +23,6 @@ case "${1:-}" in
             cat "$f" > "$SICHERUNG"
         fi
         governor powersave
-        pkill -USR1 -x st7789_server
         echo "Ruhe an"
         ;;
     off)

@@ -72,7 +72,9 @@ class LcdOut:
             time.sleep(0.1)
         while self.app.running:
             t0 = time.monotonic()
-            if self.app.ruhe:                   # Ruhemodus: Display ist aus (deploy/xgo-ruhe), nichts schreiben
+            if self.app.ruhe:
+                # Ruhemodus: am Display stehen die Schlafaugen (api.php), nichts schreiben. Das FIFO bleibt
+                # offen, dann wartet der Daemon im read() statt nachzusehen.
                 self._gaze_sent = None
                 time.sleep(1.0)
                 continue

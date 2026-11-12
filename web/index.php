@@ -207,12 +207,12 @@ details.extras[open]>summary{margin-bottom:8px}
     <span class="pille" id="p-rec" style="display:none" title="Rohaufzeichnung: schreibt nur, solange der Rider balanciert"><span class="lang">Aufzeichnung </span><b>-</b></span>
     <span class="pille" id="p-wlan" title="WLAN-Empfang (Pegel) und Durchsatz des Riders: ↓ empfangen, ↑ gesendet"><span class="lang">WLAN </span><b>-</b></span>
   </div>
-  <button id="ruhe-knopf" onclick="ruheSchalten(true)" title="Ruhemodus: absetzen, Bildverarbeitung aus, Abfragen aus, CPU-Takt runter, Display aus">Ruhe</button>
+  <button id="ruhe-knopf" onclick="ruheSchalten(true)" title="Ruhemodus: absetzen, Bildverarbeitung aus, Abfragen aus, CPU-Takt runter, Schlafaugen am Display">Ruhe</button>
   <button id="stop" onclick="befehl('stop')" title="Stillstand, Modus idle">STOPP</button>
 </header>
 <div id="ruhe-decke">
   <h2>Ruhemodus</h2>
-  <p>Rider liegt, Bildverarbeitung, Abfragen und Display sind aus, CPU-Takt gesenkt. Akku <b id="ruhe-akku">-</b></p>
+  <p>Rider liegt, Bildverarbeitung und Abfragen sind aus, CPU-Takt gesenkt, am Display stehen die Schlafaugen. Akku <b id="ruhe-akku">-</b></p>
   <p id="ruhe-fehler"></p>
   <button onclick="ruheSchalten(false)" title="CPU-Takt und Abfragen wieder hoch; Bildverarbeitung bleibt aus, Rider bleibt liegen">Wecken</button>
 </div>

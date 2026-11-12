@@ -17,8 +17,9 @@
  *   POST api.php?a=horizon_delete&h=<mm>      (Eintrag dieser Körperhöhe löschen)
  *   POST api.php?a=stop
  *   POST api.php?a=pipeline&on=0|1
- *   POST api.php?a=ruhe&on=0|1                (Ruhemodus: xgonav /ruhe + sudo xgo-ruhe on|off für CPU-Takt
- *                                            und Display; Wecken startet nichts, Rider bleibt liegen)
+ *   POST api.php?a=ruhe&on=0|1                (Ruhemodus: xgonav /ruhe, Schlafaugen aufs Display (bleiben
+ *                                            stehen), sudo xgo-ruhe on|off für den CPU-Takt; Wecken startet
+ *                                            nichts, Rider bleibt liegen)
  *   POST api.php?a=record&on=0|1              (Rohaufzeichnung; schreibt nur, solange der Rider balanciert)
  *   POST api.php?a=drive&v=-1..1&w=-1..1      (nur Modus manual, alle 0,2 s senden)
  *   POST api.php?a=led&i=0..3&c=%23rrggbb
@@ -113,7 +114,18 @@ function xgonav_versuch(string $path): int
     return (int)$m[1];
 }
 
-// Ruhemodus, root-Teil (CPU-Takt, Display); true bei Erfolg.
+// Schlafaugen abspielen und warten (~4 s, höchstens 10 s); das letzte Bild (Augen zu) bleibt am Display stehen.
+function schlafaugen(): void
+{
+    if (!is_dir(EMOTION_RAW . '/sleep') || !is_writable('/tmp/lcd0')) {
+        return;
+    }
+    exec('pkill -u www-data -f "[e]motion.sh play|[f]fmpeg.*/tmp/lcd0" 2>/dev/null');
+    exec(sprintf('timeout 10 %s play %s > /dev/null 2>&1', escapeshellarg(EMOTION),
+                 escapeshellarg(EMOTION_RAW . '/sleep')));
+}
+
+// Ruhemodus, root-Teil (CPU-Takt); true bei Erfolg.
 function ruhe_system(bool $an, array &$fehler): bool
 {
     exec('sudo -n /usr/local/sbin/xgo-ruhe ' . ($an ? 'on' : 'off') . ' 2>&1', $out, $rc);
@@ -194,12 +206,15 @@ switch ($a) {
         $on = ($_GET['on'] ?? '1') === '0' ? '0' : '1';
         xgonav('POST', '/pipeline?on=' . $on);
     case 'ruhe':
-        // Einschlafen: erst xgonav (setzt ab, Abfragen aus), dann CPU-Takt runter. Wecken umgekehrt: erst
-        // CPU-Takt hoch. Beides wird versucht, auch wenn ein Teil fehlschlägt (xgonav läuft evtl. nicht).
+        // Einschlafen: erst xgonav (setzt ab, Abfragen aus, schreibt nicht mehr aufs Display), dann die
+        // Schlafaugen (bleiben stehen; das Display lässt sich nicht abschalten), erst danach CPU-Takt runter.
+        // Wecken umgekehrt: erst CPU-Takt hoch. Beides wird versucht, auch wenn ein Teil fehlschlägt
+        // (xgonav läuft evtl. nicht).
         $an = ($_GET['on'] ?? '1') !== '0';
         $fehler = [];
         if ($an) {
             $code = xgonav_versuch('/ruhe?on=1');
+            schlafaugen();
             $sys = ruhe_system(true, $fehler);
         } else {
             $sys = ruhe_system(false, $fehler);
@@ -272,10 +287,8 @@ switch ($a) {
     case 'shutdown':
         // Erst prüfen, ob poweroff erlaubt ist, dann "sleep" abspielen (blockiert ~4 s), dann aus.
         exec('sudo -n -l /usr/bin/systemctl poweroff 2>&1', $out, $rc);
-        if ($rc === 0 && is_dir(EMOTION_RAW . '/sleep') && is_writable('/tmp/lcd0')) {
-            exec('pkill -u www-data -f "[e]motion.sh play|[f]fmpeg.*/tmp/lcd0" 2>/dev/null');
-            exec(sprintf('timeout 10 %s play %s > /dev/null 2>&1', escapeshellarg(EMOTION),
-                         escapeshellarg(EMOTION_RAW . '/sleep')));
+        if ($rc === 0) {
+            schlafaugen();
         }
         $out = [];
         exec('sudo -n /usr/bin/systemctl poweroff 2>&1', $out, $rc);

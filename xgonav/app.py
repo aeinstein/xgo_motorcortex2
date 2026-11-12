@@ -350,7 +350,7 @@ class App:
     def set_ruhe(self, on: bool) -> None:
         """Ruhemodus: absetzen, Bildverarbeitung aus, Treiber fragt nichts mehr ab, alle Threads wachen nur noch
         selten auf. Wecken stellt nur die Abfragen wieder her; Bildverarbeitung bleibt aus, er bleibt liegen.
-        CPU-Takt und Display schaltet deploy/xgo-ruhe (root, über api.php)."""
+        Den CPU-Takt schaltet deploy/xgo-ruhe (root), die Schlafaugen am Display spielt api.php."""
         if on == self.ruhe:
             return
         if on:

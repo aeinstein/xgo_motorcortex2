@@ -633,7 +633,7 @@ class PetCfg:
 @dataclass
 class RuheCfg:
     # Ruhemodus (Web-Knopf „Ruhe“): abgesetzt, Bildverarbeitung aus, Treiber fragt nichts mehr ab, xgonav
-    # wacht nur noch selten auf. CPU-Takt und Display schaltet deploy/xgo-ruhe (root, über api.php).
+    # wacht nur noch selten auf. Den CPU-Takt schaltet deploy/xgo-ruhe (root), die Schlafaugen spielt api.php.
     tick_s: float = 1.0                # Hauptschleife und robot-Thread: so oft aufwachen
     sleep_ms_on_loop: int = 1000       # Treiber-Hauptschleife (Zustand, Akku); normal 200
 

@@ -92,7 +92,7 @@ sudo systemctl enable --now xgonav
 |---|---|
 | Emotions → `/tmp/lcd0` | group `video` |
 | Shutdown | `/etc/sudoers.d/xgonav-poweroff`: `www-data ALL=(root) NOPASSWD: /usr/bin/systemctl poweroff` |
-| Sleep mode | `/usr/local/sbin/xgo-ruhe` (governor, display), `/etc/sudoers.d/xgonav-ruhe`: `www-data` may run only `xgo-ruhe on` / `xgo-ruhe off` |
+| Sleep mode | `/usr/local/sbin/xgo-ruhe` (governor), `/etc/sudoers.d/xgonav-ruhe`: `www-data` may run only `xgo-ruhe on` / `xgo-ruhe off` |
 | LEDs, actions, height, roll | `/proc/XGORider/*` is mode 0666 |
 
 ## nginx (`deploy/nginx-xgonav.conf`)
