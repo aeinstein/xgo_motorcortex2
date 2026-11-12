@@ -16,16 +16,11 @@
 #include <queue>
 #include <vector>
 
-#if defined(_MSC_VER)
-#pragma fp_contract(off)
-#define XGO_API __declspec(dllexport)
-#else
-#define XGO_API
-#endif
+#include "xgo.h"
 
 namespace {
 
-constexpr int kNavAbi = 2;   // bei Änderung der Strukturen oder Signaturen erhöhen (navfast.py prüft das)
+constexpr int kNavAbi = 3;   // bei Änderung der Strukturen oder Signaturen erhöhen (navfast.py prüft das)
 constexpr double kInf = std::numeric_limits<double>::infinity();
 constexpr double kPi = 3.141592653589793;   // math.pi
 
@@ -510,19 +505,32 @@ struct LmapAdd {
     int64_t n, ncols, obs_n, cap;       // alte Punkte, Bildspalten, Nummer der Beobachtung, höchstens so viele Punkte
     double sc, cx, f, cam_fwd;          // Vollbild-Pixel je Spalte, Bildspalte der Fahrtrichtung, Brennweite, Kamera vor der Achse
     double max_range, far_range;        // far_range = max_range * 1.5
-    double max_age, near, now, lim;     // near: Entfernung der unteren Bildkante; lim = MIN_SPACING ** 2
+    double max_age, now, lim;           // lim = MIN_SPACING ** 2
+    GeoRow geo;
 };
 
-// localmap.LocalMap.add_freespace ab den Entfernungen je Spalte (die Geometrie rechnet weiter numpy):
+// localmap.LocalMap.add_freespace: Entfernung je Spalte aus der Bodengrenze (Geometrie wie ground_dist_np),
 // alte Punkte entfernen, wo die Beobachtung freien Boden zeigt (_clear_seen), die Grenze jeder zweiten Spalte
-// ausgedünnt anhängen, Altes und Fernes vergessen (_prune). cols: Grenze je Spalte (NaN = verdeckt), dist:
-// ihre Entfernung, known (oder null): Entfernung, ab der die Spalte messbar ist. Schreibt nach pts_o/t_o/obs_o
+// ausgedünnt anhängen, Altes und Fernes vergessen (_prune). grenze: Bodengrenze je Spalte (NaN = verdeckt),
+// kf (oder null): je Spalte, ab wo sie messbar ist (gleiche Normierung). Schreibt nach pts_o/t_o/obs_o
 // (Platz für n + ncols / 2 + 1), die Eingaben bleiben unverändert. Rückgabe: Anzahl Punkte.
 XGO_API int64_t lmap_add(const LmapAdd* p, const double* pts, const double* t, const int64_t* obs,
-                         const double* cols, const double* dist, const double* known, double* pts_o, double* t_o,
-                         int64_t* obs_o) {
+                         const double* grenze, const double* kf, double* pts_o, double* t_o, int64_t* obs_o) {
     const int64_t n = p->n, nc = p->ncols;
     int64_t m = 0;
+    // Spalten ohne messbaren Boden gelten als verdeckt; Entfernung der Grenze und des messbaren Bereichs
+    std::vector<double> cols_v(static_cast<size_t>(nc)), dist_v(static_cast<size_t>(nc)), known_v;
+    if (kf) known_v.resize(static_cast<size_t>(nc));
+    for (int64_t k = 0; k < nc; ++k) {
+        cols_v[k] = (kf && kf[k] >= 0.98) ? xgo::kNaN : grenze[k];
+        dist_v[k] = xgo::ground_dist(p->geo, cols_v[k]);
+        if (kf) known_v[k] = xgo::ground_dist(p->geo, kf[k]);
+    }
+    const double* cols = cols_v.data();
+    const double* dist = dist_v.data();
+    const double* known = kf ? known_v.data() : nullptr;
+    const double unten_d = xgo::ground_dist_row(p->geo, p->geo.y_near);
+    const double unten = unten_d == unten_d ? unten_d : 0.0;   // untere Bildkante; am Horizont 0 (Python: ... or 0.0)
     // Reichweite je Spalte: frei bis zum Horizont -> max_range, sonst die Grenze; NaN = verdeckt
     std::vector<double> rng(static_cast<size_t>(nc));
     for (int64_t k = 0; k < nc; ++k) {
@@ -539,8 +547,8 @@ XGO_API int64_t lmap_add(const LmapAdd* p, const double* pts, const double* t, c
             if (col >= 1 && col < static_cast<double>(nc - 1)) {            // Randspalten auslassen
                 const int64_t k = static_cast<int64_t>(col);
                 const double r = rng[k];
-                double lo = p->near;
-                if (known) lo = std::max(p->near, std::isfinite(known[k]) ? known[k] : kInf);
+                double lo = unten;
+                if (known) lo = std::max(unten, std::isfinite(known[k]) ? known[k] : kInf);
                 drop = std::isfinite(r) && x > lo && x < r - (0.1 + 0.15 * r);
             }
         }

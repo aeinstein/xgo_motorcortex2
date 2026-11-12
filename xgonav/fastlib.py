@@ -1,14 +1,15 @@
 """Optionaler C++-Kern xgonav/native/libxgofast.so (ctypes).
 
 Enthält Ego-Motion (native/egofast.cpp), Kantenverfahren und Verkleinern des Bodenmodells
-(native/floorfast.cpp), das Eintragen in die Raumkarte (native/gridfast.cpp), Planer, Frontier-Suche
-und Merkkarte (native/navfast.cpp, Anbindung in navfast.py) und FloorNet (native/floornet.cpp).
+(native/floorfast.cpp), das Eintragen in die Raumkarte (native/gridfast.cpp), Planer, Frontier-Suche,
+Merkkarte, Wandabstand und Wegfolger-Ziel (native/navfast.cpp, Anbindung in navfast.py; Bodengeometrie für
+beide Karten in native/xgo.h) und FloorNet (native/floornet.cpp).
 Gebaut wird am Rider mit `make -C xgonav/native`; fehlt die Bibliothek, rechnen egomotion.py,
 freespace.py, gridmap.py, planner.py, frontier.py und localmap.py in Python (gleiches Ergebnis),
 FloorNet ist dann aus. Jede Funktionsgruppe hat eine eigene ABI-Nummer, die der Aufrufer prüft.
 
-XGONAV_FASTLIB=<Datei> lädt eine andere Bibliothek (Tests am PC: navfast.cpp braucht kein OpenCV und
-lässt sich dort allein bauen, siehe docs/testing.md).
+XGONAV_FASTLIB=<Datei> lädt eine andere Bibliothek (Tests am PC: navfast.cpp und gridfast.cpp brauchen kein
+OpenCV und lassen sich dort allein bauen, siehe docs/testing.md).
 """
 from __future__ import annotations
 

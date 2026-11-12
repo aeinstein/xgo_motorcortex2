@@ -32,13 +32,15 @@ from .geometry import CamGeometry
 log = logging.getLogger("xgonav.gridmap")
 
 # ------------------------------------------------------------------ C++-Kern (optional)
-_GRID_ABI = 1
+_GRID_ABI = 2
 
 
 class _GridParams(ctypes.Structure):         # = GridParams in native/gridfast.cpp
-    _fields_ = [(n, ctypes.c_int) for n in ("n", "nrays", "pad0", "pad1")] + \
-               [(n, ctypes.c_double) for n in ("res", "half", "px", "py", "l_show", "l_free_occ", "l_free",
-                                               "l_min", "l_occ", "l_max")]
+    _fields_ = [(n, ctypes.c_int32) for n in ("n", "nrays", "step", "confirm_cells")] + \
+               [(n, ctypes.c_double) for n in ("res", "half", "px", "py", "cp", "sp", "l_show", "l_free_occ", "l_free",
+                                               "l_min", "l_occ", "l_max", "min_range", "max_range", "free_r",
+                                               "margin0", "margin_quad", "confirm_dr")] + \
+               [("geo", navfast.GeoRow)]
 
 
 def _grid_lib():
@@ -47,8 +49,10 @@ def _grid_lib():
     if not fastlib.check_abi(lib, "grid_abi", _GRID_ABI):
         return None
     p = ctypes.c_void_p
-    lib.grid_add.restype = ctypes.c_long
-    lib.grid_add.argtypes = [ctypes.POINTER(_GridParams), p, p, ctypes.c_uint32, p, p, p, p, p, p, p]
+    lib.grid_rays.restype = None
+    lib.grid_rays.argtypes = [ctypes.POINTER(_GridParams)] + [p] * 8
+    lib.grid_observe.restype = ctypes.c_int64
+    lib.grid_observe.argtypes = [ctypes.POINTER(_GridParams), p, p, ctypes.c_uint32] + [p] * 8
     return lib
 
 
@@ -60,7 +64,7 @@ class GridMap:
         self.res = cfg.resolution_m
         self.n = int(round(cfg.size_m / self.res))
         self._lock = threading.Lock()
-        self._bear: dict = {}                     # Peilung und 1/cos je Spaltenzahl (konstant)
+        self._peil: tuple | None = None           # Peilung je Strahl samt 1/cos, cos, sin (konstant je Geometrie)
         self._lib = _grid_lib() if getattr(cfg, "native", False) else None
         if self._lib is not None:
             self._stamp = np.zeros(self.n * self.n, np.uint32)   # Markierung "Zelle schon eingetragen"
@@ -68,7 +72,11 @@ class GridMap:
             c = cfg
             self._gp = _GridParams(n=self.n, res=self.res, half=self.res / 2, l_show=c.l_show,
                                    l_free_occ=c.l_free * c.occ_free_factor, l_free=c.l_free, l_min=c.l_min,
-                                   l_occ=c.l_occ, l_max=c.l_max)
+                                   l_occ=c.l_occ, l_max=c.l_max, step=max(1, c.column_step),
+                                   confirm_cells=max(0, int(c.confirm_cells)), min_range=c.min_range_m,
+                                   max_range=c.max_range_m, free_r=c.free_range_m if c.free_range_m > 0 else c.max_range_m,
+                                   margin0=max(self.res, c.free_margin_m), margin_quad=c.free_margin_quad,
+                                   confirm_dr=c.confirm_dr_m)
             log.info("Raumkarte: C++-Kern %s", fastlib.PATH)
         self.backend = "c++" if self._lib is not None else "python"
         self._nav = navfast.lib() if getattr(cfg, "native", False) else None   # wall_dist (native/navfast.cpp)
@@ -325,7 +333,16 @@ class GridMap:
         sc = self.geo.W / self.fw
         span = self.fh - fs.horizon_row
         cols = np.asarray(fs.columns, float)
-        idx = np.arange(0, len(cols), max(1, cfg.column_step))     # NaN-Spalten = unbekannt
+        idx, bear, rad, _, _ = self._peilung(len(cols), sc)        # NaN-Spalten = unbekannt
+        if self._lib is not None:
+            # im C++-Kern (gleiches Ergebnis wie unten)
+            g, cols, kf = self._params(fs, cols, len(idx), span, sc, pitch_dev)
+            dist, free_len, start = (np.empty(len(idx)) for _ in range(3))
+            ok, hit = np.empty(len(idx), bool), np.empty(len(idx), bool)
+            self._lib.grid_rays(ctypes.byref(g), cols.ctypes.data, None if kf is None else kf.ctypes.data,
+                                rad.ctypes.data, dist.ctypes.data, free_len.ctypes.data, start.ctypes.data,
+                                ok.ctypes.data, hit.ctypes.data)
+            return idx, bear, dist, free_len, start, ok, hit
         v = cols[idx]
         dist = self.geo.ground_dist_np((self.fh - v * span) * sc, pitch_dev)
         start = np.full(len(idx), cfg.min_range_m)
@@ -341,17 +358,63 @@ class GridMap:
             free_r = cfg.free_range_m if cfg.free_range_m > 0 else cfg.max_range_m
             margin = max(self.res, cfg.free_margin_m) + cfg.free_margin_quad * dist * dist
             free_len = np.where(to_horizon, free_r, np.where(np.isfinite(dist), np.minimum(dist - margin, free_r), np.nan))
-        key = (len(idx), sc, self.geo.W, self.geo.f, self.geo.cx)
-        if key not in self._bear:
-            x_full = (idx + 0.5) * sc
-            bear = self.geo.bearing(x_full)                               # Peilung, links +
-            # ground_dist_np liefert den Abstand nach vorn (wie LocalMap: x = d, y = d*tan),
-            # die Strahlen brauchen die Länge entlang der Peilung
-            self._bear = {key: (bear, 1.0 / np.cos(bear))}
-        bear, rad = self._bear[key]
+        # ground_dist_np liefert den Abstand nach vorn (wie LocalMap: x = d, y = d*tan),
+        # die Strahlen brauchen die Länge entlang der Peilung
         dist, free_len, start = dist * rad, free_len * rad, start * rad
         ok = np.isfinite(free_len) & (free_len > start)
         return idx, bear, dist, free_len, start, ok, hit
+
+    def _peilung(self, ncols: int, sc: float) -> tuple:
+        """Je Strahl (jede column_step-te Spalte): Spaltenindex, Peilung (links +), 1 / cos, cos und sin der
+        Peilung. Hängt nur an der Geometrie, deshalb gemerkt."""
+        key = (ncols, sc, self.geo.W, self.geo.f, self.geo.cx, self.cfg.column_step)
+        p = self._peil
+        if p is None or p[0] != key:
+            idx = np.arange(0, ncols, max(1, self.cfg.column_step))
+            bear = np.ascontiguousarray(self.geo.bearing((idx + 0.5) * sc))
+            p = self._peil = (key, idx, bear, 1.0 / np.cos(bear), np.cos(bear), np.sin(bear))
+        return p[1:]
+
+    def _params(self, fs: FreeSpace, cols: np.ndarray, nrays: int, span: float, sc: float, pitch_dev: float) -> tuple:
+        """Für den C++-Kern: eigene Kopie der Parameter mit der Geometrie dieser Beobachtung, Bodengrenze und
+        messbarer Bereich (oder None) als zusammenhängende float64-Felder."""
+        g = _GridParams.from_buffer_copy(self._gp)
+        g.nrays = nrays
+        g.geo = navfast.geo_row(self.geo, self.fh, span, sc, pitch_dev)
+        kf = None if fs.known_from is None else np.ascontiguousarray(fs.known_from, np.float64)
+        return g, np.ascontiguousarray(cols, np.float64), kf
+
+    def _add_native(self, fs: FreeSpace, pitch_dev: float, pose) -> bool:
+        """Beobachtung in einem Aufruf im C++-Kern eintragen (Strahlen, Freistrahlen, Treffer samt
+        Bestätigung); False, wenn die Felder dafür nicht passen."""
+        sc = self.geo.W / self.fw
+        cols = np.asarray(fs.columns, float)
+        idx, _, rad, cb, sb = self._peilung(len(cols), sc)
+        g, cols, kf = self._params(fs, cols, len(idx), self.fh - fs.horizon_row, sc, pitch_dev)
+        with self._lock:
+            lo, conf = self.lo, self.conf
+            if not (lo.dtype == np.float32 and lo.flags.c_contiguous):
+                return False
+            if conf is not None and not (conf.dtype == np.bool_ and conf.flags.c_contiguous
+                                         and self.rmin.dtype == np.float32 and self.rmin.flags.c_contiguous
+                                         and self.rmax.dtype == np.float32 and self.rmax.flags.c_contiguous):
+                return False
+            px, py, pth = pose if pose is not None else (self.x, self.y, self.th)
+            g.cp, g.sp = math.cos(pth), math.sin(pth)
+            # Pose = Radachse; die Strahlen beginnen am Kamerafußpunkt cam_fwd davor
+            g.px, g.py = px + self.geo.cam_fwd * g.cp, py + self.geo.cam_fwd * g.sp
+            self._gen += 2
+            if self._gen >= 0xFFFFFFF0:
+                self._stamp[:] = 0
+                self._gen = 2
+            self._lib.grid_observe(ctypes.byref(g), lo.ctypes.data, self._stamp.ctypes.data, self._gen,
+                                   cols.ctypes.data, None if kf is None else kf.ctypes.data, rad.ctypes.data,
+                                   cb.ctypes.data, sb.ctypes.data,
+                                   None if conf is None else self.rmin.ctypes.data,
+                                   None if conf is None else self.rmax.ctypes.data,
+                                   None if conf is None else conf.ctypes.data)
+            self.updates += 1
+        return True
 
     def add_freespace(self, fs: FreeSpace, pitch_dev: float,
                       pose: tuple[float, float, float] | None = None) -> None:
@@ -359,32 +422,20 @@ class GridMap:
         rechnet später, der Rider ist dann schon weiter); None = aktuelle Pose."""
         if fs is None or fs.columns is None or self.locked or not self.pose_ok:
             return
+        if self._lib is not None and self._add_native(fs, pitch_dev, pose):
+            return
         cfg = self.cfg
         idx, bear, dist, free_len, start, ok, hit = self._rays(fs, pitch_dev)
+        _, _, _, cb, sb = self._peilung(len(fs.columns), self.geo.W / self.fw)
         with self._lock:
             px, py, pth = pose if pose is not None else (self.x, self.y, self.th)
             # Pose = Radachse; die Strahlen beginnen am Kamerafußpunkt cam_fwd davor
             off = self.geo.cam_fwd
-            px, py = px + off * math.cos(pth), py + off * math.sin(pth)
-            ang = pth + bear
-            ca, sa = np.cos(ang), np.sin(ang)
-            lo = self.lo
-            if self._lib is not None and lo.dtype == np.float32 and lo.flags.c_contiguous:
-                # Eintragen im C++-Kern (gleiches Ergebnis wie unten)
-                self._gen += 2
-                if self._gen >= 0xFFFFFFF0:
-                    self._stamp[:] = 0
-                    self._gen = 2
-                g = self._gp
-                g.nrays, g.px, g.py = len(idx), px, py
-                # Treffer trägt der Kern nicht ein (hit = 0), das macht _add_hits für beide Wege gleich
-                ok8, hit8 = ok.view(np.uint8), np.zeros(len(idx), np.uint8)
-                self._lib.grid_add(ctypes.byref(g), lo.ctypes.data, self._stamp.ctypes.data, self._gen,
-                                   start.ctypes.data, free_len.ctypes.data, dist.ctypes.data, ca.ctypes.data,
-                                   sa.ctypes.data, ok8.ctypes.data, hit8.ctypes.data)
-                self._add_hits(px, py, dist, ca, sa, hit)
-                self.updates += 1
-                return
+            cp, sp = math.cos(pth), math.sin(pth)
+            px, py = px + off * cp, py + off * sp
+            # Weltrichtung je Strahl aus cos/sin von Kurs und Peilung (Additionssatz): nur Produkte, so rundet
+            # numpy überall wie der C++-Kern (np.cos/np.sin runden je nach numpy-Version anders)
+            ca, sa = cb * cp - sb * sp, cb * sp + sb * cp
             # freie Strecken: Stützstellen alle res/2 von start bis free_len
             if ok.any():
                 steps = np.ceil((free_len[ok] - start[ok]) / (self.res / 2)).astype(np.int64) + 1

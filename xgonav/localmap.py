@@ -59,6 +59,15 @@ class LocalMap:
             return
         sc = self.geo.W / self.fw
         span = self.fh - fs.horizon_row
+        if self._lib is not None:
+            # Geometrie, Freiräumen, Anhängen (ausgedünnt) und Vergessen in einem Aufruf im C++-Kern
+            # (gleiches Ergebnis wie unten)
+            self.pts, self.t, self.obs = navfast.add(self._lib, self.pts, self.t, self.obs, fs.columns, fs.known_from, dict(
+                obs_n=self._obs_n, cap=self.MAX_POINTS, sc=sc, cx=self.geo.cx, f=self.geo.f, cam_fwd=self.geo.cam_fwd,
+                max_range=self.max_range, far_range=self.max_range * 1.5, max_age=self.max_age, now=now,
+                lim=self.MIN_SPACING ** 2, geo=navfast.geo_row(self.geo, self.fh, span, sc, pitch_dev)))
+            self._obs_n += 1
+            return
         cols = np.asarray(fs.columns, float)
         # Entfernung, ab der die Spalte überhaupt etwas weiß (Linsenabschattung: darunter
         # ist die Farbe nicht messbar). Spalten ohne messbaren Boden gelten als verdeckt.
@@ -69,14 +78,6 @@ class LocalMap:
             known_from = self.geo.ground_dist_np((self.fh - kf * span) * sc, pitch_dev)
         # Entfernung der Bodengrenze je Spalte (NaN: am/über dem Horizont oder verdeckt)
         dist = self.geo.ground_dist_np((self.fh - cols * span) * sc, pitch_dev)
-        if self._lib is not None:
-            # Freiräumen, Anhängen (ausgedünnt) und Vergessen in einem Aufruf im C++-Kern (gleiches Ergebnis)
-            self.pts, self.t, self.obs = navfast.add(self._lib, self.pts, self.t, self.obs, cols, dist, known_from, dict(
-                obs_n=self._obs_n, cap=self.MAX_POINTS, sc=sc, cx=self.geo.cx, f=self.geo.f, cam_fwd=self.geo.cam_fwd,
-                max_range=self.max_range, far_range=self.max_range * 1.5, max_age=self.max_age,
-                near=self.geo.ground_dist(self.geo.H - 1, pitch_dev) or 0.0, now=now, lim=self.MIN_SPACING ** 2))
-            self._obs_n += 1
-            return
         self._clear_seen(cols, dist, sc, pitch_dev, known_from)
         idx = np.arange(0, len(cols), 2)
         v, d = cols[idx], dist[idx]

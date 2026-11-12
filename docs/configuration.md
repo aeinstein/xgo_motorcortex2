@@ -166,7 +166,7 @@ Replay of three evening drives (`tools/replay_raw.py`, 2026-11-04), false alarms
 2026-11-05 (`edge_log_s` 16, `edge_glare`): replay 0 / 0 / 54 % — follow11 now sees the kitchen cabinet side 0.16 m beside the path and the 0.33 m gray wall it missed before; the replay counts these as false alarms (person far). Manual test cases (19 frames): 17 OK (before 13). Cost +0.2 ms per call on a PC.
 
 ### `[map]` (short-term local map)
-`max_age_s` 4.0, `confirm` 1 (RiderPi 3), `confirm_radius_m` 0.08, `radius_m` 0.18 (path check: a confirmed point closer than this to the arc brakes), `radius_tight_m` 0.08 (same while the path follower drives a tight spot, `home.tight_m`; Rider half width 5.8 cm per CAD), `yaw_source` `odom` (RiderPi `imu`): heading for moving the points; `odom` = like `[odom] yaw_source` (wheels, else camera), `imu` = firmware heading from `imu_log` (~50 Hz), falls back to `odom` when the IMU is missing or older than `imu.max_age_s`. RiderPi 2026-11-08, full turns against images: IMU 0.997, wheels 0.992 of the true angle; per turn the two differ randomly by ~2° (p90 ~8°). Status: `lmap_yaw_src`. `native` true: moving, entering (clear seen floor, thin, forget), confirming and the arc check in the C++ core (`xgonav/native/navfast.cpp`) if built; same result as numpy (CM4, 2000 points: arc check after a new observation 5.8 → 0.4 ms, confirmed points for the planner 94 → 0.6 ms).
+`max_age_s` 4.0, `confirm` 1 (RiderPi 3), `confirm_radius_m` 0.08, `radius_m` 0.18 (path check: a confirmed point closer than this to the arc brakes), `radius_tight_m` 0.08 (same while the path follower drives a tight spot, `home.tight_m`; Rider half width 5.8 cm per CAD), `yaw_source` `odom` (RiderPi `imu`): heading for moving the points; `odom` = like `[odom] yaw_source` (wheels, else camera), `imu` = firmware heading from `imu_log` (~50 Hz), falls back to `odom` when the IMU is missing or older than `imu.max_age_s`. RiderPi 2026-11-08, full turns against images: IMU 0.997, wheels 0.992 of the true angle; per turn the two differ randomly by ~2° (p90 ~8°). Status: `lmap_yaw_src`. `native` true: moving, entering (ground geometry, clear seen floor, thin, forget), confirming and the arc check in the C++ core (`xgonav/native/navfast.cpp`) if built; same result as numpy (CM4, 2000 points: arc check after a new observation 5.8 → 0.4 ms, confirmed points for the planner 94 → 0.6 ms).
 
 ### `[behavior]`
 | Key | Default | RiderPi |
@@ -246,7 +246,7 @@ All keys with comments: `PetCfg` in `xgonav/config.py`.
 | `view_m` | 6.0 |
 | `yaw_source` | `räder` (wheels), `kamera` or `imu` (firmware heading, RiderPi: from `imu_log`, 100 Hz with the stream; older than `imu.max_age_s` → `/proc` yaw at ~5 Hz; neither → wheels). Status: `grid_yaw_src` (`imu`, `status`, `odom`); see `docs/limitations.md` |
 | `threaded` | true |
-| `native` | true: enter rays in the C++ core (`xgonav/native/gridfast.cpp`) if built; same map as numpy (CM4 1.5 → 0.1 ms per observation). Also `wall_dist` (`navfast.cpp`) |
+| `native` | true: one observation in one call in the C++ core (`xgonav/native/gridfast.cpp`) if built: rays from the floor boundary, free rays, hits with `confirm_dr_m`; same map as numpy (CM4 1.64 → 0.18 ms per observation). Also `wall_dist` (`navfast.cpp`) |
 | `file` | `""` (off); RiderPi example: `/opt/xgonav/raumkarte.npz` |
 | `save_every_s` | 60.0 (only if changed; also on exit) |
 

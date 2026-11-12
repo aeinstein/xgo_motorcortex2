@@ -13,7 +13,7 @@ import numpy as np
 
 from . import fastlib
 
-_NAV_ABI = 2
+_NAV_ABI = 3
 _cache: list = []
 
 
@@ -25,9 +25,21 @@ class _FrontierParams(ctypes.Structure):     # = FrontierParams in native/navfas
                                                "gain_ref_m2", "turn_dps")]
 
 
+class GeoRow(ctypes.Structure):              # = GeoRow in native/xgo.h
+    _fields_ = [(n, ctypes.c_double) for n in ("fh", "span", "sc", "half_h", "f", "tilt", "pitch", "cam_h",
+                                               "beta_min", "y_near")]
+
+
+def geo_row(geo, fh: float, span: float, sc: float, pitch_dev: float) -> GeoRow:
+    """Bodengeometrie einer Beobachtung für den C++-Kern (wie CamGeometry.ground_dist_np). fh: Höhe des
+    Bodenmodell-Bildes, span = fh - Horizontzeile, sc: Vollbild-Pixel je Zeile."""
+    return GeoRow(fh=fh, span=span, sc=sc, half_h=geo.H / 2, f=geo.f, tilt=math.radians(geo.tilt_deg),
+                  pitch=pitch_dev, cam_h=geo.cam_h, beta_min=math.radians(0.5), y_near=geo.H - 1)
+
+
 class _LmapAdd(ctypes.Structure):            # = LmapAdd in native/navfast.cpp
     _fields_ = [(n, ctypes.c_int64) for n in ("n", "ncols", "obs_n", "cap")] +                [(n, ctypes.c_double) for n in ("sc", "cx", "f", "cam_fwd", "max_range", "far_range", "max_age",
-                                               "near", "now", "lim")]
+                                               "now", "lim")] + [("geo", GeoRow)]
 
 
 def lib():
@@ -53,7 +65,7 @@ def lib():
             L.lmap_move.restype = None
             L.lmap_move.argtypes = [p, ctypes.c_int64, d, d, d, p]
             L.lmap_add.restype = ctypes.c_int64
-            L.lmap_add.argtypes = [ctypes.POINTER(_LmapAdd)] + [p] * 9
+            L.lmap_add.argtypes = [ctypes.POINTER(_LmapAdd)] + [p] * 8
             L.nav_wall_dist.restype = d
             L.nav_wall_dist.argtypes = [p, i, d, ctypes.c_float, d, d, i, i, i, d]
             L.nav_path_target.restype = None
@@ -148,19 +160,18 @@ def move(L, pts: np.ndarray, ds: float, c: float, s: float) -> np.ndarray:
     return out
 
 
-def add(L, pts: np.ndarray, t: np.ndarray, obs: np.ndarray, cols: np.ndarray, dist: np.ndarray, known, par: dict) -> tuple:
-    """LocalMap.add_freespace ab den Entfernungen je Spalte: (pts, t, obs) neu, die alten bleiben unverändert.
-    par: Felder von _LmapAdd außer n und ncols."""
+def add(L, pts: np.ndarray, t: np.ndarray, obs: np.ndarray, cols, known_from, par: dict) -> tuple:
+    """LocalMap.add_freespace: (pts, t, obs) neu, die alten bleiben unverändert. cols: Bodengrenze je Spalte,
+    known_from: ab wo die Spalte messbar ist (oder None). par: Felder von _LmapAdd außer n und ncols."""
     p = np.ascontiguousarray(pts, np.float64)
     tt = np.ascontiguousarray(t, np.float64)
     o = np.ascontiguousarray(obs, np.int64)
     c = np.ascontiguousarray(cols, np.float64)
-    d = np.ascontiguousarray(dist, np.float64)
-    k = None if known is None else np.ascontiguousarray(known, np.float64)
+    k = None if known_from is None else np.ascontiguousarray(known_from, np.float64)
     room = len(p) + len(c) // 2 + 1
     po, to, oo = np.empty((room, 2)), np.empty(room), np.empty(room, np.int64)
     a = _LmapAdd(n=len(p), ncols=len(c), **par)
-    m = L.lmap_add(ctypes.byref(a), p.ctypes.data, tt.ctypes.data, o.ctypes.data, c.ctypes.data, d.ctypes.data,
+    m = L.lmap_add(ctypes.byref(a), p.ctypes.data, tt.ctypes.data, o.ctypes.data, c.ctypes.data,
                    None if k is None else k.ctypes.data, po.ctypes.data, to.ctypes.data, oo.ctypes.data)
     return po[:m], to[:m], oo[:m]
 

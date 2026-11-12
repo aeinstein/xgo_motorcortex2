@@ -20,6 +20,21 @@ from xgonav.geometry import CamGeometry  # noqa: E402
 L = navfast.lib()
 pytestmark = pytest.mark.skipif(L is None, reason="C++-Kern nicht gebaut (make -C xgonav/native)")
 
+# Die Bodengeometrie (arctan2, tan) rechnet der Kern mit der libm. numpy tut das auch (RiderPi, PC ohne AVX-512);
+# mit AVX-512 nimmt numpy eigene Vektorfunktionen, die im letzten Bit abweichen. Dann gilt für alles, was von
+# der Geometrie abhängt, statt Bitgleichheit eine Toleranz von 1e-9.
+_x = np.linspace(-3.0, 3.0, 4001)
+LIBM = (np.array_equal(np.tan(_x), [math.tan(v) for v in _x])
+        and np.array_equal(np.arctan2(_x, 310.0), [math.atan2(v, 310.0) for v in _x]))
+
+
+def _gleich(a, b) -> bool:
+    """Felder gleich: bitgleich, wo numpy wie der Kern die libm nutzt, sonst bis auf 1e-9."""
+    a, b = np.asarray(a), np.asarray(b)
+    if LIBM:
+        return a.dtype == b.dtype and np.array_equal(a, b, equal_nan=a.dtype.kind == "f")
+    return a.shape == b.shape and np.allclose(a, b, rtol=1e-9, atol=1e-12, equal_nan=True)
+
 
 def _karte(rng, n=120, waende=14, loecher=0.0):
     """Zufällige Raumkarte (Log-Odds): bekannter Boden, Wandstücke, außen und in Flecken unbekannt."""
@@ -196,10 +211,10 @@ def test_localmap_matches_numpy():
             for m in (a, b):
                 m.move(ds, dyaw)
                 m.add_freespace(fs, 0.1 * k, pd)
-            assert np.array_equal(a.pts, b.pts) and np.array_equal(a.obs, b.obs)
+            assert _gleich(a.pts, b.pts) and np.array_equal(a.obs, b.obs)
             for reach in (0.4, 1.0, math.inf):
-                assert np.array_equal(a.confirmed_points(reach), b.confirmed_points(reach))
-            assert np.array_equal(a.confirmed_later(1.0)(), b.confirmed_later(1.0)())
+                assert _gleich(a.confirmed_points(reach), b.confirmed_points(reach))
+            assert _gleich(a.confirmed_later(1.0)(), b.confirmed_later(1.0)())
             for _ in range(3):
                 v, w = float(rng.uniform(-0.4, 0.6)), float(rng.uniform(-1.5, 1.5))
                 rad = (None, 0.08)[k % 2]
@@ -208,10 +223,11 @@ def test_localmap_matches_numpy():
                 sb = b.arc_clearance(v, w, horizon_s=1.2, radius=rad, hit_out=hb)
                 assert sa == sb and len(ha) == len(hb)
                 if ha:
-                    assert np.array_equal(ha[0], hb[0])
+                    assert _gleich(ha[0], hb[0])
                 gesperrt += sa < math.inf
                 frei += sa == math.inf
-            assert a.gap_center() == b.gap_center()
+            ga, gb = a.gap_center(), b.gap_center()
+            assert (ga is None) == (gb is None) and (ga is None or _gleich(ga, gb))
         assert gesperrt > 10 and frei > 10 and len(a.pts) > 200
 
 
@@ -260,7 +276,7 @@ def test_localmap_add_edge_cases_match_numpy():
             m.add_freespace(fs, t, pd)
         geloescht += len(a.pts) < n0
         assert a.pts.dtype == b.pts.dtype and a.t.dtype == b.t.dtype and a.obs.dtype == b.obs.dtype
-        assert np.array_equal(a.pts, b.pts) and np.array_equal(a.t, b.t) and np.array_equal(a.obs, b.obs), k
+        assert _gleich(a.pts, b.pts) and np.array_equal(a.t, b.t) and np.array_equal(a.obs, b.obs), k
         assert a._obs_n == b._obs_n and len(a.pts) <= 400
     assert geloescht > 10 and len(a.pts) > 50
 
@@ -305,3 +321,49 @@ def test_path_target_matches_python():
             x, y = (float(v) for v in rng.normal(0, 2, 2))
             la = None if k % 3 == 0 else float(rng.choice([0.15, 0.3, 0.45, 5.0]))
             assert tuple(fn.target(x, y, la)) == tuple(fp.target(x, y, la))
+
+
+def test_gridmap_observe_matches_numpy():
+    """Raumkarte: Strahlen (_rays) und Eintragen einer Beobachtung in einem Aufruf (Freistrahlen, Treffer,
+    Bestätigung aus zwei Abständen) ergeben dieselben Felder wie numpy; mit messbarem Bereich je Spalte,
+    Strahlen bis zum Horizont, verdeckten Spalten, wechselnder Körperhöhe und am Kartenrand."""
+    from xgonav.freespace import FreeSpace
+    from xgonav.gridmap import GridMap, _grid_lib
+    if _grid_lib() is None:
+        pytest.skip("Raumkarten-Kern nicht gebaut (make -C xgonav/native)")
+    cfg = Config()
+    for dr, schritt in ((0.2, 2), (0.0, 1)):
+        geo = CamGeometry(640, 480, 91.0, 1.39, 43.0, 85.0, cam_fwd_mm=30.0)
+        gc = replace(cfg.grid, confirm_dr_m=dr, column_step=schritt, file="")
+        mn, mp = GridMap(gc, geo, 160, 120), GridMap(replace(gc, native=False), geo, 160, 120)
+        assert (mn.backend, mp.backend) == ("c++", "python")
+        rng = np.random.default_rng(21)
+        hz = geo.horizon_row(0) / 4
+        pose, belegt = np.zeros(3), 0
+        base = np.clip(0.5 + 0.25 * np.sin(np.linspace(0, 7, 160)), 0, 1)
+        for k in range(250):
+            cols = (rng.uniform(0.0, 1.0, 160) if k % 5 == 0 else np.clip(base + rng.normal(0, 0.03, 160), 0, 1))
+            cols[rng.random(160) < 0.1] = np.nan
+            cols[rng.random(160) < 0.15] = 1.0                       # frei bis Horizont
+            cols = cols.astype(np.float32) if k % 2 else cols
+            kf = None if k % 3 == 0 else np.clip(rng.uniform(-0.1, 0.3, 160), 0, 1)
+            if kf is not None and k % 4 == 0:
+                kf[rng.random(160) < 0.2] = 1.0
+            fs = FreeSpace([0.5] * 5, cols, hz, np.zeros((120, 160), np.uint8), True, kf)
+            pose += (rng.normal(0.02, 0.03), rng.normal(0, 0.03), rng.normal(0, 0.15))
+            if k == 150:
+                pose[:] = (7.9, -7.95, 1.0)                          # Kartenrand: Strahlen laufen hinaus
+            if k == 100:
+                geo.body_height_mm = 100.0                           # andere Kamerahöhe ab hier
+            pd = float(rng.normal(0, 0.01))
+            for a, b in zip(mn._rays(fs, pd), mp._rays(fs, pd)):
+                assert a.dtype == b.dtype and _gleich(a, b), k
+            mn.add_freespace(fs, pd, tuple(pose))
+            mp.add_freespace(fs, pd, tuple(pose))
+            assert np.array_equal(mn.lo, mp.lo), k
+            belegt = max(belegt, int((mn.lo > 0).sum()))
+        assert np.abs(mn.lo).max() > 1.0 and mn.updates == mp.updates == 250
+        assert belegt > 5                                     # Treffer wurden eingetragen (naher Bogen: wenige Zellen)
+        if dr > 0:
+            assert _gleich(mn.rmin, mp.rmin) and _gleich(mn.rmax, mp.rmax)
+            assert np.array_equal(mn.conf, mp.conf) and mn.conf.any() and (np.isfinite(mn.rmin) & ~mn.conf).any()
