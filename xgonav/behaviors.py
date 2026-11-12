@@ -10,6 +10,9 @@ import math
 import random
 from dataclasses import dataclass, field
 
+import numpy as np
+
+from . import navfast
 from .config import BehaviorCfg, ExploreCfg, HomeCfg, PatrolCfg, RobotCfg
 from .egomotion import EgoResult
 from .freespace import FreeSpace
@@ -377,6 +380,7 @@ class PathFollower:
         self.cfg, self.rcfg, self.h = cfg, rcfg, hcfg
         self.v = hcfg.v if v is None else v      # Tempo auf freier Strecke (explore: explore.v)
         self.path: list[tuple[float, float]] | None = None
+        self._pa, self._pa_of = None, None       # self.path als Feld für den C++-Kern
         self.stuck = False
         self.pressing = False
         self._press: tuple | None = None
@@ -400,6 +404,12 @@ class PathFollower:
         p = self.path
         if len(p) == 1:
             return p[0]
+        rest = self.h.lookahead_m if lookahead_m is None else lookahead_m
+        L = navfast.lib() if self.h.native else None
+        if L is not None:
+            if self._pa_of is not p:                   # Weg einmal als Feld, bis ein neuer kommt
+                self._pa, self._pa_of = np.ascontiguousarray(p, np.float64).reshape(-1, 2), p
+            return navfast.path_target(L, self._pa, x, y, rest)
         best, bi, bt = math.inf, 0, 0.0
         for i in range(len(p) - 1):
             ax, ay = p[i]
@@ -407,15 +417,15 @@ class PathFollower:
             dx, dy = bx - ax, by - ay
             L2 = dx * dx + dy * dy
             t = clamp(((x - ax) * dx + (y - ay) * dy) / L2, 0.0, 1.0) if L2 > 1e-12 else 0.0
-            d = math.hypot(ax + t * dx - x, ay + t * dy - y)
+            ex, ey = ax + t * dx - x, ay + t * dy - y
+            d = math.sqrt(ex * ex + ey * ey)            # ausgeschrieben statt math.hypot: rundet wie der C++-Kern
             if d < best:
                 best, bi, bt = d, i, t
-        rest = self.h.lookahead_m if lookahead_m is None else lookahead_m
         i, t = bi, bt
         while i < len(p) - 1:
             ax, ay = p[i]
             bx, by = p[i + 1]
-            L = math.hypot(bx - ax, by - ay)
+            L = math.sqrt((bx - ax) * (bx - ax) + (by - ay) * (by - ay))
             left = (1.0 - t) * L
             if left >= rest and L > 1e-9:
                 t += rest / L

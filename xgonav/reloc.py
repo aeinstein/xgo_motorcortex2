@@ -96,7 +96,14 @@ def _duenn(pts: np.ndarray, res: float, w: np.ndarray | None = None):
     if not len(pts):
         return pts, w
     q = np.floor(pts / res).astype(np.int64)
-    _, inv, cnt = np.unique(q, axis=0, return_inverse=True, return_counts=True)
+    q -= q.min(axis=0)
+    breite = int(q[:, 1].max()) + 1
+    if int(q[:, 0].max()) < (1 << 62) // breite:
+        # Zelle als eine Zahl: gleiche Gruppen in gleicher Reihenfolge wie zeilenweise (axis=0), aber das
+        # Sortieren kostet einen Bruchteil (PC 2026-11-12, bis 6000 Punkte: 1,6 -> 0,2 ms im Mittel)
+        _, inv, cnt = np.unique(q[:, 0] * breite + q[:, 1], return_inverse=True, return_counts=True)
+    else:
+        _, inv, cnt = np.unique(q, axis=0, return_inverse=True, return_counts=True)
     inv = inv.ravel()
     out = np.column_stack([np.bincount(inv, pts[:, 0]) / cnt, np.bincount(inv, pts[:, 1]) / cnt])
     return out, (np.bincount(inv, w) / cnt if w is not None else None)

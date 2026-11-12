@@ -290,6 +290,9 @@ class MapCfg:
     # (~50 Hz), bei fehlender/alter IMU wie "odom". RiderPi 2026-11-08, volle Drehungen gegen Bilder: IMU 0,997,
     # Räder 0,992 des wahren Winkels; je Drehung weichen beide zufällig ~2° (p90 ~8°) voneinander ab.
     yaw_source: str = "odom"
+    # Mitdrehen, Eintragen (freiräumen, ausdünnen, vergessen), Bestätigen und Bahnprüfung im C++-Kern
+    # (xgonav/native/navfast.cpp), wenn gebaut; gleiches Ergebnis wie numpy
+    native: bool = True
 
 
 @dataclass
@@ -474,6 +477,9 @@ class HomeCfg:
     # Festgefahren aufgeben erst nach so viel Zeit ohne 0,3 m Annäherung: Die Merkkarte vergisst nach 4 s, und
     # am RiderPi wäre die Bahn kurz nach dem Abbruch wieder frei gewesen (2026-11-06)
     give_up_s: float = 20.0
+    # Wegsuche (A*, Kürzen), Zielpunkt des Wegfolgers und die Schleifen der Frontier-Suche (explore) im C++-Kern
+    # (xgonav/native/navfast.cpp), wenn gebaut; gleiches Ergebnis wie Python, die GIL bleibt dabei frei
+    native: bool = True
 
 
 @dataclass

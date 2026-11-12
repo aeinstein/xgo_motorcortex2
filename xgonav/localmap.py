@@ -5,6 +5,9 @@ Hindernis aus dem Bild, ist aber noch da. Deshalb werden die Bodengrenzen aus
 der Freiraumschätzung als Punkte (x vorn, y links, Meter) gespeichert, mit der
 Eigenbewegung (Kurs aus Ego-Motion, Strecke aus Fahrbefehl) mitgeführt und
 nach einigen Sekunden vergessen.
+
+Mitdrehen, Eintragen (freiräumen, ausdünnen, vergessen), Bestätigen und die Bahnprüfung rechnet der
+C++-Kern (native/navfast.cpp), wenn gebaut; die numpy-Wege hier liefern dasselbe. Änderungen in beiden machen.
 """
 from __future__ import annotations
 
@@ -13,6 +16,7 @@ import math
 
 import numpy as np
 
+from . import navfast
 from .freespace import FreeSpace
 from .geometry import CamGeometry
 
@@ -20,8 +24,10 @@ from .geometry import CamGeometry
 class LocalMap:
     def __init__(self, geo: CamGeometry, fs_width: int, fs_height: int,
                  max_age_s: float = 6.0, max_range_m: float = 2.5, radius_m: float = 0.18,
-                 confirm: int = 1, confirm_radius_m: float = 0.08):
+                 confirm: int = 1, confirm_radius_m: float = 0.08, native: bool = True):
         self.geo = geo
+        self._lib = navfast.lib() if native else None
+        self.backend = "c++" if self._lib is not None else "python"
         self.fw, self.fh = fs_width, fs_height
         self.max_age = max_age_s
         self.max_range = max_range_m
@@ -39,9 +45,13 @@ class LocalMap:
         """Roboter fuhr ds Meter vor und drehte um dyaw (rad, links +)."""
         if not len(self.pts):
             return
-        p = self.pts - np.array([ds, 0.0])
         c, s = math.cos(-dyaw), math.sin(-dyaw)
-        self.pts = p @ np.array([[c, s], [-s, c]])
+        if self._lib is not None:
+            self.pts = navfast.move(self._lib, self.pts, ds, c, s)
+            return
+        # ausgeschrieben statt Matrixprodukt: BLAS rundet je nach Rechner anders, so rechnet auch der C++-Kern
+        px, py = self.pts[:, 0] - ds, self.pts[:, 1]
+        self.pts = np.column_stack([px * c - py * s, px * s + py * c])
 
     def add_freespace(self, fs: FreeSpace, now: float, pitch_dev: float) -> None:
         """Bodengrenzen eintragen. Spalten mit NaN gelten als verdeckt (unbekannt)."""
@@ -59,6 +69,14 @@ class LocalMap:
             known_from = self.geo.ground_dist_np((self.fh - kf * span) * sc, pitch_dev)
         # Entfernung der Bodengrenze je Spalte (NaN: am/über dem Horizont oder verdeckt)
         dist = self.geo.ground_dist_np((self.fh - cols * span) * sc, pitch_dev)
+        if self._lib is not None:
+            # Freiräumen, Anhängen (ausgedünnt) und Vergessen in einem Aufruf im C++-Kern (gleiches Ergebnis)
+            self.pts, self.t, self.obs = navfast.add(self._lib, self.pts, self.t, self.obs, cols, dist, known_from, dict(
+                obs_n=self._obs_n, cap=self.MAX_POINTS, sc=sc, cx=self.geo.cx, f=self.geo.f, cam_fwd=self.geo.cam_fwd,
+                max_range=self.max_range, far_range=self.max_range * 1.5, max_age=self.max_age,
+                near=self.geo.ground_dist(self.geo.H - 1, pitch_dev) or 0.0, now=now, lim=self.MIN_SPACING ** 2))
+            self._obs_n += 1
+            return
         self._clear_seen(cols, dist, sc, pitch_dev, known_from)
         idx = np.arange(0, len(cols), 2)
         v, d = cols[idx], dist[idx]
@@ -69,7 +87,11 @@ class LocalMap:
             x_full = (i + 0.5) * sc
             y = d * (self.geo.cx - x_full) / self.geo.f       # d * tan(Peilung)
             # Ursprung = Radachse: d zählt ab Kamerafußpunkt, der cam_fwd davor liegt
-            new_pts = self._thin(np.column_stack([d + self.geo.cam_fwd, y]))
+            new_pts = np.column_stack([d + self.geo.cam_fwd, y])
+            if self._lib is not None:
+                new_pts = new_pts[navfast.thin(self._lib, new_pts, self.MIN_SPACING ** 2)]
+            else:
+                new_pts = self._thin(new_pts)
             self.pts = np.vstack([self.pts, new_pts])
             self.t = np.concatenate([self.t, np.full(len(new_pts), now)])
             self.obs = np.concatenate([self.obs, np.full(len(new_pts), self._obs_n, np.int64)])
@@ -117,8 +139,8 @@ class LocalMap:
         if not len(self.pts):
             return
         keep = (now - self.t < self.max_age) & (np.hypot(self.pts[:, 0], self.pts[:, 1]) < self.max_range * 1.5)
-        if len(keep) > 3000:
-            keep[: len(keep) - 3000] = False
+        if len(keep) > self.MAX_POINTS:
+            keep[: len(keep) - self.MAX_POINTS] = False
         self.pts, self.t, self.obs = self.pts[keep], self.t[keep], self.obs[keep]
 
     @staticmethod
@@ -132,6 +154,7 @@ class LocalMap:
         return ((near.astype(np.float32) @ onehot) > 0).sum(axis=1).astype(np.int32)
 
     MIN_SPACING = 0.02   # m zwischen benachbarten Punkten einer Beobachtung
+    MAX_POINTS = 3000    # mehr merkt sich die Karte nicht (die ältesten fallen weg)
 
     @classmethod
     def _thin(cls, pts: np.ndarray) -> np.ndarray:
@@ -146,7 +169,8 @@ class LocalMap:
         qx, qy = xs[0], ys[0]
         for i in range(1, len(xs)):
             x, y = xs[i], ys[i]
-            if (x - qx) ** 2 + (y - qy) ** 2 >= lim:
+            dx, dy = x - qx, y - qy
+            if dx * dx + dy * dy >= lim:                # Produkte statt ** 2: rundet wie der C++-Kern
                 keep.append(i)
                 qx, qy = x, y
         return pts[keep]
@@ -169,15 +193,18 @@ class LocalMap:
         need = cand & (self._conf < 0)
         if need.any():
             nb = r < r[need].max() + self.confirm_radius
-            C, P, O = self.pts[need], self.pts[nb], self.obs[nb]
-            near = ((C[:, None, :] - P[None, :, :]) ** 2).sum(-1) < self.confirm_radius ** 2
-            self._conf[need] = self._distinct(near, O) >= self.confirm
+            if self._lib is not None:
+                navfast.confirm(self._lib, self.pts, self.obs, need, nb, self.confirm_radius, self.confirm, self._conf)
+            else:
+                C, P, O = self.pts[need], self.pts[nb], self.obs[nb]
+                near = ((C[:, None, :] - P[None, :, :]) ** 2).sum(-1) < self.confirm_radius ** 2
+                self._conf[need] = self._distinct(near, O) >= self.confirm
         return self.pts[cand & (self._conf == 1)]
 
     def confirmed_later(self, reach: float):
         """Funktion, die confirmed_points(reach) für den jetzigen Stand rechnet, ohne Zwischenspeicher: für den
         Planer-Thread. Die Arrays werden nie verändert, nur ersetzt, und die Rechnung bremst die Hauptschleife nicht."""
-        pts, obs, confirm, rad = self.pts, self.obs, self.confirm, self.confirm_radius
+        pts, obs, confirm, rad, lib = self.pts, self.obs, self.confirm, self.confirm_radius, self._lib
 
         def run() -> np.ndarray:
             if not len(pts):
@@ -187,6 +214,10 @@ class LocalMap:
             if confirm <= 1 or not cand.any():
                 return pts[cand]
             nb = r < reach + rad
+            if lib is not None:
+                conf = np.zeros(len(pts), np.int8)
+                navfast.confirm(lib, pts, obs, cand, nb, rad, confirm, conf)
+                return pts[conf == 1]
             C, P = pts[cand], pts[nb]
             near = ((C[:, None, :] - P[None, :, :]) ** 2).sum(-1) < rad ** 2
             return C[LocalMap._distinct(near, obs[nb]) >= confirm]
@@ -205,6 +236,11 @@ class LocalMap:
         pts = self.confirmed_points(abs(v_mps) * horizon_s + radius)
         if not len(pts):
             return math.inf
+        if self._lib is not None:
+            s, near = navfast.arc(self._lib, pts, v_mps, w_rads, horizon_s, steps, radius, ESCAPE_TOL_M)
+            if near is not None and hit_out is not None:
+                hit_out.append(pts[near])
+            return s
         lim = np.minimum(radius, np.hypot(pts[:, 0], pts[:, 1]) - ESCAPE_TOL_M)
         x = y = th = 0.0
         dt = horizon_s / steps

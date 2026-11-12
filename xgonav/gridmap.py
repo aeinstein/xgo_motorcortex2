@@ -24,7 +24,7 @@ import time
 import cv2
 import numpy as np
 
-from . import fastlib
+from . import fastlib, navfast
 from .config import GridCfg
 from .freespace import FreeSpace
 from .geometry import CamGeometry
@@ -71,6 +71,7 @@ class GridMap:
                                    l_occ=c.l_occ, l_max=c.l_max)
             log.info("Raumkarte: C++-Kern %s", fastlib.PATH)
         self.backend = "c++" if self._lib is not None else "python"
+        self._nav = navfast.lib() if getattr(cfg, "native", False) else None   # wall_dist (native/navfast.cpp)
         self.reset()
 
     def reset(self) -> None:
@@ -293,11 +294,18 @@ class GridMap:
     def wall_dist(self, x: float, y: float, reach_m: float) -> float:
         """Abstand (m) von (x, y) zur Mitte der nächsten belegten Zelle, inf wenn keine näher als reach_m.
         Nur ein Fenster um den Punkt (bei 0,3 m 13 x 13 Zellen)."""
-        r, c = (int(k) for k in self.cell(x, y))
+        r = int(math.floor(y / self.res + self.n / 2))             # wie cell(), ohne numpy
+        c = int(math.floor(x / self.res + self.n / 2))
         k = int(math.ceil(reach_m / self.res))
+        L = self._nav
+        if L is not None:
+            with self._lock:
+                lo = self.lo
+                if lo.dtype == np.float32 and lo.flags.c_contiguous:
+                    return navfast.wall_dist(L, lo, self.res, self.cfg.l_show, x, y, r, c, k, reach_m)
         r0, c0 = max(0, r - k), max(0, c - k)
         with self._lock:
-            rr, cc = np.nonzero(self.lo[r0:r + k + 1, c0:c + k + 1] > self.cfg.l_show)
+            rr, cc = np.nonzero(self.lo[r0:max(r0, r + k + 1), c0:max(c0, c + k + 1)] > self.cfg.l_show)
         if not len(rr):
             return math.inf
         d = np.hypot((cc + c0 + 0.5 - self.n / 2) * self.res - x, (rr + r0 + 0.5 - self.n / 2) * self.res - y).min()

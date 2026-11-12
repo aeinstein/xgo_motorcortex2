@@ -1,10 +1,14 @@
 """Optionaler C++-Kern xgonav/native/libxgofast.so (ctypes).
 
 Enthält Ego-Motion (native/egofast.cpp), Kantenverfahren und Verkleinern des Bodenmodells
-(native/floorfast.cpp), das Eintragen in die Raumkarte (native/gridfast.cpp) und FloorNet
-(native/floornet.cpp). Gebaut wird am Rider mit `make -C xgonav/native`; fehlt die Bibliothek,
-rechnen egomotion.py, freespace.py und gridmap.py in Python (gleiches Ergebnis), FloorNet ist dann aus.
-Jede Funktionsgruppe hat eine eigene ABI-Nummer, die der Aufrufer prüft.
+(native/floorfast.cpp), das Eintragen in die Raumkarte (native/gridfast.cpp), Planer, Frontier-Suche
+und Merkkarte (native/navfast.cpp, Anbindung in navfast.py) und FloorNet (native/floornet.cpp).
+Gebaut wird am Rider mit `make -C xgonav/native`; fehlt die Bibliothek, rechnen egomotion.py,
+freespace.py, gridmap.py, planner.py, frontier.py und localmap.py in Python (gleiches Ergebnis),
+FloorNet ist dann aus. Jede Funktionsgruppe hat eine eigene ABI-Nummer, die der Aufrufer prüft.
+
+XGONAV_FASTLIB=<Datei> lädt eine andere Bibliothek (Tests am PC: navfast.cpp braucht kein OpenCV und
+lässt sich dort allein bauen, siehe docs/testing.md).
 """
 from __future__ import annotations
 
@@ -14,7 +18,7 @@ import os
 
 log = logging.getLogger(__name__)
 
-PATH = os.path.join(os.path.dirname(__file__), "native", "libxgofast.so")
+PATH = os.environ.get("XGONAV_FASTLIB") or os.path.join(os.path.dirname(__file__), "native", "libxgofast.so")
 _cache: list = []
 
 

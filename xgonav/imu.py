@@ -31,10 +31,12 @@ class ImuSource:
     def __init__(self, cfg: ImuCfg, history_s: float = 20.0):
         self.cfg = cfg
         self._lock = threading.Lock()
-        self._t: deque[float] = deque()
-        self._p: deque[float] = deque()
-        self._r: deque[float] = deque()
-        self._y: deque[float] = deque()                 # Kurs (rad, links +, stetig ohne ±180°-Sprünge)
+        # Historie als numpy-Puffer, Zeilen t, roll, pitch, yaw (Kurs rad, links +, stetig ohne ±180°-Sprünge);
+        # gültig sind die Spalten _a.._b. Angehängt wird hinten. Ist der Puffer voll, zieht der gültige Teil in
+        # einen neuen um: Der alte bleibt, wie er ist, herausgegebene Ausschnitte (arrays()) gelten weiter. Mit
+        # Deques kopierte arrays() je Bild die ganze Historie Wert für Wert (20 s bei 100 Hz: 4000 Werte).
+        self._buf = np.empty((4, 4096))
+        self._a = self._b = 0
         self._y_last = None                             # letzter Rohwert (rad) zum Entfalten
         self._hist = history_s
         self._last_seq = 0
@@ -43,7 +45,6 @@ class ImuSource:
         self.rate_hz = 0.0
         self.paused = False             # Ruhemodus: nicht lesen, nur selten aufwachen
         self.idle = False               # abgesetzt: Strom und Lesen nur mit cfg.idle_hz
-        self._cache = None
 
     def start(self) -> bool:
         if not self._open():
@@ -79,28 +80,34 @@ class ImuSource:
             if seq <= self._last_seq:
                 return
             self._last_seq = seq
+            buf, a, b = self._buf, self._a, self._b
+            y_alt = float(buf[3, b - 1]) if b > a else None
             if yaw is None:
-                y = self._y[-1] if self._y else 0.0
+                y = y_alt if y_alt is not None else 0.0
             elif self._y_last is None:
                 y = yaw
             else:
                 d = (yaw - self._y_last + math.pi) % (2 * math.pi) - math.pi
-                y = (self._y[-1] if self._y else yaw) + d
+                y = (y_alt if y_alt is not None else yaw) + d
             if yaw is not None:
                 self._y_last = yaw
-            self._t.append(t)
-            self._r.append(roll)
-            self._p.append(pitch)
-            self._y.append(y)
-            while self._t and self._t[0] < t - self._hist:
-                self._t.popleft(); self._r.popleft(); self._p.popleft(); self._y.popleft()
-            self._cache = None
+            if b == buf.shape[1]:
+                n = b - a
+                neu = np.empty((4, max(4096, 2 * n + 1024)))
+                neu[:, :n] = buf[:, a:b]
+                self._buf, a, b = neu, 0, n
+                buf = neu
+            buf[:, b] = (t, roll, pitch, y)
+            b += 1
+            alt = t - self._hist
+            while a < b and buf[0, a] < alt:            # je Probe meist ein Schritt
+                a += 1
+            self._a, self._b = a, b
 
     def arrays(self) -> tuple[np.ndarray, np.ndarray]:
+        """Zeiten und Nick der Historie (Ausschnitte des Puffers, nicht verändern)."""
         with self._lock:
-            if self._cache is None:
-                self._cache = (np.fromiter(self._t, float, len(self._t)), np.fromiter(self._p, float, len(self._p)))
-            return self._cache
+            return self._buf[0, self._a:self._b], self._buf[2, self._a:self._b]
 
     def pitch_at(self, t) -> np.ndarray | float | None:
         ts, ps = self.arrays()
@@ -110,30 +117,28 @@ class ImuSource:
 
     def latest_t(self) -> float | None:
         with self._lock:
-            return self._t[-1] if self._t else None
+            return float(self._buf[0, self._b - 1]) if self._b > self._a else None
 
     def latest_tilt(self) -> tuple[float, float, float] | None:
         """(t, roll, pitch in rad) der neuesten Probe, sonst None."""
         with self._lock:
-            return (self._t[-1], self._r[-1], self._p[-1]) if self._t else None
+            return tuple(self._buf[:3, self._b - 1].tolist()) if self._b > self._a else None
 
     def since(self, t0: float) -> list[tuple[float, float, float, float]]:
         """Proben nach t0 als (t, roll, pitch, yaw in rad), älteste zuerst (für die Rohaufzeichnung)."""
         with self._lock:
-            n = 0
-            for t in reversed(self._t):
-                if t <= t0:
-                    break
-                n += 1
-            k = len(self._t) - n
-            return [(self._t[i], self._r[i], self._p[i], self._y[i]) for i in range(k, len(self._t))]
+            a, b = self._a, self._b
+            alt = np.flatnonzero(self._buf[0, a:b] <= t0)          # ab der letzten Probe bis t0 ist alles neu
+            k = a + (int(alt[-1]) + 1 if len(alt) else 0)
+            rows = self._buf[:, k:b].T.tolist()
+        return list(map(tuple, rows))
 
     def latest_yaw(self) -> tuple[float, float] | None:
         """(t, Kurs rad links +) der neuesten Probe mit Kurs, sonst None."""
         with self._lock:
-            if not self._t or self._y_last is None:
+            if self._b <= self._a or self._y_last is None:
                 return None
-            return self._t[-1], self._y[-1]
+            return float(self._buf[0, self._b - 1]), float(self._buf[3, self._b - 1])
 
     def _run(self) -> None:
         n0, t0 = 0, time.monotonic()

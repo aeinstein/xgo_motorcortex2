@@ -5,6 +5,9 @@ aufgeblasen und sind gesperrt, Zellen nahe an Hindernissen und unbekannte Zellen
 kosten mehr (lieber durch bekannten freien Raum). Gesucht wird nur in einem Ausschnitt
 um Pose, Ziel und gefahrenen Weg, sonst wäre A* in Python am CM4 zu langsam. Der
 Planer läuft in eigenem Thread (PlannerWorker); die Hauptschleife fragt nur ab.
+
+Wegsuche und Kürzen (astar, shortcut) rechnet der C++-Kern (native/navfast.cpp), wenn gebaut; die
+Funktionen hier sind der gleichwertige Python-Weg und die Vorlage dafür. Änderungen in beiden machen.
 """
 from __future__ import annotations
 
@@ -17,6 +20,7 @@ import time
 import cv2
 import numpy as np
 
+from . import navfast
 from .config import HomeCfg
 from .gridmap import GridMap
 
@@ -94,7 +98,8 @@ def astar(blocked: np.ndarray, cost: np.ndarray, s: tuple[int, int], g: tuple[in
     si = s[0] * w + s[1]
     gi = gr * w + gc
     best[si] = 0.0
-    heap = [(math.hypot(s[0] - gr, s[1] - gc), 0.0, si)]
+    # Luftlinie als sqrt der exakten Summe (= math.hypot ganzer Zahlen): so rechnet auch der C++-Kern
+    heap = [(math.sqrt((s[0] - gr) ** 2 + (s[1] - gc) ** 2), 0.0, si)]
     pops = 0
     while heap:
         _, d, i = heapq.heappop(heap)
@@ -122,7 +127,7 @@ def astar(blocked: np.ndarray, cost: np.ndarray, s: tuple[int, int], g: tuple[in
             if nd < best[j]:
                 best[j] = nd
                 prev[j] = i
-                heapq.heappush(heap, (nd + math.hypot(rr - gr, cc - gc), nd, j))
+                heapq.heappush(heap, (nd + math.sqrt((rr - gr) ** 2 + (cc - gc) ** 2), nd, j))
     return None
 
 
@@ -154,8 +159,9 @@ def shortcut(cells: list[tuple[int, int]], blocked: np.ndarray, cost: np.ndarray
                 d = np.hypot(np.diff(seg[:, 0]), np.diff(seg[:, 1]))
                 cs = cost[seg[:, 0], seg[:, 1]]
                 weg = float((d * (cs[:-1] + cs[1:]) / 2).sum())
-                gerade = float(cost[rr, cc].mean()) * math.hypot(b[0] - a[0], b[1] - a[1])
-                if cost[rr, cc].max() <= cs.max() + 1e-3 and gerade <= 1.02 * weg + 1e-3:
+                gerade = float(cost[rr, cc].mean()) * math.sqrt((b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2)
+                # Vergleich in float64 (wie numpy 1.26 am Rider; numpy 2 rechnete float32 + 1e-3 in float32)
+                if float(cost[rr, cc].max()) <= float(cs.max()) + 1e-3 and gerade <= 1.02 * weg + 1e-3:
                     break
             j -= 1
         out.append(cells[j])
@@ -209,12 +215,21 @@ def kept_path(keep, start_xy, blocked, local) -> list | None:
     return rest if all(_line_free(blocked, a, b) for a, b in zip(cells, cells[1:])) else None
 
 
-def route(blocked, cost, s, g, to_world, start_xy, goal_xy) -> list | None:
-    """Weg von Zelle s nach g auf fertigen Kostenkarten, in Weltpunkten; None = kein Weg."""
-    cells = astar(blocked, cost, s, g)
-    if cells is None:
-        return None
-    out = [to_world(r, c) for r, c in shortcut(cells, blocked, cost)]
+def route(blocked, cost, s, g, to_world, start_xy, goal_xy, native: bool = True) -> list | None:
+    """Weg von Zelle s nach g auf fertigen Kostenkarten, in Weltpunkten; None = kein Weg.
+    native: A* und Kürzen im C++-Kern, wenn gebaut (gleiches Ergebnis, GIL frei)."""
+    L = navfast.lib() if native else None
+    if L is not None:
+        cells = navfast.route_cells(L, blocked, cost, s, g)
+        if cells is None:
+            return None
+        cells = cells.tolist()
+    else:
+        cells = astar(blocked, cost, s, g)
+        if cells is None:
+            return None
+        cells = shortcut(cells, blocked, cost)
+    out = [to_world(r, c) for r, c in cells]
     out[0], out[-1] = tuple(start_xy), tuple(goal_xy)
     return out
 
@@ -278,13 +293,13 @@ def plan(grid: GridMap, start_xy: tuple[float, float], goal_xy: tuple[float, flo
     kept = None
     if keep and math.hypot(keep[-1][0] - goal_xy[0], keep[-1][1] - goal_xy[1]) < 0.05:
         kept = kept_path(keep, start_xy, blocked, local)
-    out = route(blocked, cost, s, g, to_world, start_xy, goal_xy)
+    out = route(blocked, cost, s, g, to_world, start_xy, goal_xy, cfg.native)
     if out is None and kept is None and extra is not None:
         # Die Merkkarte schloss eine Engstelle, durch die er gerade fuhr, und die Fahrt endete mit „kein Weg“
         # (RiderPi 2026-11-06). Zur Not ohne sie, wie die Zielsuche: Die Bahnprüfung bremst ohnehin.
         blocked, cost = cost_map(lo, res, grid.cfg.l_show, cfg, None, driven)
         clear_ends(blocked)
-        out = route(blocked, cost, s, g, to_world, start_xy, goal_xy)
+        out = route(blocked, cost, s, g, to_world, start_xy, goal_xy, cfg.native)
     if out is None:
         return kept
     if kept is not None and path_length(kept) <= cfg.keep_factor * path_length(out) + 0.3:

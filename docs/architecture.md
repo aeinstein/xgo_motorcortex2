@@ -39,14 +39,15 @@ camera.FrameSource ─► egomotion.EgoMotion ─► tracker.Tracker ◄── d
 | `geometry.py` | Camera geometry, ground-plane distance |
 | `freespace.py`, `shading.py` | Floor colour model → free/blocked per image column; lens-shading correction; edge scan and downscale optionally in C++ (`native/floorfast.cpp`) |
 | `fastlib.py` | loads optional C++ core `native/libxgofast.so` (ctypes), ABI check per function group |
+| `navfast.py` | ctypes binding of `native/navfast.cpp`: A* + path shortening, wavefront, frontier group scoring, local map (move, enter, confirm, arc check), wall distance, path-follower target; used by `planner.py`, `frontier.py`, `localmap.py`, `gridmap.py`, `behaviors.py`, each keeps an equivalent Python path |
 | `floornet.py` | self-trained floor network in the C++ core (`native/floornet.cpp`); runs in the freespace thread: shadow mode (no decisions) or, with `primary = "net"`, alone instead of `method` ([floornet.md](floornet.md)) |
-| `localmap.py` | Short-term obstacle memory in robot frame (`map.max_age_s` = 4 s) |
+| `localmap.py` | Short-term obstacle memory in robot frame (`map.max_age_s` = 4 s); move, enter, confirm and arc check optionally in C++ (`native/navfast.cpp`) |
 | `wheels.py` | Wheel odometry from `wheels_log` |
 | `gridmap.py` | Room occupancy grid in world frame, start point, save/load; ray entry optionally in C++ (`native/gridfast.cpp`) |
-| `planner.py` | A* on the room map for `home`, own thread (`PlannerWorker`) |
+| `planner.py` | A* on the room map for `home`, own thread (`PlannerWorker`); A* and shortening optionally in C++ (`native/navfast.cpp`) |
 | `behaviors.py` | `idle`, `manual`, `follow`, `explore` (`MapExplore`, reactive `Explore` without room map), `approach`, `home`; `PathFollower`, `safety()` |
 | `pet.py` | mode `pet`: `PetBrain` (logic only), `Pet` (behavior); reacts to people, cats, dogs. Control step only, nothing per frame |
-| `frontier.py` | mapping targets for `explore`, runs in the planner thread |
+| `frontier.py` | mapping targets for `explore`, runs in the planner thread; loops optionally in C++ (`native/navfast.cpp`) |
 | `robot.py` | `ProcRobot` (`/proc/XGORider`), `SimRobot`; ramp, keepalive, watchdog |
 | `web.py` | Local HTTP/WebSocket API (`127.0.0.1:8088`) |
 | `lcd.py` | Overlay to `/tmp/lcd0` (Pi only, lazy import) |

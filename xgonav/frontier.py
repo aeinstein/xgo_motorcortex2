@@ -9,6 +9,10 @@ Ablauf von next_goal():
   3. Die nächste zuerst: kleinste Fahrzeit + Drehzeit; viel Unbekanntes am Ziel zählt wie höchstens
      gain_bonus_s weniger. So bleibt nichts liegen, zu dem er später quer durch die Karte zurück müsste.
   4. Das bisherige Ziel bleibt, solange seine Gruppe besteht, und wandert mit ihr mit; gewechselt wird nicht.
+
+Die Schleifen (Fahrweg-Schätzung, Werten der Gruppen, Wegsuche) rechnet der C++-Kern (native/navfast.cpp),
+wenn gebaut und home.native gesetzt; _groups_py und die Schleife in wavefront sind der gleichwertige
+Python-Weg. Änderungen in beiden machen.
 """
 from __future__ import annotations
 
@@ -18,6 +22,7 @@ from dataclasses import dataclass
 import cv2
 import numpy as np
 
+from . import navfast
 from .config import ExploreCfg, HomeCfg
 from .gridmap import GridMap
 from .planner import cost_map, driven_mask, kept_path, known_area, path_length, route, squeeze_zone
@@ -39,17 +44,21 @@ _K3 = np.ones((3, 3), np.uint8)
 _CROSS = cv2.getStructuringElement(cv2.MORPH_CROSS, (3, 3))
 
 
-def wavefront(passable: np.ndarray, start: tuple[int, int], step: int = 2) -> tuple[np.ndarray, int]:
+def wavefront(passable: np.ndarray, start: tuple[int, int], step: int = 2, native: bool = True) -> tuple[np.ndarray, int]:
     """Weglänge (in Schritten des groben Rasters) von start über passierbare Zellen, auf einem
     step-mal gröberen Raster, -1 = nicht erreichbar. Grob genug für die Fahrzeit-Schätzung; das
-    Dilatieren läuft in OpenCV ohne GIL. Rückgabe: grobe Karte und step."""
+    Ausbreiten läuft im C++-Kern (native, wenn gebaut), sonst als Dilatieren in OpenCV. Rückgabe: grobe
+    Karte und step."""
     h, w = passable.shape
     # Fläche mitteln auf float: jede passierbare Zelle zählt, schmale Durchgänge bleiben erhalten
     small = cv2.resize(passable.astype(np.float32), (max(1, w // step), max(1, h // step)),
                        interpolation=cv2.INTER_AREA) > 0
+    sr, sc = min(start[0] // step, small.shape[0] - 1), min(start[1] // step, small.shape[1] - 1)
+    L = navfast.lib() if native else None
+    if L is not None:
+        return navfast.wave(L, small, sr, sc), step
     dist = np.full(small.shape, -1, np.int32)
     cur = np.zeros(small.shape, np.uint8)
-    sr, sc = min(start[0] // step, small.shape[0] - 1), min(start[1] // step, small.shape[1] - 1)
     cur[sr, sc] = 1
     dist[sr, sc] = 0
     small8 = small.astype(np.uint8)
@@ -131,7 +140,7 @@ def next_goal(grid: GridMap, pose: tuple, hcfg: HomeCfg, ecfg: ExploreCfg, obsta
     zone = squeeze_zone(cost, hcfg)                    # dicht an Hindernissen: nur als Engstelle befahrbar
 
     # Fahrweg-Schätzung und unbekannte Fläche um jeden Punkt
-    dist, step = wavefront(passable, s)
+    dist, step = wavefront(passable, s, native=hcfg.native)
     side = max(3, int(round(2 * ecfg.gain_radius_m / res)) | 1)
     gain_cells = cv2.boxFilter(unknown.astype(np.float32), -1, (side, side), normalize=False,
                                borderType=cv2.BORDER_CONSTANT)
@@ -141,88 +150,122 @@ def next_goal(grid: GridMap, pose: tuple, hcfg: HomeCfg, ecfg: ExploreCfg, obsta
     uarea[0] = 0.0
     behind = cv2.dilate(uarea[ulab], _CROSS)
     keep_rc = to_local(*keep_frontier) if keep_frontier is not None else None
-    # Zwei Stufen: [0] Gruppen mit normalem Abstand zu Hindernissen, [1] Gruppen, die nur in Engstellen liegen
-    # (z. B. die Öffnung einer schmalen Lücke). Stufe 1 zählt erst, wenn Stufe 0 kein Ziel hat.
-    stufen, gemieden = ([], []), [0, 0]
+    # Zwei Stufen: Gruppen mit normalem Abstand zu Hindernissen (code 1) und Gruppen, die nur in Engstellen
+    # liegen (code 2, z. B. die Öffnung einer schmalen Lücke). Stufe 2 zählt erst, wenn Stufe 1 kein Ziel hat.
     nlab, lab = cv2.connectedComponents(fr.astype(np.uint8), connectivity=8)
+    L = navfast.lib() if hcfg.native else None
+    args = (lab, nlab, zone, behind, dist, step, gain_cells, avoid, pose, r0, c0, n, res, keep_rc, ecfg)
+    code, score, gain, cr, cc, kd2, kcr, kcc = navfast.frontier(L, *args) if L is not None else _groups_py(*args)
+    weit, eng = np.flatnonzero(code == 1), np.flatnonzero(code == 2)
+    cand = weit if len(weit) or not allow_tight else eng
+    avoided = int((code == 3).sum()) + (0 if len(weit) or not allow_tight else int((code == 4).sum()))
+    if not len(cand):
+        return ExplorePlan(None, clusters=avoided, avoided=avoided, known_m2=known_m2)
+    cand = cand[np.argsort(-score[cand], kind="stable")]      # die Beste zuerst, bei Gleichstand die frühere Gruppe
+
+    # Bisheriges Ziel behalten, solange seine Gruppe besteht. Umschwenken nach Nutzen ließ den
+    # Rider im Simulator alle 2 s umdrehen: Unterwegs wird immer eine andere Stelle kurz besser.
+    order = list(zip(cand[:4].tolist(), cr[cand[:4]].tolist(), cc[cand[:4]].tolist()))   # (Gruppe, Zeile, Spalte)
+    keeping = False
+    if keep_rc is not None:
+        kr, kc = keep_rc
+        k = int(cand[np.argmin(kd2[cand])])                # nächste Gruppe, bei Gleichstand die bessere
+        if int(kd2[k]) * res * res <= ecfg.keep_dist_m ** 2:
+            # Das Ziel wandert mit der Gruppe: ihre Mitte, wenn sie nah am alten Punkt liegt (die Grenze weicht
+            # beim Anfahren zurück, er fährt dann ohne Halt weiter), sonst die Zelle am nächsten zum alten Punkt
+            r, c = int(cr[k]), int(cc[k])
+            if ((r - kr) ** 2 + (c - kc) ** 2) * res * res > ecfg.keep_dist_m ** 2:
+                r, c = int(kcr[k]), int(kcc[k])
+            order = [(k, r, c)] + order[:3]
+            keeping = True
+
+    for i, (k, r, c) in enumerate(order):               # der Beste und zur Not die nächsten
+        g = (r, c)
+        path = None
+        if blocked_x is not None and not blocked_x[g]:
+            path = route(blocked_x, cost_x, s, g, to_world, (x, y), to_world(*g), hcfg.native)
+        if path is None:
+            path = route(blocked, cost, s, g, to_world, (x, y), to_world(*g), hcfg.native)
+        if path is None:
+            continue
+        path = shorten(path, ecfg.standoff_m)
+        if keeping and i == 0:                          # Weg nur bei gleichem Ziel behalten
+            kept = kept_path(keep_path, (x, y), blocked_x if blocked_x is not None else blocked, lambda p: to_local(*p))
+            if kept is not None and path_length(kept) <= hcfg.keep_factor * path_length(path) + 0.3:
+                path = kept
+        return ExplorePlan(path, path[-1], to_world(r, c), len(cand) + avoided, avoided, round(float(gain[k]), 2),
+                           known_m2, tight=bool(code[k] == 2))
+    return ExplorePlan(None, clusters=len(cand) + avoided, avoided=avoided, known_m2=known_m2)
+
+
+def _hyp(a: float, b: float) -> float:
+    """sqrt(a² + b²) ausgeschrieben statt math.hypot: rundet überall gleich, auch im C++-Kern."""
+    return math.sqrt(a * a + b * b)
+
+
+def _groups_py(lab: np.ndarray, nlab: int, zone: np.ndarray, behind: np.ndarray, dist: np.ndarray, step: int,
+               gain_cells: np.ndarray, avoid, pose: tuple, r0: int, c0: int, n: int, res: float, keep_rc,
+               ecfg: ExploreCfg) -> tuple:
+    """Frontier-Gruppen werten (Python-Weg von navfast.frontier). lab: Gruppen aus cv2.connectedComponents.
+    Je Gruppe k: code (0 zählt nicht, 1 Ziel mit Abstand, 2 Ziel nur in einer Engstelle, 3/4 wie 1/2, aber
+    durch avoid gesperrt), score, gain (m²), Zelle (cr, cc) am nächsten zur Mitte, kleinster Abstand² (Zellen)
+    zum bisherigen Ziel keep_rc (kd2) und dessen Zelle (kcr, kcc)."""
+    x, y, th = pose
+    code = np.zeros(nlab, np.int8)
+    score, gain = np.zeros(nlab), np.zeros(nlab)
+    cr, cc_, kcr, kcc = (np.zeros(nlab, np.int32) for _ in range(4))
+    kd2 = np.full(nlab, np.iinfo(np.int64).max, np.int64)
+    # alle Frontier-Zellen einmal nach Gruppe sortieren (stabil: je Gruppe die Reihenfolge von np.nonzero)
+    # statt je Gruppe die ganze Karte zu durchsuchen
+    rr_all, cc_all = np.nonzero(lab)
+    labs = lab[rr_all, cc_all]
+    o = np.argsort(labs, kind="stable")
+    rr_all, cc_all = rr_all[o], cc_all[o]
+    ends = np.cumsum(np.bincount(labs, minlength=nlab)).tolist()
+    zone_any = bool(zone.any())
     for k in range(1, nlab):
-        rr, cc = np.nonzero(lab == k)
+        rr, cc = rr_all[ends[k - 1]:ends[k]], cc_all[ends[k - 1]:ends[k]]
         weit = ~zone[rr, cc]
         stufe = 0 if weit.any() else 1
         if stufe == 0:
             ra, ca = rr[weit], cc[weit]
-            ok = math.hypot(np.ptp(ca) + 1, np.ptp(ra) + 1) * res >= ecfg.min_cluster_m
+            ok = _hyp(int(np.ptp(ca)) + 1, int(np.ptp(ra)) + 1) * res >= ecfg.min_cluster_m
             if not ok:                                  # der Teil mit Abstand ist zu klein: als Engstelle werten
                 stufe = 1
         if stufe == 1:
             # Zu klein, oder das Unbekannte dahinter ist nur ein Loch im bekannten Boden
             ra, ca = rr, cc
-            ok = (math.hypot(np.ptp(cc) + 1, np.ptp(rr) + 1) * res >= ecfg.squeeze_cluster_m
+            ok = (_hyp(int(np.ptp(cc)) + 1, int(np.ptp(rr)) + 1) * res >= ecfg.squeeze_cluster_m
                   and float(behind[rr, cc].max()) * res * res >= ecfg.min_unknown_m2
-                  and bool(zone.any()))
+                  and zone_any)
+        if keep_rc is not None:
+            d2 = (rr - keep_rc[0]) ** 2 + (cc - keep_rc[1]) ** 2
+            i = int(np.argmin(d2))
+            kd2[k], kcr[k], kcc[k] = d2[i], rr[i], cc[i]
         if not ok:
             # Zu klein, außer es ist das aktuelle Ziel: Die Größe schwankt um die Schwelle
-            if keep_rc is None or ((rr - keep_rc[0]) ** 2 + (cc - keep_rc[1]) ** 2).min() * res * res > ecfg.keep_dist_m ** 2:
+            if keep_rc is None or int(kd2[k]) * res * res > ecfg.keep_dist_m ** 2:
                 continue
         i = int(np.argmin((ra - ra.mean()) ** 2 + (ca - ca.mean()) ** 2))  # Zelle am nächsten zur Mitte
         r, c = int(ra[i]), int(ca[i])
-        fx, fy = to_world(r, c)
-        if any(math.hypot(fx - ax, fy - ay) < ar for ax, ay, ar in avoid):
-            gemieden[stufe] += 1
+        cr[k], cc_[k] = r, c
+        fx, fy = (c + c0 + 0.5 - n / 2) * res, (r + r0 + 0.5 - n / 2) * res
+        if any(_hyp(fx - ax, fy - ay) < ar for ax, ay, ar in avoid):
+            code[k] = 3 + stufe
             continue
-        d = dist[min(r // step, dist.shape[0] - 1), min(c // step, dist.shape[1] - 1)]
-        dm = d * step * res if d >= 0 else 1.5 * math.hypot(fx - x, fy - y)   # grobes Raster verfehlt die Zelle
-        gain = float(gain_cells[r, c]) * res * res
+        d = int(dist[min(r // step, dist.shape[0] - 1), min(c // step, dist.shape[1] - 1)])
+        dm = d * step * res if d >= 0 else 1.5 * _hyp(fx - x, fy - y)   # grobes Raster verfehlt die Zelle
+        g = float(gain_cells[r, c]) * res * res
         drive_s = dm / ecfg.travel_mps
         dth = abs((math.atan2(fy - y, fx - x) - th + math.pi) % (2 * math.pi) - math.pi)
         # Die nächste zuerst (Zeit bis dorthin); viel Unbekanntes wiegt höchstens gain_bonus_s auf. Mit Nutzen
         # je Zeit fuhr er am RiderPi viermal 3,5-9,6 m quer durch Bekanntes zu einer fernen großen Stelle und
         # später zu den liegengebliebenen zurück (2026-11-11)
-        score = (ecfg.gain_bonus_s * min(1.0, gain / ecfg.gain_ref_m2)
-                 - drive_s - math.degrees(dth) / ecfg.turn_dps)
-        stufen[stufe].append((score, gain, r, c, fx, fy, rr, cc, stufe))
-    cands = stufen[0] or (stufen[1] if allow_tight else [])
-    avoided = gemieden[0] if stufen[0] or not allow_tight else sum(gemieden)
-    if not cands:
-        return ExplorePlan(None, clusters=avoided, avoided=avoided, known_m2=known_m2)
-    cands.sort(key=lambda t: -t[0])
-
-    # Bisheriges Ziel behalten, solange seine Gruppe besteht. Umschwenken nach Nutzen ließ den
-    # Rider im Simulator alle 2 s umdrehen: Unterwegs wird immer eine andere Stelle kurz besser.
-    order = cands
-    keeping = False
-    if keep_rc is not None:
-        kr, kc = keep_rc
-        near = [(int(((t[6] - kr) ** 2 + (t[7] - kc) ** 2).min()), j) for j, t in enumerate(cands)]
-        d2, j = min(near)
-        if d2 * res * res <= ecfg.keep_dist_m ** 2:
-            t = cands[j]
-            # Das Ziel wandert mit der Gruppe: ihre Mitte, wenn sie nah am alten Punkt liegt (die Grenze weicht
-            # beim Anfahren zurück, er fährt dann ohne Halt weiter), sonst die Zelle am nächsten zum alten Punkt
-            r, c = t[2], t[3]
-            if ((r - kr) ** 2 + (c - kc) ** 2) * res * res > ecfg.keep_dist_m ** 2:
-                i = int(np.argmin((t[6] - kr) ** 2 + (t[7] - kc) ** 2))
-                r, c = int(t[6][i]), int(t[7][i])
-            order = [(t[0], t[1], r, c, *to_world(r, c), t[6], t[7], t[8])] + cands
-            keeping = True
-
-    for k, t in enumerate(order[:4]):                   # der Beste und zur Not die nächsten
-        g = (t[2], t[3])
-        path = None
-        if blocked_x is not None and not blocked_x[g]:
-            path = route(blocked_x, cost_x, s, g, to_world, (x, y), to_world(*g))
-        if path is None:
-            path = route(blocked, cost, s, g, to_world, (x, y), to_world(*g))
-        if path is None:
-            continue
-        path = shorten(path, ecfg.standoff_m)
-        if keeping and k == 0:                          # Weg nur bei gleichem Ziel behalten
-            kept = kept_path(keep_path, (x, y), blocked_x if blocked_x is not None else blocked, lambda p: to_local(*p))
-            if kept is not None and path_length(kept) <= hcfg.keep_factor * path_length(path) + 0.3:
-                path = kept
-        return ExplorePlan(path, path[-1], (t[4], t[5]), len(cands) + avoided, avoided, round(t[1], 2), known_m2,
-                           tight=t[8] == 1)
-    return ExplorePlan(None, clusters=len(cands) + avoided, avoided=avoided, known_m2=known_m2)
+        score[k] = (ecfg.gain_bonus_s * min(1.0, g / ecfg.gain_ref_m2)
+                    - drive_s - math.degrees(dth) / ecfg.turn_dps)
+        gain[k] = g
+        code[k] = 1 + stufe
+    return code, score, gain, cr, cc_, kd2, kcr, kcc
 
 
 def shorten(path: list, by_m: float) -> list:

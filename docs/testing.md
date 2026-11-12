@@ -12,6 +12,10 @@ python3 -m venv .venv && .venv/bin/pip install "opencv-python-headless>=4.6" "nu
 | `python -m pytest -q -m slow tests/` | 4 closed-loop simulator tests (`tests/test_closed_loop.py`) | ~150 s |
 | `python -m pytest -q tests/test_units.py -k imu_sync` | single test | |
 | `python -m pytest -q tests/test_live_ws.py` | `tools/live.php`: WebSocket rates (0.3 s / 1 s), IMU filter per connection, `imu 0`; skipped without `php` in PATH | ~10 s |
+| `python -m pytest -q tests/test_navfast.py` | C++ core `native/navfast.cpp` against the Python paths, bit-identical: A* + shortening, `plan`, wavefront, frontier groups, `next_goal`, local map (move, enter, confirm, arc check), wall distance, path-follower target (10 tests; skipped without the core). Passed on the RiderPi 2026-11-12 (aarch64, numpy 1.26) | ~5 s (CM4 ~23 s) |
+| `XGONAV_FASTLIB=navfast.so python -m pytest -q tests/` | all tests through `navfast.cpp` on the PC. It needs no OpenCV: `g++ -O2 -std=c++17 -fPIC -ffp-contract=off -shared -o navfast.so xgonav/native/navfast.cpp`, or MSVC (x64 tools prompt) `cl /O2 /std:c++17 /EHsc /fp:precise /utf-8 /LD xgonav
+ative
+avfast.cpp /Fe:navfast.dll`. The other function groups then report a missing ABI and run in Python | |
 | `python -m pytest -q tests/test_pet.py` | mode `pet`: synthetic distance tracks, budgets, every stand-up condition | <1 s |
 | `python tests/sim_run.py pet 35 --wheels --imu [--animal person\|cat\|dog] [--speed 2.5] [--set pet.faint=True]` | mode `pet`: target walks straight at the Rider | |
 | `python tests/sim_run.py follow 40 [out.mp4]` | scenario, optional overlay video | |

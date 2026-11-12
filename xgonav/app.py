@@ -155,7 +155,10 @@ class App:
             if self.fse is not None and cfg.freespace.threaded else None
         m = cfg.map
         self.lmap = LocalMap(self.geo, self.fse.W, self.fse.H, max_age_s=m.max_age_s, confirm=m.confirm,
-                             confirm_radius_m=m.confirm_radius_m, radius_m=m.radius_m) if self.fse else None
+                             confirm_radius_m=m.confirm_radius_m, radius_m=m.radius_m, native=m.native) \
+            if self.fse else None
+        if self.lmap is not None and self.lmap.backend == "c++":
+            log.info("Merkkarte, Planer, Frontier-Suche: C++-Kern (navfast)")
         self._fs_in_map = None
         # Raumkarte (Welt-KS ab Startpose), nur Anzeige
         self.gridmap = GridMap(cfg.grid, self.geo, self.fse.W, self.fse.H) \
