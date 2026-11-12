@@ -30,3 +30,5 @@ firmware-src/
 debug_firmware/
 xgonav/native/*.so
 docs/Rider-Pi.STEP
+# macOS
+.DS_Store
