@@ -46,6 +46,11 @@ Default = `config.py`. RiderPi = `deploy/config.example.toml` (blank = default).
 | `level_pulse_s` | 3.0 | | length of one leveling pulse (roll command 0, firmware `roll_balance` on, then off) |
 | `level_after_standup` | false | true | one pulse after each stand-up, 2.5 s after it; web button „Neu ausrichten“ triggers the same pulse |
 | `vx_limit` | 1.5 | 1.8 | m/s per firmware unit (measured 2026-11-05: command 0.15 → ~27 cm/s); path check, follow prediction, odometry fallback |
+| `speed_ctrl` | false | | speed control on the wheels: sent value += ∫(target − wheel speed); target = sent value × `vx_limit`. Needs wheel odometry. Zero without fresh wheel data, at standstill, below the firmware dead band (0.05) and on a direction change. Not driven on the RiderPi |
+| `speed_ctrl_window_s` | 0.3 | | s, averaging window for wheel speed and target |
+| `speed_ctrl_ti_s` | 2.0 | | s, integral time |
+| `speed_ctrl_lag_s` | 0.8 | | s, lag of the target behind the sent value (Rider inertia); without it the correction winds up at every start. Tuned on the simulator model (`sim._dyn`) |
+| `speed_ctrl_max` | 0.10 | | normalised, limit of the correction (≈ 18 cm/s); blocked against an obstacle it pushes this much harder |
 | `vyaw_limit_dps` | 360 | | °/s at u8 0/255 |
 | `accel_v` / `accel_w` | 0.8 / 2.0 | | per second |
 | `keepalive_s` | 0.3 | | s |

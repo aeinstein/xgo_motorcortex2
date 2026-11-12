@@ -249,6 +249,9 @@ class SimWorld(FrameSource):
 
     def _integrate(self, t: float, dt: float) -> None:
         vn, wn = self.robot.command
+        # Korrektur der Geschwindigkeitsregelung wirkt wie am Rider; reverse_gain/forward_gain kennt der
+        # Simulator weiterhin nicht (mit speed_ctrl im Simulator beide auf 1 lassen, sonst passt das Soll nicht)
+        vn += self.robot.with_trim(self.robot.v_nominal) - self.robot.v_nominal
         v = vn * self.vx_mps
         w = math.radians(wn * self.robot.cfg.vyaw_limit_dps)
         if self.dynamics:

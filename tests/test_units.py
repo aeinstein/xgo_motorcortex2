@@ -1158,6 +1158,121 @@ def test_wheel_odometry_wrap_reset_and_signs():
     assert w.fresh(0.3) and not w.fresh(0.5)
 
 
+def test_wheel_speed_window():
+    from xgonav.config import OdomCfg
+    from xgonav.wheels import WheelOdom
+    w = WheelOdom(OdomCfg())
+    k = 1.0 / w.m_per_tick
+    assert w.speed(0.3) is None                          # keine Proben
+    for i in range(10):                                  # 0,18 s mit 0,25 m/s
+        w.add(i + 1, i * 0.02, int(0.25 * i * 0.02 * k), int(0.25 * i * 0.02 * k), 1000 + i * 20)
+    assert w.speed(0.3) is None                          # Historie deckt das Fenster noch nicht ab
+    for i in range(10, 40):
+        w.add(i + 1, i * 0.02, int(0.25 * i * 0.02 * k), int(0.25 * i * 0.02 * k), 1000 + i * 20)
+    assert w.speed(0.3) == pytest.approx(0.25, abs=0.003)
+    # links schneller als rechts: Radmitte
+    s0 = w.latest()
+    for i in range(40, 60):
+        d = (i - 39) * 0.02
+        w.add(i + 1, i * 0.02, int((s0[1] + 0.30 * d) * k), int((s0[2] + 0.10 * d) * k), 1000 + i * 20)
+    assert w.speed(0.3) == pytest.approx(0.20, abs=0.003)
+    # Lücke (abgesetzt): kein Mittel über die Pause hinweg
+    w.add(100, 5.0, int(w.latest()[1] * k), int(w.latest()[2] * k), 6000)
+    assert w.speed(0.3) is None
+
+
+def _speed_ctrl_fahrt(abzug=0.0, v_cmd=0.2, on=True, secs=9.0):
+    """Regelkreis mit dem Trägheitsmodell des Simulators (sim._dyn): Rampe 50 Hz, Räder 50 Hz, Regelschritt
+    ~20 Hz. abzug: Fehlbetrag am Fahrwert (Teppich). Liefert (Soll m/s, Spitze, Mittel der letzten 2 s,
+    Spanne der letzten 2 s, Korrektur am Ende)."""
+    import math
+    from xgonav.config import OdomCfg
+    from xgonav.robot import SpeedCtrl
+    from xgonav.wheels import WheelOdom
+    cfg = Config().robot
+    cfg.vx_limit, cfg.speed_ctrl = 1.8, on
+    r = SimRobot(cfg)
+    sc, w = SpeedCtrl(cfg), WheelOdom(OdomCfg())
+    tau, nmp, h = SimWorld.DYN_TAU_V, SimWorld.DYN_NMP_S, 0.004
+    cur = vf = s = 0.0
+    vs = []
+    for k in range(int(secs / h)):
+        t = k * h
+        if k % 5 == 0:
+            cur += max(-cfg.accel_v * 0.02, min(cfg.accel_v * 0.02, v_cmd - cur))
+            r._cur = (cur, 0.0)
+            w.add(k // 5 + 1, t, int(s / w.m_per_tick), int(s / w.m_per_tick), int(t * 1000) + 1)
+        eff = max(0.0, r.with_trim(r.v_nominal) - abzug) * cfg.vx_limit
+        prev = vf
+        vf += (eff - vf) * (1 - math.exp(-h / tau))
+        v = vf - nmp * (vf - prev) / h
+        s += v * h
+        if k % 12 == 0 and on:
+            r.v_trim = sc.step(t, r.v_nominal, w.speed(cfg.speed_ctrl_window_s))
+        vs.append(v)
+    late = vs[-int(2.0 / h):]
+    return v_cmd * cfg.vx_limit, max(vs), sum(late) / len(late), max(late) - min(late), r.v_trim
+
+
+def test_speed_ctrl_reaches_setpoint():
+    """Teppich (Fehlbetrag am Fahrwert): ohne Regelung bleibt er unter dem Soll, mit Regelung erreicht er es,
+    ohne zu pendeln. Auf ebenem Boden ändert die Regelung fast nichts."""
+    soll, _, ende, _, _ = _speed_ctrl_fahrt(abzug=0.04, on=False)
+    assert ende < 0.82 * soll
+    soll, peak, ende, spanne, trim = _speed_ctrl_fahrt(abzug=0.04)
+    assert abs(ende - soll) < 0.05 * soll and peak < 1.10 * soll and spanne < 0.05 * soll
+    assert trim == pytest.approx(0.04, abs=0.008)
+    soll, peak, ende, spanne, trim = _speed_ctrl_fahrt(abzug=0.04, v_cmd=0.10)   # langsam, wie an Engstellen
+    assert abs(ende - soll) < 0.06 * soll and peak < 1.10 * soll
+    soll, peak, ende, spanne, trim = _speed_ctrl_fahrt()                          # eben
+    assert abs(ende - soll) < 0.03 * soll and peak < 1.10 * soll and abs(trim) < 0.008
+
+
+def test_speed_ctrl_rules():
+    """Korrektur 0 ohne Raddaten, unter dem Totband und bei Richtungswechsel; begrenzt; Stopp bleibt 128."""
+    from xgonav.robot import FW_DEADBAND, SpeedCtrl
+    cfg = Config().robot
+    cfg.vx_limit, cfg.speed_ctrl, cfg.speed_ctrl_lag_s = 1.8, True, 0.0
+    sc = SpeedCtrl(cfg)
+    t = 0.0
+    for _ in range(400):                                 # steht an: Ist 0 bei Soll 0,36 m/s
+        t += 0.05
+        sc.step(t, 0.2, 0.0)
+    assert sc.trim == pytest.approx(cfg.speed_ctrl_max)  # begrenzt
+    assert sc.v_soll == pytest.approx(0.36)
+    assert sc.step(t + 0.05, 0.2, None) == 0.0           # Raddaten weg
+    for _ in range(40):
+        t += 0.05
+        sc.step(t, 0.2, 0.1)
+    assert sc.trim > 0.02
+    assert sc.step(t + 0.05, -0.2, -0.1) == 0.0          # Richtungswechsel
+    for _ in range(40):
+        t += 0.05
+        sc.step(t, -0.2, -0.1)
+    assert sc.trim < -0.02                               # rückwärts zu langsam: mehr rückwärts
+    assert sc.step(t + 0.05, -0.5 * FW_DEADBAND, -0.1) == 0.0   # unter dem Totband der Firmware
+    for _ in range(400):                                 # schneller als verlangt: nimmt zurück, begrenzt
+        t += 0.05
+        sc.step(t, 0.2, 0.6)
+    assert sc.trim == pytest.approx(-cfg.speed_ctrl_max)
+    # Senden: Korrektur nach den Faktoren, nie über den Stillstand hinweg, Stopp exakt 128
+    cfg.reverse_gain = 2.0
+    r = SimRobot(cfg)
+    r.v_trim = 0.05
+    r._cur = (0.15, 0.0); r._send(100.0)
+    assert r._sent[0] == norm_to_u8(0.20)
+    r._cur = (-0.10, 0.0); r._send(200.0)
+    assert r._sent[0] == norm_to_u8(-0.15)               # -0,10 x 2 + 0,05
+    r._cur = (0.0, 0.0); r._send(300.0)
+    assert r._sent[0] == 128
+    r.v_trim = -0.10
+    r._cur = (0.06, 0.0); r._send(400.0)
+    assert r._sent[0] == 128                             # kehrt die Richtung nicht um
+    r.v_trim = 0.10
+    r._cur = (0.5 * FW_DEADBAND, 0.0); r._send(500.0)
+    assert r._sent[0] == norm_to_u8(0.5 * FW_DEADBAND)   # unter dem Totband bleibt der Wert
+
+
 def test_wheel_scale_calibration():
     import math
     from xgonav.config import OdomCfg

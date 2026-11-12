@@ -61,6 +61,7 @@ def _meta_zeile(snap, name: str, imu=None, raeder=None) -> str:
         # Kurs/Pose für die Auswertung von explore/home: Räder, IMU (Firmware), Raumkarte
         "mode": st.get("mode"), "yaw_deg": st.get("yaw_deg"), "yaw_src": st.get("yaw_src"),
         "yaw_drv": st.get("yaw_drv"), "odom": st.get("odom"), "height_mm": st.get("height_mm"),
+        "speed_ctrl": st.get("speed_ctrl"),
         "pose": (st.get("grid") or {}).get("pose"), "start": (st.get("grid") or {}).get("start"),
         "tracks": [{"id": t.id, "cls": t.cls, "conf": round(t.conf, 3),
                     "box": [round(v, 1) for v in t.box]} for t in snap.tracks],

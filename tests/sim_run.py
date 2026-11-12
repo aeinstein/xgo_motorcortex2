@@ -1,10 +1,11 @@
-"""Closed-Loop-Szenarien im Simulator. python3 tests/sim_run.py follow|explore|home [sekunden] [video.mp4] [--imu] [--fs-thread] [--wheels] [--kanten] [--dyn] [--rider] [--scene raum|zwei|spalt] [--video-step n] [--set a.b=wert]
+"""Closed-Loop-Szenarien im Simulator. python3 tests/sim_run.py follow|explore|home [sekunden] [video.mp4] [--imu] [--fs-thread] [--wheels] [--kanten] [--dyn] [--rider] [--scene raum|zwei|spalt] [--video-step n] [--set a.b=wert] [--vx-true m/s]
 
 home: erste Hälfte explore, dann Modus home (zurück zum Startpunkt der Raumkarte).
 --dyn: Trägheit wie am RiderPi (Totzone, Nachlaufen der Drehung, Rückrollen beim Anfahren).
 --rider: Einstellungen des RiderPi statt der Defaults (RIDER), Tempo wie gemessen, mit IMU (Vorzeichen und Zeitversatz
 bekannt wie am Rider). Ohne IMU bleibt die langsame Neigung beim Beschleunigen (sim.ACC_DEG) unbemerkt und die
-Raumkarte zeichnet Wände dicker: eine 25-cm-Lücke blieb so in 4 von 5 Läufen zu (2026-11-11)."""
+Raumkarte zeichnet Wände dicker: eine 25-cm-Lücke blieb so in 4 von 5 Läufen zu (2026-11-11).
+--vx-true: echte m/s je Firmware-Einheit, abweichend von robot.vx_limit (z. B. 1.3 = rollt schwerer, wie auf Teppich)."""
 import logging, math, sys, threading, time
 sys.path.insert(0, ".")
 import numpy as np
@@ -176,6 +177,8 @@ def run(mode="follow", secs=25.0, video=None, shake=1.0, quiet=True, imu=False, 
     out = {"imu_sync": (app.imu_sync.reliable, app.imu_sync.sign, round(app.imu_sync.offset * 1000), round(app.imu_sync.corr, 2)) if imu else None,
            "collisions": world.collisions, "coll_frames": world.coll_frames, "dist_m": round(world.dist_travelled, 2), "frames": len(L),
            "loop_ms": round(app._loop_ms, 1), "odom": app.odom_src, "odom_m": round(app.odom_m, 2),
+           # mittleres Tempo in Fahrt (m/s): mit robot.speed_ctrl unabhängig davon, wie schwer er rollt (--vx-true)
+           "v_fahrt": round(float(np.mean([r["v"] for r in L if r["v"] > 0.05] or [0.0])), 3),
            "grid": grid, "status": app._cmd.status, "fertig_s": done_t.get("s"),
            "explore": app.behavior.info() if hasattr(app.behavior, "info") else None,
            "plan_ms": round(app.planner.ms, 1) if app.planner is not None else None}
@@ -208,7 +211,7 @@ def run(mode="follow", secs=25.0, video=None, shake=1.0, quiet=True, imu=False, 
 if __name__ == "__main__":
     mode = sys.argv[1] if len(sys.argv) > 1 else "follow"
     secs = float(sys.argv[2]) if len(sys.argv) > 2 and not sys.argv[2].startswith("--") else 25
-    args = [a for i, a in enumerate(sys.argv) if i >= 3 and not a.startswith("--") and sys.argv[i - 1] not in ("--set", "--scene", "--phantoms", "--animal", "--speed", "--video-step")]
+    args = [a for i, a in enumerate(sys.argv) if i >= 3 and not a.startswith("--") and sys.argv[i - 1] not in ("--set", "--scene", "--phantoms", "--animal", "--speed", "--video-step", "--vx-true")]
     rider = "--rider" in sys.argv
     ov = dict(RIDER) if rider else {}
     for i, a in enumerate(sys.argv):
@@ -217,7 +220,8 @@ if __name__ == "__main__":
             ov[k] = eval(v, {})
     print(run(mode, secs, args[0] if args else None, imu="--imu" in sys.argv or rider, fs_thread="--fs-thread" in sys.argv,
               wheels="--wheels" in sys.argv, method="kanten" if "--kanten" in sys.argv else None,
-              dyn="--dyn" in sys.argv, overrides=ov, vx_true=RIDER_VX if rider else None,
+              dyn="--dyn" in sys.argv, overrides=ov,
+              vx_true=float(sys.argv[sys.argv.index("--vx-true") + 1]) if "--vx-true" in sys.argv else RIDER_VX if rider else None,
               scene=sys.argv[sys.argv.index("--scene") + 1] if "--scene" in sys.argv else "raum",
               video_step=int(sys.argv[sys.argv.index("--video-step") + 1]) if "--video-step" in sys.argv else 1,
               phantoms=int(sys.argv[sys.argv.index("--phantoms") + 1]) if "--phantoms" in sys.argv else 0,

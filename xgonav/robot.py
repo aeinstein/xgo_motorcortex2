@@ -13,7 +13,9 @@ Konventionen
 """
 from __future__ import annotations
 
+import collections
 import logging
+import math
 import os
 import threading
 import time
@@ -29,6 +31,8 @@ NEUTRAL = 128
 # 55..200. /proc/XGORider/height zeigt dagegen den zuletzt geschriebenen Wert, auch über das Aufstehen hinweg.
 FW_HEIGHT_STANDUP_U8 = 128
 FW_HEIGHT_MIN_U8, FW_HEIGHT_MAX_U8 = 55, 200
+# Totband der Firmware um 128 (rider_motion.cpp decode: 5 % des Bereichs); darunter fährt er nicht an
+FW_DEADBAND = 0.05
 
 
 def norm_to_u8(x: float) -> int:
@@ -50,12 +54,54 @@ class RobotState:
     mode: int | None = None    # Wert aus /proc/XGORider/state (1 = balanciert)
 
 
+class SpeedCtrl:
+    """Geschwindigkeitsregelung über die Räder (RobotCfg.speed_ctrl): stellt den gesendeten Fahrwert nach,
+    bis die Räder so schnell drehen wie verlangt. step() läuft im Regelschritt der App und liefert die
+    Korrektur (normiert), die Robot beim Senden addiert."""
+
+    def __init__(self, cfg: RobotCfg):
+        self.cfg = cfg
+        self.trim = 0.0
+        self.v_soll = 0.0                    # m/s, über das Fenster gemittelt
+        self.v_ist: float | None = None      # m/s aus den Rädern, None = keine frischen Raddaten
+        self._soll: collections.deque[tuple[float, float]] = collections.deque()   # (t, gesendeter Sollwert)
+        self._lag = 0.0                      # Sollwert hinter dem Trägheitsmodell (normiert)
+        self._last_t: float | None = None
+        self._dir = 0
+
+    def step(self, now: float, v_nominal: float, v_ist: float | None) -> float:
+        """v_nominal: Fahrwert nach Rampe und Faktoren, ohne Korrektur (normiert). v_ist: Radgeschwindigkeit
+        (m/s) über dasselbe Fenster oder None (keine frischen Raddaten, nicht balancierend)."""
+        c = self.cfg
+        dt = min(0.2, now - self._last_t) if self._last_t is not None else 0.0
+        self._last_t = now
+        # Soll so träge wie der Rider (speed_ctrl_lag_s) und über dasselbe Fenster wie das Ist gemittelt:
+        # sonst zählt jedes Anfahren als Fehler und die Korrektur lädt sich dabei auf
+        tau = c.speed_ctrl_lag_s
+        self._lag += (v_nominal - self._lag) * ((1.0 - math.exp(-dt / tau)) if tau > 0 else 1.0)
+        h = self._soll
+        h.append((now, self._lag))
+        while h[0][0] < now - c.speed_ctrl_window_s:
+            h.popleft()
+        self.v_soll = sum(v for _, v in h) / len(h) * c.vx_limit
+        self.v_ist = v_ist
+        d = (v_nominal > 0) - (v_nominal < 0)
+        if v_ist is None or abs(v_nominal) < FW_DEADBAND or d != self._dir:
+            self.trim = 0.0
+        else:
+            self.trim += (self.v_soll - v_ist) / c.vx_limit * dt / c.speed_ctrl_ti_s
+            self.trim = max(-c.speed_ctrl_max, min(c.speed_ctrl_max, self.trim))
+        self._dir = d
+        return self.trim
+
+
 class Robot:
     """Gemeinsame Logik (Rampe, Watchdog). Unterklassen implementieren _write_*."""
 
     def __init__(self, cfg: RobotCfg):
         self.cfg = cfg
         self.forward_gain = 1.0              # App: manual_forward_gain in der Handsteuerung, sonst 1
+        self.v_trim = 0.0                    # App: Korrektur der Geschwindigkeitsregelung (SpeedCtrl), sonst 0
         self.max_v_fwd: float | None = None  # App: Grenze vorwärts statt cfg.max_v (Modus explore), sonst None
         self._lock = threading.Lock()
         self._target = (0.0, 0.0)
@@ -177,6 +223,21 @@ class Robot:
         """Aktuell (nach Rampe) gesendeter Sollwert, normiert."""
         return self._cur
 
+    @property
+    def v_nominal(self) -> float:
+        """Fahrwert nach Rampe und Faktoren (reverse_gain, forward_gain), ohne die Korrektur der
+        Geschwindigkeitsregelung. Mal vx_limit ist das die verlangte Geschwindigkeit."""
+        v = self._cur[0]
+        return v * (self.cfg.reverse_gain if v < 0 else self.forward_gain)
+
+    def with_trim(self, v: float) -> float:
+        """v plus Korrektur der Geschwindigkeitsregelung. Unter dem Totband der Firmware bleibt v, wie es
+        ist (Stillstand bleibt 128), und die Korrektur kehrt die Richtung nie um."""
+        t = self.v_trim
+        if t == 0.0 or abs(v) < FW_DEADBAND:
+            return v
+        return max(0.0, v + t) if v > 0 else min(0.0, v + t)
+
     # ---- interne Schleife (50 Hz) ---------------------------------------
     def _loop(self) -> None:
         next_poll = 0.0
@@ -251,8 +312,7 @@ class Robot:
         self._cur = (v + dv, w + dw)
 
     def _send(self, now: float) -> None:
-        v = self._cur[0]
-        v *= self.cfg.reverse_gain if v < 0 else self.forward_gain
+        v = self.with_trim(self.v_nominal)
         u = (norm_to_u8(v), norm_to_u8(self._cur[1]))
         keepalive = now - self._last_send_t > self.cfg.keepalive_s
         prev = self._sent

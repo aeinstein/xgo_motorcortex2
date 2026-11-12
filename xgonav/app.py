@@ -29,7 +29,7 @@ from .wheels import WheelOdom, make_wheels
 from .imu import ImuSource, ImuSync, make_imu
 from .localmap import LocalMap, blocking_boxes, mask_movable
 from .route import arc_hits_zone, check as route_check, load as route_load, save as route_save
-from .robot import Robot
+from .robot import Robot, SpeedCtrl
 from .tracker import Tracker
 
 log = logging.getLogger(__name__)
@@ -111,6 +111,8 @@ class App:
         self._lmap_yaw: float | None = None     # letzter Kurs aus imu_log (rad) für die Merkkarte
         self.lmap_yaw_src = "odom"
         self.odom_m = 0.0                  # gefahrene Strecke laut Odometrie (Betrag, seit Start)
+        self.speed_ctrl = SpeedCtrl(cfg.robot)
+        self._speed_stat: dict | None = None   # None = Regelung aus
         self.imu_sync = ImuSync(cfg.imu)
         self._imu_lp: float | None = None
         self.pitch_src = "bild"
@@ -558,6 +560,7 @@ class App:
         now = time.monotonic()
         if now - self._last_ctrl >= period:
             self._last_ctrl = now
+            self._speed_tick(now)
             cmd = self._manual_cmd()
             self._drive(cmd)
             self._cmd = Command(cmd.v, cmd.w, None, cmd.status + " (ohne Bildverarbeitung)")
@@ -629,6 +632,7 @@ class App:
             # Der Bild-Kurs verfälscht bei Vorwärtsfahrt (Tiefenunterschiede landen im
             # Drehmodell, gemessen 2026-11-04: −8,9° bzw. +3° auf 2 m geradeaus).
             ds = self._odom_ds(now, dt)
+            self._speed_tick(now)
             self._pose_watch(now)
             dyaw_vis = self.vis_yaw - self._yaw_at_ctrl
             self._yaw_at_ctrl = self.vis_yaw
@@ -726,6 +730,7 @@ class App:
                                    "verworfen": self.grid_worker.dropped if self.grid_worker else 0},
                                "odom": {"src": self.odom_src, "m": round(self.odom_m, 2),
                                         "hz": round(self.wheels.rate_hz, 1) if self.wheels else None},
+                               "speed_ctrl": self._speed_stat,
                                "mode": self.behavior.name, "yaw_vis_deg": round(math.degrees(self.vis_yaw), 1),
                                "yaw_deg": round(math.degrees(self.yaw), 1), "yaw_src": self.yaw_src, "lmap_yaw_src": self.lmap_yaw_src,
                                "grid_yaw_src": self.grid_yaw_src,
@@ -793,6 +798,22 @@ class App:
         if last is None or last[0] != cur[0]:
             return fallback
         return (cur[1] - last[1] + math.pi) % (2 * math.pi) - math.pi
+
+    def _speed_tick(self, now: float) -> None:
+        """Geschwindigkeitsregelung (robot.speed_ctrl): Ist aus den Rädern gegen das Soll, Korrektur an den
+        Roboter. Je Regelschritt ein Blick in die Radhistorie, kein Lesezugriff auf /proc."""
+        c = self.cfg.robot
+        if not c.speed_ctrl:
+            return
+        w = self.wheels
+        ist = None
+        if w is not None and self.robot.state.balancing and w.fresh(now):
+            ist = w.speed(c.speed_ctrl_window_s)
+        sc = self.speed_ctrl
+        self.robot.v_trim = sc.step(now, self.robot.v_nominal, ist)
+        # fürs Web und die Rohaufnahme; hier statt je Bild gebaut
+        self._speed_stat = {"trim": round(sc.trim, 3), "soll": round(sc.v_soll, 3),
+                            "ist": None if ist is None else round(ist, 3)}
 
     def _odom_ds(self, now: float, dt: float) -> float:
         """Strecke seit dem letzten Regelschritt (m): aus den Rad-Encodern, wenn frisch;

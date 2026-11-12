@@ -83,6 +83,7 @@ camera.FrameSource ─► egomotion.EgoMotion ─► tracker.Tracker ◄── d
 - `robot.norm_to_u8`: `u8 = 255/(2L)·(v + L)`, 128 = standstill.
 - Firmware **holds** setpoints; stops must be written explicitly.
 - `robot.reverse_gain` multiplies negative v before sending, `robot.manual_forward_gain` positive v in manual mode only (RiderPi: 2.0 each).
+- `robot.speed_ctrl`: `App._speed_tick` (control step) compares wheel speed with the target, `robot.SpeedCtrl` integrates the difference, `Robot._send` adds it after the gains. Firmware speed loop is P only, so the Rider runs slower on carpet without it.
 
 ## CPU (RiderPi config, `[cpu]`)
 

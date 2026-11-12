@@ -132,6 +132,22 @@ class WheelOdom:
         p = self.latest()
         return p is not None and now - p[0] <= self.cfg.max_age_s
 
+    def speed(self, window_s: float) -> float | None:
+        """Mittlere Geschwindigkeit der Radmitte (m/s, vorwärts +) über die letzten window_s: neueste Probe
+        gegen die jüngste, die mindestens window_s älter ist. None, solange die Historie das Fenster nicht
+        abdeckt oder dort eine Lücke hat (abgesetzt, Ruhemodus)."""
+        with self._lock:
+            if not self._hist:
+                return None
+            b = self._hist[-1]
+            for a in reversed(self._hist):
+                dt = b[0] - a[0]
+                if dt >= window_s:
+                    if dt > 2 * window_s:
+                        return None
+                    return ((b[1] - a[1]) + (b[2] - a[2])) / 2.0 / dt
+        return None
+
     def motion(self, a: tuple[float, float, float], b: tuple[float, float, float]) -> tuple[float, float]:
         """Strecke der Radmitte (m, vorwärts +) und Drehung (rad, links +) von Probe a nach b."""
         dl, dr = b[1] - a[1], b[2] - a[2]

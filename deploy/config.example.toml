@@ -16,6 +16,7 @@ level_after_standup = true   # Nutzer 2026-11-05: einmal nach jedem Aufstehen ni
 vx_limit = 1.8           # gemessen 2026-11-05: Befehl 0,15 -> ~27 cm/s (Bahnprüfung rechnet damit)
 reverse_gain = 2.0    # [K] v=-0,15 -> u8 90 (Fahrtest 2026-11-02); seit den Patches vom 2026-11-05 ist die Firmware symmetrisch
 kernel_watchdog_ms = 1000
+speed_ctrl = true     # Nutzer 2026-11-12: auf Teppich langsamer als auf glattem Boden -> auf die Räder regeln; nicht gefahren
 
 [camera]
 source = "picam"

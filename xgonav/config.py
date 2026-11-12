@@ -25,6 +25,21 @@ class RobotCfg:
     # Simulator (--dyn, 2026-11-05) gab Faktor 2 dort 1 Kollision in 8 Läufen und Zum Start kam nur
     # noch 1 von 4 Mal an (Faktor 1: 0 Kollisionen, 4 von 4); die Freiraum-Schwellen passen nicht dazu.
     manual_forward_gain: float = 1.0
+    # Geschwindigkeitsregelung: Die Firmware regelt die Fahrgeschwindigkeit praktisch nur proportional, auf
+    # Teppich bleibt der Rider deshalb unter dem Soll. Mit speed_ctrl vergleicht xgonav im Regelschritt Soll
+    # (gesendeter Wert x vx_limit) und Ist (Räder), beide über speed_ctrl_window_s gemittelt, und stellt den
+    # gesendeten Wert nach: Korrektur += (Soll - Ist) / vx_limit x dt / speed_ctrl_ti_s, höchstens
+    # +-speed_ctrl_max (normiert). Ohne frische Raddaten, im Stand, unter dem Totband der Firmware und bei
+    # Richtungswechsel ist die Korrektur 0. Steht er an einem Hindernis an, drückt er um speed_ctrl_max stärker.
+    # speed_ctrl_lag_s: So träge folgt das Soll dem Fahrwert (Anlaufen des Riders), sonst lädt sich die
+    # Korrektur bei jedem Anfahren auf. Abgestimmt am Trägheitsmodell des Simulators (sim._dyn, 2026-11-12):
+    # ohne Modell 31-46 % Überschwingen beim Anfahren auf ebenem Boden, mit 0,8 s und ti 2 s 5 %; ein
+    # Fehlbetrag von 0,04 ist dann nach ~3 s zu 95 % ausgeglichen. Am Rider nicht gefahren.
+    speed_ctrl: bool = False
+    speed_ctrl_window_s: float = 0.3
+    speed_ctrl_ti_s: float = 2.0
+    speed_ctrl_lag_s: float = 0.8
+    speed_ctrl_max: float = 0.10
     # Die Beine haben eine Totzone: bei gleichem Befehl steht der Rider je nach Vorgeschichte bei
     # +0,7..+3,4° Roll (2026-11-05). Ein kurzer Impuls der Nivellierung in der Firmware richtet ihn
     # aus, danach bleibt er so stehen (dauerhaft an schwankt er mehr). Auslöser: einmal nach jedem
