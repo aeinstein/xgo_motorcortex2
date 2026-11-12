@@ -5,6 +5,7 @@ models/*.pt
 models/*_ncnn/
 models/*.bin
 !models/floornet.bin
+/k.txt
 *.mp4
 .venv/
 .idea/
