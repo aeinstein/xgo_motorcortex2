@@ -168,9 +168,9 @@ Built 2026-11-11, simulator and unit tests only; not installed on the Rider.
 | Not done | keep-out zones are checked at the wrong place while the pose is unknown (web shows a note); buttons are not greyed out, xgonav answers 409 |
 | Cost on the Pi | two comparisons per control step |
 
-## Map matching (`xgonav/reloc.py`, offline only so far)
+## Map matching (`xgonav/reloc.py`)
 
-Matching itself is not wired into the app yet; only the pose state below is. Tools: `tools/map_replay.py` (variant `abgleich=1`), `tools/reloc_eval.py`, `tools/map_eval.py reloc` (`docs/testing.md`).
+Running matching is wired into the app with `[reloc] track = true` (default off, 2026-11-11): `reloc.Nachfuehrung` runs in the `GridWorker` thread for every observation entered into the room map, never in the image loop. A correction shifts the map pose rigidly (`GridMap.shift_pose`, at most `max_step_m` 0.08 m / `max_step_deg` 3° per match) and the poses of queued observations. Locked map: the map itself is the reference; while mapping: a map state ≥ `ref_age_s` old. Status: `grid.abgleich` (`abgleiche`, `angenommen`, `korrektur_m`, `korrektur_deg`, `haelt`, `zuletzt`, `unsicher`, `ms_max`). The global search (start pose) is still offline only. **Not driven.** Tools (same class): `tools/map_replay.py` (variant `abgleich=1`), `tools/reloc_eval.py`, `tools/map_eval.py reloc` (`docs/testing.md`).
 
 | Part | What |
 |---|---|
@@ -192,4 +192,6 @@ Measured 2026-11-11 (PC; boundary from FloorNet `floornet_s3.bin`, 8 raw recordi
 | Real recordings, global search, piece kept in the map (upper bound) | 32 right, 4 wrong (all explore6, wheel heading), 76 unsure |
 | Time on the PC | field 2 ms, local match 3 ms, global search 42-75 ms; not measured on the Pi |
 
-Open: two drives through the same room in one map frame (real test of the global search), timing on the Pi.
+Known weakness: in front of a single wall the position along the wall is not observable; in a synthetic test the match was accepted there (not flagged as sliding) and pulled the pose up to 0.18 m along the wall until a corner came into view.
+
+Open: two drives through the same room in one map frame (real test of the global search), timing on the Pi, a RiderPi drive with `track`.

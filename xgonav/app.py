@@ -178,6 +178,15 @@ class App:
         self.grid_worker = GridWorker(self.gridmap, cfg.cpu.freespace_cpus, save_path=cfg.grid.file,
                                       save_every_s=cfg.grid.save_every_s) \
             if self.gridmap is not None and cfg.grid.threaded else None
+        # Laufender Kartenabgleich ([reloc] track): rechnet dort, wo die Karte beschrieben wird
+        self.reloc_track = None
+        if self.gridmap is not None and cfg.reloc.track:
+            from .reloc import Nachfuehrung
+            self.reloc_track = Nachfuehrung(cfg.reloc, cfg.grid.l_show)
+            if self.grid_worker is not None:
+                self.grid_worker.track = self.reloc_track
+            log.info("Kartenabgleich: laufend, alle %.0f s nach %.1f m oder %.0f°", cfg.reloc.every_s,
+                     cfg.reloc.min_move_m, cfg.reloc.min_turn_deg)
         # Planer für den Modus home (Thread startet erst beim ersten Auftrag)
         self.planner = PlannerWorker(self.gridmap, cfg.home, cfg.cpu.freespace_cpus) \
             if self.gridmap is not None else None
@@ -666,7 +675,18 @@ class App:
                         if self.grid_worker is not None:
                             self.grid_worker.offer(view, pd)
                         elif self.gridmap is not None:
-                            self.gridmap.add_freespace(view, pd, view.pose)
+                            vp = view.pose
+                            if self.reloc_track is not None and self.gridmap.pose_ok:
+                                vp = vp if vp is not None else self.gridmap.pose()
+                                ok, k = self.reloc_track.schritt(self.gridmap, now, vp, view, pd)
+                                if k is not None:
+                                    self.gridmap.shift_pose(k)
+                                    from .reloc import anwenden
+                                    vp = anwenden(k, vp)
+                                if not ok:
+                                    vp = False
+                            if vp is not False:
+                                self.gridmap.add_freespace(view, pd, vp)
             if self.gridmap is not None:
                 if self.grid_worker is None:
                     self.gridmap.maybe_save(self.cfg.grid.file, self.cfg.grid.save_every_s)
@@ -727,7 +747,10 @@ class App:
                                    **self.gridmap.stats(),
                                    "reloc": self.cfg.reloc.enabled, "pose_grund": self.pose_grund,
                                    "ms": round(self.grid_worker.ms, 1) if self.grid_worker else None,
-                                   "verworfen": self.grid_worker.dropped if self.grid_worker else 0},
+                                   "verworfen": self.grid_worker.dropped if self.grid_worker else 0,
+                                   "abgleich": None if self.reloc_track is None else {
+                                       **self.reloc_track.info(),
+                                       "ms_max": round(self.grid_worker.track_ms, 1) if self.grid_worker else None}},
                                "odom": {"src": self.odom_src, "m": round(self.odom_m, 2),
                                         "hz": round(self.wheels.rate_hz, 1) if self.wheels else None},
                                "speed_ctrl": self._speed_stat,

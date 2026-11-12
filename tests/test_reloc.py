@@ -312,3 +312,63 @@ def test_app_neustart_mit_karte_pose_unbekannt(tmp_path):
     assert np.allclose(b.gridmap.pose(), a.gridmap.pose())
     c = _app_reloc(enabled=False, file=f)                        # aus: wie bisher Pose = Startpunkt
     assert c.gridmap.pose_ok and c.gridmap.pose() == (0.0, 0.0, 0.0)
+
+
+def test_nachfuehrung_zieht_kartenpose_nach(monkeypatch):
+    """Laufender Abgleich (wie im GridWorker): Die Kartenpose liegt 12 cm / 17 cm / 5° daneben; nach einigen
+    Abgleichen gegen die gesperrte Karte stimmt sie wieder. Ohne Weg oder zu früh wird nicht abgeglichen."""
+    import threading
+    from types import SimpleNamespace as NS
+    cfg = Config().reloc
+    lo = karte(L_RAUM, [KISTE])
+    gm = NS(lo=lo, res=RES, locked=True, map_id="t", _lock=threading.Lock())
+    # nahe der Raumecke: Mitten vor einer einzelnen Wand ist die Lage längs der Wand nicht bestimmbar, dort
+    # zog der Abgleich in dieser Probe bis 18 cm längs der Wand weg (angenommen, nicht als Gleiten erkannt)
+    wahr = [(-1.35 + 0.1 * i, -0.85, math.radians(30 + 25 * i)) for i in range(6)]
+    sicht = {}
+    monkeypatch.setattr(reloc, "scan_punkte", lambda g, fs, pd, rc: sicht["s"])
+    nf = reloc.Nachfuehrung(cfg, L_SHOW)
+    k_ges = (0.12, -0.17, math.radians(-5))                    # Karte = k_ges ∘ wahr, wird nachgezogen
+    for i, w in enumerate(wahr):
+        s = rundumblick(lo, w, seed=3 + i)
+        sicht["s"] = (s.hits, s.w, s.free)
+        ist = reloc.anwenden(k_ges, w)
+        ok, k = nf.schritt(gm, 3.0 * i, ist, None, 0.0)
+        if k is not None:
+            k_ges = reloc.korrektur(w, reloc.anwenden(k, ist))
+        # gleich danach noch einmal: zu früh, kein Abgleich
+        n = nf.n
+        nf.schritt(gm, 3.0 * i + 0.1, reloc.anwenden(k_ges, w), None, 0.0)
+        assert nf.n == n
+    dm, dg = _fehler(reloc.anwenden(k_ges, wahr[-1]), wahr[-1])
+    assert nf.n_ok >= 4 and dm < 0.07 and dg < 1.5, (nf.info(), dm, dg)
+    assert nf.info()["korrektur_m"] > 0.05
+
+
+def test_gridmap_shift_pose_und_worker_abgleich():
+    """GridWorker: Eine Korrektur des Abgleichs verschiebt die Kartenpose und die wartenden Beobachtungen;
+    'nicht eintragen' lässt die Karte unverändert."""
+    from xgonav.gridmap import GridMap, GridWorker
+    from xgonav.geometry import CamGeometry
+    cfg = Config()
+    geo = CamGeometry(640, 480, 91.0, 1.39, 43.0, 85.0)
+    g = GridMap(cfg.grid, geo, 160, 120)
+    g.x, g.y, g.th = 1.0, 0.0, 0.0
+    g.shift_pose((0.1, 0.0, math.pi / 2))
+    assert np.allclose(g.pose(), (0.1, 1.0, math.pi / 2))
+    w = GridWorker(g)
+
+    class T:
+        def __init__(self): self.k, self.ok, self.resets = (0.05, 0.0, 0.0), True, 0
+        def reset(self): self.resets += 1
+        def schritt(self, gm, t, pose, fs, pd): return self.ok, self.k
+    w.track = T()
+    fs = _wand_fs(geo)
+    w._q.append((fs, 0.0, (0.0, 0.0, 0.0), 1.0))               # wartende Beobachtung
+    p0 = g.pose()
+    assert np.allclose(w._abgleich(fs, 0.0, (0.2, 0.0, 0.0), 0.0), (0.25, 0.0, 0.0))
+    assert np.allclose(g.pose(), (p0[0] + 0.05, p0[1], p0[2])) and np.allclose(w._q[0][2], (0.05, 0.0, 0.0))
+    w.track.ok, w.track.k = False, None
+    assert w._abgleich(fs, 0.0, (0.2, 0.0, 0.0), 0.0) is None
+    g.pose_ok = False                                           # Pose unbekannt: Abgleich ruht und fängt neu an
+    assert w._abgleich(fs, 0.0, (0.2, 0.0, 0.0), 0.0) == (0.2, 0.0, 0.0) and w.track.resets == 1

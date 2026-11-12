@@ -231,78 +231,33 @@ def rechne(t, bahn: Bahn, views: dict, pitch, cfg, geo, fw: int, fh: int, varian
 
 
 class Abgleich:
-    """Laufender Kartenabgleich wie am Rider geplant (xgonav/reloc.py), hier Bild für Bild nachgespielt:
-    Punkte der Bodengrenze sammeln, alle every_s gegen einen mindestens ref_age_s alten Kartenstand
-    legen, die Korrektur k gedämpft nachziehen. k gilt für alles Folgende: Pose der Karte = k ∘ Odometrie."""
+    """Laufender Kartenabgleich wie am Rider (reloc.Nachfuehrung, dieselbe Klasse), hier Bild für Bild
+    nachgespielt. Die Aufnahme liefert Odometrie-Posen; k sammelt die Korrekturen: Pose der Karte = k ∘ Odometrie."""
 
     def __init__(self, rc, p: dict, gcfg, feld=None):
         """feld: feste Referenz (fertige, gesperrte Karte) statt der Kartenstände der laufenden Fahrt."""
-        self.fest = feld
         for key, v in p.items():
             if key.startswith("reloc."):
                 cur = getattr(rc, key[6:])
                 setattr(rc, key[6:], v.lower() in ("1", "true", "ja") if isinstance(cur, bool) else type(cur)(v))
         self.rc, self.gcfg = rc, gcfg
         self.k = (0.0, 0.0, 0.0)
-        self.puffer = reloc.ScanPuffer(rc)
-        self.staende: list = []              # (Zeit, Kopie der Karte)
-        self._feld = (None, None)            # (Zeit des Stands, Feld)
-        self.t_ab, self.p_ab = -1e9, None    # letzter Abgleich: Zeit, Odometrie-Pose
-        self.halten = False
-        self.n = self.n_ok = self.n_teil = self.n_halt = 0
-        self.gruende: dict = {}
-        self.summe_m = self.summe_deg = 0.0
+        self.nf = reloc.Nachfuehrung(rc, gcfg.l_show, feld)
 
     def schritt(self, gm: GridMap, t: float, odo: tuple, view, pitch: float) -> bool:
         """Eine Beobachtung mit ihrer Odometrie-Pose. False = nicht eintragen."""
-        rc = self.rc
-        self.puffer.add(t, odo, *reloc.scan_punkte(gm, view, pitch, rc))
-        if self.fest is None and (not self.staende or t - self.staende[-1][0] >= rc.ref_every_s):
-            self.staende.append((t, gm.lo.copy()))
-            alt = [s for s in self.staende if t - s[0] >= rc.ref_age_s]
-            self.staende = alt[-1:] + [s for s in self.staende if t - s[0] < rc.ref_age_s]
-        bewegt = self.p_ab is None or math.hypot(odo[0] - self.p_ab[0], odo[1] - self.p_ab[1]) >= rc.min_move_m \
-            or abs(odo[2] - self.p_ab[2]) >= math.radians(rc.min_turn_deg)
-        if t - self.t_ab < rc.every_s or not bewegt:
-            return self._eintragen()
-        if self.fest is not None:
-            self._feld = (0.0, self.fest)
-        else:
-            ref = next((s for s in reversed(self.staende) if t - s[0] >= rc.ref_age_s), None)
-            if ref is None:
-                return self._eintragen()
-            if self._feld[0] != ref[0]:
-                self._feld = (ref[0], reloc.Feld(ref[1], gm.res, self.gcfg.l_show, rc))
-        self.t_ab, self.p_ab = t, odo
         ist = reloc.anwenden(self.k, odo)
-        e = reloc.abgleich_lokal(self._feld[1], self.puffer.scan(odo), ist, rc)
-        self.n += 1
-        if not e.ok:
-            self.gruende[e.grund] = self.gruende.get(e.grund, 0) + 1
-            self.halten = False
-            return self._eintragen()
-        self.n_ok += 1
-        self.n_teil += e.teil
-        neu = reloc.schritt(ist, e.pose, rc)
-        if neu is None:
-            neu = ist
-        else:
-            self.summe_m += math.hypot(neu[0] - ist[0], neu[1] - ist[1])
-            self.summe_deg += abs(math.degrees(neu[2] - ist[2]))
-            self.k = reloc.korrektur(odo, neu)
-        self.halten = math.hypot(e.pose[0] - neu[0], e.pose[1] - neu[1]) > rc.hold_m \
-            or abs(e.pose[2] - neu[2]) > math.radians(rc.hold_deg)
-        return self._eintragen()
-
-    def _eintragen(self) -> bool:
-        self.n_halt += self.halten
-        return not self.halten
+        ok, k = self.nf.schritt(gm, t, ist, view, pitch)
+        if k is not None:
+            self.k = reloc.korrektur(odo, reloc.anwenden(k, ist))
+        return ok
 
     def bericht(self, ende: tuple) -> dict:
         e = reloc.anwenden(self.k, ende)
-        return {"Abgleiche": self.n, "angenommen": self.n_ok, "davon nur quer": self.n_teil,
-                "unsicher": self.gruende, "nicht eingetragen": int(self.n_halt),
-                "Korrekturen m": round(self.summe_m, 3), "Korrekturen Grad": round(self.summe_deg, 1),
+        nf = self.nf
+        return {"Abgleiche": nf.n, "angenommen": nf.n_ok, "davon nur quer": nf.n_teil,
+                "unsicher": nf.gruende, "nicht eingetragen": int(nf.n_halt),
+                "Korrekturen m": round(nf.summe_m, 3), "Korrekturen Grad": round(nf.summe_deg, 1),
                 "Endpose verschoben m": round(math.hypot(e[0] - ende[0], e[1] - ende[1]), 3),
                 "Endkurs verschoben Grad": round(math.degrees(e[2] - ende[2]), 1)}
 

@@ -277,6 +277,13 @@ class GridMap:
             self.rmax[r0:r1, c0:c1][disk] = -np.inf
             self.conf[r0:r1, c0:c1][disk] = False
 
+    def shift_pose(self, k: tuple) -> None:
+        """Kartenpose starr korrigieren (Kartenabgleich): Pose' = k ∘ Pose, k = (kx, ky, kth)."""
+        with self._lock:
+            c, s = math.cos(k[2]), math.sin(k[2])
+            self.x, self.y, self.th = (k[0] + c * self.x - s * self.y, k[1] + s * self.x + c * self.y,
+                                       self.th + k[2])
+
     def mark_blocking(self, pts: np.ndarray) -> int:
         """Hindernispunkte (N x 2, Welt-m), vor denen die Bahnprüfung gerade bremst: gelten als bestätigt und
         belegt. Sonst bremste er vor Hindernissen, die die Karte nie zeigte, weil sie nur aus einem Abstand
@@ -605,6 +612,8 @@ class GridWorker:
         self.ms = 0.0
         self.dropped = 0
         self.save_path, self.save_every_s = save_path, save_every_s
+        self.track = None                        # reloc.Nachfuehrung (laufender Kartenabgleich), von App gesetzt
+        self.track_ms = 0.0
 
     def start(self) -> None:
         self._thread = threading.Thread(target=self._run, name="gridmap", daemon=True)
@@ -618,7 +627,7 @@ class GridWorker:
             self._thread.join(timeout=2)
 
     def offer(self, fs: FreeSpace, pitch_dev: float) -> None:
-        job = (fs, pitch_dev, fs.pose if fs.pose is not None else self.grid.pose())
+        job = (fs, pitch_dev, fs.pose if fs.pose is not None else self.grid.pose(), time.monotonic())
         with self._cond:
             if len(self._q) == self._q.maxlen:
                 self.dropped += 1
@@ -644,8 +653,34 @@ class GridWorker:
             self.grid.maybe_save(self.save_path, self.save_every_s)
             if job is None:
                 continue
-            fs, pd, pose = job
+            fs, pd, pose, t = job
             t0 = time.perf_counter()
-            self.grid.add_freespace(fs, pd, pose)
+            if self.track is not None:
+                pose = self._abgleich(fs, pd, pose, t)
+                t1 = time.perf_counter()
+                self.track_ms = max(0.98 * self.track_ms, (t1 - t0) * 1000)   # Spitze, klingt langsam ab
+                t0 = t1
+            if pose is not None:
+                self.grid.add_freespace(fs, pd, pose)
             ms = (time.perf_counter() - t0) * 1000
             self.ms = 0.8 * self.ms + 0.2 * ms if self.ms else ms
+
+    def _abgleich(self, fs: FreeSpace, pd: float, pose: tuple, t: float) -> tuple | None:
+        """Laufender Kartenabgleich für diese Beobachtung; Rückgabe: Pose zum Eintragen oder None (nicht
+        eintragen). Eine Korrektur verschiebt die Kartenpose und die Posen der wartenden Beobachtungen."""
+        g = self.grid
+        if not g.pose_ok or fs is None or fs.columns is None:
+            self.track.reset()
+            return pose
+        ok, k = self.track.schritt(g, t, pose, fs, pd)
+        if k is not None:
+            g.shift_pose(k)
+            c, s = math.cos(k[2]), math.sin(k[2])
+
+            def um(p):
+                return (k[0] + c * p[0] - s * p[1], k[1] + s * p[0] + c * p[1], p[2] + k[2])
+            with self._cond:
+                for i, (f, d, p, tt) in enumerate(self._q):
+                    self._q[i] = (f, d, um(p), tt)
+            pose = um(pose)
+        return pose if ok else None

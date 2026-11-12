@@ -261,7 +261,12 @@ All keys with comments: `PetCfg` in `xgonav/config.py`.
 |---|---|---|
 | `enabled` | `false` | pose state: unknown after set-down, fall, restart; map locked until confirmed in the web UI (`docs/mapping.md`) |
 | `blind_s` | 2.0 | balancing this long without fresh wheel data: pose unknown |
-| `track` and the rest | | map matching, read only by the offline tools so far (`xgonav/config.py`, `RelocCfg`) |
+| `track` | `false` | running map matching while driving: map pose follows the room map (`docs/mapping.md`, Map matching). Independent of `enabled` |
+| `every_s` / `min_move_m` / `min_turn_deg` | 2.0 / 0.2 / 20 | match at most this often and only after this much travel or turn |
+| `max_step_m` / `max_step_deg` / `gain` | 0.08 / 3 / 0.6 | correction per match |
+| `hold_m` / `hold_deg` | 0.10 / 3 | remaining correction above this: nothing is entered into the map |
+| `ref_age_s` / `ref_every_s` | 12 / 10 | while mapping: match against a map state at least this old; new state this often |
+| the rest | | windows, weights, quality limits, global search (`xgonav/config.py`, `RelocCfg`) |
 
 ### `[home]` (return to start)
 | Key | Default | Meaning |

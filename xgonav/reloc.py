@@ -417,3 +417,107 @@ def schritt(ist: tuple, soll: tuple, cfg: RelocCfg) -> tuple | None:
     g = min(cfg.gain, cfg.max_step_m / max(d, 1e-9))
     lim = math.radians(cfg.max_step_deg)
     return (ist[0] + g * dx, ist[1] + g * dy, ist[2] + max(-lim, min(lim, cfg.gain * dth)))
+
+
+# ------------------------------------------------------------------ laufender Abgleich
+class Nachfuehrung:
+    """Laufender Kartenabgleich: Punkte der Bodengrenze sammeln, alle every_s (und nur nach Weg oder Drehung)
+    auf die Karte legen, die Kartenpose gedämpft nachziehen. Referenz ist beim Erkunden ein mindestens
+    ref_age_s alter Kartenstand (sonst bestätigt sich die Karte selbst), bei gesperrter Karte die Karte.
+    Solange der Rest der Korrektur über hold_m / hold_deg liegt, wird nichts eingetragen.
+
+    Kein eigener Thread: schritt() läuft dort, wo die Raumkarte beschrieben wird (GridWorker), nie in der
+    Bildschleife. tools/map_replay.py spielt Aufnahmen mit derselben Klasse nach."""
+
+    def __init__(self, rc: RelocCfg, l_show: float, fest: Feld | None = None):
+        """fest: feste Referenz (fertige Karte) statt der Kartenstände der laufenden Fahrt."""
+        self.rc, self.l_show, self.fest = rc, l_show, fest
+        self.puffer = ScanPuffer(rc)
+        self.staende: list = []              # (Zeit, Kopie der Karte)
+        self._feld = (None, None)            # (Kennung des Stands, Feld)
+        self.t_ab, self.p_ab = -1e9, None    # letzter Abgleich: Zeit, Kartenpose
+        self.halten = False
+        self.n = self.n_ok = self.n_teil = self.n_halt = 0
+        self.gruende: dict = {}
+        self.grund = ""                      # Ergebnis des letzten Abgleichs ("" = angenommen)
+        self.summe_m = self.summe_deg = 0.0
+        self._map_id = None
+
+    def reset(self) -> None:
+        """Pose ungültig geworden (abgesetzt, Neustart) oder Karte neu: von vorn sammeln."""
+        self.puffer.clear()
+        self.staende = []
+        self._feld = (None, None)
+        self.t_ab, self.p_ab = -1e9, None
+        self.halten = False
+
+    def schritt(self, gm, t: float, pose: tuple, fs, pitch: float) -> tuple[bool, tuple | None]:
+        """Eine Beobachtung mit der Kartenpose ihrer Aufnahme. Rückgabe (eintragen, k): k ist die starre
+        Korrektur (Pose' = k ∘ Pose), die der Aufrufer auf die Kartenpose anwendet (GridMap.shift_pose), oder
+        None. Der eigene Puffer ist dann schon umgerechnet."""
+        rc = self.rc
+        if getattr(gm, "map_id", None) != self._map_id:      # neue oder geleerte Karte: alte Stände gelten nicht
+            self._map_id = getattr(gm, "map_id", None)
+            self.reset()
+        self.puffer.add(t, pose, *scan_punkte(gm, fs, pitch, rc))
+        fest = self.fest
+        if fest is None and gm.locked:       # fertige Karte: sie selbst ist die Referenz
+            if self._feld[0] != ("fest", gm.map_id):
+                with gm._lock:
+                    lo = gm.lo.copy()
+                self._feld = (("fest", gm.map_id), Feld(lo, gm.res, self.l_show, rc))
+                self.staende = []
+            fest = self._feld[1]
+        if fest is None and (not self.staende or t - self.staende[-1][0] >= rc.ref_every_s):
+            with gm._lock:
+                lo = gm.lo.copy()
+            self.staende.append((t, lo))
+            alt = [e for e in self.staende if t - e[0] >= rc.ref_age_s]
+            self.staende = alt[-1:] + [e for e in self.staende if t - e[0] < rc.ref_age_s]
+        bewegt = self.p_ab is None or math.hypot(pose[0] - self.p_ab[0], pose[1] - self.p_ab[1]) >= rc.min_move_m \
+            or abs(pose[2] - self.p_ab[2]) >= math.radians(rc.min_turn_deg)
+        if t - self.t_ab < rc.every_s or not bewegt:
+            return self._eintragen(), None
+        if fest is not None:
+            feld = fest
+        else:
+            ref = next((e for e in reversed(self.staende) if t - e[0] >= rc.ref_age_s), None)
+            if ref is None:
+                return self._eintragen(), None
+            if self._feld[0] != ref[0]:
+                self._feld = (ref[0], Feld(ref[1], gm.res, self.l_show, rc))
+            feld = self._feld[1]
+        self.t_ab, self.p_ab = t, tuple(pose)
+        e = abgleich_lokal(feld, self.puffer.scan(pose), pose, rc)
+        self.n += 1
+        self.grund = e.grund if not e.ok else ""
+        if not e.ok:
+            self.gruende[e.grund] = self.gruende.get(e.grund, 0) + 1
+            self.halten = False
+            return self._eintragen(), None
+        self.n_ok += 1
+        self.n_teil += e.teil
+        neu = schritt(pose, e.pose, rc)
+        k = None
+        if neu is None:
+            neu = tuple(pose)
+        else:
+            self.summe_m += math.hypot(neu[0] - pose[0], neu[1] - pose[1])
+            self.summe_deg += abs(math.degrees(neu[2] - pose[2]))
+            k = korrektur(pose, neu)
+            self.puffer.transform(k)
+            self.p_ab = neu
+        self.halten = math.hypot(e.pose[0] - neu[0], e.pose[1] - neu[1]) > rc.hold_m \
+            or abs(e.pose[2] - neu[2]) > math.radians(rc.hold_deg)
+        return self._eintragen(), k
+
+    def _eintragen(self) -> bool:
+        self.n_halt += self.halten
+        return not self.halten
+
+    def info(self) -> dict:
+        """Für /status."""
+        return {"abgleiche": self.n, "angenommen": self.n_ok, "nur_quer": int(self.n_teil),
+                "nicht_eingetragen": int(self.n_halt), "korrektur_m": round(self.summe_m, 3),
+                "korrektur_deg": round(self.summe_deg, 1), "haelt": self.halten, "zuletzt": self.grund or "ok",
+                "unsicher": dict(self.gruende)}
