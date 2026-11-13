@@ -124,9 +124,24 @@ details.hilfe p{margin:4px 0 0}
 /* --- Bild und Modus */
 #bild-rahmen{overflow:hidden;background:#000;border:1px solid var(--rand);border-radius:var(--r)}
 .bild-fenster{overflow:hidden}   /* „Bild festhalten“ verschiebt das <img>; die Leiste darunter bleibt frei */
-.bild-leiste{display:flex;flex-wrap:wrap;align-items:center;gap:6px 16px;padding:6px 10px;background:var(--karte);border-top:1px solid var(--rand)}
-.bild-leiste .regler{flex:1 1 230px;min-width:0}
-.bild-leiste .ist{display:flex;gap:6px;align-items:center;white-space:nowrap}
+/* Ein Raster für beide Regler (display:contents), Spalten je nach Breite des Bildrahmens: breit eine Zeile,
+   enger Ist-Wert in eigener Zeile, schmal die Regler untereinander. Nichts darf unter seinen Inhalt schrumpfen. */
+#bild-rahmen{container-type:inline-size}
+.bild-leiste{display:grid;align-items:center;gap:6px 8px;padding:6px 10px;background:var(--karte);border-top:1px solid var(--rand);
+  grid-template-columns:auto minmax(50px,1fr) auto auto auto minmax(50px,1fr) auto auto auto}
+.bild-leiste .regler{display:contents}
+.bild-leiste .w{white-space:nowrap;min-width:3.6em}
+.bild-leiste input[type=range]{min-width:0}
+.bild-leiste .regler+.regler label{margin-left:8px}
+.bild-leiste .ist{display:flex;gap:6px;align-items:center;justify-content:flex-end;white-space:nowrap}
+@container (max-width:760px){
+  .bild-leiste{grid-template-columns:auto minmax(50px,1fr) auto auto auto minmax(50px,1fr) auto auto}
+  .bild-leiste .ist{grid-column:1/-1}
+}
+@container (max-width:560px){
+  .bild-leiste{grid-template-columns:auto minmax(50px,1fr) auto auto}
+  .bild-leiste .regler+.regler label{margin-left:0}
+}
 .info{display:inline-grid;place-items:center;width:15px;height:15px;border:1px solid currentColor;border-radius:50%;
   font:600 10px/1 system-ui,sans-serif;color:var(--leise);cursor:help}
 #bild{width:100%;height:auto;aspect-ratio:4/3;object-fit:contain;display:block;background:#000}
