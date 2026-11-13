@@ -203,6 +203,10 @@ class Emotions:
         self._snd_proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                                           stderr=subprocess.DEVNULL)
 
+    def klingt(self) -> bool:
+        """Spielt gerade ein eigener Ton? (Die Schallortung hört dann weg.)"""
+        return self._snd_proc is not None and self._snd_proc.poll() is None
+
     def _play_display(self, name: str) -> None:
         d = os.path.join(self.cfg.dir, name)
         if not os.path.isdir(d):

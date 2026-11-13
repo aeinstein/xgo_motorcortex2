@@ -3,7 +3,8 @@
 Enthält Ego-Motion (native/egofast.cpp), Kantenverfahren und Verkleinern des Bodenmodells
 (native/floorfast.cpp), das Eintragen in die Raumkarte (native/gridfast.cpp), Planer, Frontier-Suche,
 Merkkarte, Wandabstand und Wegfolger-Ziel (native/navfast.cpp, Anbindung in navfast.py; Bodengeometrie für
-beide Karten in native/xgo.h) und FloorNet (native/floornet.cpp).
+beide Karten in native/xgo.h), FloorNet (native/floornet.cpp) und die Schallrichtung (native/ortfast.cpp,
+Anbindung in ortung.py; dort numpy als Ersatz, gleich bis auf Rundung).
 Gebaut wird am Rider mit `make -C xgonav/native`; fehlt die Bibliothek, rechnen egomotion.py,
 freespace.py, gridmap.py, planner.py, frontier.py und localmap.py in Python (gleiches Ergebnis),
 FloorNet ist dann aus. Jede Funktionsgruppe hat eine eigene ABI-Nummer, die der Aufrufer prüft.

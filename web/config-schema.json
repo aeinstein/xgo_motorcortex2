@@ -2848,6 +2848,172 @@
        "hilfe": ""
       }
      ]
+    },
+    {
+     "name": "ortung",
+     "doc": "",
+     "felder": [
+      {
+       "key": "enabled",
+       "typ": "bool",
+       "default": true,
+       "hilfe": "Schallrichtung aus den zwei Mikrofonen (xgonav/ortung.py): Laufzeitunterschied aus der Phase des Kreuzspektrums. Läuft nur in `modes` und nie im Ruhemodus; arecord als eigener Prozess, gerechnet wird nur bei Geräuschen über dem Ruhepegel. Vorn/hinten ist mit zwei Mikrofonen nicht zu trennen."
+      },
+      {
+       "key": "modes",
+       "typ": "liste",
+       "elem": "zahl",
+       "default": [
+        "idle",
+        "pet"
+       ],
+       "hilfe": ""
+      },
+      {
+       "key": "device",
+       "typ": "str",
+       "default": "hw:0,0",
+       "hilfe": "WM8960 (docs/audio.md)"
+      },
+      {
+       "key": "rate",
+       "typ": "int",
+       "default": 48000,
+       "hilfe": ""
+      },
+      {
+       "key": "block",
+       "typ": "int",
+       "default": 1024,
+       "hilfe": "Abtastwerte je Block (Zweierpotenz), 21 ms"
+      },
+      {
+       "key": "mic_dist_m",
+       "typ": "float",
+       "default": 0.0038,
+       "hilfe": "Wirksamer Abstand der Mikrofone quer zur Fahrtrichtung und fester Versatz zwischen den Kanälen. Gemessen 2026-11-13 balancierend, Testton 1 m entfernt, 8 Stellungen im Kreis: tau = 11,2 us x sin(Winkel) - 2,2 us (Restfehler 0,6 us). 11,2 us x 343 m/s = 3,8 mm; ein Abtastwert sind 21 us, deshalb lange mitteln."
+      },
+      {
+       "key": "tau_offset_us",
+       "typ": "float",
+       "default": -2.2,
+       "hilfe": "wird von der gemessenen Laufzeit abgezogen"
+      },
+      {
+       "key": "sign",
+       "typ": "int",
+       "default": 1,
+       "hilfe": "-1, wenn links und rechts vertauscht sind"
+      },
+      {
+       "key": "f_lo",
+       "typ": "float",
+       "default": 300.0,
+       "hilfe": "Band in Hz: darunter Brummen/Körperschall. Über 2 kHz sind die Kanäle nicht mehr phasentreu (bei 3,5-4,5 kHz steht die Phase fest bei ~170°, unabhängig von der Richtung): das ergab Scheinrichtungen."
+      },
+      {
+       "key": "f_hi",
+       "typ": "float",
+       "default": 2000.0,
+       "hilfe": ""
+      },
+      {
+       "key": "tau_margin",
+       "typ": "float",
+       "default": 1.5,
+       "hilfe": "gesucht wird bis mic_dist/c x tau_margin"
+      },
+      {
+       "key": "steer_steps",
+       "typ": "int",
+       "default": 20,
+       "hilfe": "Laufzeit-Schritte je Seite"
+      },
+      {
+       "key": "phat_beta",
+       "typ": "float",
+       "default": 0.8,
+       "hilfe": "1 = nur Phase (PHAT), 0 = mit Betrag gewichtet"
+      },
+      {
+       "key": "on_db",
+       "typ": "float",
+       "default": 9.0,
+       "hilfe": "Tor öffnet: so weit über dem Ruhepegel"
+      },
+      {
+       "key": "off_db",
+       "typ": "float",
+       "default": 3.0,
+       "hilfe": "und bleibt beim Sammeln offen, solange noch so weit darüber"
+      },
+      {
+       "key": "min_level",
+       "typ": "float",
+       "default": 0.0,
+       "hilfe": "und mindestens dieser Pegel (Einheit wie Kern.level, 0 = aus)"
+      },
+      {
+       "key": "noise_up",
+       "typ": "float",
+       "default": 0.001,
+       "hilfe": "Ruhepegel nachführen je Block: aufwärts langsam, abwärts schnell. 0,001 = 21 s Zeitkonstante: ein gleichbleibendes Geräusch wird etwa 15 s lang verfolgt, dann gilt es als Ruhe (mit 0,01 nur 0,3 s)."
+      },
+      {
+       "key": "noise_down",
+       "typ": "float",
+       "default": 0.2,
+       "hilfe": ""
+      },
+      {
+       "key": "warm_blocks",
+       "typ": "int",
+       "default": 25,
+       "hilfe": "nach dem Start nur Ruhepegel lernen"
+      },
+      {
+       "key": "window_blocks",
+       "typ": "int",
+       "default": 47,
+       "hilfe": "Streuung der Laufzeit je Auswertung (gemessen): 0,13 s +-6 us, 0,5 s +-3 us, 1 s +-1..2 us, 2 s +-0,7..1,3 us so viele Blöcke je Auswertung (1 s)"
+      },
+      {
+       "key": "min_blocks",
+       "typ": "int",
+       "default": 24,
+       "hilfe": "kürzere Geräusche verwerfen (0,5 s; ein Klatschen reicht nicht)"
+      },
+      {
+       "key": "hang_blocks",
+       "typ": "int",
+       "default": 12,
+       "hilfe": "Pausen bis zu dieser Länge unterbrechen das Sammeln nicht (Sprache)"
+      },
+      {
+       "key": "min_interval_s",
+       "typ": "float",
+       "default": 0.0,
+       "hilfe": "nach einer Auswertung so lange nichts sammeln (Dauerlärm)"
+      },
+      {
+       "key": "min_quality",
+       "typ": "float",
+       "default": 0.4,
+       "hilfe": "Güte 0..1, darunter verwerfen"
+      },
+      {
+       "key": "nachhall_s",
+       "typ": "float",
+       "default": 0.3,
+       "hilfe": "nach eigenen Tönen so lange taub"
+      },
+      {
+       "key": "retry_s",
+       "typ": "float",
+       "default": 10.0,
+       "hilfe": "arecord beendet: neuer Versuch"
+      }
+     ]
     }
    ]
   },

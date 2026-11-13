@@ -232,6 +232,7 @@ class App:
         self.dunkel = Dunkelangst(cfg.dunkel, cfg.robot.vyaw_limit_dps)
         self._luma: float | None = None
         self._luma_t = 0.0
+        self.ortung = None             # ortung.Ortung (Schallrichtung), von __main__ gesetzt (nur am Rider)
 
     # ------------------------------------------------------------------
     # Diese Modi fahren auf Freiraum zu und verlassen sich auf Bodenmodell + Merkkarte.
@@ -436,6 +437,13 @@ class App:
         if self.wheels is not None:
             self.wheels.set_idle(idle)
 
+    def _ortung_tick(self) -> None:
+        """Je Schleifendurchlauf: Schallortung nur in [ortung] modes, nie im Ruhemodus oder bei der
+        WLAN-Einrichtung. Ein Vergleich; an- und ausgeschaltet wird nur beim Wechsel."""
+        o = self.ortung
+        if o is not None:
+            o.set_active(not self.ruhe and self.wlan is None and self.behavior.name in self.cfg.ortung.modes)
+
     # ------------------------------------------------------------------ Dunkelangst (dunkel.py)
     def _dunkel_tick(self, now: float, cmd: Command) -> Command:
         """Im Regelschritt nach safety(): Ist es zu dunkel, übernimmt die Dunkelangst (auf der Stelle drehen)."""
@@ -609,6 +617,7 @@ class App:
                 if t_end and time.monotonic() > t_end:
                     break
                 self._wlan_buttons()
+                self._ortung_tick()
                 if self.wlan is not None:
                     last = self._wlan_tick(last)
                     continue
@@ -640,6 +649,8 @@ class App:
             if self.imu is not None:
                 self.imu.close()
             self.det.close()
+            if self.ortung is not None:
+                self.ortung.close()
             if self.fs_worker is not None:
                 self.fs_worker.close()
             if self.wheels is not None:

@@ -90,6 +90,10 @@ def main(argv=None) -> int:
     if cfg.emotion.enabled and kind == "proc":
         from .emotion import Emotions
         app.emotions = Emotions(cfg.emotion, cfg.emotion.fifo)
+    if cfg.ortung.enabled and kind == "proc":
+        from .ortung import Ortung
+        emo = app.emotions
+        app.ortung = Ortung(cfg.ortung, stumm=emo.klingt if emo is not None else None)
     recs = []
     if a.record:
         recs.append(threading.Thread(target=_recorder, args=(app, a.record, cfg.camera.fps), daemon=True))

@@ -121,6 +121,7 @@ def serve(app: App, host: str, port: int, fps: int, render_cpus=None) -> Threadi
                 body["mode"] = app.mode       # stats stammt vom letzten Bild und kann veraltet sein
                 w = app.wlan
                 body["wlan"] = w.status() if w is not None else None
+                body["ortung"] = app.ortung.status() if app.ortung is not None else None
                 body["start"] = START
                 if parse_qs(u.query).get("breakdown"):
                     body["loop_breakdown"] = app.loop_breakdown()

@@ -235,6 +235,7 @@ details.extras[open]>summary{margin-bottom:8px}
 .lage3d-rahmen{position:relative;user-select:none;-webkit-user-select:none}
 .lage3d-gl{position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none}
 .unter button{padding:1px 7px;font-size:12px;margin-left:6px}
+.radar{display:block;width:100%;max-width:340px;margin:0 auto;touch-action:pan-y}
 .lage-flaeche{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px}
 .kamhoehe{display:flex;flex-direction:column;align-items:center;gap:4px;height:230px;font-size:12px;color:var(--leise)}
 .kamhoehe .w{color:var(--text);font-variant-numeric:tabular-nums;white-space:nowrap}
@@ -411,6 +412,17 @@ details.extras[open]>summary{margin-bottom:8px}
         (Gitter am Boden 2026-11-10). Oberhalb von u8 200 ändert sich nichts
         mehr. Untere Grenze mit Abstand zum Minimum; in Folgen/Erkunden setzt xgonav die Höhe selbst.</p>
       <p>Roll: + = rechts.</p>
+    </details>
+  </details>
+  <details class="karte extras" id="radarkarte" ontoggle="radarUmschalten()">
+    <summary><h2>Schallradar</h2><span class="leise" id="radar-zustand">-</span></summary>
+    <canvas class="radar" id="d-radar" role="img" aria-label="Richtung der letzten Geräusche"></canvas>
+    <div class="legende" id="l-radar"></div>
+    <details class="hilfe" data-i18n-html="hilfe-radar"><summary>Strahl = Geräusch · Länge = Lautstärke · verblasst in 12 s</summary>
+      <p>Richtung aus dem Laufzeitunterschied der zwei Mikrofone (<code>[ortung]</code>). Oben ist vorn. Zwei
+        Mikrofone trennen nur links und rechts: jeder Strahl hat deshalb einen gestrichelten Zwilling nach hinten,
+        die Quelle liegt auf einem von beiden. Länge = Pegel über dem Ruhepegel, Deckkraft = Güte und Alter.
+        Lauscht nur in den Modi aus <code>[ortung] modes</code>, nie im Ruhemodus; eigene Töne werden ausgeblendet.</p>
     </details>
   </details>
   <section class="karte">
@@ -624,6 +636,9 @@ const EN = {
   'Aufzeichnen': 'Record', 'Status (roh)': 'Status (raw)', 'Verlauf': 'History', 'CPU · WLAN · Akku': 'CPU · Wi-Fi · Battery',
   'CPU je Kern, letzte 10 min': 'CPU per core, last 10 min', 'WLAN-Durchsatz, letzte 10 min': 'Wi-Fi throughput, last 10 min',
   'WLAN-Empfang (Pegel)': 'Wi-Fi signal (level)', 'Akku, 120 min (im Browser gespeichert)': 'Battery, 120 min (stored in the browser)',
+  'Schallradar': 'Sound radar', 'lauscht': 'listening', 'aus': 'off', 'links': 'left', 'rechts': 'right', 'Mitte': 'centre',
+  'vorn': 'front', 'hinten': 'rear', 'Güte': 'quality', 'vor {s} s': '{s} s ago', 'noch kein Geräusch': 'no sound yet',
+  'Richtung der letzten Geräusche': 'Direction of the latest sounds',
   'Leeren': 'Clear', 'Lage': 'Attitude', 'IMU live · ziehen: drehen · Doppelklick: zurück': 'IMU live · drag: rotate · double-click: reset',
   'Lage des Riders als 3D-Modell': 'Attitude of the Rider as a 3D model', 'Kamerahöhe': 'Camera height',
   'Roll': 'Roll', 'Roll auf 0°': 'Roll to 0°',
@@ -736,6 +751,11 @@ const EN_HTML = {
       <p>“Re-level”: the legs have a dead band; with the same command it stands up to 2.6° differently
         tilted. The button sets roll to 0° and lets the firmware level for 3 s; it then stays like that. This
         also happens once after every stand-up. While driving it can slowly tilt again.</p>`,
+  'hilfe-radar': `<summary>Ray = sound · length = loudness · fades in 12 s</summary>
+      <p>Direction from the time difference between the two microphones (<code>[ortung]</code>). Up is forward.
+        Two microphones only separate left and right: every ray therefore has a dashed twin to the rear, the
+        source is on one of them. Length = level above the noise floor, opacity = quality and age. Listens only
+        in the modes of <code>[ortung] modes</code>, never in rest mode; own sounds are ignored.</p>`,
   'hilfe-lage': `<summary>Camera height and roll</summary>
       <p>Camera height: value of the floor geometry from <code>cam_h_u8</code> (lens centre above floor, setpoint u8
         in the tooltip); the legs need about 1 s afterwards. The value matches the folding-rule measurement
@@ -1138,6 +1158,7 @@ function statusZeigen(s, fehler) {
     hoeheAusStatus = s.height_u8 != null;
     if (hoeheAusStatus) hoeheSetzen(s.height_u8);
     hzAnzeigen(s.horizon);
+    radarStatus(s.ortung);
     $('kurz').innerHTML = felder.map(([k, f, breit]) =>
       '<div class="kachel' + (breit ? ' breit' : '') + '"><div class="k">' + tr(k) + '</div><div class="w">' + esc(f(s)) + '</div></div>').join('');
     $('roh').textContent = JSON.stringify(s, null, 1);
@@ -2172,6 +2193,101 @@ function verlaufUmschalten() {
 function extrasUmschalten() {
   try { localStorage.setItem('xgonav.extras', $('extras').open ? '1' : '0'); } catch (e) {}
 }
+// Schallradar: Strahlen aus status.ortung.verlauf ([Alter s, Winkel °, Güte, Pegel dB]); gezeichnet wird nur im
+// Browser und nur, solange die Karte offen ist. Zeiten werden beim Eintreffen auf die Browseruhr umgerechnet.
+const RADAR_MS = 12000;
+let radarStrahlen = [], radarAktiv = false, radarLaeuft = false;
+function radarStatus(o) {
+  radarAktiv = !!(o && o.aktiv);
+  const jetzt = performance.now();
+  if (o && o.verlauf) radarStrahlen = o.verlauf.map(v => ({t: jetzt - v[0] * 1000, w: v[1], g: v[2], db: v[3]}));
+  $('radar-zustand').textContent = !o ? '-' : o.fehler ? o.fehler : tr(o.aktiv ? 'lauscht' : 'aus');
+  const l = radarStrahlen.length ? radarStrahlen[radarStrahlen.length - 1] : null;
+  $('l-radar').textContent = !l ? tr('noch kein Geräusch') :
+    (Math.abs(l.w) < 3 ? tr('Mitte') : Math.abs(l.w).toFixed(0) + '° ' + tr(l.w > 0 ? 'links' : 'rechts')) +
+    ' · ' + tr('Güte') + ' ' + l.g.toFixed(2) + ' · +' + l.db.toFixed(0) + ' dB · ' +
+    tr('vor {s} s', {s: Math.max(0, (jetzt - l.t) / 1000).toFixed(0)});
+  radarStarten();
+}
+function radarZeichnen(jetzt) {
+  const cv = $('d-radar'), dpr = window.devicePixelRatio || 1, B = cv.clientWidth;
+  if (!B) return;
+  if (cv.width !== Math.round(B * dpr) || cv.height !== cv.width) {
+    cv.width = cv.height = Math.round(B * dpr); cv.style.height = B + 'px';
+  }
+  const g = cv.getContext('2d'), cx = B / 2, cy = B / 2, R = B / 2 - 16;
+  const css = getComputedStyle(document.documentElement), farbe = n => css.getPropertyValue(n).trim();
+  const gruen = farbe('--gut'), rand = farbe('--rand2'), leise = farbe('--leise');
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.clearRect(0, 0, B, B);
+  g.fillStyle = farbe('--karte2');
+  g.beginPath(); g.arc(cx, cy, R, 0, 2 * Math.PI); g.fill();
+  g.strokeStyle = rand; g.lineWidth = 1;
+  for (const f of [1 / 3, 2 / 3, 1]) { g.beginPath(); g.arc(cx, cy, R * f, 0, 2 * Math.PI); g.stroke(); }
+  for (let k = 0; k < 12; k++) {                         // Speichen alle 30°, Achsen kräftiger
+    const a = k * Math.PI / 6;
+    g.globalAlpha = k % 3 ? 0.35 : 1;
+    g.beginPath(); g.moveTo(cx, cy); g.lineTo(cx + R * Math.sin(a), cy - R * Math.cos(a)); g.stroke();
+  }
+  g.globalAlpha = 1;
+  if (radarAktiv) {                                      // umlaufender Suchstrahl, nur solange gelauscht wird
+    const a0 = (jetzt / 4000 * 2 * Math.PI) % (2 * Math.PI) - Math.PI / 2;
+    g.fillStyle = gruen;
+    for (let k = 0; k < 24; k++) {
+      g.globalAlpha = 0.16 * (1 - k / 24);
+      g.beginPath(); g.moveTo(cx, cy); g.arc(cx, cy, R, a0 - (k + 1) * 0.035, a0 - k * 0.035); g.closePath(); g.fill();
+    }
+    g.globalAlpha = 1;
+  }
+  // Strahlen: Winkel > 0 = links; Zwilling nach hinten gestrichelt (vorn/hinten nicht unterscheidbar)
+  for (const s of radarStrahlen) {
+    const alter = jetzt - s.t;
+    if (alter > RADAR_MS) continue;
+    const blass = (1 - alter / RADAR_MS) * Math.min(1, Math.max(0.35, s.g));
+    const len = R * Math.min(1, Math.max(0.35, (s.db - 3) / 22)), w = s.w * Math.PI / 180;
+    for (const hinten of [false, true]) {
+      const a = hinten ? Math.PI + w : -w, x = cx + len * Math.sin(a), y = cy - len * Math.cos(a);
+      const v = g.createLinearGradient(cx, cy, x, y);
+      v.addColorStop(0, 'transparent'); v.addColorStop(1, gruen);
+      g.globalAlpha = blass * (hinten ? 0.45 : 1);
+      g.strokeStyle = v; g.lineWidth = hinten ? 2 : 3; g.lineCap = 'round';
+      g.setLineDash(hinten ? [5, 6] : []);
+      g.beginPath(); g.moveTo(cx, cy); g.lineTo(x, y); g.stroke();
+      g.setLineDash([]);
+      g.fillStyle = gruen;
+      g.beginPath(); g.arc(x, y, hinten ? 3 : 4.5, 0, 2 * Math.PI); g.fill();
+      if (!hinten && alter < 600) {                      // frisches Geräusch: Ring, der sich ausbreitet
+        g.globalAlpha = blass * (1 - alter / 600);
+        g.strokeStyle = gruen; g.lineWidth = 1.5;
+        g.beginPath(); g.arc(x, y, 5 + 16 * alter / 600, 0, 2 * Math.PI); g.stroke();
+      }
+    }
+  }
+  g.globalAlpha = 1;
+  g.fillStyle = farbe('--text');                         // Rider in der Mitte, Spitze nach vorn
+  g.beginPath(); g.moveTo(cx, cy - 9); g.lineTo(cx + 6, cy + 6); g.lineTo(cx - 6, cy + 6); g.closePath(); g.fill();
+  g.fillStyle = leise; g.font = '11px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillText(tr('vorn'), cx, cy - R - 8); g.fillText(tr('hinten'), cx, cy + R + 8);
+  g.fillText('L', cx - R - 8, cy); g.fillText('R', cx + R + 8, cy);
+}
+// Schleife nur bei offener Karte und nur, solange sich etwas bewegt (Suchstrahl oder ein Strahl verblasst)
+function radarSchleife(jetzt) {
+  radarLaeuft = false;
+  if (!$('radarkarte').open || document.hidden) return;
+  radarZeichnen(jetzt);
+  if (radarAktiv || radarStrahlen.some(s => jetzt - s.t < RADAR_MS)) radarStarten();
+}
+function radarStarten() {
+  if (radarLaeuft || !$('radarkarte').open) return;
+  radarLaeuft = true;
+  requestAnimationFrame(radarSchleife);
+}
+function radarUmschalten() {
+  try { localStorage.setItem('xgonav.radar', $('radarkarte').open ? '1' : '0'); } catch (e) {}
+  radarStarten();
+}
+document.addEventListener('visibilitychange', radarStarten);
+window.addEventListener('resize', radarStarten);
 function lageUmschalten() {
   try { localStorage.setItem('xgonav.lage', $('lagekarte').open ? '1' : '0'); } catch (e) {}
   liveImu();
@@ -2246,6 +2362,7 @@ try {
   if (localStorage.getItem('xgonav.verlauf') === '1') $('verlauf').open = true;
   if (localStorage.getItem('xgonav.lage') !== '0') $('lagekarte').open = true;   // Standard: offen
   if (localStorage.getItem('xgonav.extras') === '1') $('extras').open = true;
+  if (localStorage.getItem('xgonav.radar') !== '0') $('radarkarte').open = true;   // Standard: offen
 } catch (e) { $('lagekarte').open = true; }
 liveVerbinden();
 lageStarten();

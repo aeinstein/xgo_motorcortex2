@@ -229,6 +229,19 @@ All keys with comments: `PetCfg` in `xgonav/config.py`.
 | `tick_s` | 1.0 | main loop and `robot` thread wake-up period in sleep mode |
 | `sleep_ms_on_loop` | 1000 | driver main loop period in sleep mode (normally 200) |
 
+### `[ortung]` (sound direction, see [audio.md](audio.md#sound-direction-xgonavortungpy))
+| Key | Default | Meaning |
+|---|---|---|
+| `enabled`, `modes` | true, `idle` `pet` | only with `--robot proc`; never in sleep mode |
+| `device`, `rate`, `block` | `hw:0,0`, 48000, 1024 | `arecord` capture; block = power of two |
+| `mic_dist_m`, `tau_offset_us`, `sign` | 0.0038, −2.2, 1 | effective microphone spacing and fixed channel offset (calibration 2026-11-13, balancing); −1 swaps left/right |
+| `f_lo`, `f_hi` | 300, 2000 | band in Hz; above 2 kHz the channels are not phase-true |
+| `tau_margin`, `steer_steps`, `phat_beta` | 1.5, 20, 0.8 | search range × spacing, delays per side, 1 = phase only |
+| `on_db`, `off_db`, `min_level` | 9, 3, 0 | gate opens / stays open above the noise floor; absolute floor (0 = off) |
+| `noise_up`, `noise_down`, `warm_blocks` | 0.001, 0.2, 25 | noise floor tracking per block; blocks after start without events |
+| `window_blocks`, `min_blocks`, `hang_blocks`, `min_interval_s` | 47, 24, 12, 0 | blocks per estimate (1 s); shorter sounds dropped; pauses bridged; pause after an estimate |
+| `min_quality`, `nachhall_s`, `retry_s` | 0.4, 0.3, 10 | drop below; deaf after own sounds; retry when `arecord` ends |
+
 ### `[odom]`
 | Key | Default | RiderPi |
 |---|---|---|

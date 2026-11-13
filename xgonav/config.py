@@ -710,6 +710,47 @@ class DunkelCfg:
 
 
 @dataclass
+class OrtungCfg:
+    # Schallrichtung aus den zwei Mikrofonen (xgonav/ortung.py): Laufzeitunterschied aus der Phase des
+    # Kreuzspektrums. Läuft nur in `modes` und nie im Ruhemodus; arecord als eigener Prozess, gerechnet wird
+    # nur bei Geräuschen über dem Ruhepegel. Vorn/hinten ist mit zwei Mikrofonen nicht zu trennen.
+    enabled: bool = True
+    modes: list = field(default_factory=lambda: ["idle", "pet"])
+    device: str = "hw:0,0"             # WM8960 (docs/audio.md)
+    rate: int = 48000
+    block: int = 1024                  # Abtastwerte je Block (Zweierpotenz), 21 ms
+    # Wirksamer Abstand der Mikrofone quer zur Fahrtrichtung und fester Versatz zwischen den Kanälen. Gemessen
+    # 2026-11-13 balancierend, Testton 1 m entfernt, 8 Stellungen im Kreis: tau = 11,2 us x sin(Winkel) - 2,2 us
+    # (Restfehler 0,6 us). 11,2 us x 343 m/s = 3,8 mm; ein Abtastwert sind 21 us, deshalb lange mitteln.
+    mic_dist_m: float = 0.0038
+    tau_offset_us: float = -2.2        # wird von der gemessenen Laufzeit abgezogen
+    sign: int = 1                      # -1, wenn links und rechts vertauscht sind
+    # Band in Hz: darunter Brummen/Körperschall. Über 2 kHz sind die Kanäle nicht mehr phasentreu (bei 3,5-4,5 kHz
+    # steht die Phase fest bei ~170°, unabhängig von der Richtung): das ergab Scheinrichtungen.
+    f_lo: float = 300.0
+    f_hi: float = 2000.0
+    tau_margin: float = 1.5            # gesucht wird bis mic_dist/c x tau_margin
+    steer_steps: int = 20              # Laufzeit-Schritte je Seite
+    phat_beta: float = 0.8             # 1 = nur Phase (PHAT), 0 = mit Betrag gewichtet
+    on_db: float = 9.0                 # Tor öffnet: so weit über dem Ruhepegel
+    off_db: float = 3.0                # und bleibt beim Sammeln offen, solange noch so weit darüber
+    min_level: float = 0.0             # und mindestens dieser Pegel (Einheit wie Kern.level, 0 = aus)
+    # Ruhepegel nachführen je Block: aufwärts langsam, abwärts schnell. 0,001 = 21 s Zeitkonstante: ein
+    # gleichbleibendes Geräusch wird etwa 15 s lang verfolgt, dann gilt es als Ruhe (mit 0,01 nur 0,3 s).
+    noise_up: float = 0.001
+    noise_down: float = 0.2
+    warm_blocks: int = 25              # nach dem Start nur Ruhepegel lernen
+    # Streuung der Laufzeit je Auswertung (gemessen): 0,13 s +-6 us, 0,5 s +-3 us, 1 s +-1..2 us, 2 s +-0,7..1,3 us
+    window_blocks: int = 47            # so viele Blöcke je Auswertung (1 s)
+    min_blocks: int = 24               # kürzere Geräusche verwerfen (0,5 s; ein Klatschen reicht nicht)
+    hang_blocks: int = 12              # Pausen bis zu dieser Länge unterbrechen das Sammeln nicht (Sprache)
+    min_interval_s: float = 0.0        # nach einer Auswertung so lange nichts sammeln (Dauerlärm)
+    min_quality: float = 0.4           # Güte 0..1, darunter verwerfen
+    nachhall_s: float = 0.3            # nach eigenen Tönen so lange taub
+    retry_s: float = 10.0              # arecord beendet: neuer Versuch
+
+
+@dataclass
 class WlanCfg:
     # WLAN-Einrichtung über die Tasten (xgonav/wlan.py): Tasten halten -> WLAN-QR vor die Kamera, sonst Hotspot.
     # Kostet ohne Einrichtung nichts (der Tastenwert wird ohnehin gelesen); währenddessen ruht die Bildverarbeitung.
@@ -839,6 +880,7 @@ class Config:
     ruhe: RuheCfg = field(default_factory=RuheCfg)
     wlan: WlanCfg = field(default_factory=WlanCfg)
     dunkel: DunkelCfg = field(default_factory=DunkelCfg)
+    ortung: OrtungCfg = field(default_factory=OrtungCfg)
     control_hz: float = 20.0
 
     @classmethod
