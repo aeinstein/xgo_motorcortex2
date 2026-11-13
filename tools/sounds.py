@@ -113,8 +113,30 @@ def aufwachen(k: float) -> np.ndarray:
     return np.concatenate(parts)
 
 
+def schrei(k: float) -> np.ndarray:
+    """Sturz (alle Modi): Aufschrei, steil hoch, gehalten mit Zittern, am Ende abfallend."""
+    return np.concatenate([
+        _tone(700 * k, 2300 * k, 0.10, harm=0.55),
+        _tone(2300 * k, 2050 * k, 0.50, vib_hz=12.0, vib_depth=0.045, harm=0.55),
+        _tone(2050 * k, 800 * k, 0.28, vib_hz=12.0, vib_depth=0.03, harm=0.5),
+    ])
+
+
+def aufrappeln(k: float) -> np.ndarray:
+    """Wieder auf den Rädern: angestrengtes, wackliges Hochdrücken, dann zwei kurze Töne „geschafft“."""
+    return np.concatenate([
+        _tone(240 * k, 330 * k, 0.30, vib_hz=13.0, vib_depth=0.06, harm=0.55),
+        _tone(330 * k, 460 * k, 0.22, vib_hz=13.0, vib_depth=0.05, harm=0.55),
+        _silence(0.07),
+        _tone(820 * k, 1000 * k, 0.08, harm=0.3), _silence(0.03),
+        _tone(1000 * k, 1350 * k, 0.14, harm=0.3),
+    ])
+
+
+# Varianten-Töne pet_<Ereignis>_<n>.wav; schrei und aufrappeln spielt emotion.py in allen Modi
 PET = {"traellern": traellern, "quiek": quiek, "kichern": kichern, "seufzen": seufzen, "wimmern": wimmern,
-       "gurren": gurren, "hey": hey, "ohnmacht": ohnmacht, "aufwachen": aufwachen}
+       "gurren": gurren, "hey": hey, "ohnmacht": ohnmacht, "aufwachen": aufwachen,
+       "schrei": schrei, "aufrappeln": aufrappeln}
 VARIANTS = (1.0, 0.92, 1.09)
 
 

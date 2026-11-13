@@ -189,7 +189,8 @@ class PetBrain:
             self._set_state("liegt", s.t)
             self._gesture = None
             self.roll_deg = 0.0
-            self._react(s.t, "vertigo", "ohnmacht", urgent=True)
+            # Sturz (Firmware 0): den Schrei spielt emotion.py in allen Modi, hier nur die Augen
+            self._react(s.t, "vertigo", None if s.fw_mode == 0 else "ohnmacht", urgent=True)
         self.target = self._pick(s)
         act = {"wach": self._wach, "schreck": self._schreck, "ab": self._ab, "nap": self._nap,
                "lugen": self._lugen, "warnen": self._warnen, "hoch": self._hoch, "settle": self._settle, "liegt": self._liegt,
@@ -656,7 +657,7 @@ class PetBrain:
     def _hoch(self, s: Sense) -> Act:
         c, t = self.cfg, s.t
         if s.balancing:
-            self._react(t, "cute", None)
+            self._react(t, "cute", "aufrappeln", urgent=True)
             self._blind_until = t + c.settle_s
             self._set_state("settle", t)
         elif t - self._state_t > c.standup_timeout_s:

@@ -585,6 +585,7 @@ class App:
             cmd = self._manual_cmd()
             self._drive(cmd)
             self._cmd = Command(cmd.v, cmd.w, None, cmd.status + " (ohne Bildverarbeitung)")
+            self._emotion_tick(None)                  # Akku und Sturz
         time.sleep(max(0.0, self._last_ctrl + period - time.monotonic()))
 
     def _step(self, f) -> None:
@@ -970,7 +971,8 @@ class App:
     def _emotion_tick(self, person: bool | None) -> None:
         if self.emotions is not None and not self.ruhe:
             try:
-                self.emotions.update(time.monotonic(), self.behavior.name, person, self.robot.state.battery)
+                self.emotions.update(time.monotonic(), self.behavior.name, person, self.robot.state.battery,
+                                     self.robot.state.mode)
             except Exception as e:                  # Anzeige darf die Regelung nie stören
                 log.warning("Emotion: %s", e)
 

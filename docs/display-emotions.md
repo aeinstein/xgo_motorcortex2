@@ -95,7 +95,10 @@ python tools/eyes.py --gaze DIR      # eye atlas for mode pet: 11 gaze positions
 |---|---|
 | Found | `freude.wav` (3 rising chirps, 0.5 s) when a person appears |
 | Lost | `trauer.wav` (2 falling "wah", 1.1 s) after `lost_s` (2 s) without person |
+| Fall | `pet_schrei_<n>.wav` (scream, 0.9 s) when firmware state goes 1 → 0 (tilt/fall fault); all modes, also with pipeline stopped |
+| Back up | `pet_aufrappeln_<n>.wav` (effortful rise + 2 chirps, 0.8 s) on the next balancing (1) after a fall, whoever triggered the stand-up; in `pet` also after a faint |
 | Independent of | display (plays even while an emotion runs), mode |
+| Set down (254) | no scream |
 | Files | `tools/sounds.py DIR` (numpy only); `deploy/install.sh` → `/opt/xgonav/sounds` |
 | Playback | `aplay` (ALSA default, `emotion.sound_device`), WM8960 speaker; volume `amixer -c 0 sset Speaker 82%` |
 | Off | `[emotion] sound = false` |
@@ -127,7 +130,7 @@ Eyes follow the bearing of the target, gliding one position per control step, an
 
 ### Faint
 
-`vertigo`, set down, eyes shut `nap_s` (10 s) → eyes open slowly over `eyes_open_s` (3 s) while looking left and right → anyone in view: eyes shut again, wait → nobody in view for `clear_s` (2.5 s): wake-up sound `standup_warn_s` (1.5 s) → stand up (253) → `settle_s` (6 s) without gestures.
+`vertigo`, set down, eyes shut `nap_s` (10 s) → eyes open slowly over `eyes_open_s` (3 s) while looking left and right → anyone in view: eyes shut again, wait → nobody in view for `clear_s` (2.5 s): wake-up sound `standup_warn_s` (1.5 s) → stand up (253), `cute` + get-up sound → `settle_s` (6 s) without gestures. A fall (state 0) in `pet` shows `vertigo`; the scream comes from `xgonav/emotion.py`.
 
 It stands up by itself only if all hold:
 

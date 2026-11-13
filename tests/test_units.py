@@ -978,11 +978,24 @@ def test_emotion_sounds():
     assert snd == ["gefunden", "verloren", "gefunden"]
 
 
+def test_emotion_sturz_schrei_und_aufrappeln():
+    """Sturz = Firmware 1 -> 0, in allen Modi auch ohne Bildverarbeitung; Absetzen (254) schreit nicht."""
+    from xgonav.config import EmotionCfg
+    from xgonav.emotion import EmotionTrigger
+    snd = []
+    tr = EmotionTrigger(EmotionCfg(), lambda n: None, lambda: False, snd.append)
+    for t, fw in ((0, 1), (1, 254), (2, 253), (3, 1), (4, 0), (5, 0), (6, 254), (7, 253), (8, 1), (9, 1),
+                  (10, None), (11, 0), (12, 1)):
+        tr.update(float(t), "idle", None, 80, fw)
+    assert snd == ["schrei", "aufrappeln", "schrei", "aufrappeln"]
+
+
 def test_sounds_tool(tmp_path):
     import importlib.util, wave
     spec = importlib.util.spec_from_file_location("sounds", Path(__file__).resolve().parents[1] / "tools" / "sounds.py")
     m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
-    for name, fn in (("freude.wav", m.freude), ("trauer.wav", m.trauer)):
+    for name, fn in (("freude.wav", m.freude), ("trauer.wav", m.trauer), ("schrei.wav", lambda: m.schrei(1.0)),
+                     ("aufrappeln.wav", lambda: m.aufrappeln(1.0))):
         p = str(tmp_path / name)
         m.write(p, fn())
         with wave.open(p) as w:

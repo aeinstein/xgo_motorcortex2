@@ -63,6 +63,11 @@ class EmotionTrigger:
     - embarrassed: anderer Modus und seit lost_s keine Person (einmal je Verlust)
     - shy:       Akku <= battery_low %, danach alle battery_repeat_s erneut
     Läuft schon eine Emotion, wird gewartet (Bedingung bleibt gemerkt) statt unterbrochen.
+
+    Geräusche bei Sturz, in allen Modi und auch bei gestoppter Bildverarbeitung:
+    - schrei:      Firmware-Zustand 1 (balanciert) -> 0 (Kipp-/Sturzfehler, docs/LED.md)
+    - aufrappeln:  danach wieder balanciert (1), wer auch immer das Aufstehen ausgelöst hat
+    pet setzt sich selbst per 254 ab (nie 0) und spielt aufrappeln nach der Ohnmacht selbst.
     """
 
     def __init__(self, cfg: EmotionCfg, play: Callable[[str], None], busy: Callable[[], bool],
@@ -74,10 +79,27 @@ class EmotionTrigger:
         self._doubt_armed = True
         self._next_shy = 0.0
         self._mode = None
+        self._fw_mode: int | None = None
+        self._fallen = False                         # seit dem letzten Sturz nicht wieder balanciert
 
-    def update(self, now: float, mode: str, person: bool | None, battery: int | None) -> str | None:
-        """person=None: unbekannt (Bildverarbeitung gestoppt) – dann nur Akku."""
+    def _fall_tick(self, fw_mode: int | None) -> None:
+        if fw_mode is None:
+            return
+        if self._fw_mode == 1 and fw_mode == 0:
+            self._fallen = True
+            if self._sound is not None:
+                self._sound("schrei")
+        elif self._fallen and fw_mode == 1:
+            self._fallen = False
+            if self._sound is not None:
+                self._sound("aufrappeln")
+        self._fw_mode = fw_mode
+
+    def update(self, now: float, mode: str, person: bool | None, battery: int | None,
+               fw_mode: int | None = None) -> str | None:
+        """person=None: unbekannt (Bildverarbeitung gestoppt) – dann nur Akku und Sturz."""
         c = self.cfg
+        self._fall_tick(fw_mode)
         if mode != self._mode:                       # neuer Modus: Verlust neu bewerten
             self._mode = mode
             self._doubt_armed = True
@@ -134,7 +156,8 @@ class Emotions:
                        "verloren": os.path.join(cfg.sound_dir, cfg.sound_lost)}
         self.sound_enabled = bool(cfg.sound and self._aplay
                                   and all(os.path.isfile(f) for f in self.sounds.values()))
-        # Töne des Modus pet: pet_<Ereignis>_<n>.wav (tools/sounds.py), einmal beim Start gesucht
+        # Töne mit Varianten: pet_<Ereignis>_<n>.wav (tools/sounds.py), einmal beim Start gesucht;
+        # schrei und aufrappeln heißen auch so, gelten aber in allen Modi
         self.pet_sounds: dict[str, list[str]] = {}
         for f in sorted(glob.glob(os.path.join(cfg.sound_dir, "pet_*.wav"))):
             self.pet_sounds.setdefault(os.path.basename(f).split("_")[1], []).append(f)
@@ -183,6 +206,7 @@ class Emotions:
         elif self.sound_enabled and (urgent or self._snd_proc is None or self._snd_proc.poll() is not None):
             self.sound(name)
 
-    def update(self, now: float, mode: str, person: bool | None, battery: int | None) -> None:
+    def update(self, now: float, mode: str, person: bool | None, battery: int | None,
+               fw_mode: int | None = None) -> None:
         if self.enabled or self.sound_enabled:
-            self.trigger.update(now, mode, person, battery)
+            self.trigger.update(now, mode, person, battery, fw_mode)

@@ -352,6 +352,26 @@ def test_ohnmacht_augen_langsam_auf_dann_aufspringen():
     assert b.state == "wach"
 
 
+def test_aufrappeln_nach_ohnmacht():
+    b = brain(faint=True)
+    t0 = bis_nap(b)
+    t, _ = lauf(b, t0, t0 + 20.0)
+    assert b.want_stand_up
+    b.drain()
+    b.update(Sense(t=t, balancing=True))
+    assert ("sound", "aufrappeln", True) in b.drain()
+
+
+def test_sturz_nur_augen_schrei_kommt_aus_emotion():
+    """Firmware 0 (Sturz): vertigo ohne Ohnmachtston; abgesetzt von außen (254) wie bisher mit Ton."""
+    for fw, snd in ((0, []), (254, ["ohnmacht"])):
+        b = brain()
+        run(b, 0.0, 0.5)
+        _, _, evs = run(b, 0.5, 1.5, balancing=False, fw_mode=fw)
+        assert ("emotion", "vertigo", True) in evs
+        assert [e[1] for e in evs if e[0] == "sound"] == snd
+
+
 def test_jemand_im_bild_augen_wieder_zu_und_wartet():
     """Luft nicht rein: stellt sich tot und schaut erst danach wieder."""
     b = brain(faint=True)
