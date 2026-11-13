@@ -1059,6 +1059,9 @@ class App:
         w.fw_mode = self.robot.state.mode
         w.height_mm = self.robot.height_mm
         w.map_ok = self.lmap is not None
+        sch = self.ortung.last if self.ortung is not None else None
+        if sch is not None:
+            w.sound = (sch, time.monotonic() - sch.t)
         tilt = self.imu.latest_tilt() if self.imu is not None else None
         if tilt is not None and now - tilt[0] < 0.5:
             w.tilt = (math.degrees(tilt[1]), math.degrees(tilt[2]))

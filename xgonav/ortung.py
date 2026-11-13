@@ -172,6 +172,7 @@ class Schall:
     guete: float             # 0..1
     pegel_db: float          # über dem Ruhepegel
     blocks: int
+    dauer_s: float = 1.0     # Zeit vom ersten gesammelten Block bis zur Meldung (Pausen eingerechnet)
 
 
 class Ortung:
@@ -190,6 +191,7 @@ class Ortung:
         self._warm = cfg.warm_blocks
         self._n = 0                                          # gesammelte Blöcke
         self._gap = 0                                        # Blöcke mit geschlossenem Tor seit dem letzten offenen
+        self._t0 = 0.0                                       # Beginn des laufenden Sammelns
         self._peak = 0.0
         self._next_t = 0.0                                   # frühestens dann wieder sammeln
         self._mute_until = 0.0
@@ -228,6 +230,8 @@ class Ortung:
         if offen and self._n == 0 and (now < self._next_t or self._ist_stumm(now)):
             return None
         if offen:
+            if self._n == 0:
+                self._t0 = now - c.block / c.rate
             self.kern.add(pcm)
             self._n += 1
             self._gap = 0
@@ -253,7 +257,7 @@ class Ortung:
         tau = c.sign * (tau - c.tau_offset_us * 1e-6)
         sinus = max(-1.0, min(1.0, tau / self.tau_lim))
         s = Schall(t=now, winkel_deg=math.degrees(math.asin(sinus)), tau_us=tau * 1e6, guete=guete,
-                   pegel_db=10.0 * math.log10(peak / max(self.noise, 1e-9)), blocks=n)
+                   pegel_db=10.0 * math.log10(peak / max(self.noise, 1e-9)), blocks=n, dauer_s=now - self._t0)
         self.last = s
         self.verlauf.append(s)
         self.n_events += 1

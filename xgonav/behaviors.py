@@ -48,6 +48,7 @@ class World:
     tilt: tuple | None = None         # (roll, pitch) in Grad aus frischer IMU
     fw_mode: int | None = None        # /proc/XGORider/state
     height_mm: float | None = None    # Höhen-Sollwert
+    sound: tuple | None = None        # (ortung.Schall, Alter s) der letzten Schallmeldung, nur für pet
     map_ok: bool = False              # Merkkarte vorhanden
     # Engstellen (PathFollower): wall_fn(x, y, reach_m) = Abstand zur nächsten belegten Zelle der Raumkarte
     # (inf ab reach_m), gap_fn() = Mitte der Lücke voraus laut Merkkarte (x, y im Rider-KS) oder None

@@ -156,6 +156,23 @@ Tasks inside state `wach`; any person/cat/dog in view ends them (search: `like` 
 
 Driving (`seek_m`, `roam_m`, `roam_radius_m`: 0 = off, −1 = no limit; RiderPi default −1 since 2026-11-13, simulator 0 / 0 / 1.0 m) only forward at `drive_v` (0.08), with wheels, valid floor model + local map, battery ≥ `roam_battery` (40 %). Stops on: remaining distance within coast (~0.9 s × speed), budget, arc check of the local map blocked (`path_blocked`, computed only while driving), centre free space < half `roam_free_min`, no progress for 2.5 s, time-out. Three failed legs end roaming. Foot points > 5 m (occluded) are ignored, distances capped at 3.5 m. Steps are seen too late by the floor model: never near stairs. Pi cost: arithmetic per control step, plus one arc check per control step while driving.
 
+### Hearing (sound direction, [audio.md](audio.md#sound-direction-xgonavortungpy))
+
+Input: reports of `xgonav/ortung.py` (≈ 1 per second of sound, direction folded to the front). Direction counts only while balancing and only if the 1 s window began after his own last movement. `[pet] hear = false` turns all of it off. **Unit tests only, not run on the Rider** (2026-11-13).
+
+| Situation | Reaction |
+|---|---|
+| sound from the side, nobody in view | first report: eyes move there, sound `horch`. Second report from the same side: turns to it (`look_w`), listens `hear_listen_s` (3.5 s). Again from the side → the source was behind: turns by the remainder (180° − reading); at most `hear_turns` (3). From the front → done. Silence → `doubt` |
+| target appears while turning | `surprised`, found sound; then talks back (below) |
+| calling: voice keeps coming from the front (`call_events` = 3 reports), nobody in view | searches there like "search": drives at most `call_m` (1.0 m, never more than `seek_m`; simulator 0) with the same conditions as every pet drive, then looks around (finds someone standing exactly behind). Again after `call_repeat_s` (45 s) at the earliest |
+| suddenly loud (`hear_startle_db` = 20 dB) after `hear_quiet_s` (8 s) of silence, nobody in view | `surprised`, squeak, ducks 0.6 s, turns fast (`turn_w`). No retreat, no faint |
+| dozing, two reports in a row | wakes: `surprised`, `horch`, detector back to `active_hz` |
+| lying after a faint | air is not clear while someone speaks (last report < `clear_s`): eyes stay shut, no stand-up |
+| lying (set down from outside), two reports | `doubt`, `horch` (direction is useless lying down) |
+| talking back: person in view (or just found by listening) speaks ≥ `talk_min_events` (2) reports, then pauses `talk_pause_s` (1.6 s) | sound `brabbeln`, head tilt; at most every `talk_repeat_s` (7 s) |
+
+Pi cost: a few comparisons per control step; the sound direction itself as in [audio.md](audio.md).
+
 ### Faint
 
 `vertigo`, set down, eyes shut `nap_s` (10 s) → eyes open slowly over `eyes_open_s` (3 s) while looking left and right → anyone in view: eyes shut again, wait → nobody in view for `clear_s` (2.5 s): wake-up sound `standup_warn_s` (1.5 s) → stand up (253), `cute` + get-up sound → `settle_s` (6 s) without gestures. A fall (state 0) in `pet` shows `vertigo`; the scream comes from `xgonav/emotion.py`.

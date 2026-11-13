@@ -12,6 +12,13 @@ und schaut sich um, "streifen" schaut sich bei Langeweile um und fährt in Etapp
 nie weiter als roam_radius_m vom Platz, an dem er aufstand. Die Stellen rechnet er selbst aus Rädern und
 Kurs (Sense.ds, Sense.yaw), unabhängig von der Raumkarte. Jedes Ziel im Bild beendet die Aufgabe.
 
+Hören (Sense.heard, Meldungen der Schallortung): "horchen" dreht sich zu einem Geräusch (Phase "drehen"), lauscht
+nach ("lauschen") und dreht weiter, wenn es wieder von der Seite kommt (dann lag die Quelle hinten: zwei
+Mikrofone trennen vorn und hinten nicht). Hält eine Stimme von vorn an und ist niemand zu sehen, sucht er dort
+(Rufen, call_m). Plötzlich laut nach Stille: zuckt zusammen und dreht sich schnell hin. Dösend wecken ihn
+Stimmen; liegend nach einer Ohnmacht ist die Luft nicht rein, solange jemand spricht. Sieht er jemanden und
+der macht eine Sprechpause, antwortet er (Mitreden). Während er selbst dreht oder fährt, zählt keine Richtung.
+
 Sicherheit: Fahren nur innerhalb der Budgets retreat_m / creep_m (Standard 0), seek_m / roam_m (RiderPi: ohne Grenze)
 und nur mit Rädern.
 Vorwärts zusätzlich nur mit gültigem Bodenmodell und Merkkarte, weil safety() ohne Bodenmodell
@@ -69,6 +76,15 @@ class Seen:
 
 
 @dataclass
+class Heard:
+    key: float                       # Zeit der Meldung (eindeutig je Meldung)
+    bearing: float                   # rad, links +; vorn/hinten nicht unterscheidbar (|bearing| <= 90°)
+    db: float                        # über dem Ruhepegel
+    age: float = 0.0                 # s seit dem Ende des ausgewerteten Fensters
+    window_s: float = 1.0            # Länge des ausgewerteten Fensters
+
+
+@dataclass
 class Sense:
     t: float
     dt: float = 0.05
@@ -84,6 +100,7 @@ class Sense:
     yaw: float = 0.0                 # Kurs rad, links + (World.yaw)
     free_center: float | None = None  # Freiraum im Zentrum (FreeSpace.center), None = Bodenmodell ungültig
     path_blocked: bool = False       # geradeaus mit drive_v laut Merkkarte blockiert (nur während einer Fahrt)
+    heard: Heard | None = None       # letzte Schallmeldung (bleibt stehen, bis die nächste kommt)
 
 
 @dataclass
@@ -182,6 +199,21 @@ class PetBrain:
         self._stall: tuple[float, float] | None = None    # (Zeit, Weg) seit dem letzten Fortschritt
         self._fails = 0                      # Etappen in Folge, die nicht ankamen
         self._drive_t_max = 0.0
+        # Hören
+        self.n_heard = self.n_talk = self.n_called = 0
+        self._ev: tuple[Heard, bool] | None = None    # neue Meldung dieses Schritts, Richtung brauchbar?
+        self._ear_key: float | None = None
+        self._ear_last_t = -1e9              # letzte Meldung (laut genug)
+        self._ear_gap = 1e9                  # Stille vor der letzten Meldung
+        self._ear_dirs: collections.deque = collections.deque()   # (t, Peilung) brauchbarer Meldungen
+        self._ear_turns = 0
+        self._ear_front_n = 0
+        self._ear_flipped = False
+        self._ear_fast = False
+        self._ear_gaze: tuple[float, float] | None = None   # (bis wann, Peilung): Augen wandern zum Geräusch
+        self._talk_n = 0                     # Meldungen in Folge (eine Äußerung)
+        self._voice_t = -1e9                 # zuletzt eine Stimme von vorn gehört oder jemanden nach dem Horchen gesehen
+        self._flinch_until = 0.0
 
     # ---- Ausgabe ----------------------------------------------------------
     def _react(self, t: float, emotion: str | None = None, sound: str | None = None, urgent: bool = False) -> None:
@@ -252,6 +284,7 @@ class PetBrain:
             # Sturz (Firmware 0): den Schrei spielt emotion.py in allen Modi, hier nur die Augen
             self._react(s.t, "vertigo", None if s.fw_mode == 0 else "ohnmacht", urgent=True)
         self.target = self._pick(s)
+        self._ev = self._hear_new(s)
         act = {"wach": self._wach, "schreck": self._schreck, "ab": self._ab, "nap": self._nap,
                "lugen": self._lugen, "warnen": self._warnen, "hoch": self._hoch, "settle": self._settle, "liegt": self._liegt,
                "aus": self._aus}[self.state](s)
@@ -285,12 +318,20 @@ class PetBrain:
         tg = self.target
         act = Act()
         self._measure(s, tg)
+        if tg is None and self._dozing and self._ev is not None and self._talk_n >= 2:
+            log.info("pet: Stimmen wecken ihn")
+            self._dozing = False
+            self.det_hz = c.active_hz
+            self._seen_t = t                         # Stimmen zählen als Gesellschaft
+            self._react(t, "surprised", "horch")
         if tg is not None:
             if self._dozing:
                 self._dozing = False
                 self.det_hz = c.active_hz
                 self._react(t, "surprised", "gefunden")
             if self.task is not None:
+                if self.task == "horchen":
+                    self._voice_t = t                # er hat hingehört und jemanden gefunden: redet mit
                 self._task_found(s)
             self._seen_t = t
             self._bored_t = -1e9
@@ -308,11 +349,163 @@ class PetBrain:
             self._person(s, tg, act)
         self._person_presence(s, person)
         self._nudge_check(s)
+        self._hear_wach(s, tg)
+        if t < self._flinch_until and c.gestures:
+            act.height_mm = self.duck_mm
         if self.task is not None:
             self._task_step(s, act)
             return act
         self._apply_gesture(s, act, tg)
         return act
+
+    # ---- Hören --------------------------------------------------------------
+    def _hear_new(self, s: Sense) -> tuple[Heard, bool] | None:
+        """Neue Schallmeldung dieses Schritts oder None. Zweiter Wert: Richtung brauchbar (balancierend und das
+        ausgewertete Fenster begann nach der letzten eigenen Bewegung)."""
+        c, h = self.cfg, s.heard
+        if not c.hear or h is None or h.key == self._ear_key:
+            return None
+        self._ear_key = h.key
+        if h.age > 1.5 or h.db < c.hear_min_db:
+            return None
+        self._ear_gap = s.t - self._ear_last_t
+        self._ear_last_t = s.t
+        self._talk_n = self._talk_n + 1 if self._ear_gap <= c.talk_pause_s + 1.0 else 1
+        self.n_heard += 1
+        ok = s.balancing and s.t - h.age - h.window_s - 0.2 > self._move_t
+        return h, ok
+
+    def _hear_wach(self, s: Sense, tg: Seen | None) -> None:
+        c, t = self.cfg, s.t
+        if not c.hear:
+            return
+        # Mitreden: jemand ist da (zu sehen oder eben von vorn gehört) und macht eine Pause
+        da = (tg is not None and tg.cls == "person") or t - self._voice_t < 10.0
+        still = t - self._ear_last_t
+        if (c.talk and da and self.task is None and self._gesture is None and self._talk_n >= c.talk_min_events
+                and c.talk_pause_s <= still < c.talk_pause_s + 2.0 and self._ready("mitreden", t, c.talk_repeat_s)):
+            self._talk_n = 0
+            self.n_talk += 1
+            self._voice_t = t
+            self.trust = clamp(self.trust + 0.01, 0.0, 1.0)
+            self._react(t, None, "brabbeln")
+            if c.gestures and self.roll_mag > 0:
+                self._gesture = ("kopf", t, t + c.tilt_s)
+                self.roll_deg = self.rng.choice((-1.0, 1.0)) * self.roll_mag
+                self.rolled = True
+                self._blind_until = max(self._blind_until, t + c.tilt_s + 0.5)
+        if self._ev is None or tg is not None or self.task in ("suchen", "horchen") or not s.balancing:
+            return
+        h, ok = self._ev
+        front = math.radians(c.hear_front_deg)
+        # Schreck: nach Stille plötzlich laut, niemand zu sehen
+        if (h.db >= c.hear_startle_db and self._ear_gap >= c.hear_quiet_s and ok
+                and self._ready("hoerschreck", t, 20.0)):
+            log.info("pet: Schreck durch Geräusch (+%.0f dB, %.0f°)", h.db, math.degrees(h.bearing))
+            self._react(t, "surprised", "quiek", urgent=True)
+            self._flinch_until = t + 0.6
+            self._blind_until = max(self._blind_until, t + 2.0)       # Höhe ändert die Bodengeometrie
+            self._ear_dirs.clear()
+            self._hear_start(s, h.bearing, fast=True)
+            return
+        if not ok:
+            return
+        while self._ear_dirs and self._ear_dirs[0][0] < t - 4.0:
+            self._ear_dirs.popleft()
+        self._ear_dirs.append((t, h.bearing))
+        self._ear_gaze = (t + 2.5, h.bearing)                         # erst wandern nur die Augen
+        if len(self._ear_dirs) < 2:
+            if self._ready("horch", t, c.hear_repeat_s):
+                self._react(t, None, "horch")
+            return
+        a, b = self._ear_dirs[-2][1], self._ear_dirs[-1][1]
+        if (abs(a) < front and abs(b) < front) or (a * b > 0 and abs(a - b) < math.radians(40.0)):
+            if self._cool.get("horchen", -1e9) <= t:
+                self._ear_dirs.clear()
+                self._hear_start(s, 0.5 * (a + b))
+
+    def _hear_start(self, s: Sense, bearing: float, fast: bool = False) -> None:
+        if self.task is not None:
+            self._task_reset(s.t)                                     # Streifen ist vorbei
+        log.info("pet: horche, Geräusch bei %.0f°", math.degrees(bearing))
+        self._ev = None                                               # diese Meldung ist verbraucht
+        self.task = "horchen"
+        self._looks, self._fails = [], 0
+        self._ear_turns, self._ear_front_n, self._ear_flipped, self._ear_fast = 0, 0, False, fast
+        if abs(bearing) >= math.radians(self.cfg.hear_front_deg):
+            self._hear_turn(s, bearing)
+        else:
+            self._ear_front_n = 1
+            self._phase_set("lauschen", s.t)
+
+    def _hear_turn(self, s: Sense, ang: float) -> None:
+        self._ear_turns += 1
+        self._look_dir = 1.0 if ang >= 0 else -1.0
+        self._phase_set("drehen", s.t)
+        self._yaw_goal = self.yaw + ang
+
+    def _hear_end(self, s: Sense, why: str) -> None:
+        log.info("pet: horchen endet: %s", why)
+        self._cool["horchen"] = s.t + self.cfg.hear_repeat_s
+        self._task_reset(s.t)
+
+    def _hear_drehen(self, s: Sense, act: Act) -> None:
+        c, t = self.cfg, s.t
+        err = _wrap(self._yaw_goal - self.yaw)
+        if abs(err) > math.radians(6.0) and t - self._phase_t < 8.0 and c.gestures:
+            w = math.degrees(c.turn_kp * abs(err)) / self.rcfg.vyaw_limit_dps
+            act.w = math.copysign(clamp(w, c.turn_min_w, c.turn_w if self._ear_fast else max(c.look_w, c.turn_min_w)), err)
+            return
+        self._ear_fast = False
+        self._phase_set("lauschen", t)
+
+    def _hear_lauschen(self, s: Sense, act: Act) -> None:
+        """Steht und wartet auf die nächste Meldung. Von vorn: richtig gedreht (oder die Quelle liegt genau
+        hinten). Wieder von der Seite: Die Quelle lag hinten, also um den Rest herumdrehen."""
+        c, t = self.cfg, s.t
+        if self._ev is not None and self._ev[1]:
+            b = self._ev[0].bearing
+            self._phase_t = t
+            if abs(b) < math.radians(c.hear_front_deg):
+                self._ear_front_n += 1
+                self._voice_t = t
+                if self._ear_front_n >= c.call_events:
+                    if self._ready("rufen", t, c.call_repeat_s):
+                        self._hear_call(s)
+                    else:
+                        self._hear_end(s, "Stimme vorn, eben erst gesucht")
+            elif self._ear_turns < c.hear_turns:
+                ang = b
+                if not self._ear_flipped and self._ear_turns > 0:
+                    self._ear_flipped = True
+                    ang = math.copysign(math.pi - abs(b), b)
+                self._ear_front_n = 0
+                self._hear_turn(s, ang)
+            else:
+                self._react(t, "doubt", None)
+                self._hear_end(s, "Richtung bleibt unklar")
+            return
+        if t - self._phase_t > c.hear_listen_s:
+            if self._ear_front_n == 0:
+                self._react(t, "doubt", None)
+            self._hear_end(s, "still" if self._ear_front_n == 0 else "Stimme vorn, niemand zu sehen")
+
+    def _hear_call(self, s: Sense) -> None:
+        """Rufen: Die Stimme kommt weiter von vorn (oder genau von hinten) und niemand ist zu sehen. Sucht in
+        diese Richtung: fährt bis call_m, wenn er darf, und schaut sich dort um (findet auch den, der hinten steht)."""
+        c = self.cfg
+        self.n_called += 1
+        self._cool["horchen"] = s.t + c.hear_repeat_s
+        self._task_reset(s.t)
+        budget = min(self.seek_m, max(c.call_m, 0.0))
+        goal = None
+        if budget > self._stop_m() + 0.05:
+            go = budget - self._stop_m()
+            goal = (self.x + go * math.cos(self.yaw), self.y + go * math.sin(self.yaw))
+        log.info("pet: gerufen, suche vorn (%.1f m)", budget)
+        self._react(s.t, "like", "horch")
+        self._task_start("suchen", s, goal)
+        self._task_left = min(self._task_left, budget)
 
     def _lonely(self, s: Sense) -> bool:
         """Niemand in Sicht: Langeweile, Dösen, nach timeout_s absetzen. True: nichts weiter zu tun."""
@@ -664,7 +857,8 @@ class PetBrain:
         self._task_reset(s.t)
 
     def _task_step(self, s: Sense, act: Act) -> None:
-        {"fahren": self._drive, "schauen": self._look}[self.phase](s, act)
+        {"fahren": self._drive, "schauen": self._look, "drehen": self._hear_drehen,
+         "lauschen": self._hear_lauschen}[self.phase](s, act)
 
     def _drive(self, s: Sense, act: Act) -> None:
         """Zur Stelle self._goal: erst ausrichten, dann langsam fahren. Halten (dann umschauen), wenn der Rest
@@ -857,7 +1051,7 @@ class PetBrain:
         """Ist die Luft rein? Niemand im Bild, egal wie weit weg: Im Liegen stimmt die Bodengeometrie nicht,
         und wer ihn erschreckt hat, soll weg sein. Dazu Akku bekannt und die Liegelage als Referenz."""
         return (not s.seen and s.battery is not None and s.battery > self.cfg.battery_low
-                and self._nap_ref is not None)
+                and self._nap_ref is not None and s.t - self._ear_last_t >= self.cfg.clear_s)   # und niemand spricht
 
     def _nap_check(self, s: Sense) -> bool:
         """Gemeinsam für nap und warnen. False: Zustand ist schon gewechselt."""
@@ -948,6 +1142,8 @@ class PetBrain:
             if s.t - self._lying_seen_t >= self.cfg.gone_s and self._ready("liegend", s.t, 10.0):
                 self._react(s.t, "surprised", "gefunden")
             self._lying_seen_t = s.t
+        elif self._ev is not None and self._talk_n >= 2 and self._ready("liegend_hoeren", s.t, 15.0):
+            self._react(s.t, "doubt", "horch")         # liegend taugt die Richtung nicht: nur aufmerken
         return Act()
 
     def _aus(self, s: Sense) -> Act:
@@ -963,8 +1159,13 @@ class PetBrain:
         elif self.phase == "schauen" and self.target is None and self._yaw_goal is None:
             # beim Umschauen im Stehen: Blick wandert, beim Drehen schaut er in Drehrichtung
             goal = GAZE_CENTER + int(round(GAZE_CENTER * 0.8 * math.sin(2 * math.pi * (t - self._phase_t) / 2.0)))
+        elif self.task == "horchen" and self.target is None:
+            # beim Hindrehen in Drehrichtung, beim Lauschen geradeaus
+            goal = GAZE_CENTER + (int(round(GAZE_CENTER * 0.8 * self._look_dir)) if self.phase == "drehen" else 0)
         elif self.task is not None and self.target is None:
             goal = GAZE_CENTER + (int(round(GAZE_CENTER * 0.6 * self._look_dir)) if self.phase == "schauen" else 0)
+        elif self.target is None and self._ear_gaze is not None and t < self._ear_gaze[0]:
+            goal = GAZE_CENTER + int(round(clamp(self._ear_gaze[1] / GAZE_RANGE, -1.0, 1.0) * GAZE_CENTER))
         elif self.target is not None:
             # Links vom Rider ist für den, der ihn anschaut, rechts im Bild
             raw = GAZE_CENTER + clamp(self.target.bearing / GAZE_RANGE, -1.0, 1.0) * GAZE_CENTER
@@ -997,7 +1198,8 @@ class PetBrain:
                 "schreck": round(self.fright, 2), "ziel": self.target.cls if self.target else None,
                 "schrecks": self.n_startle, "ruck": self.n_retreat, "ohnmacht": self.n_faint, "liegt_weil": self.why_down or None,
                 "aufgabe": "%s/%s" % (self.task, self.phase) if self.task else None, "suchen": self.n_seek,
-                "gefunden": self.n_found, "gefahren_m": round(self.task_m, 2)}
+                "gefunden": self.n_found, "gefahren_m": round(self.task_m, 2),
+                "gehoert": self.n_heard, "gerufen": self.n_called, "mitgeredet": self.n_talk}
 
 
 class Pet(Behavior):
@@ -1035,11 +1237,15 @@ class Pet(Behavior):
 
     def step(self, w: World) -> Command:
         b = self.brain
+        heard = None
+        if w.sound is not None:
+            sch, age = w.sound
+            heard = Heard(sch.t, math.radians(sch.winkel_deg), sch.pegel_db, age, getattr(sch, "dauer_s", 1.0))
         s = Sense(t=w.t, dt=w.dt, balancing=w.balancing, battery=w.battery, seen=self.sense_tracks(w),
                   ds=w.ds, ds_measured=w.ds_measured, tilt=w.tilt, fw_mode=w.fw_mode,
                   floor_ok=w.map_ok and w.free is not None and bool(w.free.valid), height_mm=w.height_mm,
                   yaw=w.yaw, free_center=w.free.center if w.free is not None and w.free.valid else None,
-                  path_blocked=w.path_blocked)
+                  path_blocked=w.path_blocked, heard=heard)
         act = b.update(s)
         if b.want_set_down:
             b.want_set_down, self.want_set_down = False, True

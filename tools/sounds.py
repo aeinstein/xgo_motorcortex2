@@ -162,10 +162,29 @@ def dudeln(k: float) -> np.ndarray:
     return np.concatenate(parts)
 
 
+def horch(k: float) -> np.ndarray:
+    """Hat etwas gehört: kurzes, fragendes „hm?“ nach oben."""
+    return np.concatenate([_tone(520 * k, 560 * k, 0.10, harm=0.35), _silence(0.03),
+                           _tone(600 * k, 980 * k, 0.20, vib_hz=12.0, vib_depth=0.01, harm=0.3)])
+
+
+def brabbeln(k: float) -> np.ndarray:
+    """Mitreden: ein paar Silben mit Satzmelodie, am Ende je nach Variante fragend oder feststellend."""
+    silben = {1.0: ((700, 820), (900, 760), (640, 700), (820, 1000), (980, 1250)),
+              0.92: ((820, 700), (640, 760), (900, 880), (760, 620), (700, 520))}.get(
+        k, ((760, 900), (880, 700), (700, 820), (940, 760), (620, 700), (840, 1100)))
+    parts = []
+    for i, (a, b) in enumerate(silben):
+        parts += [_tone(a * k, b * k, 0.09 + 0.03 * (i % 2), vib_hz=14.0, vib_depth=0.012, harm=0.35),
+                  _silence(0.035 + 0.02 * (i % 3 == 1))]
+    return np.concatenate(parts)
+
+
 # Varianten-Töne pet_<Ereignis>_<n>.wav; schrei, aufrappeln, dudeln und angst kommen in allen Modi
 PET = {"traellern": traellern, "quiek": quiek, "kichern": kichern, "seufzen": seufzen, "wimmern": wimmern,
        "gurren": gurren, "hey": hey, "ohnmacht": ohnmacht, "aufwachen": aufwachen,
-       "schrei": schrei, "aufrappeln": aufrappeln, "dudeln": dudeln, "angst": angst}
+       "schrei": schrei, "aufrappeln": aufrappeln, "dudeln": dudeln, "angst": angst,
+       "horch": horch, "brabbeln": brabbeln}
 VARIANTS = (1.0, 0.92, 1.09)
 
 

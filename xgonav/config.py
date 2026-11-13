@@ -653,6 +653,26 @@ class PetCfg:
     # Merkkarte. Weg und Radius: 0 = aus, -1 = ohne Grenze (RiderPi seit 2026-11-13, Nutzer: keine Treppe im
     # Raum, Bodenmodell zuverlässig). Stufen sieht das Bodenmodell zu spät: nie an einer Treppe.
     look: bool = True                  # nach dem Verschwinden und bei Langeweile umschauen
+    # Hören (xgonav/ortung.py, [ortung] modes muss pet enthalten). Die Richtung taugt nur balancierend und nur
+    # für Geräusche ab ~1 s (Sprache); vorn und hinten unterscheidet er durch Drehen und erneutes Lauschen.
+    hear: bool = True
+    hear_min_db: float = 8.0           # leisere Meldungen zählen nicht
+    hear_front_deg: float = 20.0       # innerhalb davon gilt die Quelle als vorn (oder genau hinten)
+    hear_turns: int = 3                # höchstens so viele Drehungen je Geräusch
+    hear_listen_s: float = 3.5         # nach dem Drehen so lange auf das nächste Geräusch warten
+    hear_repeat_s: float = 6.0         # nach einem Horchen frühestens wieder
+    hear_startle_db: float = 20.0      # nach hear_quiet_s Stille gleich so laut und niemand zu sehen: zuckt zusammen
+    hear_quiet_s: float = 8.0
+    # Rufen: Stimme hält von vorn an und niemand ist zu sehen -> sucht dort (call_events Meldungen). Fährt
+    # höchstens call_m je Ruf und nie mehr als seek_m, mit Bodenmodell und Bahnprüfung wie das Suchen; 0 = nur umschauen.
+    call_events: int = 3
+    call_m: float = 1.0
+    call_repeat_s: float = 45.0        # frühestens dann wieder (ein Fernseher vorn ruft sonst endlos)
+    # Mitreden: nach talk_min_events Meldungen und talk_pause_s Pause antwortet er (Ton brabbeln, Kopf schief)
+    talk: bool = True
+    talk_min_events: int = 2
+    talk_pause_s: float = 1.6
+    talk_repeat_s: float = 7.0
     seek_m: float = -1.0               # je Verschwinden höchstens so weit zur letzten Stelle
     seek_stop_m: float = 0.4           # so weit vor der letzten Stelle halten
     roam_m: float = -1.0               # je Phase ohne Begegnung höchstens so weit streifen (endet spätestens mit doze_s)
@@ -837,7 +857,7 @@ class RelocCfg:
 
 # Die Defaults oben sind seit 2026-11-12 die Werte des RiderPi (/opt/xgonav/config.toml ohne Testbetrieb und
 # ohne Pfade unter /opt). Simulator und Tests rechnen mit dem früheren neutralen Stand: Config.neutral().
-NEUTRAL = {"pet.faint": False, "pet.faint_level": 1.0, "pet.seek_m": 0.0, "pet.roam_m": 0.0, "pet.roam_radius_m": 1.0,
+NEUTRAL = {"pet.call_m": 0.0, "pet.faint": False, "pet.faint_level": 1.0, "pet.seek_m": 0.0, "pet.roam_m": 0.0, "pet.roam_radius_m": 1.0,
            "robot.vx_limit": 1.5, "robot.max_v": 0.25, "robot.max_w": 0.25, "robot.reverse_gain": 1.0,
            "robot.manual_forward_gain": 1.0, "robot.level_after_standup": False, "camera.sensor_mode": "",
            "camera.scaler_crop": [], "camera.exposure_us": 4000, "camera.analogue_gain": 0.0,

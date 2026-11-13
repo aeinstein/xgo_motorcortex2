@@ -16,7 +16,7 @@ from xgonav.behaviors import World, make_behavior  # noqa: E402
 from xgonav.config import BehaviorCfg, Config, PetCfg, RobotCfg  # noqa: E402
 from xgonav.emotion import LCD_FRAME_BYTES, load_gaze  # noqa: E402
 from xgonav.geometry import CamGeometry  # noqa: E402
-from xgonav.pet import GAZE_BINS, GAZE_CENTER, LID_OPEN, LID_SHUT, Pet, PetBrain, Seen, Sense  # noqa: E402
+from xgonav.pet import GAZE_BINS, GAZE_CENTER, LID_OPEN, LID_SHUT, Heard, Pet, PetBrain, Seen, Sense  # noqa: E402
 from xgonav.robot import SimRobot  # noqa: E402
 from xgonav.tracker import Track  # noqa: E402
 
@@ -812,3 +812,174 @@ def test_verdeckter_fusspunkt_verschiebt_letzte_stelle_nicht():
     k.run(0.0, 1.0, lambda t: [seen("person", 2.0, t, vs=0)])
     k.run(1.0, 1.5, lambda t: [seen("person", 10.6, t, vs=0)])    # Fußpunkt hinter einer Kiste
     assert abs(math.hypot(*b._last_pos) - 2.0) < 1e-6
+
+
+# ---- Hören ------------------------------------------------------------------
+def hoeren(b, t0, t1, quelle=None, who=None, db=14.0, takt=1.0, ab=None, bis=None, dt=0.05, fahrbar=False, **sense):
+    """Regelschritte mit idealer Drehung und Fahrt. quelle: Weltwinkel der Schallquelle in Grad (None = still).
+    Wie die Ortung: alle takt s eine Meldung über das letzte 1-s-Fenster, Peilung nach vorn gefaltet, dazu das
+    Alter. Rückgabe: (t, yaw°, Weg m, Acts, Ereignisse)."""
+    t, yaw, weg, acts, evs = t0, 0.0, 0.0, [], []
+    ab = t0 if ab is None else ab
+    bis = t1 if bis is None else bis
+    heard, naechste, ds = None, ab + takt, 0.0
+    if fahrbar:
+        sense = dict(floor_ok=True, free_center=1.5, **sense)
+    while t < t1:
+        if quelle is not None and ab <= t <= bis and t >= naechste:
+            naechste = t + takt
+            rel = math.radians(quelle) - yaw
+            heard = Heard(key=t, bearing=math.asin(math.sin(rel)), db=db, age=0.0)
+        if heard is not None:
+            heard = dataclasses.replace(heard, age=t - heard.key)
+        a = b.update(Sense(t=t, dt=dt, seen=who(t) if who else [], yaw=yaw, ds=ds, heard=heard, **sense))
+        acts.append(a)
+        evs += b.drain()
+        yaw += math.radians(a.w * b.rcfg.vyaw_limit_dps) * dt
+        ds = a.v * b.rcfg.vx_limit * dt
+        weg += abs(ds)
+        t += dt
+    return t, math.degrees(yaw), weg, acts, evs
+
+
+def wdiff(a, b):
+    return abs((a - b + 180.0) % 360.0 - 180.0)
+
+
+@pytest.mark.parametrize("quelle", [60.0, -70.0, 150.0, -120.0, 35.0])
+def test_horchen_dreht_zur_quelle(quelle):
+    """Vorn seitlich: eine Drehung. Hinten: Die Peilung zeigt nach vorn gespiegelt, nach dem Nachlauschen dreht er herum."""
+    b = brain(call_events=99)                                    # ohne Rufen: Das dreht ihn danach weiter
+    _, yaw, weg, acts, evs = hoeren(b, 0.0, 40.0, quelle)
+    assert weg == 0.0 and all(a.v == 0.0 for a in acts)
+    assert wdiff(yaw, quelle) < 25.0, yaw
+    assert ("sound", "horch", False) in evs
+    assert b.n_heard >= 3
+
+
+def test_horchen_stille_endet_fragend():
+    """Ein Geräusch, zu dem er sich dreht, danach nichts mehr: schaut fragend und gibt auf."""
+    b = brain()
+    _, yaw, _, _, evs = hoeren(b, 0.0, 20.0, 60.0, bis=2.5)
+    assert wdiff(yaw, 60.0) < 20.0
+    assert b.task is None and ("emotion", "doubt", False) in evs
+
+
+def test_horchen_nicht_waehrend_eigener_drehung():
+    """Fenster, in denen er sich selbst gedreht hat, liefern keine Richtung."""
+    b = brain()
+    b._move_t = 100.0                                            # dreht „gerade“
+    b.update(Sense(t=0.0, yaw=0.0))
+    for k in range(1, 6):
+        b.update(Sense(t=float(k), yaw=0.0, heard=Heard(key=float(k), bearing=1.0, db=15.0)))
+    assert b.task is None and b.n_heard == 5
+
+
+def test_horchen_aus():
+    b = brain(hear=False)
+    _, yaw, _, acts, evs = hoeren(b, 0.0, 15.0, 60.0)
+    assert yaw == 0.0 and b.n_heard == 0 and not any(e[1] == "horch" for e in evs)
+
+
+def test_horchen_zu_leise():
+    b = brain()
+    _, yaw, _, _, _ = hoeren(b, 0.0, 15.0, 60.0, db=5.0)
+    assert yaw == 0.0 and b.n_heard == 0
+
+
+def test_horchen_findet_person():
+    """Taucht beim Hindrehen jemand im Bild auf, endet das Horchen mit Freude; danach redet er mit."""
+    b = brain()
+    wer = lambda t: [seen("person", 2.0, t)] if t > 6.0 else []
+    _, _, _, _, evs = hoeren(b, 0.0, 9.0, 60.0, who=wer)
+    assert ("sound", "gefunden", False) in evs and b.task is None
+    assert b._voice_t > 0
+
+
+def test_geraeusch_schreck():
+    """Nach Stille plötzlich laut von der Seite: quiekt, duckt sich kurz und dreht sich schnell hin."""
+    b = brain(call_events=99)
+    _, yaw, _, acts, evs = hoeren(b, 0.0, 12.0, -80.0, db=26.0, ab=3.0)
+    assert ("sound", "quiek", True) in evs and ("emotion", "surprised", True) in evs
+    assert any(a.height_mm == b.duck_mm for a in acts)
+    assert max(abs(a.w) for a in acts) > b.cfg.look_w
+    assert wdiff(yaw, -80.0) < 25.0
+    assert b.n_startle == 0 and b.state == "wach"                # kein Ruck zurück, keine Ohnmacht
+
+
+def test_rufen_ohne_budget_schaut_sich_um():
+    """Stimme von vorn (oder genau hinten), niemand zu sehen: Ohne Fahrbudget schaut er sich um, fährt nie."""
+    b = brain()
+    _, _, weg, acts, _ = hoeren(b, 0.0, 14.0, 0.0)
+    assert b.n_called == 1 and b.n_seek == 1 and weg == 0.0
+    assert any(a.w != 0.0 for a in acts)                         # Rundumblick
+
+
+def test_rufen_faehrt_hoechstens_call_m():
+    b = brain(seek_m=-1.0, call_m=1.0)
+    _, _, weg, acts, _ = hoeren(b, 0.0, 40.0, 0.0, fahrbar=True)
+    assert b.n_called >= 1
+    assert 0.3 < weg <= 1.0 * b.n_called + 0.05, weg
+    b = brain(seek_m=0.4, call_m=1.0)                            # seek_m bleibt die Obergrenze
+    _, _, weg, _, _ = hoeren(b, 0.0, 20.0, 0.0, bis=6.0, fahrbar=True)
+    assert weg <= 0.4 + 0.05
+    b = brain(seek_m=-1.0, call_m=1.0)                           # ohne Bodenmodell nie
+    _, _, weg, _, _ = hoeren(b, 0.0, 20.0, 0.0)
+    assert weg == 0.0
+
+
+def test_stimmen_wecken_beim_doesen():
+    b = brain()
+    t, _, _ = run(b, 0.0, b.cfg.doze_s + 2.0)
+    assert b._dozing
+    _, _, _, _, evs = hoeren(b, t, t + 4.0, 30.0)
+    assert not b._dozing and b.det_hz == b.cfg.active_hz
+    assert ("emotion", "surprised", False) in evs
+
+
+def test_mitreden_nach_sprechpause():
+    """Person im Bild spricht (drei Meldungen) und macht eine Pause: Er antwortet einmal, erst nach der Pause."""
+    b = brain()
+    wer = lambda t: [seen("person", 1.2, t)]
+    t, _, _, _, evs = hoeren(b, 0.0, 6.0, 0.0, who=wer, bis=3.2)
+    brabbel = [e for e in evs if e[1] == "brabbeln"]
+    assert len(brabbel) == 1 and b.n_talk == 1
+    assert b.roll_deg != 0.0 or b.rolled                         # Kopf schief
+    _, _, _, _, evs = hoeren(b, t, t + 3.0, None, who=wer)       # weiter Stille: nicht noch einmal
+    assert not [e for e in evs if e[1] == "brabbeln"]
+
+
+def test_mitreden_nicht_ohne_gegenueber():
+    b = brain(call_events=99)
+    _, _, _, _, evs = hoeren(b, 0.0, 3.0, None)
+    b.update(Sense(t=3.0, heard=Heard(key=3.0, bearing=1.2, db=15.0), balancing=False))    # liegend: keine Richtung
+    b.update(Sense(t=4.0, heard=Heard(key=4.0, bearing=1.2, db=15.0), balancing=False))
+    for k in range(60):
+        b.update(Sense(t=4.05 + 0.05 * k, balancing=False))
+        evs += b.drain()
+    assert not [e for e in evs if e[1] == "brabbeln"]
+
+
+def test_luft_nicht_rein_solange_jemand_spricht():
+    b = brain()
+    b._nap_ref = (0.0, 0.0, 254)
+    b._ear_last_t = 9.0
+    assert not b._air_clear(Sense(t=10.0, balancing=False))
+    assert b._air_clear(Sense(t=9.0 + b.cfg.clear_s + 0.1, balancing=False))
+
+
+def test_neue_toene_werden_erzeugt():
+    spec = importlib.util.spec_from_file_location("sounds", ROOT / "tools" / "sounds.py")
+    snd = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(snd)
+    for name in ("horch", "brabbeln"):
+        for k in snd.VARIANTS:
+            y = snd.PET[name](k)
+            assert 0.2 < len(y) / snd.RATE < 1.5 and np.abs(y).max() > 0.1
+
+
+def test_rufen_nicht_endlos():
+    """Dauerquelle vorn (Fernseher): Er sucht einmal, dann erst nach call_repeat_s wieder."""
+    b = brain()
+    hoeren(b, 0.0, 40.0, 0.0)
+    assert b.n_called == 1

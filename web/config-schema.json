@@ -2475,6 +2475,96 @@
        "hilfe": "Umschauen und Suchen (xgonav/pet.py, Aufgaben). Person weg: zur letzten bekannten Stelle, dann umschauen. Nichts zu tun: umschauen und in Etappen zur freiesten Richtung streifen. Umschauen dreht nur auf der Stelle (wie die Gesten, gestures = false schaltet es ab); gefahren wird nur mit Rädern, Bodenmodell und Merkkarte. Weg und Radius: 0 = aus, -1 = ohne Grenze (RiderPi seit 2026-11-13, Nutzer: keine Treppe im Raum, Bodenmodell zuverlässig). Stufen sieht das Bodenmodell zu spät: nie an einer Treppe. nach dem Verschwinden und bei Langeweile umschauen"
       },
       {
+       "key": "hear",
+       "typ": "bool",
+       "default": true,
+       "hilfe": "Hören (xgonav/ortung.py, [ortung] modes muss pet enthalten). Die Richtung taugt nur balancierend und nur für Geräusche ab ~1 s (Sprache); vorn und hinten unterscheidet er durch Drehen und erneutes Lauschen."
+      },
+      {
+       "key": "hear_min_db",
+       "typ": "float",
+       "default": 8.0,
+       "hilfe": "leisere Meldungen zählen nicht"
+      },
+      {
+       "key": "hear_front_deg",
+       "typ": "float",
+       "default": 20.0,
+       "hilfe": "innerhalb davon gilt die Quelle als vorn (oder genau hinten)"
+      },
+      {
+       "key": "hear_turns",
+       "typ": "int",
+       "default": 3,
+       "hilfe": "höchstens so viele Drehungen je Geräusch"
+      },
+      {
+       "key": "hear_listen_s",
+       "typ": "float",
+       "default": 3.5,
+       "hilfe": "nach dem Drehen so lange auf das nächste Geräusch warten"
+      },
+      {
+       "key": "hear_repeat_s",
+       "typ": "float",
+       "default": 6.0,
+       "hilfe": "nach einem Horchen frühestens wieder"
+      },
+      {
+       "key": "hear_startle_db",
+       "typ": "float",
+       "default": 20.0,
+       "hilfe": "nach hear_quiet_s Stille gleich so laut und niemand zu sehen: zuckt zusammen"
+      },
+      {
+       "key": "hear_quiet_s",
+       "typ": "float",
+       "default": 8.0,
+       "hilfe": ""
+      },
+      {
+       "key": "call_events",
+       "typ": "int",
+       "default": 3,
+       "hilfe": "Rufen: Stimme hält von vorn an und niemand ist zu sehen -> sucht dort (call_events Meldungen). Fährt höchstens call_m je Ruf und nie mehr als seek_m, mit Bodenmodell und Bahnprüfung wie das Suchen; 0 = nur umschauen."
+      },
+      {
+       "key": "call_m",
+       "typ": "float",
+       "default": 1.0,
+       "hilfe": ""
+      },
+      {
+       "key": "call_repeat_s",
+       "typ": "float",
+       "default": 45.0,
+       "hilfe": "frühestens dann wieder (ein Fernseher vorn ruft sonst endlos)"
+      },
+      {
+       "key": "talk",
+       "typ": "bool",
+       "default": true,
+       "hilfe": "Mitreden: nach talk_min_events Meldungen und talk_pause_s Pause antwortet er (Ton brabbeln, Kopf schief)"
+      },
+      {
+       "key": "talk_min_events",
+       "typ": "int",
+       "default": 2,
+       "hilfe": ""
+      },
+      {
+       "key": "talk_pause_s",
+       "typ": "float",
+       "default": 1.6,
+       "hilfe": ""
+      },
+      {
+       "key": "talk_repeat_s",
+       "typ": "float",
+       "default": 7.0,
+       "hilfe": ""
+      },
+      {
        "key": "seek_m",
        "typ": "float",
        "default": -1.0,
