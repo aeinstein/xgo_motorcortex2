@@ -31,6 +31,7 @@ from .route import arc_hits_zone, check as route_check, load as route_load, save
 from .robot import Robot, SpeedCtrl
 from .tracker import Tracker
 from .wlan import Helfer, HoldDetector, PressDetector, WlanSetup
+from .dunkel import Dunkelangst, helligkeit
 
 log = logging.getLogger(__name__)
 
@@ -227,6 +228,10 @@ class App:
         self._wlan_hold = HoldDetector(cfg.wlan.buttons, cfg.wlan.hold_s)
         self._wlan_cancel = PressDetector(cfg.wlan.cancel_buttons)
         self._wlan_pipeline = False                   # lief die Bildverarbeitung vorher?
+        # Dunkelangst (dunkel.py): Helligkeit je check_hz, im Regelschritt ausgewertet
+        self.dunkel = Dunkelangst(cfg.dunkel, cfg.robot.vyaw_limit_dps)
+        self._luma: float | None = None
+        self._luma_t = 0.0
 
     # ------------------------------------------------------------------
     # Diese Modi fahren auf Freiraum zu und verlassen sich auf Bodenmodell + Merkkarte.
@@ -431,6 +436,57 @@ class App:
         if self.wheels is not None:
             self.wheels.set_idle(idle)
 
+    # ------------------------------------------------------------------ Dunkelangst (dunkel.py)
+    def _dunkel_tick(self, now: float, cmd: Command) -> Command:
+        """Im Regelschritt nach safety(): Ist es zu dunkel, übernimmt die Dunkelangst (auf der Stelle drehen)."""
+        d = self.dunkel
+        if (not self.cfg.dunkel.enabled or self.behavior.name not in self.cfg.dunkel.modes
+                or not self.robot.state.balancing):
+            d.reset()
+            return cmd
+        dc = d.update(now, self._luma, self.yaw)
+        for art, name in d.drain():
+            if art == "ruhe":
+                self._dunkel_ruhe()
+            elif self.emotions is not None:
+                try:
+                    self.emotions.express(art, name, urgent=True)
+                except Exception as e:                # Anzeige darf die Regelung nie stören
+                    log.warning("Dunkelangst: %s %s: %s", art, name, e)
+        if dc is None:
+            return cmd
+        return Command(0.0, dc.w, None, dc.status)
+
+    def _dunkel_ruhe(self) -> None:
+        """Kein Licht gefunden: absetzen und Ruhemodus wie der Web-Knopf (Schlafaugen, CPU-Takt per xgo-ruhe)."""
+        log.warning("Dunkelangst: setzt sich, Ruhemodus")
+        self.robot.stop()
+        if self.emotions is not None:
+            try:
+                self.emotions.play("sleep")
+            except Exception as e:
+                log.warning("Dunkelangst: Schlafaugen: %s", e)
+        self.set_ruhe(True)
+        self.dunkel.reset()
+        self._ruhe_system(True)
+
+    def _ruhe_system(self, on: bool) -> None:
+        """CPU-Takt wie api.php (sudo xgo-ruhe on|off), im Hintergrund; fehlt die Regel, nur eine Warnung."""
+        if not os.path.exists("/usr/local/sbin/xgo-ruhe"):
+            return
+
+        def lauf():
+            import subprocess
+            try:
+                p = subprocess.run(["sudo", "-n", "/usr/local/sbin/xgo-ruhe", "on" if on else "off"],
+                                   capture_output=True, text=True, timeout=10)
+                if p.returncode != 0:
+                    log.warning("xgo-ruhe %s: %s", "on" if on else "off", (p.stdout + p.stderr).strip())
+            except (OSError, subprocess.SubprocessError) as e:
+                log.warning("xgo-ruhe: %s", e)
+
+        threading.Thread(target=lauf, name="xgo-ruhe", daemon=True).start()
+
     # ------------------------------------------------------------------ WLAN-Einrichtung (wlan.py)
     def wlan_request(self, on: bool) -> None:
         """Vom Web: WLAN-Einrichtung starten/abbrechen; übernommen in der Hauptschleife."""
@@ -454,7 +510,8 @@ class App:
 
     def _wlan_start(self, now: float) -> None:
         if self.ruhe:
-            self.set_ruhe(False)                 # Takt bleibt bis zum Wecken aus dem Web auf powersave
+            self.set_ruhe(False)
+            self._ruhe_system(False)             # CPU-Takt wieder hoch (wie Wecken im Web)
         with self._mode_lock:
             self._pending_mode = None
         self._pet_leave()
@@ -656,6 +713,9 @@ class App:
     def _step(self, f) -> None:
         tm = _Marks()
         self._apply_pending_mode()
+        if self.cfg.dunkel.enabled and f.t - self._luma_t >= 1.0 / max(0.1, self.cfg.dunkel.check_hz):
+            self._luma_t = f.t
+            self._luma = helligkeit(f.bgr)
 
         excl = [t.box for t in self.tracker.tracks]
         ego = self.ego.update(f.idx, f.t, f.bgr, excl)
@@ -788,6 +848,7 @@ class App:
                 cmd = self._manual_cmd()
             else:
                 cmd = safety(self.behavior.step(w), w, self.cfg.behavior)
+                cmd = self._dunkel_tick(now, cmd)
                 cmd = self._arc_check(cmd)
             self._drive(cmd)
             # pet: Abducken beim Schreck darf nicht bis zu 1 s warten; set_height schreibt nur Änderungen

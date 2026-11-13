@@ -685,6 +685,31 @@ class RuheCfg:
 
 
 @dataclass
+class DunkelCfg:
+    # Dunkelangst (xgonav/dunkel.py): Bild zu dunkel -> Angst, umdrehen, Licht suchen; sonst absetzen + Ruhemodus.
+    # Nur in diesen Modi und nur balancierend. Helligkeit = Mittelwert 0..255 (jedes 8. Pixel), check_hz.
+    enabled: bool = True
+    modes: list = field(default_factory=lambda: ["explore", "patrol", "home", "follow", "approach", "pet"])
+    # Gemessen an Rohfahrten am RiderPi (2026-11-13): Abendlicht im Raum 11..28, unter Möbeln/Licht aus 2..5
+    dark_level: float = 7.0            # darunter dunkel
+    light_level: float = 11.0          # beim Prüfen darüber hell (Abstand gegen Flattern)
+    dark_s: float = 2.0                # so lange dunkel, bevor er Angst bekommt
+    check_hz: float = 4.0
+    fright_s: float = 1.5              # Angst: so lange stehen (Emotion, Ton)
+    settle_s: float = 1.5              # nach dem Drehen warten, bis die Belichtung nachgeregelt hat
+    turn_kp: float = 1.5               # 1/s, wie pet
+    turn_w: float = 0.20
+    turn_min_w: float = 0.06
+    tol_deg: float = 8.0
+    turn_timeout_s: float = 10.0
+    max_events: int = 3                # so oft in events_window_s ins Dunkle: gleich aufgeben
+    events_window_s: float = 300.0
+    emotion: str = "angst"
+    sound: str = "angst"
+    sound_relief: str = "kichern"
+
+
+@dataclass
 class WlanCfg:
     # WLAN-Einrichtung über die Tasten (xgonav/wlan.py): Tasten halten -> WLAN-QR vor die Kamera, sonst Hotspot.
     # Kostet ohne Einrichtung nichts (der Tastenwert wird ohnehin gelesen); währenddessen ruht die Bildverarbeitung.
@@ -813,6 +838,7 @@ class Config:
     pet: PetCfg = field(default_factory=PetCfg)
     ruhe: RuheCfg = field(default_factory=RuheCfg)
     wlan: WlanCfg = field(default_factory=WlanCfg)
+    dunkel: DunkelCfg = field(default_factory=DunkelCfg)
     control_hz: float = 20.0
 
     @classmethod

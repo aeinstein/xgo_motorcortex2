@@ -2726,6 +2726,128 @@
        "hilfe": "Treiber-Hauptschleife (Zustand, Akku); normal 200"
       }
      ]
+    },
+    {
+     "name": "dunkel",
+     "doc": "",
+     "felder": [
+      {
+       "key": "enabled",
+       "typ": "bool",
+       "default": true,
+       "hilfe": "Dunkelangst (xgonav/dunkel.py): Bild zu dunkel -> Angst, umdrehen, Licht suchen; sonst absetzen + Ruhemodus. Nur in diesen Modi und nur balancierend. Helligkeit = Mittelwert 0..255 (jedes 8. Pixel), check_hz."
+      },
+      {
+       "key": "modes",
+       "typ": "liste",
+       "elem": "zahl",
+       "default": [
+        "explore",
+        "patrol",
+        "home",
+        "follow",
+        "approach",
+        "pet"
+       ],
+       "hilfe": ""
+      },
+      {
+       "key": "dark_level",
+       "typ": "float",
+       "default": 7.0,
+       "hilfe": "Gemessen an Rohfahrten am RiderPi (2026-11-13): Abendlicht im Raum 11..28, unter Möbeln/Licht aus 2..5 darunter dunkel"
+      },
+      {
+       "key": "light_level",
+       "typ": "float",
+       "default": 11.0,
+       "hilfe": "beim Prüfen darüber hell (Abstand gegen Flattern)"
+      },
+      {
+       "key": "dark_s",
+       "typ": "float",
+       "default": 2.0,
+       "hilfe": "so lange dunkel, bevor er Angst bekommt"
+      },
+      {
+       "key": "check_hz",
+       "typ": "float",
+       "default": 4.0,
+       "hilfe": ""
+      },
+      {
+       "key": "fright_s",
+       "typ": "float",
+       "default": 1.5,
+       "hilfe": "Angst: so lange stehen (Emotion, Ton)"
+      },
+      {
+       "key": "settle_s",
+       "typ": "float",
+       "default": 1.5,
+       "hilfe": "nach dem Drehen warten, bis die Belichtung nachgeregelt hat"
+      },
+      {
+       "key": "turn_kp",
+       "typ": "float",
+       "default": 1.5,
+       "hilfe": "1/s, wie pet"
+      },
+      {
+       "key": "turn_w",
+       "typ": "float",
+       "default": 0.2,
+       "hilfe": ""
+      },
+      {
+       "key": "turn_min_w",
+       "typ": "float",
+       "default": 0.06,
+       "hilfe": ""
+      },
+      {
+       "key": "tol_deg",
+       "typ": "float",
+       "default": 8.0,
+       "hilfe": ""
+      },
+      {
+       "key": "turn_timeout_s",
+       "typ": "float",
+       "default": 10.0,
+       "hilfe": ""
+      },
+      {
+       "key": "max_events",
+       "typ": "int",
+       "default": 3,
+       "hilfe": "so oft in events_window_s ins Dunkle: gleich aufgeben"
+      },
+      {
+       "key": "events_window_s",
+       "typ": "float",
+       "default": 300.0,
+       "hilfe": ""
+      },
+      {
+       "key": "emotion",
+       "typ": "str",
+       "default": "angst",
+       "hilfe": ""
+      },
+      {
+       "key": "sound",
+       "typ": "str",
+       "default": "angst",
+       "hilfe": ""
+      },
+      {
+       "key": "sound_relief",
+       "typ": "str",
+       "default": "kichern",
+       "hilfe": ""
+      }
+     ]
     }
    ]
   },

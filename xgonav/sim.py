@@ -196,6 +196,8 @@ class SimWorld(FrameSource):
         super().__init__(cfg)
         self.robot = robot
         self.dynamics = dynamics
+        # dunkle Zonen (x0, y0, x1, y1, Restlicht 0..1): Dunkelangst prüfen (tests/sim_run.py --dunkel)
+        self.dark_zones: list[tuple[float, float, float, float, float]] = []
         self._vf = self._wf = 0.0
         self.scene = scene or SimScene()
         self.segs = self.scene.segments()
@@ -384,9 +386,28 @@ class SimWorld(FrameSource):
             kern = np.zeros((kz, kz), np.float32)
             kern[:, kz // 2] = 1.0 / kz
             img = cv2.filter2D(img, -1, kern)
+        if self.dark_zones:
+            k = self.light_factor()
+            if k < 0.999:
+                img = cv2.convertScaleAbs(img, alpha=k)
         if box is not None:
             box = tuple(v * self.rs for v in box)
         return img, box
+
+    def _licht_bei(self, x: float, y: float) -> float:
+        k = 1.0
+        for x0, y0, x1, y1, rest in self.dark_zones:
+            d = min(x - x0, x1 - x, y - y0, y1 - y)       # > 0 innen
+            tief = min(max(d / 0.3, 0.0), 1.0)              # 30 cm Übergang
+            k = min(k, 1.0 - tief * (1.0 - rest))
+        return k
+
+    def light_factor(self) -> float:
+        """Licht im Bild: wo die Kamera steht und wohin sie schaut (1,5 m voraus); aus einer dunklen Ecke
+        heraus in den hellen Raum ist es heller als in die Ecke hinein."""
+        cx, cy = getattr(self, "_cam_xy", (self.x, self.y))
+        ax, ay = cx + 1.5 * math.cos(self.th), cy + 1.5 * math.sin(self.th)
+        return 0.35 * self._licht_bei(cx, cy) + 0.65 * self._licht_bei(ax, ay)
 
     def _draw_person(self, img, f, th, depth, W, H):
         pr = self.person

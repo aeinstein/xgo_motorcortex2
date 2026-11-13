@@ -1,4 +1,4 @@
-"""Closed-Loop-Szenarien im Simulator. python3 tests/sim_run.py follow|approach|explore|home [sekunden] [video.mp4] [--imu] [--fs-thread] [--wheels] [--kanten] [--dyn] [--rider] [--scene raum|zwei|spalt] [--video-step n] [--set a.b=wert] [--vx-true m/s]
+"""Closed-Loop-Szenarien im Simulator. python3 tests/sim_run.py follow|approach|explore|home [sekunden] [video.mp4] [--dunkel x0,y0,x1,y1[,rest]] [--imu] [--fs-thread] [--wheels] [--kanten] [--dyn] [--rider] [--scene raum|zwei|spalt] [--video-step n] [--set a.b=wert] [--vx-true m/s]
 
 home: erste Hälfte explore, dann Modus home (zurück zum Startpunkt der Raumkarte).
 --dyn: Trägheit wie am RiderPi (Totzone, Nachlaufen der Drehung, Rückrollen beim Anfahren).
@@ -48,7 +48,7 @@ def pick_route(gm, cfg, n=3):
 
 
 def run(mode="follow", secs=25.0, video=None, shake=1.0, quiet=True, imu=False, fs_thread=False, wheels=False, vx_true=None, method=None, dyn=False,
-        overrides=None, scene="raum", record=None, phantoms=0, animal="person", speed=None, video_step=1):
+        overrides=None, scene="raum", record=None, phantoms=0, animal="person", speed=None, video_step=1, dunkel=None):
     """overrides: siehe apply_overrides. record: Liste, bekommt je Eintrag in die Raumkarte die Beobachtung
     (tools/map_eval.py spielt sie offline ab); dafür trägt die Karte im Regelschritt ein.
     animal, speed (m/s): nur Modus pet, wer auf den Rider zukommt (person, cat, dog)."""
@@ -79,6 +79,9 @@ def run(mode="follow", secs=25.0, video=None, shake=1.0, quiet=True, imu=False, 
                      mount_offset_mm=cfg.camera.mount_offset_mm,
                      vx_mps=vx_true if vx_true is not None else cfg.robot.vx_limit,  # vx_true: echte m/s je Einheit
                      dynamics=dyn, scene=SCENES[scene]())
+    if dunkel:                               # dunkle Zone (x0, y0, x1, y1[, Restlicht]): Dunkelangst
+        z = tuple(dunkel) + ((0.04,) if len(dunkel) == 4 else ())
+        world.dark_zones.append(z)
     if imu:
         cfg.imu.pitch_ref_deg = 2.5   # wie nach calibrate.py wall
     if not wheels:
@@ -179,7 +182,9 @@ def run(mode="follow", secs=25.0, video=None, shake=1.0, quiet=True, imu=False, 
                 "pose_fehler_m": round(math.hypot(ex - world.x, ey - world.y), 3),
                 "kurs_fehler_deg": round(math.degrees((th0 + gm.th - world.th + math.pi) % (2 * math.pi) - math.pi), 1)}
     out = {"imu_sync": (app.imu_sync.reliable, app.imu_sync.sign, round(app.imu_sync.offset * 1000), round(app.imu_sync.corr, 2)) if imu else None,
-           "collisions": world.collisions, "coll_frames": world.coll_frames, "dist_m": round(world.dist_travelled, 2), "frames": len(L),
+           "collisions": world.collisions, "coll_frames": world.coll_frames,
+           "dunkel": {"angst": app.dunkel.n_angst, "licht": app.dunkel.n_licht, "aufgeben": app.dunkel.n_aufgeben,
+                      "ruhe": app.ruhe} if dunkel else None, "dist_m": round(world.dist_travelled, 2), "frames": len(L),
            "loop_ms": round(app._loop_ms, 1), "odom": app.odom_src, "odom_m": round(app.odom_m, 2),
            # mittleres Tempo in Fahrt (m/s): mit robot.speed_ctrl unabhängig davon, wie schwer er rollt (--vx-true)
            "v_fahrt": round(float(np.mean([r["v"] for r in L if r["v"] > 0.05] or [0.0])), 3),
@@ -218,7 +223,7 @@ def run(mode="follow", secs=25.0, video=None, shake=1.0, quiet=True, imu=False, 
 if __name__ == "__main__":
     mode = sys.argv[1] if len(sys.argv) > 1 else "follow"
     secs = float(sys.argv[2]) if len(sys.argv) > 2 and not sys.argv[2].startswith("--") else 25
-    args = [a for i, a in enumerate(sys.argv) if i >= 3 and not a.startswith("--") and sys.argv[i - 1] not in ("--set", "--scene", "--phantoms", "--animal", "--speed", "--video-step", "--vx-true")]
+    args = [a for i, a in enumerate(sys.argv) if i >= 3 and not a.startswith("--") and sys.argv[i - 1] not in ("--set", "--scene", "--phantoms", "--animal", "--speed", "--video-step", "--vx-true", "--dunkel")]
     rider = "--rider" in sys.argv
     ov = dict(RIDER) if rider else {}
     for i, a in enumerate(sys.argv):
@@ -233,4 +238,5 @@ if __name__ == "__main__":
               video_step=int(sys.argv[sys.argv.index("--video-step") + 1]) if "--video-step" in sys.argv else 1,
               phantoms=int(sys.argv[sys.argv.index("--phantoms") + 1]) if "--phantoms" in sys.argv else 0,
               animal=sys.argv[sys.argv.index("--animal") + 1] if "--animal" in sys.argv else "person",
-              speed=float(sys.argv[sys.argv.index("--speed") + 1]) if "--speed" in sys.argv else None))
+              speed=float(sys.argv[sys.argv.index("--speed") + 1]) if "--speed" in sys.argv else None,
+              dunkel=[float(v) for v in sys.argv[sys.argv.index("--dunkel") + 1].split(",")] if "--dunkel" in sys.argv else None))

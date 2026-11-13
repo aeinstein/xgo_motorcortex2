@@ -384,6 +384,23 @@ def surprised(t: float, T: float):
     return dict(), l, r
 
 
+def angst(t: float, T: float):
+    """Dunkelangst (xgonav/dunkel.py): Augen weit auf, kleine Pupillen huschen links und rechts, besorgte
+    Lider (innen hoch), dabei Zittern."""
+    e = envelope(t, T, 0.15, 0.4)
+    z = dict(sc=1.08, top=0.14, tslope=14, pupil=0.30, hl=1.0, dy=-4)
+    l, r = pose(neutral(), z, e), pose(neutral(), z, e)
+    blick = track(t, [(0.2, 0), (0.4, -0.7), (0.85, -0.7), (1.0, 0.7), (1.45, 0.7), (1.6, -0.5), (1.95, -0.5),
+                      (2.1, 0)])
+    zittern = 2.2 * math.sin(2 * math.pi * 13 * t) * e
+    for p in (l, r):
+        p["ppx"] = blick * e
+        p["ppy"] = 0.1 * e
+        p["dx"] += zittern + 6 * blick * e
+        p["blink"] = blink(t, 2.25, 0.14)
+    return dict(), l, r
+
+
 def vertigo(t: float, T: float):
     e = envelope(t, T, 0.3, 0.35)
     l, r = neutral(), neutral()
@@ -397,6 +414,7 @@ def vertigo(t: float, T: float):
 # Name -> (Funktion, Dauer in s)
 EMOTIONS = {
     "Angry": (angry, 2.4),
+    "angst": (angst, 2.6),
     "cute": (cute, 3.0),
     "doubt": (doubt, 3.0),
     "embarrassed": (embarrassed, 2.8),

@@ -56,12 +56,13 @@ python tools/eyes.py --gaze DIR      # eye atlas for mode pet: 11 gaze positions
 | Color | default turquoise `0,225,210` |
 | `--png` | also writes `<Name><n>.png` |
 | `--preview DIR` | contact sheet `<Name>.png` and `<Name>.mp4` per emotion |
-| Runtime | ~7 s on a PC for all 13; needs only numpy + OpenCV |
+| Runtime | ~7 s on a PC for all 14; needs only numpy + OpenCV |
 | Install | `deploy/install.sh` → `/opt/xgonav/emotions`; the web UI lists this directory |
 
 | Emotion | Eyes |
 |---|---|
 | `Angry` | lids slanted down toward the center, trembling, two pulses |
+| `angst` | wide eyes, small pupils darting left/right, worried lids (inner corners up), trembling (fear of the dark) |
 | `cute` | large round eyes without pupils, smiling lower edge, gentle bob, head tilt, short `^ ^` squint |
 | `doubt` | one eye raised, other squinted, glance right then left |
 | `embarrassed` | darting glances left/right, then trembling `> <` |
@@ -106,6 +107,19 @@ python tools/eyes.py --gaze DIR      # eye atlas for mode pet: 11 gaze positions
 - Pipeline stopped → person unknown → battery trigger only.
 - Emotion already playing → trigger waits (not interrupted).
 - Manual: web UI → Extras → Emotionen (`POST api.php?a=emotion&name=..`).
+
+## Fear of the dark (`xgonav/dunkel.py`)
+
+| Item | Value |
+|---|---|
+| Active | `[dunkel] modes` (explore, patrol, home, follow, approach, pet), balancing only; overrides the mode after `safety()`, before the arc check |
+| Brightness | mean of every 8th pixel (80×60), `check_hz` 4; RiderPi raw runs 2026-11-13: evening room light 11–28, under furniture / lights off 2–5 |
+| Dark | < `dark_level` 7 for `dark_s` 2 s → stand, emotion `angst` + sound `pet_angst_<n>.wav` (3 shaky "ee", long wavering fall), `fright_s` 1.5 s |
+| Search light | turn on the spot 180° (back), then +90° (right), then +180° (left); after each turn wait `settle_s` 1.5 s (auto exposure), light = ≥ `light_level` 11 |
+| Light found | sound `kichern`, the mode continues |
+| No light | stop, emotion `sleep`, set down (254), sleep mode (`set_ruhe`), CPU governor via `sudo xgo-ruhe on` (rule `deploy/sudoers-xgonav-ruhe`, also for `aeinstein`) |
+| Repeated | `max_events` 3 frights within `events_window_s` 300 s → gives up at once (explore would drive back into the dark area) |
+| Simulator | `tests/sim_run.py explore 120 --wheels --dunkel 3.5,3,6,6[,rest]`: dark zone, light from camera position and 1.5 m ahead |
 
 ## Mode `pet` (`xgonav/pet.py`)
 
