@@ -164,7 +164,7 @@ Input: reports of `xgonav/ortung.py` (≈ 1 per second of sound, direction folde
 |---|---|
 | sound from the side, nobody in view | first report: eyes move there, sound `horch`. Second report from the same side: turns to it (`look_w`), listens `hear_listen_s` (3.5 s). Again from the side → the source was behind: turns by the remainder (180° − reading); at most `hear_turns` (3). From the front → done. Silence → `doubt` |
 | target appears while turning | `surprised`, found sound; then talks back (below) |
-| calling: voice keeps coming from the front (`call_events` = 3 reports), nobody in view | searches there like "search": drives at most `call_m` (1.0 m, never more than `seek_m`; simulator 0) with the same conditions as every pet drive, then looks around (finds someone standing exactly behind). Again after `call_repeat_s` (45 s) at the earliest |
+| calling: voice keeps coming from the front (`call_events` = 3 reports), nobody in view | searches there like "search": drives at most `call_m` (RiderPi −1 = no limit, then one 3 m leg per call; never more than `seek_m`; simulator 0) with the same conditions as every pet drive, then looks around (finds someone standing exactly behind). Again after `call_repeat_s` (45 s) at the earliest |
 | suddenly loud (`hear_startle_db` = 20 dB) after `hear_quiet_s` (8 s) of silence, nobody in view | `surprised`, squeak, ducks 0.6 s, turns fast (`turn_w`). No retreat, no faint |
 | dozing, two reports in a row | wakes: `surprised`, `horch`, detector back to `active_hz` |
 | lying after a faint | air is not clear while someone speaks (last report < `clear_s`): eyes stay shut, no stand-up |

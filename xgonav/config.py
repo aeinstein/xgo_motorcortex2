@@ -664,9 +664,10 @@ class PetCfg:
     hear_startle_db: float = 20.0      # nach hear_quiet_s Stille gleich so laut und niemand zu sehen: zuckt zusammen
     hear_quiet_s: float = 8.0
     # Rufen: Stimme hält von vorn an und niemand ist zu sehen -> sucht dort (call_events Meldungen). Fährt
-    # höchstens call_m je Ruf und nie mehr als seek_m, mit Bodenmodell und Bahnprüfung wie das Suchen; 0 = nur umschauen.
+    # höchstens call_m je Ruf und nie mehr als seek_m, mit Bodenmodell und Bahnprüfung wie das Suchen; 0 = nur
+    # umschauen, -1 = ohne Grenze (dann je Ruf eine Etappe von 3 m; RiderPi seit 2026-11-13, Nutzer: keine Treppe).
     call_events: int = 3
-    call_m: float = 1.0
+    call_m: float = -1.0
     call_repeat_s: float = 45.0        # frühestens dann wieder (ein Fernseher vorn ruft sonst endlos)
     # Mitreden: nach talk_min_events Meldungen und talk_pause_s Pause antwortet er (Ton brabbeln, Kopf schief)
     talk: bool = True

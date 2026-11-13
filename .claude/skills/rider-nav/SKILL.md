@@ -40,6 +40,8 @@ $R python3 /root/rider_nav.py zustand
 3. **Aufspringen + Kalibrierung abwarten:** `$R python3 /root/rider_nav.py aufstehen`
    - schreibt 253, wartet bis `state` = 1, dann mindestens 6 s (Aufschwung ≤ 2 s, Nivellier-Impuls 2,5–5,5 s)
      und bei `[horizon]` bis die Standreferenz `gültig` ist (3 s Einschwingen + 3 s Mittel im Stillstand).
+   - `aufstehen` schaltet vorher auf `idle` (`/stop`). Soll er danach in einem Modus laufen (z. B. `pet`):
+     nach „bereit“ `curl -s -X POST 'localhost:8088/mode?name=pet'`, sonst steht er nur (2026-11-13).
    - In dieser Zeit nichts schicken. Körperhöhe steht danach auf Firmware-Mitte 128 (≈ 90 mm); Höhe nur auf
      Ansage ändern, nie unter Minimum + 10 mm (u8 ≥ 55 wird gefahren), danach kalibriert die Standreferenz neu.
 4. **Fahrbefehle** (je einzeln, Ergebnis dem Nutzer melden):

@@ -45,6 +45,7 @@ CLOSE_M = 0.3                        # Fußpunkt unten abgeschnitten: so nah etw
 # verworfen, bis dahin gekappt; die Richtung stimmt trotzdem, und gefahren wird ohnehin nur seek_m.
 POS_DROP_M, POS_CAP_M = 5.0, 3.5
 STALL_S, STALL_M = 2.5, 0.02         # Fahrt befohlen, aber so lange kaum Weg: Bahnprüfung bremst, Etappe aus
+CALL_LEG_M = 3.0                     # Rufen ohne Grenze: je Ruf so weit auf die Stimme zu
 GAZE_BINS = 11                       # Blickrichtungen im Augen-Atlas (tools/eyes.py --gaze): 10 Stufen, ungerade für eine exakte Mitte
 GAZE_CENTER = GAZE_BINS // 2
 BLINK_S = 0.4                        # Lidschlag über alle Lidstellungen; 20 Hz Regelschritt: je 50 ms eine Stufe
@@ -497,12 +498,12 @@ class PetBrain:
         self.n_called += 1
         self._cool["horchen"] = s.t + c.hear_repeat_s
         self._task_reset(s.t)
-        budget = min(self.seek_m, max(c.call_m, 0.0))
+        budget = min(self.seek_m, _limit(c.call_m))
         goal = None
         if budget > self._stop_m() + 0.05:
-            go = budget - self._stop_m()
+            go = min(budget, CALL_LEG_M) - self._stop_m()
             goal = (self.x + go * math.cos(self.yaw), self.y + go * math.sin(self.yaw))
-        log.info("pet: gerufen, suche vorn (%.1f m)", budget)
+        log.info("pet: gerufen, suche vorn (Budget %.1f m)", budget)
         self._react(s.t, "like", "horch")
         self._task_start("suchen", s, goal)
         self._task_left = min(self._task_left, budget)

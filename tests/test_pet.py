@@ -923,6 +923,9 @@ def test_rufen_faehrt_hoechstens_call_m():
     b = brain(seek_m=0.4, call_m=1.0)                            # seek_m bleibt die Obergrenze
     _, _, weg, _, _ = hoeren(b, 0.0, 20.0, 0.0, bis=6.0, fahrbar=True)
     assert weg <= 0.4 + 0.05
+    b = brain(seek_m=-1.0, call_m=-1.0)                          # ohne Grenze: je Ruf eine Etappe
+    _, _, weg, _, _ = hoeren(b, 0.0, 60.0, 0.0, bis=6.0, fahrbar=True)
+    assert 1.5 < weg <= 3.0 + 0.05, weg
     b = brain(seek_m=-1.0, call_m=1.0)                           # ohne Bodenmodell nie
     _, _, weg, _, _ = hoeren(b, 0.0, 20.0, 0.0)
     assert weg == 0.0

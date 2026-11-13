@@ -2526,12 +2526,12 @@
        "key": "call_events",
        "typ": "int",
        "default": 3,
-       "hilfe": "Rufen: Stimme hält von vorn an und niemand ist zu sehen -> sucht dort (call_events Meldungen). Fährt höchstens call_m je Ruf und nie mehr als seek_m, mit Bodenmodell und Bahnprüfung wie das Suchen; 0 = nur umschauen."
+       "hilfe": "Rufen: Stimme hält von vorn an und niemand ist zu sehen -> sucht dort (call_events Meldungen). Fährt höchstens call_m je Ruf und nie mehr als seek_m, mit Bodenmodell und Bahnprüfung wie das Suchen; 0 = nur umschauen, -1 = ohne Grenze (dann je Ruf eine Etappe von 3 m; RiderPi seit 2026-11-13, Nutzer: keine Treppe)."
       },
       {
        "key": "call_m",
        "typ": "float",
-       "default": 1.0,
+       "default": -1.0,
        "hilfe": ""
       },
       {
