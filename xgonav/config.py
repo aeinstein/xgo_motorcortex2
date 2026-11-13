@@ -361,6 +361,13 @@ class EmotionCfg:
     sound_found: str = "freude.wav"
     sound_lost: str = "trauer.wav"
     sound_device: str = ""
+    # „Dum-di-dum-di-dum“ (pet_dudeln_*.wav), solange er kartiert oder sucht: in diesen Modi sowie in pet
+    # beim Suchen und Streifen. Erst nach dudeln_start_s, dann etwa alle dudeln_s (±30 %), nie über ein
+    # anderes Geräusch.
+    dudeln: bool = True
+    dudeln_modes: list = field(default_factory=lambda: ["explore", "patrol", "home"])
+    dudeln_start_s: float = 1.5
+    dudeln_s: float = 25.0
 
 
 @dataclass

@@ -995,12 +995,28 @@ def test_sounds_tool(tmp_path):
     spec = importlib.util.spec_from_file_location("sounds", Path(__file__).resolve().parents[1] / "tools" / "sounds.py")
     m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
     for name, fn in (("freude.wav", m.freude), ("trauer.wav", m.trauer), ("schrei.wav", lambda: m.schrei(1.0)),
-                     ("aufrappeln.wav", lambda: m.aufrappeln(1.0))):
+                     ("aufrappeln.wav", lambda: m.aufrappeln(1.0))) + tuple(
+                        (f"dudeln{k}.wav", lambda k=k: m.dudeln(k)) for k in m.VARIANTS):
         p = str(tmp_path / name)
         m.write(p, fn())
         with wave.open(p) as w:
             assert w.getframerate() == m.RATE and w.getnchannels() == 1
             assert 0.3 < w.getnframes() / m.RATE < 1.5
+
+
+def test_dudler():
+    """„Dum-di-dum“: erst nach start_s, dann etwa alle every_s; Ende der Suche setzt zurück."""
+    import random
+    from xgonav.emotion import Dudler
+    d = Dudler(1.5, 25.0, random.Random(1))
+    assert not d.update(0.0, True)
+    assert not d.update(1.4, True)
+    assert d.update(1.5, True)
+    t = [x / 10 for x in range(16, 600)]
+    hits = [x for x in t if d.update(x, True)]
+    assert all(17.5 - 0.1 <= b - a <= 32.5 + 0.1 for a, b in zip([1.5] + hits, hits)) and len(hits) >= 1
+    assert not d.update(61.0, False)
+    assert not d.update(61.1, True) and not d.update(62.0, True) and d.update(62.6, True)
 
 
 def test_exposure_runtime_limits():

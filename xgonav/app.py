@@ -1040,8 +1040,9 @@ class App:
     def _emotion_tick(self, person: bool | None) -> None:
         if self.emotions is not None and not self.ruhe:
             try:
+                brain = getattr(self.behavior, "brain", None)          # pet: sucht oder streift
                 self.emotions.update(time.monotonic(), self.behavior.name, person, self.robot.state.battery,
-                                     self.robot.state.mode)
+                                     self.robot.state.mode, sucht=getattr(brain, "task", None) is not None)
             except Exception as e:                  # Anzeige darf die Regelung nie stören
                 log.warning("Emotion: %s", e)
 

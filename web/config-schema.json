@@ -2677,6 +2677,35 @@
        "typ": "str",
        "default": "",
        "hilfe": ""
+      },
+      {
+       "key": "dudeln",
+       "typ": "bool",
+       "default": true,
+       "hilfe": "„Dum-di-dum-di-dum“ (pet_dudeln_*.wav), solange er kartiert oder sucht: in diesen Modi sowie in pet beim Suchen und Streifen. Erst nach dudeln_start_s, dann etwa alle dudeln_s (±30 %), nie über ein anderes Geräusch."
+      },
+      {
+       "key": "dudeln_modes",
+       "typ": "liste",
+       "elem": "zahl",
+       "default": [
+        "explore",
+        "patrol",
+        "home"
+       ],
+       "hilfe": ""
+      },
+      {
+       "key": "dudeln_start_s",
+       "typ": "float",
+       "default": 1.5,
+       "hilfe": ""
+      },
+      {
+       "key": "dudeln_s",
+       "typ": "float",
+       "default": 25.0,
+       "hilfe": ""
       }
      ]
     },

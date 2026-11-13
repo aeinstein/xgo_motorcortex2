@@ -97,6 +97,7 @@ python tools/eyes.py --gaze DIR      # eye atlas for mode pet: 11 gaze positions
 | Lost | `trauer.wav` (2 falling "wah", 1.1 s) after `lost_s` (2 s) without person |
 | Fall | `pet_schrei_<n>.wav` (scream, 0.9 s) when firmware state goes 1 → 0 (tilt/fall fault); all modes, also with pipeline stopped |
 | Back up | `pet_aufrappeln_<n>.wav` (effortful rise + 2 chirps, 0.8 s) on the next balancing (1) after a fall, whoever triggered the stand-up; in `pet` also after a faint |
+| Mapping / searching | `pet_dudeln_<n>.wav` (cheerful "dum-di-dum-di-dum", 3 melodies, ~0.9 s) in `[emotion] dudeln_modes` (explore, patrol, home) and in `pet` while searching or roaming; first after `dudeln_start_s` 1.5 s, then every `dudeln_s` 25 s ±30 %; skipped while another sound plays (`emotion.Dudler`) |
 | Independent of | display (plays even while an emotion runs), mode |
 | Set down (254) | no scream |
 | Files | `tools/sounds.py DIR` (numpy only); `deploy/install.sh` → `/opt/xgonav/sounds` |

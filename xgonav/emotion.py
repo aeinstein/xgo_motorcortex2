@@ -143,6 +143,27 @@ class EmotionTrigger:
         return want
 
 
+class Dudler:
+    """Wann das „Dum-di-dum“ kommt: active (kartiert/sucht) -> nach start_s, dann alle every_s ±30 %."""
+
+    def __init__(self, start_s: float, every_s: float, rng: random.Random | None = None):
+        self.start_s, self.every_s = start_s, every_s
+        self._rng = rng or random.Random()
+        self._next: float | None = None
+
+    def update(self, now: float, active: bool) -> bool:
+        if not active:
+            self._next = None
+            return False
+        if self._next is None:
+            self._next = now + self.start_s
+            return False
+        if now < self._next:
+            return False
+        self._next = now + self.every_s * self._rng.uniform(0.7, 1.3)
+        return True
+
+
 class Emotions:
     """Startet den Player; aus, wenn EmotionCfg.dir fehlt (z. B. am PC)."""
 
@@ -163,6 +184,7 @@ class Emotions:
             self.pet_sounds.setdefault(os.path.basename(f).split("_")[1], []).append(f)
         self.trigger = EmotionTrigger(cfg, self.play, lambda: active(self.fifo),
                                       self.sound if self.sound_enabled else None)
+        self.dudler = Dudler(cfg.dudeln_start_s, cfg.dudeln_s)
         if cfg.enabled and not self.enabled:
             log.info("Emotionen aus (%s oder %s fehlt)", cfg.dir, PLAYER)
         if cfg.sound and not self.sound_enabled:
@@ -207,6 +229,10 @@ class Emotions:
             self.sound(name)
 
     def update(self, now: float, mode: str, person: bool | None, battery: int | None,
-               fw_mode: int | None = None) -> None:
+               fw_mode: int | None = None, sucht: bool = False) -> None:
+        """sucht: pet sucht oder streift gerade (Kartier-Modi stehen in dudeln_modes)."""
         if self.enabled or self.sound_enabled:
             self.trigger.update(now, mode, person, battery, fw_mode)
+        if (self.sound_enabled and self.cfg.dudeln and "dudeln" in self.pet_sounds
+                and self.dudler.update(now, sucht or mode in self.cfg.dudeln_modes)):
+            self.express("sound", "dudeln")         # nicht dringend: entfällt, wenn gerade etwas klingt

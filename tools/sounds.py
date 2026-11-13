@@ -133,10 +133,30 @@ def aufrappeln(k: float) -> np.ndarray:
     ])
 
 
-# Varianten-Töne pet_<Ereignis>_<n>.wav; schrei und aufrappeln spielt emotion.py in allen Modi
+# „Dum-di-dum-di-dum“ beim Kartieren, Suchen, Streifen (emotion.Dudler, alle Modi): tiefes, federndes
+# „dum“ und kurzes, hohes „di“; je Variante eine andere Melodie (k wählt sie, wie die Tonhöhe der anderen)
+_DUDEL = {1.0: (523, 784, 659, 784, 1047),       # C5 G5 E5 G5 C6
+          0.92: (392, 587, 494, 587, 784),       # G4 D5 B4 D5 G5
+          1.09: (659, 523, 587, 494, 784)}       # E5 C5 D5 B4 G5
+
+
+def dudeln(k: float) -> np.ndarray:
+    parts = []
+    noten = _DUDEL.get(k, _DUDEL[1.0])
+    for i, f in enumerate(noten):
+        if i % 2 == 0:                            # dum: kurz eingedellt, dann federnd nach oben
+            d = 0.24 if i == len(noten) - 1 else 0.14
+            parts += [_tone(f * 0.94, f, 0.03, harm=0.4), _tone(f, f * 1.03, d, vib_hz=7.0, vib_depth=0.01, harm=0.4)]
+        else:                                     # di: kurz und hell
+            parts += [_tone(f, f * 1.08, 0.075, harm=0.2)]
+        parts.append(_silence(0.035))
+    return np.concatenate(parts)
+
+
+# Varianten-Töne pet_<Ereignis>_<n>.wav; schrei, aufrappeln und dudeln spielt emotion.py in allen Modi
 PET = {"traellern": traellern, "quiek": quiek, "kichern": kichern, "seufzen": seufzen, "wimmern": wimmern,
        "gurren": gurren, "hey": hey, "ohnmacht": ohnmacht, "aufwachen": aufwachen,
-       "schrei": schrei, "aufrappeln": aufrappeln}
+       "schrei": schrei, "aufrappeln": aufrappeln, "dudeln": dudeln}
 VARIANTS = (1.0, 0.92, 1.09)
 
 
