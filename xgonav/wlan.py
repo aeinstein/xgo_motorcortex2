@@ -167,7 +167,7 @@ class WlanSetup:
 
     OK_S = 20.0           # Erfolg so lange anzeigen
     FEHLER_S = 8.0
-    STATUS_S = 5.0        # im Hotspot so oft nachsehen, ob über wlan.php verbunden wurde
+    STATUS_S = 3.0        # im Hotspot so oft nachsehen: über wlan.php verbunden? neues Handy im Hotspot?
 
     def __init__(self, cfg, helfer, now: float):
         self.cfg, self.helfer = cfg, helfer
@@ -183,6 +183,7 @@ class WlanSetup:
         self._job = ""                      # laufender Helfer-Auftrag
         self._off_pending = False           # Hotspot schließen, sobald der Helfer frei ist
         self.rest_s: int | None = None      # Countdown (QR-Suche, Hotspot) in ganzen Sekunden
+        self.clients = 0                    # Geräte im Hotspot (letzte Abfrage)
         self._bgr: np.ndarray | None = None
         self.version = 0                    # erhöht sich bei jeder Änderung der Anzeige
         self._lcd_cache: tuple[int, np.ndarray] | None = None
@@ -272,6 +273,18 @@ class WlanSetup:
             if con and con != "xgo-hotspot" and kv.get("ip"):
                 self.ssid, self.ip = kv.get("ssid", con), kv["ip"]
                 self._set("ok", now, f"Verbunden: {self.ssid}", self.ip)
+                return
+            try:
+                n = int(kv.get("clients", "0") or 0)
+            except ValueError:
+                n = 0
+            if n > self.clients:
+                # neues Gerät im Hotspot: Countdown beginnt neu, Zeit zum Eintippen in wlan.php
+                self.t_state = now
+                self.detail = "Handy verbunden"
+                self.version += 1
+                log.warning("WLAN-Einrichtung: Gerät im Hotspot (%d), Countdown neu", n)
+            self.clients = n
         elif rc != 0:
             log.warning("WLAN-Einrichtung: %s: %s", job, last)
 

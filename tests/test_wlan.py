@@ -152,6 +152,21 @@ def test_hotspot_erkennt_verbindung_ueber_web():
     assert w.state == "ok" and w.ssid == "Heim"
 
 
+def test_hotspot_neues_geraet_startet_countdown_neu():
+    cfg = Config.neutral().wlan
+    h = FakeHelfer({"status": (0, "con=xgo-hotspot\nip=10.42.0.1\nclients=1")})
+    w = WlanSetup(cfg, h, 0.0)
+    w.state, w.t_state = "hotspot", 0.0
+    w.step(None, 50.0)
+    w.step(None, 50.1)
+    assert w.t_state == 50.1 and w.clients == 1 and w.state == "hotspot"
+    w.step(None, 54.0)
+    w.step(None, 54.1)                      # dasselbe Gerät: kein neuer Start
+    assert w.t_state == 50.1
+    w.step(None, 50.1 + cfg.hotspot_timeout_s + 0.01)
+    assert w.state == "ende"
+
+
 def test_hotspot_zeit_um():
     cfg = Config.neutral().wlan
     h = FakeHelfer({"status": (0, "con=xgo-hotspot\nip=10.42.0.1")})

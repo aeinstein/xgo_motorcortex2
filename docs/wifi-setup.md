@@ -12,7 +12,7 @@ Buttons on the Rider start it; no existing connection needed. Code: `xgonav/wlan
 | 4 | Join the hotspot, open the URL (self-signed TLS warning), pick network, enter password | hotspot closes when switching; result on the display |
 | Cancel | press **B**, hold C+D again, or `POST /wlan?on=0` | hotspot removed, previous connection restored |
 
-Hotspot closes by itself after 60 s (countdown); join and enter the network within that time. Also reachable from the web: `api.php?a=wlan&on=1`; `wlan.php` works in normal operation as "add Wi-Fi".
+Hotspot closes by itself after 60 s (countdown); each newly joined device restarts the countdown (`iw station dump`, polled every 3 s). Also reachable from the web: `api.php?a=wlan&on=1`; `wlan.php` works in normal operation as "add Wi-Fi".
 
 ## Behaviour
 

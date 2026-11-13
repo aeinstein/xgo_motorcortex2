@@ -9,7 +9,7 @@
 #                         Hotspot) wieder hochgefahren. Andere Profile werden nie gelöscht.
 #   xgo-wlan hotspot      stdin: SSID, Passwort -> Hotspot "xgo-hotspot" auf wlan0 (10.42.0.1)
 #   xgo-wlan hotspot-off  Hotspot löschen, vorige Verbindung zurück
-#   xgo-wlan status       con=, ssid=, ip= von wlan0
+#   xgo-wlan status       con=, ssid=, ip= von wlan0; im Hotspot auch clients= (iw station dump)
 #   xgo-wlan scan         sichtbare Netze: SIGNAL:SECURITY:SSID je Zeile (aus dem Cache, ohne neu zu suchen)
 # Ausgabe key=wert je Zeile, Fehler als letzte Zeile, Exit != 0.
 set -u
@@ -45,6 +45,9 @@ status() {
         echo "ssid=$(nmcli -g 802-11-wireless.ssid con show id "$c" 2>/dev/null)"
     fi
     echo "ip=$(nmcli -g IP4.ADDRESS dev show "$IF" 2>/dev/null | head -n1 | cut -d/ -f1)"
+    if [ "$c" = "$HOTSPOT" ]; then   # verbundene Geräte im Hotspot
+        echo "clients=$(iw dev "$IF" station dump 2>/dev/null | grep -c '^Station')"
+    fi
 }
 
 # Keyfile-Wert (GKeyFile): \ -> \\, Leerzeichen -> \s, Tab -> \t
