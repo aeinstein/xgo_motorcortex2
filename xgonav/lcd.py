@@ -104,7 +104,7 @@ class LcdOut:
                         self._fd = None
                 self._gaze_sent = None
                 self._last_idx = None
-                time.sleep(0.1)
+                time.sleep(0.05 if wlan.state == "qr" else 0.1)   # QR-Suche: Augen mit 20 Bildern/s
                 continue
             self._wlan_sent = None
             gaze = getattr(self.app.behavior, "gaze", None)

@@ -6,7 +6,7 @@ Buttons on the Rider start it; no existing connection needed. Code: `xgonav/wlan
 
 | Step | Action | Display |
 |---|---|---|
-| 1 | Hold **C+D** for 3 s (in sleep mode up to ~5 s) | camera image, "WLAN-QR vor die Kamera halten", Wi-Fi symbol with 60 s countdown ring (red for the last 10 s) |
+| 1 | Hold **C+D** for 3 s (in sleep mode up to ~5 s) | eyes looking around with QR finder patterns as pupils (`QrEyes`, ~1.5 ms per frame, 20 fps), small camera image top left, Wi-Fi symbol with 60 s countdown ring (red for the last 10 s), "WLAN-QR vor die Kamera halten" |
 | 2 | Show a Wi-Fi QR code to the camera (Android: Wi-Fi → Share; iOS: Wi-Fi → (i) → share / Passwords app) | "Verbinde mit …", then "Verbunden: <ssid>" + IP (20 s) or the error (8 s, then back to 1) |
 | 3 | No code within 60 s → hotspot `xgo-rider`, random 8-char password | QR to join, SSID, password, `10.42.0.1/xgonav/wlan.php`, Wi-Fi symbol with 60 s countdown |
 | 4 | Join the hotspot, open the URL (self-signed TLS warning), pick network, enter password | hotspot closes when switching; result on the display |

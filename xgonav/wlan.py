@@ -186,7 +186,9 @@ class WlanSetup:
         self.clients = 0                    # Geräte im Hotspot (letzte Abfrage)
         self._bgr: np.ndarray | None = None
         self.version = 0                    # erhöht sich bei jeder Änderung der Anzeige
-        self._lcd_cache: tuple[int, np.ndarray] | None = None
+        self._lcd_cache: tuple[tuple[int, int], np.ndarray] | None = None
+        self._anim = 0                      # Zähler der LCD-Bilder in der QR-Suche
+        self._eyes = QrEyes()
         log.warning("WLAN-Einrichtung: QR-Code suchen (%.0f s, danach Hotspot)", cfg.qr_timeout_s)
 
     # -------------------------------------------------------------- Zustand
@@ -316,13 +318,15 @@ class WlanSetup:
         return text or None
 
     # -------------------------------------------------------------- Display (LCD-Thread)
-    def lcd_frame(self) -> tuple[int, np.ndarray]:
-        """(version, BGR 320x240); neu gezeichnet nur, wenn sich etwas geändert hat."""
-        v = self.version
-        if self._lcd_cache is not None and self._lcd_cache[0] == v:
+    def lcd_frame(self) -> tuple[tuple[int, int], np.ndarray]:
+        """(Schlüssel, BGR 320x240); neu gezeichnet nur bei Änderung, in der QR-Suche jedes Mal (Augen)."""
+        if self.state == "qr":
+            self._anim += 1
+        key = (self.version, self._anim if self.state == "qr" else 0)
+        if self._lcd_cache is not None and self._lcd_cache[0] == key:
             return self._lcd_cache
         img = self._draw()
-        self._lcd_cache = (v, img)
+        self._lcd_cache = (key, img)
         return self._lcd_cache
 
     def _draw(self) -> np.ndarray:
@@ -341,9 +345,13 @@ class WlanSetup:
             cv2.putText(img, WLAN_URL, (8, 202), font, 0.5, (160, 0, 0), 1, cv2.LINE_AA)
             cv2.putText(img, "B = Abbruch", (8, 230), font, 0.4, (90, 90, 90), 1, cv2.LINE_AA)
             return img
-        if self.state == "qr" and self._bgr is not None:
-            img = cv2.resize(self._bgr, (320, 240), interpolation=cv2.INTER_AREA)
-            cv2.rectangle(img, (80, 60), (240, 180), (0, 255, 255), 1)      # Mitte: dort sucht er vergrößert
+        if self.state == "qr":
+            img = self._eyes.draw(time.monotonic())
+            if self._bgr is not None:                                       # kleines Kamerabild zum Zielen
+                klein = cv2.resize(self._bgr, (96, 72), interpolation=cv2.INTER_AREA)
+                cv2.rectangle(klein, (24, 18), (72, 54), (0, 255, 255), 1)  # Mitte: dort sucht er vergrößert
+                img[4:76, 4:100] = klein
+                cv2.rectangle(img, (3, 3), (100, 76), (90, 90, 90), 1)
         else:
             img = np.zeros((240, 320, 3), np.uint8)
         if self.state == "qr":
@@ -356,6 +364,89 @@ class WlanSetup:
             unten = (unten + "  " if unten else "") + "danach Hotspot, B = Abbruch"
         cv2.putText(img, unten, (6, 228), font, 0.42, (200, 200, 200), 1, cv2.LINE_AA)
         return img
+
+
+class QrEyes:
+    """Augen wie tools/eyes.py (Türkis, abgerundet), die Pupillen sind QR-Suchmuster (7:5:3 Module, dunkel/hell/
+    dunkel). Sie schauen sich um: Blick springt (Sakkade 0,12 s) zu zufälligen Zielen, hält 0,4-1,4 s, dazwischen
+    Lidschlag. Direkt mit cv2 in 320x240 gezeichnet, ~1 ms je Bild, nur während der QR-Suche."""
+
+    FARBE = (210, 225, 0)          # BGR von tools/eyes.py FARBE (0, 225, 210)
+    CX, CY, W, H = (98.0, 222.0), 128.0, 74.0, 84.0
+    MODUL = 5.0                    # Pupille 7 Module = 35 px
+    SAKKADE = 0.12
+
+    def __init__(self, seed: int = 7):
+        self._rng = np.random.default_rng(seed)
+        self._von = self._nach = (0.0, 0.0)
+        self._t_ziel = None            # Zeitpunkt der letzten Sakkade
+        self._t_next = 0.0
+        self._t_blink = 0.0
+
+    def _blick(self, t: float) -> tuple[float, float]:
+        if self._t_ziel is None:
+            self._t_ziel, self._t_next, self._t_blink = t, t + 0.8, t + 2.5
+        if t >= self._t_next:
+            self._von = self._blick_bei(t)
+            alt = self._nach
+            while True:                # neues Ziel, deutlich woanders
+                z = (float(self._rng.uniform(-1, 1)), float(self._rng.uniform(-1, 1)) * 0.8)
+                if abs(z[0] - alt[0]) + abs(z[1] - alt[1]) > 0.7:
+                    break
+            if self._rng.random() < 0.25:
+                z = (0.0, 0.0)         # zwischendurch geradeaus (in die Kamera)
+            self._nach, self._t_ziel = z, t
+            self._t_next = t + self.SAKKADE + float(self._rng.uniform(0.4, 1.4))
+        return self._blick_bei(t)
+
+    def _blick_bei(self, t: float) -> tuple[float, float]:
+        x = 1.0 if self._t_ziel is None else min(1.0, (t - self._t_ziel) / self.SAKKADE)
+        x = x * x * (3 - 2 * x)
+        return (self._von[0] + (self._nach[0] - self._von[0]) * x,
+                self._von[1] + (self._nach[1] - self._von[1]) * x)
+
+    def _lid(self, t: float) -> float:
+        """0 offen .. 1 zu (Lidschlag 0,2 s)."""
+        d = t - self._t_blink
+        if d > 0.2:
+            self._t_blink = t + float(self._rng.uniform(2.5, 5.0))
+            return 0.0
+        return 0.0 if d < 0 else 1.0 - abs(d / 0.1 - 1.0)
+
+    def draw(self, t: float) -> np.ndarray:
+        gx, gy = self._blick(t)
+        lid = self._lid(t)
+        S = 4                                       # Subpixel-Bits
+        f = 1 << S
+        alpha = np.zeros((240, 320), np.uint8)
+        for cx0 in self.CX:
+            cx, cy = cx0 + 18 * gx, self.CY + 8 * gy
+            h = max(7.0, self.H * (1 - lid))
+            auge = np.zeros_like(alpha)
+            pts = rrect(self.W, h, 0.36 * min(self.W, h) / 2) + (cx, cy)
+            cv2.fillPoly(auge, [np.round(pts * f).astype(np.int32)], 255, cv2.LINE_AA, S)
+            m = auge.copy()
+            px = cx + gx * (self.W / 2 - 3.5 * self.MODUL - 4)
+            py = cy + gy * (self.H / 2 - 3.5 * self.MODUL - 4) * (h / self.H)
+            for n, val in ((7, 0), (5, 255), (3, 0)):   # Suchmuster: dunkel, hell, dunkel; Lid staucht mit
+                r = n * self.MODUL / 2
+                ry = r * h / self.H
+                a = (int(round((px - r) * f)), int(round((py - ry) * f)))
+                b = (int(round((px + r) * f)), int(round((py + ry) * f)))
+                cv2.rectangle(m, a, b, val, -1, cv2.LINE_AA, S)
+            np.maximum(alpha, np.minimum(m, auge), out=alpha)
+        return (alpha[..., None].astype(np.float32) * (np.array(self.FARBE, np.float32) / 255)).astype(np.uint8)
+
+
+def rrect(w: float, h: float, r: float, n: int = 10) -> np.ndarray:
+    """Abgerundetes Rechteck um (0, 0) wie tools/eyes.py."""
+    r = min(r, w / 2, h / 2)
+    pts = []
+    for cx, cy, a0 in ((w / 2 - r, -h / 2 + r, -90), (w / 2 - r, h / 2 - r, 0),
+                       (-w / 2 + r, h / 2 - r, 90), (-w / 2 + r, -h / 2 + r, 180)):
+        for a in np.linspace(math.radians(a0), math.radians(a0 + 90), n):
+            pts.append((cx + r * math.cos(a), cy + r * math.sin(a)))
+    return np.array(pts)
 
 
 def _countdown(img: np.ndarray, c: tuple[int, int], r: int, rest: int | None, total: float,
