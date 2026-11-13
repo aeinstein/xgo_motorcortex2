@@ -212,6 +212,7 @@ All keys with comments: `PetCfg` in `xgonav/config.py`.
 | `hear`, `hear_min_db`, `hear_front_deg`, `hear_turns`, `hear_listen_s`, `hear_repeat_s` | true, 8, 20, 3, 3.5, 6 | hearing ([display-emotions.md](display-emotions.md#hearing-sound-direction-audiomd)); needs `[ortung]` with `pet` in `modes` |
 | `hear_startle_db`, `hear_quiet_s` | 20, 8 | sudden loud sound after silence |
 | `call_events`, `call_m`, `call_repeat_s` | 3, −1 = no limit, 3 m per call (sim: 0), 45 | calling: drive toward a voice from the front, never more than `seek_m` |
+| `come_events`, `come_m`, `come_stop_m`, `come_repeat_s` | 2, −1 = no limit (sim: 0), 0.8, 8 | come here: drive toward a visible person who speaks |
 | `talk`, `talk_min_events`, `talk_pause_s`, `talk_repeat_s` | true, 2, 1.6, 7 | talking back |
 | `faint` | true (sim: false) | hard scare: set down, wake up, stand up by itself; on at the RiderPi since 2026-11-13 |
 | `faint_level` | 0.8 (sim: 1.0) | scare level that triggers a faint |

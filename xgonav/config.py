@@ -669,6 +669,13 @@ class PetCfg:
     call_events: int = 3
     call_m: float = -1.0
     call_repeat_s: float = 45.0        # frühestens dann wieder (ein Fernseher vorn ruft sonst endlos)
+    # Komm her: Er sieht eine Person, die weiter als come_stop_m entfernt ist und spricht (come_events Meldungen
+    # in Folge) -> fährt auf sie zu bis come_stop_m, höchstens come_m je Mal (0 = aus, -1 = ohne Grenze; RiderPi
+    # seit 2026-11-13). Bedingungen wie jede pet-Fahrt (Räder, Bodenmodell, Merkkarte, Bahnprüfung, Akku).
+    come_events: int = 2
+    come_m: float = -1.0
+    come_stop_m: float = 0.8
+    come_repeat_s: float = 8.0
     # Mitreden: nach talk_min_events Meldungen und talk_pause_s Pause antwortet er (Ton brabbeln, Kopf schief)
     talk: bool = True
     talk_min_events: int = 2
@@ -858,7 +865,7 @@ class RelocCfg:
 
 # Die Defaults oben sind seit 2026-11-12 die Werte des RiderPi (/opt/xgonav/config.toml ohne Testbetrieb und
 # ohne Pfade unter /opt). Simulator und Tests rechnen mit dem früheren neutralen Stand: Config.neutral().
-NEUTRAL = {"pet.call_m": 0.0, "pet.faint": False, "pet.faint_level": 1.0, "pet.seek_m": 0.0, "pet.roam_m": 0.0, "pet.roam_radius_m": 1.0,
+NEUTRAL = {"pet.call_m": 0.0, "pet.come_m": 0.0, "pet.faint": False, "pet.faint_level": 1.0, "pet.seek_m": 0.0, "pet.roam_m": 0.0, "pet.roam_radius_m": 1.0,
            "robot.vx_limit": 1.5, "robot.max_v": 0.25, "robot.max_w": 0.25, "robot.reverse_gain": 1.0,
            "robot.manual_forward_gain": 1.0, "robot.level_after_standup": False, "camera.sensor_mode": "",
            "camera.scaler_crop": [], "camera.exposure_us": 4000, "camera.analogue_gain": 0.0,

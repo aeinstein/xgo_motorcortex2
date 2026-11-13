@@ -986,3 +986,37 @@ def test_rufen_nicht_endlos():
     b = brain()
     hoeren(b, 0.0, 40.0, 0.0)
     assert b.n_called == 1
+
+
+def test_komm_her_faehrt_zur_sprechenden_person():
+    """Person in 2,5 m spricht: Er fährt auf sie zu und hält come_stop_m vor ihr. Ohne Budget oder Bodenmodell nie."""
+    def lauf(b, t1=40.0, fahrbar=True, d0=2.5):
+        pos = {"x": 0.0}
+        def wer(t):
+            return [seen("person", max(0.05, d0 - pos["x"]), t, vs=0)]
+        t, acts, evs, heard, nxt, ds = 0.0, [], [], None, 1.0, 0.0
+        extra = dict(floor_ok=True, free_center=1.5) if fahrbar else {}
+        while t < t1:
+            if t >= nxt:
+                nxt, heard = t + 1.0, Heard(key=t, bearing=0.0, db=15.0)
+            if heard is not None:
+                heard = dataclasses.replace(heard, age=t - heard.key)
+            a = b.update(Sense(t=t, seen=wer(t), ds=ds, heard=heard, **extra))
+            acts.append(a)
+            evs += b.drain()
+            ds = a.v * b.rcfg.vx_limit * 0.05
+            pos["x"] += ds
+            t += 0.05
+        return pos["x"], acts, evs
+    b = brain(come_m=-1.0)
+    weg, acts, evs = lauf(b)
+    assert b.n_come >= 1 and 1.3 < weg < 2.5 - b.cfg.come_stop_m + 0.25, weg
+    assert b.n_startle == 0 and ("sound", "kichern", False) in evs
+    b = brain(come_m=0.5)
+    assert lauf(b)[0] <= 0.5 * b.n_come + 0.05
+    b = brain(come_m=0.0)
+    assert lauf(b)[0] == 0.0 and b.n_come == 0
+    b = brain(come_m=-1.0)
+    assert lauf(b, fahrbar=False)[0] == 0.0
+    b = brain(come_m=-1.0)                                       # schon nah: bleibt stehen
+    assert lauf(b, d0=0.9)[0] == 0.0

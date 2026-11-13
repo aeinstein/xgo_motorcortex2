@@ -164,6 +164,7 @@ Input: reports of `xgonav/ortung.py` (≈ 1 per second of sound, direction folde
 |---|---|
 | sound from the side, nobody in view | first report: eyes move there, sound `horch`. Second report from the same side: turns to it (`look_w`), listens `hear_listen_s` (3.5 s). Again from the side → the source was behind: turns by the remainder (180° − reading); at most `hear_turns` (3). From the front → done. Silence → `doubt` |
 | target appears while turning | `surprised`, found sound; then talks back (below) |
+| come here: a person in view farther than `come_stop_m` + 0.3 m speaks (`come_events` = 2 reports in a row) | happy sound, drives toward the person and stops `come_stop_m` (0.8 m) short, following while they move; at most `come_m` per time (RiderPi −1 = no limit, simulator 0), again after `come_repeat_s` (8 s). Ends when the person is lost for 1 s (then the normal search) or the arc is blocked |
 | calling: voice keeps coming from the front (`call_events` = 3 reports), nobody in view | searches there like "search": drives at most `call_m` (RiderPi −1 = no limit, then one 3 m leg per call; never more than `seek_m`; simulator 0) with the same conditions as every pet drive, then looks around (finds someone standing exactly behind). Again after `call_repeat_s` (45 s) at the earliest |
 | suddenly loud (`hear_startle_db` = 20 dB) after `hear_quiet_s` (8 s) of silence, nobody in view | `surprised`, squeak, ducks 0.6 s, turns fast (`turn_w`). No retreat, no faint |
 | dozing, two reports in a row | wakes: `surprised`, `horch`, detector back to `active_hz` |

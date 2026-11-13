@@ -14,7 +14,8 @@ Kurs (Sense.ds, Sense.yaw), unabhängig von der Raumkarte. Jedes Ziel im Bild be
 
 Hören (Sense.heard, Meldungen der Schallortung): "horchen" dreht sich zu einem Geräusch (Phase "drehen"), lauscht
 nach ("lauschen") und dreht weiter, wenn es wieder von der Seite kommt (dann lag die Quelle hinten: zwei
-Mikrofone trennen vorn und hinten nicht). Hält eine Stimme von vorn an und ist niemand zu sehen, sucht er dort
+Mikrofone trennen vorn und hinten nicht). Sieht er eine Person und sie spricht ihn an, fährt er auf sie zu
+(Aufgabe "kommen", come_m, hält come_stop_m vor ihr). Hält eine Stimme von vorn an und ist niemand zu sehen, sucht er dort
 (Rufen, call_m). Plötzlich laut nach Stille: zuckt zusammen und dreht sich schnell hin. Dösend wecken ihn
 Stimmen; liegend nach einer Ohnmacht ist die Luft nicht rein, solange jemand spricht. Sieht er jemanden und
 der macht eine Sprechpause, antwortet er (Mitreden). Während er selbst dreht oder fährt, zählt keine Richtung.
@@ -201,7 +202,9 @@ class PetBrain:
         self._fails = 0                      # Etappen in Folge, die nicht ankamen
         self._drive_t_max = 0.0
         # Hören
-        self.n_heard = self.n_talk = self.n_called = 0
+        self.n_heard = self.n_talk = self.n_called = self.n_come = 0
+        self.come_m = _limit(cfg.come_m)
+        self._come_lost_t: float | None = None
         self._ev: tuple[Heard, bool] | None = None    # neue Meldung dieses Schritts, Richtung brauchbar?
         self._ear_key: float | None = None
         self._ear_last_t = -1e9              # letzte Meldung (laut genug)
@@ -330,7 +333,7 @@ class PetBrain:
                 self._dozing = False
                 self.det_hz = c.active_hz
                 self._react(t, "surprised", "gefunden")
-            if self.task is not None:
+            if self.task is not None and self.task != "kommen":
                 if self.task == "horchen":
                     self._voice_t = t                # er hat hingehört und jemanden gefunden: redet mit
                 self._task_found(s)
@@ -351,6 +354,8 @@ class PetBrain:
         self._person_presence(s, person)
         self._nudge_check(s)
         self._hear_wach(s, tg)
+        if self.task == "kommen":
+            self._come_step(s, tg)
         if t < self._flinch_until and c.gestures:
             act.height_mm = self.duck_mm
         if self.task is not None:
@@ -395,7 +400,21 @@ class PetBrain:
                 self.roll_deg = self.rng.choice((-1.0, 1.0)) * self.roll_mag
                 self.rolled = True
                 self._blind_until = max(self._blind_until, t + c.tilt_s + 0.5)
-        if self._ev is None or tg is not None or self.task in ("suchen", "horchen") or not s.balancing:
+        # Komm her: Er sieht die Person, sie ist nicht nah und spricht
+        if (self._ev is not None and tg is not None and tg.cls == "person" and self.task is None and s.balancing
+                and tg.dist is not None and tg.dist > c.come_stop_m + 0.3 and self._talk_n >= c.come_events
+                and t >= self._blind_until and self._may_drive(s, self.come_m)
+                and self._ready("kommen", t, c.come_repeat_s)):
+            log.info("pet: komme (Person in %.1f m spricht)", tg.dist)
+            self.n_come += 1
+            self.task = "kommen"
+            self._task_left = self.come_m
+            self._looks, self._fails, self._come_lost_t = [], 0, None
+            self._goal = (self.x, self.y)
+            self._come_goal(tg)
+            self._react(t, "like", "traellern")
+            self._phase_set("fahren", t)
+        if self._ev is None or tg is not None or self.task in ("suchen", "horchen", "kommen") or not s.balancing:
             return
         h, ok = self._ev
         front = math.radians(c.hear_front_deg)
@@ -424,6 +443,32 @@ class PetBrain:
             if self._cool.get("horchen", -1e9) <= t:
                 self._ear_dirs.clear()
                 self._hear_start(s, 0.5 * (a + b))
+
+    def _come_goal(self, tg: Seen) -> bool:
+        """Ziel come_stop_m vor der Person. False: schon nah genug."""
+        d = min(tg.dist, POS_CAP_M) if tg.dist > 0 else CLOSE_M
+        go = d - self.cfg.come_stop_m
+        if go <= 0.0:
+            return False
+        a = self.yaw + tg.bearing
+        self._goal = (self.x + go * math.cos(a), self.y + go * math.sin(a))
+        return True
+
+    def _come_step(self, s: Sense, tg: Seen | None) -> None:
+        """Ziel der Person nachführen. Verschwindet sie, endet die Aufgabe (dann greift das Suchen)."""
+        t = s.t
+        self._blind_until = max(self._blind_until, t + 1.0)          # eigene Fahrt ist kein Schreck
+        if tg is not None and tg.cls == "person" and tg.dist is not None:
+            self._come_lost_t = None
+            if not self._come_goal(tg):
+                self._task_end(s, "angekommen")
+        elif tg is not None and tg.cls != "person":
+            self._task_end(s, "Tier im Bild")
+        else:
+            if self._come_lost_t is None:
+                self._come_lost_t = t
+            elif t - self._come_lost_t > 1.0:
+                self._task_end(s, "Person nicht mehr zu sehen")
 
     def _hear_start(self, s: Sense, bearing: float, fast: bool = False) -> None:
         if self.task is not None:
@@ -855,6 +900,8 @@ class PetBrain:
         log.info("pet: %s endet: %s", self.task, why)
         if self.task == "suchen":
             self._react(s.t, "sad", "verloren")
+        elif self.task == "kommen" and why == "angekommen":
+            self._react(s.t, "cute", "kichern")
         self._task_reset(s.t)
 
     def _task_step(self, s: Sense, act: Act) -> None:
@@ -894,6 +941,9 @@ class PetBrain:
                 why = "kommt nicht voran"
         if why is not None:
             log.info("pet: %s: halte (%s, Rest %.2f m)", self.task, why, rest)
+            if self.task == "kommen":
+                self._task_end(s, why)
+                return
             if why != "angekommen":
                 self._fails += 1
             self._phase_set("schauen", t)
@@ -1200,7 +1250,7 @@ class PetBrain:
                 "schrecks": self.n_startle, "ruck": self.n_retreat, "ohnmacht": self.n_faint, "liegt_weil": self.why_down or None,
                 "aufgabe": "%s/%s" % (self.task, self.phase) if self.task else None, "suchen": self.n_seek,
                 "gefunden": self.n_found, "gefahren_m": round(self.task_m, 2),
-                "gehoert": self.n_heard, "gerufen": self.n_called, "mitgeredet": self.n_talk}
+                "gehoert": self.n_heard, "gerufen": self.n_called, "mitgeredet": self.n_talk, "gekommen": self.n_come}
 
 
 class Pet(Behavior):

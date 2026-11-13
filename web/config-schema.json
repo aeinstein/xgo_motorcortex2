@@ -2541,6 +2541,30 @@
        "hilfe": "frühestens dann wieder (ein Fernseher vorn ruft sonst endlos)"
       },
       {
+       "key": "come_events",
+       "typ": "int",
+       "default": 2,
+       "hilfe": "Komm her: Er sieht eine Person, die weiter als come_stop_m entfernt ist und spricht (come_events Meldungen in Folge) -> fährt auf sie zu bis come_stop_m, höchstens come_m je Mal (0 = aus, -1 = ohne Grenze; RiderPi seit 2026-11-13). Bedingungen wie jede pet-Fahrt (Räder, Bodenmodell, Merkkarte, Bahnprüfung, Akku)."
+      },
+      {
+       "key": "come_m",
+       "typ": "float",
+       "default": -1.0,
+       "hilfe": ""
+      },
+      {
+       "key": "come_stop_m",
+       "typ": "float",
+       "default": 0.8,
+       "hilfe": ""
+      },
+      {
+       "key": "come_repeat_s",
+       "typ": "float",
+       "default": 8.0,
+       "hilfe": ""
+      },
+      {
        "key": "talk",
        "typ": "bool",
        "default": true,
