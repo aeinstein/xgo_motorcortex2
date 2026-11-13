@@ -70,6 +70,7 @@ python3 -m venv .venv && .venv/bin/pip install "opencv-python-headless>=4.6" "nu
 | [mapping.md](docs/mapping.md) | Odometry, short-term local map, room map (occupancy grid) |
 | [floornet.md](docs/floornet.md) | Self-trained floor network: labels, hand lines, training, results; shadow mode only |
 | [display-emotions.md](docs/display-emotions.md) | LCD daemon, overlay, emotion player and triggers |
+| [wifi-setup.md](docs/wifi-setup.md) | Wi-Fi without a network: buttons C+D, QR code, hotspot + `wlan.php` |
 | [testing.md](docs/testing.md) | Unit/slow tests, simulator, replay, results |
 | [limitations.md](docs/limitations.md) | Hardware test status, measured values, known issues |
 | [firmware/README.md](firmware/README.md) | ESP32 firmware build, patches, flashing rules |

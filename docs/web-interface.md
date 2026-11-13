@@ -99,6 +99,10 @@ GET only for `status`, `route`, `horizon`, `detector`; all commands POST. Parame
 | `POST ?a=pitch_calibration` | `settings/pitch_calibration` | API only, no UI button |
 | `POST ?a=emotion&name=..` | `tools/emotion.sh play` | name must exist in `/opt/xgonav/emotions` |
 | `POST ?a=shutdown` | plays `sleep` emotion, `sudo systemctl poweroff` | |
+| `GET ?a=wlan_status` | `sudo -n xgo-wlan status` | JSON `con`, `ssid`, `ip` of wlan0 |
+| `GET ?a=wlan_scan` | `sudo -n xgo-wlan scan` | JSON `netze` [`ssid`, `signal`, `security`], cached scan |
+| `POST ?a=wlan_connect` | `sudo -n xgo-wlan connect` (password via stdin) | body JSON `{ssid, pw}`; pw 8..63 or empty (open); over the hotspot: answers at once (`hotspot: true`), result on the display |
+| `POST ?a=wlan&on=0\|1` | xgonav `/wlan` | Wi-Fi setup like buttons C+D |
 | `GET ?a=config` | schema `web/config-schema.json` + values parsed from `/opt/xgonav/config.toml` + backups | JSON `schema`, `werte`, `unlesbar`, `hash`, `schreibbar`, `sicherungen` |
 | `POST ?a=config_save&hash=..` | rewrites changed lines of `config.toml` | body JSON `{"section.key": value\|null}` (null = remove line → default; top level: `allgemein.control_hz`); type-checked against schema, then `Config.load` via `/opt/xgonav/venv/bin/python`; 409 if file changed since `hash` |
 | `POST ?a=config_restore&name=..&hash=..` | copies a backup back | name `config.toml.YYYYMMDD-HHMMSS[-n]` |
@@ -119,6 +123,7 @@ xgonav unreachable → HTTP 502 `xgonav nicht erreichbar`. Exposure/gain changes
 | POST | `/stop` | standstill, mode idle |
 | POST | `/pipeline?on=0\|1` | stop/start image processing; 409 in sleep mode |
 | POST | `/ruhe?on=0\|1` | sleep mode on/off; `/status` field `ruhe` |
+| POST | `/wlan?on=0\|1` | start/cancel Wi-Fi setup ([wifi-setup.md](wifi-setup.md)); `/status` field `wlan` (`state`, `text`, `detail`, `ssid`, `ip`, `hotspot`) or null |
 | POST | `/record?on=0\|1` | switch raw recording; `/status` field `aufzeichnung`: `an`, `laeuft`, `ordner`, `bilder`, `fehler` |
 | POST | `/level` | leveling pulse (roll 0, 3 s `roll_balance`); 409 if not balancing |
 | POST | `/drive?v=..&w=..` | 409 if not mode `manual` |

@@ -30,6 +30,7 @@ from .localmap import LocalMap, mask_movable
 from .route import arc_hits_zone, check as route_check, load as route_load, save as route_save
 from .robot import Robot, SpeedCtrl
 from .tracker import Tracker
+from .wlan import Helfer, HoldDetector, PressDetector, WlanSetup
 
 log = logging.getLogger(__name__)
 
@@ -220,6 +221,12 @@ class App:
         self.emotions = None           # emotion.Emotions, von __main__ gesetzt (nur am Rider)
         self.rawrec = None             # rawrec.RawRecorder, von __main__ gesetzt
         self._ruhe_saved: dict[str, str] | None = None   # Ruhemodus: alte Treiber-Einstellungen, sonst None
+        # WLAN-Einrichtung über die Tasten (wlan.py): läuft in der Hauptschleife statt _step
+        self.wlan: WlanSetup | None = None
+        self._wlan_req: bool | None = None            # vom Web (POST /wlan), in der Hauptschleife übernommen
+        self._wlan_hold = HoldDetector(cfg.wlan.buttons, cfg.wlan.hold_s)
+        self._wlan_cancel = PressDetector(cfg.wlan.cancel_buttons)
+        self._wlan_pipeline = False                   # lief die Bildverarbeitung vorher?
 
     # ------------------------------------------------------------------
     # Diese Modi fahren auf Freiraum zu und verlassen sich auf Bodenmodell + Merkkarte.
@@ -424,6 +431,60 @@ class App:
         if self.wheels is not None:
             self.wheels.set_idle(idle)
 
+    # ------------------------------------------------------------------ WLAN-Einrichtung (wlan.py)
+    def wlan_request(self, on: bool) -> None:
+        """Vom Web: WLAN-Einrichtung starten/abbrechen; übernommen in der Hauptschleife."""
+        self._wlan_req = on
+
+    def _wlan_buttons(self) -> None:
+        """Je Schleifendurchlauf: Tastenwert (liest der robot-Thread ohnehin) vergleichen. Sonst nichts."""
+        if not self.cfg.wlan.enabled:
+            return
+        now = time.monotonic()
+        b = self.robot.state.buttons
+        req, self._wlan_req = self._wlan_req, None
+        if self._wlan_hold.update(b, now):
+            req = self.wlan is None              # nochmal halten bricht ab
+        if self._wlan_cancel.update(b) and self.wlan is not None:
+            req = False
+        if req is True and self.wlan is None:
+            self._wlan_start(now)
+        elif req is False and self.wlan is not None:
+            self.wlan.cancel(now)
+
+    def _wlan_start(self, now: float) -> None:
+        if self.ruhe:
+            self.set_ruhe(False)                 # Takt bleibt bis zum Wecken aus dem Web auf powersave
+        with self._mode_lock:
+            self._pending_mode = None
+        self._pet_leave()
+        self.behavior = self._make("idle")
+        self.robot.stop()
+        self._cmd = Command(0.0, 0.0, None, "WLAN-Einrichtung")
+        self._wlan_pipeline = self.pipeline_on
+        if not self._wlan_pipeline:
+            self.src.resume()
+        self.wlan = WlanSetup(self.cfg.wlan, Helfer(self.cfg.wlan.helper), now)
+
+    def _wlan_tick(self, last: int) -> int:
+        """Hauptschleife während der Einrichtung: Bild an wlan.step, Rider steht (Modus idle)."""
+        f = self.src.get(last, timeout=0.5) if not self.src.paused else None
+        now = time.monotonic()
+        self.wlan.step(f.bgr if f is not None else None, now)
+        self._cmd = Command(0.0, 0.0, None, "WLAN: " + self.wlan.text)
+        if f is not None and isinstance(self.src, OpenCVSource):
+            self.src.mark_consumed()
+        if f is None:
+            time.sleep(0.05)
+        if self.wlan.done:
+            log.warning("WLAN-Einrichtung beendet: %s %s", self.wlan.text, self.wlan.detail)
+            self.wlan = None
+            if self._wlan_pipeline:
+                self.reset_floor(hold_s=self.cfg.freespace.restart_hold_s)
+            else:
+                self.src.pause()
+        return f.idx if f is not None else last
+
     def reset_floor(self, hold_s: float = 0.0) -> None:
         """Bodenmodell neu lernen lassen; hold_s: so lange vorher kein Bodenmodell rechnen
         (nach Kamerastart sind die ersten Bilder dunkel). Bis dahin kein Freiraum-Ergebnis."""
@@ -490,6 +551,10 @@ class App:
             while self.running:
                 if t_end and time.monotonic() > t_end:
                     break
+                self._wlan_buttons()
+                if self.wlan is not None:
+                    last = self._wlan_tick(last)
+                    continue
                 if self.src.paused:
                     self._paused_tick()
                     continue

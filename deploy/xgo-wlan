@@ -1,0 +1,151 @@
+#!/bin/sh
+# WLAN-Einrichtung, Teil mit root-Rechten (NetworkManager). Aufruf nur über sudo-Regel
+# deploy/sudoers-xgonav-wlan: xgonav (Tasten C+D, xgonav/wlan.py) und web/wlan.php (api.php).
+# Installiert nach /usr/local/sbin/xgo-wlan (deploy/install-all.sh).
+#
+#   xgo-wlan connect      stdin: SSID, Passwort, Typ (WPA|NOPASS), versteckt (0|1), je eine Zeile
+#                         -> Profil "xgo-<SSID>" (Keyfile 0600, Passwort nie in der Kommandozeile), verbinden.
+#                         Misslingt es, wird das neue Profil gelöscht und die vorige Verbindung (oder der
+#                         Hotspot) wieder hochgefahren. Andere Profile werden nie gelöscht.
+#   xgo-wlan hotspot      stdin: SSID, Passwort -> Hotspot "xgo-hotspot" auf wlan0 (10.42.0.1)
+#   xgo-wlan hotspot-off  Hotspot löschen, vorige Verbindung zurück
+#   xgo-wlan status       con=, ssid=, ip= von wlan0
+#   xgo-wlan scan         sichtbare Netze: SIGNAL:SECURITY:SSID je Zeile (aus dem Cache, ohne neu zu suchen)
+# Ausgabe key=wert je Zeile, Fehler als letzte Zeile, Exit != 0.
+set -u
+IF=wlan0
+HOTSPOT=xgo-hotspot
+PREV=/run/xgo-wlan.prev
+DIR=/etc/NetworkManager/system-connections
+
+fehler() { echo "$*"; exit 1; }
+
+aktiv() { nmcli -g GENERAL.CONNECTION dev show "$IF" 2>/dev/null | head -n1; }
+
+vorige_merken() {   # aktive Verbindung merken (nicht den Hotspot, nicht überschreiben)
+    a=$(aktiv)
+    if [ -n "$a" ] && [ "$a" != "$HOTSPOT" ] && [ ! -s "$PREV" ]; then
+        printf '%s\n' "$a" > "$PREV"
+    fi
+}
+
+vorige_zurueck() {
+    if [ -s "$PREV" ]; then
+        p=$(cat "$PREV")
+        rm -f "$PREV"
+        nmcli --wait 30 con up id "$p" >/dev/null 2>&1 && return 0
+    fi
+    nmcli dev connect "$IF" >/dev/null 2>&1
+}
+
+status() {
+    c=$(aktiv)
+    echo "con=$c"
+    if [ -n "$c" ]; then
+        echo "ssid=$(nmcli -g 802-11-wireless.ssid con show id "$c" 2>/dev/null)"
+    fi
+    echo "ip=$(nmcli -g IP4.ADDRESS dev show "$IF" 2>/dev/null | head -n1 | cut -d/ -f1)"
+}
+
+# Keyfile-Wert (GKeyFile): \ -> \\, Leerzeichen -> \s, Tab -> \t
+kf_esc() { printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/ /\\s/g' -e 's/	/\\t/g'; }
+
+case "${1:-}" in
+    connect)
+        IFS= read -r ssid || true
+        IFS= read -r pw || true
+        IFS= read -r typ || true
+        IFS= read -r hidden || true
+        typ=$(printf '%s' "${typ:-WPA}" | tr 'a-z' 'A-Z')
+        n=$(printf '%s' "$ssid" | wc -c)
+        [ "$n" -ge 1 ] && [ "$n" -le 32 ] || fehler "SSID ungültig"
+        case "$typ" in
+            WPA|WPA2|WPA3|SAE)
+                m=$(printf '%s' "$pw" | wc -c)
+                [ "$m" -ge 8 ] && [ "$m" -le 64 ] || fehler "Passwort muss 8 bis 63 Zeichen haben"
+                ;;
+            NOPASS) pw="" ;;
+            *) fehler "Verschlüsselung $typ nicht unterstützt (nur WPA oder offen)" ;;
+        esac
+        name="xgo-$ssid"
+        vorher=$(aktiv)
+        vorige_merken
+        nmcli con delete id "$name" >/dev/null 2>&1      # eigenes Profil mit gleichem Namen ersetzen
+        datei=$(mktemp "$DIR/xgo-wlan.XXXXXX") || fehler "kann $DIR nicht schreiben"
+        chmod 600 "$datei"
+        {
+            echo "[connection]"
+            echo "id=$(kf_esc "$name")"
+            echo "uuid=$(cat /proc/sys/kernel/random/uuid)"
+            echo "type=wifi"
+            echo "interface-name=$IF"
+            echo "autoconnect-priority=10"
+            echo
+            echo "[wifi]"
+            echo "mode=infrastructure"
+            # SSID als Bytefolge: eindeutig für jedes Zeichen
+            echo "ssid=$(printf '%s' "$ssid" | od -An -tu1 -v | tr -s ' \n' ';;' | sed -e 's/^;//')"
+            [ "${hidden:-0}" = 1 ] && echo "hidden=true"
+            if [ "$typ" != NOPASS ]; then
+                echo
+                echo "[wifi-security]"
+                echo "key-mgmt=wpa-psk"
+                echo "psk=$(kf_esc "$pw")"
+            fi
+            echo
+            echo "[ipv4]"
+            echo "method=auto"
+            echo
+            echo "[ipv6]"
+            echo "addr-gen-mode=default"
+            echo "method=auto"
+        } > "$datei"
+        ziel="$DIR/xgo-wlan-$(cat /proc/sys/kernel/random/uuid).nmconnection"
+        mv "$datei" "$ziel"
+        nmcli con load "$ziel" >/dev/null 2>&1 || { rm -f "$ziel"; fehler "Profil nicht lesbar"; }
+        if out=$(nmcli --wait 45 con up id "$name" 2>&1); then
+            [ "$vorher" = "$HOTSPOT" ] && nmcli con delete id "$HOTSPOT" >/dev/null 2>&1
+            rm -f "$PREV"
+            sleep 1
+            status
+            exit 0
+        fi
+        nmcli con delete id "$name" >/dev/null 2>&1
+        if [ "$vorher" = "$HOTSPOT" ]; then
+            nmcli --wait 30 con up id "$HOTSPOT" >/dev/null 2>&1
+        else
+            vorige_zurueck
+        fi
+        fehler "Verbinden fehlgeschlagen: $(printf '%s' "$out" | tail -n1)"
+        ;;
+    hotspot)
+        IFS= read -r ssid || true
+        IFS= read -r pw || true
+        [ -n "$ssid" ] || fehler "SSID fehlt"
+        m=$(printf '%s' "$pw" | wc -c)
+        [ "$m" -ge 8 ] && [ "$m" -le 63 ] || fehler "Passwort muss 8 bis 63 Zeichen haben"
+        vorige_merken
+        nmcli con delete id "$HOTSPOT" >/dev/null 2>&1
+        out=$(nmcli dev wifi hotspot ifname "$IF" con-name "$HOTSPOT" ssid "$ssid" password "$pw" 2>&1) \
+            || { vorige_zurueck; fehler "Hotspot fehlgeschlagen: $(printf '%s' "$out" | tail -n1)"; }
+        nmcli con modify id "$HOTSPOT" connection.autoconnect no >/dev/null 2>&1
+        status
+        ;;
+    hotspot-off)
+        nmcli con down id "$HOTSPOT" >/dev/null 2>&1
+        nmcli con delete id "$HOTSPOT" >/dev/null 2>&1
+        vorige_zurueck
+        status
+        ;;
+    status)
+        status
+        ;;
+    scan)
+        nmcli -t -f SIGNAL,SECURITY,SSID dev wifi list --rescan no 2>/dev/null
+        ;;
+    *)
+        echo "Aufruf: xgo-wlan connect|hotspot|hotspot-off|status|scan" >&2
+        exit 2
+        ;;
+esac
+exit 0

@@ -40,7 +40,7 @@ API = {"GET": ["/status", "/ws?nick=1 (WebSocket: Bilder, Bestätigung je Bild; 
                "/map.png?px=480&view=6 (Raumkarte)",
                "/horizon (Horizonttabelle + Stand)",
                "/detector (wählbare Ziele für follow/approach: Klassen des Detektors)"],
-       "POST": ["/mode?name=..&target=..", "/stop", "/pipeline?on=0|1", "/ruhe?on=0|1 (Ruhemodus; Wecken startet nichts)", "/record?on=0|1 (Rohaufzeichnung, nur balancierend)",
+       "POST": ["/mode?name=..&target=..", "/stop", "/pipeline?on=0|1", "/ruhe?on=0|1 (Ruhemodus; Wecken startet nichts)", "/wlan?on=0|1 (WLAN-Einrichtung: QR-Code, sonst Hotspot; wie Tasten C+D halten)", "/record?on=0|1 (Rohaufzeichnung, nur balancierend)",
                 "/drive?v=..&w=.. (nur Modus manual)",
                 "/exposure?us=0|100..33333 (0 = Automatik)", "/gain?g=0|1..63.9 (0 = Automatik)",
                 "/map/reset (Raumkarte leeren, Pose auf 0)", "/map/pose?aktion=start|hier|verwerfen (Standort bestätigen)", "/level (Beine neu ausrichten, 3 s)",
@@ -119,6 +119,8 @@ def serve(app: App, host: str, port: int, fps: int, render_cpus=None) -> Threadi
                         "ttc": round(s.ego.ttc, 2) if s.ego and s.ego.ttc < 99 else None,
                         **s.stats}
                 body["mode"] = app.mode       # stats stammt vom letzten Bild und kann veraltet sein
+                w = app.wlan
+                body["wlan"] = w.status() if w is not None else None
                 body["start"] = START
                 if parse_qs(u.query).get("breakdown"):
                     body["loop_breakdown"] = app.loop_breakdown()
@@ -202,6 +204,9 @@ def serve(app: App, host: str, port: int, fps: int, render_cpus=None) -> Threadi
             if u.path == "/ruhe":
                 app.set_ruhe(q.get("on", ["1"])[0] not in ("0", "false", "aus"))
                 return self._send(200, json.dumps({"ok": True, "ruhe": app.ruhe}).encode())
+            if u.path == "/wlan":
+                app.wlan_request(q.get("on", ["1"])[0] not in ("0", "false", "aus"))
+                return self._send(200, b'{"ok":true}')
             if u.path == "/record":
                 if app.rawrec is None:
                     return self._send(404, b'{"error":"keine Aufzeichnung"}')

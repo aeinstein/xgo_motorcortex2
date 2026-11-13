@@ -37,6 +37,12 @@
  *   POST api.php?a=pitch_calibration         (Lage: Firmware balanciert im Stand aus und speichert den Trimm)
  *   POST api.php?a=emotion&name=...           (Bildfolge aufs Display)
  *   POST api.php?a=shutdown                   (sudo-Regel: www-data -> systemctl poweroff)
+ *   GET  api.php?a=wlan_status                (wlan0: Verbindung, SSID, IP; sudo xgo-wlan status)
+ *   GET  api.php?a=wlan_scan                  (sichtbare Netze aus dem Cache; sudo xgo-wlan scan)
+ *   POST api.php?a=wlan_connect               (Body JSON {"ssid", "pw"}: Profil anlegen und verbinden, web/wlan.php;
+ *                                            im Hotspot sofort antworten, das Verbinden schließt ihn)
+ *   POST api.php?a=wlan&on=0|1                (WLAN-Einrichtung in xgonav wie Tasten C+D: QR-Code, sonst Hotspot)
+ *   (sudo-Regel deploy/sudoers-xgonav-wlan: www-data -> /usr/local/sbin/xgo-wlan connect|status|scan)
  *   (sudo-Regel deploy/sudoers-xgonav-ruhe: www-data -> /usr/local/sbin/xgo-ruhe on|off)
  *   GET  api.php?a=config                     (Einstellungen: Schema, Werte aus config.toml, Sicherungen)
  *   POST api.php?a=config_save&hash=<sha1>    (Body JSON {"abschnitt.key": Wert|null}; null = Default.
@@ -154,6 +160,37 @@ function ruhe_system(bool $an, array &$fehler): bool
     return $rc === 0;
 }
 
+// ---------------------------------------------------------------- WLAN (deploy/xgo-wlan)
+const XGO_WLAN = '/usr/local/sbin/xgo-wlan';
+
+// Helfer per sudo, stdin wird übergeben (Passwort nie in der Kommandozeile). [rc, Zeilen]
+function wlan_helfer(string $cmd, string $stdin = ''): array
+{
+    $p = proc_open(['sudo', '-n', XGO_WLAN, $cmd], [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
+    if (!is_resource($p)) {
+        return [127, ['Helfer nicht startbar']];
+    }
+    fwrite($pipes[0], $stdin);
+    fclose($pipes[0]);
+    $out = stream_get_contents($pipes[1]) . stream_get_contents($pipes[2]);
+    fclose($pipes[1]);
+    fclose($pipes[2]);
+    $rc = proc_close($p);
+    return [$rc, array_values(array_filter(explode("\n", trim($out)), fn($z) => $z !== ''))];
+}
+
+function wlan_kv(array $zeilen): array
+{
+    $d = [];
+    foreach ($zeilen as $z) {
+        $teil = explode('=', $z, 2);
+        if (count($teil) === 2) {
+            $d[$teil[0]] = $teil[1];
+        }
+    }
+    return $d;
+}
+
 // ---------------------------------------------------------------- Einstellungen (config.toml)
 function konfig_schema(): array
 {
@@ -259,6 +296,27 @@ if ($a === 'horizon' && !$post) {
 if ($a === 'detector' && !$post) {
     xgonav('GET', '/detector');
 }
+if ($a === 'wlan_status' && !$post) {
+    [$rc, $z] = wlan_helfer('status');
+    antwort($rc === 0 ? 200 : 500, json_encode($rc === 0 ? wlan_kv($z) : ['error' => end($z) ?: "rc $rc"],
+                                               JSON_UNESCAPED_UNICODE));
+}
+if ($a === 'wlan_scan' && !$post) {
+    [$rc, $z] = wlan_helfer('scan');
+    $netze = [];
+    foreach ($z as $zeile) {
+        // SIGNAL:SECURITY:SSID, ":" in der SSID ist mit \ maskiert
+        $f = preg_split('/(?<!\\\\):/', $zeile, 3);
+        if (count($f) === 3 && $f[2] !== '') {
+            $ssid = str_replace('\\:', ':', $f[2]);
+            if (!isset($netze[$ssid]) || $netze[$ssid]['signal'] < (int)$f[0]) {
+                $netze[$ssid] = ['ssid' => $ssid, 'signal' => (int)$f[0], 'security' => $f[1]];
+            }
+        }
+    }
+    usort($netze, fn($x, $y) => $y['signal'] <=> $x['signal']);
+    antwort(200, json_encode(['netze' => array_values($netze)], JSON_UNESCAPED_UNICODE));
+}
 if (!$post) {
     antwort(405, json_encode(['error' => 'Befehle nur per POST']));
 }
@@ -339,6 +397,30 @@ switch ($a) {
                                   'system' => $sys, 'fehler' => $fehler]));
     case 'record':
         xgonav('POST', '/record?on=' . (($_GET['on'] ?? '1') === '0' ? '0' : '1'));
+    case 'wlan':
+        xgonav('POST', '/wlan?on=' . (($_GET['on'] ?? '1') === '0' ? '0' : '1'));
+    case 'wlan_connect':
+        $d = json_decode((string)file_get_contents('php://input'), true);
+        $ssid = is_array($d) ? (string)($d['ssid'] ?? '') : '';
+        $pw = is_array($d) ? (string)($d['pw'] ?? '') : '';
+        if ($ssid === '' || strlen($ssid) > 32 || preg_match('/[\x00-\x1f]/', $ssid . $pw)) {
+            antwort(400, json_encode(['error' => 'SSID ungültig']));
+        }
+        if ($pw !== '' && (strlen($pw) < 8 || strlen($pw) > 63)) {
+            antwort(400, json_encode(['error' => 'Passwort muss 8 bis 63 Zeichen haben (oder leer für offene Netze)']));
+        }
+        $stdin = "$ssid\n$pw\n" . ($pw === '' ? 'NOPASS' : 'WPA') . "\n0\n";
+        $vorher = wlan_kv(wlan_helfer('status')[1]);
+        if (($vorher['con'] ?? '') === 'xgo-hotspot' && function_exists('fastcgi_finish_request')) {
+            // Über den Hotspot verbunden: Das Umschalten trennt den Browser, Ergebnis steht am Display
+            echo json_encode(['ok' => true, 'hotspot' => true]);
+            fastcgi_finish_request();
+            wlan_helfer('connect', $stdin);
+            exit;
+        }
+        [$rc, $z] = wlan_helfer('connect', $stdin);
+        antwort($rc === 0 ? 200 : 500, json_encode($rc === 0 ? ['ok' => true] + wlan_kv($z)
+                                                             : ['error' => end($z) ?: "rc $rc"], JSON_UNESCAPED_UNICODE));
     case 'drive':
         $v = zahl('v', -1, 1);
         $w = zahl('w', -1, 1);

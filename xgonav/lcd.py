@@ -31,6 +31,7 @@ class LcdOut:
         self._atlas = None              # Augen des Modus pet, beim ersten Bedarf geladen
         self._atlas_tried = False
         self._gaze_sent = None
+        self._wlan_sent = None
         threading.Thread(target=self._run, name="lcd", daemon=True).start()
 
     def _open(self) -> bool:
@@ -90,6 +91,22 @@ class LcdOut:
             if self._fd is None and not self._open():
                 time.sleep(2.0)
                 continue
+            wlan = self.app.wlan
+            if wlan is not None:
+                # WLAN-Einrichtung: Kamerabild mit Hinweis bzw. Hotspot-Daten; schreiben nur bei Änderung
+                v, img = wlan.lcd_frame()
+                if v != self._wlan_sent:
+                    try:
+                        os.write(self._fd, to_rgb565(img))
+                        self._wlan_sent = v
+                    except OSError:
+                        os.close(self._fd)
+                        self._fd = None
+                self._gaze_sent = None
+                self._last_idx = None
+                time.sleep(0.1)
+                continue
+            self._wlan_sent = None
             gaze = getattr(self.app.behavior, "gaze", None)
             if gaze is not None and self._gaze_frame(gaze):
                 continue

@@ -1,0 +1,8 @@
+# WLAN-Einrichtung (deploy/xgo-wlan): xgonav (Tasten C+D) und Weboberfläche (web/wlan.php über api.php).
+# Nach /etc/sudoers.d/xgonav-wlan, Rechte 0440, vorher mit "visudo -cf <datei>" prüfen.
+Cmnd_Alias XGO_WLAN = /usr/local/sbin/xgo-wlan connect, /usr/local/sbin/xgo-wlan hotspot, \
+                      /usr/local/sbin/xgo-wlan hotspot-off, /usr/local/sbin/xgo-wlan status, \
+                      /usr/local/sbin/xgo-wlan scan
+aeinstein ALL=(root) NOPASSWD: XGO_WLAN
+www-data ALL=(root) NOPASSWD: /usr/local/sbin/xgo-wlan connect, /usr/local/sbin/xgo-wlan status, \
+                              /usr/local/sbin/xgo-wlan scan

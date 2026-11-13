@@ -25,7 +25,7 @@ ZIEL = ROOT / "web" / "config-schema.json"
 OBEN = "allgemein"          # Pseudo-Abschnitt für Schlüssel auf oberster Ebene (control_hz)
 
 KATEGORIEN = [
-    ("Hardware", ["robot", "camera", "imu", "odom", "cpu", OBEN]),
+    ("Hardware", ["robot", "camera", "imu", "odom", "cpu", "wlan", OBEN]),
     ("Wahrnehmung", ["ego", "detector", "tracker", "freespace", "horizon"]),
     ("Karten", ["map", "grid", "reloc"]),
     ("Verhalten", ["behavior", "explore", "home", "patrol", "pet", "emotion", "ruhe"]),

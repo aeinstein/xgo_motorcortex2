@@ -502,6 +502,66 @@
      ]
     },
     {
+     "name": "wlan",
+     "doc": "",
+     "felder": [
+      {
+       "key": "enabled",
+       "typ": "bool",
+       "default": true,
+       "hilfe": "WLAN-Einrichtung über die Tasten (xgonav/wlan.py): Tasten halten -> WLAN-QR vor die Kamera, sonst Hotspot. Kostet ohne Einrichtung nichts (der Tastenwert wird ohnehin gelesen); währenddessen ruht die Bildverarbeitung."
+      },
+      {
+       "key": "buttons",
+       "typ": "int",
+       "default": 12,
+       "hilfe": "Bitmaske aus /proc/XGORider/buttons (A=1 B=2 C=4 D=8); A+B fährt herunter"
+      },
+      {
+       "key": "hold_s",
+       "typ": "float",
+       "default": 3.0,
+       "hilfe": "so lange halten (im Ruhemodus liest xgonav nur 1x/s)"
+      },
+      {
+       "key": "cancel_buttons",
+       "typ": "int",
+       "default": 2,
+       "hilfe": "kurz drücken bricht ab (B)"
+      },
+      {
+       "key": "qr_hz",
+       "typ": "float",
+       "default": 5.0,
+       "hilfe": "QR-Suche höchstens so oft"
+      },
+      {
+       "key": "qr_timeout_s",
+       "typ": "float",
+       "default": 60.0,
+       "hilfe": "ohne Code danach Hotspot"
+      },
+      {
+       "key": "hotspot_ssid",
+       "typ": "str",
+       "default": "xgo-rider",
+       "hilfe": ""
+      },
+      {
+       "key": "hotspot_timeout_s",
+       "typ": "float",
+       "default": 600.0,
+       "hilfe": "Hotspot ohne Eingabe so lange, dann alte Verbindung zurück"
+      },
+      {
+       "key": "helper",
+       "typ": "str",
+       "default": "/usr/local/sbin/xgo-wlan",
+       "hilfe": "root-Teil (deploy/xgo-wlan, sudo-Regel deploy/sudoers-xgonav-wlan)"
+      }
+     ]
+    },
+    {
      "name": "allgemein",
      "doc": "Schlüssel auf oberster Ebene (ohne Abschnitt)",
      "felder": [

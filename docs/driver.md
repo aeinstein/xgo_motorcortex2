@@ -64,7 +64,7 @@ cat /proc/XGORider/serial_stats; cat /proc/XGORider/imu
 | `battery` | r | % | 0x01 |
 | `state` | r | firmware state, 0 = fallen, 1 = balancing | |
 | `yaw` | r | integer degrees | |
-| `buttons` | r | integer | |
+| `buttons` | r | bit mask, 1 = pressed: A = 1 (GPIO 17), B = 2 (22), C = 4 (23), D = 8 (24); polled every `sleep_ms_on_loop`. **A+B together = `orderly_poweroff`** (driver). C+D held 3 s = Wi-Fi setup ([wifi-setup.md](wifi-setup.md)) | |
 | `imu` | r | `seq t_ns roll pitch yaw` (millidegrees), newest sample | |
 | `imu_log` | r | last 128 samples, oldest first | |
 | `wheels` | r | `seq t_ns ticks_left ticks_right fw_ms` (fw_ms only with 0x0d) | |

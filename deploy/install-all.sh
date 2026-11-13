@@ -134,11 +134,12 @@ if [ "$DO_WEB" = 1 ]; then
         warnung "Weboberfläche nicht aktiviert: Zertifikat/Schlüssel fehlen ($CERT, $KEY). Pfade in deploy/nginx-xgonav.conf anpassen und erneut aufrufen."
     fi
 
-    # Rechte für www-data: Emotionen nach /tmp/lcd0, nur "systemctl poweroff", "xgo-ruhe on|off" und
-    # "systemctl --no-block restart xgonav" (Einstellungen).
+    # Rechte für www-data: Emotionen nach /tmp/lcd0, nur "systemctl poweroff", "xgo-ruhe on|off",
+    # "systemctl --no-block restart xgonav" (Einstellungen) und "xgo-wlan connect|status|scan" (auch aeinstein).
     usermod -aG video www-data
     installiere deploy/xgo-ruhe /usr/local/sbin/xgo-ruhe 0755
-    for regel in poweroff ruhe restart; do
+    installiere deploy/xgo-wlan /usr/local/sbin/xgo-wlan 0755     # WLAN-Einrichtung (Tasten C+D, wlan.php)
+    for regel in poweroff ruhe restart wlan; do
         if visudo -cf "deploy/sudoers-xgonav-$regel" >/dev/null; then
             installiere "deploy/sudoers-xgonav-$regel" "/etc/sudoers.d/xgonav-$regel" 0440
             visudo -c >/dev/null
