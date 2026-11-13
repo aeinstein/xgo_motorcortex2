@@ -284,18 +284,14 @@ class LocalMap:
         return (left.min() if len(left) else math.inf, right.min() if len(right) else math.inf)
 
 
-def blocking_boxes(tracks, target_id, now: float, no_block_cls=()) -> list:
-    """Boxen, die als Hindernis ins Freiraum-Ergebnis kommen: frisch gesehen, nicht das Ziel, keine große Möbelklasse."""
-    return [t.box for t in tracks if t.id != target_id and t.lost_s(now) < 0.5 and t.cls not in no_block_cls]
-
-
 MOVABLE = {"person", "dog", "cat", "bird", "horse", "sports ball", "bicycle", "car"}
 ESCAPE_TOL_M = 0.01   # arc_clearance: Punkt im Radius blockiert erst, wenn die Bahn ihm >1 cm näher kommt
 
 
 def mask_movable(free: FreeSpace, objects, W: int, H: int) -> FreeSpace:
-    """Für die (statische) Karte: Spalten unter beweglichen Objekten ausblenden,
-    sonst hinterlässt z. B. eine verfolgte Person eine Geisterspur auf dem Weg.
+    """Nur für die Raumkarte: Spalten unter beweglichen Objekten ausblenden, sonst hinterlässt z. B. eine
+    verfolgte Person eine Geisterspur. Die Merkkarte (Bahnprüfung) bekommt das unmaskierte Bodenmodell:
+    Erkennungen fließen nie in Freiraum oder Bahnprüfung ein (Nutzer 2026-11-13).
     NaN = verdeckt: dort wird weder eingetragen noch freigeräumt.
     objects: Folge von (Klasse, (x1, y1, x2, y2)) in Vollbild-Pixeln."""
     mov = [box for cls, box in objects if cls in MOVABLE]

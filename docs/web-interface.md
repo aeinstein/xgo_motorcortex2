@@ -16,7 +16,7 @@
 | Area | Content |
 |---|---|
 | Header (sticky) | host, connection, mode, state (balancing/lying), battery (green ≥ 40 %, yellow ≥ 20 %, red < 20 %), pipeline, recording (only while switched on), WLAN (signal dBm: green ≥ −60, yellow ≥ −70, red below; ↓/↑ kB/s of `wlan0`), **Ruhe**, **STOPP** |
-| Left | camera image (WebSocket), mode selector (Idle · Hand · Follow · Explore · Approach · Zum Start) + target class, pipeline card with start/stop, Aufzeichnen button and status tiles, raw status JSON |
+| Left | camera image (WebSocket), mode selector (Idle · Hand · Follow · Explore · Approach · Zum Start) + target class dropdown (classes from `?a=detector`, reloaded after an xgonav restart, last choice in `localStorage`; disabled when YOLO is off), pipeline card with start/stop, Aufzeichnen button and status tiles, raw status JSON |
 | Lage (open by default, right column top) | 3D model of the Rider rotated by roll, pitch, yaw from `imu_log`: CAD model `web/rider-model.bin` via WebGL, legs follow the `height`/`roll` setpoints through the linkage, smoothed ~0.33 s, at minimum while state = 254 (sliders keep their value), see limitations; wheels turn by the encoder ticks from `wheels_log` (1024/rev, live packet `imu.wheels`, CAD model only) (built by `tools/step_to_model.py` from `docs/Rider-Pi.STEP`, loaded when Verlauf is first opened); without WebGL or the file, simple boxes on canvas 2D; fixed compass ring on the ground (0° = heading at ESP32 start, + = left), blue line = body forward direction; values below. Samples replayed smoothly ~0.4 s behind; rotation about the wheel axle. Drag (mouse/touch) to orbit the view (elevation 5–85°), double-click resets; view kept in `localStorage` `xgonav.lage3d`; live (5 s buffer, memory); open/closed kept in `localStorage` `xgonav.lage`. Controls: vertical *Kamerahöhe* slider beside the model (shows the camera height the floor geometry uses, in mm, from `cam_h_gerade`, including the × 0.921 correction, so about 8 % below a folding-rule reading; writes u8 61–205, u8 in the tooltip; shows `u8 …` until xgonav has answered once), roll −20..20° below |
 | Fahren | D-pad, speed 5–100 %, Aufstehen (arm, 255), Neu ausrichten (leveling pulse), Absetzen (disarm, 254) |
 | Raumkarte | room map PNG, view 3/6/10/16 m; mouse: drag to pan, wheel to zoom about the pointer (1 m..`grid.size_m`), double-click recentres on the Rider and follows again (touch: page scrolls, no pan); Start hier (start = pose), Speichern, reset, pose line with distance to start |
@@ -68,11 +68,12 @@ works without xgonav.
 
 ## `api.php`
 
-GET only for `status`, `route`, `horizon`; all commands POST. Parameters are validated; invalid → HTTP 400.
+GET only for `status`, `route`, `horizon`, `detector`; all commands POST. Parameters are validated; invalid → HTTP 400.
 
 | Request | Target | Range |
 |---|---|---|
 | `GET ?a=status` | xgonav `/status` (once; live via `/xgonav/live`) | |
+| `GET ?a=detector` | xgonav `/detector` | JSON `on`, `geladen`, `backend`, `classes`, `modes`, `default` |
 | `POST ?a=mode&name=..&target=..` | xgonav `/mode` | name ∈ idle, manual, follow, explore, approach, home, patrol, pet; target `[a-z ]{1,30}` |
 | `POST ?a=stop` | xgonav `/stop` | |
 | `POST ?a=pipeline&on=0\|1` | xgonav `/pipeline` | |
@@ -127,12 +128,13 @@ xgonav unreachable → HTTP 502 `xgonav nicht erreichbar`. Exposure/gain changes
 | POST | `/map/start` | start point = current pose |
 | POST | `/map/save` | save now to `grid.file`; 404 if no map or no file |
 | POST | `/map/pose?aktion=start\|hier\|verwerfen` | `start`: Rider stands on the start point, pose jumps there; `hier`: shown pose is right; `verwerfen`: pose unknown (needs `[reloc] enabled`). 409 while lying, during `home`/`patrol`/`explore` |
+| GET | `/detector` | selectable targets (detector classes), computed on request only |
 | GET | `/horizon` | horizon table + `stand` (same as `/status` `horizon`); 409 if `[horizon]` off |
 | POST | `/horizon/edit?row=..` | green line in the overlay (full-frame row), empty = off |
 | POST | `/horizon/cal?row=..` | store row for the body height of the stand reference; 409 without valid stand reference |
 | POST | `/horizon/delete?h=..` | delete entry at that height (±1 mm); 404 if none |
 
-Mode rules: `explore`/`approach`/`home` need `freespace.enabled` (else 409); `home` also needs the room map; all modes except `idle`/`manual` need a running pipeline (else 409).
+Mode rules: `explore`/`approach`/`home` need `freespace.enabled` (else 409); `follow`/`approach` need a running detector and a target in its classes (else 409); `home` also needs the room map; all modes except `idle`/`manual` need a running pipeline (else 409).
 
 ## Image transport (WebSocket)
 

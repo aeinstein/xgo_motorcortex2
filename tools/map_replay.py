@@ -338,9 +338,7 @@ def lade(d: str, cfg, bahn_quelle: str = "pose", roll_ref: float = 0.0, imu_vers
         else:
             fs = fse.update(img, m["pitch_dev"], [tr["box"] for tr in m.get("tracks_all", m.get("tracks", []))])
         tracks = m.get("tracks", [])
-        free = dataclasses.replace(fs, sectors=list(fs.sectors), columns=fs.columns.copy())
-        fse.block_boxes(free, [tr["box"] for tr in tracks if tr.get("id") != m.get("target")])
-        views[i] = mask_movable(free, [(tr.get("cls"), tr["box"]) for tr in tracks], geo.W, geo.H)
+        views[i] = mask_movable(fs, [(tr.get("cls"), tr["box"]) for tr in tracks], geo.W, geo.H)
     pitch = np.array([m["pitch_dev"] for m in ms], float)
     return {"t": t, "bahn": bahn, "views": views, "pitch": pitch, "geo": geo, "fw": fse.W, "fh": fse.H,
             "rate_rad": rate_rad, "roll_imu": roll_imu, "kurs_imu": kurs_imu, "imu": imu is not None, "bilder": len(ms)}

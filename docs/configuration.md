@@ -124,7 +124,7 @@ Default = `config.py`; since 2026-11-12 these are the RiderPi values (`/opt/xgon
 | `conf` / `iou` | 0.35 / 0.45 | |
 | `threads` | 2 | 2 |
 | `max_hz` | 5.0 (sim: 0.0) | |
-| `classes` | `["person", "chair", "couch", "dining table", "potted plant", "bed", "dog", "cat"]` (sim: `[]`) | |
+| `classes` | `["person", "chair", "couch", "dining table", "potted plant", "bed", "dog", "cat"]` (sim: `[]`) | selectable targets for `follow`/`approach` (web dropdown); `[]` = all COCO. Recognition only, never obstacles |
 | `sharpness_rel` / `max_wait_s` | 0.6 / 0.25 | |
 
 ### `[tracker]`
@@ -144,7 +144,6 @@ Default = `config.py`; since 2026-11-12 these are the RiderPi values (`/opt/xgon
 | `min_obst_height_m` | 0.04 | | |
 | `shading_file` | `shading.json` (sim: `""`) | | |
 | `shading_max_gain` | 5.0 (sim: 8.0) | | |
-| `no_block_cls` | bed, couch, dining table | | detector classes not entered as obstacles: their box bottom is no footprint (RiderPi 2026-11-06: "bed" box down to the image bottom blocked everything) |
 | `min_known_frac` | 0.2 | | columns below → unknown |
 | `bg_model` / `shading_max_gain_bg` | false / 8.0 | false | edge model from blue+green where red is unmeasurable; full width, but false obstacles in dark lower corners |
 | `min_learn_v` | 12 | | no learning from (nearly) black samples |
@@ -208,7 +207,8 @@ All keys with comments: `PetCfg` in `xgonav/config.py`.
 | `faint` | false | hard scare: set down, wake up, stand up by itself |
 | `gestures` | true | false: only eyes and sounds |
 | `zone_far_m`, `zone_mid_m`, `zone_close_m`, `kneel_max_m` | 3.0, 1.5, 0.5, 1.9 | person zones |
-| `startle_mps`, `startle_heavy_mps`, `startle_max_m` | 1.0, 1.8, 1.6 | foot point confirmed by box width growth; **not tuned on real footage** |
+| `startle_mps`, `startle_heavy_mps`, `startle_max_m` | 1.0, 1.8, 1.6 | approach speed = min(foot-point line fit, measured box-width growth × distance / `startle_vs`); widths of boxes cut at the left/right image edge are ignored; **not tuned on real footage** |
+| `startle_vs` | 1.0 | < 1 trusts the box growth more |
 | `pulse_margin` | 0.85 | budgets are time pulses (budget / speed × margin), wheels are only the upper limit: after a stop command it coasts ~0.9 s × speed |
 | `dog_fear_m`, `dog_close_m`, `cat_stop_m` | 2.0, 0.5, 0.8 | |
 | `nap_s`, `eyes_open_s`, `clear_s`, `nap_max_s` | 10, 3, 2.5, 60 | eyes shut, opening, nobody in view, give up |

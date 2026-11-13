@@ -557,10 +557,15 @@ class FakeDetector:
         self._lock = threading.Lock()
         self._rng = np.random.default_rng(3)
 
+    backend = "sim"
+
     def start(self) -> bool:
         return True
 
     def close(self) -> None: ...
+
+    def classes(self) -> list[str]:
+        return [self.world.person.cls if self.world.person is not None else "person"]
 
     def offer(self, frame, sharpness, median) -> None:
         now = time.monotonic()

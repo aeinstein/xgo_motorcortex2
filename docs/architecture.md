@@ -18,7 +18,7 @@ camera.FrameSource ─► egomotion.EgoMotion ─► tracker.Tracker ◄── d
 |---|---|---|
 | Image loop | camera fps (RiderPi config: 25) | ego-motion, tracker update, free space, snapshot |
 | Control step | `control_hz` = 20 Hz | build `World`, run behaviour, safety, `drive()` |
-| Detector | `detector.max_hz` (RiderPi: 5 Hz) | YOLO on sharp frames, own thread |
+| Detector | `detector.max_hz` (RiderPi: 5 Hz), only in `follow`/`approach`/`pet` | YOLO on sharp frames, own thread; recognition only, never obstacles |
 | IMU / wheels | 50 Hz (`imu.imu_hz`) / `wheel_hz` | kernel thread, read from `/proc/XGORider/imu_log`, `wheels_log` |
 
 ## Rules

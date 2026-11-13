@@ -674,7 +674,7 @@
         "dog",
         "cat"
        ],
-       "hilfe": "leer = alle COCO-Klassen"
+       "hilfe": "Wählbare Ziele für follow/approach; nur Erkennung, nie Hindernis. Leer = alle COCO-Klassen."
       }
      ]
     },
@@ -777,17 +777,6 @@
        "typ": "float",
        "default": 0.04,
        "hilfe": "Ein Nicht-Boden-Lauf zählt erst, wenn er so hoch ist wie ein aufrechter Gegenstand dieser Höhe an seinem Fußpunkt (oder bis zum Horizont reicht). Flache Flecken, Fugen und Kabel auf dem Boden sind kürzer. 0 = aus. Braucht die Kamerageometrie."
-      },
-      {
-       "key": "no_block_cls",
-       "typ": "liste",
-       "elem": "str",
-       "default": [
-        "bed",
-        "couch",
-        "dining table"
-       ],
-       "hilfe": "Diese Klassen werden nicht als Hindernis eingetragen: Die Box großer Möbel sagt nichts über die Standfläche, ihre Unterkante ist kein Fußpunkt (RiderPi 2026-11-06: \"bed\" vom Bett bis zum unteren Bildrand über die volle Breite, alles blockiert). Das Möbel selbst findet das Bodenmodell."
       },
       {
        "key": "shading_file",
@@ -2116,8 +2105,8 @@
       {
        "key": "startle_vs",
        "typ": "float",
-       "default": 0.5,
-       "hilfe": "Boxbreite muss mit diesem Anteil von Annäherung/Abstand wachsen"
+       "default": 1.0,
+       "hilfe": "Annäherung = min(Fußpunkt-Gerade, Boxwachstum x Abstand / startle_vs); < 1 traut der Box mehr zu"
       },
       {
        "key": "startle_s",

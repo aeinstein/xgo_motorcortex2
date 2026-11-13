@@ -42,7 +42,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from label import MAX_TURN_DPS, load_cfg, load_run, make_geo, select_segment, trajectory  # noqa: E402
 from xgonav.freespace import FreeSpace, FreeSpaceEstimator, net_to_columns, _p20  # noqa: E402
 from xgonav.gridmap import GridMap  # noqa: E402
-from xgonav.localmap import LocalMap, mask_movable  # noqa: E402
+from xgonav.localmap import LocalMap  # noqa: E402
 
 JUMP_PX = 40.0
 NCOLS = 80
@@ -140,19 +140,16 @@ class Spur:
             with np.errstate(invalid="ignore"):
                 z["still_flacker"] += int((np.abs(rows - self.prev_rows) > JUMP_PX).sum())
         self.prev_rows = rows
-        tracks = m.get("tracks", [])
-        free = dataclasses.replace(fs, sectors=list(fs.sectors), columns=fs.columns.copy())
-        self.fse.block_boxes(free, [tr["box"] for tr in tracks if tr.get("id") != m.get("target")])
+        # Erkennungen sind kein Hindernis, die Merkkarte bekommt das Bodenmodell unmaskiert (wie App._step)
         b = self.cfg.behavior
-        r = regelung(free.center, b.blocked_free, b.slow_free)
+        r = regelung(fs.center, b.blocked_free, b.slow_free)
         z["halt"] += r == "halt"
         z["bremst"] += r == "bremst"
         if self.prev_halt is not None and (r == "halt") != self.prev_halt:
             z["halt_wechsel"] += 1
         self.prev_halt = r == "halt"
         self.lmap.move(ds, dyaw)
-        view = mask_movable(free, [(tr.get("cls"), tr["box"]) for tr in tracks], W, H)
-        self.lmap.add_freespace(view, t, m["pitch_dev"])
+        self.lmap.add_freespace(fs, t, m["pitch_dev"])
         blk = self.lmap.arc_clearance(v_chk, 0.0, horizon_s=1.2) < need
         z["bahn_block"] += blk
         if self.prev_blk is not None and blk != self.prev_blk:

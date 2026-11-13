@@ -243,7 +243,7 @@ class Follow(Behavior):
             hmm = self.cfg.height_fast_mm if fast else self.cfg.height_cruise_mm
             st = "verfolge #%d %s (%+.0f°, %s)" % (tr.id, tr.cls, math.degrees(err),
                                                   "%.2f m" % dist if dist is not None else "? m")
-            return Command(v, wc, hmm, st, tr.id)
+            return Command(v, wc, hmm, st, tr.id, extra={"dist": dist, "err": err})
         # verloren -> in Richtung der letzten Sichtung suchen
         if self.search_start is None:
             self.search_start = w.t
@@ -324,8 +324,17 @@ class Explore(Behavior):
 
 
 class Approach(Behavior):
-    """Erkunden, bis ein Objekt der Zielklasse gesehen wird; dann anfahren und davor stoppen."""
+    """Erkunden, bis ein Objekt der Zielklasse gesehen wird; dann anfahren und davor stoppen.
+    Angekommen ist er, wenn der geschätzte Abstand höchstens approach_dist_m + dist_deadband beträgt und er
+    ausgerichtet ist (ARRIVE_S lang), oder wenn er vor dem nahen Ziel blockiert ist: Das Verhalten will vor,
+    Sicherheitsschicht oder Bahnprüfung halten ihn an (gefahrener Befehl ~0 seit BLOCK_S). Sonst stünde er dort
+    für immer mit „verfolge …“, weil das Verhalten selbst nie v = 0 befiehlt."""
     name = "approach"
+    ARRIVE_S = 1.0
+    ARRIVE_DEG = 8.0
+    BLOCK_S = 3.0
+    BLOCK_NEAR_M = 0.3            # blockiert zählt als angekommen bis so viel über dem Wunschabstand
+    LOST_EXPLORE_S = 4.0          # so lange suchen, dann wieder erkunden
 
     def __init__(self, cfg, rcfg, target_class: str | None = None):
         super().__init__(cfg, rcfg)
@@ -333,27 +342,42 @@ class Approach(Behavior):
         self.follow = Follow(cfg, rcfg, self.cls, cfg.approach_dist_m)
         self.explore = Explore(cfg, rcfg)
         self.arrived_since: float | None = None
+        self.blocked_since: float | None = None
         self.done = False
+        self.result = ""
+
+    def _finish(self, status: str) -> Command:
+        self.done, self.result = True, status
+        return Command(0, 0, self.cfg.height_search_mm, status)
 
     def step(self, w: World) -> Command:
         if self.done:
-            return Command(0, 0, self.cfg.height_search_mm, "angekommen bei %s" % self.cls)
+            return Command(0, 0, self.cfg.height_search_mm, self.result)
         seen = any(t.cls == self.cls for t in w.tracks)
         if not seen and self.follow.search_start is None and self.follow.target is None:
+            self.arrived_since = self.blocked_since = None
             c = self.explore.step(w)
             c.status = "suche %s: %s" % (self.cls, c.status)
             return c
         c = self.follow.step(w)
-        if c.target_id is not None and abs(c.v) < 1e-3 and abs(c.w) < 0.02:
-            self.arrived_since = self.arrived_since or w.t
-            if w.t - self.arrived_since > 1.0:
-                self.done = True
+        dist, err = c.extra.get("dist"), c.extra.get("err")
+        if c.target_id is not None and dist is not None:
+            want = self.cfg.approach_dist_m
+            near = dist <= want + self.cfg.dist_deadband and abs(err) < math.radians(self.ARRIVE_DEG)
+            pushing = c.v > 0.02 and abs(w.cmd_v) < 0.01 and dist < want + self.BLOCK_NEAR_M
+            self.arrived_since = (w.t if self.arrived_since is None else self.arrived_since) if near else None
+            self.blocked_since = (w.t if self.blocked_since is None else self.blocked_since) if pushing else None
+            if self.arrived_since is not None and w.t - self.arrived_since >= self.ARRIVE_S:
+                return self._finish("angekommen bei %s (%.2f m)" % (self.cls, dist))
+            if self.blocked_since is not None and w.t - self.blocked_since >= self.BLOCK_S:
+                return self._finish("vor %s blockiert (%.2f m)" % (self.cls, dist))
         else:
-            self.arrived_since = None
-        if self.follow.search_start is not None and w.t - self.follow.search_start > 4.0:
-            # länger nicht gesehen -> wieder erkunden
+            self.arrived_since = self.blocked_since = None
+        if self.follow.search_start is not None and w.t - self.follow.search_start > self.LOST_EXPLORE_S:
+            # länger nicht gesehen -> wieder erkunden; beim Wiederfinden mit frischem Abstand anfangen
             self.follow.target = None
             self.follow.search_start = None
+            self.follow.servo.reset()
         return c
 
 

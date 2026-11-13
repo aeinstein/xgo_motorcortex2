@@ -4,7 +4,6 @@ Objekten, wie in App._step. Zum Vergleichen von Parametern ohne Fahrt am Rider.
 
   python tools/replay_raw.py DIR --config rider.toml
   python tools/replay_raw.py DIR --config rider.toml --set freespace.edge_weight=0.4 --set freespace.min_obst_rows=6
-  python tools/replay_raw.py DIR --config rider.toml --no-objects     # erkannte Objekte nicht in die Karte
   python tools/replay_raw.py DIR --config rider.toml --video out.mp4  # Bodengrenze + Karte einzeichnen
 
 Bewertet wird je Regelschritt (control_hz), ob die Bahn geradeaus mit max_v blockiert
@@ -14,7 +13,6 @@ Blockade als Fehlalarm, sofern sonst nichts im Weg steht (Szene vorher prüfen).
 from __future__ import annotations
 
 import argparse
-import dataclasses
 import json
 import math
 import os
@@ -30,7 +28,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from xgonav.config import Config  # noqa: E402
 from xgonav.freespace import FreeSpace, FreeSpaceEstimator, column_runs  # noqa: E402
 from xgonav.geometry import CamGeometry  # noqa: E402
-from xgonav.localmap import LocalMap, mask_movable  # noqa: E402
+from xgonav.localmap import LocalMap  # noqa: E402
 
 DIST_RE = re.compile(r"verfolge #\d+ \S+ \([+-]?\d+°, ([\d.]+) m\)")
 
@@ -45,7 +43,7 @@ def set_param(cfg: Config, expr: str) -> None:
     setattr(obj, parts[-1], type(cur)(val) if not isinstance(cur, bool) else val.lower() in ("1", "true", "ja"))
 
 
-def replay(d: str, cfg: Config, objects: bool = True, person_min: float = 1.2, video: str | None = None,
+def replay(d: str, cfg: Config, person_min: float = 1.2, video: str | None = None,
            quiet: bool = False, exclude: bool = True) -> dict:
     meta = [json.loads(line) for line in open(os.path.join(d, "meta.jsonl"))]
     W, H = cfg.camera.width, cfg.camera.height
@@ -73,16 +71,13 @@ def replay(d: str, cfg: Config, objects: bool = True, person_min: float = 1.2, v
             continue
         dt = t - last_ctrl if last_ctrl is not None else 0.0
         last_ctrl = t
-        tracks = m["tracks"]
-        free = dataclasses.replace(free_raw, sectors=list(free_raw.sectors), columns=free_raw.columns.copy())
-        if objects:
-            fse.block_boxes(free, [tr["box"] for tr in tracks if tr["id"] != m["target"]])
+        free = free_raw                              # Erkennungen sind kein Hindernis (wie App._step)
         yaw = math.radians(m["yaw_vis_deg"] or 0.0)
         lmap.move(m["sent"][0] * cfg.robot.vx_limit * dt, (yaw - last_yaw) if last_yaw is not None else 0.0)
         last_yaw = yaw
         if free_raw is not fs_in_map:
             fs_in_map = free_raw
-            lmap.add_freespace(mask_movable(free, [(tr["cls"], tr["box"]) for tr in tracks], W, H), t,
+            lmap.add_freespace(free, t,                  # Merkkarte unmaskiert wie in App._step
                                m["pitch_dev"])
         wr = math.radians(m["sent"][1] * cfg.robot.vyaw_limit_dps)
         clr = lmap.arc_clearance(v_chk, wr, horizon_s=1.2)
@@ -136,7 +131,6 @@ def main() -> None:
     ap.add_argument("dir")
     ap.add_argument("--config")
     ap.add_argument("--set", action="append", default=[], metavar="ABSCHNITT.SCHLÜSSEL=WERT")
-    ap.add_argument("--no-objects", action="store_true", help="erkannte Objekte nicht als Hindernis eintragen")
     ap.add_argument("--no-exclude", action="store_true", help="Bodenmodell auch aus Objektboxen lernen (altes Verhalten)")
     ap.add_argument("--person-min", type=float, default=1.2)
     ap.add_argument("--video")
@@ -144,7 +138,7 @@ def main() -> None:
     cfg = Config.load(a.config)
     for e in a.set:
         set_param(cfg, e)
-    replay(a.dir, cfg, objects=not a.no_objects, person_min=a.person_min, video=a.video, exclude=not a.no_exclude)
+    replay(a.dir, cfg, person_min=a.person_min, video=a.video, exclude=not a.no_exclude)
 
 
 if __name__ == "__main__":

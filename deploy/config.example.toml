@@ -56,9 +56,8 @@ fallback_model = "models/yolo11n_256.onnx"  # falls NCNN-Modell oder Paket ncnn 
 threads = 2            # 2 lassen der Hauptschleife genug Kerne (CM4 gemessen)
 max_hz = 5.0           # Detektion höchstens 5x/s (ohne Pause ~7 Hz, ~2 Kerne); spart ~60 % CPU
 conf = 0.35
-# Personen plus Möbel am Boden: deren Boxen (Unterkante = Fußpunkt) blockieren die Spalten.
-# Dünne Stuhl- und Tischbeine sieht das Kantenverfahren nicht (1–2 Spalten), yolo11n_256 findet
-# Stühle in den Aufnahmen zuverlässig. Keine Klassen, die nicht am Boden stehen (tv).
+# Wählbare Ziele für follow/approach (Auswahl im Web). Nur Erkennung: Boxen sind nie Hindernisse,
+# das entscheidet allein das Bodenmodell. Der Detektor läuft nur in follow, approach und pet.
 # Leer = alle COCO-Klassen.
 classes = ["person", "chair", "couch", "dining table", "potted plant", "bed", "dog", "cat"]
 

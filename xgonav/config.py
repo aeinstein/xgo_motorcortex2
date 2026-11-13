@@ -178,7 +178,8 @@ class DetectorCfg:
     # Höchstrate der Detektion. 0 = ohne Pause (CM4: ~7 Hz bei 140 ms/Bild, ~2 Kerne).
     # 5 Hz spart rund ein Drittel davon; der Simulator-Detektor liefert ebenfalls 5 Hz.
     max_hz: float = 5.0
-    classes: list[str] = field(default_factory=lambda: ["person", "chair", "couch", "dining table", "potted plant", "bed", "dog", "cat"])  # leer = alle COCO-Klassen
+    # Wählbare Ziele für follow/approach; nur Erkennung, nie Hindernis. Leer = alle COCO-Klassen.
+    classes: list[str] = field(default_factory=lambda: ["person", "chair", "couch", "dining table", "potted plant", "bed", "dog", "cat"])
 
 
 @dataclass
@@ -207,10 +208,6 @@ class FreespaceCfg:
     # Höhe an seinem Fußpunkt (oder bis zum Horizont reicht). Flache Flecken, Fugen und Kabel
     # auf dem Boden sind kürzer. 0 = aus. Braucht die Kamerageometrie.
     min_obst_height_m: float = 0.04
-    # Diese Klassen werden nicht als Hindernis eingetragen: Die Box großer Möbel sagt nichts über die
-    # Standfläche, ihre Unterkante ist kein Fußpunkt (RiderPi 2026-11-06: "bed" vom Bett bis zum unteren
-    # Bildrand über die volle Breite, alles blockiert). Das Möbel selbst findet das Bodenmodell.
-    no_block_cls: list[str] = field(default_factory=lambda: ["bed", "couch", "dining table"])
     # Linsenabschattung (tools/calibrate.py shading -> JSON). "" = aus (Simulator).
     # Pixel, die mehr als shading_max_gain Verstärkung bräuchten, gelten als unzuverlässig
     # und nie als Hindernis (RiderPi: untere Ecken, äußere Ränder).
@@ -580,7 +577,8 @@ class PetCfg:
     startle_max_m: float = 1.6         # weiter weg erschrickt er nicht
     startle_window_s: float = 0.8      # bei 4 Hz Detektion ~3 Messungen
     startle_min_samples: int = 3
-    startle_vs: float = 0.5            # Boxbreite muss mit diesem Anteil von Annäherung/Abstand wachsen
+    # Annäherung = min(Fußpunkt-Gerade, Boxwachstum x Abstand / startle_vs); < 1 traut der Box mehr zu
+    startle_vs: float = 1.0
     startle_s: float = 1.4             # Dauer der Reaktion (Abducken, Ruck)
     startle_cooldown_s: float = 3.0
     startle_min: float = 0.12          # schwächer: nur Augen, kein Abducken

@@ -14,7 +14,7 @@ Single device: RiderPi, CM4 2 GB, kernel 6.6.74+rpt-rpi-v8, OV5647 wide-angle, f
 | `follow` | tested 2026-11-02 (runs 3–8, `max_v` 0.10–0.15); works, path check blocked in some runs |
 | `explore` | frontier mapping, three recorded RiderPi runs 2026-11-06, see below. Map not yet usable: ends too early |
 | `home` | 2026-11-05, 3 tries: did not reach the start. Stop/turn/start cycles and changing plans (45 s without progress), then stuck 1.3 m before the start at a gap the path check considers too narrow; afterwards changed (path keeping, `LocalMap` obstacles in planning, curve driving), **not retested** |
-| `approach` | **not tested** |
+| `approach` | **not tested on the Rider**. Sim (2026-11-13, standing chair, also `--rider --dyn --wheels --kanten`): stops ~0.55 m in front, 0 collisions. Ends when the distance estimate is ≤ `approach_dist_m` + `dist_deadband` and aligned for 1 s, or when safety/arc check hold it < 0.3 m beyond that for 3 s. Explores reactively until the target is seen; no fall protection (stairs) |
 | `pet` | simulator and unit tests only, **not run on the Rider**. Approach thresholds not tuned on real footage; cats and dogs from 12.8 cm camera height untested. A person standing < 1.9 m has no head in the image, so "kneeling" is inferred from the box top. Reverse is blind. Auto stand-up relies on IMU, wheels, `/proc/XGORider/state` and an empty image; the lying camera view is limited, floor or steps in front are not checked. A direct `echo 254 > action` without `POST /stop` is not noticed |
 | FloorNet | shadow mode only, makes no decisions; preset goal against hand lines missed ([floornet.md](floornet.md)) |
 | IMU sync while balancing | not verified |
@@ -83,7 +83,7 @@ Largest cost: optical flow (`ego.lk_*`). The Python binding does not accept preb
 |---|---|
 | Floor model | needs fairly uniform floor; patterned carpet / hard tile joints → phantom obstacles. Laminate OK with `edge_weight 0.4`, `min_obst_rows 6` (0 false blocks in 40 raw images). Fails on some floors / at desk (open) |
 | Follow false alarms | replay `raw_follow8`: path blocked in ~49 % of control steps without real obstacle |
-| `kanten` remaining errors (2026-11-05, 36 frames reviewed) | reflections of furniture in glossy floor put the boundary 10–20 cm too close; diffuse light pool edge in a dark room (follow9 304) seen as obstacle; thin chair/table legs invisible (use detector `classes`) |
+| `kanten` remaining errors (2026-11-05, 36 frames reviewed) | reflections of furniture in glossy floor put the boundary 10–20 cm too close; diffuse light pool edge in a dark room (follow9 304) seen as obstacle; thin chair/table legs invisible |
 | Carpet | the carpet edge is a real obstacle (Rider cannot climb it); `kanten` detects it |
 | Path check radius | `LocalMap` radius 0.18 m: a wall 0.16 m beside the path blocks driving along it (follow11 kitchen), although the Rider passed there without contact. Points already inside the radius only block when the path gets closer (escape rule). In a tight spot of `home`/`explore`/`patrol` the radius is `map.radius_tight_m` 0.08 m: 2.2 cm beyond the Rider's half width, **not driven** |
 | Narrow gaps | planner and `explore` take gaps from 25 cm when there is no other way (`home.squeeze_m` 0.09, tight-spot steering). Simulator only (scene `spalt`, collision radius 7 cm instead of 12 cm); the 5 cm map sometimes draws such a gap too narrow and it is skipped. The Rider rolls back on every start and overshoots turns by ~15°: turning in place in front of a gap is untested. More goals at the end of `explore` (holes in mapped walls look like gaps) |
@@ -93,6 +93,8 @@ Largest cost: optical flow (`ego.lk_*`). The Python binding does not accept preb
 | Explore (sim) | frontier version: 0 collisions in 10 runs to the end; an earlier version once hit a box corner and wheel slip then ruined the pose (1.7 m). Contact is not detected |
 | Ego-motion | spikes up to ~80 ms per frame |
 | Without free space (`freespace.enabled = false`) | only `idle`, `manual`, `follow`; `explore`/`approach` → HTTP 409 |
+| Detector | runs only in `follow`, `approach`, `pet` (other modes: no frames, thread idle, ~1 core saved). Detections never enter free space, safety or arc check (floor model only); persons/animals are masked only in the room map. `follow`/`approach` need a running detector and a target in its classes (else HTTP 409) |
+| Follow (sim, `--rider`) | same as before 2026-11-13: loses the walking person (0.3 m/s) and waits; the followed person is in the local map, arc check brakes at ~2.3 m in some steps |
 
 ## Other
 

@@ -727,6 +727,8 @@ def test_pipeline_pause_and_resume():
     world = SimWorld(cfg.camera, robot, Person([(3.0, 1.5), (3.5, 3.0)], speed=0.3), start=(1.0, 1.5, 0.0))
     app = App(cfg, robot, world, imu=None)
     app.imu = None
+    from xgonav.sim import FakeDetector
+    app.det = FakeDetector(world)                       # follow braucht einen Detektor
     app.set_mode("follow")
     th = threading.Thread(target=app.run, kwargs={"duration": 6.0}, daemon=True)
     th.start()
@@ -2358,16 +2360,149 @@ def test_phantoms_shorten_columns():
     assert (fs.columns < 0.9).sum() < 40                       # nur ein Fleck, nicht das ganze Bild
 
 
-def test_blocking_boxes_skip_furniture_target_and_stale():
-    from xgonav.config import FreespaceCfg
-    from xgonav.localmap import blocking_boxes
+def test_detections_never_block_path():
+    """YOLO dient nur der Erkennung: Eine Box vor dem Rider ändert weder safety() noch die Merkkarte; die
+    Raumkarte blendet bewegliche Objekte aus, die Merkkarte (Bahnprüfung) nicht (Nutzer 2026-11-13)."""
+    from xgonav.behaviors import Command, World, safety
+    from xgonav.egomotion import EgoResult
+    from xgonav.freespace import FreeSpace
+    from xgonav.localmap import mask_movable
     from xgonav.tracker import Track
-    bed = Track("bed", 320, 370, 640, 200, 0.6, 10.0)
-    person = Track("person", 100, 300, 50, 200, 0.8, 10.0)
-    target = Track("person", 400, 300, 50, 200, 0.8, 10.0)
-    alt = Track("chair", 200, 300, 50, 80, 0.8, 9.0)
-    boxes = blocking_boxes([bed, person, target, alt], target.id, 10.1, Config.neutral().freespace.no_block_cls)
-    assert boxes == [person.box]
+    import xgonav.app as appmod
+    assert not hasattr(appmod, "blocking_boxes")
+    cols = np.full(160, 0.9)
+    fs = FreeSpace(mask=np.zeros((120, 160), np.uint8), sectors=[0.9] * 7, horizon_row=40.0, columns=cols)
+    chair = Track("chair", 320, 400, 120, 160, 0.9, 10.0)
+    w = World(t=10.0, dt=0.05, W=640, H=480, hfov=1.6, ego=EgoResult(0, 10.0, 0.05), tracks=[chair], free=fs,
+              balancing=True, yaw=0.0, cmd_v=0.1)
+    c = safety(Command(0.1, 0.0, None, "x"), w, Config.neutral().behavior)
+    assert c.v == 0.1 and "Freiraum" not in c.status
+    view = mask_movable(fs, [("person", (300, 0, 340, 480))], 640, 480)
+    assert np.isnan(view.columns).any() and not np.isnan(fs.columns).any()   # nur die Kopie für die Raumkarte
+
+
+def test_detector_classes():
+    """Wählbare Ziele: Klassen des Modells (gefiltert), vor dem Start die konfigurierten, ohne Detektor keine."""
+    from xgonav.detector import COCO, DetectorWorker
+    cfg = Config.neutral().detector
+    cfg.classes = ["person", "chair"]
+    d = DetectorWorker(cfg)
+    assert d.classes() == ["person", "chair"]
+    class M:
+        names = ["person", "bicycle", "chair"]
+        allowed = {0, 2}
+    d.model = M()
+    assert d.classes() == ["person", "chair"]
+    M.allowed = None
+    assert d.classes() == ["person", "bicycle", "chair"]
+    cfg.classes = []
+    assert DetectorWorker(cfg).classes() == COCO
+    d2 = DetectorWorker(cfg)
+    d2.failed = True
+    assert d2.classes() == []
+    cfg.enabled = False
+    assert DetectorWorker(cfg).classes() == []
+
+
+def test_follow_approach_need_known_target():
+    """Ziel muss eine aktive Detektorklasse sein, sonst sucht follow bzw. erkundet approach ewig."""
+    from xgonav.app import ModeNotAllowed
+    app = _app(freespace=True)
+    app.det.cfg.classes = ["person", "chair"]
+    app.set_mode("approach", "chair")
+    app.set_mode("follow", None)                         # Default target_class person
+    with pytest.raises(ModeNotAllowed):
+        app.set_mode("follow", "bottle")
+    app.det.cfg.enabled = False
+    for name in ("follow", "approach"):
+        with pytest.raises(ModeNotAllowed):
+            app.set_mode(name, "person")
+    app.set_mode("explore")                              # andere Modi brauchen keinen Detektor
+
+
+def test_detector_only_in_det_modes():
+    """Nur follow/approach/pet geben dem Detektor Bilder (~1 Kern am CM4), sonst ruht er."""
+    from xgonav.app import App
+    from xgonav.sim import FakeDetector
+    n = {}
+    for mode in ("idle", "explore", "follow"):
+        cfg = Config.neutral(); cfg.output.web_port = 0; cfg.detector.enabled = False
+        cfg.behavior.mode = "idle" if mode == "follow" else mode
+        robot = SimRobot(cfg.robot)
+        world = SimWorld(cfg.camera, robot, None)
+        app = App(cfg, robot, world, imu=None)
+        app.imu = None
+        det = FakeDetector(world)
+        cnt = [0]
+        orig = det.offer
+        def offer(*a, _o=orig, _c=cnt):
+            _c[0] += 1
+            _o(*a)
+        det.offer = offer
+        app.det = det
+        if mode == "follow":
+            app.set_mode("follow")                       # erst mit Detektor erlaubt
+        app.run(duration=1.0)
+        n[mode] = cnt[0]
+    assert n["idle"] == 0 and n["explore"] == 0 and n["follow"] > 0
+
+
+class _GeoStub:
+    cx = 320.0
+    def __init__(self):
+        self.d = 2.0
+    def object_dist(self, box, cls, pitch_dev=0.0, clip=None):
+        return self.d, "stub"
+
+
+def _approach_world(t, tr, cmd_v, geo):
+    from xgonav.behaviors import World
+    from xgonav.egomotion import EgoResult
+    return World(t=t, dt=0.05, W=640, H=480, hfov=1.6, ego=EgoResult(0, t, 0.05), tracks=[tr], free=None,
+                 balancing=True, yaw=0.0, cmd_v=cmd_v, geo=geo)
+
+
+def test_approach_arrives_at_distance():
+    from xgonav.behaviors import Approach
+    from xgonav.tracker import Track
+    cfg = Config.neutral()
+    a = Approach(cfg.behavior, cfg.robot, "chair")
+    geo = _GeoStub()
+    tr = Track("chair", 320, 300, 100, 120, 0.9, 0.0)
+    t = 0.0
+    geo.d = cfg.behavior.approach_dist_m + 0.05
+    while t < 3.0 and not a.done:
+        tr.t_seen = t                                      # jede Runde eine neue Detektion
+        c = a.step(_approach_world(t, tr, 0.0, geo))
+        t += 0.05
+    assert a.done and c.v == 0 and "angekommen bei chair" in a.result
+    assert t <= 1.0 + 3 * 0.05 + 1e-6
+
+
+def test_approach_arrives_when_blocked():
+    """Bremst die Sicherheitsschicht vor dem Ziel, will das Verhalten weiter vor: nach BLOCK_S fertig."""
+    from xgonav.behaviors import Approach
+    from xgonav.tracker import Track
+    cfg = Config.neutral()
+    a = Approach(cfg.behavior, cfg.robot, "chair")
+    geo = _GeoStub()
+    geo.d = cfg.behavior.approach_dist_m + 0.25
+    tr = Track("chair", 320, 300, 100, 120, 0.9, 0.0)
+    t = 0.0
+    while t < 6.0 and not a.done:
+        tr.t_seen = t
+        c = a.step(_approach_world(t, tr, 0.0, geo))       # gefahrener Befehl bleibt 0 (gebremst)
+        t += 0.05
+    assert a.done and "blockiert" in a.result and 3.0 <= t <= 3.5
+    # weit weg und gebremst: nicht fertig
+    b = Approach(cfg.behavior, cfg.robot, "chair")
+    geo.d = 2.0
+    t = 0.0
+    while t < 6.0:
+        tr.t_seen = t
+        b.step(_approach_world(t, tr, 0.0, geo))
+        t += 0.05
+    assert not b.done
 
 
 def _world_at(t, pose):

@@ -42,6 +42,9 @@ class Track:
     vs: float = 0.0       # relative Größenänderung 1/s (Annäherung > 0)
     hits: int = 1
     clip: tuple = (False, False, False, False)  # links, oben, rechts, unten am Bildrand abgeschnitten
+    # Breite der letzten Detektion (px), ungeglättet; 0 = links oder rechts am Bildrand abgeschnitten. w selbst ist
+    # geglättet und zwischen Detektionen vorhergesagt: Sein Nachziehen sah für pet wie Annäherung aus (2026-11-13)
+    w_meas: float = 0.0
 
     @property
     def box(self):
@@ -117,6 +120,7 @@ class Tracker:
                 tr = Track(d.cls, 0, 0, 0, 0, d.conf, now)
                 tr.set_box(d.box)
                 tr.clip = self._clip_flags(d.box)
+                tr.w_meas = 0.0 if (tr.clip[0] or tr.clip[2]) else tr.w
                 self.tracks.append(tr)
         self.prune(now)
 
@@ -164,6 +168,7 @@ class Tracker:
         tr.clip = flags
         mcx, mcy = (b[0] + b[2]) / 2, (b[1] + b[3]) / 2
         mw, mh = b[2] - b[0], b[3] - b[1]
+        tr.w_meas = 0.0 if (flags[0] or flags[2]) else mw
         dt = max(0.05, now - tr.t_seen)
         # Skalierungsrate aus einer unbeschnittenen Ausdehnung
         rs = None

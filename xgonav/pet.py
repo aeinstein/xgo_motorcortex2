@@ -43,11 +43,12 @@ class Seen:
     dist: float | None               # m; 0 = Fußpunkt unten abgeschnitten (sehr nah); None = unbekannt
     bearing: float                   # rad, links +
     top_free: bool                   # Box oben nicht am Bildrand
-    width: float                     # Boxbreite (px), hängt anders als der Fußpunkt nicht am Nicken
+    width: float                     # Boxbreite (px) der letzten Detektion, hängt anders als der Fußpunkt nicht am Nicken
     t_seen: float
     conf: float = 1.0
     hits: int = 99
     tall: bool = False               # groß im Bild (zählt auch im Liegen, wo die Bodengeometrie nicht stimmt)
+    side_free: bool = True           # Box links/rechts nicht am Bildrand: nur dann taugt die Breite
 
 
 @dataclass
@@ -280,7 +281,8 @@ class PetBrain:
         if tg.dist is None or tg.dist <= 0.0:
             return
         if not self._hist or tg.t_seen > self._hist[-1][0]:
-            self._hist.append((tg.t_seen, tg.dist, tg.width))
+            # Seitlich abgeschnitten: Breite 0 = unbrauchbar (wer ins Bild läuft, dessen Box „wächst“ von selbst)
+            self._hist.append((tg.t_seen, tg.dist, tg.width if tg.side_free else 0.0))
         while self._hist and self._hist[0][0] < tg.t_seen - self.cfg.startle_window_s:
             self._hist.popleft()
 
@@ -300,8 +302,8 @@ class PetBrain:
     def box_growth(self) -> float:
         """Wachstum der Boxbreite 1/s über das Fenster. Track.vs taugt hier nicht: Es reagiert träge, und aus
         dieser Höhe ist die Personenbox ab 1,9 m oben abgeschnitten."""
-        h = self._hist
-        if len(h) < 2 or h[0][2] <= 0 or h[-1][2] <= 0 or h[-1][0] <= h[0][0]:
+        h = [p for p in self._hist if p[2] > 0]          # nur ganze Breiten (nicht am Bildrand abgeschnitten)
+        if len(h) < 2 or h[-1][0] - h[0][0] < 0.25:
             return 0.0
         return math.log(h[-1][2] / h[0][2]) / (h[-1][0] - h[0][0])
 
@@ -311,10 +313,13 @@ class PetBrain:
         if tg is None or tg.cls != "person" or tg.dist is None or tg.dist > c.startle_max_m or t < self._blind_until:
             return False
         speed = self.approach_speed()
-        # Wer mit v auf ihn zukommt, dessen Box wächst mit v/d je Sekunde; Rauschen im Fußpunkt tut das nicht
-        mean_d = sum(p[1] for p in self._hist) / max(len(self._hist), 1)
-        if speed is None or self.box_growth() < c.startle_vs * speed / max(mean_d, 0.2):
+        if speed is None:
             return False
+        # Wer mit v auf ihn zukommt, dessen Box wächst mit v/d je Sekunde. Der Fußpunkt allein rauscht aus 12,8 cm
+        # Höhe stark (2 m: 1° Nicken oder 3 px Box = 0,3-0,5 m), die Gerade über ~4 Messungen ergab so für eine Person
+        # mit 0,3 m/s 1,0 m/s (Simulator 2026-11-13). Es zählt der kleinere Wert aus Gerade und Boxwachstum x Abstand.
+        mean_d = sum(p[1] for p in self._hist) / max(len(self._hist), 1)
+        speed = min(speed, self.box_growth() * max(mean_d, 0.2) / max(c.startle_vs, 1e-3))
         # Vertrauen 0,5 = Grundwert; wer ihm vertraut, darf schneller kommen
         thr = c.startle_mps * (0.7 + 0.6 * self.trust)
         if speed < thr or not self._ready("schreck", t, c.startle_cooldown_s):
@@ -745,8 +750,10 @@ class Pet(Behavior):
             dist = None
             if w.balancing and w.geo is not None:        # liegend stimmt die Bodengeometrie nicht
                 dist = 0.0 if tr.clip[3] else w.geo.ground_dist(y2, w.pitch_dev)
-            out.append(Seen(tr.id, tr.cls, dist, w.bearing(tr.cx), not tr.clip[1] and y1 > 0.03 * w.H, tr.w,
-                            tr.t_seen, tr.conf, tr.hits, tr.clip[3] or tr.h > 0.5 * w.H))
+            wm = getattr(tr, "w_meas", tr.w)             # gemessen, nicht geglättet/vorhergesagt
+            out.append(Seen(tr.id, tr.cls, dist, w.bearing(tr.cx), not tr.clip[1] and y1 > 0.03 * w.H, wm or tr.w,
+                            tr.t_seen, tr.conf, tr.hits, tr.clip[3] or tr.h > 0.5 * w.H,
+                            wm > 0 and x1 > 0.03 * w.W and x2 < 0.97 * w.W))
         return out
 
     def step(self, w: World) -> Command:

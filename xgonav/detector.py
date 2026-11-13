@@ -270,6 +270,17 @@ class DetectorWorker:
         self._thread: threading.Thread | None = None
         self.busy = False
         self.infer_ms = 0.0
+        self.failed = False        # gestartet, aber kein Modell nutzbar
+
+    def classes(self) -> list[str]:
+        """Wählbare Zielklassen (follow/approach, Web-Auswahl): die Klassen, die das geladene Modell meldet;
+        vor dem Start die konfigurierten (leer = alle COCO); ohne Detektor keine. Nur auf Anfrage gerechnet."""
+        if not self.cfg.enabled or self.failed:
+            return []
+        m = self.model
+        if m is None:
+            return list(self.cfg.classes) or list(COCO)
+        return [n for i, n in enumerate(m.names) if m.allowed is None or i in m.allowed]
 
     def start(self) -> bool:
         if not self.cfg.enabled:
@@ -290,6 +301,7 @@ class DetectorWorker:
                 log.warning("Modell %s nicht nutzbar: %s", path, e)
         if self.model is None:
             log.warning("kein Detektor-Modell nutzbar – Objekterkennung aus")
+            self.failed = True
             return False
         log.info("YOLO geladen: %s [%s] (%dpx, %d Klassen)", self.model.cfg.model, self.backend,
                  self.model.size, len(self.model.names))

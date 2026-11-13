@@ -12,6 +12,7 @@
  *   GET  api.php?a=route                      (Route und Sperrzonen)
  *   POST api.php?a=route&pts=x,y;x,y&loop=0|1[&zones=x,y;x,y;x,y|...|&nozones=1]   (Meter im Karten-KS)
  *   GET  api.php?a=horizon                    (Horizonttabelle und Standreferenz, [horizon] enabled)
+ *   GET  api.php?a=detector                   (wählbare Ziele für Folgen/Anfahren: aktive YOLO-Klassen)
  *   POST api.php?a=horizon_edit&row=0..479|   (Linie zum Einstellen im Bild, leer = aus)
  *   POST api.php?a=horizon_cal&row=0..479     (Zeile für die aktuelle Körperhöhe speichern, nur im Stand)
  *   POST api.php?a=horizon_delete&h=<mm>      (Eintrag dieser Körperhöhe löschen)
@@ -254,6 +255,9 @@ if ($a === 'route' && !$post) {
 }
 if ($a === 'horizon' && !$post) {
     xgonav('GET', '/horizon');
+}
+if ($a === 'detector' && !$post) {
+    xgonav('GET', '/detector');
 }
 if (!$post) {
     antwort(405, json_encode(['error' => 'Befehle nur per POST']));

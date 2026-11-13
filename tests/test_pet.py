@@ -234,6 +234,43 @@ def test_rauschen_im_fusspunkt_kein_schreck():
         assert ("sound", "quiek", True) not in evs
 
 
+def test_fusspunkt_schnell_box_langsam_kein_schreck():
+    """Fußpunkt-Gerade 1,3 m/s (Nicken), Boxbreite wächst wie bei 0,9 m/s: Es zählt der kleinere Wert
+    (Simulator 2026-11-13: Person mit 0,3 m/s, Fußpunkt sprang 2,24 -> 1,53 m in 0,46 s)."""
+    b = brain()
+    def who(t):
+        ts = int(t / 0.2) * 0.2
+        return [seen(dist=2.2 - 1.3 * ts, t=ts, width=155.0 / (2.2 - 0.9 * ts))]
+    run(b, 0.0, 1.4, who)
+    assert b.n_startle == 0
+
+
+def test_seitlich_abgeschnittene_box_kein_schreck():
+    """Wer seitlich ins Bild läuft, dessen abgeschnittene Box wächst von selbst: Die Breite zählt dann nicht."""
+    b = brain()
+    def who(t):
+        ts = int(t / 0.25) * 0.25
+        s = seen(dist=2.4 - 2.0 * ts, t=ts)
+        return [dataclasses.replace(s, side_free=False)]
+    run(b, 0.0, 2.0, who)
+    assert b.n_startle == 0
+
+
+def test_track_merkt_gemessene_breite():
+    """w_meas = Breite der letzten Detektion, ungeglättet; 0, wenn links/rechts am Rand abgeschnitten."""
+    from xgonav.config import TrackerCfg
+    from xgonav.detector import Detection
+    from xgonav.tracker import Tracker
+    tk = Tracker(TrackerCfg(), (640, 480))
+    tk.update([Detection((300, 100, 340, 400), "person", 0.9)], 0.0)
+    tr = tk.tracks[0]
+    assert tr.w_meas == 40
+    tk.update([Detection((290, 100, 350, 400), "person", 0.9)], 0.2)
+    assert tr.w_meas == 60 and tr.w < 60                 # geglättet zieht w nach, w_meas nicht
+    tk.update([Detection((0, 100, 60, 400), "person", 0.9)], 0.4)    # neuer Track am linken Rand
+    assert tk.tracks[-1] is not tr and tk.tracks[-1].w_meas == 0.0
+
+
 def test_vertrauen_verschiebt_schwelle():
     b = brain()
     _, _, evs = run(b, 0.0, 2.0, walk(2.4, 0.9))

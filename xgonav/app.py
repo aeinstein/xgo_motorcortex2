@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import collections
-import dataclasses
 import gc
 import logging
 import math
@@ -27,7 +26,7 @@ from .geometry import CamGeometry
 from .horizon import HorizonTable, StandRef, row_to_tilt_deg
 from .wheels import WheelOdom, make_wheels
 from .imu import ImuSource, ImuSync, make_imu
-from .localmap import LocalMap, blocking_boxes, mask_movable
+from .localmap import LocalMap, mask_movable
 from .route import arc_hits_zone, check as route_check, load as route_load, save as route_save
 from .robot import Robot, SpeedCtrl
 from .tracker import Tracker
@@ -230,6 +229,11 @@ class App:
     # Diese Modi fahren nach der Raumkarte: Mit unbekannter Pose führen sie irgendwohin.
     NEEDS_POSE = {"home", "patrol", "explore"}
 
+    # Nur diese Modi bekommen Bilder für den Detektor (YOLO, ~1 Kern am CM4); sonst schläft sein Thread.
+    # Erkennungen dienen nur dem Ziel, nie Freiraum oder Bahnprüfung (Nutzer 2026-11-13).
+    DET_MODES = {"follow", "approach", "pet"}
+    TARGET_MODES = {"follow", "approach"}
+
     def _pose_unbekannt(self, grund: str) -> None:
         """Die Pose in der Raumkarte gilt nicht mehr (getragen, gefallen, Neustart). Die Karte wird nicht mehr
         beschrieben, bis der Standort bestätigt ist; Fahrten nach der Karte enden. Eine leere Karte legt ihr
@@ -289,9 +293,17 @@ class App:
         self.pose_grund = ""
         log.info("Pose in der Raumkarte bestätigt (%s)", "am Startpunkt" if aktion == "start" else "wie angezeigt")
 
-    def _check_mode(self, name: str, confirmed: bool = False) -> None:
+    def _check_mode(self, name: str, confirmed: bool = False, target: str | None = None) -> None:
         if name in self.NEEDS_FREESPACE and self.fse is None:
             raise ModeNotAllowed(f"Modus {name} braucht die Freiraum-Erkennung (freespace.enabled)")
+        if name in self.TARGET_MODES:
+            # Ohne Detektor oder mit einer Klasse, die er nicht meldet, suchte follow ewig bzw. erkundete approach ewig
+            avail = self.det.classes() if hasattr(self.det, "classes") else []
+            cls = target or self.cfg.behavior.target_class
+            if not avail:
+                raise ModeNotAllowed(f"Modus {name} braucht die Objekterkennung: YOLO ist aus")
+            if cls not in avail:
+                raise ModeNotAllowed(f"Ziel {cls!r} erkennt YOLO nicht (aktiv: {', '.join(avail)})")
         if name == "home" and getattr(self, "gridmap", None) is None:
             raise ModeNotAllowed("Modus home braucht die Raumkarte ([grid] enabled)")
         gm = getattr(self, "gridmap", None)
@@ -436,7 +448,7 @@ class App:
         """confirmed: Der Nutzer hat bestätigt, dass der Rider am Startpunkt steht (Streife: ohne Wiederfinden
         gilt beim Laden Pose = Start)."""
         self._make(name, target)  # validiert (KeyError)
-        self._check_mode(name, confirmed)
+        self._check_mode(name, confirmed, target)
         if name == "patrol" and not confirmed:
             raise ModeNotAllowed("Streife: bitte bestätigen, dass der Rider am Startpunkt steht")
         if name == "patrol":
@@ -598,7 +610,8 @@ class App:
             else:
                 log.debug("Detektion zu alt, verworfen")
         self.tracker.prune(f.t)
-        self.det.offer(f, ego.sharpness, self.ego.sharpness_median())
+        if self.behavior.name in self.DET_MODES:
+            self.det.offer(f, ego.sharpness, self.ego.sharpness_median())
         tm.mark("det")
 
         bal = self.robot.state.balancing
@@ -631,12 +644,8 @@ class App:
         if now - self._last_ctrl >= 1.0 / self.cfg.control_hz:
             dt = now - self._last_ctrl if self._last_ctrl else 0.0
             self._last_ctrl = now
+            # Freiraum nur aus dem Bodenmodell: Erkennungen (YOLO) sind kein Hindernis (Nutzer 2026-11-13)
             free = self._free
-            if free is not None and self.fse is not None:
-                # Objekte als Hindernisse, außer dem aktuellen Ziel
-                tgt = self._cmd.target_id
-                free = dataclasses.replace(free, sectors=list(free.sectors), columns=free.columns.copy())
-                self.fse.block_boxes(free, blocking_boxes(tracks, tgt, f.t, self.cfg.freespace.no_block_cls))
             # Eigenbewegung seit dem letzten Regelschritt. Kurs aus den Rädern, wenn vorhanden:
             # Der Bild-Kurs verfälscht bei Vorwärtsfahrt (Tiefenunterschiede landen im
             # Drehmodell, gemessen 2026-11-04: −8,9° bzw. +3° auf 2 m geradeaus).
@@ -664,10 +673,10 @@ class App:
                     self.gridmap.move(ds, self._grid_dyaw(gyaw, now))
                 if free is not None and self._free is not self._fs_in_map:
                     self._fs_in_map = self._free
-                    view = self._map_view(free, tracks, f.t)
                     # Nick und Pose der Aufnahme, nicht des Bildes, in dem das Ergebnis ankam
-                    pd = view.pitch_dev if view.pitch_dev is not None else pitch_dev
-                    self.lmap.add_freespace(view, f.t, pd)
+                    pd = free.pitch_dev if free.pitch_dev is not None else pitch_dev
+                    self.lmap.add_freespace(free, f.t, pd)      # Bahnprüfung: unmaskiert
+                    view = self._map_view(free, tracks, f.t)     # Raumkarte: ohne Personen und Tiere
                     # Raumkarte nur auf den Rädern (liegend sieht die Kamera etwas anderes) und
                     # ohne schnelle Drehung
                     rate = abs(math.degrees(dyaw)) / dt if dt > 0 else 0.0
@@ -720,7 +729,7 @@ class App:
                 self.geo.body_height_mm = self.robot.height_mm
             self._cmd = cmd
             self._free_ctrl = free
-            cls = self.cfg.behavior.target_class
+            cls = getattr(self.behavior, "cls", None) or self.cfg.behavior.target_class   # gewähltes Ziel
             if self.behavior.name == "pet":
                 self._pet_tick()
                 self._emotion_tick(None)              # pet entscheidet selbst, bleibt nur der Akku

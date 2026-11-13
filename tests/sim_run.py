@@ -1,4 +1,4 @@
-"""Closed-Loop-Szenarien im Simulator. python3 tests/sim_run.py follow|explore|home [sekunden] [video.mp4] [--imu] [--fs-thread] [--wheels] [--kanten] [--dyn] [--rider] [--scene raum|zwei|spalt] [--video-step n] [--set a.b=wert] [--vx-true m/s]
+"""Closed-Loop-Szenarien im Simulator. python3 tests/sim_run.py follow|approach|explore|home [sekunden] [video.mp4] [--imu] [--fs-thread] [--wheels] [--kanten] [--dyn] [--rider] [--scene raum|zwei|spalt] [--video-step n] [--set a.b=wert] [--vx-true m/s]
 
 home: erste Hälfte explore, dann Modus home (zurück zum Startpunkt der Raumkarte).
 --dyn: Trägheit wie am RiderPi (Totzone, Nachlaufen der Drehung, Rückrollen beim Anfahren).
@@ -71,6 +71,10 @@ def run(mode="follow", secs=25.0, video=None, shake=1.0, quiet=True, imu=False, 
         # geht seitlich aus dem Bild: Danach ist die Luft rein
         h, b = {"person": (1.72, 0.50), "dog": (0.5, 0.5), "cat": (0.3, 0.35)}[animal]
         person = Person([(4.2, 1.85), (1.3, 1.26), (1.4, 3.6)], speed=speed or 0.3, cls=animal, height_m=h, width_m=b, loop=False)
+    if mode == "approach":
+        # stehender Stuhl schräg voraus (FakeDetector meldet "chair"); anfahren und ~approach_dist_m davor halten
+        person = Person([(3.2, 2.2)], speed=0.0, cls="chair", height_m=0.9, width_m=0.45, loop=False)
+        cfg.behavior.target_class = "chair"
     world = SimWorld(cfg.camera, robot, person, start=(1.0, 1.2, 0.2), shake=shake,
                      mount_offset_mm=cfg.camera.mount_offset_mm,
                      vx_mps=vx_true if vx_true is not None else cfg.robot.vx_limit,  # vx_true: echte m/s je Einheit
@@ -145,7 +149,7 @@ def run(mode="follow", secs=25.0, video=None, shake=1.0, quiet=True, imu=False, 
             time.sleep(1.0)
             app.stop()
         threading.Thread(target=to_patrol, daemon=True).start()
-    if mode == "explore":
+    if mode in ("explore", "approach"):
         def watch():
             while not app.running: time.sleep(0.02)
             t0 = time.monotonic()
@@ -197,6 +201,9 @@ def run(mode="follow", secs=25.0, video=None, shake=1.0, quiet=True, imu=False, 
         out.update(home_weg_m=round(math.hypot(L[k]["x"] - x0, L[k]["y"] - y0), 2),
                    home_end_m=round(math.hypot(world.x - x0, world.y - y0), 2),
                    home_status=app._cmd.status)
+    if mode == "approach":
+        out.update(ziel_ende_m=round(math.hypot(person.x - world.x, person.y - world.y), 2),
+                   angekommen=getattr(app.behavior, "done", False))
     if person:
         d = np.array([math.hypot(r["px"] - r["x"], r["py"] - r["y"]) for r in L])
         b = np.array([math.degrees((math.atan2(r["py"] - r["y"], r["px"] - r["x"]) - r["th"] + math.pi) % (2 * math.pi) - math.pi) for r in L])

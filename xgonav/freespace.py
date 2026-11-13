@@ -702,32 +702,11 @@ class FreeSpaceEstimator:
         fs.known_from = None
         fs.src = "net"
 
-    def block_boxes(self, fs: FreeSpace, boxes) -> None:
-        """Erkannte Objekte als Hindernisse eintragen (Unterkante = Fußpunkt)."""
-        if fs.columns is None:
-            return
-        span = max(1.0, self.H - fs.horizon_row)
-        changed = False
-        for (x1, y1, x2, y2) in boxes:
-            c1 = int(max(0, x1 / self.scale))
-            c2 = int(min(self.W, x2 / self.scale + 1))
-            bottom = y2 / self.scale
-            if bottom <= fs.horizon_row or c2 <= c1:
-                continue
-            val = float(np.clip((self.H - bottom) / span, 0.0, 1.0))
-            fs.columns[c1:c2] = np.minimum(fs.columns[c1:c2], val)
-            changed = True
-        if not changed:
-            return                        # Sektoren unverändert, nicht neu berechnen
-        n = len(fs.sectors)
-        ex = np.linspace(0, self.W, n + 1).astype(int)
-        fs.sectors = [_p20(fs.columns[ex[i]:ex[i + 1]]) for i in range(n)]
-
 
 class FreeSpaceWorker:
     """Bodenmodell in eigenem Thread, nach dem Muster des DetectorWorker: offer() legt den
     neuesten Auftrag ab (ein älterer, noch nicht begonnener wird ersetzt), poll() holt das
-    neueste fertige Ergebnis. Nur dieser Thread ruft est.update() auf; block_boxes() und die
+    neueste fertige Ergebnis. Nur dieser Thread ruft est.update() auf; die
     Konstanten (W, H, scale) des Schätzers darf die Hauptschleife weiter nutzen, diag wird
     je Lauf durch ein neues dict ersetzt (nie verändert)."""
 

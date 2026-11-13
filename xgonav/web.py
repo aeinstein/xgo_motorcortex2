@@ -38,7 +38,8 @@ def _hz_rows(hz: dict | None) -> tuple[float, float]:
 API = {"GET": ["/status", "/ws?nick=1 (WebSocket: Bilder, Bestätigung je Bild; nick: Horizontzeilen im Kopf)",
                "/frame?after=<idx>&raw=1", "/stream",
                "/map.png?px=480&view=6 (Raumkarte)",
-               "/horizon (Horizonttabelle + Stand)"],
+               "/horizon (Horizonttabelle + Stand)",
+               "/detector (wählbare Ziele für follow/approach: Klassen des Detektors)"],
        "POST": ["/mode?name=..&target=..", "/stop", "/pipeline?on=0|1", "/ruhe?on=0|1 (Ruhemodus; Wecken startet nichts)", "/record?on=0|1 (Rohaufzeichnung, nur balancierend)",
                 "/drive?v=..&w=.. (nur Modus manual)",
                 "/exposure?us=0|100..33333 (0 = Automatik)", "/gain?g=0|1..63.9 (0 = Automatik)",
@@ -153,6 +154,13 @@ def serve(app: App, host: str, port: int, fps: int, render_cpus=None) -> Threadi
                     return self._send(404, b'{"error":"keine Raumkarte"}')
                 with gm._lock:
                     body = {"points": gm.route, "loop": gm.route_loop, "zones": gm.zones, "map_id": gm.map_id, "gesperrt": gm.locked}
+                return self._send(200, json.dumps(body).encode())
+            if u.path == "/detector":
+                d = app.det                   # Klassen nur auf Anfrage (Seitenaufruf, Neustart), nicht je Bild
+                cls = d.classes() if hasattr(d, "classes") else []
+                body = {"on": bool(cls), "geladen": getattr(d, "model", None) is not None,
+                        "backend": getattr(d, "backend", ""), "classes": cls, "modes": sorted(app.DET_MODES),
+                        "default": app.cfg.behavior.target_class}
                 return self._send(200, json.dumps(body).encode())
             if u.path == "/horizon":
                 try:

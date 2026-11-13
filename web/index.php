@@ -123,7 +123,7 @@ details.hilfe p{margin:4px 0 0}
 .segment button{border:0;border-radius:0;border-right:1px solid var(--rand2);margin:0}
 .segment button:last-child{border-right:0}
 .segment button.aktiv{background:var(--akzent);color:#04121f;font-weight:600}
-#ziel{width:96px}
+#ziel{width:auto;max-width:150px}
 @media (max-width:640px){
   .segment{display:grid;grid-template-columns:repeat(3,1fr);width:100%}
   .segment button{padding:7px 2px;font-size:13px}
@@ -282,7 +282,7 @@ details.extras[open]>summary{margin-bottom:8px}
         <button data-modus="patrol" onclick="streife()" title="Route auf der Raumkarte abfahren">Streife</button>
         <button data-modus="pet" onclick="modus('pet')" title="Reagiert auf Menschen, Katzen und Hunde">Haustier</button>
       </div>
-      <input id="ziel" value="person" title="Ziel für Folgen/Anfahren (COCO-Klasse)" aria-label="Ziel">
+      <select id="ziel" title="Ziel für Folgen/Anfahren (aktive YOLO-Klassen)" aria-label="Ziel"><option value="person">person</option></select>
     </div>
   </div>
   <div class="karte">
@@ -678,7 +678,29 @@ async function befehl(a, p = {}, still = false) {
   } catch (e) { zeige('keine Verbindung'); verbindungWeg(); return false; }
   finally { if (!still) status(); }
 }
-function modus(n) { return befehl('mode', {name: n, target: $('ziel').value.trim().toLowerCase()}); }
+function modus(n) { return befehl('mode', {name: n, target: $('ziel').value}); }
+// Ziele für Folgen/Anfahren: die Klassen, die YOLO am Rider meldet; einmal je Seitenaufruf und nach jedem Neustart
+let zieleStart = null;
+async function zieleLaden() {
+  const sel = $('ziel');
+  let d = null;
+  try { const r = await fetch('api.php?a=detector'); if (r.ok) d = await r.json(); } catch (e) {}
+  if (!d) return;
+  let gemerkt = null;
+  try { gemerkt = localStorage.getItem('xgonav.ziel'); } catch (e) {}
+  const alt = sel.value;
+  const klassen = d.classes || [];
+  sel.innerHTML = klassen.length ? klassen.map(c => '<option value="' + esc(c) + '">' + esc(c) + '</option>').join('')
+                                 : '<option value="">YOLO aus</option>';
+  sel.disabled = !klassen.length;
+  const wahl = [gemerkt, alt, d.default, 'person'].find(c => c && klassen.includes(c));
+  if (wahl) sel.value = wahl;
+  const hinweis = klassen.length ? '' : ' – YOLO ist aus ([detector] enabled)';
+  document.querySelectorAll('[data-modus="follow"],[data-modus="approach"]').forEach(b => {
+    b.title = (b.dataset.titel ??= b.title || '') + hinweis;
+  });
+}
+$('ziel').addEventListener('change', e => { try { localStorage.setItem('xgonav.ziel', e.target.value); } catch (x) {} });
 function streife() {
   if (!confirm('Steht der Rider (aufgestanden) am Startpunkt, in Startrichtung? Die Pose springt dann dorthin. Sind Treppen und Kanten abgesperrt?')) return;
   return befehl('mode', {name: 'patrol', target: 'person', bestaetigt: 1});
@@ -816,6 +838,7 @@ function statusZeigen(s, fehler) {
     bildSoll(!s.ruhe && s.pipeline === 'läuft');
     aktModus = s.mode;
     aktPipeline = s.pipeline;
+    if (s.start != null && s.start !== zieleStart) { zieleStart = s.start; zieleLaden(); }   // nach Neustart neu
     window.letzterStatus = s;
     if (s.cam_h_gerade) kamGerade = s.cam_h_gerade;
     hoeheAusStatus = s.height_u8 != null;
