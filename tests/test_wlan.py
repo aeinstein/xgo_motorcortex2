@@ -130,7 +130,9 @@ def test_qr_fehler_dann_hotspot_und_abbruch():
     assert cmd == "hotspot" and stdin.startswith(cfg.hotspot_ssid + "\n") and len(w.hotspot_pw) == 8
     w.step(None, t0 + cfg.qr_timeout_s + 1)
     assert w.state == "hotspot"
-    v, img = w.lcd_frame()                  # Hotspot-Bild mit QR zum Beitreten
+    w.lcd_frame()                           # erstes Bild: Augen wachsen erst zusammen
+    w._hot_t0 -= 5.0                        # Animation vorbei
+    v, img = w.lcd_frame()                  # Hotspot-Bild: großes Auge, Pupille = QR zum Beitreten
     txt, _, _ = cv2.QRCodeDetector().detectAndDecode(cv2.resize(img[0:170, 0:160], None, fx=2, fy=2,
                                                                  interpolation=cv2.INTER_NEAREST))
     assert parse_wifi_qr(txt)[:2] == (cfg.hotspot_ssid, w.hotspot_pw)

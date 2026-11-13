@@ -188,6 +188,8 @@ class WlanSetup:
         self.version = 0                    # erhöht sich bei jeder Änderung der Anzeige
         self._lcd_cache: tuple[tuple[int, int], np.ndarray] | None = None
         self._anim = 0                      # Zähler der LCD-Bilder in der QR-Suche
+        self._hot_t0: float | None = None
+        self._hot_qr: tuple[str, np.ndarray | None] | None = None
         self._eyes = QrEyes()
         log.warning("WLAN-Einrichtung: QR-Code suchen (%.0f s, danach Hotspot)", cfg.qr_timeout_s)
 
@@ -198,6 +200,7 @@ class WlanSetup:
 
     def _set(self, state: str, now: float, text: str, detail: str = "") -> None:
         self.state, self.t_state, self.text, self.detail = state, now, text, detail
+        self._hot_t0 = None                 # Hotspot-Animation beginnt beim ersten Bild dieses Zustands
         self.version += 1
         log.warning("WLAN-Einrichtung: %s %s", text, detail)
 
@@ -320,9 +323,11 @@ class WlanSetup:
     # -------------------------------------------------------------- Display (LCD-Thread)
     def lcd_frame(self) -> tuple[tuple[int, int], np.ndarray]:
         """(Schlüssel, BGR 320x240); neu gezeichnet nur bei Änderung, in der QR-Suche jedes Mal (Augen)."""
-        if self.state == "qr":
+        animiert = self.state == "qr" or (self.state == "hotspot" and
+                                          (self._hot_t0 is None or time.monotonic() - self._hot_t0 < HOT_ANIM_S + 0.1))
+        if animiert:
             self._anim += 1
-        key = (self.version, self._anim if self.state == "qr" else 0)
+        key = (self.version, self._anim if animiert else 0)
         if self._lcd_cache is not None and self._lcd_cache[0] == key:
             return self._lcd_cache
         img = self._draw()
@@ -332,18 +337,25 @@ class WlanSetup:
     def _draw(self) -> np.ndarray:
         font = cv2.FONT_HERSHEY_SIMPLEX
         if self.state == "hotspot":
-            img = np.full((240, 320, 3), 255, np.uint8)
-            qr = _qr_image(wifi_qr_text(self.cfg.hotspot_ssid, self.hotspot_pw), 140)
-            if qr is not None:
-                img[6:146, 4:144] = qr
-            zeilen = [("WLAN:", 0.45, 30), (_ascii(self.cfg.hotspot_ssid), 0.55, 52), ("Passwort:", 0.45, 82),
-                      (self.hotspot_pw, 0.7, 108)]
-            for t, sc, y in zeilen:
-                cv2.putText(img, t, (152, y), font, sc, (0, 0, 0), 2 if sc > 0.5 else 1, cv2.LINE_AA)
-            _countdown(img, (282, 160), 28, self.rest_s, self.cfg.hotspot_timeout_s, hell=True)
-            cv2.putText(img, "Dann im Browser:", (8, 172), font, 0.5, (0, 0, 0), 1, cv2.LINE_AA)
-            cv2.putText(img, WLAN_URL, (8, 202), font, 0.5, (160, 0, 0), 1, cv2.LINE_AA)
-            cv2.putText(img, "B = Abbruch", (8, 230), font, 0.4, (90, 90, 90), 1, cv2.LINE_AA)
+            now = time.monotonic()
+            if self._hot_t0 is None:
+                self._hot_t0 = now
+            text = wifi_qr_text(self.cfg.hotspot_ssid, self.hotspot_pw)
+            if self._hot_qr is None or self._hot_qr[0] != text:
+                q = _qr_image(text, HOT_QR_PX)
+                self._hot_qr = (text, None if q is None else q[..., 0])
+            x = min(1.0, (now - self._hot_t0) / HOT_ANIM_S)
+            img = hotspot_eyes(x * x * (3 - 2 * x), self._hot_qr[1])
+            if x >= 1.0:
+                _countdown(img, (282, 160), 28, self.rest_s, self.cfg.hotspot_timeout_s)
+                weiss, tuerkis = (255, 255, 255), QrEyes.FARBE
+                zeilen = [("WLAN:", 0.45, 30, (170, 170, 170)), (_ascii(self.cfg.hotspot_ssid), 0.55, 52, weiss),
+                          ("Passwort:", 0.45, 82, (170, 170, 170)), (self.hotspot_pw, 0.7, 108, weiss)]
+                for t, sc, y, c in zeilen:
+                    cv2.putText(img, t, (166, y), font, sc, c, 2 if sc > 0.5 else 1, cv2.LINE_AA)
+                cv2.putText(img, "Dann im Browser:", (8, 182), font, 0.5, weiss, 1, cv2.LINE_AA)
+                cv2.putText(img, WLAN_URL, (8, 208), font, 0.5, tuerkis, 1, cv2.LINE_AA)
+                cv2.putText(img, "B = Abbruch", (8, 232), font, 0.4, (150, 150, 150), 1, cv2.LINE_AA)
             return img
         if self.state == "qr":
             img = self._eyes.draw(time.monotonic())
@@ -435,7 +447,54 @@ class QrEyes:
                 b = (int(round((px + r) * f)), int(round((py + ry) * f)))
                 cv2.rectangle(m, a, b, val, -1, cv2.LINE_AA, S)
             np.maximum(alpha, np.minimum(m, auge), out=alpha)
-        return (alpha[..., None].astype(np.float32) * (np.array(self.FARBE, np.float32) / 255)).astype(np.uint8)
+        return _faerben(alpha)
+
+
+_LUT = [np.round(np.arange(256) * c / 255).astype(np.uint8) for c in (210, 225, 0)]   # QrEyes.FARBE (BGR)
+
+
+def _faerben(alpha: np.ndarray) -> np.ndarray:
+    """Alpha 0..255 -> BGR in Augenfarbe, per Tabelle (am CM4 statt Fließkomma)."""
+    return cv2.merge([cv2.LUT(alpha, t) for t in _LUT])
+
+
+HOT_ANIM_S = 1.2                    # Augen wachsen zum großen Auge mit dem Hotspot-QR als Pupille
+HOT_QR_PX = 116
+HOT_EYE = (80.0, 82.0, 156.0)       # Mitte x, y und Kantenlänge des großen Auges
+
+
+def hotspot_eyes(x: float, qr: np.ndarray | None) -> np.ndarray:
+    """Hotspot: Die beiden Standardaugen (Pupille QR-Suchmuster) wachsen und wandern zusammen, bis ein großes
+    Auge übrig ist; x 0..1 (geglättet). Bei x = 1 ist seine Pupille der QR-Code zum Beitreten (dunkle Module auf
+    Augenfarbe, der Rand des Auges ist die Ruhezone)."""
+    S = 4
+    f = 1 << S
+    ex, ey, es = HOT_EYE
+    alpha = np.zeros((240, 320), np.uint8)
+    mitten = []
+    for cx0 in QrEyes.CX:                               # beide Augen: Körper vereinigen
+        cx, cy = cx0 + (ex - cx0) * x, QrEyes.CY + (ey - QrEyes.CY) * x
+        w, h = QrEyes.W + (es - QrEyes.W) * x, QrEyes.H + (es - QrEyes.H) * x
+        pts = rrect(w, h, 0.36 * min(w, h) / 2 * (1 - 0.5 * x)) + (cx, cy)
+        cv2.fillPoly(alpha, [np.round(pts * f).astype(np.int32)], 255, cv2.LINE_AA, S)
+        mitten.append((cx, cy))
+    if x < 1.0 or qr is None:
+        # Pupillen schichtweise (erst beide Außenquadrate, dann beide hellen, dann beide Kerne): überlappend
+        # verschmelzen sie zu einem Suchmuster, das wächst, bis der Code es ablöst
+        modul = QrEyes.MODUL * (1 + 1.6 * x)
+        koerper = alpha.copy()
+        for n, val in ((7, 0), (5, 255), (3, 0)):
+            r = n * modul / 2
+            for cx, cy in mitten:
+                a = (int(round((cx - r) * f)), int(round((cy - r) * f)))
+                b = (int(round((cx + r) * f)), int(round((cy + r) * f)))
+                cv2.rectangle(alpha, a, b, val, -1, cv2.LINE_AA, S)
+        np.minimum(alpha, koerper, out=alpha)
+    if x >= 1.0 and qr is not None:
+        n = qr.shape[0]
+        y0, x0 = int(round(ey - n / 2)), int(round(ex - n / 2))
+        alpha[y0:y0 + n, x0:x0 + n] = np.where(qr > 127, 255, 0).astype(np.uint8)
+    return _faerben(alpha)
 
 
 def rrect(w: float, h: float, r: float, n: int = 10) -> np.ndarray:
