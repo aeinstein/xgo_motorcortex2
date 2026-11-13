@@ -1020,3 +1020,21 @@ def test_komm_her_faehrt_zur_sprechenden_person():
     assert lauf(b, fahrbar=False)[0] == 0.0
     b = brain(come_m=-1.0)                                       # schon nah: bleibt stehen
     assert lauf(b, d0=0.9)[0] == 0.0
+
+
+def test_horchen_unterbricht_streifen():
+    """Beim Streifen dreht er fast durchgehend, die Richtung taugt dann nicht: Auf ein Geräusch hin bleibt er
+    stehen, lauscht und dreht sich mit der nächsten Meldung hin."""
+    b = brain(call_events=99)
+    _, yaw, weg, acts, evs = hoeren(b, 0.0, 34.0)                # 30 s niemand: streift (dreht sich um)
+    assert b.task == "streifen"
+    b2 = brain(call_events=99)
+    _, yaw, weg, acts, evs = hoeren(b2, 0.0, 60.0, 70.0, ab=33.0)
+    assert weg == 0.0 and wdiff(yaw, 70.0) < 25.0, yaw
+    assert b2.task == "horchen" and ("sound", "horch", False) in evs
+
+
+def test_horchen_dreht_bei_erster_meldung():
+    b = brain(call_events=99)
+    _, yaw, _, _, _ = hoeren(b, 0.0, 6.0, 60.0, bis=1.2)         # nur eine Meldung
+    assert wdiff(yaw, 60.0) < 20.0

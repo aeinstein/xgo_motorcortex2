@@ -2243,8 +2243,8 @@
       {
        "key": "turn_w",
        "typ": "float",
-       "default": 0.2,
-       "hilfe": ""
+       "default": 0.3,
+       "hilfe": "Nutzer 2026-11-13: Drehen x2 (vorher 0,20); robot.max_w = 0,30 begrenzt"
       },
       {
        "key": "turn_min_w",
@@ -2543,8 +2543,8 @@
       {
        "key": "come_events",
        "typ": "int",
-       "default": 2,
-       "hilfe": "Komm her: Er sieht eine Person, die weiter als come_stop_m entfernt ist und spricht (come_events Meldungen in Folge) -> fährt auf sie zu bis come_stop_m, höchstens come_m je Mal (0 = aus, -1 = ohne Grenze; RiderPi seit 2026-11-13). Bedingungen wie jede pet-Fahrt (Räder, Bodenmodell, Merkkarte, Bahnprüfung, Akku)."
+       "default": 1,
+       "hilfe": "Komm her: Er sieht eine Person, die weiter als come_stop_m entfernt ist und spricht (come_events Meldungen in Folge, 1 = ein kurzer Zuruf reicht) -> fährt auf sie zu bis come_stop_m, höchstens come_m je Mal (0 = aus, -1 = ohne Grenze; RiderPi seit 2026-11-13). Bedingungen wie jede pet-Fahrt (Räder, Bodenmodell, Merkkarte, Bahnprüfung, Akku)."
       },
       {
        "key": "come_m",
@@ -2645,14 +2645,14 @@
       {
        "key": "drive_v",
        "typ": "float",
-       "default": 0.08,
-       "hilfe": "normiert (x vx_limit = m/s)"
+       "default": 0.12,
+       "hilfe": "normiert; gemessen 0,08 -> ~12,5 cm/s, 0,12 -> ~26 cm/s. Nutzer 2026-11-13: schneller (vorher 0,08)"
       },
       {
        "key": "look_w",
        "typ": "float",
-       "default": 0.12,
-       "hilfe": "Drehrate beim Umschauen, normiert"
+       "default": 0.24,
+       "hilfe": "Drehrate beim Umschauen und Horchen, normiert. Nutzer 2026-11-13: x2 (vorher 0,12)"
       },
       {
        "key": "look_step_deg",

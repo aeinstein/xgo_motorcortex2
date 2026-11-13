@@ -599,7 +599,7 @@ class PetCfg:
     wiggle_s: float = 1.2
     turn_kp: float = 1.5               # 1/s
     turn_deadband_deg: float = 8.0
-    turn_w: float = 0.20
+    turn_w: float = 0.30               # Nutzer 2026-11-13: Drehen x2 (vorher 0,20); robot.max_w = 0,30 begrenzt
     turn_min_w: float = 0.06           # kleinere Lenkbefehle ignoriert die Firmware
     # Budgets, 0 = aus. Rückwärts ist blind und vorwärts sieht das Bodenmodell Stufen zu spät: nur mit
     # Beobachtung und nur, wo keine Treppe ist. Ohne Räder fährt er nie, Obergrenzen 0,30 m / 1,0 m.
@@ -670,9 +670,9 @@ class PetCfg:
     call_m: float = -1.0
     call_repeat_s: float = 45.0        # frühestens dann wieder (ein Fernseher vorn ruft sonst endlos)
     # Komm her: Er sieht eine Person, die weiter als come_stop_m entfernt ist und spricht (come_events Meldungen
-    # in Folge) -> fährt auf sie zu bis come_stop_m, höchstens come_m je Mal (0 = aus, -1 = ohne Grenze; RiderPi
+    # in Folge, 1 = ein kurzer Zuruf reicht) -> fährt auf sie zu bis come_stop_m, höchstens come_m je Mal (0 = aus, -1 = ohne Grenze; RiderPi
     # seit 2026-11-13). Bedingungen wie jede pet-Fahrt (Räder, Bodenmodell, Merkkarte, Bahnprüfung, Akku).
-    come_events: int = 2
+    come_events: int = 1
     come_m: float = -1.0
     come_stop_m: float = 0.8
     come_repeat_s: float = 8.0
@@ -690,8 +690,8 @@ class PetCfg:
     roam_repeat_s: float = 45.0        # danach wieder
     roam_free_min: float = 0.55        # Freiraum im Zentrum (wie behavior.slow_free), sonst fährt er dort nicht hin
     roam_battery: int = 40             # %: darunter weder suchen noch streifen
-    drive_v: float = 0.08              # normiert (x vx_limit = m/s)
-    look_w: float = 0.12               # Drehrate beim Umschauen, normiert
+    drive_v: float = 0.12              # normiert; gemessen 0,08 -> ~12,5 cm/s, 0,12 -> ~26 cm/s. Nutzer 2026-11-13: schneller (vorher 0,08)
+    look_w: float = 0.24               # Drehrate beim Umschauen und Horchen, normiert. Nutzer 2026-11-13: x2 (vorher 0,12)
     look_step_deg: float = 90.0        # in Schritten drehen, dazwischen still stehen: Detektor und Bodenmodell
     look_steps: int = 4                # so viele Blicke (4 x 90° = einmal rundum)
     look_pause_s: float = 1.5          # je Blick stillstehen
@@ -865,7 +865,7 @@ class RelocCfg:
 
 # Die Defaults oben sind seit 2026-11-12 die Werte des RiderPi (/opt/xgonav/config.toml ohne Testbetrieb und
 # ohne Pfade unter /opt). Simulator und Tests rechnen mit dem früheren neutralen Stand: Config.neutral().
-NEUTRAL = {"pet.call_m": 0.0, "pet.come_m": 0.0, "pet.faint": False, "pet.faint_level": 1.0, "pet.seek_m": 0.0, "pet.roam_m": 0.0, "pet.roam_radius_m": 1.0,
+NEUTRAL = {"pet.call_m": 0.0, "pet.come_m": 0.0, "pet.drive_v": 0.08, "pet.look_w": 0.12, "pet.turn_w": 0.20, "pet.faint": False, "pet.faint_level": 1.0, "pet.seek_m": 0.0, "pet.roam_m": 0.0, "pet.roam_radius_m": 1.0,
            "robot.vx_limit": 1.5, "robot.max_v": 0.25, "robot.max_w": 0.25, "robot.reverse_gain": 1.0,
            "robot.manual_forward_gain": 1.0, "robot.level_after_standup": False, "camera.sensor_mode": "",
            "camera.scaler_crop": [], "camera.exposure_us": 4000, "camera.analogue_gain": 0.0,

@@ -428,21 +428,30 @@ class PetBrain:
             self._ear_dirs.clear()
             self._hear_start(s, h.bearing, fast=True)
             return
+        frei = self._cool.get("horchen", -1e9) <= t
         if not ok:
+            # Er war selbst in Bewegung (Streifen dreht und fährt fast durchgehend): stutzt, bleibt stehen und
+            # lauscht; die nächste Meldung im Stand gibt die Richtung
+            if self.task == "streifen" and frei:
+                if self._ready("horch", t, c.hear_repeat_s):
+                    self._react(t, None, "horch")
+                self._ear_dirs.clear()
+                self._hear_start(s, 0.0, listen=True)
             return
         while self._ear_dirs and self._ear_dirs[0][0] < t - 4.0:
             self._ear_dirs.popleft()
         self._ear_dirs.append((t, h.bearing))
-        self._ear_gaze = (t + 2.5, h.bearing)                         # erst wandern nur die Augen
-        if len(self._ear_dirs) < 2:
-            if self._ready("horch", t, c.hear_repeat_s):
-                self._react(t, None, "horch")
+        self._ear_gaze = (t + 2.5, h.bearing)                         # die Augen wandern zuerst
+        if len(self._ear_dirs) < 2 and self._ready("horch", t, c.hear_repeat_s):
+            self._react(t, None, "horch")
+        if not frei:
             return
-        a, b = self._ear_dirs[-2][1], self._ear_dirs[-1][1]
-        if (abs(a) < front and abs(b) < front) or (a * b > 0 and abs(a - b) < math.radians(40.0)):
-            if self._cool.get("horchen", -1e9) <= t:
-                self._ear_dirs.clear()
-                self._hear_start(s, 0.5 * (a + b))
+        if abs(h.bearing) >= front:                                   # klar von der Seite: gleich hindrehen
+            self._ear_dirs.clear()
+            self._hear_start(s, h.bearing)
+        elif len(self._ear_dirs) >= 2 and abs(self._ear_dirs[-2][1]) < front:
+            self._ear_dirs.clear()                                    # zweimal von vorn: lauschen, evtl. Rufen
+            self._hear_start(s, h.bearing)
 
     def _come_goal(self, tg: Seen) -> bool:
         """Ziel come_stop_m vor der Person. False: schon nah genug."""
@@ -470,15 +479,21 @@ class PetBrain:
             elif t - self._come_lost_t > 1.0:
                 self._task_end(s, "Person nicht mehr zu sehen")
 
-    def _hear_start(self, s: Sense, bearing: float, fast: bool = False) -> None:
+    def _hear_start(self, s: Sense, bearing: float, fast: bool = False, listen: bool = False) -> None:
+        """listen: Richtung noch unbekannt, nur stehen bleiben und lauschen."""
         if self.task is not None:
             self._task_reset(s.t)                                     # Streifen ist vorbei
-        log.info("pet: horche, Geräusch bei %.0f°", math.degrees(bearing))
+        if listen:
+            log.info("pet: horche, bleibe stehen")
+        else:
+            log.info("pet: horche, Geräusch bei %.0f°", math.degrees(bearing))
         self._ev = None                                               # diese Meldung ist verbraucht
         self.task = "horchen"
         self._looks, self._fails = [], 0
         self._ear_turns, self._ear_front_n, self._ear_flipped, self._ear_fast = 0, 0, False, fast
-        if abs(bearing) >= math.radians(self.cfg.hear_front_deg):
+        if listen:
+            self._phase_set("lauschen", s.t)
+        elif abs(bearing) >= math.radians(self.cfg.hear_front_deg):
             self._hear_turn(s, bearing)
         else:
             self._ear_front_n = 1
