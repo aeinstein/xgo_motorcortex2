@@ -4,8 +4,9 @@
  * Raumkarte: map.png, Status und Befehle: api.php. Dazu Handsteuerung, Höhe, Aktionen, LEDs,
  * Emotionen, Herunterfahren. Keine Authentifizierung.
  *
- * Aufbau: Kopfleiste (immer sichtbar, mit STOPP) – links Bild, Modus, Kennzahlen, Kamera,
- * Verlauf (eingeklappt) – rechts Karten (Fahren, Raumkarte, Extras eingeklappt, System).
+ * Aufbau: Kopfleiste (immer sichtbar: Sprache, Einstellungen, Herunterfahren, Ruhe, STOPP) – links Bild mit
+ * Kameraleiste, Modus, Kennzahlen, Verlauf (eingeklappt) – rechts Lage, Fahren (mit Extras), Raumkarte.
+ * Sprache: Deutsch steht im HTML, Englisch im Wörterbuch EN (nur im Browser umgeschaltet).
  */
 declare(strict_types=1);
 header('Cache-Control: no-store');
@@ -52,6 +53,12 @@ header h1 span{color:var(--leise);font-weight:400}
   header .pille{padding:1px 7px}
   .pille .lang{display:none}
 }
+/* Einstellungen/Herunterfahren: schmal nur als Symbol */
+header .symbol .ic{display:none}
+@media (max-width:1000px){header .symbol .txt{display:none}header .symbol .ic{display:inline-block}header .symbol{padding:6px 10px}}
+.sprache{display:inline-flex;border:1px solid var(--rand2);border-radius:6px;overflow:hidden}
+.sprache button{border:0;border-radius:0;padding:5px 7px;font-size:12px;background:var(--karte2);color:var(--leise)}
+.sprache button.aktiv{background:var(--akzent);color:#04121f;font-weight:600}
 .pillen{display:flex;gap:6px;flex-wrap:wrap;flex:1;min-width:0}
 .pille{display:inline-flex;align-items:center;gap:5px;padding:2px 9px;border-radius:999px;font-size:12px;
   background:var(--karte2);border:1px solid var(--rand);color:var(--leise);white-space:nowrap;font-variant-numeric:tabular-nums}
@@ -116,6 +123,12 @@ details.hilfe p{margin:4px 0 0}
 
 /* --- Bild und Modus */
 #bild-rahmen{overflow:hidden;background:#000;border:1px solid var(--rand);border-radius:var(--r)}
+.bild-fenster{overflow:hidden}   /* „Bild festhalten“ verschiebt das <img>; die Leiste darunter bleibt frei */
+.bild-leiste{display:flex;flex-wrap:wrap;align-items:center;gap:6px 16px;padding:6px 10px;background:var(--karte);border-top:1px solid var(--rand)}
+.bild-leiste .regler{flex:1 1 230px;min-width:0}
+.bild-leiste .ist{display:flex;gap:6px;align-items:center;white-space:nowrap}
+.info{display:inline-grid;place-items:center;width:15px;height:15px;border:1px solid currentColor;border-radius:50%;
+  font:600 10px/1 system-ui,sans-serif;color:var(--leise);cursor:help}
 #bild{width:100%;height:auto;aspect-ratio:4/3;object-fit:contain;display:block;background:#000}
 #bild.aus{opacity:.35}
 .modus{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
@@ -161,13 +174,33 @@ pre{background:#0b0d10;border-radius:6px;padding:8px;overflow:auto;max-height:40
 #karte-rahmen.zieht{cursor:grabbing}
 #karte-rahmen.setzt{cursor:crosshair}
 #karte-punkte{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
-.route-leiste{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:6px}
+/* Knöpfe nach Zweck gruppiert; während Route/Zone gesetzt wird, ist die ganze Gruppe gesperrt (fieldset) */
+#karte-gruppen{border:0;margin:0 0 8px;padding:0;min-width:0;display:grid;gap:5px}
+.gruppe{display:grid;grid-template-columns:7.5em 1fr;gap:8px;align-items:center}
+.gruppe .g-name{font-size:12px;color:var(--leise)}
+.gruppe button{padding:4px 9px;font-size:13px}
+@media (max-width:420px){.gruppe{grid-template-columns:1fr;gap:3px}}
+/* Auflagen im Kartenrahmen: Bearbeiten oben, Pose-Warnung unten – die Karte verrutscht dadurch nicht */
+.karte-auflage{position:absolute;left:0;right:0;z-index:2;display:flex;flex-wrap:wrap;gap:5px;align-items:center;
+  padding:6px 8px;font-size:12px;cursor:default;background:rgba(15,17,20,.88)}
+.karte-auflage[hidden]{display:none}
+.karte-auflage button{padding:3px 8px;font-size:12px}
+#route-edit{top:0;border-bottom:1px solid var(--rand2)}
+#route-hinweis{flex:1 1 100%;color:var(--text)}
+#karte-pose-warn{bottom:0;margin:0;background:rgba(58,21,23,.94);color:#ffb3b5;border-top:1px solid #6b2427}
+#karte-pose-warn strong{color:#fff}
+/* Statuszeilen: Erkunden und Streife teilen sich eine Zeile (nie beide zugleich), Platz bleibt reserviert */
+.karte-status{display:grid;margin-top:6px;font-size:12px;color:var(--leise)}
+#karte-erkunden,#karte-streife{grid-area:2/1;min-height:1.4em}
+.weg{visibility:hidden}
 #karte{display:block;width:100%;height:100%;pointer-events:none;user-select:none;-webkit-user-select:none}
 
 /* --- Extras */
 details.extras>summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px;user-select:none}
 details.extras>summary::-webkit-details-marker{display:none}
-details.extras>summary h2{font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#a9b4c2;margin:0;flex:1}
+details.extras>summary :is(h2,h3){font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#a9b4c2;margin:0;flex:1}
+details.fahren-extras{border-top:1px solid var(--rand);margin-top:10px;padding-top:8px}
+details.fahren-extras>summary h3{font-size:12px}
 details.extras>summary::after{content:"▸";color:var(--leise);transition:transform .15s}
 details.extras[open]>summary::after{transform:rotate(90deg)}
 details.extras[open]>summary{margin-bottom:8px}
@@ -256,6 +289,13 @@ details.extras[open]>summary{margin-bottom:8px}
     <span class="pille" id="p-rec" style="display:none" title="Rohaufzeichnung: schreibt nur, solange der Rider balanciert"><span class="lang">Aufzeichnung </span><b>-</b></span>
     <span class="pille" id="p-wlan" title="WLAN-Empfang (Pegel) und Durchsatz des Riders: ↓ empfangen, ↑ gesendet"><span class="lang">WLAN </span><b>-</b></span>
   </div>
+  <div class="sprache" role="group" aria-label="Sprache">
+    <button data-lang="de" onclick="sprache('de')" title="Deutsch">DE</button><button data-lang="en" onclick="sprache('en')" title="English">EN</button>
+  </div>
+  <!-- Kalibrier-Knöpfe gesperrt (2026-11-02): Speichern bei schlaffen Beinen hat die
+       Beinnullpunkte im ESP32-Flash überschrieben. Erst mit geführtem Ablauf wieder freigeben. -->
+  <button class="symbol" onclick="einstOeffnen()" aria-label="Einstellungen" title="Alle Einstellungen aus config.toml ändern (mit Sicherung), xgonav neu starten"><span class="ic" aria-hidden="true">⚙</span><span class="txt">Einstellungen</span></button>
+  <button id="aus" class="gefahr symbol" onclick="herunterfahren()" aria-label="Herunterfahren" title="Rider herunterfahren"><svg class="ic" aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" style="vertical-align:-2px"><path d="M12 3v9"/><path d="M6.3 6.8a8 8 0 1 0 11.4 0"/></svg><span class="txt">Herunterfahren</span></button>
   <button id="ruhe-knopf" onclick="ruheSchalten(true)" title="Ruhemodus: absetzen, Bildverarbeitung aus, Abfragen aus, CPU-Takt runter, Schlafaugen am Display">Ruhe</button>
   <button id="stop" onclick="befehl('stop')" title="Stillstand, Modus idle">STOPP</button>
 </header>
@@ -269,7 +309,26 @@ details.extras[open]>summary{margin-bottom:8px}
 
 <main>
 <div class="spalte">
-  <div id="bild-rahmen"><img id="bild" alt="" aria-label="Kamerabild" width="640" height="480"></div>
+  <div id="bild-rahmen">
+    <div class="bild-fenster"><img id="bild" alt="" aria-label="Kamerabild" width="640" height="480"></div>
+    <div class="bild-leiste">
+      <div class="regler">
+        <label for="belicht">Belichtung</label>
+        <input type="range" id="belicht" min="1" max="33" value="15" step="1"
+          oninput="belichtAnzeige(this.value * 1000)" onchange="belichtung(this.value * 1000)">
+        <span class="w" id="belicht-w">-</span>
+        <button id="belicht-auto" onclick="belichtung(0)">Auto</button>
+      </div>
+      <div class="regler">
+        <label for="gain">Verstärkung</label>
+        <input type="range" id="gain" min="1" max="63.9" value="8" step="0.5"
+          oninput="gainAnzeige(this.value)" onchange="verstaerkung(this.value)">
+        <span class="w" id="gain-w">-</span>
+        <button id="gain-auto" onclick="verstaerkung(0)">Auto</button>
+      </div>
+      <span class="ist"><span class="leise" id="belicht-ist">-</span><span class="info" tabindex="0" title="Gilt bis zum Neustart von xgonav. Kürzere Belichtung = weniger Bewegungsunschärfe, aber dunkler; mehr Verstärkung = heller, aber mehr Rauschen (Automatik nur bis 8; über ~8× wird der Rauschabstand nicht besser, nur das Bild heller). Dauerhaft über [camera] exposure_us / analogue_gain in config.toml.">i</span></span>
+    </div>
+  </div>
   <div class="karte">
     <div class="modus">
       <div class="segment">
@@ -292,26 +351,6 @@ details.extras[open]>summary{margin-bottom:8px}
     <div class="kacheln" id="kurz"></div>
     <details class="roh"><summary>Status (roh)</summary><pre id="roh"></pre></details>
   </div>
-  <section class="karte">
-    <div class="kopf"><h2>Kamera</h2><span class="leise" id="belicht-ist">-</span></div>
-    <div class="regler">
-      <label for="belicht">Belichtung</label>
-      <input type="range" id="belicht" min="1" max="33" value="15" step="1"
-        oninput="belichtAnzeige(this.value * 1000)" onchange="belichtung(this.value * 1000)">
-      <span class="w" id="belicht-w">-</span>
-      <button id="belicht-auto" onclick="belichtung(0)">Auto</button>
-      <label for="gain">Verstärkung</label>
-      <input type="range" id="gain" min="1" max="63.9" value="8" step="0.5"
-        oninput="gainAnzeige(this.value)" onchange="verstaerkung(this.value)">
-      <span class="w" id="gain-w">-</span>
-      <button id="gain-auto" onclick="verstaerkung(0)">Auto</button>
-    </div>
-    <details class="hilfe"><summary>Gilt bis zum Neustart von xgonav</summary>
-      <p>Kürzere Belichtung = weniger Bewegungsunschärfe, aber dunkler; mehr Verstärkung = heller, aber mehr
-        Rauschen (Automatik nur bis 8; über ~8× wird der Rauschabstand nicht mehr besser, nur das Bild heller). Dauerhaft über <code>[camera] exposure_us</code> /
-        <code>analogue_gain</code> in config.toml.</p>
-    </details>
-  </section>
   <details class="karte extras" id="verlauf" ontoggle="verlaufUmschalten()">
     <summary><h2>Verlauf</h2><span class="leise">CPU · WLAN · Akku</span></summary>
     <div class="unter">CPU je Kern, letzte 10 min <span class="rechts" id="v-temp"></span></div>
@@ -351,7 +390,7 @@ details.extras[open]>summary{margin-bottom:8px}
       <span class="w" id="roll-w">0°</span><button onclick="rollNull()" title="Roll auf 0°">0</button>
     </div>
     <div class="legende" id="l-lage" title="Gier 0° = Kurs beim Start des ESP32; + = links. Roll + = rechts tief, Nick + = vorn tief"></div>
-    <details class="hilfe"><summary>Kamerahöhe und Roll</summary>
+    <details class="hilfe" data-i18n-html="hilfe-lage"><summary>Kamerahöhe und Roll</summary>
       <p>Kamerahöhe: Rechenwert der Bodengeometrie aus <code>cam_h_u8</code> (Linsenmitte über Boden, Sollwert u8
         im Tooltip), die Beine brauchen danach etwa 1 s. Der Wert entspricht der Messung mit dem Zollstock
         (Gitter am Boden 2026-11-10). Oberhalb von u8 200 ändert sich nichts
@@ -381,7 +420,7 @@ details.extras[open]>summary{margin-bottom:8px}
         </div>
       </div>
     </div>
-    <details class="hilfe"><summary>Gedrückt halten: Maus, Touch, Pfeiltasten/WASD</summary>
+    <details class="hilfe" data-i18n-html="hilfe-fahren"><summary>Gedrückt halten: Maus, Touch, Pfeiltasten/WASD</summary>
       <p>Fahren schaltet auf „Hand“ und ist auf max_v/max_w der Konfiguration begrenzt. Ohne Bodenmodell
         und Bahnprüfung; Sturz-Erkennung und Watchdogs bleiben aktiv.</p>
       <p>Balancieren (Firmware R-1.1.6): Nach einem ESP32-Neustart balanciert der Rider erst nach
@@ -392,6 +431,36 @@ details.extras[open]>summary{margin-bottom:8px}
       <p>„Neu ausrichten“: Die Beine haben eine Totzone, bei gleichem Befehl steht er bis zu 2,6° unterschiedlich
         schief. Der Knopf setzt Roll auf 0° und lässt die Firmware 3 s nivellieren; danach bleibt er so stehen. Das
         passiert auch einmal nach jedem Aufstehen. Beim Fahren kann er langsam wieder schief werden.</p>
+    </details>
+    <details class="extras fahren-extras" id="extras" ontoggle="extrasUmschalten()">
+      <summary><h3>Extras</h3><span class="leise">Aktionen · LEDs · Emotionen</span></summary>
+      <div class="unter">Aktionen</div>
+      <div class="knoepfe">
+        <?php for ($i = 1; $i <= 6; $i++): ?><button onclick="befehl('action', {n: <?= $i ?>})"><?= $i ?></button><?php endfor; ?>
+      </div>
+      <div class="unter">LEDs</div>
+      <div class="ledzeile">
+        <div class="leds">
+          <input type="color" id="led0" onchange="led(0, this.value)" aria-label="LED 0"><input type="color" id="led3" onchange="led(3, this.value)" aria-label="LED 3">
+          <input type="color" id="led1" onchange="led(1, this.value)" aria-label="LED 1"><input type="color" id="led2" onchange="led(2, this.value)" aria-label="LED 2">
+        </div>
+        <div class="knoepfe">
+          <button onclick="ledsAus()">Alle aus</button>
+          <button id="strobe" onclick="strobe()">Strobe</button>
+        </div>
+      </div>
+      <div class="regler" title="Gilt für alle LEDs, bleibt über Neustarts gespeichert">
+        <label for="ledhell">Helligkeit</label>
+        <input type="range" id="ledhell" min="0" max="100" value="<?= $ledP ?>" step="1"
+          oninput="document.getElementById('ledhell-w').textContent = this.value + ' %'"
+          onchange="befehl('led_brightness', {p: this.value}, true)">
+        <span class="w" id="ledhell-w"><?= $ledP ?> %</span><span class="leer"></span>
+      </div>
+      <div class="unter">Emotionen (Display)</div>
+      <div class="knoepfe">
+        <?php foreach ($emotionen as $e): ?><button onclick="befehl('emotion', {name: '<?= h($e) ?>'})"><?= h($e) ?></button><?php endforeach; ?>
+        <?php if (!$emotionen): ?><span class="leise">keine gefunden in <?= h(EMOTION_RAW) ?></span><?php endif; ?>
+      </div>
     </details>
   </section>
 
@@ -409,7 +478,7 @@ details.extras[open]>summary{margin-bottom:8px}
       <label title="Bild senkrecht so verschieben, dass die cyan IMU-Linie fest steht"><input type="checkbox" id="hz-stabil" onchange="hzStabil(this.checked)"> Bild am IMU-Nick festhalten</label>
     </div>
     <div class="leise" style="margin-top:6px" id="hz-tabelle">-</div>
-    <details class="hilfe"><summary>weiß Stand · cyan IMU · magenta Bild · orange IMU roh · grün Einstellen</summary>
+    <details class="hilfe" data-i18n-html="hilfe-horizont"><summary>weiß Stand · cyan IMU · magenta Bild · orange IMU roh · grün Einstellen</summary>
       <p>Erst aufstehen lassen und nicht anfassen: Nach 3 s Einschwingen misst xgonav 3 s lang den mittleren
         Nickwinkel (Standreferenz). Danach die grüne Linie auf einen Bezug in Kamerahöhe schieben (Laserlinie,
         Klebeband an der Wand in Höhe der Kameramitte) und speichern. Das je Kamerahöhe wiederholen; dazwischen
@@ -427,38 +496,46 @@ details.extras[open]>summary{margin-bottom:8px}
   <section class="karte">
     <div class="kopf"><h2>Raumkarte</h2>
       <select id="karte-view" aria-label="Ausschnitt" onchange="karteView(this.value)"><option value="3">3 m</option><option value="6" selected>6 m</option><option value="10">10 m</option><option value="16">16 m</option><option id="karte-view-frei" hidden></option></select>
-      <button onclick="befehl('map_start')" title="Startpunkt = aktuelle Pose">Start hier</button>
-      <button onclick="befehl('map_save')" title="Raumkarte jetzt speichern ([grid] file)">Speichern</button>
-      <button onclick="befehl('map_reset')">Zurücksetzen</button>
-      <button id="karte-pose-weg" hidden onclick="befehl('map_pose', {aktion: 'verwerfen'})" title="Der Rider wurde versetzt: Die Karte wird nicht mehr beschrieben, bis der Standort bestätigt ist">Pose verwerfen</button>
     </div>
-    <p id="karte-pose-warn" class="hinweis" hidden>
-      <strong>Pose unbekannt</strong> <span id="karte-pose-grund"></span>. Die Karte wird nicht beschrieben, „Zum Start“, Streife und Erkunden sind gesperrt;
-      Sperrzonen gelten an falscher Stelle.
-      <button onclick="poseBestaetigen('start')" title="Die Pose springt auf den Startpunkt">Steht am Startpunkt</button>
-      <button onclick="poseBestaetigen('hier')" title="Der Rider wurde nicht versetzt">Pose stimmt</button>
-    </p>
+    <fieldset id="karte-gruppen">
+      <div class="gruppe"><span class="g-name">Karte</span><div class="knoepfe">
+        <button onclick="befehl('map_save')" title="Raumkarte jetzt speichern ([grid] file)">Speichern</button>
+        <button id="karte-sperre" onclick="karteSperren()" title="Gesperrt ändern Fahrten die Karte nicht">Karte sperren</button>
+        <button class="gefahr" onclick="karteZuruecksetzen()" title="Karte leeren; Route und Sperrzonen gehen verloren">Zurücksetzen</button>
+      </div></div>
+      <div class="gruppe"><span class="g-name">Start · Pose</span><div class="knoepfe">
+        <button onclick="befehl('map_start')" title="Startpunkt = aktuelle Pose">Start hier</button>
+        <button id="karte-pose-weg" hidden onclick="befehl('map_pose', {aktion: 'verwerfen'})" title="Der Rider wurde versetzt: Die Karte wird nicht mehr beschrieben, bis der Standort bestätigt ist">Pose verwerfen</button>
+      </div></div>
+      <div class="gruppe"><span class="g-name">Route · Zonen</span><div class="knoepfe">
+        <button onclick="bearbeiten('route')" title="Wegpunkte der Streife per Klick auf die Karte setzen">Route setzen</button>
+        <button onclick="bearbeiten('zone')" title="Bereich, den der Rider nie befährt: Ecken anklicken">Sperrzone</button>
+        <button onclick="zonenLoeschen()" title="Alle Sperrzonen löschen">Zonen löschen</button>
+      </div></div>
+    </fieldset>
     <div id="karte-rahmen" title="ziehen: verschieben · Mausrad: zoomen · Doppelklick: zurück zum Rider">
       <img id="karte" alt="Raumkarte" width="320" height="320" draggable="false">
       <svg id="karte-punkte" viewBox="0 0 1 1" preserveAspectRatio="none"></svg>
+      <div class="karte-auflage" id="route-edit" hidden>
+        <span id="route-hinweis"></span>
+        <label id="route-kreis"><input type="checkbox" id="route-loop"> im Kreis</label>
+        <button onclick="punktWeg()">Letzten weg</button>
+        <button onclick="bearbeitenFertig()" class="aktiv">Übernehmen</button>
+        <button onclick="bearbeitenEnde()">Abbrechen</button>
+      </div>
+      <p class="karte-auflage" id="karte-pose-warn" hidden>
+        <span><strong>Pose unbekannt</strong><span id="karte-pose-grund"></span>. Die Karte wird nicht beschrieben, „Zum Start“, Streife und Erkunden sind gesperrt;
+        Sperrzonen gelten an falscher Stelle.</span>
+        <button onclick="poseBestaetigen('start')" title="Die Pose springt auf den Startpunkt">Steht am Startpunkt</button>
+        <button onclick="poseBestaetigen('hier')" title="Der Rider wurde nicht versetzt">Pose stimmt</button>
+      </p>
     </div>
-    <div class="leise" style="margin-top:6px" id="karte-pose">-</div>
-    <div class="leise" id="karte-erkunden" hidden></div>
-    <div class="leise" id="karte-streife" hidden></div>
-    <div class="route-leiste" id="route-start">
-      <button onclick="bearbeiten('route')" title="Wegpunkte der Streife per Klick auf die Karte setzen">Route setzen</button>
-      <button onclick="bearbeiten('zone')" title="Bereich, den der Rider nie befährt: Ecken anklicken">Sperrzone</button>
-      <button onclick="zonenLoeschen()" title="Alle Sperrzonen löschen">Zonen löschen</button>
-      <button id="karte-sperre" onclick="karteSperren()" title="Gesperrt ändern Fahrten die Karte nicht">Karte sperren</button>
+    <div class="karte-status">
+      <div id="karte-pose">-</div>
+      <div id="karte-erkunden" class="weg"></div>
+      <div id="karte-streife" class="weg"></div>
     </div>
-    <div class="route-leiste" id="route-edit" hidden>
-      <span id="route-hinweis" class="leise"></span>
-      <label id="route-kreis"><input type="checkbox" id="route-loop"> im Kreis</label>
-      <button onclick="punktWeg()">Letzten weg</button>
-      <button onclick="bearbeitenFertig()" class="aktiv">Übernehmen</button>
-      <button onclick="bearbeitenEnde()">Abbrechen</button>
-    </div>
-    <details class="hilfe"><summary>grau unbekannt · hell frei · dunkel belegt · grün Weg · cyan Plan · blau Start · rot Rider</summary>
+    <details class="hilfe" data-i18n-html="hilfe-karte"><summary>grau unbekannt · hell frei · dunkel belegt · grün Weg · cyan Plan · blau Start · rot Rider</summary>
       <p>Maus: ziehen verschiebt, Mausrad zoomt um den Zeiger, Doppelklick zentriert wieder auf den Rider
         und folgt ihm.</p>
       <p>Ursprung = Startpose (oben = vorn beim Start). Strecke und Drehung aus den Rädern (auch bei
@@ -475,46 +552,6 @@ details.extras[open]>summary{margin-bottom:8px}
       <p>„Zum Start“ plant einen Weg über die Karte und fährt ihn ab. Die Karte wird regelmäßig gespeichert
         und beim Start von xgonav geladen; der Rider muss dann wieder am Startpunkt stehen.</p>
     </details>
-  </section>
-
-  <details class="karte extras">
-    <summary><h2>Extras</h2><span class="leise">Aktionen · LEDs · Emotionen</span></summary>
-    <div class="unter">Aktionen</div>
-    <div class="knoepfe">
-      <?php for ($i = 1; $i <= 6; $i++): ?><button onclick="befehl('action', {n: <?= $i ?>})"><?= $i ?></button><?php endfor; ?>
-    </div>
-    <div class="unter">LEDs</div>
-    <div class="ledzeile">
-      <div class="leds">
-        <input type="color" id="led0" onchange="led(0, this.value)" aria-label="LED 0"><input type="color" id="led3" onchange="led(3, this.value)" aria-label="LED 3">
-        <input type="color" id="led1" onchange="led(1, this.value)" aria-label="LED 1"><input type="color" id="led2" onchange="led(2, this.value)" aria-label="LED 2">
-      </div>
-      <div class="knoepfe">
-        <button onclick="ledsAus()">Alle aus</button>
-        <button id="strobe" onclick="strobe()">Strobe</button>
-      </div>
-    </div>
-    <div class="regler" title="Gilt für alle LEDs, bleibt über Neustarts gespeichert">
-      <label for="ledhell">Helligkeit</label>
-      <input type="range" id="ledhell" min="0" max="100" value="<?= $ledP ?>" step="1"
-        oninput="document.getElementById('ledhell-w').textContent = this.value + ' %'"
-        onchange="befehl('led_brightness', {p: this.value}, true)">
-      <span class="w" id="ledhell-w"><?= $ledP ?> %</span><span class="leer"></span>
-    </div>
-    <div class="unter">Emotionen (Display)</div>
-    <div class="knoepfe">
-      <?php foreach ($emotionen as $e): ?><button onclick="befehl('emotion', {name: '<?= h($e) ?>'})"><?= h($e) ?></button><?php endforeach; ?>
-      <?php if (!$emotionen): ?><span class="leise">keine gefunden in <?= h(RC) ?>/emotions</span><?php endif; ?>
-    </div>
-  </details>
-
-  <section class="karte">
-    <div class="kopf"><h2>System</h2>
-      <!-- Kalibrier-Knöpfe gesperrt (2026-11-02): Speichern bei schlaffen Beinen hat die
-           Beinnullpunkte im ESP32-Flash überschrieben. Erst mit geführtem Ablauf wieder freigeben. -->
-      <button onclick="einstOeffnen()" title="Alle Einstellungen aus config.toml ändern (mit Sicherung), xgonav neu starten">Einstellungen</button>
-      <button id="aus" class="gefahr" onclick="herunterfahren()">Herunterfahren</button>
-    </div>
   </section>
 </div>
 </main>
@@ -539,6 +576,247 @@ details.extras[open]>summary{margin-bottom:8px}
   </div>
 </dialog>
 <script>
+// ---------------------------------------------------------------- Sprache (nur im Browser, am Rider keine Kosten)
+// Deutsch steht im HTML und im Code; EN übersetzt über den deutschen Text als Schlüssel (Leerraum zusammengefasst).
+// Feste Texte: Textknoten und title/aria-label/placeholder; lange Hilfen ganz über data-i18n-html (EN_HTML).
+// Dynamische Texte: tr('…'). Was xgonav oder api.php als Freitext liefern (Status, Fehler), bleibt deutsch.
+// ?i18n=debug listet fehlende Übersetzungen in der Konsole.
+const EN = {
+  'Modus': 'Mode', 'Zustand': 'State', 'Akku': 'Battery', 'Bildverarb.': 'Vision',
+  'Rohaufzeichnung: schreibt nur, solange der Rider balanciert': 'Raw recording: writes only while the Rider is balancing',
+  'Aufzeichnung': 'Recording', 'WLAN': 'Wi-Fi',
+  'WLAN-Empfang (Pegel) und Durchsatz des Riders: ↓ empfangen, ↑ gesendet': 'Wi-Fi signal (level) and throughput of the Rider: ↓ received, ↑ sent',
+  'Sprache': 'Language',
+  'Alle Einstellungen aus config.toml ändern (mit Sicherung), xgonav neu starten': 'Edit all settings in config.toml (with backup), restart xgonav',
+  'Einstellungen': 'Settings', 'Rider herunterfahren': 'Shut down the Rider', 'Herunterfahren': 'Shut down',
+  'Ruhemodus: absetzen, Bildverarbeitung aus, Abfragen aus, CPU-Takt runter, Schlafaugen am Display':
+    'Rest mode: sit down, vision off, polling off, CPU clock down, sleepy eyes on the display',
+  'Ruhe': 'Rest', 'Stillstand, Modus idle': 'Stand still, mode idle', 'STOPP': 'STOP', 'Ruhemodus': 'Rest mode',
+  'Rider liegt, Bildverarbeitung und Abfragen sind aus, CPU-Takt gesenkt, am Display stehen die Schlafaugen. Akku':
+    'Rider is lying down, vision and polling are off, CPU clock lowered, sleepy eyes on the display. Battery',
+  'CPU-Takt und Abfragen wieder hoch; Bildverarbeitung bleibt aus, Rider bleibt liegen': 'CPU clock and polling back up; vision stays off, Rider stays down',
+  'Wecken': 'Wake up', 'Kamerabild': 'Camera image', 'Belichtung': 'Exposure', 'Verstärkung': 'Gain',
+  'Gilt bis zum Neustart von xgonav. Kürzere Belichtung = weniger Bewegungsunschärfe, aber dunkler; mehr Verstärkung = heller, aber mehr Rauschen (Automatik nur bis 8; über ~8× wird der Rauschabstand nicht besser, nur das Bild heller). Dauerhaft über [camera] exposure_us / analogue_gain in config.toml.':
+    'Applies until xgonav restarts. Shorter exposure = less motion blur but darker; more gain = brighter but noisier (auto only up to 8; above ~8× the signal-to-noise ratio does not improve, the image just gets brighter). Permanently via [camera] exposure_us / analogue_gain in config.toml.',
+  'Idle': 'Idle', 'Hand': 'Manual', 'Folgen': 'Follow', 'Erkunden': 'Explore', 'Anfahren': 'Approach',
+  'Weg über die Raumkarte zum Startpunkt': 'Path over the room map to the start point', 'Zum Start': 'Home',
+  'Route auf der Raumkarte abfahren': 'Drive the route on the room map', 'Streife': 'Patrol',
+  'Reagiert auf Menschen, Katzen und Hunde': 'Reacts to people, cats and dogs', 'Haustier': 'Pet',
+  'Ziel für Folgen/Anfahren (aktive YOLO-Klassen)': 'Target for follow/approach (active YOLO classes)', 'Ziel': 'Target',
+  'Bildverarbeitung': 'Vision',
+  'Rohbilder und Metadaten am Rider speichern. Schreibt nur, solange er balanciert; Absetzen beendet die Aufnahme, jedes Aufstehen beginnt eine neue.':
+    'Store raw images and metadata on the Rider. Writes only while balancing; sitting down ends the recording, every stand-up starts a new one.',
+  'Aufzeichnen': 'Record', 'Status (roh)': 'Status (raw)', 'Verlauf': 'History', 'CPU · WLAN · Akku': 'CPU · Wi-Fi · Battery',
+  'CPU je Kern, letzte 10 min': 'CPU per core, last 10 min', 'WLAN-Durchsatz, letzte 10 min': 'Wi-Fi throughput, last 10 min',
+  'WLAN-Empfang (Pegel)': 'Wi-Fi signal (level)', 'Akku, 120 min (im Browser gespeichert)': 'Battery, 120 min (stored in the browser)',
+  'Leeren': 'Clear', 'Lage': 'Attitude', 'IMU live · ziehen: drehen · Doppelklick: zurück': 'IMU live · drag: rotate · double-click: reset',
+  'Lage des Riders als 3D-Modell': 'Attitude of the Rider as a 3D model', 'Kamerahöhe': 'Camera height',
+  'Roll': 'Roll', 'Roll auf 0°': 'Roll to 0°',
+  'Gier 0° = Kurs beim Start des ESP32; + = links. Roll + = rechts tief, Nick + = vorn tief':
+    'Yaw 0° = heading at ESP32 start; + = left. Roll + = right side down, pitch + = front down',
+  'Fahren': 'Drive', 'vor': 'forward', 'links': 'left', 'rechts': 'right', 'zurück': 'back', 'Tempo': 'Speed',
+  'Aktion 255': 'Action 255', 'Aufstehen': 'Stand up',
+  'Aktion 253 (!standup): Rider muss stehen und Platz haben': 'Action 253 (!standup): Rider must be upright and have room',
+  'Aufspringen': 'Jump up', 'Roll auf 0° und die Beine 3 s nivellieren (nur wenn er steht)': 'Roll to 0° and level the legs for 3 s (only while standing)',
+  'Neu ausrichten': 'Re-level', 'Aktion 254, Not-Stopp': 'Action 254, emergency stop', 'Absetzen': 'Sit down',
+  'Extras': 'Extras', 'Aktionen · LEDs · Emotionen': 'Actions · LEDs · Emotions', 'Aktionen': 'Actions', 'LEDs': 'LEDs',
+  'Alle aus': 'All off', 'Strobe': 'Strobe', 'Gilt für alle LEDs, bleibt über Neustarts gespeichert': 'Applies to all LEDs, kept across restarts',
+  'Helligkeit': 'Brightness', 'Emotionen (Display)': 'Emotions (display)', 'keine gefunden in': 'none found in',
+  'Horizont': 'Horizon', 'Linie 5 px nach oben': 'Line up 5 px', 'Linie 1 px nach oben': 'Line up 1 px',
+  'Linie 1 px nach unten': 'Line down 1 px', 'Linie 5 px nach unten': 'Line down 5 px',
+  'Zeile der grünen Linie für die aktuelle Kamerahöhe speichern': 'Save the row of the green line for the current camera height',
+  'Für diese Kamerahöhe speichern': 'Save for this camera height', 'Grüne Linie ausblenden': 'Hide the green line', 'Linie aus': 'Line off',
+  'Bild senkrecht so verschieben, dass die cyan IMU-Linie fest steht': 'Shift the image vertically so the cyan IMU line stays fixed',
+  'Bild am IMU-Nick festhalten': 'Pin image to IMU pitch',
+  'Raumkarte': 'Room map', 'Ausschnitt': 'View', 'Karte': 'Map',
+  'Raumkarte jetzt speichern ([grid] file)': 'Save the room map now ([grid] file)', 'Speichern': 'Save',
+  'Gesperrt ändern Fahrten die Karte nicht': 'While locked, drives do not change the map', 'Karte sperren': 'Lock map', 'Karte entsperren': 'Unlock map',
+  'Karte leeren; Route und Sperrzonen gehen verloren': 'Clear the map; route and no-go zones are lost', 'Zurücksetzen': 'Reset',
+  'Start · Pose': 'Start · Pose', 'Startpunkt = aktuelle Pose': 'Start point = current pose', 'Start hier': 'Start here',
+  'Der Rider wurde versetzt: Die Karte wird nicht mehr beschrieben, bis der Standort bestätigt ist':
+    'The Rider was moved: the map is not written until the position is confirmed',
+  'Pose verwerfen': 'Discard pose', 'Route · Zonen': 'Route · Zones',
+  'Wegpunkte der Streife per Klick auf die Karte setzen': 'Set patrol waypoints by clicking on the map', 'Route setzen': 'Set route',
+  'Bereich, den der Rider nie befährt: Ecken anklicken': 'Area the Rider never enters: click its corners', 'Sperrzone': 'No-go zone',
+  'Alle Sperrzonen löschen': 'Delete all no-go zones', 'Zonen löschen': 'Delete zones',
+  'ziehen: verschieben · Mausrad: zoomen · Doppelklick: zurück zum Rider': 'drag: pan · wheel: zoom · double-click: back to the Rider',
+  'im Kreis': 'loop', 'Letzten weg': 'Remove last', 'Übernehmen': 'Apply', 'Abbrechen': 'Cancel', 'Pose unbekannt': 'Pose unknown',
+  '. Die Karte wird nicht beschrieben, „Zum Start“, Streife und Erkunden sind gesperrt; Sperrzonen gelten an falscher Stelle.':
+    '. The map is not written; Home, Patrol and Explore are blocked; no-go zones apply at the wrong place.',
+  'Die Pose springt auf den Startpunkt': 'The pose jumps to the start point', 'Steht am Startpunkt': 'At start point',
+  'Der Rider wurde nicht versetzt': 'The Rider was not moved', 'Pose stimmt': 'Pose is correct',
+  'Einstellungen durchsuchen': 'Search settings', 'Suchen (Schlüssel, Text)': 'Search (key, text)',
+  'nur in config.toml gesetzte': 'only set in config.toml', 'Schließen': 'Close', 'Sicherungen': 'Backups',
+  'Nicht gespeicherte Änderungen verwerfen': 'Discard unsaved changes', 'Verwerfen': 'Discard',
+  'Speichern und neu starten': 'Save and restart', 'xgonav neu starten: liest config.toml neu ein': 'Restart xgonav: re-reads config.toml',
+  'Neu starten': 'Restart',
+  // dynamisch
+  'Status': 'Status', 'Befehl v / w': 'Command v / w', 'Kurs': 'Heading', 'Kamera / Schleife': 'Camera / loop',
+  'Schleife p95 / max': 'Loop p95 / max', 'Detektor': 'Detector', 'Nicken': 'Pitch', 'Gier / Nick': 'Yaw / pitch', 'TTC / Schärfe': 'TTC / sharpness',
+  'Rundumblick': 'looking around', 'fährt zu einer Stelle': 'driving to a spot', 'schaut': 'looking', 'setzt zurück': 'backing up',
+  'befreit sich': 'freeing itself', 'fährt zum Start': 'driving home', 'fertig': 'done', 'fährt': 'driving',
+  'verbunden': 'connected', 'getrennt': 'disconnected', 'keine Verbindung': 'no connection',
+  'keine Verbindung zum Rider': 'no connection to the Rider', 'keine Verbindung zu xgonav': 'no connection to xgonav',
+  'balanciert': 'balancing', 'liegt': 'lying', 'läuft': 'running', 'gestoppt': 'stopped', 'Stoppen': 'Stop', 'Starten': 'Start',
+  'Aufzeichnung aus': 'Stop recording', 'Bilder': 'frames', 'wartet: liegt': 'waiting: lying down',
+  'wartet: Bildverarb. aus': 'waiting: vision off', 'wartet auf Bild': 'waiting for image', 'Aufzeichnung aus: ': 'Recording off: ',
+  'YOLO aus': 'YOLO off', ' – YOLO ist aus ([detector] enabled)': ' – YOLO is off ([detector] enabled)',
+  'Ruhemodus? Der Rider setzt sich ab, Bildverarbeitung aus, CPU-Takt runter.': 'Rest mode? The Rider sits down, vision off, CPU clock down.',
+  'Steht der Rider (aufgestanden) am Startpunkt, in Startrichtung? Die Pose springt dann dorthin. Sind Treppen und Kanten abgesperrt?':
+    'Is the Rider (standing) at the start point, facing the start direction? The pose then jumps there. Are stairs and edges blocked off?',
+  'Steht der Rider (aufgestanden) am Startpunkt, in Startrichtung? Die Pose springt dann dorthin.':
+    'Is the Rider (standing) at the start point, facing the start direction? The pose then jumps there.',
+  'Steht der Rider (aufgestanden) genau dort, wo ihn die Karte zeigt, in dieser Richtung?':
+    'Is the Rider (standing) exactly where the map shows it, facing that direction?',
+  'liegt – erst aufstehen': 'lying – stand up first', 'schwingt ein': 'settling', 'misst Standlage': 'measuring stand attitude',
+  'Standreferenz gültig': 'stand reference valid', 'Sollwert u8 ': 'Setpoint u8 ', 'Horizont für {mm} mm löschen?': 'Delete horizon for {mm} mm?',
+  'Eintrag löschen': 'Delete entry', 'Tabelle leer': 'Table empty', 'Zeile': 'row',
+  'Kamerahöhe ': 'Camera height ', 'IMU im Stand ': 'IMU standing ', 'Zeile Stand ': 'Row stand ', ' / Bild ': ' / image ',
+  'Bild−IMU ': 'image−IMU ', 'IMU roh ': 'IMU raw ', 'Ego ok ': 'Ego ok ', 'keine Tabelle: tilt_deg der Konfig': 'no table: tilt_deg from config',
+  'außerhalb der Tabelle': 'outside the table',
+  'Fehler ': 'Error ', 'ist ': 'actual ', 'Start ': 'home ', 'belegt ': 'occupied ',
+  'Erkunden: ': 'Explore: ', ' Stellen offen': ' spots open', ' übergangen': ' skipped',
+  'Streife: ': 'Patrol: ', 'Punkt ': 'point ', ' von ': ' of ', 'Runde ': 'round ', 'ausgelassen: ': 'skipped: ',
+  'Ecken der Sperrzone anklicken: ': 'Click the corners of the no-go zone: ', 'Wegpunkte anklicken: ': 'Click waypoints: ',
+  'Route nicht lesbar': 'Route not readable', 'Eine Sperrzone braucht mindestens 3 Ecken': 'A no-go zone needs at least 3 corners',
+  'Alle Sperrzonen löschen?': 'Delete all no-go zones?',
+  'Raumkarte zurücksetzen? Route und Sperrzonen gehen dabei verloren.': 'Reset the room map? Route and no-go zones will be lost.',
+  'Lage kalibrieren? Der Rider muss balancieren und frei stehen; er regelt sich ein paar Sekunden auf der Stelle ein.':
+    'Calibrate attitude? The Rider must balance and stand free; it settles on the spot for a few seconds.',
+  'Aufspringen? Der Rider muss auf den Rädern stehen und rundherum Platz haben – er springt hoch und schwingt dabei aus.':
+    'Jump up? The Rider must stand on its wheels with room all around – it jumps up and swings out.',
+  'Rider wirklich herunterfahren?': 'Really shut down the Rider?',
+  'Kern ': 'Core ', '↓ empfangen': '↓ received', '↑ gesendet': '↑ sent', ' · Qualität ': ' · quality ', 'Pegel': 'Level',
+  ' · Last ': ' · load ', 'Nick': 'Pitch', 'Gier': 'Yaw', 'keine IMU-Daten': 'no IMU data',
+  // Einstellungen
+  'Zahl erwartet': 'number expected', 'ganze Zahl erwartet': 'integer expected', 'Typ unbekannt': 'unknown type',
+  'steht in config.toml': 'set in config.toml', 'gesetzt': 'set', 'wird Default': 'becomes default', 'geändert': 'changed',
+  'Default': 'Default', 'Default aus config.py: ': 'Default from config.py: ', ' – entfernt die Zeile aus config.toml': ' – removes the line from config.toml',
+  '(leer)': '(empty)', 'In config.toml nicht lesbar ({x}), nur per ssh änderbar.': 'Not readable in config.toml ({x}), change only via ssh.',
+  'Default: ': 'Default: ', ' · in Datei: ': ' · in file: ', 'gesetzt / Felder': 'set / fields', ', ungespeichert geändert': ', changed, unsaved',
+  'Nichts gefunden.': 'Nothing found.', 'Keine Einträge.': 'No entries.', 'lädt …': 'loading …',
+  ' ist nicht schreibbar (Gruppe video, 0664: deploy/install.sh)': ' is not writable (group video, 0664: deploy/install.sh)',
+  '{n} ungültige Eingabe(n)': '{n} invalid input(s)', '{n} ungespeicherte Änderung(en) – wirkt erst nach Neustart': '{n} unsaved change(s) – takes effect after restart',
+  'Gespeichert. Wirkt erst nach Neustart von xgonav.': 'Saved. Takes effect after xgonav restarts.', 'Keine Änderungen. ': 'No changes. ',
+  'Zurückspielen': 'Restore', 'noch keine': 'none yet',
+  'config.toml durch die Sicherung {name} ersetzen? Der jetzige Stand wird vorher gesichert. Wirkt nach Neustart.':
+    'Replace config.toml with backup {name}? The current state is backed up first. Takes effect after restart.',
+  'Laden fehlgeschlagen: ': 'Loading failed: ', 'Alle ungespeicherten Änderungen verwerfen?': 'Discard all unsaved changes?',
+  'In config.toml schreiben (vorher Sicherung):': 'Write to config.toml (backup first):', 'Danach xgonav neu starten.': 'Then restart xgonav.',
+  '(Default ': '(default ', 'leer': 'empty',
+  'xgonav neu starten? Er liest dabei config.toml neu ein; Bild und Status sind einige Sekunden weg.':
+    'Restart xgonav? It re-reads config.toml; image and status are gone for a few seconds.',
+  'Trotzdem neu starten? Laufende Fahrt, Aufzeichnung und Modus enden.': 'Restart anyway? Running drive, recording and mode will end.',
+  'xgonav startet neu …': 'xgonav is restarting …',
+};
+const EN_HTML = {
+  'hilfe-fahren': `<summary>Hold: mouse, touch, arrow keys/WASD</summary>
+      <p>Driving switches to “Manual” and is limited to max_v/max_w from the configuration. No floor model
+        and no path check; fall detection and watchdogs stay active.</p>
+      <p>Balancing (firmware R-1.1.6): after an ESP32 restart the Rider balances only after
+        “Stand up”. If it is lying, the firmware waits until it is upright – then the wheels start immediately.
+        “Jump up” (action 253, like <code>!standup</code>) makes it jump up – <b>Rider must be upright and have room</b>.
+        “Sit down” is an emergency stop (action 254, like <code>!stop</code>): it sits down in a controlled way and
+        stays off until the next stand-up.</p>
+      <p>“Re-level”: the legs have a dead band; with the same command it stands up to 2.6° differently
+        tilted. The button sets roll to 0° and lets the firmware level for 3 s; it then stays like that. This
+        also happens once after every stand-up. While driving it can slowly tilt again.</p>`,
+  'hilfe-lage': `<summary>Camera height and roll</summary>
+      <p>Camera height: value of the floor geometry from <code>cam_h_u8</code> (lens centre above floor, setpoint u8
+        in the tooltip); the legs need about 1 s afterwards. The value matches the folding-rule measurement
+        (floor grid 2026-11-10). Above u8 200 nothing changes
+        any more. Lower limit keeps a margin to the minimum; in Follow/Explore xgonav sets the height itself.</p>
+      <p>Roll: + = right.</p>`,
+  'hilfe-horizont': `<summary>white stand · cyan IMU · magenta image · orange IMU raw · green adjust</summary>
+      <p>Let it stand up first and do not touch it: after 3 s of settling xgonav measures the mean pitch angle
+        for 3 s (stand reference). Then move the green line onto a reference at camera height (laser line,
+        tape on the wall at the height of the camera centre) and save. Repeat per camera height; in between
+        xgonav interpolates linearly.</p>
+      <p>Cyan is the horizon from the IMU minus the stand reference. Magenta starts at the IMU value, then follows the image
+        pitch (fast changes) and is reset to the IMU after at most 0.5 s; magenta is used for the
+        distances. Orange is the raw pitch of the driver (newest sample, not time-aligned to the image), on the left
+        with the raw value in degrees. After every height change and every sit-down it measures the stand attitude again.</p>
+      <p>“Pin image to IMU pitch”: each image is shifted so that the cyan IMU line stays fixed on the
+        stand row. If the IMU is right, the scene stands still; if it wanders against the cyan line, the IMU
+        or the time alignment drifts. Black border at top/bottom = shift.</p>`,
+  'hilfe-karte': `<summary>grey unknown · light free · dark occupied · green path · cyan plan · blue start · red Rider</summary>
+      <p>Mouse: drag pans, the wheel zooms around the pointer, double-click centres on the Rider again
+        and follows it.</p>
+      <p>Origin = start pose (up = forward at start). Distance and rotation from the wheels (also with
+        vision stopped); without markers the map drifts over time.</p>
+      <p>“Explore” maps the room: first a look around, then it drives to the borders between known floor and
+        unknown until nothing reachable is left (or a time or battery limit). Then it saves the map and
+        drives home.</p>
+      <p>“Set route”: click the points on the map in order; magenta is the saved route. Every point
+        must lie on known, reachable floor. “No-go zone”: click the corners of an area it must never enter,
+        e.g. stairs (red). It applies to all modes except manual control, but drifts with the map: it
+        does not replace a physical barrier. Route and zones belong to this map; after “Reset” they are gone.</p>
+      <p>“Patrol” drives the route and finally home. The Rider must stand at the start point for it. Below 30 % battery it
+        returns, at 15 % it sits down. After “Explore” the map is locked so drives no longer change it.</p>
+      <p>“Home” plans a path over the map and drives it. The map is saved regularly
+        and loaded when xgonav starts; the Rider must then be at the start point again.</p>`,
+};
+let LANG = 'de';
+try { if (localStorage.getItem('xgonav.lang') === 'en') LANG = 'en'; } catch (e) {}
+const I18N_DEBUG = /[?&]i18n=debug\b/.test(location.search), i18nFehlt = new Set();
+const i18nKey = s => s.replace(/\s+/g, ' ').trim();
+function trEn(s) {
+  if (s in EN) return EN[s];
+  const k = i18nKey(s);
+  if (k in EN) return EN[k];
+  if (I18N_DEBUG && /[A-Za-zÄÖÜäöüß]{2}/.test(k) && !i18nFehlt.has(k)) { i18nFehlt.add(k); console.warn('i18n fehlt:', k); }
+  return null;
+}
+// Übersetzen; Platzhalter {x} aus v
+function tr(s, v) {
+  let r = LANG === 'en' ? (trEn(s) ?? s) : s;
+  if (v) for (const k in v) r = r.replace('{' + k + '}', v[k]);
+  return r;
+}
+const LOCALE = () => LANG === 'en' ? 'en-GB' : 'de-DE';
+// Ein Textknoten bzw. Attribut: Original merken, nur zurücksetzen, solange der Code es nicht inzwischen neu gesetzt hat
+function i18nWert(halter, key, jetzt, setzen) {
+  const o = halter._i18n ??= {};
+  if (o[key] && jetzt === o[key].en) { if (LANG === 'de') { setzen(o[key].de); delete o[key]; } return; }
+  delete o[key];
+  if (LANG !== 'en') return;
+  const en = trEn(jetzt);
+  if (en == null) return;
+  const neu = jetzt.replace(/^(\s*)[\s\S]*?(\s*)$/, (_, a, b) => a + en + b);
+  o[key] = {de: jetzt, en: neu};
+  setzen(neu);
+}
+function spracheAnwenden() {
+  document.documentElement.lang = LANG;
+  document.querySelectorAll('[data-lang]').forEach(b => b.classList.toggle('aktiv', b.dataset.lang === LANG));
+  for (const el of document.querySelectorAll('[data-i18n-html]')) {
+    el._de ??= el.innerHTML;
+    const en = EN_HTML[el.dataset.i18nHtml];
+    el.innerHTML = LANG === 'en' && en ? en : el._de;
+  }
+  const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {acceptNode: n =>
+    n.parentElement.closest('script,style,pre,[data-i18n-html]') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT});
+  for (let n; (n = w.nextNode());) if (n.nodeValue.trim()) i18nWert(n, 'text', n.nodeValue, v => { n.nodeValue = v; });
+  for (const el of document.querySelectorAll('[title],[aria-label],[placeholder]')) {
+    if (el.closest('[data-i18n-html]')) continue;
+    for (const a of ['title', 'aria-label', 'placeholder']) {
+      const v = el.getAttribute(a);
+      if (v) i18nWert(el, a, v, x => el.setAttribute(a, x));
+    }
+  }
+}
+// Ursprünglicher (deutscher) Wert eines Attributs, auch wenn es gerade übersetzt angezeigt wird
+const attrDe = (el, a) => el._i18n?.[a]?.de ?? el.getAttribute(a) ?? '';
+function sprache(l) {
+  LANG = l === 'en' ? 'en' : 'de';
+  try { localStorage.setItem('xgonav.lang', LANG); } catch (e) {}
+  spracheAnwenden();
+  if (window.letzterStatus) statusZeigen(window.letzterStatus);
+  zieleLaden();
+  if (einst.d) { einstSicherungen(); einstZeigen(); }
+  verlaufZeichnen();
+}
+
 // Kennzahlen-Kacheln; Modus, Bildverarbeitung, Akku und Zustand stehen in der Kopfleiste
 const felder = [
   ['Status', s => s.status, true],
@@ -558,7 +836,7 @@ const STREIFE = {fahrt: 'fährt', schau: 'schaut', backup: 'setzt zurück', heim
 const esc = t => String(t ?? '-').replace(/[<&]/g, c => c === '<' ? '&lt;' : '&amp;');
 const $ = id => document.getElementById(id);
 let aktModus = null, aktPipeline = null;
-function zeige(text) { $('meldung').textContent = text || ''; }
+function zeige(text) { $('meldung').textContent = tr(text || ''); }
 // Pille der Kopfleiste setzen: Wert und Bewertung (gut / warn / schlecht / neutral)
 function pille(id, wert, art = '') {
   const p = $(id);
@@ -566,12 +844,12 @@ function pille(id, wert, art = '') {
   p.className = 'pille' + (art ? ' ' + art : '');
 }
 // Verbindungsfehler verschwinden von selbst, sobald xgonav wieder antwortet (andere Meldungen bleiben)
-const VERBINDUNG = /nicht erreichbar|keine Verbindung/;
+const VERBINDUNG = /nicht erreichbar|keine Verbindung|no connection/;
 function verbindungOk() {
   if (VERBINDUNG.test($('meldung').textContent)) zeige('');
-  pille('p-verb', 'verbunden', 'gut');
+  pille('p-verb', tr('verbunden'), 'gut');
 }
-function verbindungWeg() { pille('p-verb', 'getrennt', 'schlecht'); }
+function verbindungWeg() { pille('p-verb', tr('getrennt'), 'schlecht'); }
 // Kamerabild über eine WebSocket-Verbindung. Jedes Bild wird sofort bestätigt, erst dann
 // schickt xgonav das nächste (neueste): kein Rückstau wie beim MJPEG-Stream über schwaches
 // WLAN (bis 20 s). Nachricht (nick=1): 4 Byte Bildnummer, 2 x float32 row_stand/row_imu, JPEG.
@@ -601,7 +879,7 @@ function ruheZeigen(an, akku) {
   liveImu();
 }
 async function ruheSchalten(an) {
-  if (an && !confirm('Ruhemodus? Der Rider setzt sich ab, Bildverarbeitung aus, CPU-Takt runter.')) return;
+  if (an && !confirm(tr('Ruhemodus? Der Rider setzt sich ab, Bildverarbeitung aus, CPU-Takt runter.'))) return;
   try {
     const r = await fetch('api.php?a=ruhe&on=' + (an ? '1' : '0'), {method: 'POST'});
     const j = await r.json();
@@ -673,7 +951,7 @@ async function befehl(a, p = {}, still = false) {
   try {
     const r = await fetch('api.php?' + q, {method: 'POST'});
     const j = await r.json();
-    if (!still || !r.ok) zeige(r.ok ? '' : (j.error || ('Fehler ' + r.status)));
+    if (!still || !r.ok) zeige(r.ok ? '' : (j.error || (tr('Fehler ') + r.status)));
     return r.ok;
   } catch (e) { zeige('keine Verbindung'); verbindungWeg(); return false; }
   finally { if (!still) status(); }
@@ -691,25 +969,26 @@ async function zieleLaden() {
   const alt = sel.value;
   const klassen = d.classes || [];
   sel.innerHTML = klassen.length ? klassen.map(c => '<option value="' + esc(c) + '">' + esc(c) + '</option>').join('')
-                                 : '<option value="">YOLO aus</option>';
+                                 : '<option value="">' + tr('YOLO aus') + '</option>';
   sel.disabled = !klassen.length;
   const wahl = [gemerkt, alt, d.default, 'person'].find(c => c && klassen.includes(c));
   if (wahl) sel.value = wahl;
-  const hinweis = klassen.length ? '' : ' – YOLO ist aus ([detector] enabled)';
+  const hinweis = klassen.length ? '' : tr(' – YOLO ist aus ([detector] enabled)');
   document.querySelectorAll('[data-modus="follow"],[data-modus="approach"]').forEach(b => {
-    b.title = (b.dataset.titel ??= b.title || '') + hinweis;
+    b.dataset.titel ??= attrDe(b, 'title');
+    b.title = (b.dataset.titel ? tr(b.dataset.titel) : '') + hinweis;
   });
 }
 $('ziel').addEventListener('change', e => { try { localStorage.setItem('xgonav.ziel', e.target.value); } catch (x) {} });
 function streife() {
-  if (!confirm('Steht der Rider (aufgestanden) am Startpunkt, in Startrichtung? Die Pose springt dann dorthin. Sind Treppen und Kanten abgesperrt?')) return;
+  if (!confirm(tr('Steht der Rider (aufgestanden) am Startpunkt, in Startrichtung? Die Pose springt dann dorthin. Sind Treppen und Kanten abgesperrt?'))) return;
   return befehl('mode', {name: 'patrol', target: 'person', bestaetigt: 1});
 }
 function poseBestaetigen(aktion) {
   const frage = aktion === 'start'
     ? 'Steht der Rider (aufgestanden) am Startpunkt, in Startrichtung? Die Pose springt dann dorthin.'
     : 'Steht der Rider (aufgestanden) genau dort, wo ihn die Karte zeigt, in dieser Richtung?';
-  if (!confirm(frage)) return;
+  if (!confirm(tr(frage))) return;
   return befehl('map_pose', {aktion});
 }
 function pipelineUmschalten() { return befehl('pipeline', {on: aktPipeline === 'läuft' ? 0 : 1}); }
@@ -721,16 +1000,16 @@ function aufzeichnungZeigen(s) {
   if (!a) return;
   aktAufzeichnung = a.an;
   const rec = $('rec');
-  rec.textContent = a.an ? 'Aufzeichnung aus' : 'Aufzeichnen';
+  rec.textContent = tr(a.an ? 'Aufzeichnung aus' : 'Aufzeichnen');
   rec.classList.toggle('aktiv', a.an);
   const ordner = a.ordner ? a.ordner.split('/').pop() : '';
   let text = '', art = 'warn';
-  if (a.laeuft) { text = a.bilder + ' Bilder'; art = 'schlecht'; }
-  else if (a.an) text = !s.balancing ? 'wartet: liegt' : (s.pipeline !== 'läuft' ? 'wartet: Bildverarb. aus' : 'wartet auf Bild');
+  if (a.laeuft) { text = a.bilder + ' ' + tr('Bilder'); art = 'schlecht'; }
+  else if (a.an) text = tr(!s.balancing ? 'wartet: liegt' : (s.pipeline !== 'läuft' ? 'wartet: Bildverarb. aus' : 'wartet auf Bild'));
   pille('p-rec', text || '-', art);
   $('p-rec').style.display = a.an ? '' : 'none';
   const rt = $('rec-text');
-  rt.textContent = a.fehler ? 'Aufzeichnung aus: ' + a.fehler : (a.laeuft ? '● ' + text + ' · ' + ordner : text);
+  rt.textContent = a.fehler ? tr('Aufzeichnung aus: ') + a.fehler : (a.laeuft ? '● ' + text + ' · ' + ordner : text);
   rt.title = a.ordner || '';
 }
 // Horizont im Stand ([horizon] enabled): grüne Linie einstellen und je Körperhöhe speichern
@@ -747,24 +1026,24 @@ function kamText(u) {
 function hoeheWert(u) {
   const el = $('hoehe-w');
   el.textContent = kamText(u);
-  el.title = 'Sollwert u8 ' + u;
+  el.title = tr('Sollwert u8 ') + u;
 }
 function hoeheSetzen(u) {
   reglerSetzen('hoehe', u, kamText(u));
-  $('hoehe-w').title = 'Sollwert u8 ' + $('hoehe').value;
+  $('hoehe-w').title = tr('Sollwert u8 ') + $('hoehe').value;
 }
 function hzAnzeigen(h) {
   const box = $('horizont');
   box.hidden = !h;
   if (!h) return;
-  $('hz-zustand').textContent = HZ_ZUSTAND[h.zustand] || h.zustand;
+  $('hz-zustand').textContent = tr(HZ_ZUSTAND[h.zustand] || h.zustand);
   $('hz-stabil').checked = bildStabil;
-  $('hz-werte').textContent = 'Kamerahöhe ' + zahlOder((window.letzterStatus || {}).cam_h_mm, 1, ' mm') + ' · IMU im Stand ' + zahlOder(h.ref_deg, 2, '°')
-    + ' (±' + zahlOder(h.std_deg, 2, '°') + ') · Zeile Stand ' + zahlOder(h.row_stand) + ' / IMU ' + zahlOder(h.row_imu)
-    + ' / Bild ' + zahlOder(h.row_bild) + ' · Bild−IMU ' + zahlOder(h.bild_minus_imu_deg, 2, '°')
-    + ' · IMU roh ' + zahlOder(h.imu_roh_deg, 2, '°')
-    + ' · Ego ok ' + (h.ego_ok != null ? Math.round(h.ego_ok * 100) + ' %' : '-')
-    + (h.row_cal == null ? ' · keine Tabelle: tilt_deg der Konfig' : (h.tabelle_deckt ? '' : ' · außerhalb der Tabelle'));
+  $('hz-werte').textContent = tr('Kamerahöhe ') + zahlOder((window.letzterStatus || {}).cam_h_mm, 1, ' mm') + ' · ' + tr('IMU im Stand ') + zahlOder(h.ref_deg, 2, '°')
+    + ' (±' + zahlOder(h.std_deg, 2, '°') + ') · ' + tr('Zeile Stand ') + zahlOder(h.row_stand) + ' / IMU ' + zahlOder(h.row_imu)
+    + tr(' / Bild ') + zahlOder(h.row_bild) + ' · ' + tr('Bild−IMU ') + zahlOder(h.bild_minus_imu_deg, 2, '°')
+    + ' · ' + tr('IMU roh ') + zahlOder(h.imu_roh_deg, 2, '°')
+    + ' · ' + tr('Ego ok ') + (h.ego_ok != null ? Math.round(h.ego_ok * 100) + ' %' : '-')
+    + (h.row_cal == null ? ' · ' + tr('keine Tabelle: tilt_deg der Konfig') : (h.tabelle_deckt ? '' : ' · ' + tr('außerhalb der Tabelle')));
   $('hz-speichern').disabled = h.zustand !== 'gültig' || hzZeile == null;
   if (hzZeile == null && h.edit_row != null) hzZeile = h.edit_row;
   $('hz-zeile').textContent = hzZeile == null ? '-' : hzZeile.toFixed(0);
@@ -777,10 +1056,10 @@ async function hzTabelle() {
     const j = await r.json();
     if (!r.ok) return;
     const el = $('hz-tabelle');
-    el.innerHTML = j.punkte.length ? j.punkte.map(p => esc(p.kamera_mm.toFixed(1) + ' mm → Zeile ' + p.row.toFixed(1)
+    el.innerHTML = j.punkte.length ? j.punkte.map(p => esc(p.kamera_mm.toFixed(1) + ' mm → ' + tr('Zeile') + ' ' + p.row.toFixed(1)
       + (p.ref_deg != null ? ' (IMU ' + p.ref_deg.toFixed(2) + '°)' : ''))
-      + ' <button onclick="hzLoeschen(' + p.height_mm + ')" title="Eintrag löschen">×</button>').join('<br>')
-      : 'Tabelle leer';
+      + ' <button onclick="hzLoeschen(' + p.height_mm + ')" title="' + tr('Eintrag löschen') + '">×</button>').join('<br>')
+      : tr('Tabelle leer');
   } catch (e) {}
 }
 async function hzSchieben(d) {
@@ -801,7 +1080,7 @@ function hzStabil(an) {
 }
 async function hzAus() { hzZeile = null; await befehl('horizon_edit', {row: ''}, true); }
 async function hzLoeschen(mm) {
-  if (!confirm('Horizont für ' + mm + ' mm löschen?')) return;
+  if (!confirm(tr('Horizont für {mm} mm löschen?', {mm}))) return;
   if (await befehl('horizon_delete', {h: mm})) hzTabelle();
 }
 // WLAN aus dem Live-Paket ("rx tx dBm Qualität"); Raten hier aus der Differenz
@@ -827,7 +1106,7 @@ async function status() {
   try {
     const r = await fetch('api.php?a=status');
     const s = await r.json();
-    statusZeigen(r.ok ? s : null, s.error || ('Fehler ' + r.status));
+    statusZeigen(r.ok ? s : null, s.error || (tr('Fehler ') + r.status));
   } catch (e) { statusZeigen(null, 'keine Verbindung zu xgonav'); }
 }
 function statusZeigen(s, fehler) {
@@ -845,44 +1124,45 @@ function statusZeigen(s, fehler) {
     if (hoeheAusStatus) hoeheSetzen(s.height_u8);
     hzAnzeigen(s.horizon);
     $('kurz').innerHTML = felder.map(([k, f, breit]) =>
-      '<div class="kachel' + (breit ? ' breit' : '') + '"><div class="k">' + k + '</div><div class="w">' + esc(f(s)) + '</div></div>').join('');
+      '<div class="kachel' + (breit ? ' breit' : '') + '"><div class="k">' + tr(k) + '</div><div class="w">' + esc(f(s)) + '</div></div>').join('');
     $('roh').textContent = JSON.stringify(s, null, 1);
     document.querySelectorAll('[data-modus]').forEach(b => b.classList.toggle('aktiv', b.dataset.modus === s.mode));
-    pille('p-modus', MODI[s.mode] || s.mode || '-', s.mode && s.mode !== 'idle' ? 'warn' : '');
-    pille('p-zustand', s.balancing == null ? '-' : (s.balancing ? 'balanciert' : 'liegt'),
+    pille('p-modus', tr(MODI[s.mode] || s.mode || '-'), s.mode && s.mode !== 'idle' ? 'warn' : '');
+    pille('p-zustand', s.balancing == null ? '-' : tr(s.balancing ? 'balanciert' : 'liegt'),
           s.balancing == null ? '' : (s.balancing ? 'gut' : 'warn'));
     akkuMerken(s.battery);
     pille('p-akku', s.battery != null ? s.battery + ' %' : '-',
           s.battery == null ? '' : (s.battery < 20 ? 'schlecht' : s.battery < 40 ? 'warn' : 'gut'));
-    pille('p-pip', s.pipeline ?? '-', s.pipeline === 'läuft' ? 'gut' : (s.pipeline ? 'warn' : ''));
+    pille('p-pip', tr(s.pipeline ?? '-'), s.pipeline === 'läuft' ? 'gut' : (s.pipeline ? 'warn' : ''));
     const pip = $('pip');
-    pip.textContent = s.pipeline === 'läuft' ? 'Stoppen' : 'Starten';
+    pip.textContent = tr(s.pipeline === 'läuft' ? 'Stoppen' : 'Starten');
     pip.classList.toggle('aktiv', s.pipeline !== 'läuft');
     aufzeichnungZeigen(s);
     if (s.grid) $('karte-pose').textContent =
-      'x ' + s.grid.pose[0].toFixed(2) + ' m · y ' + s.grid.pose[1].toFixed(2) + ' m · ' + s.grid.pose[2].toFixed(0) + '° · Start ' + s.grid.zum_start_m.toFixed(2) + ' m · belegt ' + s.grid.belegt_m2 + ' m²';
+      'x ' + s.grid.pose[0].toFixed(2) + ' m · y ' + s.grid.pose[1].toFixed(2) + ' m · ' + s.grid.pose[2].toFixed(0) + '° · ' + tr('Start ') + s.grid.zum_start_m.toFixed(2) + ' m · ' + tr('belegt ') + s.grid.belegt_m2 + ' m²';
     const ek = $('karte-erkunden');
-    ek.hidden = !s.explore;
+    ek.classList.toggle('weg', !s.explore);
     if (s.explore) {
       const ende = s.explore.ende ? ' · ' + s.explore.ende : '';
-      ek.textContent = 'Erkunden: ' + ERKUNDEN[s.explore.zustand] + ' · ' + s.explore.stellen + ' Stellen offen'
-        + (s.explore.gesperrt ? ', ' + s.explore.gesperrt + ' übergangen' : '') + ende;
+      ek.textContent = tr('Erkunden: ') + tr(ERKUNDEN[s.explore.zustand] || s.explore.zustand) + ' · ' + s.explore.stellen + tr(' Stellen offen')
+        + (s.explore.gesperrt ? ', ' + s.explore.gesperrt + tr(' übergangen') : '') + ende;
     }
     const st = $('karte-streife');
-    st.hidden = !s.patrol;
+    st.classList.toggle('weg', !s.patrol);
     if (s.patrol) {
       const p = s.patrol;
-      st.textContent = 'Streife: ' + STREIFE[p.zustand] + ' · Punkt ' + p.punkt + ' von ' + p.von + ' · Runde ' + p.runde
-        + (p.ausgelassen.length ? ' · ausgelassen: ' + p.ausgelassen.join(', ') : '') + (p.ende ? ' · ' + p.ende : '');
+      st.textContent = tr('Streife: ') + tr(STREIFE[p.zustand] || p.zustand) + ' · ' + tr('Punkt ') + p.punkt + tr(' von ') + p.von + ' · ' + tr('Runde ') + p.runde
+        + (p.ausgelassen.length ? ' · ' + tr('ausgelassen: ') + p.ausgelassen.join(', ') : '') + (p.ende ? ' · ' + p.ende : '');
     }
     if (s.grid) {
       const poseWeg = s.grid.pose_ok === false;
       $('karte-pose-warn').hidden = !poseWeg;
-      $('karte-pose-grund').textContent = s.grid.pose_grund ? '(' + s.grid.pose_grund + ')' : '';
-      $('karte-pose-weg').hidden = !s.grid.reloc || poseWeg;
+      $('karte-pose-grund').textContent = s.grid.pose_grund ? ' (' + s.grid.pose_grund + ')' : '';
+      $('karte-pose-weg').hidden = !s.grid.reloc;          // ohne Kartenabgleich nie (Konfig), sonst fest an seinem Platz
+      $('karte-pose-weg').disabled = poseWeg;
       karteGesperrt = !!s.grid.gesperrt;
       const ks = $('karte-sperre');
-      ks.textContent = karteGesperrt ? 'Karte entsperren' : 'Karte sperren';
+      ks.textContent = tr(karteGesperrt ? 'Karte entsperren' : 'Karte sperren');
       ks.classList.toggle('aktiv', karteGesperrt);
     }
     belichtStatus(s.exposure);
@@ -938,7 +1218,7 @@ const belichtRegler = $('belicht');
 belichtRegler.addEventListener('pointerdown', () => belichtBewegt = true);
 belichtRegler.addEventListener('pointerup', () => belichtBewegt = false);
 function belichtAnzeige(us) {
-  $('belicht-w').textContent = us ? (us / 1000).toFixed(0) + ' ms' : 'Auto';
+  $('belicht-w').textContent = us ? (us / 1000).toFixed(0) + ' ms' : tr('Auto');
 }
 function belichtStatus(e) {
   if (!e) return;
@@ -949,7 +1229,7 @@ function belichtStatus(e) {
   }
   $('belicht-auto').classList.toggle('aktiv', e.soll_us === 0);
   $('belicht-ist').textContent = e.ist_us == null && e.gain == null ? '' :
-    'ist ' + (e.ist_us != null ? (e.ist_us / 1000).toFixed(1) + ' ms' : '-') + ' · ' + (e.gain ?? '-') + '×';
+    tr('ist ') + (e.ist_us != null ? (e.ist_us / 1000).toFixed(1) + ' ms' : '-') + ' · ' + (e.gain ?? '-') + '×';
 }
 function belichtung(us) { belichtBewegt = false; return befehl('exposure', {us}); }
 
@@ -959,7 +1239,7 @@ const gainRegler = $('gain');
 gainRegler.addEventListener('pointerdown', () => gainBewegt = true);
 gainRegler.addEventListener('pointerup', () => gainBewegt = false);
 function gainAnzeige(g) {
-  $('gain-w').textContent = Number(g) ? Number(g).toFixed(1) + '×' : 'Auto';
+  $('gain-w').textContent = Number(g) ? Number(g).toFixed(1) + '×' : tr('Auto');
 }
 function gainStatus(e) {
   if (!e || e.gain_soll == null) return;
@@ -1005,7 +1285,7 @@ function kalibrierung() {
 // Nick-Trimm (Register 0x09): Firmware hält den Rider im Stand, bis er ruhig steht, und
 // speichert die nötige Haltekorrektur. Vorher xgonav auf idle, damit nichts dazwischenfährt.
 async function lageKalibrieren() {
-  if (!confirm('Lage kalibrieren? Der Rider muss balancieren und frei stehen; er regelt sich ein paar Sekunden auf der Stelle ein.')) return;
+  if (!confirm(tr('Lage kalibrieren? Der Rider muss balancieren und frei stehen; er regelt sich ein paar Sekunden auf der Stelle ein.'))) return;
   if (aktModus && aktModus !== 'idle' && !(await modus('idle'))) return;
   befehl('pitch_calibration');
 }
@@ -1015,10 +1295,10 @@ function arm() {
 }
 // Aktion 253 = !standup: Rider springt auf und schwingt dabei aus – nur mit Nachfrage
 function aufspringen() {
-  if (confirm('Aufspringen? Der Rider muss auf den Rädern stehen und rundherum Platz haben – er springt hoch und schwingt dabei aus.')) befehl('action', {n: 253});
+  if (confirm(tr('Aufspringen? Der Rider muss auf den Rädern stehen und rundherum Platz haben – er springt hoch und schwingt dabei aus.'))) befehl('action', {n: 253});
 }
 function herunterfahren() {
-  if (confirm('Rider wirklich herunterfahren?')) befehl('shutdown');
+  if (confirm(tr('Rider wirklich herunterfahren?'))) befehl('shutdown');
 }
 
 // ---------------------------------------------------------------- Einstellungen (Modal)
@@ -1045,10 +1325,10 @@ function eiLesen(f, t) {
   t = t.trim();
   const zahl = s => {
     s = s.replace(',', '.');
-    if (!/^[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?$/.test(s)) throw 'Zahl erwartet';
+    if (!/^[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?$/.test(s)) throw tr('Zahl erwartet');
     return Number(s);
   };
-  if (f.typ === 'int') { if (!/^[-+]?\d+$/.test(t)) throw 'ganze Zahl erwartet'; return Number(t); }
+  if (f.typ === 'int') { if (!/^[-+]?\d+$/.test(t)) throw tr('ganze Zahl erwartet'); return Number(t); }
   if (f.typ === 'float') { if (t === '' && f.nullbar) return null; return zahl(t); }
   if (f.typ === 'str') return t;
   if (f.typ === 'liste') {
@@ -1056,7 +1336,7 @@ function eiLesen(f, t) {
     const teile = t.replace(/^\[|\]$/g, '').split(',').map(s => s.trim().replace(/^["']|["']$/g, ''));
     return f.elem === 'str' ? teile : teile.map(zahl);
   }
-  throw 'Typ unbekannt';
+  throw tr('Typ unbekannt');
 }
 function eiSetzen(ab, f, v) {
   const n = eiName(ab, f), datei = eiDatei(ab, f);
@@ -1078,8 +1358,8 @@ function eiZeile(ab, f) {
   const geaendert = n in einst.aend;
   const gesetzt = geaendert ? einst.aend[n] !== null : datei.da;
   z.innerHTML = '<div class="key">' + esc(ab === einst.d.schema.oben ? f.key : n) +
-    (gesetzt ? '<span class="marke gesetzt" title="steht in config.toml">gesetzt</span>' : '') +
-    (geaendert ? '<span class="marke geaendert">' + (einst.aend[n] === null ? 'wird Default' : 'geändert') + '</span>' : '') + '</div>';
+    (gesetzt ? '<span class="marke gesetzt" title="' + tr('steht in config.toml') + '">' + tr('gesetzt') + '</span>' : '') +
+    (geaendert ? '<span class="marke geaendert">' + tr(einst.aend[n] === null ? 'wird Default' : 'geändert') + '</span>' : '') + '</div>';
   let inp;
   const v = eiWert(ab, f);
   if (f.typ === 'bool') {
@@ -1099,15 +1379,15 @@ function eiZeile(ab, f) {
   if (unl || !einst.d.schreibbar) inp.disabled = true;
   z.appendChild(inp);
   const zb = document.createElement('button');
-  zb.className = 'zurueck'; zb.textContent = 'Default';
-  zb.title = 'Default aus config.py: ' + (eiText(f, f.default) || '(leer)') + ' – entfernt die Zeile aus config.toml';
+  zb.className = 'zurueck'; zb.textContent = tr('Default');
+  zb.title = tr('Default aus config.py: ') + (eiText(f, f.default) || tr('(leer)')) + tr(' – entfernt die Zeile aus config.toml');
   zb.disabled = !!unl || !einst.d.schreibbar || (!gesetzt && !(n in einst.falsch));
   zb.onclick = () => { eiSetzen(ab, f, null); einstZeigen(); };
   z.appendChild(zb);
   const h = document.createElement('div');
   h.className = 'hilfe';
-  h.innerHTML = (unl ? '<b>In config.toml nicht lesbar (' + esc(unl) + '), nur per ssh änderbar.</b> ' : '') + esc(f.hilfe || '') +
-    ' <i>Default: ' + esc(eiText(f, f.default) || '(leer)') + (datei.da && !eiGleich(datei.v, eiWert(ab, f)) ? ' · in Datei: ' + esc(eiText(f, datei.v)) : '') + '</i>';
+  h.innerHTML = (unl ? '<b>' + esc(tr('In config.toml nicht lesbar ({x}), nur per ssh änderbar.', {x: unl})) + '</b> ' : '') + esc(f.hilfe || '') +
+    ' <i>' + tr('Default: ') + esc(eiText(f, f.default) || tr('(leer)')) + (datei.da && !eiGleich(datei.v, eiWert(ab, f)) ? tr(' · in Datei: ') + esc(eiText(f, datei.v)) : '') + '</i>';
   z.appendChild(h);
   return z;
 }
@@ -1120,8 +1400,8 @@ function einstNav() {
       const b = document.createElement('button');
       const nAend = Object.keys(einst.aend).filter(n => n.startsWith(a.name + '.')).length;
       const nGes = Object.keys(einst.d.werte[a.name] || {}).length;
-      b.innerHTML = esc(a.name) + '<span class="n' + (nAend ? ' ae' : '') + '" title="gesetzt / Felder' +
-        (nAend ? ', ungespeichert geändert' : '') + '">' + (nAend ? nAend + '✎ ' : '') + nGes + '/' + a.felder.length + '</span>';
+      b.innerHTML = esc(a.name) + '<span class="n' + (nAend ? ' ae' : '') + '" title="' + tr('gesetzt / Felder') +
+        (nAend ? tr(', ungespeichert geändert') : '') + '">' + (nAend ? nAend + '✎ ' : '') + nGes + '/' + a.felder.length + '</span>';
       b.classList.toggle('aktiv', !$('ei-suche').value.trim() && a.name === einst.ab);
       b.onclick = () => { einst.ab = a.name; $('ei-suche').value = ''; einstZeigen(); $('ei-felder').scrollTop = 0; };
       nav.appendChild(b);
@@ -1147,7 +1427,7 @@ function einstZeigen() {
     if (a.doc) { const p = document.createElement('p'); p.className = 'doc'; p.textContent = a.doc; box.appendChild(p); }
     for (const f of felder) { box.appendChild(eiZeile(a.name, f)); n++; }
   }
-  if (!n) box.insertAdjacentHTML('beforeend', '<p class="leise">' + (such ? 'Nichts gefunden.' : 'Keine Einträge.') + '</p>');
+  if (!n) box.insertAdjacentHTML('beforeend', '<p class="leise">' + tr(such ? 'Nichts gefunden.' : 'Keine Einträge.') + '</p>');
   if (!such) box.scrollTop = oben;
   einstNav();
   einstInfo();
@@ -1155,12 +1435,14 @@ function einstZeigen() {
 function einstInfo() {
   const nA = Object.keys(einst.aend).length, nF = Object.keys(einst.falsch).length, info = $('ei-info');
   let t, warn = false;
-  if (!einst.d) t = 'lädt …';
-  else if (!einst.d.schreibbar) { t = einst.d.datei + ' ist nicht schreibbar (Gruppe video, 0664: deploy/install.sh)'; warn = true; }
-  else if (nF) { t = nF + ' ungültige Eingabe' + (nF > 1 ? 'n' : ''); warn = true; }
-  else if (nA) t = nA + ' ungespeicherte Änderung' + (nA > 1 ? 'en' : '') + ' – wirkt erst nach Neustart';
-  else if (einst.neustart) { t = 'Gespeichert. Wirkt erst nach Neustart von xgonav.'; warn = true; }
-  else t = 'Keine Änderungen. ' + einst.d.datei;
+  // Mehrzahl: „(n)“/„(en)“ bzw. „(s)“ im Text
+  const mz = (s, n) => LANG === 'en' ? s.replace(/\(s\)/g, n > 1 ? 's' : '') : s.replace(/\((e?n)\)/g, (_, e) => n > 1 ? e : '');
+  if (!einst.d) t = tr('lädt …');
+  else if (!einst.d.schreibbar) { t = einst.d.datei + tr(' ist nicht schreibbar (Gruppe video, 0664: deploy/install.sh)'); warn = true; }
+  else if (nF) { t = mz(tr('{n} ungültige Eingabe(n)', {n: nF}), nF); warn = true; }
+  else if (nA) t = mz(tr('{n} ungespeicherte Änderung(en) – wirkt erst nach Neustart', {n: nA}), nA);
+  else if (einst.neustart) { t = tr('Gespeichert. Wirkt erst nach Neustart von xgonav.'); warn = true; }
+  else t = tr('Keine Änderungen. ') + einst.d.datei;
   info.textContent = t;
   info.classList.toggle('warn', warn);
   $('ei-speichern').disabled = $('ei-speichern-neu').disabled = !nA || nF > 0 || !einst.d?.schreibbar;
@@ -1169,22 +1451,22 @@ function einstSicherungen() {
   const ul = $('ei-sich-liste');
   ul.innerHTML = '';
   const liste = einst.d.sicherungen;
-  $('ei-sich').querySelector('summary').textContent = 'Sicherungen (' + liste.length + ')';
+  $('ei-sich').querySelector('summary').textContent = tr('Sicherungen') + ' (' + liste.length + ')';
   for (const s of liste) {
     const li = document.createElement('li');
-    li.innerHTML = '<span>' + new Date(s.zeit * 1000).toLocaleString('de-DE') + '</span><code>' + esc(s.name) + '</code>';
+    li.innerHTML = '<span>' + new Date(s.zeit * 1000).toLocaleString(LOCALE()) + '</span><code>' + esc(s.name) + '</code>';
     const b = document.createElement('button');
-    b.textContent = 'Zurückspielen';
+    b.textContent = tr('Zurückspielen');
     b.disabled = !einst.d.schreibbar;
     b.onclick = async () => {
-      if (!confirm('config.toml durch die Sicherung ' + s.name + ' ersetzen? Der jetzige Stand wird vorher gesichert. Wirkt nach Neustart.')) return;
+      if (!confirm(tr('config.toml durch die Sicherung {name} ersetzen? Der jetzige Stand wird vorher gesichert. Wirkt nach Neustart.', {name: s.name}))) return;
       const j = await einstPost('config_restore', {name: s.name, hash: einst.d.hash});
       if (j) { einst.neustart = true; await einstLaden(); zeige(''); }
     };
     li.appendChild(b);
     ul.appendChild(li);
   }
-  if (!liste.length) ul.innerHTML = '<li class="leise">noch keine</li>';
+  if (!liste.length) ul.innerHTML = '<li class="leise">' + tr('noch keine') + '</li>';
 }
 async function einstPost(a, p, body) {
   try {
@@ -1195,7 +1477,7 @@ async function einstPost(a, p, body) {
     return j;
   } catch (e) {
     if (e && e.status === 409 && e.grund) throw e;     // Neustart: Rückfrage beim Aufrufer
-    alert((e && e.error) || 'keine Verbindung');
+    alert((e && e.error) || tr('keine Verbindung'));
     return null;
   }
 }
@@ -1203,9 +1485,9 @@ async function einstLaden() {
   try {
     const r = await fetch('api.php?a=config');
     const j = await r.json();
-    if (!r.ok) throw j.error || ('Fehler ' + r.status);
+    if (!r.ok) throw j.error || (tr('Fehler ') + r.status);
     einst.d = j;
-  } catch (e) { $('ei-info').textContent = 'Laden fehlgeschlagen: ' + e; return false; }
+  } catch (e) { $('ei-info').textContent = tr('Laden fehlgeschlagen: ') + e; return false; }
   einst.aend = {}; einst.falsch = {};
   if (!einst.ab) einst.ab = eiErster();
   einstSicherungen();
@@ -1220,7 +1502,7 @@ async function einstOeffnen() {
 }
 function einstSchliessen() { $('einst').close(); }
 function einstVerwerfen() {
-  if (Object.keys(einst.aend).length && !confirm('Alle ungespeicherten Änderungen verwerfen?')) return;
+  if (Object.keys(einst.aend).length && !confirm(tr('Alle ungespeicherten Änderungen verwerfen?'))) return;
   einst.aend = {}; einst.falsch = {};
   einstZeigen();
 }
@@ -1230,10 +1512,11 @@ async function einstSpeichern(neustarten) {
     const n = eiName(a.name, f);
     if (!(n in einst.aend)) continue;
     const alt = eiDatei(a.name, f);
-    zeilen.push(n + ': ' + (alt.da ? eiText(f, alt.v) || '(leer)' : '(Default ' + (eiText(f, f.default) || 'leer') + ')') + ' → ' +
-      (einst.aend[n] === null ? '(Default ' + (eiText(f, f.default) || 'leer') + ')' : eiText(f, einst.aend[n]) || '(leer)'));
+    const dflt = tr('(Default ') + (eiText(f, f.default) || tr('leer')) + ')';
+    zeilen.push(n + ': ' + (alt.da ? eiText(f, alt.v) || tr('(leer)') : dflt) + ' → ' +
+      (einst.aend[n] === null ? dflt : eiText(f, einst.aend[n]) || tr('(leer)')));
   }
-  if (!confirm('In config.toml schreiben (vorher Sicherung):\n\n' + zeilen.join('\n') + (neustarten ? '\n\nDanach xgonav neu starten.' : ''))) return;
+  if (!confirm(tr('In config.toml schreiben (vorher Sicherung):') + '\n\n' + zeilen.join('\n') + (neustarten ? '\n\n' + tr('Danach xgonav neu starten.') : ''))) return;
   const j = await einstPost('config_save', {hash: einst.d.hash}, JSON.stringify(einst.aend));
   if (!j) return;
   einst.neustart = true;
@@ -1241,19 +1524,19 @@ async function einstSpeichern(neustarten) {
   if (neustarten) await einstNeustart(true);
 }
 async function einstNeustart(ohneFrage = false) {
-  if (!ohneFrage && !confirm('xgonav neu starten? Er liest dabei config.toml neu ein; Bild und Status sind einige Sekunden weg.')) return;
+  if (!ohneFrage && !confirm(tr('xgonav neu starten? Er liest dabei config.toml neu ein; Bild und Status sind einige Sekunden weg.'))) return;
   let j;
   try { j = await einstPost('restart', {}); }
   catch (e) {
-    if (!confirm(e.error + '.\n\nTrotzdem neu starten? Laufende Fahrt, Aufzeichnung und Modus enden.')) return;
+    if (!confirm(e.error + '.\n\n' + tr('Trotzdem neu starten? Laufende Fahrt, Aufzeichnung und Modus enden.'))) return;
     try { j = await einstPost('restart', {trotzdem: 1}); } catch (e2) { alert(e2.error); return; }
   }
   if (!j) return;
   einst.neustart = false;
   einstInfo();
-  $('ei-info').textContent = 'xgonav startet neu …';
+  $('ei-info').textContent = tr('xgonav startet neu …');
   zeige('xgonav startet neu …');
-  setTimeout(() => { if (/startet neu/.test($('meldung').textContent)) zeige(''); }, 15000);
+  setTimeout(() => { if (/startet neu|is restarting/.test($('meldung').textContent)) zeige(''); }, 15000);
 }
 
 // Raumkarte: einmal pro Sekunde neu laden, nächstes Bild erst nach dem vorigen. Verschieben und Zoomen
@@ -1296,7 +1579,7 @@ const bearb = {art: null, pts: []};
 let karteGesperrt = false;
 async function routeHolen() {
   const r = await fetch('api.php?a=route', {cache: 'no-store'});
-  if (!r.ok) throw new Error('Route nicht lesbar');
+  if (!r.ok) throw new Error(tr('Route nicht lesbar'));
   return r.json();
 }
 const punktText = pts => pts.map(p => p[0].toFixed(3) + ',' + p[1].toFixed(3)).join(';');
@@ -1313,7 +1596,7 @@ function punkteZeichnen() {
     + q.map(p => '<circle cx="' + p[0] + '" cy="' + p[1] + '" r="0.012" fill="' + farbe + '"/>').join('');
 }
 function bearbeitenHinweis() {
-  $('route-hinweis').textContent = (bearb.art === 'zone' ? 'Ecken der Sperrzone anklicken: ' : 'Wegpunkte anklicken: ') + bearb.pts.length;
+  $('route-hinweis').textContent = tr(bearb.art === 'zone' ? 'Ecken der Sperrzone anklicken: ' : 'Wegpunkte anklicken: ') + bearb.pts.length;
 }
 async function bearbeiten(art) {
   let akt = {points: [], loop: false};
@@ -1324,13 +1607,13 @@ async function bearbeiten(art) {
   bearb.pts = art === 'route' ? akt.points.map(p => [p[0], p[1]]) : [];
   $('route-loop').checked = !!akt.loop;
   $('route-kreis').hidden = art !== 'route';
-  $('route-start').hidden = true; $('route-edit').hidden = false;
+  $('karte-gruppen').disabled = true; $('route-edit').hidden = false;
   $('karte-rahmen').classList.add('setzt');
   bearbeitenHinweis(); punkteZeichnen();
 }
 function bearbeitenEnde() {
   bearb.art = null; bearb.pts = [];
-  $('route-start').hidden = false; $('route-edit').hidden = true;
+  $('karte-gruppen').disabled = false; $('route-edit').hidden = true;
   $('karte-rahmen').classList.remove('setzt');
   punkteZeichnen();
 }
@@ -1348,10 +1631,13 @@ async function bearbeitenFertig() {
   if (await befehl('route', p)) { bearbeitenEnde(); karteAnstoss(); }
 }
 async function zonenLoeschen() {
-  if (!confirm('Alle Sperrzonen löschen?')) return;
+  if (!confirm(tr('Alle Sperrzonen löschen?'))) return;
   let akt;
   try { akt = await routeHolen(); } catch (e) { zeige(e.message); return; }
   if (await befehl('route', {pts: punktText(akt.points), loop: akt.loop ? 1 : 0, nozones: 1})) karteAnstoss();
+}
+function karteZuruecksetzen() {
+  if (confirm(tr('Raumkarte zurücksetzen? Route und Sperrzonen gehen dabei verloren.'))) befehl('map_reset');
 }
 function karteSperren() { return befehl('map_lock', {on: karteGesperrt ? 0 : 1}); }
 // Ziehen darf kein System-Drag werden: Ist Text markiert, zöge der Browser sonst die Markierung mit und
@@ -1368,9 +1654,12 @@ function karteView(v) {     // Auswahlfeld
   const el = $('karte-rahmen'), mitte = () => [karte.cx == null ? karte.bild.cx : karte.cx, karte.cy == null ? karte.bild.cy : karte.cy];
   const grenze = c => Math.max(-karte.bild.size, Math.min(karte.bild.size, c));
   let start = null, gezogen = false;
-  keinSystemDrag(el);
+  const auflage = e => e.target.closest('.karte-auflage');    // Knöpfe über der Karte: kein Punkt, kein Ziehen
+  el.addEventListener('mousedown', e => { if (!auflage(e) && e.button === 0) e.preventDefault(); });
+  el.addEventListener('dragstart', e => e.preventDefault());
   // Klick (Maus oder Finger): Punkt setzen. Ziehen verschiebt weiter die Karte.
   el.addEventListener('click', e => {
+    if (auflage(e)) return;
     if (!bearb.art || !karte.bild || gezogen) { gezogen = false; return; }
     const q = el.getBoundingClientRect(), [cx, cy] = mitte();
     const fx = (e.clientX - q.left) / q.width, fy = (e.clientY - q.top) / q.height;
@@ -1378,7 +1667,7 @@ function karteView(v) {     // Auswahlfeld
     bearbeitenHinweis(); punkteZeichnen();
   });
   el.addEventListener('pointerdown', e => {
-    if (e.pointerType === 'touch' || e.button !== 0 || !karte.bild) return;
+    if (e.pointerType === 'touch' || e.button !== 0 || !karte.bild || auflage(e)) return;
     start = {x: e.clientX, y: e.clientY, m: mitte()};
     gezogen = false;
     el.setPointerCapture(e.pointerId); el.classList.add('zieht');
@@ -1394,7 +1683,7 @@ function karteView(v) {     // Auswahlfeld
   });
   const ende = () => { if (start) { start = null; el.classList.remove('zieht'); karteAnstoss(); } };
   el.addEventListener('pointerup', ende); el.addEventListener('pointercancel', ende);
-  el.addEventListener('dblclick', () => { if (bearb.art) return; karte.cx = karte.cy = null; karteAnzeigen(); karteAnstoss(); });
+  el.addEventListener('dblclick', e => { if (bearb.art || auflage(e)) return; karte.cx = karte.cy = null; karteAnzeigen(); karteAnstoss(); });
   el.addEventListener('wheel', e => {
     if (!karte.bild) return;
     e.preventDefault();
@@ -1657,7 +1946,7 @@ function lageZeichnen(w) {
     g.strokeStyle = a % 90 ? '#2b3038' : '#4a535e'; g.beginPath(); g.moveTo(p1[0], p1[1]); g.lineTo(p2[0], p2[1]); g.stroke();
     if (a % 90 === 0) { g.fillStyle = '#8b94a1'; g.fillText(a > 180 ? (a - 360) + '°' : a + '°', pt[0], pt[1]); }
   }
-  if (!w) { if (lageGL) modellZeichnen(K, null, B, H, dpr); g.fillStyle = '#8b94a1'; g.fillText('keine IMU-Daten', B / 2, 16); return; }
+  if (!w) { if (lageGL) modellZeichnen(K, null, B, H, dpr); g.fillStyle = '#8b94a1'; g.fillText(tr('keine IMU-Daten'), B / 2, 16); return; }
   const R = drehmatrix(w[0], w[1], w[2]);
   const welt = p => { const q = mal(R, [p[0] - ACHSE[0], p[1] - ACHSE[1], p[2] - ACHSE[2]]); return [q[0] + ACHSE[0], q[1] + ACHSE[1], q[2] + ACHSE[2]]; };
   // Schatten/Kursanzeiger am Boden: Vorwärtsrichtung des Körpers, auf den Boden projiziert
@@ -1691,7 +1980,7 @@ function lageSchleife() {
   lageZeichnen(w);
   if (w && lageN++ % 10 === 0) {
     const gier = ((w[2] + 180) % 360 + 360) % 360 - 180;
-    $('l-lage').innerHTML = [['Roll', w[0], 1], ['Nick', w[1], 1], ['Gier', gier, 0]]
+    $('l-lage').innerHTML = [[tr('Roll'), w[0], 1], [tr('Nick'), w[1], 1], [tr('Gier'), gier, 0]]
       .map(([n, v, nk]) => '<span>' + n + ' <b>' + (v >= 0 ? '+' : '−') + Math.abs(v).toFixed(nk) + '°</b></span>').join('');
   }
   lageRaf = requestAnimationFrame(lageSchleife);
@@ -1835,28 +2124,28 @@ function legende(id, serien, einheit, nk = 1) {
            (p ? p[1].toFixed(nk) + einheit : '-') + '</b></span>';
   }).join('');
 }
-const uhr = t => new Date(t).toLocaleTimeString('de-DE', {hour: '2-digit', minute: '2-digit'});
+const uhr = t => new Date(t).toLocaleTimeString(LOCALE(), {hour: '2-digit', minute: '2-digit'});
 function verlaufZeichnen() {
   if (!$('verlauf').open) return;
   // Lage: eigene Schleife (lageSchleife). CPU: Browserzeit
   const jetzt = Date.now(), n = cpu.length ? cpu[cpu.length - 1][1].length : 0;
   const cs = Array.from({length: n}, (_, k) =>
-    ({name: 'Kern ' + k, farbe: FARBEN[k % FARBEN.length], pkt: cpu.map(p => [p[0], p[1][k]])}));
+    ({name: tr('Kern ') + k, farbe: FARBEN[k % FARBEN.length], pkt: cpu.map(p => [p[0], p[1][k]])}));
   legende('l-cpu', cs, ' %', 0);
   linien($('d-cpu'), cs, {von: jetzt - CPU_MS, bis: jetzt, ymin: 0, ymax: 100, einheit: '%', luecke: 5e3,
                           xText: uhr, xs: 120e3, nk: 0});
-  const ws = [{name: '↓ empfangen', farbe: FARBEN[0], pkt: wlan.map(p => [p[0], p[1]])},
-              {name: '↑ gesendet', farbe: FARBEN[1], pkt: wlan.map(p => [p[0], p[2]])}];
+  const ws = [{name: tr('↓ empfangen'), farbe: FARBEN[0], pkt: wlan.map(p => [p[0], p[1]])},
+              {name: tr('↑ gesendet'), farbe: FARBEN[1], pkt: wlan.map(p => [p[0], p[2]])}];
   legende('l-wlan', ws, ' kB/s', 0);
   linien($('d-wlan'), ws, {von: jetzt - CPU_MS, bis: jetzt, ymin: 0, einheit: '', luecke: 5e3, minSpanne: 10,
                            xText: uhr, xs: 120e3, nk: 0});
   const wl = wlan.length ? wlan[wlan.length - 1] : null;
-  $('v-wlan').textContent = wl ? (wl[3] != null ? wl[3] + ' dBm' : '') + (wl[4] != null ? ' · Qualität ' + wl[4] + '/70' : '') : '';
-  linien($('d-pegel'), [{name: 'Pegel', farbe: FARBEN[2], pkt: wlan.filter(p => p[3] != null).map(p => [p[0], p[3]])}],
+  $('v-wlan').textContent = wl ? (wl[3] != null ? wl[3] + ' dBm' : '') + (wl[4] != null ? tr(' · Qualität ') + wl[4] + '/70' : '') : '';
+  linien($('d-pegel'), [{name: tr('Pegel'), farbe: FARBEN[2], pkt: wlan.filter(p => p[3] != null).map(p => [p[0], p[3]])}],
          {von: jetzt - CPU_MS, bis: jetzt, ymin: -90, ymax: -30, einheit: '', luecke: 5e3, xText: uhr, xs: 120e3, nk: 0});
   const a = akkuLesen().filter(p => p[0] > jetzt - AKKU_MS);
   $('v-akku').textContent = a.length ? a[a.length - 1][1] + ' %' : '';
-  linien($('d-akku'), [{name: 'Akku', farbe: FARBEN[0], pkt: a}],
+  linien($('d-akku'), [{name: tr('Akku'), farbe: FARBEN[0], pkt: a}],
          {von: jetzt - AKKU_MS, bis: jetzt, ymin: 0, ymax: 100, einheit: '%', luecke: 5 * 60e3, xText: uhr,
           xs: 30 * 60e3, nk: 0});
 }
@@ -1864,6 +2153,9 @@ function verlaufZeichnen() {
 function verlaufUmschalten() {
   try { localStorage.setItem('xgonav.verlauf', $('verlauf').open ? '1' : '0'); } catch (e) {}
   if ($('verlauf').open) verlaufZeichnen();
+}
+function extrasUmschalten() {
+  try { localStorage.setItem('xgonav.extras', $('extras').open ? '1' : '0'); } catch (e) {}
 }
 function lageUmschalten() {
   try { localStorage.setItem('xgonav.lage', $('lagekarte').open ? '1' : '0'); } catch (e) {}
@@ -1921,7 +2213,7 @@ function sysVerarbeiten(s) {
   cpuVorher = s.cpu; cpuZeit = jetzt;
   abschneiden(cpu, jetzt - CPU_MS);
   $('v-temp').textContent = (s.temp_c != null ? s.temp_c.toFixed(1) + ' °C' : '') +
-                            (s.load != null ? ' · Last ' + s.load.toFixed(2) : '');
+                            (s.load != null ? tr(' · Last ') + s.load.toFixed(2) : '');
   akkuMerken(s.battery);
   wlanMerken(s.wlan);
   verlaufZeichnen();
@@ -1932,10 +2224,14 @@ document.querySelectorAll('.diag').forEach(cv => {
   cv.addEventListener('pointerleave', () => { cv._hx = null; verlaufZeichnen(); });
 });
 window.addEventListener('resize', verlaufZeichnen);
+spracheAnwenden();
 karteHolen();
 status();
-if (localStorage.getItem('xgonav.verlauf') === '1') $('verlauf').open = true;
-if (localStorage.getItem('xgonav.lage') !== '0') $('lagekarte').open = true;   // Standard: offen
+try {
+  if (localStorage.getItem('xgonav.verlauf') === '1') $('verlauf').open = true;
+  if (localStorage.getItem('xgonav.lage') !== '0') $('lagekarte').open = true;   // Standard: offen
+  if (localStorage.getItem('xgonav.extras') === '1') $('extras').open = true;
+} catch (e) { $('lagekarte').open = true; }
 liveVerbinden();
 lageStarten();
 </script>
