@@ -64,6 +64,10 @@ footer { color: var(--muted); font-size: .9rem; border-top: 1px solid var(--line
     <li><a href="#2026-11-06"><b>Fr, 6. Nov.</b><small>Die Treppe</small></a></li>
     <li><a href="#2026-11-07"><b>Sa, 7. Nov.</b><small>Entwicklung gestoppt</small></a></li>
     <li><a href="#2026-11-08"><b>So, 8. Nov.</b><small>Grüner Boden</small></a></li>
+    <li><a href="#2026-11-09"><b>Mo, 9. Nov.</b><small>Grün, Bild für Bild</small></a></li>
+    <li><a href="#2026-11-10"><b>Di, 10. Nov.</b><small>Das Netz am Steuer</small></a></li>
+    <li><a href="#2026-11-11"><b>Mi, 11. Nov.</b><small>Sichten und Quetschen</small></a></li>
+    <li><a href="#2026-11-12"><b>Do, 12. Nov.</b><small>Das Netz hatte recht</small></a></li>
   </ol>
 </nav>
 <main>
@@ -494,7 +498,173 @@ footer { color: var(--muted); font-size: .9rem; border-top: 1px solid var(--line
   <div class="bilanz"><p>Bilanz: Die Grundlagen stimmen so gut wie nie. Mein Satz von heute Morgen gilt trotzdem: noch weit von brauchbar entfernt.</p></div>
 </article>
 
-<footer>Fortsetzung folgt. Der 9. November wird später geschrieben.</footer>
+<article id="2026-11-09">
+  <h2>Montag, 9. November 2026</h2>
+  <p class="meta">2 Commits · pet im Stand, Trainingsdaten in Stufen, Prompt 9 und 10</p>
+  <div class="e"><time>09:38</time><div>
+    <p><q>commit das und spiel es ein, er steht unten</q>. Der Modus <code>pet</code> kam auf den Rider, erst einmal nur zum Anschauen. <q>die folgenden augen passen nicht zum stil der "normalen" Augen</q>, dann <q>er spielt immer die freude emotion ab obwohl ich die ganze zeit erkennbar bin</q>. Immerhin: <q>die augen wandern zu mir hin</q>. Mir war das zu grob: <q>es sollten 10 stufen sein und das blinzeln auch mehrere</q>. Es wurden 11 Blickstellungen.</p>
+  </div></div>
+  <div class="e"><time>10:09</time><div>
+    <p><q>platz ist frei, ich stehe daneben, lass ihn aufstehen</q>. Nach 0,22 Sekunden Stoppgrund 251, Rückmeldung eines Servos fehlt. <q>das eine Bein hält er wieder oben</q>, wie am Samstag. Neustart, danach stand er. Die Ursache haben wir wieder nicht gefunden.</p>
+  </div></div>
+  <div class="e"><time>10:23</time><div>
+    <p><q>ich würde gerne floornet als erste stufe und kanten als schatten. wäre das möglich und sinnvoll?</q> Schalter und Vergleich gebaut. Bei vier von sechs Vergleichsbildern vermutete ich einen Fehler in den Trainingsdaten und wollte sie sehen. <q>so erstmal ich kann per SMB auf Kimmy. es ist NICHT nötig irgendwas hin und her zu kopieren.</q> <q>Der Pfad reicht kein Blah blah</q>.</p>
+  </div></div>
+  <div class="e"><time>11:54</time><div>
+    <p>Ich habe mir die Masken angesehen und Ausreißer gefunden, die man leicht wegfiltern kann: <q>in der weißen fläche darf es KEINE schwarze Insel geben und umgekehrt</q>.</p>
+  </div></div>
+  <div class="e"><time>12:03</time><div>
+    <p>Eigene Sitzung nur für FloorNet. Zwanzig Minuten später: <q>meine fresse du bist schon wieder 8 schritte vorraus, wir kümmern uns hier erstmal NUR um das aufbereiten der Trainingsdaten, vergiss den ganzen anderen rest</q>. Und: <q>Die von ComfyUI aufbereiteten bilder in Zukunft nicht mehr löschen.</q> Einige fehlten schon: <q>Und jetzt will ich alle Bearbeitungen von ComfyUI neu erstellt haben, wenn Sie fehlen</q>.</p>
+  </div></div>
+  <div class="e"><time>12:51</time><div>
+    <p>Ordnung in die Verzeichnisse: <q>Kanten, Handlinien etc. Stage0 als vergleich</q>, grüne Bilder Stage1, Maske Stage2. <q>bei Stage2 halten wir erstmal inne</q>. Dazu ein Betrachter mit allen Bildern nebeneinander, Pfeiltasten vor und zurück. Claude wollte mir einen Tunnel bauen. <q>stop das brauchst du nicht, ich möchte nicht jedesmal überlegen müssen wie ich da jetzt dran komme. wir sind bei mir zuhause, hier wohn nur ich</q>.</p>
+  </div></div>
+  <div class="e"><time>13:06</time><div>
+    <p>Ab hier saß ich vor dem Betrachter. <q>ok, direkt der erste fall: explore2/000000</q>: Die Maske schloss dunkles Grün aus. Bei <code>000016</code> traf sie Dinge, die nicht da sind. Ich habe Prompt 9 selbst formuliert: <q>Recolor the floor to flat solid #00FF00 and only #00FF00.</q> Ergebnis: <q>ja es sieht perfekt aus</q>. Dann das Bild vor ComfyUI grau machen, nur im Speicher. <q>ok, das sieht sehr gut aus</q>.</p>
+  </div></div>
+  <div class="e"><time>13:44</time><div>
+    <p>Stage3 kam von mir: <q>von unten nach oben ist am ersten schwarzen pixel, auch der rest schwarz</q>. Boden hinter einem Hindernis ist ohnehin egal, die Karte kennt je Richtung nur eine Entfernung. <q>ganz dünne dinge sollen verschluckt werden und über einen schuh kann man nicht drüber fahren</q>. Im Betrachter dunkle ich alles außer dem Boden auf 20 % ab. <q>perfekt, jetzt kann ich sehen, ob das richtige im training landet. danke</q>.</p>
+  </div></div>
+  <div class="e"><time>14:06</time><div>
+    <p><q>wie kommst du darauf das bei explore2/000000 und 000016 der rider liegt? das stimmt nicht</q>. Zwei Minuten später: <q>sorry du hattest recht, er liegt nach vorne</q>. Alle Bilder, auf denen er liegt, sind seitdem gelöscht, dazu ein gutes Dutzend überholter Ordner. Nebenbei kam ein Knopf „Aufzeichnen“ in die Weboberfläche, er zeichnet nur auf, solange er balanciert.</p>
+  </div></div>
+  <div class="e"><time>14:27</time><div>
+    <p>Der Teppich auf <code>unten1/010658</code> wurde nicht erkannt. Mein Versuch: Grünkanal auf 0. Dann <q>mummpitz: graustufenbild als helligkeits faktor bei den verbliebenen kanälen</q>. Claude zählte Pixel und meldete Zahlen. <q>bitte grundsätzlich das grünbild mit darein, ich kann nicht so schnell pixel zählen wie du, und ich lasse dich nicht mehr alleine daran</q>. Um 14:50: <q>ok, nimm G0 + Graubild Helligkeit. das ergeniss ist jetzt schon fast perfekt, das reicht fürs training</q>.</p>
+  </div></div>
+  <div class="e"><time>14:59</time><div>
+    <p>Die Grünschwelle: erst 30, dann <q>mach >= 10</q>, dann <q>ja weil ich wieder rechte hatte: mach g > 0</q>. Um 16:26 sah ich, dass Qwen Spiegelungen malt und Wände dadurch grün schimmern. <q>rechne die 8 bilder, schwelle >= 30</q>. Also wieder 30.</p>
+  </div></div>
+  <div class="e"><time>15:04</time><div>
+    <p>Zwischendurch der Auftrag für dieses Tagebuch. Um 15:14 stürzte mein PC ab. <q>ey Ich bin Ich, das tagebuch ist aus meiner Perspektive, nicht deiner</q>. Und um 16:30: <q>ich sehe nicht das ich dort fast 400 bilder handgelabelt habe</q>. Deshalb steht beim 8. November jetzt, was die Handlinien gekostet haben.</p>
+  </div></div>
+  <div class="e"><time>15:18</time><div>
+    <p><q>bild unten1/004298 qwen hat was erfunden</q>: eine dunkle Matte, die es nicht gibt. Schuld war der Satz über den gelben Teppich im Prompt. Ohne ihn wurde es Prompt 10. Bei einem anderen Bild sah Claude einen Fehler, ich nicht: <q>unten3b/011700 ist genau richtig, keine ahnung was du da siehst</q>.</p>
+  </div></div>
+  <div class="e"><time>18:13</time><div>
+    <p><q>Es geht um einen ruhemodus, er soll nichts machen, ausser sich über das frontend wecken lassen</q>. Um 19:44 lief er: xgonav 181 % CPU mit Bildverarbeitung, 9 % ohne, 0 % im Ruhemodus. Die Emotion <code>cute</code> bekam ihre Pupillen weg. Über Nacht rechnete ComfyUI alle Fahrten mit Prompt 10 neu.</p>
+  </div></div>
+  <div class="bilanz"><p>Bilanz: Gut anderthalb Stunden am Betrachter, Bild für Bild. Jede Entscheidung über die Trainingsdaten habe ich am grünen Bild getroffen, nicht an Claudes Kennzahlen.</p></div>
+</article>
+
+<article id="2026-11-10">
+  <h2>Dienstag, 10. November 2026</h2>
+  <p class="meta">7 Commits · FloorNet entscheidet allein · Fahr-Integral · Prüfgitter</p>
+  <div class="e"><time>09:32</time><div>
+    <p>Der Nachtlauf war fertig: 13 522 Bilder, 14,2 Stunden, kein Fehler. <q>bau die labels und starte das training</q>. Um 09:38 lief das neue Netz am Rider.</p>
+  </div></div>
+  <div class="e"><time>09:48</time><div>
+    <p><q>ich habe eine probefahrt gemacht. karte driftet, rider kommt nicht bis zu startpunkt</q>. Er blieb 0,64 m und in der zweiten Fahrt 1,0 m vor dem Start stehen. <q>es lag nichts unterm rider</q>. Das Diagnoseregister zeigte: Der Fahrbefehl kam an, die Räder standen, das Nick-Soll war am Anschlag. Der Geschwindigkeitsregler der Firmware hat ein Integral, das praktisch nichts tut. <q>mach den I-Anteil in der Firmware wirksam</q>. Patch 0015, <q>bitte flashen</q>, 10:06. Drei Minuten später: <q>er ist beim erkunden bis zum start zurück und dort stehen geblieben</q>. Diesmal war das Stehenbleiben Absicht.</p>
+  </div></div>
+  <div class="e"><time>10:12</time><div>
+    <p>Drei neue Fahrten, <code>explore10</code> bis <code>explore12</code>, 9 105 Bilder. <q>kopier sie nach kimmy und rechne jedes zweite Bild</q>.</p>
+  </div></div>
+  <div class="e"><time>13:12</time><div>
+    <p><q>wir müsen sprechen. Die Labels aus Comfy sind deutlich besser als meine Handlabels. Wir sollten die als die absolute wahrheit sehen. ich kann nicht so feine Handlinien machen</q>. Die 517 Bilder vom Freitag und Sonntag sind damit kein Prüfmittel mehr. Sie haben ihren Zweck erfüllt: Ohne sie hätten wir nie gemerkt, wie schlecht die alten Labels waren. Geprüft wird ab jetzt an <code>explore10</code> bis <code>12</code>, die nie ins Training dürfen.</p>
+  </div></div>
+  <div class="e"><time>13:29</time><div>
+    <p><q>ja es entstehen doppelwände, lies die aktuelle config vom rider</q>. Claude baute ein Werkzeug, das eine Aufnahme mit verschiedenen Varianten neu in die Karte rechnet. Keine Variante beseitigte die Doppelwände. Damit man es weiter untersuchen kann, schreibt die Aufnahme seitdem die IMU- und Radwerte zu jedem Bild. <q>Ich würde alles webschmeissen, da nur die letzten überhaupt die kompletten IMU Werte als Meta haben.</q></p>
+  </div></div>
+  <div class="e"><time>13:58</time><div>
+    <p>Ein Prüfmuster zum Selbstdrucken, 5 × 4 DIN-A4-Blätter, nur Gitterlinien. Mein Drucker druckte alles auf 192,5 statt 200 mm. <q>sorry es iszt schwierig. der drucker schneidet die ränder bei 192,5mm ab</q>. Am Ende kamen 248,8 mm Höhe heraus.</p>
+  </div></div>
+  <div class="e"><time>16:01</time><div>
+    <p><q>den vergleich mit kanten, kannst du auch weglassen, wir sind eh immer genauer.</q> Ich wollte dazu das Eingabebild mit dem Netzergebnis darüber sehen, <q>so wie die anderen betrachter</q>. Erst gab es einen SSL-Fehler, dann: <q>das sieht sehr gut aus auf allen 3 läufen. abundzu gibt es mal ein artefakt, bei reflexionen</q>. Mein Vorschlag waren zwei Wege nach ComfyUI: Helle Bilder gehen unverändert hinein, dunkle mit Grün auf null. <q>zum pipeline switch, ab helligkeit 60</q>. Der nächste Lauf: 12 178 helle, 5 905 dunkle Bilder, rund 13 Stunden.</p>
+  </div></div>
+  <div class="e"><time>18:25</time><div>
+    <p><q>ich habe jetzt ein testmuster</q>, 950 × 950 mm an der Wand. <q>ich kann nur bis 75cm zurück, da steht er jetzt, ps das papier liegt an der wand, die linse ist wirklich so schlecht</q>. Dann lag das Gitter am Boden. <q>was ich nicht verstehe, die kamerahöhe haben wir mehrfach nachgemessen</q>. Zu Recht. Das Gitter bestätigte meine gemessene Höhe, der Faktor 0,921 vom Samstag war falsch und flog raus. Zwischendurch hatte Claude mir −3,4 % gemeldet, aus einer Aufnahme mit nur geschätztem Abstand.</p>
+  </div></div>
+  <div class="e"><time>19:05</time><div>
+    <p><q>schmeiß kanten raus, auch aus der pipeline</q>. FloorNet entscheidet am Rider seitdem allein, <code>kanten</code> springt nur ein, wenn das Netz ausfällt. Eine Aufnahmefahrt danach: <q>er hält manchmal einfach an</q>, <q>man sieht auch wieder eine doppelwand in der bodenkarte</q>. Im Liegen gehen jetzt IMU auf 5 Hz und die Räder ganz aus.</p>
+  </div></div>
+  <div class="e"><time>19:34</time><div>
+    <p><q>das frontend macht mir zuviele requests</q>. Laufzeitdaten kommen jetzt einmal je Sekunde per WebSocket, die IMU alle 0,3 s, solange er balanciert. Das Kamerabild wird nur noch geholt, wenn die Bildverarbeitung läuft.</p>
+  </div></div>
+  <div class="e"><time>20:10</time><div>
+    <p><q>bei der handsteuerung fahre ich nach 3 sekunden ca. wird er langsamer, dann wieder schneller, dann wieder langsamer</q>. Bei gleichem Befehl 0,51, 0,09, 0,38, 0,16 m/s im Wechsel. Das war das Integral vom Morgen. Abgeschaltet: <q>fährt besser</q>. <q>mach 2</q>: entschärft statt aus. Vor dem Flashen noch <q>led helligkeit nochmal um 50% reduzieren und ein kommando dafür einbauen</q>, Patch 0016, geflasht 20:31. Dann ein Regler im Web und ein kurzer heller Blitz, wenn xgonav gestartet ist.</p>
+  </div></div>
+  <div class="bilanz"><p>Bilanz: Das Netz fährt allein, und meine Handlinien sind Geschichte. Das Fahr-Integral vom Morgen ließ ihn am Abend pumpen. Wie sich die entschärfte Fassung fährt, wissen wir noch nicht.</p></div>
+</article>
+
+<article id="2026-11-11">
+  <h2>Mittwoch, 11. November 2026</h2>
+  <p class="meta">11 Commits · Sichten im Betrachter · Prompt 11 · Kartenabgleich · Engstellen · drei Erkundungsfahrten</p>
+  <div class="e"><time>09:05</time><div>
+    <p><q>wenn ich den rider einschalte, oder den esp32 resette, sind die leuchten pink. diese farbe steht nicht in der LED.md</q>. Jetzt steht sie drin, es ist die Startfarbe. Die Firmware- und Web-Hinweise bekamen je eine eigene <code>CLAUDE.md</code>.</p>
+  </div></div>
+  <div class="e"><time>09:26</time><div>
+    <p>Das Sichten ging los, und es war zäh: <q>können wir die doppelten(ähnliche bilder, wo der rider nur steht) schon in stage2 entfernen? beim durchklicken wird das etwas eintönig. desweiteren hätte ich gerne eine button um untaugliche bilder direkt zu entfernen</q>. Und: <q>warum sollten die die wir nicht brauchen bis zum comfy kommen</q>. Standbilder fliegen jetzt vor ComfyUI raus, untaugliche markiere ich mit X.</p>
+  </div></div>
+  <div class="e"><time>10:03</time><div>
+    <p><q>desweiteren, ist es nach der letzten Teppich Änderung im Prompt, dazu gekommen,, das der Teppich und Dinge auf dem Boden, oft für Boden gehalten wird.</q> Rund 230 Bilder hatte ich deswegen schon aussortiert, meist den gelben Teppich in <code>unten4</code>. Probelauf mit drei Prompt-Varianten auf je 73 Bildern, alle drei von mir durchgesehen. <q>ok nimm T3 und starte den Neulauf</q>. Prompt 11: Nur die nackte Bodenfläche wird gefärbt, alles, was darauf liegt, auch Teppiche, bleibt. 9 661 Bilder, fertig gegen 21 Uhr.</p>
+  </div></div>
+  <div class="e"><time>11:07</time><div>
+    <p><q>das Bodenmodell macht seine Arbeit gut, jetzt können wir das Problem mit der Initial Pose und der Kartendrift angehen.</q> <q>Wie machen das andere, z.b. staubsauger roboter?</q> Rundumblick und Abgleich mit der Karte, ohne Marker. Offline trug der laufende Abgleich: Fahrt 6 wurde gerade. Die Suche nach der Startpose blieb meist „mehrdeutig“. <q>ja, spiel es ein und setz enabled = true</q>. Eine Stunde später ließ ich <code>row_bias</code> ganz entfernen, FloorNet braucht keinen Versatz.</p>
+  </div></div>
+  <div class="e"><time>12:24</time><div>
+    <p><q>bitte im betrachter merken, welche ich bereits gesichtet habe, und diese nach reload nicht mehr anzeigen</q>. Kurz danach kam ein Bluescreen. <q>mein PC hatte bluescreen mit Hypervisor problem. Benutzt du den ?</q> Nein. Ein Absturzbericht existierte nicht, die Speicherabbilder sind bei mir abgeschaltet. Um 13:20: <q>im betrachter sehe ich nur 1</q>. Richtig so, ich hatte alle 1 794 Bilder durch, die bis dahin fertig waren, 1 820 Meldungen in 27 Minuten.</p>
+  </div></div>
+  <div class="e"><time>13:30</time><div>
+    <p><q>Mach es so das der rider sich noch durch eine Lücke von 25cm quetscht.</q> Im Simulator klappte das nur mit dem alten, übertriebenen Nicken. Mit dem gemessenen kam er in 2 von 5 Läufen durch. <q>warum wackelt es so ? so schlimm ist die fahrt auch nicht</q>. Am Ende: <q>Lass die Tests deaktiviert, bis wir an der navigations Logik weitermachen</q> und <q>Schreib sie auf den rider die 2cm Grenze, wir testen das da und stimmen den simulator darauf ab</q>. Gefahren ist er damit noch nicht.</p>
+  </div></div>
+  <div class="e"><time>15:07</time><div>
+    <p>Neue Fahrten vom Rider kamen dazu, also weiter sichten. <q>das blättern dauert zu lange, und cursor halten verschluckt sich</q>. Seitdem läuft der Betrachter mit der Leertaste so schnell durch, wie die Bilder laden, und lässt keine Maske aus.</p>
+  </div></div>
+  <div class="e"><time>17:31</time><div>
+    <p><q>wäre es im budget dem floornet das aktuelle und das letzte bild als input zu geben</q>. Ich habe die billigere Stufe 2 genommen: <q>Ja Bau Stufe 2 mit 3 Bildern</q>. Die Kante wird über drei Bilder geglättet, die Sprünge halbieren sich, am CM4 kostet das 1,5 ms.</p>
+  </div></div>
+  <div class="e"><time>19:36</time><div>
+    <p><q>wenn die neuen läufe gelabelt sind, starte das training damit</q>. Claude nahm dafür auch Fahrten, die ich noch nicht gesehen hatte. <q>stop</q>. Keine Antwort. <q>hallo?</q> Dann: <q>ich möchte keine läufe im training, die nicht durch comfy und meine handauslese gegangen sind</q>. Das Netz <code>p11a</code> lernte dann nur auf gesichteten Bildern, 6 071 Stück. Ich ließ es auf den Rider spielen, obwohl Claude zum Warten riet.</p>
+  </div></div>
+  <div class="e"><time>20:15</time><div>
+    <p><q>beim erkunden, den rider doppelt so schnell vorwärts fahren lassen, wie bisher</q>. Dann <q>es ist immer noch das problem das wände nach einmal hin und her 30cm versetzt neugezeichnet werden</q>. Nach der Fahrt: <q>testfahrt beendet, karte ist besser aber beim 2ten abfahren wieder daneben. und der routenplaner ist sch.... Bitte einen sinnvolleren</q>. Die Auswertung gab mir recht: 26 Halte in 348 Sekunden, 17 % der Zeit Drehen auf der Stelle, zehn Meter Umweg. <q>ps es gab keine kollision</q>. Jetzt fährt er die nächste Stelle zuerst an, ohne Halt weiter, mit 0,2 statt 0,3.</p>
+  </div></div>
+  <div class="e"><time>21:09</time><div>
+    <p><q>Einspielen und messen</q>: Der laufende Kartenabgleich kostet am Pi rund 73 ms alle zwei Sekunden. Um 22:08: <q>Den rider in den Ruhe Modus setzen</q>.</p>
+  </div></div>
+  <div class="bilanz"><p>Bilanz: Gut zwei Stunden am Betrachter, über den Tag verteilt, Hunderte Bilder aussortiert. Und ein Erkunden ohne Berührung, nur noch nicht schön.</p></div>
+</article>
+
+<article id="2026-11-12">
+  <h2>Donnerstag, 12. November 2026</h2>
+  <p class="meta">10 Commits · der lange Sichtungstag · neu malen lassen · C++-Kern navfast · neue Adresse</p>
+  <div class="e"><time>09:12</time><div>
+    <p><q>mon, stand?</q> Prompt 11 war über Nacht durchgelaufen. Bis 10 Uhr saß ich am Betrachter. <q>ok, gesichtet, pack alles ins training</q>. Dann das Netz gegen meine Augen: <q>Die Antworten des Netzes sind größtenteils korrekt.</q> Fehler nur an Fugen, fünf Bilder. Ab Bild <code>006591</code> sprang die Linie. <q>warum wird überhaupt umgeschaltet, wenn die gelbe linie die ganze zeit perfekt ist?</q> Abgeschaltet. Claude rechnete mit Fehlerwerten. <q>und wie kommst du auf die loss werte? 20261110-191711 ist 99% perfekt</q>.</p>
+  </div></div>
+  <div class="e"><time>10:07</time><div>
+    <p><q>ok, schieß los, trainiere solange neu(verschiedene lernraten, die schuldigen finden) bis der lauf explore10 keine Ausreisser mehr hat</q>. Nach 22 Trainings brach Claude ab, keines kam auch nur in die Nähe. Dann habe ich die verdächtigen Bilder selbst angesehen: <q>alle bilder, bis auf 3(Ausreisser mit zacken) sind korrekt. Das netz antwortet korrekt mit belegt. es liegt was im Weg</q>. Nicht das Netz lag falsch, sondern die Labels. ComfyUI hatte Gegenstände auf dem Boden einfach mit übermalt.</p>
+  </div></div>
+  <div class="e"><time>11:18</time><div>
+    <p><q>hi, die Adresse des Riders ist jetzt 10.10.0.110. Schau mal bitte warum xgonav die Adressänderung nicht überstanden hat</q>. <q>PS nginx zeigt 502 bad gateway</q>. Es lag nicht an der Adresse. Claude hatte zwei Tage vorher <code>rc.local</code> mit Windows-Zeilenenden auf den Rider kopiert. Beim ersten Neustart brach sie in der ersten Zeile ab: kein Treiber, kein Display, xgonav in der Absturzschleife. Seitdem erzwingt das Repo LF.</p>
+  </div></div>
+  <div class="e"><time>11:27</time><div>
+    <p>Mein Vorschlag: <q>du machst eine taste um das bild erneut durch comfy zu schicken. das alte kann einfach überschrieben werden. dann kann ich solange seeden bis die objekte nicht mehr ausgeblendet werden</q>. Nach ein paar Versuchen: <q>seed alleine reicht nicht, ich muss verschiedene prompts für verschiedene situationen haben</q>. Seitdem malt eine Taste das Bild neu, mit anderem Seed oder einer anderen Prompt-Variante. Im Ruhemodus zeigt das Display seitdem Schlafaugen, abschalten lässt es sich ohnehin nicht.</p>
+  </div></div>
+  <div class="e"><time>12:14</time><div>
+    <p><q>p11_label prüfen ist durch</q>. Weiter mit der nächsten Liste, um 13:50: <q>bin mit der label prüfung durch</q>. Dann <q>lass mich explore10 korrigieren</q>, elf Minuten später <q>fertig</q>. Und noch eine Fahrt: <q>ok, wie und wo soll ich sie sichten?</q>, um 15:15 <q>ich habe gesichtet, bilder bleiben aber stehen</q>. Um 16:28 sah es so aus, als wäre alles umsonst: <q>ich habe bereits welche korrigiert unter pruef_verdacht, aber die neu generierten sind wieder wie vorher</q>. Gespeichert war alles richtig. Der Browser hatte nur die alten Bilder zwischengespeichert. Bis dahin waren 276 Bilder neu gemalt, manche mehrmals.</p>
+  </div></div>
+  <div class="e"><time>14:02</time><div>
+    <p>Auf Teppich fährt er langsamer als auf glattem Boden. Claude plante es schon in der Firmware. <q>nein, xgonav soll auf den soll wert regeln, geschwindigkeit an der rädern holen, gemittelt über 0,3s</q>. Gebaut, im Standard aus, nicht gefahren.</p>
+  </div></div>
+  <div class="e"><time>14:22</time><div>
+    <p><q>so, dann habe ich gesehen, das du in xgonav cpu mit python verschwendest. z.b. der Planer, etc. bitte das was geht auf c++ machen, so wie gehabt. Schleifen in python gilt es zu vermeiden</q>. Der Planer fiel am CM4 von 113 auf 7,2 ms, die Zielwahl von 137 auf 14 ms, der Regelschritt von 1,7 auf 0,5 ms. Alles bitgleich zum Python-Weg geprüft. Danach dauerte es noch drei Anläufe, bis alles committet war, weil zwei Sitzungen in denselben Dateien gearbeitet hatten.</p>
+  </div></div>
+  <div class="e"><time>20:14</time><div>
+    <p><q>neue fahrt am rider. ps er ist wieder auf 192.168.53.110 zu erreichen</q>. Und gleich danach: <q>ich habe eine perfekte erkunden fahrt gemacht. aber mir ist aufgefallen das er ein hindernis nicht einträgt, obwohl er deswegen umdreht.</q> Die Suche habe ich nach einer Viertelstunde abgebrochen. Die Frage ist noch offen.</p>
+  </div></div>
+  <div class="e"><time>21:42</time><div>
+    <p><q>Müssen prüffahrten den imu haben? Werden die nicht nur zum prüfen des Netzes?</q> Meine Entscheidung: <q>Wir nutzen die alten Fahrten nur zur Netz Prüfung. Für alles andere nur die mit imu verwenden</q>. Das erste Netz nur aus den 16 neuen Fahrten, 12 711 gesichtete Bilder, wurde schlechter. <q>warum wird das netz schlechter ?</q> Weil die alten Fahrten aus dem oberen Raum fehlten. <q>sind wir schon overfitted?</q> Nein, 30, 100 und 300 Durchläufe ergaben dasselbe. Dazu kam noch eine Strafe für Sprünge der Kante.</p>
+  </div></div>
+  <div class="e"><time>22:15</time><div>
+    <p><q>ok, wir bleiben bei yolo11n ncnn.</q> Dazu eine Einstellungsseite im Web, die direkt die <code>config.toml</code> ändert, mit Sicherung und Neustart auf Knopfdruck. <q>bitte die jetzigen rider einstellungen als default setzen</q>. Bis nach Mitternacht habe ich mir die Netze noch im Betrachter angesehen.</p>
+  </div></div>
+  <div class="bilanz"><p>Bilanz: Fast fünf Stunden am Betrachter, mein längster Sichtungstag. Am Ende hatte das Netz recht und die Labels nicht. Gefunden habe ich das mit den Augen, nicht mit 22 Trainings.</p></div>
+</article>
+
+<section class="vorwort" style="border-bottom:0;border-top:1px solid var(--line);padding-top:2rem">
+  <p><b>Was das Labeln gekostet hat</b> (Stand 12. November). Am 6. und 8. November habe ich 517 Bilder von Hand beschriftet und 4 342 Punkte geklickt. Vom 9. bis 12. November kamen laut Protokoll des Betrachters rund <b>9 Stunden</b> reines Sichten dazu: 1,6 h am Montag, 0,5 h am Dienstag, 2,2 h am Mittwoch und 4,9 h am Donnerstag. Pausen über fünf Minuten sind nicht mitgezählt, die tatsächliche Zeit war also länger. Allein mit Prompt 11 habe ich <b>21 866 Bilder</b> gesichtet und 1 141 als untauglich aussortiert. Dazu kommen 229 und 213 aus den früheren Läufen, rund 200 Bilder aus den drei Probe-Prompts, die korrigierte Fahrt <code>explore10</code> und über 1 100 Aufträge, ein Bild neu malen zu lassen. Ins Training kommt nur, was ich gesehen habe.</p>
+</section>
+
+<footer>Fortsetzung folgt. Der 13. November wird später geschrieben.</footer>
 </main>
 </div>
 <script>
