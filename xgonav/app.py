@@ -711,6 +711,10 @@ class App:
             if self.lmap is not None and self.behavior.name in ("explore", "approach"):
                 vg = self.cfg.behavior.cruise_v * self.cfg.robot.vx_limit
                 w.path_blocked = self.lmap.arc_clearance(vg, 0.0, horizon_s=1.2) < 0.6 * vg + 0.08
+            elif self.lmap is not None and self.behavior.name == "pet" and self.behavior.drives:
+                # pet sucht oder streift: eine Bahnprüfung je Regelschritt, nur solange er fährt
+                vg = self.cfg.pet.drive_v * self.cfg.robot.vx_limit
+                w.path_blocked = self.lmap.arc_clearance(vg, 0.0, horizon_s=1.2) < 0.6 * vg + 0.08
             if getattr(self.behavior, "want_set_down", False):
                 self.behavior.want_set_down = False
                 log.warning("Modus %s: setze ab", self.behavior.name)

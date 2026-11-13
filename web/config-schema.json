@@ -2303,14 +2303,14 @@
       {
        "key": "faint",
        "typ": "bool",
-       "default": false,
-       "hilfe": "Ohnmacht: absetzen, nap_s liegen, von selbst aufstehen. Beim Aufspringen rollt er ~20 cm vor: bewusst einschalten, vorne >= 40 cm frei, keine Stufe."
+       "default": true,
+       "hilfe": "Ohnmacht: absetzen, nap_s liegen, von selbst aufstehen. Beim Aufspringen rollt er ~20 cm vor: vorne >= 40 cm frei, keine Stufe. Am RiderPi an seit 2026-11-13 (Nutzer: soll beim Erschrecken umfallen)."
       },
       {
        "key": "faint_level",
        "typ": "float",
-       "default": 1.0,
-       "hilfe": ""
+       "default": 0.8,
+       "hilfe": "RiderPi seit 2026-11-13 (vorher 1,0: Schreck 0,90 warf ihn nicht um)"
       },
       {
        "key": "faint_max",
@@ -2407,6 +2407,96 @@
        "typ": "float",
        "default": 0.05,
        "hilfe": "so viel Radweg in 0,5 s ohne Fahrbefehl: angestupst"
+      },
+      {
+       "key": "look",
+       "typ": "bool",
+       "default": true,
+       "hilfe": "Umschauen und Suchen (xgonav/pet.py, Aufgaben). Person weg: zur letzten bekannten Stelle, dann umschauen. Nichts zu tun: umschauen und in Etappen zur freiesten Richtung streifen. Umschauen dreht nur auf der Stelle (wie die Gesten, gestures = false schaltet es ab); gefahren wird nur mit Rädern, Bodenmodell und Merkkarte. Weg und Radius: 0 = aus, -1 = ohne Grenze (RiderPi seit 2026-11-13, Nutzer: keine Treppe im Raum, Bodenmodell zuverlässig). Stufen sieht das Bodenmodell zu spät: nie an einer Treppe. nach dem Verschwinden und bei Langeweile umschauen"
+      },
+      {
+       "key": "seek_m",
+       "typ": "float",
+       "default": -1.0,
+       "hilfe": "je Verschwinden höchstens so weit zur letzten Stelle"
+      },
+      {
+       "key": "seek_stop_m",
+       "typ": "float",
+       "default": 0.4,
+       "hilfe": "so weit vor der letzten Stelle halten"
+      },
+      {
+       "key": "roam_m",
+       "typ": "float",
+       "default": -1.0,
+       "hilfe": "je Phase ohne Begegnung höchstens so weit streifen (endet spätestens mit doze_s)"
+      },
+      {
+       "key": "roam_radius_m",
+       "typ": "float",
+       "default": -1.0,
+       "hilfe": "beim Streifen nie weiter vom Platz, an dem er in pet aufstand"
+      },
+      {
+       "key": "roam_leg_m",
+       "typ": "float",
+       "default": 0.4,
+       "hilfe": "Länge einer Etappe"
+      },
+      {
+       "key": "roam_after_s",
+       "typ": "float",
+       "default": 30.0,
+       "hilfe": "so lange niemand: umschauen bzw. streifen"
+      },
+      {
+       "key": "roam_repeat_s",
+       "typ": "float",
+       "default": 45.0,
+       "hilfe": "danach wieder"
+      },
+      {
+       "key": "roam_free_min",
+       "typ": "float",
+       "default": 0.55,
+       "hilfe": "Freiraum im Zentrum (wie behavior.slow_free), sonst fährt er dort nicht hin"
+      },
+      {
+       "key": "roam_battery",
+       "typ": "int",
+       "default": 40,
+       "hilfe": "%: darunter weder suchen noch streifen"
+      },
+      {
+       "key": "drive_v",
+       "typ": "float",
+       "default": 0.08,
+       "hilfe": "normiert (x vx_limit = m/s)"
+      },
+      {
+       "key": "look_w",
+       "typ": "float",
+       "default": 0.12,
+       "hilfe": "Drehrate beim Umschauen, normiert"
+      },
+      {
+       "key": "look_step_deg",
+       "typ": "float",
+       "default": 90.0,
+       "hilfe": "in Schritten drehen, dazwischen still stehen: Detektor und Bodenmodell"
+      },
+      {
+       "key": "look_steps",
+       "typ": "int",
+       "default": 4,
+       "hilfe": "so viele Blicke (4 x 90° = einmal rundum)"
+      },
+      {
+       "key": "look_pause_s",
+       "typ": "float",
+       "default": 1.5,
+       "hilfe": "je Blick stillstehen"
       },
       {
        "key": "bored_s",

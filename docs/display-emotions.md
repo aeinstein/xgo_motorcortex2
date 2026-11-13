@@ -119,14 +119,27 @@ Started by hand (web UI „Haustier“, `--mode pet`). Not run on the Rider yet,
 | box top free and < 1.9 m (kneeling, sitting, child) | `like` |
 | person approaching > ~1 m/s within 1.6 m | `surprised`, squeak, duck, optional jerk back |
 | person gone < 3 s and back | `laugh`, giggle |
-| person gone > 3 s | looks after them, then `sad` |
+| person gone > 3 s | looks after them, `doubt`, searches (below), `sad` if not found |
 | wheels move without a drive command | `embarrassed`, „hey“ |
-| nobody for 60 s / 180 s / 600 s | sighs and looks around / dozes, detector 1 Hz / sets down, `idle` |
+| nobody for 30 s (`roam_after_s`, again every 45 s) | roams (below) |
+| nobody for 60 s / 180 s / 600 s | sighs / dozes, detector 1 Hz, roaming ends / sets down, `idle` |
 | cat | turns toward, `like`, coo; optional creep up to 0.8 m |
 | dog within 2 m (priority over all) | keeps looking, `grievance`, whimper, duck, optional jerk back |
 | dog < 0.5 m or hard scare (with `faint`) | faint, see below |
 
 Eyes follow the bearing of the target, gliding one position per control step, and blink through all lid positions in 0.4 s (atlas, neutral eye style without pupils, replaces the overlay on the LCD; written only when changed, checked at ~33 Hz). Priority: dog, cat, person. Trust (0..1) shifts thresholds; repeated scares weaken (habituation).
+
+### Search and roam
+
+Tasks inside state `wach`; any person/cat/dog in view ends them (search: `like` + found sound; roam: `surprised`). Position from wheels and heading (`World.yaw`), independent of the room map; reset on stand-up.
+
+| Task | Sequence |
+|---|---|
+| search (person gone > `gone_s`) | drive to `seek_stop_m` (0.4 m) short of the last foot-point position, at most `seek_m` → look around → `sad`, lost sound |
+| roam (nobody for `roam_after_s`) | look around, note free space per view → leg of `roam_leg_m` (0.4 m) toward the freest view within `roam_radius_m` (1.0 m) of the stand-up spot (none: back toward it) → look around → … until `roam_m` is used up; new budget after each encounter |
+| look around | `look_steps` (4) views, `look_step_deg` (90°) apart, `look_pause_s` (1.5 s) standing still each (detector, floor model); eyes sweep. Turning only, on by default (`look`, needs `gestures`) |
+
+Driving (`seek_m`, `roam_m`, `roam_radius_m`: 0 = off, −1 = no limit; RiderPi default −1 since 2026-11-13, simulator 0 / 0 / 1.0 m) only forward at `drive_v` (0.08), with wheels, valid floor model + local map, battery ≥ `roam_battery` (40 %). Stops on: remaining distance within coast (~0.9 s × speed), budget, arc check of the local map blocked (`path_blocked`, computed only while driving), centre free space < half `roam_free_min`, no progress for 2.5 s, time-out. Three failed legs end roaming. Foot points > 5 m (occluded) are ignored, distances capped at 3.5 m. Steps are seen too late by the floor model: never near stairs. Pi cost: arithmetic per control step, plus one arc check per control step while driving.
 
 ### Faint
 

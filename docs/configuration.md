@@ -204,7 +204,13 @@ All keys with comments: `PetCfg` in `xgonav/config.py`.
 |---|---|---|
 | `retreat_m` | 0 (off) | jerk backwards per scare, cap 0.30 m, RiderPi test 0.12. Blind, needs wheels |
 | `creep_m` | 0 (off) | toward a cat per encounter, cap 1.0 m, test 0.4. Needs wheels, floor model, local map |
-| `faint` | false | hard scare: set down, wake up, stand up by itself |
+| `seek_m` | −1 = no limit (sim: 0 = off) | person gone: drive toward the last position, per loss. Needs wheels, floor model, local map |
+| `roam_m`, `roam_radius_m` | −1, −1 = no limit (sim: 0, 1.0) | nobody around: roam in legs per phase without encounter (ends at `doze_s`); radius around the stand-up spot |
+| `look` | true | look around (turning only) after a person is gone and when idle |
+| `roam_after_s`, `roam_repeat_s`, `roam_leg_m`, `roam_free_min`, `roam_battery` | 30, 45, 0.4, 0.55, 40 % | |
+| `seek_stop_m`, `drive_v`, `look_w`, `look_step_deg`, `look_steps`, `look_pause_s` | 0.4, 0.08, 0.12, 90, 4, 1.5 | |
+| `faint` | true (sim: false) | hard scare: set down, wake up, stand up by itself; on at the RiderPi since 2026-11-13 |
+| `faint_level` | 0.8 (sim: 1.0) | scare level that triggers a faint |
 | `gestures` | true | false: only eyes and sounds |
 | `zone_far_m`, `zone_mid_m`, `zone_close_m`, `kneel_max_m` | 3.0, 1.5, 0.5, 1.9 | person zones |
 | `startle_mps`, `startle_heavy_mps`, `startle_max_m` | 1.0, 1.8, 1.6 | approach speed = min(foot-point line fit, measured box-width growth × distance / `startle_vs`); widths of boxes cut at the left/right image edge are ignored; **not tuned on real footage** |

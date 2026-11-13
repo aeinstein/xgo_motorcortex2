@@ -620,9 +620,9 @@ class PetCfg:
     fright_decay: float = 0.05         # 1/s
     habit_tau_s: float = 60.0          # Gewöhnung klingt so schnell ab
     # Ohnmacht: absetzen, nap_s liegen, von selbst aufstehen. Beim Aufspringen rollt er ~20 cm vor:
-    # bewusst einschalten, vorne >= 40 cm frei, keine Stufe.
-    faint: bool = False
-    faint_level: float = 1.0
+    # vorne >= 40 cm frei, keine Stufe. Am RiderPi an seit 2026-11-13 (Nutzer: soll beim Erschrecken umfallen).
+    faint: bool = True
+    faint_level: float = 0.8           # RiderPi seit 2026-11-13 (vorher 1,0: Schreck 0,90 warf ihn nicht um)
     faint_max: int = 3                 # höchstens so viele in faint_window_s, danach nur Schreck
     faint_window_s: float = 600.0
     nap_s: float = 10.0                # so lange ganz weg, dann gehen langsam die Augen auf
@@ -640,6 +640,26 @@ class PetCfg:
     peek_s: float = 3.0                # Person so kurz weg und wieder da: Guck-guck
     gone_s: float = 3.0                # länger weg: schaut hinterher, dann traurig
     nudge_m: float = 0.05              # so viel Radweg in 0,5 s ohne Fahrbefehl: angestupst
+    # Umschauen und Suchen (xgonav/pet.py, Aufgaben). Person weg: zur letzten bekannten Stelle, dann umschauen.
+    # Nichts zu tun: umschauen und in Etappen zur freiesten Richtung streifen. Umschauen dreht nur auf der
+    # Stelle (wie die Gesten, gestures = false schaltet es ab); gefahren wird nur mit Rädern, Bodenmodell und
+    # Merkkarte. Weg und Radius: 0 = aus, -1 = ohne Grenze (RiderPi seit 2026-11-13, Nutzer: keine Treppe im
+    # Raum, Bodenmodell zuverlässig). Stufen sieht das Bodenmodell zu spät: nie an einer Treppe.
+    look: bool = True                  # nach dem Verschwinden und bei Langeweile umschauen
+    seek_m: float = -1.0               # je Verschwinden höchstens so weit zur letzten Stelle
+    seek_stop_m: float = 0.4           # so weit vor der letzten Stelle halten
+    roam_m: float = -1.0               # je Phase ohne Begegnung höchstens so weit streifen (endet spätestens mit doze_s)
+    roam_radius_m: float = -1.0        # beim Streifen nie weiter vom Platz, an dem er in pet aufstand
+    roam_leg_m: float = 0.4            # Länge einer Etappe
+    roam_after_s: float = 30.0         # so lange niemand: umschauen bzw. streifen
+    roam_repeat_s: float = 45.0        # danach wieder
+    roam_free_min: float = 0.55        # Freiraum im Zentrum (wie behavior.slow_free), sonst fährt er dort nicht hin
+    roam_battery: int = 40             # %: darunter weder suchen noch streifen
+    drive_v: float = 0.08              # normiert (x vx_limit = m/s)
+    look_w: float = 0.12               # Drehrate beim Umschauen, normiert
+    look_step_deg: float = 90.0        # in Schritten drehen, dazwischen still stehen: Detektor und Bodenmodell
+    look_steps: int = 4                # so viele Blicke (4 x 90° = einmal rundum)
+    look_pause_s: float = 1.5          # je Blick stillstehen
     bored_s: float = 60.0
     bored_repeat_s: float = 45.0
     doze_s: float = 180.0              # dösen, Detektor auf doze_hz
@@ -729,7 +749,8 @@ class RelocCfg:
 
 # Die Defaults oben sind seit 2026-11-12 die Werte des RiderPi (/opt/xgonav/config.toml ohne Testbetrieb und
 # ohne Pfade unter /opt). Simulator und Tests rechnen mit dem früheren neutralen Stand: Config.neutral().
-NEUTRAL = {"robot.vx_limit": 1.5, "robot.max_v": 0.25, "robot.max_w": 0.25, "robot.reverse_gain": 1.0,
+NEUTRAL = {"pet.faint": False, "pet.faint_level": 1.0, "pet.seek_m": 0.0, "pet.roam_m": 0.0, "pet.roam_radius_m": 1.0,
+           "robot.vx_limit": 1.5, "robot.max_v": 0.25, "robot.max_w": 0.25, "robot.reverse_gain": 1.0,
            "robot.manual_forward_gain": 1.0, "robot.level_after_standup": False, "camera.sensor_mode": "",
            "camera.scaler_crop": [], "camera.exposure_us": 4000, "camera.analogue_gain": 0.0,
            "camera.mount_offset_mm": 45.0, "camera.cam_h_u8": [], "camera.cam_fwd_mm": 0.0,

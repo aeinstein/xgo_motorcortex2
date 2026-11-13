@@ -114,12 +114,16 @@ gap_s = 5.0             # surprised erst nach so langer Pause ohne Person
 lost_s = 2.0            # doubt bzw. embarrassed nach so langer Zeit ohne Person
 battery_low = 20        # %, Treiber schaltet bei 8 % ab
 
-[pet]                   # Modus pet (xgonav/pet.py); Boden und Karte können dafür aus bleiben, wenn creep_m = 0
+[pet]                   # Modus pet (xgonav/pet.py); Boden und Karte können dafür aus bleiben, wenn creep_m = seek_m = roam_m = 0
 # Standard: bleibt auf der Stelle, keine Ohnmacht. Einzeln und unter Beobachtung freischalten,
 # nie oben an der Treppe. Rückwärts ist blind, beim Aufspringen rollt er ~20 cm vor.
 # retreat_m = 0.12      # Ruck zurück beim Schreck
 # creep_m = 0.4         # zur Katze schleichen; braucht Bodenmodell und Merkkarte
-# faint = true          # heftiger Schreck: absetzen, 10 s, von selbst aufstehen
+# faint = false         # heftiger Schreck: absetzen, 10 s, von selbst aufstehen (Standard an)
+# Suchen/Streifen fahren am RiderPi ohne Grenze (seek_m = roam_m = roam_radius_m = -1); 0 = aus, sonst Meter
+# seek_m = 0            # Person weg: nicht zur letzten Stelle fahren, nur umschauen
+# roam_m = 0            # niemand da: nicht streifen, nur umschauen
+# look = false          # auch nicht mehr umschauen (dreht sonst auf der Stelle)
 
 [cpu]
 # CPU-Pinning (CM4, 4 Kerne), gemessen 2026-11-02: CPU 282 -> 249 %, Detektor 149 -> 129 ms,

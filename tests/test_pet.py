@@ -1,5 +1,6 @@
 """Modus pet (xgonav/pet.py): reine Logik mit synthetischen Verläufen."""
 import dataclasses
+import math
 import importlib.util
 import sys
 import wave
@@ -21,6 +22,10 @@ from xgonav.tracker import Track  # noqa: E402
 
 
 def brain(seed=1, **kw):
+    kw.setdefault("seek_m", 0.0)             # Standard am RiderPi: ohne Grenze; die Tests geben den Weg selbst vor
+    kw.setdefault("roam_m", 0.0)
+    kw.setdefault("faint", False)            # Standard am RiderPi: an; die Tests schalten es selbst ein
+    kw.setdefault("faint_level", 1.0)        # Standard am RiderPi: 0,8; die Tests rechnen mit 1,0
     return PetBrain(PetCfg(**kw), Config.neutral().robot, seed=seed)
 
 
@@ -64,9 +69,10 @@ def test_grenzen_aus_der_konfiguration_nicht_aufhebbar():
     assert b.duck_mm == 70.0                 # Minimum 60 + 10 mm
 
 
-def test_standard_faehrt_nicht_und_setzt_nicht_ab():
+def test_standard_ruckt_nicht_und_faellt_am_rider_um():
     d = PetCfg()
-    assert d.retreat_m == 0 and d.creep_m == 0 and not d.faint
+    assert d.retreat_m == 0 and d.creep_m == 0 and d.faint          # RiderPi: Ohnmacht an
+    assert not Config.neutral().pet.faint                             # Simulator: aus
 
 
 def test_ruck_zurueck_bleibt_im_budget():
@@ -674,3 +680,135 @@ def test_toene(tmp_path):
         snd.write(str(p), fn(1.0))
         with wave.open(str(p)) as f:
             assert 0.1 < f.getnframes() / f.getframerate() < 2.0, name
+
+
+# ---- Suchen und streifen ---------------------------------------------------
+class Kin:
+    """Fährt, was befohlen ist (neutral: 1,5 m/s und 360°/s je Einheit), Kurs und Weg wie World.yaw/ds."""
+
+    def __init__(self, b):
+        self.b, self.x, self.y, self.yaw, self.ds, self.moved, self.far = b, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+        self.acts, self.evs = [], []
+
+    def run(self, t0, t1, who=None, dt=0.05, **sense):
+        sense.setdefault("floor_ok", True)
+        sense.setdefault("free_center", 1.0)
+        t = t0
+        while t < t1:
+            a = self.b.update(Sense(t=t, dt=dt, seen=who(t) if who else [], ds=self.ds, yaw=self.yaw, **sense))
+            self.acts.append(a)
+            self.evs += [e[1] for e in self.b.drain()]
+            self.yaw += math.radians(a.w * 360.0) * dt
+            self.ds = a.v * 1.5 * dt
+            self.x += self.ds * math.cos(self.yaw)
+            self.y += self.ds * math.sin(self.yaw)
+            self.moved += abs(self.ds)
+            self.far = max(self.far, math.hypot(self.x, self.y))
+            t += dt
+        return t
+
+
+def weg_nach(t_weg, dist=1.6, bearing=0.3):
+    """Person steht da, bis t_weg; danach ist sie weg."""
+    return lambda t: [seen("person", dist, t, bearing=bearing, vs=0)] if t < t_weg else []
+
+
+def test_suchen_ohne_budget_dreht_nur():
+    k = Kin(brain())
+    k.run(0.0, 30.0, weg_nach(3.0))
+    assert k.moved == 0.0 and all(a.v == 0.0 for a in k.acts)
+    assert any(a.w != 0.0 for a in k.acts[200:])           # schaut sich um
+    assert k.b.n_seek == 1 and "verloren" in k.evs and k.b.task is None
+    assert abs(math.degrees(k.yaw)) > 200                   # einmal rundum (Hinterherschauen zählt mit)
+
+
+def test_suchen_faehrt_zur_letzten_stelle():
+    k = Kin(brain(seek_m=1.0))
+    k.run(0.0, 40.0, weg_nach(3.0, dist=1.6, bearing=0.3))
+    # 1,6 m entfernt, 0,4 m davor halten: 1,2 m, das Budget 1,0 m begrenzt
+    assert 0.6 < k.moved <= 1.0
+    assert all(a.v >= 0.0 for a in k.acts)                  # nie rückwärts
+    assert "verloren" in k.evs and k.b.n_found == 0          # danach (ab 33 s) streift er, Budget 0
+
+
+def test_suchen_nah_genug_faehrt_nicht():
+    k = Kin(brain(seek_m=1.0))
+    k.run(0.0, 30.0, weg_nach(3.0, dist=0.5))
+    assert k.moved == 0.0 and k.b.n_seek == 1
+
+
+def test_suchen_findet_person_wieder():
+    k = Kin(brain(seek_m=1.0))
+    k.run(0.0, 9.0, weg_nach(3.0))
+    assert k.b.task == "suchen" and k.b.phase == "fahren"
+    k.run(9.0, 12.0, lambda t: [seen("person", 1.0, t, vs=0)])
+    assert k.b.task is None and k.b.n_found == 1 and "gefunden" in k.evs
+    assert all(a.v == 0.0 for a in k.acts[-40:])
+
+
+@pytest.mark.parametrize("sense", [dict(ds_measured=False), dict(floor_ok=False), dict(free_center=None),
+                                   dict(battery=30), dict(battery=None)])
+def test_suchen_ohne_voraussetzung_faehrt_nicht(sense):
+    k = Kin(brain(seek_m=1.0, roam_m=2.0))
+    k.run(0.0, 120.0, weg_nach(3.0), **sense)
+    assert k.moved == 0.0
+
+
+def test_suchen_haelt_bei_blockierter_bahn():
+    k = Kin(brain(seek_m=1.0))
+    k.run(0.0, 30.0, weg_nach(3.0), path_blocked=True)
+    assert k.moved == 0.0 and k.b.n_seek == 1 and "verloren" in k.evs
+
+
+def test_streifen_im_radius_und_budget():
+    k = Kin(brain(seed=3, roam_m=1.5, roam_radius_m=0.8))
+    k.run(0.0, 175.0)                                        # vor doze_s
+    assert 0.5 < k.moved <= 1.5
+    assert k.far <= 0.8 + 0.15
+    assert all(a.v >= 0.0 for a in k.acts)
+    assert k.b.state == "wach"
+
+
+def test_streifen_doesen_beendet_aufgabe():
+    k = Kin(brain(roam_m=1.5))
+    k.run(0.0, 200.0)
+    assert k.b._dozing and k.b.task is None
+    assert all(a.v == 0.0 and a.w == 0.0 for a in k.acts[-200:])
+
+
+def test_streifen_freiraum_klein_faehrt_nicht():
+    k = Kin(brain(roam_m=1.5))
+    k.run(0.0, 175.0, free_center=0.3)
+    assert k.moved == 0.0
+
+
+def test_ohne_gesten_kein_umschauen():
+    k = Kin(brain(gestures=False, seek_m=1.0, roam_m=1.5))
+    k.run(0.0, 175.0, weg_nach(3.0))
+    assert all(a.v == 0.0 and a.w == 0.0 for a in k.acts)
+
+
+def test_such_grenzen_negativ_ohne_grenze():
+    b = brain(seek_m=-1.0, roam_m=-1.0, roam_radius_m=-1.0)
+    assert b.seek_m == b.roam_m == b.roam_radius == math.inf
+    assert brain(seek_m=9.0).seek_m == 9.0                       # keine feste Obergrenze mehr
+    d = PetCfg()
+    assert d.seek_m < 0 and d.roam_m < 0 and d.roam_radius_m < 0   # RiderPi: ohne Grenze
+    n = Config.neutral().pet
+    assert n.seek_m == 0 and n.roam_m == 0                        # Simulator: wie früher
+
+
+def test_ohne_grenze_sucht_bis_zur_stelle_und_streift_bis_doesen():
+    k = Kin(brain(seek_m=-1.0, roam_m=-1.0, roam_radius_m=-1.0))
+    k.run(0.0, 30.0, weg_nach(3.0, dist=2.4, bearing=0.3))
+    assert 1.8 < k.moved <= 2.05                                   # 2,4 m - 0,4 m davor
+    k.run(30.0, 200.0)
+    assert k.moved > 2.5 and k.b._dozing and k.b.task is None
+
+
+def test_verdeckter_fusspunkt_verschiebt_letzte_stelle_nicht():
+    b = brain()
+    k = Kin(b)
+    k.run(0.0, 1.0, lambda t: [seen("person", 2.0, t, vs=0)])
+    k.run(1.0, 1.5, lambda t: [seen("person", 10.6, t, vs=0)])    # Fußpunkt hinter einer Kiste
+    assert abs(math.hypot(*b._last_pos) - 2.0) < 1e-6
