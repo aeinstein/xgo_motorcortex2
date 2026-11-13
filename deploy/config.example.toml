@@ -9,8 +9,8 @@
 control_hz = 20.0
 
 [robot]
-max_v = 0.15          # Sollwert vor den Faktoren unten; gesendet 0,12 -> 26 cm/s, 0,24 -> 50 cm/s (2026-11-05)
-max_w = 0.30          # ~108 °/s; Nutzer 2026-11-05: Drehen x2 (vorher 0.15)
+max_v = 0.5           # Nutzer 2026-11-13: 50 % (vorher 0.15); gesendet 0,12 -> 26 cm/s, 0,24 -> 50 cm/s, darüber nie gefahren
+max_w = 0.5           # ~180 °/s; Nutzer 2026-11-13: 50 % (vorher 0.30)
 manual_forward_gain = 2.0   # Nutzer 2026-11-05: Handsteuerung vorwärts wie rückwärts; v=0,12 -> 49 cm/s gefahren, v=0,15 -> u8 166 noch nicht
 level_after_standup = true   # Nutzer 2026-11-05: einmal nach jedem Aufstehen nivellieren (Totzone der Beine)
 vx_limit = 1.8           # gemessen 2026-11-05: Befehl 0,15 -> ~27 cm/s (Bahnprüfung rechnet damit)

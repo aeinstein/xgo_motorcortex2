@@ -14,8 +14,13 @@ class RobotCfg:
     vx_limit: float = 1.8          # Einheit der Firmware bei u8=0/255
     vyaw_limit_dps: float = 360.0  # Grad/s bei u8=0/255
     # Sicherheitsgrenzen für den Autonomiebetrieb (Anteil des Vollausschlags)
-    max_v: float = 0.15            # ~0.37 Firmware-Einheiten
-    max_w: float = 0.30            # ~90 °/s
+    # Nutzer 2026-11-13: beide auf 50 % des Firmware-Bereichs (vorher 0,15 / 0,30). 0,5 sind rechnerisch
+    # ~0,9 m/s und 180 °/s; über 0,24 (50 cm/s) ist nie gefahren worden.
+    max_v: float = 0.5
+    max_w: float = 0.5
+    # Harte Obergrenze für den gesendeten Fahr- und Drehwert, nach allen Faktoren (reverse_gain,
+    # manual_forward_gain) und der Geschwindigkeitsregelung: nie mehr als dieser Anteil des Vollausschlags
+    max_sent: float = 0.5
     # Rückwärts war 2026-11-02 viel schwächer (2 s mit u8 109 ~4 cm, mit 147 vorwärts 86 cm), daher
     # werden negative v beim Senden mit reverse_gain multipliziert; max_v begrenzt davor den
     # Sollwert. 1.0 = symmetrisch. Mit den Firmware-Patches vom 2026-11-05 setzt die Firmware beide
@@ -599,7 +604,7 @@ class PetCfg:
     wiggle_s: float = 1.2
     turn_kp: float = 1.5               # 1/s
     turn_deadband_deg: float = 8.0
-    turn_w: float = 0.30               # Nutzer 2026-11-13: Drehen x2 (vorher 0,20); robot.max_w = 0,30 begrenzt
+    turn_w: float = 0.40               # Nutzer 2026-11-13: Drehen x2 (vorher 0,20)
     turn_min_w: float = 0.06           # kleinere Lenkbefehle ignoriert die Firmware
     # Budgets, 0 = aus. Rückwärts ist blind und vorwärts sieht das Bodenmodell Stufen zu spät: nur mit
     # Beobachtung und nur, wo keine Treppe ist. Ohne Räder fährt er nie, Obergrenzen 0,30 m / 1,0 m.

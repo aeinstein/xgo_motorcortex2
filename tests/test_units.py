@@ -2979,3 +2979,24 @@ def test_config_schema_aktuell():
     import config_schema
     assert (Path(config_schema.ZIEL).read_text(encoding="utf-8") == config_schema.text()), \
         "web/config-schema.json veraltet: python tools/config_schema.py"
+
+
+def test_max_sent_deckelt_nach_faktoren():
+    """max_v 0,5 mit Faktor 2 (Handsteuerung vorwärts, rückwärts) und Geschwindigkeitsregelung: gesendet wird
+    höchstens max_sent, auch beim Drehen."""
+    from xgonav.robot import SimRobot
+    cfg = Config.neutral()
+    cfg.robot.reverse_gain = cfg.robot.manual_forward_gain = 2.0
+    cfg.robot.max_v = cfg.robot.max_w = cfg.robot.max_sent = 0.5
+    r = SimRobot(cfg.robot)
+    r.forward_gain = 2.0
+    r.v_trim = 0.1
+    for cur, soll in (((0.5, 0.0), 128 + round(0.5 * 127)), ((-0.5, 0.0), 128 - round(0.5 * 127)), ((0.1, 0.0), 128 + round(0.3 * 127))):
+        r._cur = cur
+        r._sent = None
+        r._send(time.monotonic() + 10)
+        assert abs(r._sent[0] - soll) <= 1, (cur, r._sent)
+    r._cur = (0.0, 0.9)
+    r._sent = None
+    r._send(time.monotonic() + 10)
+    assert abs(r._sent[1] - (128 + round(0.5 * 127))) <= 1

@@ -312,8 +312,11 @@ class Robot:
         self._cur = (v + dv, w + dw)
 
     def _send(self, now: float) -> None:
-        v = self.with_trim(self.v_nominal)
-        u = (norm_to_u8(v), norm_to_u8(self._cur[1]))
+        # Harte Obergrenze für alles, was an die Firmware geht: Faktoren (reverse_gain, manual_forward_gain) und
+        # die Geschwindigkeitsregelung wirken nach max_v und höben sonst darüber hinaus
+        m = self.cfg.max_sent
+        v = max(-m, min(m, self.with_trim(self.v_nominal)))
+        u = (norm_to_u8(v), norm_to_u8(max(-m, min(m, self._cur[1]))))
         keepalive = now - self._last_send_t > self.cfg.keepalive_s
         prev = self._sent
         if prev == u and not keepalive:

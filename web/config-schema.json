@@ -29,14 +29,20 @@
       {
        "key": "max_v",
        "typ": "float",
-       "default": 0.15,
-       "hilfe": "Sicherheitsgrenzen für den Autonomiebetrieb (Anteil des Vollausschlags) ~0.37 Firmware-Einheiten"
+       "default": 0.5,
+       "hilfe": "Sicherheitsgrenzen für den Autonomiebetrieb (Anteil des Vollausschlags) Nutzer 2026-11-13: beide auf 50 % des Firmware-Bereichs (vorher 0,15 / 0,30). 0,5 sind rechnerisch ~0,9 m/s und 180 °/s; über 0,24 (50 cm/s) ist nie gefahren worden."
       },
       {
        "key": "max_w",
        "typ": "float",
-       "default": 0.3,
-       "hilfe": "~90 °/s"
+       "default": 0.5,
+       "hilfe": ""
+      },
+      {
+       "key": "max_sent",
+       "typ": "float",
+       "default": 0.5,
+       "hilfe": "Harte Obergrenze für den gesendeten Fahr- und Drehwert, nach allen Faktoren (reverse_gain, manual_forward_gain) und der Geschwindigkeitsregelung: nie mehr als dieser Anteil des Vollausschlags"
       },
       {
        "key": "reverse_gain",
@@ -2243,8 +2249,8 @@
       {
        "key": "turn_w",
        "typ": "float",
-       "default": 0.3,
-       "hilfe": "Nutzer 2026-11-13: Drehen x2 (vorher 0,20); robot.max_w = 0,30 begrenzt"
+       "default": 0.4,
+       "hilfe": "Nutzer 2026-11-13: Drehen x2 (vorher 0,20)"
       },
       {
        "key": "turn_min_w",

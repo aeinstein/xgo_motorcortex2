@@ -39,10 +39,11 @@ Default = `config.py`; since 2026-11-12 these are the RiderPi values (`/opt/xgon
 ### `[robot]`
 | Key | Default | RiderPi | Unit / note |
 |---|---|---|---|
-| `max_v` | 0.15 (sim: 0.25) | | normalised, before the gains; sent 0.12 ≈ 26 cm/s, 0.24 ≈ 50 cm/s |
-| `max_w` | 0.3 (sim: 0.25) | | normalised; 0.25 ≈ 90 °/s (firmware scale assumed); RiderPi 0.15 → 0.30 on 2026-11-05 |
-| `manual_forward_gain` | 2.0 (sim: 1.0) | | multiplier for positive v, manual mode only (applied after `max_v`) |
-| `reverse_gain` | 2.0 (sim: 1.0) | | multiplier for negative v (applied after `max_v`) |
+| `max_v` | 0.5 (sim: 0.25) | | normalised; RiderPi 0.15 → 0.5 on 2026-11-13 (user), **never driven above 0.24**. Sent 0.12 ≈ 26 cm/s, 0.24 ≈ 50 cm/s. |
+| `max_sent` | 0.5 | | hard cap on the sent drive and turn value, after the gains below and `speed_ctrl` |
+| `max_w` | 0.5 (sim: 0.25) | | normalised; 0.25 ≈ 90 °/s (firmware scale assumed); RiderPi 0.30 → 0.5 on 2026-11-13 (user) |
+| `manual_forward_gain` | 2.0 (sim: 1.0) | | multiplier for positive v, manual mode only (applied after `max_v`, capped by `max_sent`) |
+| `reverse_gain` | 2.0 (sim: 1.0) | | multiplier for negative v (applied after `max_v`, capped by `max_sent`) |
 | `level_pulse_s` | 3.0 | | length of one leveling pulse (roll command 0, firmware `roll_balance` on, then off) |
 | `level_after_standup` | true (sim: false) | | one pulse after each stand-up, 2.5 s after it; web button „Neu ausrichten“ triggers the same pulse |
 | `vx_limit` | 1.8 (sim: 1.5) | | m/s per firmware unit (measured 2026-11-05: command 0.15 → ~27 cm/s); path check, follow prediction, odometry fallback |
@@ -208,7 +209,7 @@ All keys with comments: `PetCfg` in `xgonav/config.py`.
 | `roam_m`, `roam_radius_m` | −1, −1 = no limit (sim: 0, 1.0) | nobody around: roam in legs per phase without encounter (ends at `doze_s`); radius around the stand-up spot |
 | `look` | true | look around (turning only) after a person is gone and when idle |
 | `roam_after_s`, `roam_repeat_s`, `roam_leg_m`, `roam_free_min`, `roam_battery` | 30, 45, 0.4, 0.55, 40 % | |
-| `seek_stop_m`, `drive_v`, `look_w`, `look_step_deg`, `look_steps`, `look_pause_s` | 0.4, 0.12 (sim: 0.08), 0.24 (sim: 0.12), 90, 4, 1.5 | RiderPi faster since 2026-11-13 (user); `turn_w` 0.30 (sim: 0.20), capped by `robot.max_w` |
+| `seek_stop_m`, `drive_v`, `look_w`, `look_step_deg`, `look_steps`, `look_pause_s` | 0.4, 0.12 (sim: 0.08), 0.24 (sim: 0.12), 90, 4, 1.5 | RiderPi faster since 2026-11-13 (user); `turn_w` 0.40 (sim: 0.20) |
 | `hear`, `hear_min_db`, `hear_front_deg`, `hear_turns`, `hear_listen_s`, `hear_repeat_s` | true, 8, 20, 3, 3.5, 6 | hearing ([display-emotions.md](display-emotions.md#hearing-sound-direction-audiomd)); needs `[ortung]` with `pet` in `modes` |
 | `hear_startle_db`, `hear_quiet_s` | 20, 8 | sudden loud sound after silence |
 | `call_events`, `call_m`, `call_repeat_s` | 3, −1 = no limit, 3 m per call (sim: 0), 45 | calling: drive toward a voice from the front, never more than `seek_m` |
