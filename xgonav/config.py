@@ -686,9 +686,9 @@ class WlanCfg:
     hold_s: float = 3.0                # so lange halten (im Ruhemodus liest xgonav nur 1x/s)
     cancel_buttons: int = 2            # kurz drücken bricht ab (B)
     qr_hz: float = 5.0                 # QR-Suche höchstens so oft
-    qr_timeout_s: float = 60.0         # ohne Code danach Hotspot
+    qr_timeout_s: float = 60.0         # ohne Code danach Hotspot (Countdown am Display)
     hotspot_ssid: str = "xgo-rider"
-    hotspot_timeout_s: float = 600.0   # Hotspot ohne Eingabe so lange, dann alte Verbindung zurück
+    hotspot_timeout_s: float = 60.0    # Hotspot so lange (Countdown am Display), dann alte Verbindung zurück
     helper: str = "/usr/local/sbin/xgo-wlan"   # root-Teil (deploy/xgo-wlan, sudo-Regel deploy/sudoers-xgonav-wlan)
 
 

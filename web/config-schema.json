@@ -539,7 +539,7 @@
        "key": "qr_timeout_s",
        "typ": "float",
        "default": 60.0,
-       "hilfe": "ohne Code danach Hotspot"
+       "hilfe": "ohne Code danach Hotspot (Countdown am Display)"
       },
       {
        "key": "hotspot_ssid",
@@ -550,8 +550,8 @@
       {
        "key": "hotspot_timeout_s",
        "typ": "float",
-       "default": 600.0,
-       "hilfe": "Hotspot ohne Eingabe so lange, dann alte Verbindung zurück"
+       "default": 60.0,
+       "hilfe": "Hotspot so lange (Countdown am Display), dann alte Verbindung zurück"
       },
       {
        "key": "helper",

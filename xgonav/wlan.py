@@ -13,6 +13,7 @@ die Bildverarbeitung; QR-Suche höchstens [wlan] qr_hz, Display-Bild nur bei Än
 from __future__ import annotations
 
 import logging
+import math
 import secrets
 import subprocess
 import threading
@@ -181,6 +182,7 @@ class WlanSetup:
         self._qr = cv2.QRCodeDetector()
         self._job = ""                      # laufender Helfer-Auftrag
         self._off_pending = False           # Hotspot schließen, sobald der Helfer frei ist
+        self.rest_s: int | None = None      # Countdown (QR-Suche, Hotspot) in ganzen Sekunden
         self._bgr: np.ndarray | None = None
         self.version = 0                    # erhöht sich bei jeder Änderung der Anzeige
         self._lcd_cache: tuple[int, np.ndarray] | None = None
@@ -198,7 +200,7 @@ class WlanSetup:
 
     def status(self) -> dict:
         return {"state": self.state, "text": self.text, "detail": self.detail, "ssid": self.ssid, "ip": self.ip,
-                "hotspot": self.cfg.hotspot_ssid if self.state == "hotspot" else None}
+                "hotspot": self.cfg.hotspot_ssid if self.state == "hotspot" else None, "rest_s": self.rest_s}
 
     def _run(self, cmd: str, stdin: str = "", timeout: float = 60.0) -> None:
         self._job = cmd
@@ -243,6 +245,11 @@ class WlanSetup:
             self._set("ende", now, "Fertig", self.detail)
         elif st == "fehler" and dt >= self.FEHLER_S:
             self._set("qr", now, "WLAN-QR vor die Kamera halten")
+        frist = {"qr": self.cfg.qr_timeout_s, "hotspot": self.cfg.hotspot_timeout_s}.get(self.state)
+        rest = None if frist is None else max(0, math.ceil(frist - (now - self.t_state)))
+        if rest != self.rest_s:
+            self.rest_s = rest
+            self.version += 1
 
     def _job_done(self, job: str, res: tuple[int, str], now: float) -> None:
         rc, out = res
@@ -309,33 +316,56 @@ class WlanSetup:
         font = cv2.FONT_HERSHEY_SIMPLEX
         if self.state == "hotspot":
             img = np.full((240, 320, 3), 255, np.uint8)
-            qr = _qr_image(wifi_qr_text(self.cfg.hotspot_ssid, self.hotspot_pw), 150)
+            qr = _qr_image(wifi_qr_text(self.cfg.hotspot_ssid, self.hotspot_pw), 140)
             if qr is not None:
-                img[10:160, 5:155] = qr
-            zeilen = [("WLAN:", 0.45), (_ascii(self.cfg.hotspot_ssid), 0.55), ("Passwort:", 0.45),
-                      (self.hotspot_pw, 0.7)]
-            y = 40
-            for t, s in zeilen:
-                cv2.putText(img, t, (162, y), font, s, (0, 0, 0), 2 if s > 0.5 else 1, cv2.LINE_AA)
-                y += 28
-            cv2.putText(img, "Dann im Browser:", (8, 185), font, 0.5, (0, 0, 0), 1, cv2.LINE_AA)
-            cv2.putText(img, WLAN_URL, (8, 210), font, 0.5, (160, 0, 0), 1, cv2.LINE_AA)
-            cv2.putText(img, "B = Abbruch", (8, 232), font, 0.4, (90, 90, 90), 1, cv2.LINE_AA)
+                img[6:146, 4:144] = qr
+            zeilen = [("WLAN:", 0.45, 30), (_ascii(self.cfg.hotspot_ssid), 0.55, 52), ("Passwort:", 0.45, 82),
+                      (self.hotspot_pw, 0.7, 108)]
+            for t, sc, y in zeilen:
+                cv2.putText(img, t, (152, y), font, sc, (0, 0, 0), 2 if sc > 0.5 else 1, cv2.LINE_AA)
+            _countdown(img, (282, 160), 28, self.rest_s, self.cfg.hotspot_timeout_s, hell=True)
+            cv2.putText(img, "Dann im Browser:", (8, 172), font, 0.5, (0, 0, 0), 1, cv2.LINE_AA)
+            cv2.putText(img, WLAN_URL, (8, 202), font, 0.5, (160, 0, 0), 1, cv2.LINE_AA)
+            cv2.putText(img, "B = Abbruch", (8, 230), font, 0.4, (90, 90, 90), 1, cv2.LINE_AA)
             return img
         if self.state == "qr" and self._bgr is not None:
             img = cv2.resize(self._bgr, (320, 240), interpolation=cv2.INTER_AREA)
             cv2.rectangle(img, (80, 60), (240, 180), (0, 255, 255), 1)      # Mitte: dort sucht er vergrößert
         else:
             img = np.zeros((240, 320, 3), np.uint8)
+        if self.state == "qr":
+            _countdown(img, (280, 40), 32, self.rest_s, self.cfg.qr_timeout_s)
         farbe = {"ok": (0, 200, 0), "fehler": (0, 0, 255)}.get(self.state, (255, 255, 255))
         cv2.rectangle(img, (0, 180), (320, 240), (0, 0, 0), -1)
         cv2.putText(img, _ascii(self.text)[:34], (6, 202), font, 0.5, farbe, 1, cv2.LINE_AA)
         unten = _ascii(self.detail)[:40]
         if self.state == "qr":
-            rest = max(0, int(self.cfg.qr_timeout_s - (time.monotonic() - self.t_state)))
-            unten = (unten + "  " if unten else "") + f"Hotspot in {rest} s, B = Abbruch"
+            unten = (unten + "  " if unten else "") + "danach Hotspot, B = Abbruch"
         cv2.putText(img, unten, (6, 228), font, 0.42, (200, 200, 200), 1, cv2.LINE_AA)
         return img
+
+
+def _countdown(img: np.ndarray, c: tuple[int, int], r: int, rest: int | None, total: float,
+               hell: bool = False) -> None:
+    """WLAN-Zeichen mit Ring, der mit der Zeit abläuft, und den Restsekunden darunter."""
+    if rest is None:
+        return
+    vg, hg = ((0, 0, 0), (225, 225, 225)) if hell else ((255, 255, 255), (60, 60, 60))
+    akzent = (0, 160, 255) if rest > 10 else (0, 0, 255)          # orange, die letzten 10 s rot
+    if not hell:
+        cv2.circle(img, c, r + 4, (0, 0, 0), -1, cv2.LINE_AA)
+    cv2.circle(img, c, r, hg, 3, cv2.LINE_AA)
+    anteil = max(0.0, min(1.0, rest / max(1.0, total)))
+    if anteil > 0:
+        cv2.ellipse(img, c, (r, r), -90, 0, 360 * anteil, akzent, 3, cv2.LINE_AA)
+    # WLAN-Zeichen: drei Bögen und ein Punkt, oben im Ring
+    x, y = c[0], c[1] + 1
+    for rr in (6, 11, 16):
+        cv2.ellipse(img, (x, y), (rr, rr), 0, 225, 315, vg, 2, cv2.LINE_AA)
+    cv2.circle(img, (x, y), 2, vg, -1, cv2.LINE_AA)
+    t = str(rest)
+    (tw, th), _ = cv2.getTextSize(t, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
+    cv2.putText(img, t, (x - tw // 2, y + 6 + th), cv2.FONT_HERSHEY_SIMPLEX, 0.5, vg, 1, cv2.LINE_AA)
 
 
 def _qr_image(text: str, size: int) -> np.ndarray | None:
