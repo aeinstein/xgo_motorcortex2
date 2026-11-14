@@ -76,3 +76,27 @@ def test_gridmap_render_center():
     assert abs(z - 150) < 10 and abs(s - 150) < 10
     assert abs(m.render(200, 4.03)[3] - 4.05) < 1e-9             # Kante auf ganze Zellen (5 cm)
     assert m.image(120).shape == (120, 120, 3)
+
+
+def test_gridmap_render_merkkarte():
+    """Punkte der Merkkarte werden nur gezeichnet (gelb, bestätigte orangerot), nie eingetragen."""
+    from xgonav.config import Config
+    from xgonav.geometry import CamGeometry
+    from xgonav.gridmap import GridMap
+    m = GridMap(Config.neutral().grid, CamGeometry(640, 480, 91.0, 1.39, 43.0, 85.0), 160, 120)
+    m.move(0.0, np.pi / 2)                                       # Rider schaut nach links (+y)
+    gelb = lambda img: np.argwhere((img[:, :, 2] > 200) & (img[:, :, 1] > 180) & (img[:, :, 0] < 60))
+    orot = lambda img: np.argwhere((img[:, :, 2] > 200) & (img[:, :, 1] > 50) & (img[:, :, 1] < 90) & (img[:, :, 0] < 30))
+    lo = m.lo.copy()
+    pts = np.array([[1.0, 0.0], [1.0, 0.5]])                     # 1 m voraus, einer davon 0,5 m links
+    img = m.render(200, 4.0, None, (pts, pts[:1]))[0]
+    assert (m.lo == lo).all()                                    # Karte unverändert
+    z, s = orot(img).mean(0)                                     # bestätigt: 1 m voraus = im Bild 1 m links
+    assert abs(z - 100) < 3 and abs(s - 50) < 3
+    z, s = gelb(img).mean(0)                                     # unbestätigt: dazu 0,5 m links vom Rider = unten
+    assert abs(z - 125) < 3 and abs(s - 50) < 3
+    leer = m.render(200, 4.0)[0]                                 # ohne Punkte: wieder weg
+    assert not len(gelb(leer)) and not len(orot(leer))
+    assert not len(gelb(m.render(200, 4.0, None, (np.zeros((0, 2)), None))[0]))
+    m.pose_ok = False                                            # Pose unbekannt: Punkte hätten keinen Ort
+    assert not len(gelb(m.render(200, 4.0, None, (pts, None))[0]))

@@ -407,15 +407,18 @@ class GridCfg:
     enabled: bool = True
     resolution_m: float = 0.05
     size_m: float = 16.0               # Kantenlänge, Start in der Mitte
-    # Treffer nur bis hierhin: Kamera nur 12,8 cm hoch, eine Bildzeile sind bei 2 m schon ~40 cm
-    max_range_m: float = 1.25
+    # Treffer nur bis hierhin: Kamera nur 12,8 cm hoch, eine Bildzeile sind bei 2 m schon ~40 cm.
+    # 1,5 seit 2026-11-14 (Nutzer: Hindernisse schon aus 1,5 m eintragen); vorher und im Simulator 1,25
+    max_range_m: float = 1.5
     min_range_m: float = 0.15          # davor sieht die Kamera den Boden nicht
     # Treffer erst eintragen, wenn dieselbe Stelle (± confirm_cells Zellen) aus Entfernungen getroffen wurde, die
     # sich um mindestens so viel unterscheiden (m). Spiegelungen im glänzenden Boden und Fugen wandern mit dem
     # Rider und werden so nie belegt (Anzeige: orange). Aus Drehungen auf der Stelle allein entsteht nichts.
-    # 0 = aus (jeder Treffer zählt). RiderPi 0.2 (2026-11-08: Fensterunterkante gespiegelt, doppelte Wand).
+    # 0 = aus (jeder Treffer zählt). RiderPi 0.2 ab 2026-11-08 (Fensterunterkante gespiegelt, doppelte Wand),
+    # seit 2026-11-14 wieder 0: Mit dem Bodennetz (FloorNet) genügt eine Sichtung (Nutzer); mit 0.2 erschienen
+    # Hindernisse erst aus der Nähe und am Bildrand oft gar nicht.
     # Simulator explore 120 s: Wände 82 % (aus) / 57 % (±1 Zelle) / 73 % (±2 Zellen), Präzision 0,90 / 0,95 / 0,93.
-    confirm_dr_m: float = 0.2
+    confirm_dr_m: float = 0.0
     confirm_cells: int = 2
     # Punkte der Merkkarte, vor denen die Bahnprüfung bremst, gelten in der Raumkarte als bestätigt und belegt
     # (auch ohne confirm_dr_m): Was ihn bremst, steht in der Karte, und der Planer fährt darum herum.
@@ -425,7 +428,10 @@ class GridCfg:
     l_occ: float = 0.5                 # zwei Treffer bis "belegt" (l_show): ein Ausreißer sperrt nichts
     free_margin_m: float = 0.10        # Freistrahl endet so weit vor der Grenze (Messrauschen)
     free_margin_quad: float = 0.05     # dazu so viel x Entfernung² (der Fehler wächst quadratisch)
-    free_range_m: float = 1.1          # Freistrahlen bis hierhin (Treffer nur bis max_range_m); 0 = wie max_range_m
+    # Freistrahlen bis hierhin (Treffer nur bis max_range_m); 0 = wie max_range_m. RiderPi 1,1 ab 2026-11-06 (eine
+    # Stufe wurde aus > 1 m als Boden gesehen und bei 1,5 m als frei eingetragen), seit 2026-11-14 wieder 1,5
+    # (Nutzer: offenen Boden so weit sehen wie Hindernisse; mit dem Bodennetz, nicht gefahren)
+    free_range_m: float = 1.5
     driven_free_r_m: float = 0.10      # gefahrener Weg gilt so breit als frei; 0 = aus
     max_turn_dps: float = 40.0         # bei schnellerer Drehung nichts eintragen (Unschärfe, Pose)
     occ_free_factor: float = 0.5       # schon belegte Zellen baut ein Freistrahl nur so stark ab
@@ -527,7 +533,10 @@ class ExploreCfg:
     gain_ref_m2: float = 2.0
     gain_bonus_s: float = 3.0
     travel_mps: float = 0.35           # Fahrzeit-Schätzung (v 0,20 x vx_limit 1,8 = 0,36)
-    turn_dps: float = 40.0             # Drehzeit-Schätzung
+    # Drehzeit-Schätzung: Grad zur Stelle / turn_dps zählt wie Fahrzeit. Kleiner = Geradeaus wird bevorzugt.
+    # 15 seit 2026-11-14 (Nutzer: nicht immer drehen, weil etwas anderes näher ist): 90° wiegen wie 2,1 m
+    # Fahrt, 180° wie 4,2 m; vorher und im Simulator 40 (90° wie 0,8 m)
+    turn_dps: float = 15.0
     # Näher als roll_m am Ziel: alle roll_every_s neu planen statt alle home.replan_s. Die Grenze weicht beim
     # Anfahren zurück, das Ziel wandert mit, und er hält nicht alle 0,7-1 m an (RiderPi 2026-11-11: 26 Halte
     # in 348 s).
@@ -666,6 +675,9 @@ class PetCfg:
     hear_turns: int = 3                # höchstens so viele Drehungen je Geräusch
     hear_listen_s: float = 3.5         # nach dem Drehen so lange auf das nächste Geräusch warten
     hear_repeat_s: float = 6.0         # nach einem Horchen frühestens wieder
+    # Ab diesem Winkel kommt das Geräusch ganz klar von links oder rechts: dreht auch in der Sperrzeit
+    # hear_repeat_s hin (Nutzer 2026-11-14). 90 oder mehr = Sperre gilt immer.
+    hear_side_deg: float = 45.0
     hear_startle_db: float = 20.0      # nach hear_quiet_s Stille gleich so laut und niemand zu sehen: zuckt zusammen
     hear_quiet_s: float = 8.0
     # Rufen: Stimme hält von vorn an und niemand ist zu sehen -> sucht dort (call_events Meldungen). Fährt
@@ -884,7 +896,7 @@ NEUTRAL = {"pet.call_m": 0.0, "pet.come_m": 0.0, "pet.drive_v": 0.08, "pet.look_
            "behavior.turn_w": 0.18, "behavior.search_timeout_s": 20.0, "behavior.height_search_mm": 115.0,
            "behavior.height_fast_mm": 70.0, "output.lcd_fifo": "/tmp/lcd0", "cpu.main_cpus": [],
            "cpu.detector_cpus": [], "cpu.render_cpus": [], "cpu.freespace_cpus": [], "odom.scale_left": 1.0,
-           "odom.scale_right": 1.0, "grid.confirm_dr_m": 0.0, "grid.free_range_m": 1.5, "grid.yaw_source": "räder",
+           "odom.scale_right": 1.0, "explore.turn_dps": 40.0, "grid.confirm_dr_m": 0.0, "grid.max_range_m": 1.25, "grid.free_range_m": 1.5, "grid.yaw_source": "räder",
            "reloc.enabled": False, "reloc.track": False}
 
 

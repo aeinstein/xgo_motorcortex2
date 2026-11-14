@@ -875,6 +875,23 @@ def test_horchen_nicht_waehrend_eigener_drehung():
     assert b.task is None and b.n_heard == 5
 
 
+def test_horchen_sperre_nicht_bei_klarer_seite():
+    """In der Sperrzeit nach einem Horchen dreht er nur, wenn das Geräusch ganz klar von der Seite kommt."""
+    for grad, dreht in ((30.0, False), (60.0, True), (-60.0, True)):
+        b = brain()
+        b.update(Sense(t=0.0, yaw=0.0))
+        b._cool["horchen"] = 100.0                               # eben erst gehorcht
+        b.update(Sense(t=1.0, yaw=0.0, heard=Heard(key=1.0, bearing=math.radians(grad), db=15.0)))
+        assert (b.task == "horchen") == dreht, grad
+        if dreht:
+            assert b.phase == "drehen" and b._look_dir == math.copysign(1.0, grad)
+    b = brain(hear_side_deg=90.0)                                # Sperre gilt immer
+    b.update(Sense(t=0.0, yaw=0.0))
+    b._cool["horchen"] = 100.0
+    b.update(Sense(t=1.0, yaw=0.0, heard=Heard(key=1.0, bearing=math.radians(80.0), db=15.0)))
+    assert b.task is None
+
+
 def test_horchen_aus():
     b = brain(hear=False)
     _, yaw, _, acts, evs = hoeren(b, 0.0, 15.0, 60.0)

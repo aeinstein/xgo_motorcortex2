@@ -66,7 +66,7 @@ def make_grid(cfg: Config, body_h: float) -> GridMap:
 
 
 def replay(data: dict, sets: dict, pitch: str, pose: str, max_pitch: float, max_turn: float):
-    cfg = Config()
+    cfg = Config.neutral()          # Aufnahmen stammen aus dem Simulator (sim_run nimmt Config.neutral())
     apply_overrides(cfg, data["overrides"])
     apply_overrides(cfg, sets)
     cfg.grid.native = False
@@ -87,7 +87,7 @@ def replay(data: dict, sets: dict, pitch: str, pose: str, max_pitch: float, max_
 
 def rays(data: dict, pitch: str) -> None:
     """Gemessene Bodengrenze gegen die wahre Entfernung entlang desselben Strahls."""
-    cfg = Config()
+    cfg = Config.neutral()          # Aufnahmen stammen aus dem Simulator (sim_run nimmt Config.neutral())
     apply_overrides(cfg, data["overrides"])
     g = make_grid(cfg, data["obs"][0]["body_h"])
     scene = SCENES[data["scene"]]()
@@ -279,7 +279,7 @@ def reloc_cmd(a) -> None:
     for f in a.files:
         with open(f, "rb") as fh:
             data = pickle.load(fh)
-        cfg = Config()
+        cfg = Config.neutral()
         apply_overrides(cfg, data["overrides"])
         apply_overrides(cfg, sets)
         cfg.grid.native = False

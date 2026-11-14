@@ -322,6 +322,22 @@ def serve(app: App, host: str, port: int, fps: int, render_cpus=None) -> Threadi
                 return self._send(200, b'{"ok":true}')
             self._send(404, b"{}")
 
+        def _merk(self):
+            """Punkte der Merkkarte für die Raumkarte (alle, bestätigte); None ohne laufende Bildverarbeitung.
+            Nur auf Anfrage (Browser, 1x je s) und im Bild-Thread; die Felder der Merkkarte werden nie
+            verändert, nur ersetzt."""
+            lm = getattr(app, "lmap", None)
+            if lm is None or not app.pipeline_on:
+                return None
+            pts = lm.pts
+            if not len(pts):
+                return None
+            try:
+                best = lm.confirmed_later(lm.max_range)()
+            except Exception:                              # Felder mitten im Wechsel: dieses Bild ohne
+                best = None
+            return pts, best
+
         def _map_png(self, q):
             gm = app.gridmap
             if gm is None:
@@ -338,7 +354,7 @@ def serve(app: App, host: str, port: int, fps: int, render_cpus=None) -> Threadi
             except (ValueError, KeyError):
                 return self._send(400, b'{"error":"px/view/cx/cy ungueltig"}')
             pin_thread(render_cpus, "Bild-Thread", quiet=True)
-            img, mx, my, kante = gm.render(px, view, center)
+            img, mx, my, kante = gm.render(px, view, center, self._merk())
             ok, png = cv2.imencode(".png", img)
             if not ok:
                 return self._send(500, b'{"error":"PNG"}')

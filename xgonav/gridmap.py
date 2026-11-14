@@ -528,12 +528,15 @@ class GridMap:
     def image(self, px: int = 480, view_m: float | None = None) -> np.ndarray:
         return self.render(px, view_m)[0]
 
-    def render(self, px: int = 480, view_m: float | None = None, center: tuple | None = None):
+    def render(self, px: int = 480, view_m: float | None = None, center: tuple | None = None,
+               merk: tuple | None = None):
         """Karte als BGR-Bild, Ausschnitt view_m x view_m um center (Karten-Koordinaten in m),
         ohne center um die aktuelle Pose. Oben = Karten-x (vorn beim Start), links = Karten-y
         (links beim Start). Grau unbekannt, hell frei, dunkel belegt; Weg grün, Plan cyan, Start
-        blau, Pose als rotes Dreieck, Maßstab 1 m. Rückgabe: Bild, Mitte x, Mitte y, Kante in m
-        (auf ganze Zellen gerundet)."""
+        blau, Pose als rotes Dreieck, Maßstab 1 m. merk: Punkte der Merkkarte (N x 2 im Rider-KS, davon
+        bestätigt M x 2 oder None): gelb, bestätigte (bremsen die Bahnprüfung) orangerot. Sie werden nur
+        gezeichnet, nicht eingetragen: Vergisst die Merkkarte sie, fehlen sie im nächsten Bild.
+        Rückgabe: Bild, Mitte x, Mitte y, Kante in m (auf ganze Zellen gerundet)."""
         view_m = view_m or self.cfg.view_m
         with self._lock:
             lo = self.lo.copy()
@@ -580,6 +583,19 @@ class GridMap:
                 q = to_px(a, b)
                 cv2.circle(img, q, 5, (200, 60, 200), -1)
                 cv2.putText(img, str(i), (q[0] + 6, q[1] - 6), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (200, 60, 200), 1, cv2.LINE_AA)
+        if merk is not None and pose_ok:
+            ct, st = math.cos(th), math.sin(th)
+            rad = max(1, int(round(0.02 / self.res * k)))
+            for pts, farbe in ((merk[0], (0, 220, 255)), (merk[1], (0, 70, 255))):
+                if pts is None or not len(pts):
+                    continue
+                a = np.asarray(pts, float)
+                gx, gy = x + a[:, 0] * ct - a[:, 1] * st, y + a[:, 0] * st + a[:, 1] * ct
+                u_ = np.rint((n_px / 2 - (gy - my) / self.res) * k).astype(np.int64)
+                v_ = np.rint((n_px / 2 - (gx - mx) / self.res) * k).astype(np.int64)
+                im = (u_ >= 0) & (u_ < px) & (v_ >= 0) & (v_ < px)
+                for q in set(zip(u_[im].tolist(), v_[im].tolist())):      # je Bildpunkt einmal
+                    cv2.circle(img, q, rad, farbe, -1)
         sp = to_px(sx, sy)
         cv2.circle(img, sp, max(4, int(round(0.08 / self.res * k))), (230, 110, 30), 2)
         cv2.line(img, sp, to_px(sx + 0.16 * math.cos(sth), sy + 0.16 * math.sin(sth)), (230, 110, 30), 2)

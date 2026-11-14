@@ -444,8 +444,8 @@ class PetBrain:
         self._ear_gaze = (t + 2.5, h.bearing)                         # die Augen wandern zuerst
         if len(self._ear_dirs) < 2 and self._ready("horch", t, c.hear_repeat_s):
             self._react(t, None, "horch")
-        if not frei:
-            return
+        if not frei and abs(h.bearing) < math.radians(c.hear_side_deg):
+            return                                                    # Sperrzeit; ganz klar von der Seite gilt sie nicht
         if abs(h.bearing) >= front:                                   # klar von der Seite: gleich hindrehen
             self._ear_dirs.clear()
             self._hear_start(s, h.bearing)

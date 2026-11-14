@@ -21,7 +21,7 @@ Single device: RiderPi, CM4 2 GB, kernel 6.6.74+rpt-rpi-v8, OV5647 wide-angle, f
 | FloorNet | shadow mode only, makes no decisions; preset goal against hand lines missed ([floornet.md](floornet.md)) |
 | IMU sync while balancing | not verified |
 | Patch 0003 (`force_yaw`) | not tested |
-| Room map | used by `home` and `explore`; drifts (no markers); glossy floors mirror window sills and furniture edges as obstacles at d = D·h_cam/(h_edge + h_cam), RiderPi suppresses them with `confirm_dr_m` (only after the Rider moved); rug edges stay obstacles; loading assumes the Rider stands at the start point. The boundary row is entered as reported (no row correction since 2026-11-11); its error at a wall base is not measured |
+| Room map | used by `home` and `explore`; drifts (no markers); glossy floors mirror window sills and furniture edges as obstacles at d = D·h_cam/(h_edge + h_cam), `confirm_dr_m` suppressed them until 2026-11-14 (now 0: one sighting is entered, relying on FloorNet); rug edges stay obstacles; loading assumes the Rider stands at the start point. The boundary row is entered as reported (no row correction since 2026-11-11); its error at a wall base is not measured |
 
 ## System software
 

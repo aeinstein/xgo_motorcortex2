@@ -1158,8 +1158,8 @@
       {
        "key": "max_range_m",
        "typ": "float",
-       "default": 1.25,
-       "hilfe": "Treffer nur bis hierhin: Kamera nur 12,8 cm hoch, eine Bildzeile sind bei 2 m schon ~40 cm"
+       "default": 1.5,
+       "hilfe": "Treffer nur bis hierhin: Kamera nur 12,8 cm hoch, eine Bildzeile sind bei 2 m schon ~40 cm. 1,5 seit 2026-11-14 (Nutzer: Hindernisse schon aus 1,5 m eintragen); vorher und im Simulator 1,25"
       },
       {
        "key": "min_range_m",
@@ -1170,8 +1170,8 @@
       {
        "key": "confirm_dr_m",
        "typ": "float",
-       "default": 0.2,
-       "hilfe": "Treffer erst eintragen, wenn dieselbe Stelle (± confirm_cells Zellen) aus Entfernungen getroffen wurde, die sich um mindestens so viel unterscheiden (m). Spiegelungen im glänzenden Boden und Fugen wandern mit dem Rider und werden so nie belegt (Anzeige: orange). Aus Drehungen auf der Stelle allein entsteht nichts. 0 = aus (jeder Treffer zählt). RiderPi 0.2 (2026-11-08: Fensterunterkante gespiegelt, doppelte Wand). Simulator explore 120 s: Wände 82 % (aus) / 57 % (±1 Zelle) / 73 % (±2 Zellen), Präzision 0,90 / 0,95 / 0,93."
+       "default": 0.0,
+       "hilfe": "Treffer erst eintragen, wenn dieselbe Stelle (± confirm_cells Zellen) aus Entfernungen getroffen wurde, die sich um mindestens so viel unterscheiden (m). Spiegelungen im glänzenden Boden und Fugen wandern mit dem Rider und werden so nie belegt (Anzeige: orange). Aus Drehungen auf der Stelle allein entsteht nichts. 0 = aus (jeder Treffer zählt). RiderPi 0.2 ab 2026-11-08 (Fensterunterkante gespiegelt, doppelte Wand), seit 2026-11-14 wieder 0: Mit dem Bodennetz (FloorNet) genügt eine Sichtung (Nutzer); mit 0.2 erschienen Hindernisse erst aus der Nähe und am Bildrand oft gar nicht. Simulator explore 120 s: Wände 82 % (aus) / 57 % (±1 Zelle) / 73 % (±2 Zellen), Präzision 0,90 / 0,95 / 0,93."
       },
       {
        "key": "confirm_cells",
@@ -1218,8 +1218,8 @@
       {
        "key": "free_range_m",
        "typ": "float",
-       "default": 1.1,
-       "hilfe": "Freistrahlen bis hierhin (Treffer nur bis max_range_m); 0 = wie max_range_m"
+       "default": 1.5,
+       "hilfe": "Freistrahlen bis hierhin (Treffer nur bis max_range_m); 0 = wie max_range_m. RiderPi 1,1 ab 2026-11-06 (eine Stufe wurde aus > 1 m als Boden gesehen und bei 1,5 m als frei eingetragen), seit 2026-11-14 wieder 1,5 (Nutzer: offenen Boden so weit sehen wie Hindernisse; mit dem Bodennetz, nicht gefahren)"
       },
       {
        "key": "driven_free_r_m",
@@ -1739,8 +1739,8 @@
       {
        "key": "turn_dps",
        "typ": "float",
-       "default": 40.0,
-       "hilfe": "Drehzeit-Schätzung"
+       "default": 15.0,
+       "hilfe": "Drehzeit-Schätzung: Grad zur Stelle / turn_dps zählt wie Fahrzeit. Kleiner = Geradeaus wird bevorzugt. 15 seit 2026-11-14 (Nutzer: nicht immer drehen, weil etwas anderes näher ist): 90° wiegen wie 2,1 m Fahrt, 180° wie 4,2 m; vorher und im Simulator 40 (90° wie 0,8 m)"
       },
       {
        "key": "roll_m",
@@ -2515,6 +2515,12 @@
        "typ": "float",
        "default": 6.0,
        "hilfe": "nach einem Horchen frühestens wieder"
+      },
+      {
+       "key": "hear_side_deg",
+       "typ": "float",
+       "default": 45.0,
+       "hilfe": "Ab diesem Winkel kommt das Geräusch ganz klar von links oder rechts: dreht auch in der Sperrzeit hear_repeat_s hin (Nutzer 2026-11-14). 90 oder mehr = Sperre gilt immer."
       },
       {
        "key": "hear_startle_db",

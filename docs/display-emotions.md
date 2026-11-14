@@ -162,7 +162,7 @@ Input: reports of `xgonav/ortung.py` (≈ 1 per second of sound, direction folde
 
 | Situation | Reaction |
 |---|---|
-| sound from the side, nobody in view | eyes move there, sound `horch`, turns to it at once (`look_w`; a sound near the front needs two reports), listens `hear_listen_s` (3.5 s). Again from the side → the source was behind: turns by the remainder (180° − reading); at most `hear_turns` (3). From the front → done. Silence → `doubt` |
+| sound from the side, nobody in view | eyes move there, sound `horch`, turns to it at once (`look_w`; a sound near the front needs two reports), listens `hear_listen_s` (3.5 s). After a listen he turns again only after `hear_repeat_s` (6 s), unless the sound comes from ≥ `hear_side_deg` (45°) to the left or right (2026-11-14). Again from the side → the source was behind: turns by the remainder (180° − reading); at most `hear_turns` (3). From the front → done. Silence → `doubt` |
 | sound while roaming (he turns and drives almost all the time, no direction then) | stops roaming, stands and listens; the next report gives the direction |
 | target appears while turning | `surprised`, found sound; then talks back (below) |
 | come here: a person in view farther than `come_stop_m` + 0.3 m speaks (`come_events` = 1 report, a short call is enough) | happy sound, drives toward the person and stops `come_stop_m` (0.8 m) short, following while they move; at most `come_m` per time (RiderPi −1 = no limit, simulator 0), again after `come_repeat_s` (8 s). Ends when the person is lost for 1 s (then the normal search) or the arc is blocked |
