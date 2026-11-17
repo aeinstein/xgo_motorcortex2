@@ -59,7 +59,7 @@ cat /proc/XGORider/serial_stats; cat /proc/XGORider/imu
 | `height` | rw | u8 0..255 (web UI min 43); read: last written value, empty until first write; not reset when the firmware stands up at 128 | 0x35 |
 | `roll` | rw | int −20..20 °, mapped linearly to 0..255; read: last written value, empty until first write | 0x36 |
 | `roll_balance` | w | 0/1 | 0x61 |
-| `action` | w | u8; R-1.1.6+patch: 1..6 actions, 254 disarm/emergency stop, 255 arm, 0 = no action | 0x3e |
+| `action` | w | u8; R-1.1.6+patch: 1..6 actions, 237 restart the ESP32 (firmware patch 0018, refused while balancing), 253 stand up from lying, 254 disarm/emergency stop, 255 arm, 0 = no action | 0x3e |
 | `leds/0`..`leds/3` | w | `#RRGGBB` | 0x69..0x6c |
 | `battery` | r | % | 0x01 |
 | `state` | r | firmware state, 0 = fallen, 1 = balancing | |

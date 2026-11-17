@@ -444,6 +444,7 @@ details.extras[open]>summary{margin-bottom:8px}
           <button onclick="aufspringen()" title="Aktion 253 (!standup): Rider muss stehen und Platz haben">Aufspringen</button>
           <button onclick="ausrichten()" title="Roll auf 0° und die Beine 3 s nivellieren (nur wenn er steht)">Neu ausrichten</button>
           <button class="gefahr" onclick="befehl('action', {n: 254})" title="Aktion 254, Not-Stopp">Absetzen</button>
+          <button onclick="espNeustart()" title="Aktion 237: ESP32 neu starten, nur wenn er nicht balanciert">ESP-Neustart</button>
         </div>
       </div>
     </div>
@@ -715,6 +716,9 @@ const EN = {
     'Calibrate attitude? The Rider must balance and stand free; it settles on the spot for a few seconds.',
   'Aufspringen? Der Rider muss auf den Rädern stehen und rundherum Platz haben – er springt hoch und schwingt dabei aus.':
     'Jump up? The Rider must stand on its wheels with room all around – it jumps up and swings out.',
+  'ESP32 neu starten? Geht nur, wenn der Rider nicht balanciert. Danach wie nach dem Einschalten: Steht er aufrecht, balanciert er von selbst los.':
+    'Restart the ESP32? Only works while the Rider is not balancing. Afterwards as after power-on: once upright it starts balancing by itself.',
+  'ESP-Neustart': 'ESP restart', 'Aktion 237: ESP32 neu starten, nur wenn er nicht balanciert': 'Action 237: restart the ESP32, only while it is not balancing',
   'Rider wirklich herunterfahren?': 'Really shut down the Rider?',
   'Kern ': 'Core ', '↓ empfangen': '↓ received', '↑ gesendet': '↑ sent', ' · Qualität ': ' · quality ', 'Pegel': 'Level',
   ' · Last ': ' · load ', 'Nick': 'Pitch', 'Gier': 'Yaw', 'keine IMU-Daten': 'no IMU data',
@@ -1332,6 +1336,10 @@ function arm() {
 // Aktion 253 = !standup: Rider springt auf und schwingt dabei aus – nur mit Nachfrage
 function aufspringen() {
   if (confirm(tr('Aufspringen? Der Rider muss auf den Rädern stehen und rundherum Platz haben – er springt hoch und schwingt dabei aus.'))) befehl('action', {n: 253});
+}
+// Aktion 237 = ESP32 neu starten (Firmware-Patch 0018); die Firmware lehnt ab, solange er balanciert
+function espNeustart() {
+  if (confirm(tr('ESP32 neu starten? Geht nur, wenn der Rider nicht balanciert. Danach wie nach dem Einschalten: Steht er aufrecht, balanciert er von selbst los.'))) befehl('action', {n: 237});
 }
 function herunterfahren() {
   if (confirm(tr('Rider wirklich herunterfahren?'))) befehl('shutdown');

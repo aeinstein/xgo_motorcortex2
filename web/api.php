@@ -26,8 +26,9 @@
  *   POST api.php?a=led&i=0..3&c=%23rrggbb
  *   POST api.php?a=led_brightness&p=0..100    (Prozent; n = p·255/100 nach /proc und dauerhaft nach LED_FILE,
  *                                            das rc.local beim Booten und xgonav beim Start setzen)
- *   POST api.php?a=action&n=1..6|253|254|255 (R-1.1.6+Patch: 255 = Arm/aufstehen, 254 = Disarm/Not-Stopp,
- *                                            253 = Aufspringen aus dem Liegen (!standup); 1..6 Aktionen)
+ *   POST api.php?a=action&n=1..6|237|253|254|255 (R-1.1.6+Patch: 255 = Arm/aufstehen, 254 = Disarm/Not-Stopp,
+ *                                            253 = Aufspringen aus dem Liegen (!standup), 237 = ESP32 neu
+ *                                            starten (nur wenn er nicht balanciert); 1..6 Aktionen)
  *   POST api.php?a=height&h=61..255         (u8; darunter nicht, siehe Höhengrenzen)
  *   POST api.php?a=ausrichten               (Beine neu ausrichten, xgonav /level)
  *   POST api.php?a=roll&deg=-20..20          (Grad, + = nach rechts; Treiber-Patch 0004: Register 0x36)
@@ -447,10 +448,12 @@ switch ($a) {
     case 'action':
         $n = (int)zahl('n', 1, 255);
         // 0 ist bei R-1.1.6 nur "keine Aktion" (kein Stopp) – nicht anbieten, sonst verwechselbar
-        if ($n > 6 && $n !== 253 && $n !== 254 && $n !== 255) {
+        if ($n > 6 && $n !== 237 && $n !== 253 && $n !== 254 && $n !== 255) {
             antwort(400, json_encode(['error' => 'Aktion ungültig']));
         }
-        if ($n === 254) {
+        // 237 = ESP32 neu starten (Firmware-Patch 0018, die Firmware lehnt ab, solange er balanciert):
+        // danach liegt er disarmed, pet darf ihn also ebenso wenig von selbst aufstellen wie nach 254.
+        if ($n === 254 || $n === 237) {
             // Die Aktion geht direkt nach /proc, xgonav erfährt davon nichts. Der Modus pet stünde
             // nach einer Ohnmacht sonst von selbst wieder auf. Fehlschlag egal: dann läuft xgonav nicht.
             @file_get_contents(XGONAV . '/stop?nur=pet', false, stream_context_create(['http' => [

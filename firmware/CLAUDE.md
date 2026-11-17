@@ -44,10 +44,12 @@ g++ -std=c++17 -ffp-contract=off -I $S firmware/tests/test_turn_hold.cpp $S/cont
 | 0015 | Integral beim Fahren, sonst blieb er an leichten Steigungen trotz vollem Fahrbefehl stehen. Erste Fassung ließ die Geschwindigkeit pendeln (Periode ~5 s); jetzige hält nur eine Untergrenze von 30 % des Befehls | Aktion 239 an / 238 aus, Default an | `test_drive_integral.cpp` |
 | 0016 | LED-Helligkeit als globaler Multiplikator zur Laufzeit, Default 32 = halb so hell wie bisher | 0x12 = n/256, am Pi `settings/led_brightness` | |
 | 0017 | Nick-Fusion nimmt den ungefilterten Beschleunigungs-Nick (außer vor der Startkalibrierung und bei 0006-Einfrieren); vorher kamen Nickbewegungen ~6 % zu klein heraus (Vorfilter hinkt nach), im Stand stimmte der Winkel | | `test_pitch_fusion.cpp` |
+| 0018 | Neustart des ESP32 auf Befehl, nur wenn er nicht balanciert; schickt vorher „Drehmoment aus“ an beide Beine. Setzt die Servos selbst nicht zurück; danach balanciert er von selbst los, sobald er aufrecht steht | Aktion 237, Konsole `!restart`, Web „ESP-Neustart“ | |
+| 0019 | Startkalibrierung des Gier-Nullpunkts gilt nur im Stillstand (Spanne je Kreiselachse < 1,5 °/s, je Beschleunigungsachse < 0,5 m/s²), sonst von vorn; nach 20 verworfenen Fenstern (~15 s) wie im Original. Vorher stand der Nullpunkt nach bewegtem Einschalten um 12–20 °/s daneben, er drehte balancierend langsam | 0x10 Flags bit4..7 = verworfene Fenster | `test_gyro_boot_cal.cpp` |
 
 ## Stand am Rider
 
-0001–0017 seit 2026-11-17 18:12 geflasht; 0017 noch nicht gegen das Kamerabild geprüft und nicht balanciert, neues 0015 noch nicht gefahren, 0016 noch nicht ausprobiert.
+0001–0019 seit 2026-11-17 19:34 geflasht (0017 seit 18:12, 0018 seit 19:20); 0019 nur liegend geprüft (kalibriert, kein Fenster verworfen, Nullpunkt −0,78 °/s), bewegtes Einschalten noch nicht ausprobiert; 0017 noch nicht gegen das Kamerabild geprüft und nicht balanciert, neues 0015 noch nicht gefahren, 0016 noch nicht ausprobiert. Seit 0017 scheiterten 3 von 4 Aufspringversuchen (19:09:56 Zustand 251 = Aktorfehler 0,2 s nach dem Start, linkes Bein hielt fest; Ursache offen, `README.md`). 0018 im Liegen über die Web-API ausprobiert (IMU-Strom ~1 s weg, kommt von selbst zurück), an einem festhaltenden Bein noch nicht.
 
 ## Schnittstelle zum Pi
 

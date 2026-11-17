@@ -28,6 +28,8 @@
 #   0015 Integral beim Fahren als Untergrenze (30 % des Befehls; Aktion 239 an / 238 aus), sonst bleibt er an Steigungen stehen
 #   0016 LED-Helligkeit als globaler Multiplikator zur Laufzeit (Register 0x12 = n/256, !led <n>), Default 32 = Hälfte von 0003
 #   0017 Nick-Fusion mit ungefiltertem Beschleunigungs-Nick (Vorfilter hinkte nach: Nickbewegungen ~6 % zu klein)
+#   0018 Aktion 0x3e = 237 / !restart: ESP32 neu starten (nur wenn er nicht balanciert)
+#   0019 Startkalibrierung des Gier-Nullpunkts nur im Stillstand (sonst wiederholen, höchstens 20 Fenster)
 # Braucht: git, python3 (venv), Internet beim ersten Lauf (PlatformIO lädt Toolchain ~1 GB).
 set -euo pipefail
 
