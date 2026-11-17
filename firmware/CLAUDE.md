@@ -43,10 +43,11 @@ g++ -std=c++17 -ffp-contract=off -I $S firmware/tests/test_turn_hold.cpp $S/cont
 | 0014 | IMU-/Rad-Datenstrom, Pakete Typ 0x14, 34 Byte | 0x11 = Rate in Hz | `test_imu_stream.cpp` |
 | 0015 | Integral beim Fahren, sonst blieb er an leichten Steigungen trotz vollem Fahrbefehl stehen. Erste Fassung ließ die Geschwindigkeit pendeln (Periode ~5 s); jetzige hält nur eine Untergrenze von 30 % des Befehls | Aktion 239 an / 238 aus, Default an | `test_drive_integral.cpp` |
 | 0016 | LED-Helligkeit als globaler Multiplikator zur Laufzeit, Default 32 = halb so hell wie bisher | 0x12 = n/256, am Pi `settings/led_brightness` | |
+| 0017 | Nick-Fusion nimmt den ungefilterten Beschleunigungs-Nick (außer vor der Startkalibrierung und bei 0006-Einfrieren); vorher kamen Nickbewegungen ~6 % zu klein heraus (Vorfilter hinkt nach), im Stand stimmte der Winkel | | `test_pitch_fusion.cpp` |
 
 ## Stand am Rider
 
-0001–0016 seit 2026-11-10 20:31 geflasht; neues 0015 noch nicht gefahren, 0016 noch nicht ausprobiert.
+0001–0017 seit 2026-11-17 18:12 geflasht; 0017 noch nicht gegen das Kamerabild geprüft und nicht balanciert, neues 0015 noch nicht gefahren, 0016 noch nicht ausprobiert.
 
 ## Schnittstelle zum Pi
 
