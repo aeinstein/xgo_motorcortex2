@@ -78,10 +78,24 @@ leaning, not balancing, so the horizon is off when standing and at other heights
 | Fast changes | image pitch summed from the last IMU value, re-anchored to the IMU at the latest after `bild_max_s` (0.5 s; summed image pitch drifted ~0.13°/min); this is `pitch_dev` (magenta), `pitch_src = "stand+bild"`; `bild_max_s = 0` → IMU only, `"stand"` |
 | Known error | right after a turn on the spot the firmware pitch was up to 2.3° (13 px) off, back after ~5 s (band test 2026-11-07, firmware 0001–0010); to be fixed in the firmware, not compensated in xgonav |
 | Check | coloured band at lens height on a wall: `tools/record_status.py DIR 60` on the Rider, then `tools/horizon_replay.py DIR` on the PC (band vs IMU line vs used line in px) |
-| Needs | `[imu] pitch_sign` and `time_offset_ms` set (RiderPi: -1, +8), else falls back to the old path until the auto sync is reliable |
+| Needs | `[imu] pitch_sign` and `time_offset_ms` set (RiderPi: -1, +10.5), else falls back to the old path until the auto sync is reliable |
 
 Lines in the overlay: white stand horizon of this height, cyan IMU, magenta image, green line being set.
-Drift check: *Bild am IMU-Nick festhalten* shifts each frame in the browser by `row_stand − row_imu` (black border, no load on the pipeline); the cyan line is then fixed on the stand row. Scene moving against it = IMU or time-sync drift.
+Drift check: *Bild am IMU-Nick festhalten* (camera bar, also without `[horizon]`) shifts each frame in the browser by `row_stand − row_imu` (black border, no load on the pipeline); the cyan line is then fixed on the stand row. Scene moving against it = IMU or time-sync drift.
+
+## 2c. Time offset frame → IMU — `[imu] time_offset_ms`, `pitch_sign`
+
+Every consumer (geometry, floor model roll, map heading, tilt, overlay, web) uses one IMU value per frame: `imu.imu_frame` at frame time (`SensorTimestamp`) + `time_offset_ms`, linearly interpolated in the `imu_log` history. Measure the offset on the PC from a raw recording (web button *Aufzeichnen*, needs pitch motion such as height changes):
+
+```bash
+python tools/imu_versatz.py ~/fahrt/<recording> [--fenster idx,idx,... --halb 48]
+```
+
+| Date | Result |
+|---|---|
+| 2026-11-17 | recording 20261117-161237 (height changes), 8 sections of 4 s: +9.9..+12.0 ms, all together **+10.5 ms**, sign −1, correlation 0.99; slope 1.13 (image pitch 13 % larger than IMU pitch: focal length or IMU scale, open) |
+
+Web: the line under the camera image shows the IMU value of each frame (pitch, roll, heading, sample age, pitch rate image vs. IMU) and counts frames without a valid IMU value (red).
 
 ## 3. Lens shading — `[freespace] shading_file`
 

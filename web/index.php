@@ -1,6 +1,6 @@
 <?php
 /*
- * xgonav – Bedienoberfläche. Bild: WebSocket ws?nick=1 (nginx -> xgonav /ws, Bestätigung je Bild),
+ * xgonav – Bedienoberfläche. Bild: WebSocket ws?nick=2 (nginx -> xgonav /ws, Bestätigung je Bild),
  * Raumkarte: map.png, Status und Befehle: api.php. Dazu Handsteuerung, Höhe, Aktionen, LEDs,
  * Emotionen, Herunterfahren. Keine Authentifizierung.
  *
@@ -134,6 +134,8 @@ details.hilfe p{margin:4px 0 0}
 .bild-leiste input[type=range]{min-width:0}
 .bild-leiste .regler+.regler label{margin-left:8px}
 .bild-leiste .ist{display:flex;gap:6px;align-items:center;justify-content:flex-end;white-space:nowrap}
+.bild-leiste .imu-bild{grid-column:1/-1;font-variant-numeric:tabular-nums}
+.bild-leiste .imu-bild.schlecht{color:#ff8a8d}
 @container (max-width:760px){
   .bild-leiste{grid-template-columns:auto minmax(50px,1fr) auto auto auto minmax(50px,1fr) auto auto}
   .bild-leiste .ist{grid-column:1/-1}
@@ -342,7 +344,8 @@ details.extras[open]>summary{margin-bottom:8px}
         <span class="w" id="gain-w">-</span>
         <button id="gain-auto" onclick="verstaerkung(0)">Auto</button>
       </div>
-      <span class="ist"><span class="leise" id="belicht-ist">-</span><span class="info" tabindex="0" title="Gilt bis zum Neustart von xgonav. Kürzere Belichtung = weniger Bewegungsunschärfe, aber dunkler; mehr Verstärkung = heller, aber mehr Rauschen (Automatik nur bis 8; über ~8× wird der Rauschabstand nicht besser, nur das Bild heller). Dauerhaft über [camera] exposure_us / analogue_gain in config.toml.">i</span></span>
+      <span class="ist"><label title="Bild senkrecht so verschieben, dass der IMU-Nick fest steht: stimmt die IMU, steht die Szene still"><input type="checkbox" id="hz-stabil" onchange="hzStabil(this.checked)"> Bild am IMU-Nick festhalten</label><label title="Bild um den IMU-Roll drehen: stimmt der Roll, stehen senkrechte Kanten senkrecht und die cyan Linie waagerecht"><input type="checkbox" id="hz-roll" onchange="hzRoll(this.checked)"> Roll ausgleichen</label><span class="leise" id="belicht-ist">-</span><span class="info" tabindex="0" title="Gilt bis zum Neustart von xgonav. Kürzere Belichtung = weniger Bewegungsunschärfe, aber dunkler; mehr Verstärkung = heller, aber mehr Rauschen (Automatik nur bis 8; über ~8× wird der Rauschabstand nicht besser, nur das Bild heller). Dauerhaft über [camera] exposure_us / analogue_gain in config.toml.">i</span></span>
+      <div class="imu-bild leise" id="imu-bild" title="IMU-Wert dieses Bildes (Bildzeit + [imu] time_offset_ms), mit dem xgonav Boden, Karten und die cyan Linie rechnet. Nickrate: aus dem Bild (Ego-Motion) gegen die IMU; weichen sie dauerhaft ab, stimmen Zeitversatz oder Brennweite nicht">-</div>
     </div>
   </div>
   <div class="karte">
@@ -503,7 +506,6 @@ details.extras[open]>summary{margin-bottom:8px}
       <button onclick="hzSchieben(5)" title="Linie 5 px nach unten">+5</button>
       <button id="hz-speichern" onclick="hzSpeichern()" title="Zeile der grünen Linie für die aktuelle Kamerahöhe speichern">Für diese Kamerahöhe speichern</button>
       <button onclick="hzAus()" title="Grüne Linie ausblenden">Linie aus</button>
-      <label title="Bild senkrecht so verschieben, dass die cyan IMU-Linie fest steht"><input type="checkbox" id="hz-stabil" onchange="hzStabil(this.checked)"> Bild am IMU-Nick festhalten</label>
     </div>
     <div class="leise" style="margin-top:6px" id="hz-tabelle">-</div>
     <details class="hilfe" data-i18n-html="hilfe-horizont"><summary>weiß Stand · cyan IMU · magenta Bild · orange IMU roh · grün Einstellen</summary>
@@ -523,7 +525,7 @@ details.extras[open]>summary{margin-bottom:8px}
 
   <section class="karte">
     <div class="kopf"><h2>Raumkarte</h2>
-      <select id="karte-view" aria-label="Ausschnitt" onchange="karteView(this.value)"><option value="3">3 m</option><option value="6" selected>6 m</option><option value="10">10 m</option><option value="16">16 m</option><option id="karte-view-frei" hidden></option></select>
+      <select id="karte-view" aria-label="Ausschnitt" onchange="karteView(this.value)"><option value="3">3 m</option><option value="6" selected>6 m</option><option value="10">10 m</option><option value="16">16 m</option><option value="24">24 m</option><option id="karte-view-frei" hidden></option></select>
     </div>
     <fieldset id="karte-gruppen">
       <div class="gruppe"><span class="g-name">Karte</span><div class="knoepfe">
@@ -657,8 +659,12 @@ const EN = {
   'Linie 1 px nach unten': 'Line down 1 px', 'Linie 5 px nach unten': 'Line down 5 px',
   'Zeile der grünen Linie für die aktuelle Kamerahöhe speichern': 'Save the row of the green line for the current camera height',
   'Für diese Kamerahöhe speichern': 'Save for this camera height', 'Grüne Linie ausblenden': 'Hide the green line', 'Linie aus': 'Line off',
-  'Bild senkrecht so verschieben, dass die cyan IMU-Linie fest steht': 'Shift the image vertically so the cyan IMU line stays fixed',
-  'Bild am IMU-Nick festhalten': 'Pin image to IMU pitch',
+  'Bild senkrecht so verschieben, dass der IMU-Nick fest steht: stimmt die IMU, steht die Szene still': 'Shift the image vertically so the IMU pitch stays fixed: if the IMU is right, the scene stands still',
+  'Bild am IMU-Nick festhalten': 'Pin image to IMU pitch', 'Roll ausgleichen': 'Level roll',
+  'IMU zum Bild': 'IMU at frame', 'IMU fehlt – Nick nur aus dem Bild': 'IMU missing – pitch from image only',
+  'ohne IMU': 'without IMU', 'keine IMU': 'no IMU', 'Kurs': 'Heading', 'Alter': 'Age', 'Nickrate Bild/IMU': 'Pitch rate image/IMU',
+  'IMU-Wert dieses Bildes (Bildzeit + [imu] time_offset_ms), mit dem xgonav Boden, Karten und die cyan Linie rechnet. Nickrate: aus dem Bild (Ego-Motion) gegen die IMU; weichen sie dauerhaft ab, stimmen Zeitversatz oder Brennweite nicht': 'IMU value of this frame (frame time + [imu] time_offset_ms) that xgonav uses for floor, maps and the cyan line. Pitch rate: from the image (ego-motion) vs. IMU; a lasting difference means time offset or focal length are off',
+  'Bild um den IMU-Roll drehen: stimmt der Roll, stehen senkrechte Kanten senkrecht und die cyan Linie waagerecht': 'Rotate the image by the IMU roll: if the roll is right, vertical edges stand vertical and the cyan line is level',
   'Raumkarte': 'Room map', 'Ausschnitt': 'View', 'Karte': 'Map',
   'Raumkarte jetzt speichern ([grid] file)': 'Save the room map now ([grid] file)', 'Speichern': 'Save',
   'Gesperrt ändern Fahrten die Karte nicht': 'While locked, drives do not change the map', 'Karte sperren': 'Lock map', 'Karte entsperren': 'Unlock map',
@@ -891,16 +897,46 @@ function verbindungOk() {
 function verbindungWeg() { pille('p-verb', tr('getrennt'), 'schlecht'); }
 // Kamerabild über eine WebSocket-Verbindung. Jedes Bild wird sofort bestätigt, erst dann
 // schickt xgonav das nächste (neueste): kein Rückstau wie beim MJPEG-Stream über schwaches
-// WLAN (bis 20 s). Nachricht (nick=1): 4 Byte Bildnummer, 2 x float32 row_stand/row_imu, JPEG.
+// WLAN (bis 20 s). Nachricht (nick=2, xgonav/web.py ws_kopf): 4 Byte Bildnummer, 10 x float32 row_stand,
+// row_imu, Roll, cx, IMU-Nick, IMU-Kurs, Alter der IMU-Probe, Nickrate Bild, Nickrate IMU, Zustand; JPEG.
 // Bei Abbruch nach 1 s neu verbinden.
-// „Bild am IMU-Nick festhalten“: Das Bild wird hier im Browser per CSS um row_stand − row_imu verschoben,
-// sodass die cyan IMU-Linie fest steht; die Bildpipeline rechnet dafür nichts.
-let bildUrl = null, bildDy = 0;
-let bildStabil = false;
+// „Bild am IMU-Nick festhalten“ (Kameraleiste): Das Bild wird hier im Browser per CSS um row_stand − row_imu
+// verschoben, sodass der IMU-Nick fest steht; die Bildpipeline rechnet dafür nichts. Mit [horizon] gegen
+// die Standreferenz (cyan Linie), sonst Normallage gegen den reinen IMU-Nick (ohne Bildanteil).
+// „Roll ausgleichen“ (nick=2: dazu Roll und cx im Kopf): Das Bild wird um den Horizontpunkt bei cx um den
+// IMU-Roll gedreht (CSS rotate, im Uhrzeigersinn = rechts tief ausgleichen). Stimmt der Roll, stehen senkrechte
+// Kanten senkrecht und die cyan Linie liegt waagerecht. Am Pi rechnet dafür nichts zusätzlich.
+let bildUrl = null, bildDy = 0, bildRoll = 0, bildCx = NaN, bildRowImu = NaN;
+let bildStabil = false, bildRollAn = false;
 try { bildStabil = localStorage.getItem('xgonav.stabil') === '1'; } catch (e) {}
+try { bildRollAn = localStorage.getItem('xgonav.roll') === '1'; } catch (e) {}
+$('hz-stabil').checked = bildStabil;
+$('hz-roll').checked = bildRollAn;
 function bildVerschieben() {
-  const b = $('bild'), H = b.naturalHeight || 480;
-  b.style.transform = bildStabil && bildDy ? 'translateY(' + (bildDy / H * 100).toFixed(3) + '%)' : '';
+  const b = $('bild'), H = b.naturalHeight || 480, W = b.naturalWidth || 640;
+  const t = [];
+  if (bildStabil && bildDy) t.push('translateY(' + (bildDy / H * 100).toFixed(3) + '%)');
+  if (bildRollAn && bildRoll) {
+    t.push('rotate(' + bildRoll.toFixed(2) + 'deg)');
+    const ox = Number.isFinite(bildCx) ? bildCx / W * 100 : 50, oy = Number.isFinite(bildRowImu) ? bildRowImu / H * 100 : 50;
+    b.style.transformOrigin = ox.toFixed(2) + '% ' + oy.toFixed(2) + '%';
+  }
+  b.style.transform = t.join(' ');
+}
+// IMU-Wert des gezeigten Bildes (aus dem Bild-Kopf, nicht aus live.php): damit rechnet xgonav dieses Bild.
+// Zählt Bilder ohne gültige IMU seit dem Laden (dann Nick nur aus dem Bild, rot).
+let imuBilder = 0, imuOhne = 0;
+function imuBildZeigen(w) {
+  const el = $('imu-bild'), z = (v, n, e) => Number.isFinite(v) ? (v >= 0 ? '+' : '') + v.toFixed(n) + e : '-';
+  imuBilder++;
+  if (w.ok !== 1) imuOhne++;
+  const ohne = imuOhne ? ' · ' + tr('ohne IMU') + ' ' + imuOhne + '/' + imuBilder : '';
+  if (!Number.isFinite(w.ok)) { el.textContent = tr('keine IMU'); el.classList.add('schlecht'); return; }
+  el.classList.toggle('schlecht', w.ok !== 1);
+  el.textContent = (w.ok === 1 ? tr('IMU zum Bild') : tr('IMU fehlt – Nick nur aus dem Bild')) + ': '
+    + tr('Nick') + ' ' + z(w.nick, 2, '°') + ' · ' + tr('Roll') + ' ' + z(w.roll, 2, '°') + ' · ' + tr('Kurs') + ' '
+    + z(w.kurs, 1, '°') + ' · ' + tr('Alter') + ' ' + z(w.alter, 0, ' ms') + ' · ' + tr('Nickrate Bild/IMU') + ' '
+    + z(w.rateBild, 1, '') + ' / ' + z(w.rateImu, 1, ' °/s') + ohne;
 }
 // Ruhemodus: kein Bild, keine Karte, keine Lage; Status nur alle 5 s (drosselt tools/live.php selbst)
 let ruhe = false, bildWs = null, liveWs = null;
@@ -941,17 +977,32 @@ function bildSoll(an) {
 function bildVerbinden() {
   if (!bildAn) return;
   const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host +
-                           location.pathname.replace(/[^/]*$/, '') + 'ws?nick=1');
+                           location.pathname.replace(/[^/]*$/, '') + 'ws?nick=2');
   ws.binaryType = 'arraybuffer';
-  $('bild').onload = bildVerschieben;               // Verschiebung erst mit dem zugehörigen Bild
+  // Bild erst dekodieren, dann Bild und Verschiebung/Drehung im selben Schritt setzen: sonst zeichnet der
+  // Browser das neue Bild einmal mit der alten Lage (beim ersten Bild ohne, im Liegen bis 160 px Sprung).
+  let neuestes = 0;
   ws.onmessage = ev => {
     ws.send('ok');                                    // Bestätigung: nächstes Bild bitte
-    const d = new DataView(ev.data), stand = d.getFloat32(4), imu = d.getFloat32(8);
-    bildDy = Number.isFinite(stand) && Number.isFinite(imu) ? stand - imu : 0;
-    const url = URL.createObjectURL(new Blob([new Uint8Array(ev.data, 12)], {type: 'image/jpeg'}));
-    $('bild').src = url;
-    if (bildUrl) URL.revokeObjectURL(bildUrl);
-    bildUrl = url;
+    const d = new DataView(ev.data), stand = d.getFloat32(4), imu = d.getFloat32(8), r = d.getFloat32(12);
+    const cx = d.getFloat32(16), nr = ++neuestes;
+    const w = {nick: d.getFloat32(20), kurs: d.getFloat32(24), alter: d.getFloat32(28),
+               rateBild: d.getFloat32(32), rateImu: d.getFloat32(36), ok: d.getFloat32(40), roll: r};
+    const url = URL.createObjectURL(new Blob([new Uint8Array(ev.data, 44)], {type: 'image/jpeg'}));
+    const vor = new Image();
+    vor.src = url;
+    vor.decode().then(() => {
+      if (nr !== neuestes) { URL.revokeObjectURL(url); return; }   // inzwischen kam ein neueres
+      bildDy = Number.isFinite(stand) && Number.isFinite(imu) ? stand - imu : 0;
+      bildRoll = Number.isFinite(r) ? r : 0;
+      bildCx = cx;
+      bildRowImu = imu;
+      $('bild').src = url;
+      bildVerschieben();
+      imuBildZeigen(w);
+      if (bildUrl) URL.revokeObjectURL(bildUrl);
+      bildUrl = url;
+    }, () => URL.revokeObjectURL(url));
   };
   bildWs = ws;
   ws.onclose = () => { if (bildWs === ws) bildWs = null; if (bildAn) setTimeout(bildVerbinden, 1000); };
@@ -1076,7 +1127,6 @@ function hzAnzeigen(h) {
   box.hidden = !h;
   if (!h) return;
   $('hz-zustand').textContent = tr(HZ_ZUSTAND[h.zustand] || h.zustand);
-  $('hz-stabil').checked = bildStabil;
   $('hz-werte').textContent = tr('Kamerahöhe ') + zahlOder((window.letzterStatus || {}).cam_h_mm, 1, ' mm') + ' · ' + tr('IMU im Stand ') + zahlOder(h.ref_deg, 2, '°')
     + ' (±' + zahlOder(h.std_deg, 2, '°') + ') · ' + tr('Zeile Stand ') + zahlOder(h.row_stand) + ' / IMU ' + zahlOder(h.row_imu)
     + tr(' / Bild ') + zahlOder(h.row_bild) + ' · ' + tr('Bild−IMU ') + zahlOder(h.bild_minus_imu_deg, 2, '°')
@@ -1111,6 +1161,11 @@ async function hzSchieben(d) {
 async function hzSpeichern() {
   if (hzZeile == null) return;
   if (await befehl('horizon_cal', {row: hzZeile})) { hzTabelle(); }
+}
+function hzRoll(an) {
+  bildRollAn = an;
+  try { localStorage.setItem('xgonav.roll', an ? '1' : '0'); } catch (e) {}
+  bildVerschieben();
 }
 function hzStabil(an) {
   bildStabil = an;

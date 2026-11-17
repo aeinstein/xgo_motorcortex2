@@ -105,6 +105,9 @@ def next_goal(grid: GridMap, pose: tuple, hcfg: HomeCfg, ecfg: ExploreCfg, obsta
     occ = lo > l_show
     free = lo < -l_show
     unknown = ~free & ~occ
+    if ecfg.weak_wall_l >= 0:
+        # schwach getroffene Zellen sind Wand im Werden, kein Ziel (Löcher in vorbeigefahrenen Wänden)
+        unknown &= ~(lo > ecfg.weak_wall_l)
     n = grid.n
 
     def to_world(r: int, c: int) -> tuple[float, float]:
@@ -157,8 +160,17 @@ def next_goal(grid: GridMap, pose: tuple, hcfg: HomeCfg, ecfg: ExploreCfg, obsta
     args = (lab, nlab, zone, behind, dist, step, gain_cells, avoid, pose, r0, c0, n, res, keep_rc, ecfg)
     code, score, gain, cr, cc, kd2, kcr, kcc = navfast.frontier(L, *args) if L is not None else _groups_py(*args)
     weit, eng = np.flatnonzero(code == 1), np.flatnonzero(code == 2)
-    cand = weit if len(weit) or not allow_tight else eng
-    avoided = int((code == 3).sum()) + (0 if len(weit) or not allow_tight else int((code == 4).sum()))
+    if ecfg.tight_penalty_s < 0:
+        # alte Regel: Engstellen nur, wenn es kein Ziel mit Abstand gibt
+        cand = weit if len(weit) or not allow_tight else eng
+        avoided = int((code == 3).sum()) + (0 if len(weit) or not allow_tight else int((code == 4).sum()))
+    else:
+        # Engstellen zählen mit, kosten aber tight_penalty_s mehr: Sonst kehrte er für ein fernes Ziel mit Abstand
+        # hinter sich um, obwohl eine Engstelle direkt voraus lag (RiderPi 2026-11-15)
+        cand = np.concatenate([weit, eng]) if allow_tight else weit
+        avoided = int((code == 3).sum()) + (int((code == 4).sum()) if allow_tight else 0)
+        score = score.copy()
+        score[eng] -= ecfg.tight_penalty_s
     if not len(cand):
         return ExplorePlan(None, clusters=avoided, avoided=avoided, known_m2=known_m2)
     cand = cand[np.argsort(-score[cand], kind="stable")]      # die Beste zuerst, bei Gleichstand die frühere Gruppe

@@ -474,6 +474,24 @@ def test_imu_sync_finds_sign_and_offset():
             assert math.degrees(abs(s.pitch_dev(imu, t) - pitch(t))) < 0.3
 
 
+def test_imu_alter_im_liegen():
+    """Abgesetzt (idle, 5 Hz) ist die neueste Probe bis ~0,4 s alt: Nick und Roll gelten dann bis 2,5 Abstände
+    (0,5 s) statt max_age_s (0,3 s); sonst fiel jedes vierte Bild auf Nick 0 (Horizontlinie sprang, 2026-11-17)."""
+    from xgonav.imu import ImuSource, ImuSync, max_age, roll_dev_deg
+    cfg = Config.neutral().imu
+    cfg.pitch_sign, cfg.time_offset_ms, cfg.idle_hz, cfg.max_age_s = -1, 0.0, 5, 0.3
+    cfg.use_roll, cfg.roll_ref_deg = True, 0.0
+    imu = ImuSource(cfg)
+    for k in range(10):                        # 5 Hz bis t = 1,8 s
+        imu.add(k, k * 0.2, math.radians(2.0), math.radians(-20.0))
+    sync = ImuSync(cfg)
+    assert sync.pitch_dev(imu, 2.2) is None and roll_dev_deg(sync, imu, 2.2) == 0.0   # balancierend: 0,4 s zu alt
+    imu.idle = True
+    assert max_age(cfg, imu) == 0.5
+    assert sync.pitch_dev(imu, 2.2) is not None and abs(roll_dev_deg(sync, imu, 2.2) - 2.0) < 1e-6
+    assert sync.pitch_dev(imu, 2.4) is None                                             # 0,6 s: zu alt
+
+
 def test_imu_sync_needs_motion():
     s, _, _ = _sync_scenario(1, 0, still=True)
     assert not s.reliable
@@ -1505,9 +1523,10 @@ def test_cx_offset_bearing_maps_and_sim():
 
 
 def test_imu_yaw_unwrap_and_localmap_yaw_source():
-    """imu_log-Kurs: über ±180° stetig; [map] yaw_source "imu" dreht die Merkkarte damit, alte IMU -> Räder."""
+    """imu_log-Kurs: über ±180° stetig; [map] yaw_source "imu" dreht die Merkkarte mit dem Kurs zur Bildzeit
+    (App._imu_frame, wie im Bildschritt gesetzt), alte IMU -> Räder."""
     from xgonav.app import App
-    from xgonav.imu import ImuSource
+    from xgonav.imu import ImuSource, imu_frame
     cfg = Config.neutral()
     imu = ImuSource(cfg.imu)
     assert imu.latest_yaw() is None
@@ -1524,13 +1543,19 @@ def test_imu_yaw_unwrap_and_localmap_yaw_source():
     cfg.map.yaw_source = "imu"
     robot = SimRobot(cfg.robot)
     app = App(cfg, robot, SimWorld(cfg.camera, robot, None), imu=imu)
+    def bild(t):                                                           # wie App._pitch_dev je Bild
+        app._imu_frame = imu_frame(app.imu_sync, imu, t)
     now = t0 + 0.07
+    bild(t0 + 0.06)
     assert app._lmap_dyaw(0.5, now) == 0.5 and app.lmap_yaw_src == "imu"   # erster Wert: noch kein Bezug
     imu.add(10, t0 + 0.08, 0.0, 0.0, math.radians(-165.0))
+    bild(t0 + 0.08)
     assert math.degrees(app._lmap_dyaw(0.5, t0 + 0.09)) == pytest.approx(5.0)
+    bild(t0 + 5.0)
     assert app._lmap_dyaw(0.5, t0 + 5.0) == 0.5 and app.lmap_yaw_src == "odom"   # IMU zu alt
     cfg.map.yaw_source = "odom"
     imu.add(11, t0 + 5.0, 0.0, 0.0, math.radians(-160.0))
+    bild(t0 + 5.0)
     assert app._lmap_dyaw(0.25, t0 + 5.0) == 0.25
 
 
@@ -1822,6 +1847,26 @@ def test_gridmap_start_save_load(tmp_path):
     assert not (tmp_path / "karte.npz.tmp").exists()
 
 
+def test_gridmap_kleinere_karte_mittig_geladen(tmp_path):
+    """size_m vergrößert: gespeicherte kleinere Karte landet mittig, Weltkoordinaten bleiben; größere wird ignoriert."""
+    from xgonav.gridmap import GridMap
+    cfg, m = _grid()
+    x, y = 1.2, -0.7
+    r, c = m.cell(x, y)
+    m.lo[r, c] = 2.5
+    f = str(tmp_path / "karte.npz")
+    assert m.save(f)
+    cfg.grid.size_m = m.cfg.size_m + 8
+    big = GridMap(cfg.grid, m.geo, 160, 120)
+    assert big.n == m.n + 160 and big.load(f)
+    rb, cb = big.cell(x, y)
+    assert big.lo[rb, cb] == pytest.approx(2.5, abs=0.01) and np.count_nonzero(big.lo) == 1
+    if big.conf is not None:
+        assert big.conf.shape == big.lo.shape and big.rmin.shape == big.lo.shape
+    assert big.save(f)
+    assert not m.load(f)                                       # größere Karte passt nicht in die kleine
+
+
 def test_planner_avoids_wall_and_reports_no_path():
     from xgonav.planner import cost_map, plan
     cfg, m = _grid()
@@ -2072,6 +2117,49 @@ def test_frontier_ignores_unreachable_and_small():
     assert next_goal(m, (0.0, 0.0, 0.0), cfg.home, cfg.explore).path is None
 
 
+def test_roll_columns_straightens_boundary():
+    """Roll der Kamera: Die Grenze wird je Spalte um (Spalte - Mitte) * tan(Roll) Zeilen gedreht; freie Spalten bleiben."""
+    from xgonav.freespace import roll_columns
+    H, W, hz, cx = 120, 160, 60.0, 80.0
+    cols = np.full(W, 0.5, np.float32)
+    cols[:10] = 1.0                                             # frei bis zum Horizont
+    out = roll_columns(cols, hz, H, W, cx, 2.0)
+    assert out[:10] == pytest.approx(1.0)
+    u = (np.arange(W) + 0.5) - cx
+    soll = 0.5 - u * math.tan(math.radians(2.0)) / (H - hz)
+    assert out[10:] == pytest.approx(soll[10:], abs=1e-6)
+    assert roll_columns(cols, hz, H, W, cx, 0.0) == pytest.approx(cols)
+    # Gegenprobe: eine um 2° gerollte gerade Grenze wird wieder gerade
+    schief = np.clip(0.5 + u * math.tan(math.radians(2.0)) / (H - hz), 0, 0.979).astype(np.float32)
+    assert np.ptp(roll_columns(schief, hz, H, W, cx, 2.0)) < 1e-5
+
+
+def test_frontier_weak_wall_is_no_goal():
+    """Wandstück mit nur einem Treffer (unter l_show) ist kein Ziel mehr (Fahrt 20261117-144500); mit -1 wie früher."""
+    from dataclasses import replace
+    from xgonav.frontier import next_goal
+    cfg, m = _room_map(door=True)
+    r0, _ = (int(v) for v in m.cell(0.0, -0.5))
+    r1, _ = (int(v) for v in m.cell(0.0, 0.5))
+    _, c = (int(v) for v in m.cell(1.2, 0.0))
+    m.lo[r0:r1 + 1, c - 1:c + 2] = cfg.grid.l_occ              # Türöffnung: je Zelle ein Treffer
+    assert cfg.grid.l_occ <= cfg.grid.l_show
+    assert next_goal(m, (-0.5, 0.0, 0.0), cfg.home, replace(cfg.explore, weak_wall_l=-1.0)).path is not None
+    assert next_goal(m, (-0.5, 0.0, 0.0), cfg.home, replace(cfg.explore, weak_wall_l=0.0)).path is None
+
+
+def test_pathfollower_align_turn_limit():
+    """Drehen auf der Stelle höchstens mit home.turn_w_max (Fahrt 20261117-144500: Wende mit 0,5 störte die IMU)."""
+    from dataclasses import replace
+    from xgonav.behaviors import PathFollower
+    cfg = Config.neutral()
+    f = PathFollower(cfg.behavior, cfg.robot, replace(cfg.home, turn_w_max=0.25))
+    assert f.align(math.radians(170), "x").w == pytest.approx(0.25)
+    assert f.align(math.radians(-170), "x").w == pytest.approx(-0.25)
+    f = PathFollower(cfg.behavior, cfg.robot, cfg.home)
+    assert abs(f.align(math.radians(170), "x").w) > 0.25
+
+
 def test_frontier_keeps_goal_instead_of_switching():
     """Ein bestehendes Ziel bleibt, auch wenn ein anderes gerade besser ist (sonst pendelt er)."""
     from xgonav.frontier import next_goal
@@ -2310,8 +2398,41 @@ def test_map_explore_finishes_saves_and_returns_home():
     assert b.f.path is None
     b.set_path([(1.0, 1.0), (0.0, 0.0)])
     assert b.step(_ex_world(11.0, (1.0, 1.0, math.radians(-135)))).v > 0
+    # Am Start: Der Heimweg war 1,4 m lang, also noch einmal suchen (auf dem Weg kam Neues in die Karte)
     c = b.step(_ex_world(30.0, (0.05, 0.0, 0.0)))
-    assert b.done and c.v == 0 and c.status == "Karte fertig"
+    assert not b.done and b.state == "ziel" and b.rechecks == 1 and c.v == 0 and "noch einmal" in c.status
+    assert b.want_plan(30.1)
+    for _ in range(cfg.explore.no_goal_limit):                 # wieder kein Ziel: jetzt ist die Karte fertig
+        b.set_path(ExplorePlan(None, known_m2=20.0))
+    b.step(_ex_world(31.0, (0.05, 0.0, 0.0)))
+    assert b.state == "heim" and b.reason == "Karte fertig"
+    c = b.step(_ex_world(31.1, (0.05, 0.0, 0.0)))              # steht schon am Start: kein weiteres Suchen
+    assert b.done and c.v == 0 and c.status == "Karte fertig" and b.rechecks == 1
+
+
+def test_map_explore_recheck_finds_goal_and_off():
+    """Findet die Suche am Start ein Ziel, erkundet er weiter; recheck_max = 0 schaltet das ab."""
+    from xgonav.frontier import ExplorePlan
+    cfg, b = _explore_ready()
+    b.visited.append((5.0, 5.0))
+    for _ in range(cfg.explore.no_goal_limit):
+        b.set_path(ExplorePlan(None, known_m2=20.0))
+    b.step(_ex_world(10.0, (2.0, 0.0, 0.0)))
+    b.step(_ex_world(10.1, (2.0, 0.0, 0.0)))                   # Heimweg beginnt 2 m vom Start
+    b.step(_ex_world(30.0, (0.05, 0.0, 0.0)))
+    assert b.state == "ziel"
+    b.set_path(ExplorePlan([(0.05, 0.0), (0.0, 1.5)], (0.0, 1.5), (0.0, 1.8), 1, 0, 1.0, 21.0))
+    assert b.frontier == (0.0, 1.8) and b.f.path is not None and not b.done
+    cfg.explore.recheck_max = 0
+    cfg, b = _explore_ready()
+    b.e.recheck_max = 0
+    b.visited.append((5.0, 5.0))
+    for _ in range(cfg.explore.no_goal_limit):
+        b.set_path(ExplorePlan(None, known_m2=20.0))
+    b.step(_ex_world(10.0, (2.0, 0.0, 0.0)))
+    b.step(_ex_world(10.1, (2.0, 0.0, 0.0)))
+    b.step(_ex_world(30.0, (0.05, 0.0, 0.0)))
+    assert b.done
 
 
 def test_map_explore_wanders_before_giving_up():
@@ -2696,6 +2817,71 @@ def test_pathfollower_detects_pressing_quickly():
     assert f.pressing and f.stuck
 
 
+def _press_world(t, x, v, free_c):
+    """Welt für die Drückerkennung: Pose (x, 0), Befehl v, Bodenmodell frei bis free_c (Anteil bis Horizont)."""
+    from xgonav.behaviors import World
+    from xgonav.egomotion import EgoResult
+    from xgonav.freespace import FreeSpace
+    from xgonav.geometry import CamGeometry
+    cfg = Config.neutral()
+    fs = FreeSpace(sectors=[free_c] * 5, valid=True) if free_c is not None else None
+    return World(t=t, dt=0.05, W=640, H=480, hfov=1.6, ego=EgoResult(0, t, 0.05), tracks=[], free=fs, balancing=True,
+                 yaw=0.0, cmd_v=v, geo=CamGeometry.from_cfg(cfg, 85.0), pose=(x, 0.0, 0.0), goal=(3.0, 0.0, 0.0))
+
+
+def test_pathfollower_anschub_bei_rille():
+    """Räder stehen, vorn frei: erst zweimal kurz anschieben (push_v), dann wie bisher festgefahren."""
+    from xgonav.behaviors import PathFollower
+    cfg = Config.neutral()
+    f = PathFollower(cfg.behavior, cfg.robot, cfg.home)
+    f.set_path([(0.0, 0.0), (3.0, 0.0)])
+    assert f.free_ahead_m(_press_world(0, 0.3, 0.15, 0.71)) > cfg.behavior.push_free_m
+    pushes, t = [], 0.0
+    while t < 12 and not f.pressing:
+        c = f.drive(_press_world(t, 0.3, 0.15, 0.71), "x")
+        if "Anschub" in c.status:
+            assert c.v == cfg.behavior.push_v and c.w == 0
+            pushes.append(round(t, 1))
+        t += 0.05
+    assert f.pressing and f.stuck
+    starts = [p for i, p in enumerate(pushes) if i == 0 or p - pushes[i - 1] > 0.2]
+    assert len(starts) == cfg.behavior.push_n and 2.5 <= starts[0] <= 2.7
+    # Nach 0,3 m echtem Fortschritt sind wieder Anschübe erlaubt
+    f.clear()
+    f.set_path([(0.0, 0.0), (3.0, 0.0)])
+    f.drive(_press_world(20.0, 0.7, 0.15, 0.71), "x")
+    assert f._push_n == 0
+
+
+def test_pathfollower_kein_anschub_ohne_freiraum():
+    """Vorn kaum frei (Wand) oder Bodenmodell unbekannt: kein Anschub, gleich festgefahren."""
+    from xgonav.behaviors import PathFollower
+    cfg = Config.neutral()
+    for free_c in (0.05, None):
+        f = PathFollower(cfg.behavior, cfg.robot, cfg.home)
+        f.set_path([(0.0, 0.0), (3.0, 0.0)])
+        t = 0.0
+        while t < 4:
+            c = f.drive(_press_world(t, 0.3, 0.15, free_c), "x")
+            assert "Anschub" not in c.status
+            t += 0.05
+        assert f.pressing
+
+
+def test_map_explore_befreien_erkennt_druecken():
+    """„befreie mich“ (reaktiv) drückt nicht mehr wander_s lang: Anschub, dann zurücksetzen."""
+    from xgonav.behaviors import MapExplore
+    cfg = Config.neutral()
+    b = MapExplore(cfg.behavior, cfg.robot, cfg.home, cfg.explore)
+    b.state, b.until = "wander", 1e9
+    st, t = [], 0.0
+    while t < 10 and b.state == "wander":
+        st.append(b.step(_press_world(t, 0.3, 0.15, 0.71)).status)
+        t += 0.05
+    assert b.state == "backup" and t < 7
+    assert any("befreie mich – Anschub" in s for s in st) and st[-1] == "befreie mich: hänge fest"
+
+
 def test_map_explore_contact_blocks_goal_at_once():
     from xgonav.behaviors import MapExplore
     cfg = Config.neutral()
@@ -2709,8 +2895,9 @@ def test_map_explore_contact_blocks_goal_at_once():
 
 
 def test_grid_heading_from_imu():
-    """[grid] yaw_source "imu": Kurs aus imu_log, ist der alt die /proc-Treppe, sonst Räder; Quellenwechsel ohne Sprung."""
-    from xgonav.imu import ImuSource
+    """[grid] yaw_source "imu": Kurs aus imu_log zur Bildzeit, ist der alt die /proc-Treppe, sonst Räder;
+    Quellenwechsel ohne Sprung."""
+    from xgonav.imu import ImuSource, imu_frame
     app = _app(freespace=True)
     now = time.monotonic()
     assert app._grid_dyaw(0.5, now) == 0.5                             # Default: Räder
@@ -2720,12 +2907,19 @@ def test_grid_heading_from_imu():
     app.robot.state.yaw_deg = -179.0                                   # über die Naht: +2°
     assert abs(app._grid_dyaw(0.5, now) - math.radians(2.0)) < 1e-9
     app.imu = ImuSource(app.cfg.imu)                                   # imu_log-Kurs vorhanden: hat Vorrang
-    app.imu.add(1, now, 0.0, 0.0, math.radians(10.0))
+    app.imu.add(1, now - 0.01, 0.0, 0.0, math.radians(10.0))
+    app.imu.add(2, now, 0.0, 0.0, math.radians(10.0))
+
+    def bild(t):                                                       # wie App._pitch_dev je Bild
+        app._imu_frame = imu_frame(app.imu_sync, app.imu, t)
+    bild(now)
     assert app._grid_dyaw(0.5, now) == 0.5 and app.grid_yaw_src == "imu"      # Wechsel: Räder, kein Sprung
-    app.imu.add(2, now + 0.01, 0.0, 0.0, math.radians(13.0))
+    app.imu.add(3, now + 0.01, 0.0, 0.0, math.radians(13.0))
+    bild(now + 0.01)
     assert abs(app._grid_dyaw(0.5, now + 0.01) - math.radians(3.0)) < 1e-9
+    bild(now + 5.0)
     assert app._grid_dyaw(0.5, now + 5.0) == 0.5 and app.grid_yaw_src == "status"   # imu_log zu alt
-    app.imu, app.robot.state.yaw_deg = None, None                      # keine IMU: Rückfall
+    app.imu, app._imu_frame, app.robot.state.yaw_deg = None, None, None   # keine IMU: Rückfall
     assert app._grid_dyaw(0.5, now) == 0.5 and app.grid_yaw_src == "odom"
 
 
@@ -3000,3 +3194,43 @@ def test_max_sent_deckelt_nach_faktoren():
     r._sent = None
     r._send(time.monotonic() + 10)
     assert abs(r._sent[1] - (128 + round(0.5 * 127))) <= 1
+
+
+def test_frontier_engstelle_voraus_mit_zuschlag(monkeypatch):
+    """Engstellen-Ziele konkurrieren mit Zuschlag tight_penalty_s; -1 = alte Regel (nur, wenn kein Ziel mit Abstand)."""
+    from xgonav import frontier
+    from xgonav.geometry import CamGeometry
+    from xgonav.gridmap import GridMap
+    cfg = Config.neutral()
+    cfg.home.native = False
+    gm = GridMap(cfg.grid, CamGeometry(640, 480, 91.0, 1.39, 43.0, 85.0), 160, 120)
+    r, c = gm.cell(0.0, 0.0)
+    gm.lo[int(r) - 20:int(r) + 21, int(c) - 20:int(c) + 21] = -2.0          # 2 m x 2 m frei um den Rider
+    ziele = {}
+
+    def gruppen(lab, nlab, zone, behind, dist, step, gain_cells, avoid, pose, r0, c0, n, res, keep_rc, ecfg):
+        # Gruppe 1 mit Abstand 0,8 m hinter ihm (Wert -6), Gruppe 2 Engstelle 0,8 m voraus (Wert -1)
+        code = np.array([0, 1, 2], np.int8)
+        score = np.array([0.0, -6.0, -1.0])
+        cr, cc = np.zeros(3, np.int32), np.zeros(3, np.int32)
+        for k, (x, y) in ((1, (-0.8, 0.0)), (2, (0.8, 0.0))):
+            rr, cc_ = gm.cell(x, y)
+            cr[k], cc[k] = int(rr) - r0, int(cc_) - c0
+            ziele[k] = (x, y)
+        z = np.zeros(3, np.int32)
+        return code, score, np.zeros(3), cr, cc, np.full(3, 10 ** 9, np.int64), z, z
+
+    monkeypatch.setattr(frontier, "_groups_py", gruppen)
+    monkeypatch.setattr(frontier, "route", lambda *a: [a[5], a[6]])
+    # Frontier-Zellen (Rand des freien Quadrats) braucht next_goal, damit es überhaupt Gruppen wertet
+    cfg.explore.tight_penalty_s = 3.0
+    p = frontier.next_goal(gm, (0.0, 0.0, 0.0), cfg.home, cfg.explore)
+    assert p.tight and p.frontier[0] > 0.5                                   # -1 - 3 = -4 schlägt -6: geradeaus
+    cfg.explore.tight_penalty_s = 6.0
+    p = frontier.next_goal(gm, (0.0, 0.0, 0.0), cfg.home, cfg.explore)
+    assert not p.tight and p.frontier[0] < -0.5                              # -7 gegen -6: das Ziel hinter ihm
+    cfg.explore.tight_penalty_s = -1.0
+    p = frontier.next_goal(gm, (0.0, 0.0, 0.0), cfg.home, cfg.explore)
+    assert not p.tight and p.frontier[0] < -0.5                              # alte Regel: Abstand geht vor
+    p = frontier.next_goal(gm, (0.0, 0.0, 0.0), cfg.home, cfg.explore, allow_tight=False)
+    assert not p.tight

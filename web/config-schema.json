@@ -329,13 +329,25 @@
        "typ": "float",
        "nullbar": true,
        "default": null,
-       "hilfe": "None = automatisch"
+       "hilfe": "IMU-Zeit = Bildzeit + dies; None = automatisch (RiderPi 10,5: tools/imu_versatz.py)"
       },
       {
        "key": "pitch_ref_deg",
        "typ": "float",
-       "default": -4.43,
-       "hilfe": "IMU-Rohpitch bei der Kamerakalibrierung (calibrate.py wall)"
+       "default": -4.23,
+       "hilfe": "IMU-Rohpitch bei der Kamerakalibrierung (calibrate.py wall): -4.43; seit 2026-11-17 -4.23 (Nick +0,2°): Flur mit 2,04 m befahrbarer Breite (Nutzer) kam in drei Rundumblicken mit Roll-Korrektur auf 1,98 m, mit +0,25° auf 2,03-2,05 m"
+      },
+      {
+       "key": "use_roll",
+       "typ": "bool",
+       "default": true,
+       "hilfe": "Roll: Die Bodengrenze des Netzes wird je Bild um (IMU-Roll - roll_ref_deg) gedreht, bevor sie in Karten und Sicherheit geht (freespace.roll_columns). roll_ref_deg = IMU-Rohroll, bei dem das Bild waagerecht ist. Ohne das lag dieselbe Flurwand im Rundumblick je nach Bildrand bei 0,7 oder 1,2 m statt 1,0 m (Wand 33-48 cm dick, mit Korrektur 10-14 cm; drei Rundumblicke 2026-11-17, Fahrten 144500, 151254, 153930). use_roll False = aus (Simulator)."
+      },
+      {
+       "key": "roll_ref_deg",
+       "typ": "float",
+       "default": 1.25,
+       "hilfe": ""
       },
       {
        "key": "sigma_deg",
@@ -1152,8 +1164,8 @@
       {
        "key": "size_m",
        "typ": "float",
-       "default": 16.0,
-       "hilfe": "Kantenlänge, Start in der Mitte"
+       "default": 48.0,
+       "hilfe": "Kantenlänge, Start in der Mitte. 24 seit 2026-11-17: mit 16 endete die Karte 8 m vom Start (Fahrt 20261117-130359 stieß bei y = +7,9 m an den Rand). 48 seit 2026-11-17 nachmittags: Fahrt 20261117-144500 (gerader Flur) kam bei 10,7 m an den Rand, fand voraus kein Ziel mehr und kehrte um. Kleinere gespeicherte Karten werden mittig übernommen. 48 m = 960 x 960 Zellen, ~16 MB."
       },
       {
        "key": "max_range_m",
@@ -1232,6 +1244,18 @@
        "typ": "float",
        "default": 40.0,
        "hilfe": "bei schnellerer Drehung nichts eintragen (Unschärfe, Pose)"
+      },
+      {
+       "key": "turn_settle_s",
+       "typ": "float",
+       "default": 0.0,
+       "hilfe": "Nach einer Drehung über turn_settle_dps noch turn_settle_s lang nichts eintragen: Die IMU-Neigung stimmt dann nicht (Fahrt 20261117-144500: nach der Wende mit w 0,5 für 3-4 s um 2-3,5° daneben, die Flurwand stand 0,55 statt 0,9 m neben ihm in der Karte: Doppelwand). Eigene Schwelle auf die geglättete Drehrate (~0,2 s), weil das Lenken in der Fahrt in einzelnen Schritten schon 40-84 °/s erreicht, Wenden 110-180 °/s über mehrere Schritte. Mit 3 s auf die ungeglättete Rate stockte die Karte voraus und er wendete im Flur (Fahrt 20261117-151254). turn_settle_s 0 = aus (Simulator). Seit 2026-11-17 15:40 aus: mit 2 s war am Rider kein Erkunden mehr möglich (Fahrt 20261117-153038, Ursache ungeklärt); erst wieder einschalten, wenn die Zielwechsel im Log stehen."
+      },
+      {
+       "key": "turn_settle_dps",
+       "typ": "float",
+       "default": 60.0,
+       "hilfe": ""
       },
       {
        "key": "occ_free_factor",
@@ -1659,6 +1683,30 @@
        "hilfe": "Sicherheitsschicht: darunter keine Vorwärtsfahrt"
       },
       {
+       "key": "push_v",
+       "typ": "float",
+       "default": 0.45,
+       "hilfe": "Anschub: Drückt er vorwärts, ohne voranzukommen (PathFollower.PRESS_S), und zeigt das Bodenmodell vorn noch push_free_m frei, fährt er push_s lang mit push_v statt gleich zurückzusetzen. Höchstens push_n Mal, bis er wieder 0,3 m weitergekommen ist. Anlass: RiderPi 2026-11-17, Rille im Teppich vor der Heizung, 15 s mit 0,25 gedrückt, Räder standen. Am Rider nicht gefahren. push_n 0 = aus."
+      },
+      {
+       "key": "push_s",
+       "typ": "float",
+       "default": 0.6,
+       "hilfe": "mit robot.accel_v 0,8/s erreicht er 0,45 erst nach ~0,4 s"
+      },
+      {
+       "key": "push_n",
+       "typ": "int",
+       "default": 2,
+       "hilfe": ""
+      },
+      {
+       "key": "push_free_m",
+       "typ": "float",
+       "default": 0.4,
+       "hilfe": ""
+      },
+      {
        "key": "height_cruise_mm",
        "typ": "float",
        "default": 85.0,
@@ -1711,6 +1759,12 @@
        "typ": "float",
        "default": 0.05,
        "hilfe": ""
+      },
+      {
+       "key": "weak_wall_l",
+       "typ": "float",
+       "default": -1.0,
+       "hilfe": "Zellen mit Treffern, die noch nicht als belegt gelten (Log-Odds über diesem Wert, unter grid.l_show), zählen für die Zielsuche nicht als unbekannt: Im Vorbeifahren bekommt eine Wand stellenweise nur einen Treffer, das Loch wurde zum Ziel hinter ihm (Fahrt 20261117-144500, 6,8 m zurück). Negativ = aus (Simulator). Seit 2026-11-17 15:40 aus (-1): Wirkung am Rider nicht belegt, das Loch der Fahrt blieb auch so ein Ziel."
       },
       {
        "key": "gain_radius_m",
@@ -1767,10 +1821,22 @@
        "hilfe": ""
       },
       {
+       "key": "pass_turn_max_deg",
+       "typ": "float",
+       "default": 180.0,
+       "hilfe": "... und nur, wenn das nächste Ziel höchstens so weit seitlich liegt (Grad zum Kurs): Stockt die Karte voraus, erreicht er die Stelle, und das vorausgeplante Ziel (ohne diese Stelle) liegt hinter ihm; er wendete im geraden Flur um 180° (Fahrten 20261117-144500 am Kartenrand, -151254). Sonst anhalten, schauen, neu suchen. 180 = immer übernehmen (Simulator). Seit 2026-11-17 15:40 auf 180 (aus), am Rider nie wirksam gesehen; 100 war der Versuch."
+      },
+      {
        "key": "tight_max",
        "typ": "int",
-       "default": 3,
-       "hilfe": "Höchstens so viele Ziele, die nur in Engstellen liegen (Stufe 1), je Erkundung: In einer echten Karte sind das meist Löcher in gezeichneten Wänden (RiderPi 2026-11-11: 17-25 solche Stellen am Ende)."
+       "default": 10,
+       "hilfe": "Höchstens so viele Ziele, die nur in Engstellen liegen (Stufe 1), je Erkundung: In einer echten Karte sind das meist Löcher in gezeichneten Wänden (RiderPi 2026-11-11: 17-25 solche Stellen am Ende). 10 seit 2026-11-15 (Nutzer; RiderPi: bei 3 blieben 10 Stellen hinter Engstellen liegen und die Karte galt nach 145 s als fertig); vorher und im Simulator 3"
+      },
+      {
+       "key": "tight_penalty_s",
+       "typ": "float",
+       "default": 3.0,
+       "hilfe": "Ziele nur in Engstellen kosten so viel Zeit (s) mehr als Ziele mit Abstand und konkurrieren sonst mit ihnen. -1 = alte Regel (Engstellen nur, wenn kein Ziel mit Abstand bleibt; Simulator). 3 seit 2026-11-15 (Nutzer): Er kehrte sonst für ein Ziel hinter sich um, obwohl eine Engstelle direkt voraus lag."
       },
       {
        "key": "standoff_m",
@@ -1861,6 +1927,18 @@
        "typ": "bool",
        "default": true,
        "hilfe": "am Ende zum Startpunkt fahren"
+      },
+      {
+       "key": "recheck_max",
+       "typ": "int",
+       "default": 3,
+       "hilfe": "Am Start angekommen noch einmal nach Zielen suchen, bevor die Karte als fertig gilt: Auf dem Heimweg sieht er Neues (RiderPi 2026-11-15: eine offene Stelle neben dem Start blieb so liegen). Nur wenn der Heimweg mindestens recheck_min_m lang war, höchstens recheck_max mal je Erkundung; 0 = aus."
+      },
+      {
+       "key": "recheck_min_m",
+       "typ": "float",
+       "default": 1.0,
+       "hilfe": ""
       }
      ]
     },
@@ -2023,6 +2101,12 @@
        "typ": "float",
        "default": 4.0,
        "hilfe": ""
+      },
+      {
+       "key": "turn_w_max",
+       "typ": "float",
+       "default": 0.25,
+       "hilfe": "Drehen auf der Stelle (Wegfolger, Ausrichten am Ziel) höchstens so schnell (normiert). 0,25 seit 2026-11-17: mit robot.max_w 0,5 wendete er mit 0,5, kippte dabei 7° zur Seite und die IMU-Neigung brauchte danach 3-4 s (Fahrt 20261117-144500). 1.0 = nur robot.max_w begrenzt (Simulator)."
       },
       {
        "key": "align_heading",

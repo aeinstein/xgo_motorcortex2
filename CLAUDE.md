@@ -55,7 +55,7 @@ Datenfluss pro Frame in `App._step()` (`xgonav/app.py`), alles andere hängt dar
 ```
 camera.FrameSource  →  egomotion.EgoMotion  →  tracker.Tracker  ←  detector.DetectorWorker (eigener Thread)
                               │                      │
-                              ├→ imu.ImuSync (Komplementärfilter IMU + Bild → pitch_dev)
+                              ├→ imu.imu_frame (IMU zur Bildzeit, eine Wahrheit je Bild → pitch_dev, Roll, Kurs)
                               ├→ freespace.FreeSpaceEstimator → localmap.LocalMap
                               ▼
                     behaviors.World → Behavior.step() → behaviors.safety() → App._arc_check() → robot.Robot.drive()

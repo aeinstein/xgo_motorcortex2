@@ -115,7 +115,7 @@ xgonav unreachable → HTTP 502 `xgonav nicht erreichbar`. Exposure/gain changes
 | Method | Path | Response / effect |
 |---|---|---|
 | GET | `/status` | JSON (mode, pipeline, status, cmd, tracks, free, ttc, fps, loop_ms, loop_p95, loop_max, det_ms, grid, exposure, battery, balancing, yaw_drv, height_mm, height_u8, cam_h_mm, cam_h_gerade `[a, b]` (mm = a + b·u8), pitch_src, pitch_deg, ego, odom, …); `?breakdown=1` adds per-section loop timing |
-| GET | `/ws` | WebSocket, overlay JPEGs; `?nick=1`: per-frame `row_stand`/`row_imu` in the header |
+| GET | `/ws` | WebSocket, overlay JPEGs; `?nick=1`: per-frame `row_stand`/`row_imu` in the header; `?nick=2`: also roll (deg) and `cx` |
 | GET | `/frame?after=<idx>` | single JPEG newer than idx |
 | GET | `/stream` | MJPEG (legacy) |
 | GET | `/map.png?px=480&view=6[&cx=&cy=]` | room map; px 120..960, view 1..`grid.size_m`; centre `cx`,`cy` in map metres (both or neither; default Rider pose; clamped to ±`grid.size_m`); header `X-Map-View: cx,cy,view,size`; 404 if no map |
@@ -145,7 +145,7 @@ Mode rules: `explore`/`approach`/`home` need `freespace.enabled` (else 409); `fo
 | Item | Value |
 |---|---|
 | Path | `/xgonav/ws` (nginx → xgonav `/ws`, TLS terminates in nginx) |
-| Message | binary: 4-byte frame index + JPEG; with `?nick=1` (used by `index.php`): index, 2 × float32 BE `row_stand`, `row_imu` (NaN = no stand reference), JPEG |
+| Message | binary: 4-byte frame index + JPEG; with `?nick=1`: index, 2 × float32 BE `row_stand`, `row_imu` (with `[horizon]`: stand reference; otherwise `horizon_row(0)` / `horizon_row(pure IMU pitch)`; NaN = no IMU), JPEG; with `?nick=2` (used by `index.php`) two more float32 after them: roll (deg, + = right side low, as the cyan line) and `cx` |
 | Flow control | client sends `ok` per image; xgonav sends the next (newest) image only after ack |
 | Ack timeout | 10 s → connection closed |
 | Reconnect | client after 1 s |

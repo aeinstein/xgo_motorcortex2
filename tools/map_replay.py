@@ -13,6 +13,7 @@ verwendet. Eine Variante ist "name:schlüssel=wert,..." und ändert die Basis:
   versatz=MS       Pose zur Zeit Bildzeit + MS aus der aufgezeichneten Posenfolge (Basis: ein Bild früher,
                    so trägt die App ein: Pose des letzten Regelschritts vor dem Bild; 0 = Pose des Bildes)
   sperre=DPS       Drehratensperre (Basis: grid.max_turn_dps)
+  ruhe=S           nach einer Drehung über grid.turn_settle_dps noch so lange nichts eintragen (Basis: grid.turn_settle_s)
   quelle=rad|pose  Drehrate aus dem Radkurs beim Eintreffen des Ergebnisses (Basis, wie App) oder aus dem
                    Kurs der Pose zur Bildzeit
   ankunft=N        so viele Bilder später trifft das Ergebnis ein (Basis 2)
@@ -163,10 +164,12 @@ def _fahre(gm: GridMap, x: float, y: float, th: float) -> None:
 
 
 def rechne(t, bahn: Bahn, views: dict, pitch, cfg, geo, fw: int, fh: int, varianten, rate_rad=None,
-           roll_imu=None, kurs_imu=None) -> list[tuple[str, GridMap, dict]]:
+           roll_imu=None, kurs_imu=None, beobachter=None) -> list[tuple[str, GridMap, dict]]:
     """Je Variante eine Karte. views: Bildindex -> FreeSpace (schon ohne bewegliche Objekte),
     pitch je Bild (rad). rate_rad: Drehrate des Radkurses je Bild (°/s), None = aus der Pose.
-    roll_imu je Bild (Grad) und kurs_imu (Funktion Zeit -> rad) nur bei Aufnahmen mit IMU-Proben."""
+    roll_imu je Bild (Grad) und kurs_imu (Funktion Zeit -> rad) nur bei Aufnahmen mit IMU-Proben.
+    beobachter(name, gm, t, pose): nach jedem Bild mit der Karte, wie sie bis dahin steht (z. B. die Zielwahl
+    des Erkundens an dieser Stelle nachrechnen)."""
     t = np.asarray(t, float)
     dt_bild = float(np.median(np.diff(t))) if len(t) > 1 else 0.04
     rate_pose = bahn.rate_dps(t)
@@ -181,6 +184,8 @@ def rechne(t, bahn: Bahn, views: dict, pitch, cfg, geo, fw: int, fh: int, varian
                 setattr(gcfg, k[5:], v.lower() in ("1", "true", "ja") if isinstance(cur, bool) else type(cur)(v))
         versatz = float(p["versatz"]) / 1000.0 if "versatz" in p else -dt_bild
         sperre = float(p.get("sperre", gcfg.max_turn_dps))
+        ruhe = float(p.get("ruhe", gcfg.turn_settle_s))
+        t_dreh, rate_lp = -1e9, 0.0
         quelle = p.get("quelle", "rad")
         ankunft = int(p.get("ankunft", 2))
         roll = p.get("roll", "")
@@ -201,8 +206,13 @@ def rechne(t, bahn: Bahn, views: dict, pitch, cfg, geo, fw: int, fh: int, varian
                 kb[q] = reloc.anwenden(k, (bahn.x[q], bahn.y[q], bahn.th[q]))
             j0 = max(j0, j + 1)
             _fahre(gm, *(float(v) for v in kb[j]))
+            if beobachter is not None:
+                beobachter(name, gm, float(t[j]), tuple(float(v) for v in kb[j]))
             rate = rate_rad[j] if quelle == "rad" else rate_pose[i]
-            if rate > sperre:
+            rate_lp += 0.35 * (rate - rate_lp)          # wie App: geglättet, Lenkspitzen sind keine Wende
+            if rate_lp > gcfg.turn_settle_dps:
+                t_dreh = float(t[j])
+            if rate > sperre or t[j] - t_dreh < ruhe:
                 n_sperre += 1
                 continue
             px, py, pth = (float(v) for v in bahn.at(t[i] + versatz))
@@ -334,7 +344,9 @@ def lade(d: str, cfg, bahn_quelle: str = "pose", roll_ref: float = 0.0, imu_vers
         if img is None:
             continue
         if net is not None:
-            fs = fse.from_net(net.run(img), m["pitch_dev"])
+            # Roll wie live (imu.use_roll): Grenze um IMU-Roll - roll_ref_deg geradegedreht
+            rd = float(np.interp(t[i], imu[0], imu[1])) - cfg.imu.roll_ref_deg if cfg.imu.use_roll and imu is not None else 0.0
+            fs = fse.from_net(net.run(img), m["pitch_dev"], rd)
         else:
             fs = fse.update(img, m["pitch_dev"], [tr["box"] for tr in m.get("tracks_all", m.get("tracks", []))])
         tracks = m.get("tracks", [])

@@ -25,7 +25,7 @@ from .planner import PlannerWorker
 from .geometry import CamGeometry
 from .horizon import HorizonTable, StandRef, row_to_tilt_deg
 from .wheels import WheelOdom, make_wheels
-from .imu import ImuSource, ImuSync, make_imu
+from .imu import ImuFrame, ImuSource, ImuSync, imu_frame, make_imu
 from .localmap import LocalMap, mask_movable
 from .route import arc_hits_zone, check as route_check, load as route_load, save as route_save
 from .robot import Robot, SpeedCtrl
@@ -53,6 +53,8 @@ class Snapshot:
     fs_diag: dict = field(default_factory=dict)      # Diagnose des Bodenmodells
     cam_meta: dict | None = None                     # Weißabgleich, Verstärkung
     horizon: dict | None = None                      # Horizont im Stand ([horizon] enabled)
+    imu: ImuFrame | None = None                      # IMU zur Bildzeit (eine Wahrheit je Bild); None ohne IMU
+    nickrate: tuple[float, float] | None = None      # Nickrate aus Bild / IMU (°/s) zwischen den letzten Bildern
 
 
 class ModeNotAllowed(ValueError):
@@ -115,7 +117,8 @@ class App:
         self.speed_ctrl = SpeedCtrl(cfg.robot)
         self._speed_stat: dict | None = None   # None = Regelung aus
         self.imu_sync = ImuSync(cfg.imu)
-        self._imu_lp: float | None = None
+        self._imu_frame: ImuFrame | None = None   # IMU zur Bildzeit, je Bild (imu.imu_frame)
+        self._nickrate: tuple[float, float] | None = None
         self.pitch_src = "bild"
         self.last_pitch_dev = 0.0
         self.robot = robot
@@ -163,6 +166,8 @@ class App:
         if self.lmap is not None and self.lmap.backend == "c++":
             log.info("Merkkarte, Planer, Frontier-Suche: C++-Kern (navfast)")
         self._fs_in_map = None
+        self._grid_turn_t = -1e9             # letzte schnelle Drehung (grid.turn_settle_s)
+        self._grid_rate_lp = 0.0
         # Raumkarte (Welt-KS ab Startpose), nur Anzeige
         self.gridmap = GridMap(cfg.grid, self.geo, self.fse.W, self.fse.H) \
             if self.fse is not None and cfg.grid.enabled else None
@@ -768,8 +773,9 @@ class App:
             if r is not None:
                 self._free = r
             if f.idx % 2 == 0 or self._free is None:
+                roll = self._imu_frame.roll_deg if self._imu_frame is not None else 0.0
                 self.fs_worker.offer(f.bgr, pitch_dev, [t.box for t in self.tracker.tracks],
-                                     self.gridmap.pose() if self.gridmap is not None else None, f.t)
+                                     self.gridmap.pose() if self.gridmap is not None else None, f.t, roll)
         elif self.fse is not None and (f.idx % 2 == 0 or self._free is None):
             self._free = self.fse.update(f.bgr, pitch_dev, [t.box for t in self.tracker.tracks])
             self._free.pose = self.gridmap.pose() if self.gridmap is not None else None
@@ -817,7 +823,13 @@ class App:
                     # Raumkarte nur auf den Rädern (liegend sieht die Kamera etwas anderes) und
                     # ohne schnelle Drehung
                     rate = abs(math.degrees(dyaw)) / dt if dt > 0 else 0.0
-                    if self.robot.state.balancing and rate <= self.cfg.grid.max_turn_dps:
+                    # geglättet (~0,2 s): einzelne Lenkspitzen in der Fahrt sind keine Wende
+                    self._grid_rate_lp += 0.35 * (rate - self._grid_rate_lp)
+                    if self._grid_rate_lp > self.cfg.grid.turn_settle_dps:
+                        self._grid_turn_t = now
+                    # ... und nach einer Wende (turn_settle_dps) noch turn_settle_s: die IMU-Neigung stimmt dann nicht
+                    if (self.robot.state.balancing and rate <= self.cfg.grid.max_turn_dps
+                            and now - self._grid_turn_t >= self.cfg.grid.turn_settle_s):
                         if self.grid_worker is not None:
                             self.grid_worker.offer(view, pd)
                         elif self.gridmap is not None:
@@ -880,6 +892,7 @@ class App:
         tm.mark("ctrl")
 
         snap = Snapshot(frame=f.bgr, idx=f.idx, t=f.t, pitch_dev=pitch_dev, tracks=list(tracks), horizon=self._hz_info,
+                        imu=self._imu_frame, nickrate=self._nickrate,
                         tracks_all=list(self.tracker.tracks), cam_meta=f.meta,
                         fs_diag=dict(self.fse.diag) if self.fse is not None else {},
                         free=self._free_ctrl or self._free,
@@ -944,8 +957,9 @@ class App:
     def _lmap_dyaw(self, fallback: float, now: float) -> float:
         """Drehung der Merkkarte seit dem letzten Aufruf (rad, links +): Kurs aus imu_log bei [map] yaw_source
         "imu", sonst (oder bei fehlender/alter IMU) fallback = Räder bzw. Kamera."""
-        p = self.imu.latest_yaw() if self.cfg.map.yaw_source == "imu" and self.imu is not None else None
-        if p is None or now - p[0] > self.cfg.imu.max_age_s:
+        fr = self._imu_frame
+        p = (fr.t_imu, fr.yaw) if self.cfg.map.yaw_source == "imu" and fr is not None and fr.yaw is not None else None
+        if p is None:
             self._lmap_yaw, self.lmap_yaw_src = None, "odom"
             return fallback
         last, self._lmap_yaw = self._lmap_yaw, p[1]
@@ -959,9 +973,9 @@ class App:
         if self.cfg.grid.yaw_source != "imu":
             self._grid_yaw, self.grid_yaw_src = None, "odom"
             return fallback
-        p = self.imu.latest_yaw() if self.imu is not None else None
-        if p is not None and now - p[0] <= self.cfg.imu.max_age_s:
-            cur = ("imu", p[1])
+        fr = self._imu_frame
+        if fr is not None and fr.yaw is not None:      # Kurs zur Bildzeit (imu_frame), gültig wie der Nick
+            cur = ("imu", fr.yaw)
         elif self.robot.state.yaw_deg is not None:
             cur = ("status", math.radians(self.robot.state.yaw_deg))
         else:
@@ -1062,9 +1076,9 @@ class App:
         sch = self.ortung.last if self.ortung is not None else None
         if sch is not None:
             w.sound = (sch, time.monotonic() - sch.t)
-        tilt = self.imu.latest_tilt() if self.imu is not None else None
-        if tilt is not None and now - tilt[0] < 0.5:
-            w.tilt = (math.degrees(tilt[1]), math.degrees(tilt[2]))
+        fr = self._imu_frame                  # Roll/Nick roh zur Bildzeit; ungültig (zu alt) = kein Wert
+        if fr is not None and fr.frisch:
+            w.tilt = (fr.roll_raw_deg, fr.pitch_raw_deg)
 
     def _pet_tick(self) -> None:
         """Wünsche des Modus pet ausführen, im Regelschritt und nur bei Änderungen."""
@@ -1122,30 +1136,33 @@ class App:
                 log.warning("Emotion: %s", e)
 
     def _pitch_dev(self, f, ego) -> float:
-        """Nickabweichung der Kamera: mit [horizon] aus IMU minus Standreferenz; sonst absolut aus
-        der IMU, wenn synchronisiert, sonst nur der schnelle Anteil aus dem Bild (langsame Neigung
-        dann unbekannt)."""
+        """Nickabweichung der Kamera: mit [horizon] aus IMU minus Standreferenz; sonst der reine IMU-Nick zur
+        Bildzeit (imu_frame, Versatz [imu] time_offset_ms); ohne gültige IMU nur der schnelle Anteil aus dem Bild
+        (langsame Neigung dann unbekannt, pitch_src "bild"). Bis 2026-11-17 lief hier ein Komplementärfilter
+        (IMU-Tiefpass + Bildanteil); der Bildanteil ist jetzt nur noch Vergleich (Snapshot.nickrate)."""
+        prev = self._imu_frame
+        self._imu_frame = None
         if self.imu is not None:
             if ego.ok and ego.dt > 0:
                 self.imu_sync.add(f.t - ego.dt, f.t, ego.pitch)
             self.imu_sync.update(self.imu, time.monotonic())
+            self._imu_frame = imu_frame(self.imu_sync, self.imu, f.t)
+            fr = self._imu_frame
+            if (ego.ok and ego.dt > 0 and fr.pitch is not None and prev is not None and prev.pitch is not None
+                    and 0 < fr.t_imu - prev.t_imu < 0.5):
+                d = fr.t_imu - prev.t_imu
+                self._nickrate = (math.degrees(ego.pitch / ego.dt), math.degrees((fr.pitch - prev.pitch) / d))
+            else:
+                self._nickrate = None
         if self.stand is not None:
             pd = self._pitch_dev_stand(f, ego)
             if pd is not None:
                 return pd
             self.geo.tilt_deg = self.cfg.camera.tilt_deg
-        if self.imu is not None:
-            pd = self.imu_sync.pitch_dev(self.imu, f.t)
-            if pd is not None:
-                # Komplementärfilter: langsamer Anteil aus der IMU (absolut), schneller aus dem
-                # Bild. Gleicher Tiefpass wie in der Ego-Motion (ego.pitch_dev = Bild - Tiefpass),
-                # dadurch ergänzen sich beide exakt; IMU-Abtastung (50 Hz) limitiert nicht.
-                a = self.cfg.ego.smooth_alpha
-                self._imu_lp = pd if self._imu_lp is None else (1 - a) * self._imu_lp + a * pd
-                self.pitch_src = "imu"
-                self.geo.pitch_sigma_deg = self.cfg.imu.sigma_deg
-                return self._imu_lp + ego.pitch_dev
-        self._imu_lp = None
+        if self._imu_frame is not None and self._imu_frame.pitch is not None:
+            self.pitch_src = "imu"
+            self.geo.pitch_sigma_deg = self.cfg.imu.sigma_deg
+            return self._imu_frame.pitch
         self.pitch_src = "bild"
         self.geo.pitch_sigma_deg = 1.5
         return ego.pitch_dev
@@ -1310,13 +1327,22 @@ def _ascii(s: str) -> str:
     return s.translate(_ASCII).encode("ascii", "replace").decode()
 
 
-def render(snap: Snapshot, text: bool = True) -> np.ndarray | None:
+def render(snap: Snapshot, text: bool = True, horizont: tuple[float, float, float] | None = None) -> np.ndarray | None:
     """Debug-Overlay zeichnen (nur auf Anfrage, kostet Zeit). text=False lässt die
-    Statuszeilen weg (~10 ms je Bild am CM4); die Weboberfläche zeigt sie als HTML."""
+    Statuszeilen weg (~10 ms je Bild am CM4); die Weboberfläche zeigt sie als HTML.
+    horizont: (Zeile in der Bildmitte cx, Roll in Grad, cx) für die cyan Horizontlinie, Vollbild-Pixel
+    (horizont_linie); ohne sie die Horizontzeile des Bodenmodells, waagerecht und auf 20..80 % geklemmt."""
     if snap.frame is None:
         return None
     img = snap.frame.copy()
     H, W = img.shape[:2]
+    if horizont is not None:
+        row, roll, cx = horizont
+        if math.isfinite(row) and abs(roll) < 80:
+            k = math.tan(math.radians(roll))      # Roll + = rechts tief: Horizont rechts höher im Bild
+            y0, y1 = row + cx * k, row - (W - cx) * k
+            if max(y0, y1) > -H and min(y0, y1) < 2 * H:     # sonst weit außerhalb (cv2 rechnet in int)
+                cv2.line(img, (0, int(round(y0))), (W, int(round(y1))), (255, 255, 0), 1, cv2.LINE_AA)
     fs = snap.free
     if fs is not None and fs.columns is not None:
         sc = W / len(fs.columns)
@@ -1327,8 +1353,9 @@ def render(snap: Snapshot, text: bool = True) -> np.ndarray | None:
         for a, b in (column_runs(cols) if fs.src != "net" else ()):   # unbekannte Spalten (NaN): Lücke
             pts = [(int(i * sc), int((fh - cols[i] * span) * H / fh)) for i in range(a, b)]
             cv2.polylines(img, [np.array(pts, np.int32)], False, (0, 255, 255), 2)
-        hy = int(fs.horizon_row * H / fh)
-        cv2.line(img, (0, hy), (W, hy), (255, 255, 0), 1)
+        if horizont is None:
+            hy = int(fs.horizon_row * H / fh)
+            cv2.line(img, (0, hy), (W, hy), (255, 255, 0), 1)
         n = len(fs.sectors)
         for i, s in enumerate(fs.sectors):
             x0, x1 = int(i * W / n), int((i + 1) * W / n)

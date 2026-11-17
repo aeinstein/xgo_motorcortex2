@@ -6,6 +6,7 @@ Sicherheitsschicht hat immer das letzte Wort.
 """
 from __future__ import annotations
 
+import logging
 import math
 import random
 from dataclasses import dataclass, field
@@ -18,6 +19,8 @@ from .egomotion import EgoResult
 from .freespace import FreeSpace
 from .geometry import CamGeometry
 from .tracker import Track
+
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -399,6 +402,7 @@ class PathFollower:
     # 4-5 s. Normales Anfahren braucht dort bis 5 cm im Mittel 1 s, höchstens 1,8 s; 1,5 s löste einmal
     # auf freier Strecke aus.
     PRESS_V, PRESS_M, PRESS_S = 0.08, 0.02, 2.5
+    PRESS_AFTER_PUSH_S = 1.0
     END_K = 0.45                    # normiertes v je m Rest bis zum Wegende (drive(slow_end=True))
 
     def __init__(self, cfg: BehaviorCfg, rcfg: RobotCfg, hcfg: HomeCfg, v: float | None = None):
@@ -409,6 +413,9 @@ class PathFollower:
         self.stuck = False
         self.pressing = False
         self._press: tuple | None = None
+        self._push_until: float | None = None    # Anschub läuft bis dahin
+        self._push_n = 0                          # Anschübe seit dem letzten echten Fortschritt
+        self._push_at: tuple[float, float] | None = None
         self._turning = False
         self._anchor: tuple[float, float] | None = None
         self._t_prog = 0.0
@@ -422,6 +429,7 @@ class PathFollower:
         self.stuck = False
         self.pressing = False
         self._press = None
+        self._push_until = None     # _push_n bleibt: erst 0,3 m Fortschritt erlaubt neue Anschübe
         self._anchor = None
 
     def target(self, x: float, y: float, lookahead_m: float | None = None) -> tuple[float, float]:
@@ -459,14 +467,53 @@ class PathFollower:
             i, t = i + 1, 0.0
         return p[-1]
 
-    def _watch_press(self, t: float, x: float, y: float, cmd_v: float) -> None:
+    @staticmethod
+    def free_ahead_m(w: World) -> float | None:
+        """Freier Boden geradeaus laut Bodenmodell (m ab Kamerafußpunkt), inf bis zum Horizont, None unbekannt."""
+        fs = w.free
+        if fs is None or not fs.valid or w.geo is None:
+            return None
+        c = fs.center
+        if c >= 0.98:
+            return math.inf
+        g = w.geo
+        d = g.ground_dist(g.H - c * (g.H - g.horizon_row(w.pitch_dev)), w.pitch_dev)
+        return math.inf if d is None else d
+
+    def _watch_press(self, w: World) -> None:
+        t, cmd_v = w.t, w.cmd_v
+        x, y = w.pose[0], w.pose[1]
+        if self._push_at is not None and math.hypot(x - self._push_at[0], y - self._push_at[1]) > 0.3:
+            self._push_n, self._push_at = 0, None      # wieder richtig vorangekommen
         if cmd_v <= self.PRESS_V:
             self._press = None
         elif self._press is None or math.hypot(x - self._press[0], y - self._press[1]) >= self.PRESS_M:
             self._press = (x, y, t)
         elif t - self._press[2] > self.PRESS_S:
-            self.stuck = self.pressing = True
             self._press = None
+            free = self.free_ahead_m(w)
+            if self._push_n < self.cfg.push_n and free is not None and free >= self.cfg.push_free_m:
+                # Etwas Niedriges hält die Räder (Rille, Kante), vorn ist frei: kurz kräftig anschieben
+                self._push_n += 1
+                self._push_at = (x, y)
+                self._push_until = t + self.cfg.push_s
+                self._anchor = None                    # die Zeit am Hindernis zählt nicht als Festfahren
+                log.info("Anschub %d: Räder stehen, vorn %.2f m frei", self._push_n, free)
+            else:
+                self.stuck = self.pressing = True
+
+    def press_step(self, w: World, label: str) -> Command | None:
+        """Drücken ohne Fortschritt prüfen; während eines Anschubs dessen Fahrbefehl, sonst None."""
+        if self._push_until is None:
+            self._watch_press(w)
+        if self._push_until is not None:
+            if w.t < self._push_until:
+                return Command(self.cfg.push_v, 0.0, self.cfg.height_cruise_mm,
+                               "%s – Anschub %d" % (label, self._push_n))
+            # Danach genügt 1 s ohne Fortschritt für den nächsten Schritt: Anfahren ist dann vorbei
+            self._push_until = None
+            self._press = (w.pose[0], w.pose[1], w.t - self.PRESS_S + self.PRESS_AFTER_PUSH_S)
+        return None
 
     def _watch(self, t: float, x: float, y: float, err: float) -> None:
         if self._anchor is None:
@@ -486,7 +533,9 @@ class PathFollower:
         Ankunftsradius hinaus und pendelte am Startpunkt hin und her (Simulator 2026-11-11, ~60 s)."""
         hmm = self.cfg.height_cruise_mm
         x, y, th = w.pose
-        self._watch_press(w.t, x, y, w.cmd_v)
+        push = self.press_step(w, label)
+        if push is not None:
+            return push
         # Engstelle (Wand der Raumkarte nah): dem Weg eng folgen und erst ausrichten, dann fahren
         tm = self.h.tight_m
         tight = tm > 0 and w.wall_fn is not None and any(
@@ -508,6 +557,7 @@ class PathFollower:
         self._watch(w.t, x, y, err)
         wc = clamp(yaw_rate_to_w(self.h.kp_turn * err, self.rcfg), -1.0, 1.0)
         if self._turning:
+            wc = clamp(wc, -self.h.turn_w_max, self.h.turn_w_max)
             if abs(wc) < self.cfg.search_w:          # kleine Werte ignoriert die Firmware
                 wc = math.copysign(self.cfg.search_w, err)
             return Command(0.0, wc, hmm, "%s – drehe (%+.0f°)" % (label, math.degrees(err)), extra={"tight": tight})
@@ -524,7 +574,7 @@ class PathFollower:
 
     def align(self, err: float, label: str) -> Command:
         """Auf der Stelle auf einen Endkurs drehen (err rad)."""
-        wc = clamp(yaw_rate_to_w(self.h.kp_turn * err, self.rcfg), -1.0, 1.0)
+        wc = clamp(yaw_rate_to_w(self.h.kp_turn * err, self.rcfg), -self.h.turn_w_max, self.h.turn_w_max)
         if abs(wc) < self.cfg.search_w:              # kleine Werte ignoriert die Firmware
             wc = math.copysign(self.cfg.search_w, err)
         return Command(0.0, wc, self.cfg.height_cruise_mm, "%s (%+.0f°)" % (label, math.degrees(err)))
@@ -652,6 +702,8 @@ class MapExplore(Behavior):
         self._t_growth: float | None = None
         self._xy: tuple | None = None      # letzte Pose (für das Nachplanen kurz vor dem Ziel)
         self.tight_goals = 0               # angefahrene Ziele, die nur in Engstellen lagen
+        self.rechecks = 0                  # so oft am Start noch einmal nach Zielen gesucht
+        self._home_d0: float | None = None # Entfernung zum Start, als der Heimweg begann
         self._goal_tight = False
         # Übernächstes Ziel: kurz vor dem Ziel im Voraus geplant (ab dem Ziel, ohne dessen Stelle), damit er
         # beim Erreichen ohne Halt weiterfährt
@@ -749,6 +801,11 @@ class MapExplore(Behavior):
         self.clusters, self.avoided = res.clusters, res.avoided
         moved = math.inf if self.frontier is None else math.hypot(res.frontier[0] - self.frontier[0], res.frontier[1] - self.frontier[1])
         if moved > self.e.keep_dist_m:
+            log.info("Erkunden: neues Ziel (%.2f, %.2f)%s statt %s, Pose (%.2f, %.2f), %d Stellen, %d gesperrt",
+                     res.frontier[0], res.frontier[1], " eng" if res.tight else "",
+                     "keins" if self.frontier is None else "(%.2f, %.2f)" % self.frontier,
+                     self._xy[0] if self._xy else math.nan, self._xy[1] if self._xy else math.nan,
+                     res.clusters, res.avoided)
             self.stucks = 0                         # neues Ziel
             self.t_goal = self.t_plan
             self.f.clear()
@@ -826,6 +883,15 @@ class MapExplore(Behavior):
                 self.state = "ziel"
                 self.wander.state = "cruise"
                 return Command(0, 0, hmm, "weiter")
+            # Auch beim reaktiven Befreien prüfen, ob er nur drückt (RiderPi 2026-11-17: 15 s gegen eine Rille)
+            push = self.f.press_step(w, "befreie mich")
+            if push is not None:
+                return push
+            if self.f.pressing:
+                self.f.stuck = self.f.pressing = False
+                self.wander.state = "cruise"
+                self.state, self.until = "backup", w.t + 0.8
+                return Command(0, 0, hmm, "befreie mich: hänge fest")
             c = self.wander.step(w)
             c.status = "befreie mich: " + c.status
             return c
@@ -837,7 +903,21 @@ class MapExplore(Behavior):
                 return Command(0, 0, hmm, self._final_status())
             gx, gy, gth = w.goal
             dist = math.hypot(gx - x, gy - y)
+            if self._home_d0 is None:
+                self._home_d0 = dist
             if dist < self.h.arrive_m:
+                if (self.reason == "Karte fertig" and self.rechecks < e.recheck_max
+                        and self._home_d0 >= e.recheck_min_m):
+                    # Auf dem Heimweg kam Neues in die Karte: noch einmal suchen, erst dann ist sie fertig
+                    self.rechecks += 1
+                    self.reason = ""
+                    self.state, self._home_d0 = "ziel", None
+                    self.no_goal = self.stucks = self.home_fails = self.home_stuck = 0
+                    self.home_best, self.home_t_best = math.inf, None
+                    self.frontier = self.goal = None
+                    self.f.clear()
+                    self.t_plan, self._t_growth = -1e9, w.t
+                    return Command(0, 0, hmm, "am Start – suche noch einmal")
                 err = _wrap(gth - th)
                 if self.h.align_heading and abs(err) > math.radians(self.h.align_tol_deg):
                     return self.f.align(err, "am Start – richte aus")
@@ -897,8 +977,12 @@ class MapExplore(Behavior):
             self.visited.append((self.frontier[0], self.frontier[1]))
             nxt, self._next = self._next, None
             seen = abs(_wrap(math.atan2(self.frontier[1] - y, self.frontier[0] - x) - th)) < math.radians(e.pass_view_deg)
-            if nxt is not None and seen and w.t - self._next_t < e.pass_age_s:
+            vorn = nxt is not None and abs(_wrap(math.atan2(nxt.goal[1] - y, nxt.goal[0] - x) - th))                 <= math.radians(e.pass_turn_max_deg)
+            if nxt is not None and seen and vorn and w.t - self._next_t < e.pass_age_s:
                 # Die Stelle liegt im Bild und das nächste Ziel steht schon fest: ohne Halt weiter
+                log.info("Erkunden: (%.2f, %.2f) erreicht bei (%.2f, %.2f), ohne Halt weiter zu (%.2f, %.2f)%s",
+                         self.frontier[0], self.frontier[1], x, y, nxt.frontier[0], nxt.frontier[1],
+                         " eng" if nxt.tight else "")
                 self.tight_goals += self._goal_tight
                 self._goal_tight = nxt.tight
                 self.frontier, self.goal = nxt.frontier, nxt.goal
@@ -906,6 +990,8 @@ class MapExplore(Behavior):
                 self.f.clear()
                 self.f.set_path(nxt.path)
                 return self.f.drive(w, "erkunde (%d Stellen)" % self.clusters)
+            log.info("Erkunden: (%.2f, %.2f) erreicht bei (%.2f, %.2f), halte und schaue",
+                     self.frontier[0], self.frontier[1], x, y)
             self._face = self.frontier
             self.frontier = self.goal = None
             self.f.clear()

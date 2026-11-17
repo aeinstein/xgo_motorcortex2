@@ -120,8 +120,17 @@ class ImuCfg:
     # stream_hz und poll_s. Spart am CM4 ~6 % eines Kerns (2026-11-10). 0 = nie umschalten.
     idle_hz: int = 5
     pitch_sign: int = 0            # 0 = automatisch aus Bild-Korrelation, sonst +1/-1
-    time_offset_ms: float | None = None   # None = automatisch
-    pitch_ref_deg: float = -4.43     # IMU-Rohpitch bei der Kamerakalibrierung (calibrate.py wall)
+    time_offset_ms: float | None = None   # IMU-Zeit = Bildzeit + dies; None = automatisch (RiderPi 10,5: tools/imu_versatz.py)
+    # IMU-Rohpitch bei der Kamerakalibrierung (calibrate.py wall): -4.43; seit 2026-11-17 -4.23 (Nick +0,2°): Flur
+    # mit 2,04 m befahrbarer Breite (Nutzer) kam in drei Rundumblicken mit Roll-Korrektur auf 1,98 m, mit +0,25° auf 2,03-2,05 m
+    pitch_ref_deg: float = -4.23
+    # Roll: Die Bodengrenze des Netzes wird je Bild um (IMU-Roll - roll_ref_deg) gedreht, bevor sie in Karten und
+    # Sicherheit geht (freespace.roll_columns). roll_ref_deg = IMU-Rohroll, bei dem das Bild waagerecht ist.
+    # Ohne das lag dieselbe Flurwand im Rundumblick je nach Bildrand bei 0,7 oder 1,2 m statt 1,0 m (Wand
+    # 33-48 cm dick, mit Korrektur 10-14 cm; drei Rundumblicke 2026-11-17, Fahrten 144500, 151254, 153930).
+    # use_roll False = aus (Simulator).
+    use_roll: bool = True
+    roll_ref_deg: float = 1.25
     sigma_deg: float = 0.3         # Restunsicherheit der Nicklage mit IMU
     min_corr: float = 0.6
     sync_range_ms: float = 100.0
@@ -333,6 +342,14 @@ class BehaviorCfg:
     slow_free: float = 0.55        # darunter proportional abbremsen
     ttc_avoid_s: float = 1.2       # Erkunden: Time-to-contact darunter -> ausweichen
     ttc_stop_s: float = 0.8        # Sicherheitsschicht: darunter keine Vorwärtsfahrt
+    # Anschub: Drückt er vorwärts, ohne voranzukommen (PathFollower.PRESS_S), und zeigt das Bodenmodell
+    # vorn noch push_free_m frei, fährt er push_s lang mit push_v statt gleich zurückzusetzen. Höchstens
+    # push_n Mal, bis er wieder 0,3 m weitergekommen ist. Anlass: RiderPi 2026-11-17, Rille im Teppich
+    # vor der Heizung, 15 s mit 0,25 gedrückt, Räder standen. Am Rider nicht gefahren. push_n 0 = aus.
+    push_v: float = 0.45
+    push_s: float = 0.6            # mit robot.accel_v 0,8/s erreicht er 0,45 erst nach ~0,4 s
+    push_n: int = 2
+    push_free_m: float = 0.4
     height_cruise_mm: float = 85.0
     height_search_mm: float = 100.0
     height_fast_mm: float = 80.0
@@ -406,7 +423,11 @@ class GridCfg:
     # Belegungskarte (gridmap.py): Welt-KS ab Startpose, nur Anzeige
     enabled: bool = True
     resolution_m: float = 0.05
-    size_m: float = 16.0               # Kantenlänge, Start in der Mitte
+    # Kantenlänge, Start in der Mitte. 24 seit 2026-11-17: mit 16 endete die Karte 8 m vom Start (Fahrt
+    # 20261117-130359 stieß bei y = +7,9 m an den Rand). 48 seit 2026-11-17 nachmittags: Fahrt 20261117-144500
+    # (gerader Flur) kam bei 10,7 m an den Rand, fand voraus kein Ziel mehr und kehrte um. Kleinere
+    # gespeicherte Karten werden mittig übernommen. 48 m = 960 x 960 Zellen, ~16 MB.
+    size_m: float = 48.0
     # Treffer nur bis hierhin: Kamera nur 12,8 cm hoch, eine Bildzeile sind bei 2 m schon ~40 cm.
     # 1,5 seit 2026-11-14 (Nutzer: Hindernisse schon aus 1,5 m eintragen); vorher und im Simulator 1,25
     max_range_m: float = 1.5
@@ -434,6 +455,16 @@ class GridCfg:
     free_range_m: float = 1.5
     driven_free_r_m: float = 0.10      # gefahrener Weg gilt so breit als frei; 0 = aus
     max_turn_dps: float = 40.0         # bei schnellerer Drehung nichts eintragen (Unschärfe, Pose)
+    # Nach einer Drehung über turn_settle_dps noch turn_settle_s lang nichts eintragen: Die IMU-Neigung stimmt
+    # dann nicht (Fahrt 20261117-144500: nach der Wende mit w 0,5 für 3-4 s um 2-3,5° daneben, die Flurwand
+    # stand 0,55 statt 0,9 m neben ihm in der Karte: Doppelwand). Eigene Schwelle auf die geglättete Drehrate
+    # (~0,2 s), weil das Lenken in der Fahrt in einzelnen Schritten schon 40-84 °/s erreicht, Wenden 110-180 °/s
+    # über mehrere Schritte. Mit 3 s auf die ungeglättete Rate stockte die Karte voraus und er wendete im Flur
+    # (Fahrt 20261117-151254). turn_settle_s 0 = aus (Simulator).
+    # Seit 2026-11-17 15:40 aus: mit 2 s war am Rider kein Erkunden mehr möglich (Fahrt 20261117-153038, Ursache
+    # ungeklärt); erst wieder einschalten, wenn die Zielwechsel im Log stehen.
+    turn_settle_s: float = 0.0
+    turn_settle_dps: float = 60.0
     occ_free_factor: float = 0.5       # schon belegte Zellen baut ein Freistrahl nur so stark ab
     l_min: float = -3.0
     l_max: float = 3.5
@@ -501,6 +532,10 @@ class HomeCfg:
     # unter ~11° Fehler. Ab min_w_err_deg Fehler deshalb mindestens min_w.
     min_w: float = 0.055
     min_w_err_deg: float = 4.0
+    # Drehen auf der Stelle (Wegfolger, Ausrichten am Ziel) höchstens so schnell (normiert). 0,25 seit
+    # 2026-11-17: mit robot.max_w 0,5 wendete er mit 0,5, kippte dabei 7° zur Seite und die IMU-Neigung
+    # brauchte danach 3-4 s (Fahrt 20261117-144500). 1.0 = nur robot.max_w begrenzt (Simulator).
+    turn_w_max: float = 0.25
     align_heading: bool = True         # am Ziel auf den Startkurs drehen
     align_tol_deg: float = 10.0
     max_fail: int = 3                  # so oft kein Weg -> aufgeben
@@ -527,6 +562,11 @@ class ExploreCfg:
     # mindestens min_unknown_m2 zusammenhängend unbekannt ist (kein einzelnes Loch im bekannten Boden)
     squeeze_cluster_m: float = 0.15
     min_unknown_m2: float = 0.05
+    # Zellen mit Treffern, die noch nicht als belegt gelten (Log-Odds über diesem Wert, unter grid.l_show),
+    # zählen für die Zielsuche nicht als unbekannt: Im Vorbeifahren bekommt eine Wand stellenweise nur einen
+    # Treffer, das Loch wurde zum Ziel hinter ihm (Fahrt 20261117-144500, 6,8 m zurück). Negativ = aus (Simulator).
+    # Seit 2026-11-17 15:40 aus (-1): Wirkung am Rider nicht belegt, das Loch der Fahrt blieb auch so ein Ziel.
+    weak_wall_l: float = -1.0
     # Zielwahl: die Stelle mit der kleinsten Fahrzeit + Drehzeit zuerst. Viel Unbekanntes am Ziel (Fläche im
     # Umkreis gain_radius_m, voll ab gain_ref_m2) zählt wie höchstens gain_bonus_s weniger Zeit.
     gain_radius_m: float = 1.2
@@ -547,9 +587,21 @@ class ExploreCfg:
     # ohne Halt weiter; sonst wie bisher hindrehen, settle_s schauen, neu suchen.
     pass_view_deg: float = 40.0
     pass_age_s: float = 3.0
+    # ... und nur, wenn das nächste Ziel höchstens so weit seitlich liegt (Grad zum Kurs): Stockt die Karte voraus,
+    # erreicht er die Stelle, und das vorausgeplante Ziel (ohne diese Stelle) liegt hinter ihm; er wendete im
+    # geraden Flur um 180° (Fahrten 20261117-144500 am Kartenrand, -151254). Sonst anhalten, schauen, neu suchen.
+    # 180 = immer übernehmen (Simulator).
+    # Seit 2026-11-17 15:40 auf 180 (aus), am Rider nie wirksam gesehen; 100 war der Versuch.
+    pass_turn_max_deg: float = 180.0
     # Höchstens so viele Ziele, die nur in Engstellen liegen (Stufe 1), je Erkundung: In einer echten Karte
     # sind das meist Löcher in gezeichneten Wänden (RiderPi 2026-11-11: 17-25 solche Stellen am Ende).
-    tight_max: int = 3
+    # 10 seit 2026-11-15 (Nutzer; RiderPi: bei 3 blieben 10 Stellen hinter Engstellen liegen und die Karte galt
+    # nach 145 s als fertig); vorher und im Simulator 3
+    tight_max: int = 10
+    # Ziele nur in Engstellen kosten so viel Zeit (s) mehr als Ziele mit Abstand und konkurrieren sonst mit ihnen.
+    # -1 = alte Regel (Engstellen nur, wenn kein Ziel mit Abstand bleibt; Simulator). 3 seit 2026-11-15 (Nutzer):
+    # Er kehrte sonst für ein Ziel hinter sich um, obwohl eine Engstelle direkt voraus lag.
+    tight_penalty_s: float = 3.0
     standoff_m: float = 0.3            # so weit vor der Frontier anhalten
     start_free_r_m: float = 0.2        # um den Startpunkt gilt der Boden als frei
     reach_m: float = 0.25              # Ziel gilt als erreicht
@@ -567,6 +619,11 @@ class ExploreCfg:
     max_s: float = 900.0               # Zeitgrenze
     min_battery: int = 25              # %: darunter beenden und zum Start
     return_home: bool = True           # am Ende zum Startpunkt fahren
+    # Am Start angekommen noch einmal nach Zielen suchen, bevor die Karte als fertig gilt: Auf dem Heimweg
+    # sieht er Neues (RiderPi 2026-11-15: eine offene Stelle neben dem Start blieb so liegen). Nur wenn der
+    # Heimweg mindestens recheck_min_m lang war, höchstens recheck_max mal je Erkundung; 0 = aus.
+    recheck_max: int = 3
+    recheck_min_m: float = 1.0
 
 
 @dataclass
@@ -887,7 +944,7 @@ NEUTRAL = {"pet.call_m": 0.0, "pet.come_m": 0.0, "pet.drive_v": 0.08, "pet.look_
            "robot.manual_forward_gain": 1.0, "robot.level_after_standup": False, "camera.sensor_mode": "",
            "camera.scaler_crop": [], "camera.exposure_us": 4000, "camera.analogue_gain": 0.0,
            "camera.mount_offset_mm": 45.0, "camera.cam_h_u8": [], "camera.cam_fwd_mm": 0.0,
-           "camera.cx_offset_px": 0.0, "camera.tilt_deg": 0.0, "imu.stream_hz": 0, "imu.pitch_ref_deg": 0.0,
+           "camera.cx_offset_px": 0.0, "camera.tilt_deg": 0.0, "imu.stream_hz": 0, "imu.pitch_ref_deg": 0.0, "imu.use_roll": False, "imu.roll_ref_deg": 0.0,
            "detector.max_hz": 0.0, "detector.classes": [], "freespace.threaded": False,
            "freespace.sample_rows": 0.18, "freespace.sample_cols": 0.3, "freespace.shading_file": "",
            "freespace.shading_max_gain": 8.0, "freespace.method": "farbe", "freespace.shadow_net": "",
@@ -896,7 +953,7 @@ NEUTRAL = {"pet.call_m": 0.0, "pet.come_m": 0.0, "pet.drive_v": 0.08, "pet.look_
            "behavior.turn_w": 0.18, "behavior.search_timeout_s": 20.0, "behavior.height_search_mm": 115.0,
            "behavior.height_fast_mm": 70.0, "output.lcd_fifo": "/tmp/lcd0", "cpu.main_cpus": [],
            "cpu.detector_cpus": [], "cpu.render_cpus": [], "cpu.freespace_cpus": [], "odom.scale_left": 1.0,
-           "odom.scale_right": 1.0, "explore.turn_dps": 40.0, "grid.confirm_dr_m": 0.0, "grid.max_range_m": 1.25, "grid.free_range_m": 1.5, "grid.yaw_source": "räder",
+           "odom.scale_right": 1.0, "explore.turn_dps": 40.0, "explore.tight_max": 3, "explore.tight_penalty_s": -1.0, "grid.confirm_dr_m": 0.0, "grid.max_range_m": 1.25, "grid.free_range_m": 1.5, "grid.size_m": 16.0, "grid.turn_settle_s": 0.0, "home.turn_w_max": 1.0, "explore.weak_wall_l": -1.0, "explore.pass_turn_max_deg": 180.0, "grid.yaw_source": "räder",
            "reloc.enabled": False, "reloc.track": False}
 
 

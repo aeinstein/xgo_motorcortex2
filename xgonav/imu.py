@@ -17,6 +17,7 @@ import os
 import threading
 import time
 from collections import deque
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -114,6 +115,26 @@ class ImuSource:
         if len(ts) < 2:
             return None
         return np.interp(t, ts, ps)
+
+    def roll_at(self, t) -> float | None:
+        """Roll (rad) zur Zeit t aus der Historie, None ohne Proben."""
+        with self._lock:
+            ts, rs = self._buf[0, self._a:self._b], self._buf[1, self._a:self._b]
+            if len(ts) < 2:
+                return None
+            return float(np.interp(t, ts, rs))
+
+    def at(self, t: float) -> tuple[float, float, float | None, float] | None:
+        """(Roll, Nick, Kurs in rad, Zeit der neuesten Probe) zur Zeit t, in einem Zug unter der Sperre; None mit
+        weniger als 2 Proben. Kurs ist entfaltet (stetig), None, solange der Treiber keinen liefert."""
+        with self._lock:
+            a, b = self._a, self._b
+            if b - a < 2:
+                return None
+            ts = self._buf[0, a:b]
+            y = float(np.interp(t, ts, self._buf[3, a:b])) if self._y_last is not None else None
+            return (float(np.interp(t, ts, self._buf[1, a:b])), float(np.interp(t, ts, self._buf[2, a:b])),
+                    y, float(ts[-1]))
 
     def latest_t(self) -> float | None:
         with self._lock:
@@ -275,17 +296,58 @@ class ImuSync:
         self.reliable = ok
 
     def pitch_dev(self, imu: ImuSource, t_frame: float) -> float | None:
-        """Absolute Nickabweichung der Kamera (rad, + = schaut höher) ggü. Referenzlage."""
-        if not self.reliable:
-            return None
-        lt = imu.latest_t()
-        if lt is None or t_frame + self.offset - lt > self.cfg.max_age_s:
-            return None
-        p = imu.pitch_at(t_frame + self.offset)
-        if p is None:
-            return None
-        # pitch_ref_deg = Rohwert der IMU bei der Kamerakalibrierung (tools/calibrate.py wall)
-        return self.sign * (float(p) - math.radians(self.cfg.pitch_ref_deg))
+        """Absolute Nickabweichung der Kamera (rad, + = schaut höher) ggü. Referenzlage (imu_frame().pitch).
+        pitch_ref_deg = Rohwert der IMU bei der Kamerakalibrierung (tools/calibrate.py wall)."""
+        return imu_frame(self, imu, t_frame).pitch
+
+
+@dataclass(frozen=True)
+class ImuFrame:
+    """IMU zur Bildzeit, einmal je Bild in App._step gerechnet und von allen genutzt (Geometrie, Bodenmodell,
+    Karten, Kippen, Overlay, Weboberfläche). t_imu = Bildzeit + [imu] time_offset_ms."""
+    t_imu: float
+    ok: bool                    # Probe jung genug und Vorzeichen/Versatz bekannt
+    frisch: bool                # Probe jung genug (max_age); Roll, Kurs und Rohwerte gelten auch ohne Sync
+    pitch: float | None         # Nick gegen die Referenzlage (rad, + = Kamera schaut höher), wie pitch_dev
+    roll_deg: float             # Roll gegen waagerecht (Grad, + = rechts tief) = Roll - roll_ref_deg; 0 aus/ungültig
+    yaw: float | None           # Kurs (rad, links +, entfaltet)
+    pitch_raw_deg: float | None  # Rohwerte der IMU (Grad)
+    roll_raw_deg: float | None
+    alter_ms: float | None      # Bildzeit+Versatz minus neueste Probe (> 0: Wert gehalten, < 0: interpoliert)
+
+
+def imu_frame(sync: "ImuSync", imu: ImuSource, t_frame: float) -> ImuFrame:
+    """IMU-Werte zur Bildzeit t_frame (CLOCK_MONOTONIC, SensorTimestamp). Ungültig (ok False), wenn die neueste
+    Probe älter als max_age ist oder Vorzeichen/Versatz unbekannt; dann pitch None, roll_deg 0."""
+    t = t_frame + sync.offset
+    w = imu.at(t)
+    if w is None:
+        return ImuFrame(t, False, False, None, 0.0, None, None, None, None)
+    r, p, y, lt = w
+    alter = t - lt
+    frisch = alter <= max_age(sync.cfg, imu)
+    ok = frisch and sync.reliable
+    pitch = sync.sign * (p - math.radians(sync.cfg.pitch_ref_deg)) if ok else None
+    roll = math.degrees(r) - sync.cfg.roll_ref_deg if frisch and sync.cfg.use_roll else 0.0
+    return ImuFrame(t, ok, frisch, pitch, roll, y if frisch else None, math.degrees(p), math.degrees(r),
+                    alter * 1000.0)
+
+
+def max_age(cfg, imu) -> float:
+    """Höchstes Alter der neuesten IMU-Probe, bis zu dem ein Bild sie noch nutzt. Abgesetzt (imu.idle) liefert
+    die IMU nur idle_hz und wird so oft gelesen: die Probe ist dann bis 2 Abstände alt, mit max_age_s (0,3 s) fiel
+    sonst bei 5 Hz jedes vierte Bild auf Nick 0 zurück (Horizontlinie sprang im Liegen, 2026-11-17)."""
+    lim = cfg.max_age_s
+    hz = getattr(cfg, "idle_hz", 0)
+    if getattr(imu, "idle", False) and hz > 0:
+        lim = max(lim, 2.5 / hz)
+    return lim
+
+
+def roll_dev_deg(sync: "ImuSync", imu: ImuSource, t_frame: float) -> float:
+    """Roll der Kamera gegen waagerecht (Grad) zur Bildzeit: IMU-Roll - roll_ref_deg; 0.0, wenn aus oder die
+    IMU zu alt ist. Gleicher Zeitversatz wie beim Nick (imu_frame().roll_deg)."""
+    return imu_frame(sync, imu, t_frame).roll_deg
 
 
 def make_imu(cfg: ImuCfg) -> ImuSource | None:

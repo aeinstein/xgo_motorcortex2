@@ -69,6 +69,19 @@ def net_to_columns(rows: np.ndarray, horizon: float, H: int, W: int, scale: floa
     return np.clip((H - np.asarray(rows, np.float32)[idx] / scale) / max(1.0, H - horizon), 0.0, 1.0).astype(np.float32)
 
 
+def roll_columns(columns: np.ndarray, horizon: float, H: int, W: int, cx: float, roll_deg: float) -> np.ndarray:
+    """Bodengrenze um den Roll der Kamera gedreht: Bei Roll liegt die Grenze je Spalte um (Spalte - Mitte) *
+    tan(Roll) Zeilen falsch (cx = Bildmitte in Spalten des Bodenmodells). Spalten ohne Treffer (frei bis zum
+    Horizont) und unbekannte bleiben. Wie tools/map_replay.roll_spalten."""
+    cols = np.asarray(columns, np.float32).copy()
+    span = max(1.0, H - horizon)
+    u = (np.arange(len(cols)) + 0.5) * (W / len(cols)) - cx
+    with np.errstate(invalid="ignore"):
+        hit = cols < 0.98
+    cols[hit] = np.clip(cols[hit] - u[hit] * (math.tan(math.radians(roll_deg)) / span), 0.0, 0.979)
+    return cols
+
+
 def _p20(a: np.ndarray) -> float:
     """20-%-Quantil mit linearer Interpolation (wie np.percentile, aber ohne dessen Overhead).
     NaN-Spalten (unbekannt) zählen nicht; ganz unbekannt = 0.0 (nicht als frei melden)."""
@@ -682,7 +695,7 @@ class FreeSpaceEstimator:
         out[hit] = np.minimum(out[hit], val[hit])
         return out, int(hit.sum())
 
-    def from_net(self, rows: np.ndarray, pitch_dev: float = 0.0) -> FreeSpace:
+    def from_net(self, rows: np.ndarray, pitch_dev: float = 0.0, roll_deg: float = 0.0) -> FreeSpace:
         """FloorNet allein: FreeSpace nur aus seinen Zeilen, ohne das Verfahren zu rechnen (kein update()).
         Horizont wie in update(); die Maske ist leer (nur ihre Größe wird gebraucht)."""
         hz_full = self.geo.horizon_row(pitch_dev) if self.geo else self.H * self.scale / 2
@@ -690,12 +703,15 @@ class FreeSpaceEstimator:
         if self._net_mask is None:
             self._net_mask = np.zeros((self.H, self.W), np.uint8)
         fs = FreeSpace([1.0] * self.cfg.sectors, None, horizon, self._net_mask, True, None, pitch_dev)
-        self.adopt_net(fs, rows)
+        self.adopt_net(fs, rows, roll_deg)
         return fs
 
-    def adopt_net(self, fs: FreeSpace, rows: np.ndarray) -> None:
-        """columns und sectors aus den Zeilen des Netzes (auch für den Vergleich auf Aufnahmen)."""
+    def adopt_net(self, fs: FreeSpace, rows: np.ndarray, roll_deg: float = 0.0) -> None:
+        """columns und sectors aus den Zeilen des Netzes (auch für den Vergleich auf Aufnahmen). roll_deg: Roll der
+        Kamera zur Bildzeit (imu.imu_frame().roll_deg), die Grenze wird damit geradegedreht."""
         fs.columns = net_to_columns(rows, fs.horizon_row, self.H, self.W, self.scale)
+        if roll_deg and self.geo is not None:
+            fs.columns = roll_columns(fs.columns, fs.horizon_row, self.H, self.W, self.geo.cx / self.scale, roll_deg)
         n = len(fs.sectors)
         ex = np.linspace(0, self.W, n + 1).astype(int)
         fs.sectors = [_p20(fs.columns[ex[i]:ex[i + 1]]) for i in range(n)]
@@ -741,11 +757,12 @@ class FreeSpaceWorker:
         if self.net is not None and not (self._thread and self._thread.is_alive()):
             self.net.close()
 
-    def offer(self, bgr, pitch_dev: float, boxes, pose=None, t: float | None = None) -> None:
-        """pose: Kartenpose zum Bild, wird dem Ergebnis mitgegeben. t: Aufnahmezeit (s, monoton), für das Glätten."""
+    def offer(self, bgr, pitch_dev: float, boxes, pose=None, t: float | None = None, roll_deg: float = 0.0) -> None:
+        """pose: Kartenpose zum Bild, wird dem Ergebnis mitgegeben. t: Aufnahmezeit (s, monoton), für das Glätten.
+        roll_deg: Roll der Kamera zur Bildzeit (nur der Netzweg dreht die Grenze damit gerade)."""
         import time
         with self._cond:
-            self._job = (bgr, pitch_dev, list(boxes), pose, time.monotonic() if t is None else t)
+            self._job = (bgr, pitch_dev, list(boxes), pose, time.monotonic() if t is None else t, roll_deg)
             self._cond.notify()
 
     def poll(self) -> FreeSpace | None:
@@ -797,7 +814,7 @@ class FreeSpaceWorker:
             roh = rows
             if self.smooth is not None:
                 rows = self.smooth.glaetten(roh, job[3], job[1], job[4], getattr(self.est, "geo", None))
-            fs = self.est.from_net(rows, job[1])
+            fs = self.est.from_net(rows, job[1], job[5])
             fs.net_rows = rows
             if self.smooth is not None:
                 fs.net_rows_raw = roh

@@ -5,7 +5,7 @@
 ```
 camera.FrameSource ─► egomotion.EgoMotion ─► tracker.Tracker ◄── detector.DetectorWorker (thread)
                             │                       │
-                            ├─► imu.ImuSync (complementary filter IMU + image → pitch_dev)
+                            ├─► imu.imu_frame (IMU at frame time, one value per frame → pitch_dev, roll, heading)
                             ├─► freespace.FreeSpaceEstimator (opt. thread) ─► localmap.LocalMap
                             ├─► wheels (odometry) ─► gridmap.GridMap (thread, display only)
                             ▼
@@ -33,7 +33,7 @@ camera.FrameSource ─► egomotion.EgoMotion ─► tracker.Tracker ◄── d
 |---|---|
 | `camera.py` | `PiCameraSource` (picamera2), `OpenCVSource` (index/file) |
 | `egomotion.py` | LK optical flow + RANSAC → rotation model, sharpness, time-to-contact; C++ core `native/egofast.cpp` (ctypes, optional) |
-| `imu.py` | `ProcImu`, `ImuSync`: sign/time offset by correlation, complementary filter |
+| `imu.py` | `ProcImu`, `ImuSync`: sign/time offset by correlation; `imu_frame`: pitch, roll, heading at frame time + offset, used by geometry, floor model, maps, tilt, overlay and web (`Snapshot.imu`); image pitch only as comparison (`Snapshot.nickrate`) |
 | `detector.py` | `DetectorWorker`: YOLO via NCNN (`YoloNcnn`) or onnxruntime (`YoloOnnx`), fallback model; disabled if none is usable |
 | `tracker.py` | Tracks, ego-motion compensation, latency compensation, Kalman distance/velocity |
 | `geometry.py` | Camera geometry, ground-plane distance |

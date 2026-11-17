@@ -90,8 +90,9 @@ Default = `config.py`; since 2026-11-12 these are the RiderPi values (`/opt/xgon
 | `stream_hz` | 100 (sim: 0) | | > 0: written to `settings/imu_stream_hz` → firmware stream (patch 0014) with the firmware's sample time; driver without it: warning, polling |
 | `idle_hz` | 5 | 5 | While the Rider is set down (not balancing): stream rate and read rate of the IMU thread; back to `stream_hz` and `poll_s` on stand-up. Saves ~6 % of one core on the CM4. `0` = never switch. Sleep mode still turns the stream off |
 | `pitch_sign` | 0 | | 0 = auto from image correlation (RiderPi: -1) |
-| `time_offset_ms` | None | | None = auto (RiderPi: +4..+8 ms) |
-| `pitch_ref_deg` | -4.43 (sim: 0.0) | | raw IMU pitch at camera calibration (R-1.1.3: -2.7) |
+| `time_offset_ms` | None | | IMU time = frame time + this. None = auto. RiderPi 10.5: `tools/imu_versatz.py` on a raw recording (2026-11-17, 8 sections +9.9..+12.0 ms, correlation 0.99). Pitch for the geometry is the pure IMU pitch at this time (no image share since 2026-11-17) |
+| `pitch_ref_deg` | -4.23 (sim: 0.0) | | raw IMU pitch at camera calibration (-4.43; R-1.1.3: -2.7) plus 0.2° from a corridor of 2.04 m drivable width (three start scans 2026-11-17 gave 1.98 m) |
+| `use_roll` / `roll_ref_deg` | true / 1.25 (sim: false / 0) | | FloorNet boundary is rotated by (IMU roll − `roll_ref_deg`) per frame before it reaches maps and safety (`freespace.roll_columns`); the camera sits ~2° rolled. Without it one corridor wall lay at 0.7 or 1.2 m depending on the image edge (wall 33–48 cm thick in the start scan, 10–14 cm with it; three scans 2026-11-17) |
 | `min_corr` | 0.6 | | sync accepted above |
 | `sync_range_ms` / `sync_step_ms` | 100 / 4 | | |
 | `poll_s` | 0.01 | | read `imu_log` this often; only new lines are parsed (RiderPi: one read 185 µs for 128 lines). At 0.05 the newest sample was up to ~50 ms older than the frame and the pitch was held, not interpolated |
@@ -189,6 +190,7 @@ Replay of three evening drives (`tools/replay_raw.py`, 2026-11-04), false alarms
 | `search_timeout_s` | 10.0 (sim: 20.0) | |
 | `blocked_free` / `slow_free` | 0.22 / 0.55 | |
 | `ttc_avoid_s` / `ttc_stop_s` | 1.2 / 0.8 | |
+| `push_v` / `push_s` / `push_n` / `push_free_m` | 0.45 / 0.6 / 2 / 0.4 | push: forward commanded, < 2 cm progress for 2.5 s (1 s after a push) and FloorNet ≥ `push_free_m` free ahead → drive `push_v` for `push_s`; at most `push_n` times until 0.3 m progress, then back up as before. Path following, `home`, `patrol`, and the reactive escape of `explore`. 0 = off. Not driven (carpet groove 2026-11-17) |
 | `height_cruise_mm` / `height_search_mm` / `height_fast_mm` | 85 / 100 / 80 (sim: 85 / 115 / 70) | |
 
 ### `[output]`
@@ -264,7 +266,8 @@ All keys with comments: `PetCfg` in `xgonav/config.py`.
 | Key | Default |
 |---|---|
 | `enabled` | true |
-| `resolution_m` / `size_m` | 0.05 / 16.0 |
+| `resolution_m` / `size_m` | 0.05 / 48.0 (16 until 2026-11-17, then 24: a straight corridor hit the edge 12 m from the start and explore turned back; sim 16; a smaller saved map is loaded centred, a larger one ignored) |
+| `turn_settle_s` / `turn_settle_dps` | 0 (off since 2026-11-17 15:40: with 2 s the Rider could no longer explore, cause open) / 60: nothing is entered for this long after a turn faster than this (rate smoothed over ~0.2 s, single steering spikes do not count; IMU pitch is off by 2–3.5° after a fast turn, run 20261117-144500); 0 = off (sim) |
 | `min_range_m` / `max_range_m` | 0.15 / 1.5 (hits only up to here; sim 1.25) |
 | `confirm_dr_m` / `confirm_cells` | 0 = off (since 2026-11-14, one sighting is enough with FloorNet; 0.2 before) / 2: with > 0 a hit counts only once the same spot (± cells) was hit from ranges at least this far apart; until then it is a candidate (orange in `/map.png`). Reflections in a glossy floor and seams move with the Rider and are never confirmed; turning on the spot alone confirms nothing |
 | `mark_blocking` | true | `LocalMap` points the path check brakes for are entered as confirmed and occupied (what stops the Rider is on the map); free rays remove them again if the spot is later seen free |
@@ -312,6 +315,7 @@ All keys with comments: `PetCfg` in `xgonav/config.py`.
 | `use_localmap` | true | confirmed `LocalMap` points (same as the path check) are obstacles for planning |
 | `v` | 0.15 | normalised speed (`home`, `patrol`; `explore` uses `explore.v`) |
 | `kp_turn` | 1.5 | 1/s, turn rate per heading error (follow uses `behavior.kp_turn`) |
+| `turn_w_max` | 0.25 | cap for turning in place (path follower, final alignment); 1.0 = only `robot.max_w` (sim). Turning at 0.5 rolled the Rider 7° and upset IMU pitch and pose (2026-11-17) |
 | `turn_enter_deg` / `turn_exit_deg` | 75 / 25 | turn in place above enter until below exit; otherwise drive the curve (speed ≥ 30 %) |
 | `align_heading` / `align_tol_deg` | true / 10 | turn to start heading at goal |
 | `max_fail` | 3 | consecutive failed plans → stop |

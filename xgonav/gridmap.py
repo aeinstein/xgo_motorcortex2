@@ -205,16 +205,28 @@ class GridMap:
         try:
             with np.load(path) as d:
                 res, n = float(d["res"]), int(d["n"])
-                if abs(res - self.res) > 1e-9 or n != self.n:
+                if abs(res - self.res) > 1e-9 or n > self.n or (self.n - n) % 2:
                     log.warning("Raumkarte %s passt nicht (%.3f m / %d Zellen statt %.3f m / %d) – ignoriert",
                                 path, res, n, self.res, self.n)
                     return False
-                lo = d["lo"].astype(np.float32)
+                # Kleinere Karte (size_m vergrößert, 2026-11-17 16 -> 24 m): mittig einsetzen, Start bleibt in der Mitte
+                k = (self.n - n) // 2
+
+                def gross(a, fill):
+                    if not k:
+                        return a
+                    b = np.full((self.n, self.n), fill, a.dtype)
+                    b[k:k + n, k:k + n] = a
+                    return b
+                lo = gross(d["lo"].astype(np.float32), 0.0)
                 start = tuple(float(v) for v in d["start"])
                 map_id = str(d["map_id"]) if "map_id" in d.files else secrets.token_hex(4)
                 locked = bool(d["locked"]) if "locked" in d.files else False
                 saved_pose = tuple(float(v) for v in d["pose"]) if "pose" in d.files else None
-                cand = tuple(d[k] for k in ("rmin", "rmax", "conf")) if "conf" in d.files else None
+                cand = (gross(d["rmin"].astype(np.float32), np.inf), gross(d["rmax"].astype(np.float32), -np.inf),
+                        gross(d["conf"].astype(bool), False)) if "conf" in d.files else None
+                if k:
+                    log.info("Raumkarte %s: %d Zellen mittig in %d übernommen", path, n, self.n)
         except (OSError, KeyError, ValueError) as e:
             log.warning("Raumkarte %s nicht geladen: %s", path, e)
             return False
