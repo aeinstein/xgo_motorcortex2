@@ -1,6 +1,6 @@
 """ESP32-Emulator am PTY: beantwortet XGO-Lesebefehle mit 115200-Baud-Timing und Fehlern.
 
-python3 esp32_emu.py <harness> <sekunden> <imu_hz> [--block] [--faults] [--imu65] [--wheels]
+python3 esp32_emu.py <harness> <sekunden> <imu_hz> [--faults] [--wheels --combo] [--stream[=HZ]|--stream-off]
 
 --imu65: Register 0x65 (R-1.1.6: accel + roll/pitch/yaw, 24 Byte); --wheels: 0x0c (Rad-Encoder);
 --combo: 0x0d (roll/pitch/yaw + Rad-Ticks + t_ms, 24 Byte; nur zusammen mit --wheels sinnvoll).
@@ -8,7 +8,8 @@ python3 esp32_emu.py <harness> <sekunden> <imu_hz> [--block] [--faults] [--imu65
 Typ 0x14 (seq, t_us der Messung nach eigener, driftender ESP-Uhr, Winkel, Ticks) mit zufälligem Sendeverzug
 (Firmware-loop); aus nach 5 s ohne Byte vom Host. Das Testprogramm bekommt HZ (Standard 100) als Strom-Rate.
 --stream-off: wie --stream, aber die Firmware kennt 0x11 nicht (Rückfall auf Abfrage prüfen).
-Ohne diese Schalter antwortet der Emulator auf 0x65/0x0c gar nicht (wie R-1.1.3).
+Ohne diese Schalter antwortet der Emulator auf 0x65/0x0c/0x0d gar nicht (wie R-1.1.3); der Treiber nutzt seit
+2026-11-17 nur noch 0x0d und den Strom, --block und --imu65 prüfen nur noch, dass er sie nicht fälschlich annimmt.
 """
 import math
 import os

@@ -1,8 +1,8 @@
 """FloorNet: selbst trainiertes Bodennetz im C++-Kern (native/floornet.cpp, Training unter tools/floornet/).
 
-Liefert je Spalte die Vollbildzeile der Bodengrenze. Vorerst nur im Schattenbetrieb: Es rechnet mit und wird
-im Overlay gezeigt, entscheidet aber nichts. Fehlt der C++-Kern oder besteht er die Selbstprüfung nicht, ist
-es aus, das Kantenverfahren läuft unverändert.
+Liefert je Spalte die Vollbildzeile der Bodengrenze. Mit [freespace] primary = "net" (RiderPi) entscheidet es
+allein, sonst rechnet es im Schatten mit und wird nur im Overlay gezeigt. Fehlt der C++-Kern oder besteht er die
+Selbstprüfung nicht, ist es aus, das Verfahren ([freespace] method) übernimmt.
 """
 from __future__ import annotations
 

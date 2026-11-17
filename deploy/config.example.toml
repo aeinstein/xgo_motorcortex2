@@ -6,7 +6,7 @@
 # Abendlicht auf Laminat). Mit [K] markierte Werte sind gerätespezifisch und sollten
 # neu kalibriert werden (README, Abschnitt „Kalibrieren“).
 
-control_hz = 20.0
+control_hz = 24.0       # jedes Bild (camera.fps)
 
 [robot]
 max_v = 0.5           # Nutzer 2026-11-13: 50 % (vorher 0.15); gesendet 0,12 -> 26 cm/s, 0,24 -> 50 cm/s, darüber nie gefahren
@@ -32,7 +32,7 @@ exposure_us = 20000      # Standard (Nutzer 2026-11-03): 20 ms bei Verstärkung 
 analogue_gain = 16.0     # OV5647 1..63,9; Automatik nur bis 8; über ~8x kein besserer Rauschabstand
 mount_offset_mm = 43.0   # nur ohne cam_h_u8: Kamerahöhe = Körperhöhe + Offset
 cam_h_u8 = [109.4, 0.1126]   # [K] Kamerahöhe = a + b·u8; gemessen u8 106/150/200 -> 122/125/132,5 mm; Gitter am Boden
-                             # 2026-11-10 bestätigt (u8 128: 124-126, u8 205: 131-133 mm); der Faktor 0,921 vom 2026-11-07 ist raus
+                             # 2026-11-10 bestätigt (u8 128: 124-126, u8 205: 131-133 mm); ohne Zusatzfaktor
 cam_fwd_mm = 36.0        # [K] Linse vor der Radachse (CAD 36,9; Bodenprobe 34/41); Kartenursprung = Radachse
 cx_offset_px = 13.0      # [K] Fahrtrichtung bei Spalte 333: Fluchtpunkt Geradeausfahrt, 8 Fahrten 45 m (2026-11-08)
 tilt_deg = 5.18          # [K] Zollstock 2026-11-04, gilt zusammen mit imu.pitch_ref_deg
@@ -45,10 +45,8 @@ stream_hz = 100          # Firmware 0014 + Treiber: IMU/Rad-Strom mit Messzeit d
 pitch_ref_deg = -4.23    # [K] IMU-Rohnick bei der Zollstock-Messung (-4.43), +0,2° aus der Flurbreite 2,04 m (2026-11-17)
                          # R-1.1.6: visuell an der Horizontlinie nachgestellt (2026-11-03);
                          # unter R-1.1.3 waren es -2,7 (Wandmessung). Wandmessung für R-1.1.6 offen.
-# Vorzeichen und Zeitversatz werden automatisch aus dem Bild bestimmt (RiderPi: -1, +4..+8 ms).
-# Optional fest eintragen:
-# pitch_sign = -1
-# time_offset_ms = 10.5   # tools/imu_versatz.py auf einer Rohaufnahme (2026-11-17)
+# [K] pitch_sign = -1 und time_offset_ms = 10.5 sind Default (tools/imu_versatz.py auf einer Rohaufnahme, 2026-11-17).
+# Anderes Gerät: mit imu_versatz.py neu messen und hier eintragen.
 
 [detector]
 model = "models/yolo11n_256_ncnn"        # NCNN: CM4 96 ms statt 117 ms (onnxruntime), gleiche Boxen
@@ -64,8 +62,8 @@ classes = ["person", "chair", "couch", "dining table", "potted plant", "bed", "d
 [freespace]
 # net_outlier_px = 25.0 ist Standard: einzelne Zacken der FloorNet-Grenze herausnehmen (0 = aus), docs/floornet.md
 # net_smooth_n = 3      # FloorNet-Kante über 3 Netzbilder beruhigen (Median je Spalte nach Umrechnen mit Pose und
-                        # Nicken); nur mit primary = "net", 0 = aus (Standard), docs/floornet.md
-# primary = "net"       # FloorNet entscheidet allein, das Verfahren (method) rechnet nur bei Ausfall des Netzes;
+                        # Nicken); nur mit primary = "net", 0 = aus; 3 ist Default, docs/floornet.md
+# primary = "net"       # (Default) FloorNet entscheidet allein, das Verfahren (method) rechnet nur bei Ausfall des Netzes;
                         # braucht shadow_net und threaded. Am RiderPi seit 2026-11-10 gesetzt, nicht gefahren
 method = "kanten"        # Bodengrenze aus Stufenkanten; replay 2026-11-04: Fehlalarme 0,2–16 % statt 25–53 % (Farbe)
 # edge_log_s = 16 und edge_glare = true sind Standard (2026-11-05): dunkle Wände/Möbel werden

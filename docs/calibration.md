@@ -64,26 +64,13 @@ python tools/calibrate.py solve <row1>:<m1> <row2>:<m2>
 | RiderPi | h = 100 mm (measured), rows 338.2 / 303.3 / 292.3 / 286.3 → f = 328.3 px (hfov 88.5°), horizon row 269.8 = 5.18° up at IMU pitch −4.43°, residuals ≤ 0.24 px |
 | Result | `hfov_deg = 88.5`, `tilt_deg = 5.18`, `pitch_ref_deg = -4.43`; `mount_offset_mm` needs camera height while balancing at known body height (still 43). Superseded for f by section 0 (91.8°); f·h from this fit stays valid |
 
-## 2b. Standing horizon per body height — `[horizon]` (2026-11-07, not yet run on the Rider)
+## 2b. Standing horizon per body height — removed 2026-11-17
 
-The Rider balances: standing still it sways around a pose that depends on body height. 2a was measured
-leaning, not balancing, so the horizon is off when standing and at other heights.
-
-| Step | What |
-|---|---|
-| Stand reference | after each stand-up (balancing false → true) and each height change: wait `settle_s` (3 s), then average raw IMU pitch over `window_s` (3 s); only at standstill (command v = w = 0) and spread ≤ `max_std_deg` (0.5°), else next window |
-| Horizon row | per body height, set by hand in the web image: green line onto a level reference at lens height (laser line, tape on the wall), Horizont → *Für diese Höhe speichern*; only with a valid stand reference (409 otherwise) |
-| Table | `[horizon] file` (JSON: `height_mm`, `row`, `ref_deg`, time); linear between heights, nearest outside; same height ±1 mm replaces |
-| IMU | `sign · (IMU(t + offset) − stand reference)`, no low-pass (cyan line); `tilt_deg` from the table row |
-| Fast changes | image pitch summed from the last IMU value, re-anchored to the IMU at the latest after `bild_max_s` (0.5 s; summed image pitch drifted ~0.13°/min); this is `pitch_dev` (magenta), `pitch_src = "stand+bild"`; `bild_max_s = 0` → IMU only, `"stand"` |
-| Known error | right after a turn on the spot the firmware pitch was up to 2.3° (13 px) off, back after ~5 s (band test 2026-11-07, firmware 0001–0010); to be fixed in the firmware, not compensated in xgonav |
-| Check | coloured band at lens height on a wall: `tools/record_status.py DIR 60` on the Rider, then `tools/horizon_replay.py DIR` on the PC (band vs IMU line vs used line in px) |
-| Needs | `[imu] pitch_sign` and `time_offset_ms` set (RiderPi: -1, +10.5), else falls back to the old path until the auto sync is reliable |
-
-Lines in the overlay: white stand horizon of this height, cyan IMU, magenta image, green line being set.
-Drift check: *Bild am IMU-Nick festhalten* (camera bar, also without `[horizon]`) shifts each frame in the browser by `row_stand − row_imu` (black border, no load on the pipeline); the cyan line is then fixed on the stand row. Scene moving against it = IMU or time-sync drift.
+`[horizon]` (stand reference per stand-up, horizon row per body height; `xgonav/horizon.py`, `tools/horizon_replay.py`, web card *Horizont*) is removed; it was off on the RiderPi since 2026-11-12. The pitch is the pure IMU pitch of the frame (2c) with `pitch_ref_deg` + `tilt_deg` (section 2).
 
 ## 2c. Time offset frame → IMU — `[imu] time_offset_ms`, `pitch_sign`
+
+Both are fixed in the defaults since 2026-11-17 (-1, 10.5); the online estimate (`ImuSync`) runs only with 0 / None (simulator).
 
 Every consumer (geometry, floor model roll, map heading, tilt, overlay, web) uses one IMU value per frame: `imu.imu_frame` at frame time (`SensorTimestamp`) + `time_offset_ms`, linearly interpolated in the `imu_log` history. Measure the offset on the PC from a raw recording (web button *Aufzeichnen*, needs pitch motion such as height changes):
 
@@ -96,6 +83,7 @@ python tools/imu_versatz.py ~/fahrt/<recording> [--fenster idx,idx,... --halb 48
 | 2026-11-17 | recording 20261117-161237 (height changes), 8 sections of 4 s: +9.9..+12.0 ms, all together **+10.5 ms**, sign −1, correlation 0.99; slope 1.13 (image pitch 13 % larger than IMU pitch: focal length or IMU scale, open) |
 
 Web: the line under the camera image shows the IMU value of each frame (pitch, roll, heading, sample age, pitch rate image vs. IMU) and counts frames without a valid IMU value (red).
+Drift check: *Bild am IMU-Nick festhalten* (camera bar) shifts each frame in the browser by `row_stand − row_imu` (normal pose against the pure IMU pitch; black border, no load on the pipeline); the cyan line is then fixed. Scene moving against it = IMU or time-sync drift.
 
 ## 3. Lens shading — `[freespace] shading_file`
 

@@ -977,8 +977,7 @@ class MapExplore(Behavior):
             self.visited.append((self.frontier[0], self.frontier[1]))
             nxt, self._next = self._next, None
             seen = abs(_wrap(math.atan2(self.frontier[1] - y, self.frontier[0] - x) - th)) < math.radians(e.pass_view_deg)
-            vorn = nxt is not None and abs(_wrap(math.atan2(nxt.goal[1] - y, nxt.goal[0] - x) - th))                 <= math.radians(e.pass_turn_max_deg)
-            if nxt is not None and seen and vorn and w.t - self._next_t < e.pass_age_s:
+            if nxt is not None and seen and w.t - self._next_t < e.pass_age_s:
                 # Die Stelle liegt im Bild und das nächste Ziel steht schon fest: ohne Halt weiter
                 log.info("Erkunden: (%.2f, %.2f) erreicht bei (%.2f, %.2f), ohne Halt weiter zu (%.2f, %.2f)%s",
                          self.frontier[0], self.frontier[1], x, y, nxt.frontier[0], nxt.frontier[1],

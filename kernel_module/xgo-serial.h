@@ -24,12 +24,9 @@
 #include "xgo-drv.h"
 
 #define SERIAL_PORT "/dev/ttyAMA0" // Anpassen je nach Hardware
-#define BAUD_RATE B115200
 #define MAX_DATA_LEN 32
 
-int16_t initial_yaw = 0;
-int16_t wanted_yaw = 0;
-int16_t current_yaw = 0;
+int16_t current_yaw = 0;    // ganze Grad wie Register 0x68: aus dem Strom (stream_frame), ohne Strom aus readYaw()
 
 uint8_t battery = 100;
 uint8_t operational = 0x01;
@@ -73,35 +70,45 @@ static struct imu_sample imu_log[IMU_LOG_LEN];
 static u32 imu_seq = 0;
 static DEFINE_SPINLOCK(imu_lock);
 static unsigned int XGO_IMU_HZ = 50;   // 0 = aus
-// IMU-Lesemodus: 0 = drei Einzelregister, 1 = roll/pitch/yaw als 12-Byte-Block ab 0x62,
-// 2 = 0x65 (R-1.1.6: accel + Winkel in einer 24-Byte-Antwort),
-// 3 = 0x0d (R-1.1.6+Patch: Winkel + Rad-Ticks + Firmware-Zeit aus einem Snapshot)
-static int imu_block_mode = 0;
+// Abfrage ohne Strom nur über 0x0d (R-1.1.6 + Firmware-Patch 0001: Winkel + Rad-Ticks + Firmware-Zeit aus einem
+// Snapshot). Die früheren Wege für Firmware ohne 0x0d (0x65, 12-Byte-Block, Einzelregister, Räder 0x0c) sind seit
+// 2026-11-17 entfernt: ohne 0x0d und ohne Strom gibt es keine IMU- und Radproben.
+static bool combo_supported = false;
 
-// Rad-Encoder (Register 0x0c, R-1.1.6+Patch): fortlaufende Ticks, 1024 je Umdrehung,
+// Rad-Encoder (aus dem Strom, sonst aus 0x0d): fortlaufende Ticks, 1024 je Umdrehung,
 // beide Räder vorwärts positiv (11 = links, 21 = rechts). Zeitstempel CLOCK_MONOTONIC (CM4).
 struct wheel_sample {
 	u32 seq;
 	u64 t_ns;
 	s32 t11;
 	s32 t21;
-	u32 fw_ms;      // Firmware-millis() des Snapshots (nur Modus 3, sonst 0)
+	u32 fw_ms;      // Firmware-Zeit der Probe in ms (Strom: t_us / 1000, Abfrage: millis() aus 0x0d)
 };
 #define WHEEL_LOG_LEN 64
 static struct wheel_sample wheel_log[WHEEL_LOG_LEN];
 static u32 wheel_seq = 0;
-static bool wheels_supported = false;
-static unsigned int XGO_WHEEL_HZ = 25;  // 0 = aus; tatsächlich höchstens imu_hz, als Teiler davon
 static struct task_struct *imu_thread;
 
 // IMU/Rad-Strom (Firmware-Patch 0014): die Firmware sendet ohne Anfrage aus ihrer Regelschleife, mit eigener
 // Messzeit t_us. settings/imu_stream_hz > 0 schaltet ihn ein (imu_loop schreibt die Rate jede Sekunde neu, die
 // Firmware schaltet nach 5 s ohne Byte vom Pi und nach Neustart ab); solange Pakete kommen, wird nicht abgefragt.
 static int XGO_LED_BRIGHTNESS_SET = -1;         // zuletzt geschriebene LED-Helligkeit (n/256), -1 = nie: Firmware-Default 32
-static unsigned int XGO_IMU_STREAM_HZ = 0;      // 0 = Abfrage wie bisher
+static unsigned int XGO_IMU_STREAM_HZ = 0;      // 0 = kein Strom, Abfrage über 0x0d
 static atomic_t stat_stream = ATOMIC_INIT(0);
 static atomic_t stat_stream_gaps = ATOMIC_INIT(0);
 static u64 stream_last_rx_ns;                   // Empfang des letzten Pakets (CLOCK_MONOTONIC), 0 = nie
+
+// Strom läuft: letztes Paket jünger als 2,5 Sendeabstände, mindestens 200 ms. Mit festen 200 ms galt er bei
+// 5 Hz (liegend, Pakete alle ~200 ms) zwischen den Paketen als aus, und Abfrage-Proben mit CM4-Zeit rutschten
+// zwischen die Strom-Proben (Test 2026-11-17: 20 Pakete, 31 Proben in 4 s).
+static inline bool stream_active(u64 now) {
+	unsigned int hz = READ_ONCE(XGO_IMU_STREAM_HZ);
+	u64 last = READ_ONCE(stream_last_rx_ns), lim = 200 * NSEC_PER_MSEC;
+
+	if (!hz || !last) return false;
+	if (hz < 12) lim = div_u64(5 * (u64)NSEC_PER_SEC, 2 * hz);
+	return now - last < lim;
+}
 static s64 stream_off_ns;                       // CLOCK_MONOTONIC - ESP-Zeit (ns), Minimum über ~2-s-Fenster
 static bool stream_off_ok;
 

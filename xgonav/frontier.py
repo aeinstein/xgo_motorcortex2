@@ -105,9 +105,6 @@ def next_goal(grid: GridMap, pose: tuple, hcfg: HomeCfg, ecfg: ExploreCfg, obsta
     occ = lo > l_show
     free = lo < -l_show
     unknown = ~free & ~occ
-    if ecfg.weak_wall_l >= 0:
-        # schwach getroffene Zellen sind Wand im Werden, kein Ziel (Löcher in vorbeigefahrenen Wänden)
-        unknown &= ~(lo > ecfg.weak_wall_l)
     n = grid.n
 
     def to_world(r: int, c: int) -> tuple[float, float]:

@@ -29,8 +29,6 @@ static int initGPIO(void){
 	button_c = gpio_to_desc(GPIO_BUTTON_C + GPIO_OFFSET);
 	button_d = gpio_to_desc(GPIO_BUTTON_D + GPIO_OFFSET);
 
-	gpiod_is_active_low(button_a);
-
 	if(!button_a || !button_b || !button_c || !button_d){
 		pr_warn("Error creating GPIO descriptors");
 		return -ENODEV;

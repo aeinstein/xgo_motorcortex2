@@ -116,14 +116,6 @@ class ImuSource:
             return None
         return np.interp(t, ts, ps)
 
-    def roll_at(self, t) -> float | None:
-        """Roll (rad) zur Zeit t aus der Historie, None ohne Proben."""
-        with self._lock:
-            ts, rs = self._buf[0, self._a:self._b], self._buf[1, self._a:self._b]
-            if len(ts) < 2:
-                return None
-            return float(np.interp(t, ts, rs))
-
     def at(self, t: float) -> tuple[float, float, float | None, float] | None:
         """(Roll, Nick, Kurs in rad, Zeit der neuesten Probe) zur Zeit t, in einem Zug unter der Sperre; None mit
         weniger als 2 Proben. Kurs ist entfaltet (stetig), None, solange der Treiber keinen liefert."""
@@ -140,11 +132,6 @@ class ImuSource:
         with self._lock:
             return float(self._buf[0, self._b - 1]) if self._b > self._a else None
 
-    def latest_tilt(self) -> tuple[float, float, float] | None:
-        """(t, roll, pitch in rad) der neuesten Probe, sonst None."""
-        with self._lock:
-            return tuple(self._buf[:3, self._b - 1].tolist()) if self._b > self._a else None
-
     def since(self, t0: float) -> list[tuple[float, float, float, float]]:
         """Proben nach t0 als (t, roll, pitch, yaw in rad), älteste zuerst (für die Rohaufzeichnung)."""
         with self._lock:
@@ -153,13 +140,6 @@ class ImuSource:
             k = a + (int(alt[-1]) + 1 if len(alt) else 0)
             rows = self._buf[:, k:b].T.tolist()
         return list(map(tuple, rows))
-
-    def latest_yaw(self) -> tuple[float, float] | None:
-        """(t, Kurs rad links +) der neuesten Probe mit Kurs, sonst None."""
-        with self._lock:
-            if self._b <= self._a or self._y_last is None:
-                return None
-            return float(self._buf[0, self._b - 1]), float(self._buf[3, self._b - 1])
 
     def _run(self) -> None:
         n0, t0 = 0, time.monotonic()
@@ -295,11 +275,6 @@ class ImuSync:
                      "zuverlässig" if ok else "unsicher", self.sign, o * 1000, c, k)
         self.reliable = ok
 
-    def pitch_dev(self, imu: ImuSource, t_frame: float) -> float | None:
-        """Absolute Nickabweichung der Kamera (rad, + = schaut höher) ggü. Referenzlage (imu_frame().pitch).
-        pitch_ref_deg = Rohwert der IMU bei der Kamerakalibrierung (tools/calibrate.py wall)."""
-        return imu_frame(self, imu, t_frame).pitch
-
 
 @dataclass(frozen=True)
 class ImuFrame:
@@ -342,12 +317,6 @@ def max_age(cfg, imu) -> float:
     if getattr(imu, "idle", False) and hz > 0:
         lim = max(lim, 2.5 / hz)
     return lim
-
-
-def roll_dev_deg(sync: "ImuSync", imu: ImuSource, t_frame: float) -> float:
-    """Roll der Kamera gegen waagerecht (Grad) zur Bildzeit: IMU-Roll - roll_ref_deg; 0.0, wenn aus oder die
-    IMU zu alt ist. Gleicher Zeitversatz wie beim Nick (imu_frame().roll_deg)."""
-    return imu_frame(sync, imu, t_frame).roll_deg
 
 
 def make_imu(cfg: ImuCfg) -> ImuSource | None:

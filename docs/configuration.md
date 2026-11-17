@@ -29,12 +29,12 @@ Unknown section or key in TOML → `KeyError` at load. New parameters go into th
 
 ## Parameters
 
-Default = `config.py`; since 2026-11-12 these are the RiderPi values (`/opt/xgonav/config.toml` without the horizon test mode and `/opt` paths). (sim: …) = `Config.neutral()` (`NEUTRAL` in `config.py`), used by `tests/sim_run.py` and the tests. RiderPi = `deploy/config.example.toml` where it still differs (blank = default). [K] = device-specific, calibrate.
+Default = `config.py`; since 2026-11-12 these are the RiderPi values (`/opt/xgonav/config.toml` without `/opt` paths). (sim: …) = `Config.neutral()` (`NEUTRAL` in `config.py`), used by `tests/sim_run.py` and the tests. RiderPi = `deploy/config.example.toml` where it still differs (blank = default). [K] = device-specific, calibrate.
 
 ### top level
-| Key | Default | RiderPi |
-|---|---|---|
-| `control_hz` | 20.0 | |
+| Key | Default | RiderPi | Note |
+|---|---|---|---|
+| `control_hz` | 24.0 (sim: 20) | | control steps per second, at the frame nearest to the beat (threshold `1/control_hz − 0.5/fps`), so at most the frame rate: 24 = every frame. Without image processing (`manual`) by the clock. Until 2026-11-17: 20, which gave only every 2nd frame (~12 Hz) on the Rider and ~20 Hz in the simulator (20 fps). 24 Hz **not installed, not driven** |
 
 ### `[robot]`
 | Key | Default | RiderPi | Unit / note |
@@ -89,23 +89,24 @@ Default = `config.py`; since 2026-11-12 these are the RiderPi values (`/opt/xgon
 | `imu_hz` | 50 | 50 | written to `settings/imu_hz` |
 | `stream_hz` | 100 (sim: 0) | | > 0: written to `settings/imu_stream_hz` → firmware stream (patch 0014) with the firmware's sample time; driver without it: warning, polling |
 | `idle_hz` | 5 | 5 | While the Rider is set down (not balancing): stream rate and read rate of the IMU thread; back to `stream_hz` and `poll_s` on stand-up. Saves ~6 % of one core on the CM4. `0` = never switch. Sleep mode still turns the stream off |
-| `pitch_sign` | 0 | | 0 = auto from image correlation (RiderPi: -1) |
-| `time_offset_ms` | None | | IMU time = frame time + this. None = auto. RiderPi 10.5: `tools/imu_versatz.py` on a raw recording (2026-11-17, 8 sections +9.9..+12.0 ms, correlation 0.99). Pitch for the geometry is the pure IMU pitch at this time (no image share since 2026-11-17) |
+| `pitch_sign` | -1 (sim: 0) | | +1/-1 fixed; 0 = auto from image correlation (`ImuSync`: once per second, valid only after the first motion). Fixed since 2026-11-17: the online estimate no longer runs; no IMU pitch for a frame → log warning, `pitch_src` = `"bild"` |
+| `time_offset_ms` | 10.5 (sim: None) | | IMU time = frame time + this. None = auto. 10.5: `tools/imu_versatz.py` on a raw recording (2026-11-17, 8 sections +9.9..+12.0 ms, correlation 0.99). Pitch for the geometry is the pure IMU pitch at this time (no image share since 2026-11-17) |
 | `pitch_ref_deg` | -4.23 (sim: 0.0) | | raw IMU pitch at camera calibration (-4.43; R-1.1.3: -2.7) plus 0.2° from a corridor of 2.04 m drivable width (three start scans 2026-11-17 gave 1.98 m) |
 | `use_roll` / `roll_ref_deg` | true / 1.25 (sim: false / 0) | | FloorNet boundary is rotated by (IMU roll − `roll_ref_deg`) per frame before it reaches maps and safety (`freespace.roll_columns`); the camera sits ~2° rolled. Without it one corridor wall lay at 0.7 or 1.2 m depending on the image edge (wall 33–48 cm thick in the start scan, 10–14 cm with it; three scans 2026-11-17) |
-| `min_corr` | 0.6 | | sync accepted above |
-| `sync_range_ms` / `sync_step_ms` | 100 / 4 | | |
+| `min_corr` | 0.6 | | auto sync only: accepted above |
+| `sync_range_ms` / `sync_step_ms` | 100 / 4 | | auto sync only |
 | `poll_s` | 0.01 | | read `imu_log` this often; only new lines are parsed (RiderPi: one read 185 µs for 128 lines). At 0.05 the newest sample was up to ~50 ms older than the frame and the pitch was held, not interpolated |
 
-### `[horizon]` (standing horizon, `docs/calibration.md` 2b)
-| Key | Default | Note |
-|---|---|---|
-| `enabled` | false | off: pitch from `pitch_ref_deg` + `tilt_deg` as before |
-| `file` | `horizont.json` | table body height → horizon row, written by the web |
-| `settle_s` / `window_s` | 3.0 / 3.0 | wait after stand-up/height change, then average |
-| `max_std_deg` | 0.5 | larger spread: window dropped |
-| `min_samples` | 50 | IMU samples per window (50 Hz → 150) |
-| `bild_max_s` | 0.5 | image pitch for fast changes, re-anchored to the IMU after this; 0 = IMU only |
+### Removed 2026-11-17
+
+Must not be in `config.toml` any more (`KeyError` at load):
+
+| Key | Was |
+|---|---|
+| `[horizon]` (whole section) | standing horizon (`xgonav/horizon.py`) |
+| `grid.turn_settle_s`, `grid.turn_settle_dps` | no map entries after a fast turn (was off) |
+| `explore.weak_wall_l`, `explore.pass_turn_max_deg` | corridor workarounds (were off) |
+| `reloc.scan_extra_deg`, `reloc.max_shift_m`, `reloc.tries` | no user in the code |
 
 ### `[ego]`
 | Key | Default |
@@ -267,7 +268,6 @@ All keys with comments: `PetCfg` in `xgonav/config.py`.
 |---|---|
 | `enabled` | true |
 | `resolution_m` / `size_m` | 0.05 / 48.0 (16 until 2026-11-17, then 24: a straight corridor hit the edge 12 m from the start and explore turned back; sim 16; a smaller saved map is loaded centred, a larger one ignored) |
-| `turn_settle_s` / `turn_settle_dps` | 0 (off since 2026-11-17 15:40: with 2 s the Rider could no longer explore, cause open) / 60: nothing is entered for this long after a turn faster than this (rate smoothed over ~0.2 s, single steering spikes do not count; IMU pitch is off by 2–3.5° after a fast turn, run 20261117-144500); 0 = off (sim) |
 | `min_range_m` / `max_range_m` | 0.15 / 1.5 (hits only up to here; sim 1.25) |
 | `confirm_dr_m` / `confirm_cells` | 0 = off (since 2026-11-14, one sighting is enough with FloorNet; 0.2 before) / 2: with > 0 a hit counts only once the same spot (± cells) was hit from ranges at least this far apart; until then it is a candidate (orange in `/map.png`). Reflections in a glossy floor and seams move with the Rider and are never confirmed; turning on the spot alone confirms nothing |
 | `mark_blocking` | true | `LocalMap` points the path check brakes for are entered as confirmed and occupied (what stops the Rider is on the map); free rays remove them again if the spot is later seen free |

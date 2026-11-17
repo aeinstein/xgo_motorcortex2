@@ -104,12 +104,6 @@ def rot_matrix(yaw: float, pitch: float, roll: float) -> np.ndarray:
     return Ry @ Rx @ Rz
 
 
-def _to3(M: np.ndarray) -> np.ndarray:
-    A = I3.copy()
-    A[:2] = M
-    return A
-
-
 class EgoMotion:
     def __init__(self, cfg: EgoCfg, full_size: tuple[int, int], hfov_deg: float):
         self.cfg = cfg
@@ -368,11 +362,6 @@ class EgoMotion:
         if not found or not self.history or self.history[0][0] > idx_from + 1:
             return None
         return T
-
-    def stab_matrix(self) -> np.ndarray:
-        """3x3-Warp (volle Auflösung), der das Bild auf den geglätteten Verlauf dreht (Anzeige)."""
-        dyaw, dpitch, droll = self._traj - self._smooth
-        return self.S @ self._model_h(-dyaw, -dpitch, -droll, 0.0) @ self.Si
 
 
 def warp_box(A: np.ndarray, box) -> tuple[float, float, float, float]:

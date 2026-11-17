@@ -105,16 +105,17 @@ static int wheels_log_show(struct seq_file *m, void *v) {
 
 static int serial_stats_show(struct seq_file *m, void *v) {
 	u64 last = READ_ONCE(stream_last_rx_ns);
+	// imu_block: 3 = 0x0d abfragbar, 0 = nicht (nur Strom); wheels: Rad-Ticks vorhanden (Strom gesehen oder 0x0d)
 	seq_printf(m, "frames %d\nbad %d\ntimeouts %d\nunsolicited %d\nimu_seq %u\nimu_hz %u\nimu_block %d\n"
-		"wheels %d\nwheel_seq %u\nwheel_hz %u\n",
+		"wheels %d\nwheel_seq %u\n",
 		atomic_read(&stat_frames), atomic_read(&stat_bad), atomic_read(&stat_timeouts),
-		atomic_read(&stat_unsolicited), READ_ONCE(imu_seq), XGO_IMU_HZ, imu_block_mode,
-		wheels_supported, READ_ONCE(wheel_seq), XGO_WHEEL_HZ);
-	// IMU/Rad-Strom (Firmware 0014): Pakete, seq-Lücken, Sollrate, läuft (< 200 ms seit dem letzten Paket),
+		atomic_read(&stat_unsolicited), READ_ONCE(imu_seq), XGO_IMU_HZ, combo_supported ? 3 : 0,
+		combo_supported || last, READ_ONCE(wheel_seq));
+	// IMU/Rad-Strom (Firmware 0014): Pakete, seq-Lücken, Sollrate, läuft (stream_active),
 	// Versatz CLOCK_MONOTONIC - ESP-Zeit in µs
 	seq_printf(m, "stream %d\nstream_gaps %d\nstream_hz %u\nstream_active %d\nstream_offset_us %lld\n",
 		atomic_read(&stat_stream), atomic_read(&stat_stream_gaps), XGO_IMU_STREAM_HZ,
-		last && ktime_get_ns() - last < 200 * NSEC_PER_MSEC,
+		stream_active(ktime_get_ns()),
 		stream_off_ok ? (long long)div_s64(stream_off_ns, 1000) : 0LL);
 	return 0;
 }
@@ -230,15 +231,8 @@ static ssize_t settings_read(struct file *file, char __user *user_buf, size_t co
       	if(XGO_SHUTDOWN_ON_LOW_BATT) len = snprintf(buffer, sizeof(buffer), "1\n");
       	else len = snprintf(buffer, sizeof(buffer), "0\n");
 
-    } else if (strcmp(setting_name, "force_yaw") == 0) {
-      	if(XGO_HOLD_YAW) len = snprintf(buffer, sizeof(buffer), "1\n");
-      	else len = snprintf(buffer, sizeof(buffer), "0\n");
-
     } else if (strcmp(setting_name, "motion_timeout_ms") == 0) {
     	len = snprintf(buffer, sizeof(buffer), "%u\n", XGO_MOTION_TIMEOUT_MS);
-
-    } else if (strcmp(setting_name, "wheel_hz") == 0) {
-    	len = snprintf(buffer, sizeof(buffer), "%u\n", XGO_WHEEL_HZ);
 
     } else if (strcmp(setting_name, "imu_hz") == 0) {
     	len = snprintf(buffer, sizeof(buffer), "%u\n", XGO_IMU_HZ);
@@ -318,8 +312,6 @@ static ssize_t translation_write(struct file *file, const char __user *user_buf,
     } else if(strcmp(setting_name, "speed_z") == 0) {
     	write_serial_data(XGO_VYAW, &value, 1);
     	arm_motion_watchdog();
-    	// gewollte Drehung: force_yaw hält still und übernimmt danach den neuen Kurs
-    	if (value != 128) WRITE_ONCE(last_user_turn, jiffies);
 
     } else if(strcmp(setting_name, "height") == 0) {
     	write_serial_data(XGO_BODYHEIGHT, &value, 1);
@@ -379,12 +371,6 @@ static ssize_t settings_write(struct file *file, const char __user *user_buf, si
     	if (strcmp(strim(buffer), "1") != 0) return -EINVAL;
     	write_serial_data(XGO_PITCH_CALIBRATION, &b, 1);
 
-    } else if (strcmp(setting_name, "force_yaw") == 0) {
-        bool on = buffer[0] != 0x30;
-        // beim Einschalten den aktuellen Kurs als Soll übernehmen (nicht den vom Aufstehen)
-        if (on && !XGO_HOLD_YAW) WRITE_ONCE(hold_valid, false);
-        XGO_HOLD_YAW = on;
-
  	} else if (strcmp(setting_name, "low_batt_level") == 0) {
       	// vorher: sscanf(buffer, "%d", XGO_LOW_BATT) -> Wert statt Pointer = Oops
       	u8 v;
@@ -424,11 +410,6 @@ static ssize_t settings_write(struct file *file, const char __user *user_buf, si
     	XGO_LED_BRIGHTNESS_SET = v;
     	pr_info("XGORider: LED-Helligkeit %u/256\n", v);
 
-    } else if (strcmp(setting_name, "wheel_hz") == 0) {
-    	unsigned int v;
-    	if (kstrtouint(strim(buffer), 10, &v) || v > 200) return -EINVAL;
-    	WRITE_ONCE(XGO_WHEEL_HZ, v);
-    	pr_info("XGORider: Räder %u Hz\n", v);
 
     } else {
         return -EINVAL; // Ungültiger Zugriff
@@ -555,14 +536,12 @@ static int createFilesystem(){
     proc_create("verbose", 0666, proc_settings, &settings_ops);
     proc_create("low_batt_level", 0666, proc_settings, &settings_ops);
     proc_create("shutdown_on_low_batt", 0666, proc_settings, &settings_ops);
-    proc_create("force_yaw", 0666, proc_settings, &settings_ops);
     proc_create("sleep_ms_on_loop", 0666, proc_settings, &settings_ops);
 	proc_create("calibration", 0666, proc_settings, &settings_ops);
 	proc_create("pitch_calibration", 0666, proc_settings, &settings_ops);
 	proc_create("motion_timeout_ms", 0666, proc_settings, &settings_ops);
 	proc_create("imu_hz", 0666, proc_settings, &settings_ops);
 	proc_create("imu_stream_hz", 0666, proc_settings, &settings_ops);
-	proc_create("wheel_hz", 0666, proc_settings, &settings_ops);
 	proc_create("led_brightness", 0666, proc_settings, &settings_ops);
 
 
@@ -624,14 +603,12 @@ static void destroyFilesystem(){
     remove_proc_entry("verbose", proc_settings);
     remove_proc_entry("low_batt_level", proc_settings);
     remove_proc_entry("shutdown_on_low_batt", proc_settings);
-    remove_proc_entry("force_yaw", proc_settings);
     remove_proc_entry("sleep_ms_on_loop", proc_settings);
     remove_proc_entry("calibration", proc_settings);
     remove_proc_entry("pitch_calibration", proc_settings);
     remove_proc_entry("motion_timeout_ms", proc_settings);
     remove_proc_entry("imu_hz", proc_settings);
     remove_proc_entry("imu_stream_hz", proc_settings);
-    remove_proc_entry("wheel_hz", proc_settings);
     remove_proc_entry("led_brightness", proc_settings);
     remove_proc_entry("settings", proc_imu);
 

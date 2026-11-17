@@ -13,7 +13,7 @@ verwendet. Eine Variante ist "name:schlüssel=wert,..." und ändert die Basis:
   versatz=MS       Pose zur Zeit Bildzeit + MS aus der aufgezeichneten Posenfolge (Basis: ein Bild früher,
                    so trägt die App ein: Pose des letzten Regelschritts vor dem Bild; 0 = Pose des Bildes)
   sperre=DPS       Drehratensperre (Basis: grid.max_turn_dps)
-  ruhe=S           nach einer Drehung über grid.turn_settle_dps noch so lange nichts eintragen (Basis: grid.turn_settle_s)
+  ruhe=S           nach einer Drehung über 60 °/s (geglättet) noch so lange nichts eintragen (Basis 0; in der App 2026-11-17 entfernt)
   quelle=rad|pose  Drehrate aus dem Radkurs beim Eintreffen des Ergebnisses (Basis, wie App) oder aus dem
                    Kurs der Pose zur Bildzeit
   ankunft=N        so viele Bilder später trifft das Ergebnis ein (Basis 2)
@@ -184,7 +184,7 @@ def rechne(t, bahn: Bahn, views: dict, pitch, cfg, geo, fw: int, fh: int, varian
                 setattr(gcfg, k[5:], v.lower() in ("1", "true", "ja") if isinstance(cur, bool) else type(cur)(v))
         versatz = float(p["versatz"]) / 1000.0 if "versatz" in p else -dt_bild
         sperre = float(p.get("sperre", gcfg.max_turn_dps))
-        ruhe = float(p.get("ruhe", gcfg.turn_settle_s))
+        ruhe = float(p.get("ruhe", 0.0))
         t_dreh, rate_lp = -1e9, 0.0
         quelle = p.get("quelle", "rad")
         ankunft = int(p.get("ankunft", 2))
@@ -209,8 +209,8 @@ def rechne(t, bahn: Bahn, views: dict, pitch, cfg, geo, fw: int, fh: int, varian
             if beobachter is not None:
                 beobachter(name, gm, float(t[j]), tuple(float(v) for v in kb[j]))
             rate = rate_rad[j] if quelle == "rad" else rate_pose[i]
-            rate_lp += 0.35 * (rate - rate_lp)          # wie App: geglättet, Lenkspitzen sind keine Wende
-            if rate_lp > gcfg.turn_settle_dps:
+            rate_lp += 0.35 * (rate - rate_lp)          # geglättet, Lenkspitzen sind keine Wende
+            if rate_lp > 60.0:
                 t_dreh = float(t[j])
             if rate > sperre or t[j] - t_dreh < ruhe:
                 n_sperre += 1

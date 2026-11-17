@@ -5,11 +5,10 @@ Endet nach SEKUNDEN oder sofort, wenn der Rider abgesetzt wird (/proc/XGORider/s
 Start, beginnt sie nicht. --neben startet einen zweiten Leser, der mit der Aufnahme endet.
 
   python3 tools/record_status.py /tmp/aufnahme 60        # 60 s; danach scp/tar zum PC
-  python tools/horizon_replay.py /pfad/aufnahme            # am PC: Nick gegen ein Band in Kamerahöhe
 
 Ergebnis: <idx>.jpg (Overlay ohne Text) und daten.json mit
   frames  [{idx, t (Bildzeit, CLOCK_MONOTONIC), t_hol}]
-  status  [{idx, t, h (horizon), cmd, pitch_deg, src, mode, ego, bal}]   (~50/s, mehrere je Bild möglich)
+  status  [{idx, t, cmd, pitch_deg, src, mode, ego, bal}]   (~50/s, mehrere je Bild möglich)
   imu     [[seq, t_ns, roll, pitch, yaw] (Milligrad, Strings)]
   raeder  [[seq, t_ns, ticks11, ticks21, fw_ms]]
 Am CM4 schafft das alle Bilder bei 24 fps (2026-11-07: 1438 von 1439 in 60 s).
@@ -63,7 +62,7 @@ def main() -> int:
         while not stop.is_set():
             try:
                 s = json.loads(urllib.request.urlopen(B + "/status", timeout=2).read())
-                stati.append({"idx": s.get("frame"), "t": s.get("frame_t"), "h": s.get("horizon"), "cmd": s.get("cmd"),
+                stati.append({"idx": s.get("frame"), "t": s.get("frame_t"), "cmd": s.get("cmd"),
                               "pitch_deg": s.get("pitch_deg"), "src": s.get("pitch_src"), "mode": s.get("mode"),
                               "ego": s.get("ego"), "bal": s.get("balancing")})
             except Exception as e:

@@ -3,7 +3,7 @@
 | Item | Value |
 |---|---|
 | Source | `kernel_module/`, `constants.h` |
-| Base | [aeinstein/xgo_motorcortex](https://github.com/aeinstein/xgo_motorcortex) `c3c888c` + patches 0001–0004 + wheel/raw_reg extensions |
+| Base | [aeinstein/xgo_motorcortex](https://github.com/aeinstein/xgo_motorcortex) `c3c888c` + patches 0001, 0002, 0004 + wheel/raw_reg extensions + stream |
 | UART | `/dev/ttyAMA0`, 115200 8N1, to ESP32 |
 | Tested on | RiderPi CM4, kernel 6.6.74+rpt-rpi-v8, firmware R-1.1.3 and R-1.1.6 |
 
@@ -19,22 +19,22 @@ cat /proc/XGORider/serial_stats; cat /proc/XGORider/imu
 |---|---|
 | 0001 | memory bugs in proc handlers fixed; `settings/motion_timeout_ms` (kernel watchdog, default 0 = off) |
 | 0002 | synchronous reads (`completion` instead of `msleep(200)`); IMU thread → `imu`, `imu_log`, `serial_stats`; UART raw mode in `rc.local` |
-| 0003 | `settings/force_yaw`: target = heading at stand-up/enable, pulsed correction, pauses during `speed_z` turns. Built, not tested on Rider; xgonav disables it |
+| 0003 | `settings/force_yaw` (pulsed heading hold): **removed 2026-11-17**, was never tested on the Rider. xgonav writes `force_yaw = 0` only if an old driver still has the entry |
 | 0004 | `roll` = roll angle in degrees (reg 0x36); old function (roll balance, 0x61) → `roll_balance` |
-| later | wheel encoders (0x0c / combined 0x0d) → `wheels`, `wheels_log`, `settings/wheel_hz`; `raw_reg` diagnostics; `calibration` sends bytes 0/1 (was ASCII, inverted); `pitch_calibration` |
+| later | wheel encoders (combined register 0x0d) → `wheels`, `wheels_log`; `raw_reg` diagnostics; `calibration` sends bytes 0/1 (was ASCII, inverted); `pitch_calibration` |
 | stream | IMU/wheel stream of firmware patch 0014 (2026-11-08): `settings/imu_stream_hz`, frames type 0x14 → `imu_log`/`wheels_log` with the firmware's sample time; polling only as fallback |
+| 2026-11-17 | read paths for firmware without firmware patch 0001 removed (IMU modes 0/1/2, wheel register 0x0c, `settings/wheel_hz`); `yaw` from the stream; `force_yaw` removed; dead code removed (`xgo-lcd.c`, `xgo-lcd.h`). **Not installed on the Rider** |
 
 ## IMU / wheel read path (auto-detected at load)
 
-| Mode | Register | Content | Firmware |
+| Path | Register | Content | Firmware |
 |---|---|---|---|
-| 3 | 0x0d | roll, pitch, yaw (float) + left/right ticks (int32) + t_ms (uint32), 24 B | R-1.1.6 + patch |
-| 2 | 0x65 | accel[3] + roll/pitch/yaw, 6 floats, 24 B | R-1.1.6 |
-| 1 | 0x62.. | 12-byte block roll/pitch/yaw | if supported |
-| 0 | 0x62, 0x63, 0x64 | single registers | all |
+| Stream | type 0x14 (see below) | roll, pitch, yaw + wheel ticks with the firmware's sample time | R-1.1.6 + firmware patch 0014 |
+| Polling (only without stream) | 0x0d | roll, pitch, yaw (float) + left/right ticks (int32) + t_ms (uint32), 24 B, at `imu_hz` | R-1.1.6 + firmware patch 0001 |
 
-- Detection compares against fresh single-register reads (roll/pitch within 2°, yaw within 10°).
-- Wheels via 0x0c (16 B: ticks L/R, pos L/R) every k-th IMU cycle, k = `imu_hz / wheel_hz`, if 0x0c answers.
+- Detection of 0x0d at load compares against fresh single-register reads (roll/pitch within 2°, yaw within 10°).
+- Firmware without 0x0d: IMU and wheels only via the stream, warning in the kernel log. The older read paths (single registers 0x62–0x64, 12-byte block from 0x62, 0x65, wheels via 0x0c) were removed 2026-11-17.
+- `serial_stats`: `imu_block` = 3 (0x0d can be polled) or 0; `wheels` = wheel ticks available (0x0d or stream seen).
 - Timestamp: CLOCK_MONOTONIC, end of reply minus transfer time ((n + 8) × 10 bits at 115200). Firmware 0014: a 0x0d reply comes from a snapshot renewed every 10 ms, so the value can be up to 10 ms older than this.
 
 ## IMU/wheel stream (firmware patch 0014)
@@ -46,7 +46,8 @@ cat /proc/XGORider/serial_stats; cat /proc/XGORider/imu
 | Rates | firmware: 0..250 Hz, divider of its IMU read (~333 Hz on the RiderPi), intervals at 100 Hz 9–12 ms |
 | Time | offset = receive time − 34 B transfer (2.95 ms) − t_us; minimum taken immediately when lower, window minimum every ~2 s (follows ESP clock drift); t_us unwrapped (71 min overflow), ESP restart resets the offset |
 | Logs | each frame → one `imu_log` and one `wheels_log` sample (`fw_ms` = t_us / 1000) |
-| Polling | skipped while frames arrive (< 200 ms old), otherwise as before (firmware without stream, stream lost) |
+| Polling | skipped while the stream is active: last frame younger than max(200 ms, 2.5 send intervals) (fixed 200 ms until 2026-11-17); otherwise 0x0d (firmware without stream, stream lost). Emulator, `--wheels --combo --stream=5`, 20 s: 11 polled samples between 100 stream frames (start-up before the first frame only), 17–18 before |
+| Heading | `/proc/XGORider/yaw` is set from every frame (whole degrees, truncated like register 0x68, only while balancing); register 0x68 is polled only without stream (saves ~5 requests/s) |
 | Stats | `serial_stats`: `stream`, `stream_gaps` (seq gaps = frames dropped by the firmware), `stream_hz`, `stream_active`, `stream_offset_us` |
 | Userspace | xgonav `[imu] stream_hz` writes the setting at start; `imu_log` format unchanged |
 
@@ -55,7 +56,7 @@ cat /proc/XGORider/serial_stats; cat /proc/XGORider/imu
 | File | Mode | Format / range | Register |
 |---|---|---|---|
 | `speed_x` | w | u8 0..255, 128 = stop; arms motion watchdog | 0x30 |
-| `speed_z` | w | u8 0..255, 128 = stop; arms watchdog; ≠128 pauses `force_yaw` | 0x32 |
+| `speed_z` | w | u8 0..255, 128 = stop; arms watchdog | 0x32 |
 | `height` | rw | u8 0..255 (web UI min 43); read: last written value, empty until first write; not reset when the firmware stands up at 128 | 0x35 |
 | `roll` | rw | int −20..20 °, mapped linearly to 0..255; read: last written value, empty until first write | 0x36 |
 | `roll_balance` | w | 0/1 | 0x61 |
@@ -63,13 +64,13 @@ cat /proc/XGORider/serial_stats; cat /proc/XGORider/imu
 | `leds/0`..`leds/3` | w | `#RRGGBB` | 0x69..0x6c |
 | `battery` | r | % | 0x01 |
 | `state` | r | firmware state, 0 = fallen, 1 = balancing | |
-| `yaw` | r | integer degrees | |
+| `yaw` | r | integer degrees, only updated while balancing; from the stream, without stream from register 0x68 every `sleep_ms_on_loop` | |
 | `buttons` | r | bit mask, 1 = pressed: A = 1 (GPIO 17), B = 2 (22), C = 4 (23), D = 8 (24); polled every `sleep_ms_on_loop`. **A+B together = `orderly_poweroff`** (driver). C+D held 3 s = Wi-Fi setup ([wifi-setup.md](wifi-setup.md)) | |
 | `imu` | r | `seq t_ns roll pitch yaw` (millidegrees), newest sample | |
 | `imu_log` | r | last 128 samples, oldest first | |
 | `wheels` | r | `seq t_ns ticks_left ticks_right fw_ms` (fw_ms only with 0x0d) | |
 | `wheels_log` | r | last 64 samples | |
-| `serial_stats` | r | `frames bad timeouts unsolicited imu_seq imu_hz imu_block wheels wheel_seq wheel_hz stream stream_gaps stream_hz stream_active stream_offset_us` (one per line) | |
+| `serial_stats` | r | `frames bad timeouts unsolicited imu_seq imu_hz imu_block wheels wheel_seq stream stream_gaps stream_hz stream_active stream_offset_us` (one per line) | |
 | `raw_reg` | rw, root | write `"0x0b 16"` (addr, len), read `"0x0b 16: 00 11 .."`; read-only diagnostics | any |
 
 ### `/proc/XGORider/settings`
@@ -77,14 +78,12 @@ cat /proc/XGORider/serial_stats; cat /proc/XGORider/imu
 | File | Default | Range / effect |
 |---|---|---|
 | `motion_timeout_ms` | 0 (off) | 0..60000; no `speed_x`/`speed_z` write for this long → stop |
-| `imu_hz` | 50 | 0..200, 0 = off |
+| `imu_hz` | 50 | 0..200, 0 = off; polling rate of 0x0d, used only without stream |
 | `imu_stream_hz` | 0 | 0..250; > 0 = firmware stream (0014), polling only as fallback |
-| `wheel_hz` | 25 | 0..200, 0 = off; effective ≤ `imu_hz`, as integer divider |
 | `led_brightness` | −1 (never written) | 0..255: global LED multiplier n/256 of firmware patch 0016 (reg 0x12; firmware default 32, former fixed value 64). Sent once on write; the firmware forgets it on an ESP restart, the file then still shows the last written value. Older firmware ignores it |
-| `force_yaw` | 0 | 0/1 |
 | `low_batt_level` | 8 | 0..100 % |
 | `shutdown_on_low_batt` | 1 | battery < level → `orderly_poweroff` |
-| `sleep_ms_on_loop` | 200 | main loop sleep (battery, state, yaw polling) |
+| `sleep_ms_on_loop` | 200 | main loop sleep (battery, state; yaw polling only without stream) |
 | `verbose` | 0 | bitmask: 1 serial, 2 gpio, 4 proc, 8 main |
 | `calibration` | — | write 1 = start leg calibration (motors limp), 0 = **save** zero points to flash |
 | `pitch_calibration` | — | write 1: firmware balances in place, stores pitch trim (reg 0x09); Rider must balance |
@@ -109,8 +108,8 @@ stty -F /dev/ttyAMA0 115200 cs8 -cstopb -parenb -brkint -imaxbel -opost -onlcr -
 ## Userspace test
 
 ```
-driver-test/run.sh kernel_module [seconds=6] [imu_hz=50] [--block] [--faults] [--wheels --combo] [--stream[=HZ] | --stream-off]
+driver-test/run.sh kernel_module [seconds=6] [imu_hz=50] [--wheels --combo] [--stream[=HZ] | --stream-off] [--faults]
 ```
-Compiles the real `xgo-serial.c` and IMU code against `kshim.h`, runs it against `esp32_emu.py`.
-Result: 49 Hz at target 50 (block mode: 97 Hz at 100), pitch error 0.06° median, parser recovers from drops, noise bytes, bad checksums.
+Compiles the real `xgo-serial.c` and IMU code against `kshim.h`, runs it against `esp32_emu.py`. Without `--wheels --combo` the emulator has no 0x0d and the driver does not poll IMU/wheels (stream only).
+Result (polling 0x0d): 49 Hz at target 50, pitch error 0.06° median, parser recovers from drops, noise bytes, bad checksums.
 Stream (emulator with its own ESP clock, 40 ppm, 0–8 ms send delay): 100 Hz without gaps, timestamp error −0.25 ms median (polling 0x0d: −1.3 ms), 0 unsolicited; with `--faults` gaps counted, polling only for the other registers; `--stream-off` falls back to polling.

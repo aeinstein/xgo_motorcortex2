@@ -58,6 +58,8 @@ sudo rmmod xgo-drv; sudo modprobe xgo-drv
 cat /proc/XGORider/serial_stats
 ```
 
+Update order from a state before 2026-11-17: xgonav first, then the driver. The old xgonav writes `settings/force_yaw` (removed from the driver) without checking and does not start otherwise. Remove the dropped keys from `/opt/xgonav/config.toml` ([configuration.md](configuration.md), Removed 2026-11-17).
+
 ## `deploy/install.sh`
 
 | Item | Value |
@@ -105,7 +107,7 @@ sudo systemctl enable --now xgonav
 | `:80` | redirect to https |
 | `/` | redirect to `/xgonav/` |
 | `/xgonav/` | `/opt/xgonav/web/` (PHP via php-fpm) |
-| `/xgonav/ws`, `/xgonav/frame`, `/xgonav/stream`, `/xgonav/map.png` | proxied to xgonav `127.0.0.1:8088` |
+| `/xgonav/ws`, `/xgonav/frame`, `/xgonav/map.png` | proxied to xgonav `127.0.0.1:8088` |
 | `/xgonav/live` | WebSocket, proxied to `xgonav-live` `127.0.0.1:8089` |
 
 ## YOLO model (PC/GPU server only, not on the Pi)

@@ -307,15 +307,6 @@ class LocalMap:
             return None
         return float((a[0] + b[0]) / 2), float((a[1] + b[1]) / 2)
 
-    def side_min(self) -> tuple[float, float]:
-        """Nächstes Hindernis links/rechts (seitlich hinter dem Sichtfeld)."""
-        if not len(self.pts):
-            return math.inf, math.inf
-        d = np.hypot(self.pts[:, 0], self.pts[:, 1])
-        left = d[self.pts[:, 1] > 0]
-        right = d[self.pts[:, 1] < 0]
-        return (left.min() if len(left) else math.inf, right.min() if len(right) else math.inf)
-
 
 MOVABLE = {"person", "dog", "cat", "bird", "horse", "sports ball", "bicycle", "car"}
 ESCAPE_TOL_M = 0.01   # arc_clearance: Punkt im Radius blockiert erst, wenn die Bahn ihm >1 cm näher kommt

@@ -101,12 +101,10 @@ def warte(bed, timeout: float, schritt: float = 0.1) -> bool:
 # ----------------------------------------------------------------------
 def cmd_zustand(_a) -> int:
     s = status()
-    hz = s.get("horizon") or {}
     out = {"akku_%": akku(), "state": proc("state"), "balanciert": balanciert(),
            "modus": s.get("mode"), "pipeline": s.get("pipeline"), "frame": s.get("frame"),
            "status": s.get("status"), "height_mm": s.get("height_mm"), "yaw_deg": s.get("yaw_deg"),
            "yaw_src": s.get("yaw_src"), "odom": s.get("odom"),
-           "standreferenz": hz.get("zustand") if hz else None,
            "xgonav.service": dienst("xgonav")}
     print(json.dumps(out, ensure_ascii=False, indent=1))
     return 0
@@ -163,27 +161,19 @@ def cmd_aufstehen(a) -> int:
     t_auf = time.monotonic()
     print("balanciert, warte auf Kalibrierung …")
     # Firmware: Aufschwung <= 2 s, dann (level_after_standup) Nivellier-Impuls 3 s ab 2,5 s nach dem Aufstehen.
-    # xgonav ([horizon]): Standreferenz settle_s 3 s + window_s 3 s im Stillstand, Zustand "gültig".
     def fertig() -> bool:
         if not balanciert():
             raise RuntimeError("liegt wieder (state %s)" % proc("state"))
-        if time.monotonic() - t_auf < a.min_s:
-            return False
-        hz = status().get("horizon")
-        return not hz or hz.get("zustand") == "gültig"
+        return time.monotonic() - t_auf >= a.min_s
     try:
         ok = warte(fertig, a.kal_timeout, 0.3)
     except RuntimeError as e:
         print("Abbruch:", e)
         return 1
-    hz = status().get("horizon") or {}
     if not ok:
-        print("Kalibrierung nicht fertig nach %.0f s (Standreferenz %s, verworfen %s) – Nutzer fragen"
-              % (a.kal_timeout, hz.get("zustand"), hz.get("verworfen")))
+        print("Kalibrierung nicht fertig nach %.0f s – Nutzer fragen" % a.kal_timeout)
         return 1
-    print("bereit: %.1f s nach dem Aufstehen, Standreferenz %s (ref %s°, Streuung %s°), Höhe %s mm"
-          % (time.monotonic() - t_auf, hz.get("zustand", "—"), hz.get("ref_deg"), hz.get("std_deg"),
-             status().get("height_mm")))
+    print("bereit: %.1f s nach dem Aufstehen, Höhe %s mm" % (time.monotonic() - t_auf, status().get("height_mm")))
     return 0
 
 

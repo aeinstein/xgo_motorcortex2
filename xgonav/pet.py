@@ -5,7 +5,7 @@ World -> Sense und Act -> Command. Töne, Emotionen, Roll und Aufstehen laufen �
 App._pet_tick abholt, nicht über Command.extra: safety() baut bei einem liegenden Rider einen neuen
 Command, ein Aufstehwunsch ginge dort verloren.
 
-Rechenzeit am Pi: nur im Regelschritt (20 Hz), Arithmetik über wenige Tracks, pro Bild nichts.
+Rechenzeit am Pi: nur im Regelschritt (control_hz), Arithmetik über wenige Tracks, pro Bild nichts.
 
 Aufgaben (Zustand wach, self.task): "suchen" fährt nach dem Verschwinden einer Person zu ihrer letzten Stelle
 und schaut sich um, "streifen" schaut sich bei Langeweile um und fährt in Etappen in die freieste Richtung,
@@ -49,7 +49,7 @@ STALL_S, STALL_M = 2.5, 0.02         # Fahrt befohlen, aber so lange kaum Weg: B
 CALL_LEG_M = 3.0                     # Rufen ohne Grenze: je Ruf so weit auf die Stimme zu
 GAZE_BINS = 11                       # Blickrichtungen im Augen-Atlas (tools/eyes.py --gaze): 10 Stufen, ungerade für eine exakte Mitte
 GAZE_CENTER = GAZE_BINS // 2
-BLINK_S = 0.4                        # Lidschlag über alle Lidstellungen; 20 Hz Regelschritt: je 50 ms eine Stufe
+BLINK_S = 0.4                        # Lidschlag über alle Lidstellungen; bei 24 Hz Regelschritt je ~42 ms eine Stufe
 GAZE_RANGE = math.radians(45.0)      # Peilung bei voll ausgelenktem Blick
 GAZE_LIDS = 5                        # Lidstellungen im Atlas, 0 = offen .. 4 = zu
 LID_OPEN, LID_HALF, LID_SHUT = 0, 2, 4

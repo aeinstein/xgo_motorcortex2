@@ -362,8 +362,9 @@ class ProcRobot(Robot):
     def _setup(self) -> None:
         if not os.path.isdir(self.base):
             raise RuntimeError(f"{self.base} fehlt – ist xgo-drv geladen?")
-        # force_yaw kämpft gegen jede Drehung -> aus
-        self._write_raw("settings/force_yaw", "0")
+        # Treiber vor 2026-11-17 hat noch settings/force_yaw (Kurs halten per Impulsen, kämpft gegen jede Drehung) -> aus
+        if os.path.exists(self._path("settings/force_yaw")):
+            self._write_raw("settings/force_yaw", "0")
         wd = self._path("settings/motion_timeout_ms")
         if os.path.exists(wd):
             self._write_raw("settings/motion_timeout_ms", str(self.cfg.kernel_watchdog_ms))

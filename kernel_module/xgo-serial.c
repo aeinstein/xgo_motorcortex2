@@ -2,8 +2,8 @@
 // Created by aeinstein on 24.01.2025.
 //
 // Lesepfad (2026-11): synchrone Requests mit completion statt msleep(200),
-// Reader liest blockweise und läuft ohne Pausen durch. Damit sind Lesezugriffe
-// in wenigen ms fertig und die IMU lässt sich mit 50-100 Hz abfragen.
+// Reader liest blockweise und läuft ohne Pausen durch. IMU und Räder kommen als Strom der
+// Firmware (Typ 0x14, stream_frame); abgefragt werden nur noch Zustand, Akku und, ohne Strom, 0x0d und der Kurs.
 //
 
 #include "xgo-serial.h"
@@ -195,6 +195,8 @@ static void stream_frame(const uint8_t *b, u64 t_rx) {
     s.roll = f32le_to_milli(b + 6);
     s.pitch = f32le_to_milli(b + 10);
     s.yaw = f32le_to_milli(b + 14);
+    // Kurs für /proc/yaw: ganze Grad, abgeschnitten wie Register 0x68, und wie dessen Abfrage nur balancierend
+    if (operational == 0x01) WRITE_ONCE(current_yaw, (int16_t)(s.yaw / 1000));
     w.t_ns = s.t_ns;
     w.t11 = (s32)le32(b + 18);
     w.t21 = (s32)le32(b + 22);

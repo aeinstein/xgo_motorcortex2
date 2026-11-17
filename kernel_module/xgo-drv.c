@@ -21,12 +21,8 @@ static int loop(void *data) {
 	    if (n++ % 10 == 0) batteryCheck();
         checkState();
 
-        if(operational == 0x01) {
-            readYaw();
-
-            if(XGO_HOLD_YAW) forceyaw();
-
-        }
+        // Kurs (0x68) nur ohne Strom abfragen: mit Strom setzt ihn stream_frame aus jedem Paket
+        if(operational == 0x01 && !stream_active(ktime_get_ns())) readYaw();
 
 		msleep(XGO_MS_SLEEP_ON_LOOP);
 	}
@@ -34,11 +30,10 @@ static int loop(void *data) {
 }
 
 /*
- * IMU-Thread: Roll/Pitch/Yaw mit XGO_IMU_HZ. Je nach Firmware eine Anfrage an 0x65
- * (R-1.1.6, 24 Byte), ein 12-Byte-Block ab 0x62 oder drei Einzelregister 0x62..0x64.
- * Jede Probe bekommt einen CLOCK_MONOTONIC-Zeitstempel (Mitte der Anfrage für Pitch),
- * damit Userspace sie den Kamerabildern zuordnen kann.
- * Dazu, falls die Firmware es kann, die Rad-Encoder (0x0c) mit XGO_WHEEL_HZ.
+ * IMU-Thread: hält den Strom der Firmware am Leben (stream_tick). Solange Pakete kommen, fragt er nichts ab;
+ * die Proben legt der Reader-Thread ab (stream_frame). Ohne Strom (imu_stream_hz 0, Firmware ohne Patch 0014,
+ * ESP-Neustart) fragt er mit XGO_IMU_HZ das Register 0x0d ab: Roll/Nick/Gier und Rad-Ticks aus einem Snapshot,
+ * Zeitstempel CLOCK_MONOTONIC (Ende der Antwort minus Übertragungsdauer).
  */
 // Zeitpunkt, zu dem die Firmware den Wert erfasst hat: kurz bevor sie antwortet, also
 // Ende der Antwort minus deren Übertragungsdauer (n Nutzbytes + 8 Rahmenbytes, 115200 Baud 8N1).
@@ -58,55 +53,22 @@ static bool imu_read(struct imu_sample *s) {
 	uint8_t b[24];
 	u64 t;
 
-	if (imu_block_mode == 3) {
-		if (read_addr_sync(XGO_COMBO, 24, b, 20) < 24) return false;
-		t = sample_time(ktime_get_ns(), 24);
-		s->roll = f32le_to_milli(b);
-		s->pitch = f32le_to_milli(b + 4);
-		s->yaw = f32le_to_milli(b + 8);
-		combo_wheels.t_ns = t;
-		combo_wheels.t11 = s32le(b + 12);
-		combo_wheels.t21 = s32le(b + 16);
-		combo_wheels.fw_ms = (u32)s32le(b + 20);
-		combo_wheels_new = true;
-	} else if (imu_block_mode == 2) {
-		if (read_addr_sync(XGO_IMU_ALL, 24, b, 20) < 24) return false;
-		t = sample_time(ktime_get_ns(), 24);
-		s->roll = f32le_to_milli(b + 12);
-		s->pitch = f32le_to_milli(b + 16);
-		s->yaw = f32le_to_milli(b + 20);
-	} else if (imu_block_mode == 1) {
-		if (read_addr_sync(XGO_ROLL, 12, b, 20) < 12) return false;
-		t = sample_time(ktime_get_ns(), 12);
-		s->roll = f32le_to_milli(b);
-		s->pitch = f32le_to_milli(b + 4);
-		s->yaw = f32le_to_milli(b + 8);
-	} else {
-		// Pitch zuerst und mit eigenem Zeitstempel: die wichtigste Größe
-		if (read_addr_sync(XGO_PITCH, 4, b, 20) < 4) return false;
-		t = sample_time(ktime_get_ns(), 4);
-		s->pitch = f32le_to_milli(b);
-		if (read_addr_sync(XGO_ROLL, 4, b, 20) < 4) return false;
-		s->roll = f32le_to_milli(b);
-		if (read_addr_sync(XGO_YAW, 4, b, 20) < 4) return false;
-		s->yaw = f32le_to_milli(b);
-	}
+	if (read_addr_sync(XGO_COMBO, 24, b, 20) < 24) return false;
+	t = sample_time(ktime_get_ns(), 24);
+	s->roll = f32le_to_milli(b);
+	s->pitch = f32le_to_milli(b + 4);
+	s->yaw = f32le_to_milli(b + 8);
 	s->t_ns = t;
-	return true;
-}
-
-static bool wheel_read(struct wheel_sample *w) {
-	uint8_t b[16];
-	if (read_addr_sync(XGO_WHEELS, 16, b, 30) < 16) return false;
-	w->t_ns = sample_time(ktime_get_ns(), 16);
-	w->t11 = s32le(b);
-	w->t21 = s32le(b + 4);
-	w->fw_ms = 0;
+	combo_wheels.t_ns = t;
+	combo_wheels.t11 = s32le(b + 12);
+	combo_wheels.t21 = s32le(b + 16);
+	combo_wheels.fw_ms = (u32)s32le(b + 20);
+	combo_wheels_new = true;
 	return true;
 }
 
 // Strom ein/aus: Rate jede Sekunde neu schreiben (Firmware schaltet nach 5 s ohne Byte vom Pi und nach
-// ESP-Neustart ab), 0 einmal beim Ausschalten. true = Pakete kommen (< 200 ms alt), Abfrage nicht nötig.
+// ESP-Neustart ab), 0 einmal beim Ausschalten. true = Pakete kommen (stream_active), Abfrage nicht nötig.
 static bool stream_tick(u64 now) {
 	static u64 sent_ns;
 	static unsigned int sent_hz;
@@ -127,24 +89,22 @@ static bool stream_tick(u64 now) {
 		sent_hz = shz;
 		sent_ns = now;
 	}
-	return now - READ_ONCE(stream_last_rx_ns) < 200 * NSEC_PER_MSEC;
+	return stream_active(now);
 }
 
 static int imu_loop(void *data) {
 	struct imu_sample s;
-	struct wheel_sample w;
 	unsigned long flags;
-	unsigned int n = 0;
 
 	while (!kthread_should_stop()) {
-		unsigned int hz = READ_ONCE(XGO_IMU_HZ), whz = READ_ONCE(XGO_WHEEL_HZ);
+		unsigned int hz = READ_ONCE(XGO_IMU_HZ);
 		u64 start = ktime_get_ns(), period, used;
 
 		if (stream_tick(start)) {
 			msleep(20);                       // Strom läuft: Proben kommen über den Reader-Thread
 			continue;
 		}
-		if (hz == 0) {
+		if (hz == 0 || !combo_supported) {
 			msleep(200);
 			continue;
 		}
@@ -156,20 +116,12 @@ static int imu_loop(void *data) {
 			imu_log[s.seq % IMU_LOG_LEN] = s;
 			spin_unlock_irqrestore(&imu_lock, flags);
 		}
-		// Räder: in Modus 3 aus derselben Antwort (jeder Takt), sonst eigene Abfrage von
-		// 0x0c in jedem k-ten Takt (k = imu_hz / wheel_hz, mindestens 1)
-		if (imu_block_mode == 3) {
-			if (combo_wheels_new) {
-				combo_wheels_new = false;
-				spin_lock_irqsave(&imu_lock, flags);
-				combo_wheels.seq = ++wheel_seq;
-				wheel_log[combo_wheels.seq % WHEEL_LOG_LEN] = combo_wheels;
-				spin_unlock_irqrestore(&imu_lock, flags);
-			}
-		} else if (wheels_supported && whz && n++ % (hz > whz ? hz / whz : 1) == 0 && wheel_read(&w)) {
+		// Räder aus derselben Antwort
+		if (combo_wheels_new) {
+			combo_wheels_new = false;
 			spin_lock_irqsave(&imu_lock, flags);
-			w.seq = ++wheel_seq;
-			wheel_log[w.seq % WHEEL_LOG_LEN] = w;
+			combo_wheels.seq = ++wheel_seq;
+			wheel_log[combo_wheels.seq % WHEEL_LOG_LEN] = combo_wheels;
 			spin_unlock_irqrestore(&imu_lock, flags);
 		}
 
@@ -182,11 +134,9 @@ static int imu_loop(void *data) {
 	return 0;
 }
 
-// Welche Lesewege die Firmware kann: 0x0d (Winkel + Räder) > 0x65 (24 Byte) > 12-Byte-Block ab 0x62
-// > Einzelregister.
-// Geprüft wird gegen frisch gelesene Einzelregister, damit eine Firmware, die bei unbekannter
-// Länge Pufferreste schickt, nicht falsch erkannt wird: Roll/Nick auf 2° gleich, Gier auf 10°
-// (über ±180° hinweg; der Kurs darf sich zwischen den Abfragen etwas drehen). Dazu: gibt es 0x0c?
+// Kann die Firmware 0x0d (Winkel + Räder)? Geprüft wird gegen frisch gelesene Einzelregister, damit eine
+// Firmware, die bei unbekanntem Register Pufferreste schickt, nicht falsch erkannt wird: Roll/Nick auf 2°
+// gleich, Gier auf 10° (über ±180° hinweg; der Kurs darf sich zwischen den Abfragen etwas drehen).
 static bool imu_singles(s32 *r, s32 *p, s32 *y) {
 	uint8_t b[4];
 	if (read_addr_sync(XGO_ROLL, 4, b, 50) < 4) return false;
@@ -204,34 +154,15 @@ static bool imu_same(const uint8_t *b, s32 r, s32 p, s32 y) {
 	return abs(f32le_to_milli(b) - r) < 2000 && abs(f32le_to_milli(b + 4) - p) < 2000 && dy < 10000;
 }
 
-static void imu_detect_block_mode(void) {
+static void imu_detect_combo(void) {
 	uint8_t b[24];
 	s32 r, p, y;
 
-	wheels_supported = read_addr_sync(XGO_WHEELS, 16, b, 50) >= 16;
-	pr_info("XGORider: Rad-Encoder (0x0c) %s\n", wheels_supported ? "vorhanden" : "nicht vorhanden");
-
-	if (!imu_singles(&r, &p, &y)) goto single;
-	if (wheels_supported && read_addr_sync(XGO_COMBO, 24, b, 50) >= 24 && imu_same(b, r, p, y)) {
-		imu_block_mode = 3;
-		pr_info("XGORider: IMU + Räder über 0x0d (24 Byte) aktiv\n");
-		return;
-	}
-	if (!imu_singles(&r, &p, &y)) goto single;      // frisch, nach evtl. Timeout oben
-	if (read_addr_sync(XGO_IMU_ALL, 24, b, 50) >= 24 && imu_same(b + 12, r, p, y)) {
-		imu_block_mode = 2;
-		pr_info("XGORider: IMU über 0x65 (24 Byte) aktiv\n");
-		return;
-	}
-	if (!imu_singles(&r, &p, &y)) goto single;      // frisch, nach evtl. Timeout oben
-	if (read_addr_sync(XGO_ROLL, 12, b, 50) >= 12 && imu_same(b, r, p, y)) {
-		imu_block_mode = 1;
-		pr_info("XGORider: IMU block read (12 Byte) aktiv\n");
-		return;
-	}
-single:
-	imu_block_mode = 0;
-	pr_info("XGORider: IMU Einzelregister-Modus\n");
+	combo_supported = imu_singles(&r, &p, &y) && read_addr_sync(XGO_COMBO, 24, b, 50) >= 24 && imu_same(b, r, p, y);
+	if (combo_supported)
+		pr_info("XGORider: IMU + Räder über 0x0d (24 Byte) abfragbar\n");
+	else
+		pr_warn("XGORider: Firmware ohne 0x0d (Patch 0001): IMU und Räder nur über den Strom (imu_stream_hz)\n");
 }
 
 // Wird bei jedem speed_x/speed_z-Write neu gestartet. Läuft er ab, ist der
@@ -248,59 +179,6 @@ static void motion_watchdog_fn(struct work_struct *work) {
 	write_serial_data(XGO_VYAW, &neutral, 1);
 }
 
-/*
- * Kurs halten (settings/force_yaw).
- *
- * Vorher: Soll war immer 0° statt des Startkurses, und 128 - (current - wanted) lief
- * in uint8_t über -> Dauer-Drehbefehl statt Korrektur.
- *
- * Jetzt: Soll = Kurs beim Aufstehen bzw. beim Einschalten von force_yaw. Die Firmware
- * dreht nach einem Stoppbefehl deutlich nach (Rampe/Trägheit, bis ~15°), und diese
- * Schleife läuft nur alle sleep_ms_on_loop. Deshalb keine Dauerregelung, sondern kurze
- * Impulse mit fester kleiner Drehrate und danach Ausschwingen, bevor neu gemessen wird.
- * Kommt ein speed_z-Befehl != 128 (xgonav, Fernsteuerung), wird nicht eingegriffen;
- * 1 s nach dem letzten Drehbefehl gilt der dann erreichte Kurs als neues Soll.
- * Konvention: Kurs steigt bei Linksdrehung, speed_z > 128 dreht links.
- */
-#define HOLD_DEADBAND_DEG  3
-#define HOLD_SPEED         8      // Abstand von 128; kleinere Befehle ignoriert die Firmware
-#define HOLD_MS_PER_DEG    40     // Impulsdauer pro Grad Fehler (~25 °/s Wirkung)
-#define HOLD_PULSE_MIN_MS  80
-#define HOLD_PULSE_MAX_MS  400
-#define HOLD_SETTLE_MS     1000
-#define HOLD_USER_MS       1000
-
-static void forceyaw(void){
-	int err;
-	unsigned int ms;
-	uint8_t cmd;
-
-	if (!READ_ONCE(hold_valid) ||
-	    time_before(jiffies, READ_ONCE(last_user_turn) + msecs_to_jiffies(HOLD_USER_MS))) {
-		wanted_yaw = current_yaw;
-		WRITE_ONCE(hold_valid, true);
-		hold_next = jiffies + msecs_to_jiffies(HOLD_SETTLE_MS);
-		return;
-	}
-	if (time_before(jiffies, hold_next)) return;
-
-	err = ((int)wanted_yaw - (int)current_yaw) % 360;   // auf [-180, 180) umbrechen
-	if (err >= 180) err -= 360;
-	if (err < -180) err += 360;
-	if (abs(err) <= HOLD_DEADBAND_DEG) return;
-
-	ms = clamp_t(unsigned int, abs(err) * HOLD_MS_PER_DEG, HOLD_PULSE_MIN_MS, HOLD_PULSE_MAX_MS);
-	cmd = err > 0 ? 128 + HOLD_SPEED : 128 - HOLD_SPEED;
-	if (verbose & VERBOSE_MAIN)
-		pr_info("XGORider: hold yaw: soll %d ist %d fehler %d -> %u fuer %u ms\n",
-		        wanted_yaw, current_yaw, err, cmd, ms);
-	write_serial_data(XGO_VYAW, &cmd, 1);
-	msleep(ms);
-	cmd = 128;
-	write_serial_data(XGO_VYAW, &cmd, 1);
-	hold_next = jiffies + msecs_to_jiffies(HOLD_SETTLE_MS);
-}
-
 static int16_t readYaw(void){
     uint8_t b[2];
     if(read_addr_sync(XGO_YAW_INT, 2, b, 50) >= 2) {
@@ -314,16 +192,6 @@ static int16_t readYaw(void){
 
     return 0;
 }
-
-static bool read_initial_yaw() {
-    initial_yaw = readYaw();
-    // force_yaw hält ab jetzt den Kurs beim Aufstehen (wird im nächsten Lauf übernommen)
-    WRITE_ONCE(hold_valid, false);
-    pr_info("XGORider: initial yaw: %d", initial_yaw);
-
-    return 0;
-}
-
 
 static void batteryCheck(void) {
     uint8_t b;
@@ -355,44 +223,15 @@ static void checkState(void) {
 
                 case 0x01:
                     pr_info("XGORider: balancing");
-                    read_initial_yaw(); // reset initial yaw, when standup
                     break;
 
                 default:
-                    printk(KERN_ERR "XGORider: unknown %d fuck the shit docs\n", operational);
+                    pr_warn("XGORider: Zustand %d (weder gefallen noch balancierend)\n", operational);
                     break;
             }
         }
     }
 }
-
-// Not working, so many tries, hope you got more luck
-/*
-static void modify_serial_port_settings(const char *tty_name, int baudrate){
-    struct tty_struct *tty;
-    struct ktermios new_termios;
-
-//#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 9, 0)
-    //tty = serial_file->private_data;
-//#else
-    tty = (struct tty_struct *)serial_file->private_data;
-//#endif
-
-    if (!tty) {
-        printk(KERN_ERR "XGORider: TTY-Gerät konnte nicht erhalten werden.");
-        return;
-    }
-
-    // Sperren des TTYs während der Modifikation
-    tty_lock(tty);
-    new_termios = tty->termios;
-
-    tty_termios_encode_baud_rate(&new_termios, baudrate, baudrate);
-    tty_set_termios(tty, &new_termios);
-    tty_unlock(tty);
-
-    pr_info("Einstellungen für %s erfolgreich geändert.\n", tty_name);
-}*/
 
 static int __init imu_proc_init(void) {
   	pr_info("              ******       ******");
@@ -428,10 +267,7 @@ static int __init imu_proc_init(void) {
     ret = initGPIO();
     if(ret) { ret = -EIO; goto err_serial; }
 
-    //ret = display_init();
-    //if(ret) return ret;
-
-    imu_detect_block_mode();
+    imu_detect_combo();
 
     ret = createFilesystem();
     if(ret) goto err_serial;

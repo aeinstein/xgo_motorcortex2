@@ -463,6 +463,7 @@ def _sync_scenario(sign, off_ms, noise_deg=0.05, still=False):
 
 
 def test_imu_sync_finds_sign_and_offset():
+    from xgonav.imu import imu_frame
     for sign, off in ((1, 0), (-1, 12), (1, -36)):
         s, imu, pitch = _sync_scenario(sign, off)
         assert s.reliable, (sign, off, s.corr)
@@ -471,13 +472,13 @@ def test_imu_sync_finds_sign_and_offset():
         s.cfg.pitch_ref_deg = 2.0
         s.cfg.max_age_s = 1e9                  # synthetische Zeitbasis
         for t in (3.0, 5.0, 7.2):
-            assert math.degrees(abs(s.pitch_dev(imu, t) - pitch(t))) < 0.3
+            assert math.degrees(abs(imu_frame(s, imu, t).pitch - pitch(t))) < 0.3
 
 
 def test_imu_alter_im_liegen():
     """Abgesetzt (idle, 5 Hz) ist die neueste Probe bis ~0,4 s alt: Nick und Roll gelten dann bis 2,5 Abstände
     (0,5 s) statt max_age_s (0,3 s); sonst fiel jedes vierte Bild auf Nick 0 (Horizontlinie sprang, 2026-11-17)."""
-    from xgonav.imu import ImuSource, ImuSync, max_age, roll_dev_deg
+    from xgonav.imu import ImuSource, ImuSync, imu_frame, max_age
     cfg = Config.neutral().imu
     cfg.pitch_sign, cfg.time_offset_ms, cfg.idle_hz, cfg.max_age_s = -1, 0.0, 5, 0.3
     cfg.use_roll, cfg.roll_ref_deg = True, 0.0
@@ -485,11 +486,13 @@ def test_imu_alter_im_liegen():
     for k in range(10):                        # 5 Hz bis t = 1,8 s
         imu.add(k, k * 0.2, math.radians(2.0), math.radians(-20.0))
     sync = ImuSync(cfg)
-    assert sync.pitch_dev(imu, 2.2) is None and roll_dev_deg(sync, imu, 2.2) == 0.0   # balancierend: 0,4 s zu alt
+    fr = imu_frame(sync, imu, 2.2)
+    assert fr.pitch is None and fr.roll_deg == 0.0                                       # balancierend: 0,4 s zu alt
     imu.idle = True
     assert max_age(cfg, imu) == 0.5
-    assert sync.pitch_dev(imu, 2.2) is not None and abs(roll_dev_deg(sync, imu, 2.2) - 2.0) < 1e-6
-    assert sync.pitch_dev(imu, 2.4) is None                                             # 0,6 s: zu alt
+    fr = imu_frame(sync, imu, 2.2)
+    assert fr.pitch is not None and abs(fr.roll_deg - 2.0) < 1e-6
+    assert imu_frame(sync, imu, 2.4).pitch is None                                           # 0,6 s: zu alt
 
 
 def test_imu_sync_needs_motion():
@@ -1529,15 +1532,15 @@ def test_imu_yaw_unwrap_and_localmap_yaw_source():
     from xgonav.imu import ImuSource, imu_frame
     cfg = Config.neutral()
     imu = ImuSource(cfg.imu)
-    assert imu.latest_yaw() is None
+    assert imu.at(0.0) is None
     t0 = time.monotonic()
     for k, deg in enumerate((170.0, 179.0, -178.0, -170.0)):              # Sprung über ±180°
         imu.add(k + 1, t0 + 0.02 * k, 0.0, 0.0, math.radians(deg))
-    t, y = imu.latest_yaw()
-    assert math.degrees(y) == pytest.approx(190.0)
+    assert math.degrees(imu.at(t0 + 0.06)[2]) == pytest.approx(190.0)
     old = ImuSource(cfg.imu)
     old.add(1, t0, 0.0, 0.0)                                               # ohne Kurs (alte Aufrufer)
-    assert old.latest_yaw() is None
+    old.add(2, t0 + 0.02, 0.0, 0.0)
+    assert old.at(t0)[2] is None
     cfg.output.web_port = 0
     cfg.detector.enabled = False
     cfg.map.yaw_source = "imu"
@@ -1575,7 +1578,7 @@ def test_proc_imu_reads_only_new_lines(tmp_path):
     assert imu._poll() == 3 and imu._poll() == 0
     ts, ps = imu.arrays()
     assert list(np.round(ts, 3)) == [0.01 * s for s in range(1, 9)]
-    assert math.degrees(imu.latest_yaw()[1]) == pytest.approx(8.0)
+    assert math.degrees(imu.at(0.08)[2]) == pytest.approx(8.0)
 
 
 def test_proc_imu_requests_stream(tmp_path):
@@ -2132,20 +2135,6 @@ def test_roll_columns_straightens_boundary():
     # Gegenprobe: eine um 2° gerollte gerade Grenze wird wieder gerade
     schief = np.clip(0.5 + u * math.tan(math.radians(2.0)) / (H - hz), 0, 0.979).astype(np.float32)
     assert np.ptp(roll_columns(schief, hz, H, W, cx, 2.0)) < 1e-5
-
-
-def test_frontier_weak_wall_is_no_goal():
-    """Wandstück mit nur einem Treffer (unter l_show) ist kein Ziel mehr (Fahrt 20261117-144500); mit -1 wie früher."""
-    from dataclasses import replace
-    from xgonav.frontier import next_goal
-    cfg, m = _room_map(door=True)
-    r0, _ = (int(v) for v in m.cell(0.0, -0.5))
-    r1, _ = (int(v) for v in m.cell(0.0, 0.5))
-    _, c = (int(v) for v in m.cell(1.2, 0.0))
-    m.lo[r0:r1 + 1, c - 1:c + 2] = cfg.grid.l_occ              # Türöffnung: je Zelle ein Treffer
-    assert cfg.grid.l_occ <= cfg.grid.l_show
-    assert next_goal(m, (-0.5, 0.0, 0.0), cfg.home, replace(cfg.explore, weak_wall_l=-1.0)).path is not None
-    assert next_goal(m, (-0.5, 0.0, 0.0), cfg.home, replace(cfg.explore, weak_wall_l=0.0)).path is None
 
 
 def test_pathfollower_align_turn_limit():
@@ -3138,7 +3127,7 @@ def test_ruhe_mode():
     cfg = Config.neutral(); cfg.output.web_port = 0; cfg.detector.enabled = False
     cfg.ruhe.tick_s = 0.2
     robot = SimRobot(cfg.robot)
-    robot.settings.update({"imu_hz": "50", "imu_stream_hz": "100", "sleep_ms_on_loop": "200"})  # wheel_hz fehlt
+    robot.settings.update({"imu_hz": "50", "imu_stream_hz": "100", "sleep_ms_on_loop": "200"})
     app = App(cfg, robot, SimWorld(cfg.camera, robot, None, start=(1.0, 1.5, 0.0)), imu=None)
     app.imu = None
     th = threading.Thread(target=app.run, kwargs={"duration": 6.0}, daemon=True)

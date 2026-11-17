@@ -11,11 +11,7 @@
  *   POST api.php?a=map_lock&on=0|1            (Karte sperren: Fahrten ändern sie nicht mehr)
  *   GET  api.php?a=route                      (Route und Sperrzonen)
  *   POST api.php?a=route&pts=x,y;x,y&loop=0|1[&zones=x,y;x,y;x,y|...|&nozones=1]   (Meter im Karten-KS)
- *   GET  api.php?a=horizon                    (Horizonttabelle und Standreferenz, [horizon] enabled)
  *   GET  api.php?a=detector                   (wählbare Ziele für Folgen/Anfahren: aktive YOLO-Klassen)
- *   POST api.php?a=horizon_edit&row=0..479|   (Linie zum Einstellen im Bild, leer = aus)
- *   POST api.php?a=horizon_cal&row=0..479     (Zeile für die aktuelle Körperhöhe speichern, nur im Stand)
- *   POST api.php?a=horizon_delete&h=<mm>      (Eintrag dieser Körperhöhe löschen)
  *   POST api.php?a=stop
  *   POST api.php?a=pipeline&on=0|1
  *   POST api.php?a=ruhe&on=0|1                (Ruhemodus: xgonav /ruhe, Schlafaugen aufs Display (bleiben
@@ -32,7 +28,7 @@
  *   POST api.php?a=height&h=61..255         (u8; darunter nicht, siehe Höhengrenzen)
  *   POST api.php?a=ausrichten               (Beine neu ausrichten, xgonav /level)
  *   POST api.php?a=roll&deg=-20..20          (Grad, + = nach rechts; Treiber-Patch 0004: Register 0x36)
- *   POST api.php?a=exposure&us=0|100..33333     (Belichtung in µs, 0 = Automatik; nur bis zum Neustart)
+ *   POST api.php?a=exposure&us=0|100..max     (Belichtung in µs, 0 = Automatik; nur bis zum Neustart)
  *   POST api.php?a=gain&g=0|1..63.9             (analoge Verstärkung, 0 = Automatik; nur bis zum Neustart)
  *   POST api.php?a=calibration&on=0|1       (Beinnullpunkte: 1 = Start, Motoren los; 0 = speichern)
  *   POST api.php?a=pitch_calibration         (Lage: Firmware balanciert im Stand aus und speichert den Trimm)
@@ -291,9 +287,6 @@ if ($a === 'status') {
 if ($a === 'route' && !$post) {
     xgonav('GET', '/route');
 }
-if ($a === 'horizon' && !$post) {
-    xgonav('GET', '/horizon');
-}
 if ($a === 'detector' && !$post) {
     xgonav('GET', '/detector');
 }
@@ -362,13 +355,6 @@ switch ($a) {
             $q['nozones'] = '1';
         }
         xgonav('POST', '/route?' . http_build_query($q));
-    case 'horizon_edit':
-        $row = $_GET['row'] ?? '';
-        xgonav('POST', '/horizon/edit?row=' . ($row === '' ? '' : round(zahl('row', 0, 479.9), 1)));
-    case 'horizon_cal':
-        xgonav('POST', '/horizon/cal?row=' . round(zahl('row', 0, 479.9), 1));
-    case 'horizon_delete':
-        xgonav('POST', '/horizon/delete?h=' . round(zahl('h', 0, 300), 1));
     case 'stop':
         xgonav('POST', '/stop');
     case 'ausrichten':

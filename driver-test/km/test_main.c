@@ -58,9 +58,9 @@ int main(int argc, char **argv) {
 	char fw[11] = {0};
 	int r = read_addr_sync(XGO_FIRMWARE_VERSION, 10, (uint8_t *)fw, 500);
 	printf("FW %d '%.10s'\n", r, fw);
-	imu_detect_block_mode();
-	printf("BLOCK %d\n", imu_block_mode);
-	printf("WHEELS %d\n", wheels_supported);
+	imu_detect_combo();
+	printf("BLOCK %d\n", combo_supported ? 3 : 0);
+	printf("WHEELS %d\n", combo_supported);
 
 	imu_thread = kthread_run(imu_loop, NULL, "imu");
 	pthread_t tm, tw;

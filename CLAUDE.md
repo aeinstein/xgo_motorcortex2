@@ -33,7 +33,7 @@ python -m xgonav --source video.mp4 --robot sim --mode follow --fast   # Replay 
 python -m xgonav --mode idle --record debug.mp4  # auf dem Rider: nur schauen, Overlay aufzeichnen
 
 ./tools/export_model.sh [yolo11n] [256]          # ONNX-Export, nur auf PC/GPU-Server, NICHT auf dem Pi
-driver-test/run.sh kernel_module 6 50 --faults   # Treiberlogik im Userspace gegen ESP32-Emulator
+driver-test/run.sh kernel_module 6 50 --wheels --combo --faults   # Treiberlogik im Userspace gegen ESP32-Emulator (ohne --wheels --combo fragt der Treiber IMU/Räder nicht ab)
 make -C kernel_module                            # auf dem Rider: Treiber bauen (Kernel-Header nötig)
 make -C xgonav/native                            # auf dem Rider: C++-Kern (Ego-Motion, Bodenmodell, Raumkarte, Planer/Frontier/Merkkarte; libopencv-dev); ohne ihn rechnet Python
 make                                             # Root-Makefile: Treiber + Display-Daemon (st7789/project/riderpi)
@@ -65,14 +65,14 @@ Grundprinzipien, die sich durch alle Module ziehen:
 
 - **Nur der neueste Frame zählt.** `FrameSource.get()` liefert immer den aktuellsten Frame, alte werden verworfen. Keine Queues.
 - **Ego-Motion wird überall herausgerechnet.** `EgoMotion` liefert pro Frame eine Homographie `A` (Rotationsmodell, nicht 2D-Shift). Der Tracker wendet sie auf alle Boxen an, verzögerte Detektionen werden per `EgoMotion.transform_between(frame_a, frame_b)` auf den aktuellen Frame geschoben, die Freiraum-Horizontlinie und die Fußpunkt-Entfernung nutzen `pitch_dev`.
-- **Zwei Taktraten.** Die Bildschleife läuft mit Kamera-FPS, die Regelung nur mit `control_hz` (20 Hz). Nur im Regelschritt werden `World` gebaut, Verhalten ausgeführt und `robot.drive()` aufgerufen.
+- **Zwei Taktraten.** Die Bildschleife läuft mit Kamera-FPS, die Regelung mit `control_hz` (24 Hz, `Config.neutral()` 20) an dem Bild, das dem Takt am nächsten liegt (Schwelle `1/control_hz − 0,5/fps`), am Rider also bei jedem Bild; bis 2026-11-17 war es dort trotz „20 Hz“ nur jedes 2. Bild (~12 Hz), 24 Hz ist nicht eingespielt und nicht gefahren. Nur im Regelschritt werden `World` gebaut, Verhalten ausgeführt und `robot.drive()` aufgerufen.
 - **Sicherheit ist geschichtet und hat das letzte Wort:** `safety()` (gefallen, Freiraum, TTC) → `_arc_check()` (Bahn gegen Merkkarte, auch rückwärts) → `Robot` (Clamp auf `max_v`/`max_w`, Rampe, Userspace-Watchdog `stall_timeout_s`, Keepalive) → Kernel-Watchdog `motion_timeout_ms` (nur mit Patch 0001).
 - **Robot-Konvention:** `drive(v, w)` normiert auf [-1, 1], v > 0 vorwärts, w > 0 Linksdrehung. Die Umrechnung auf u8 (128 = Stillstand) liegt in `robot.norm_to_u8`. Sollwerte werden von der Firmware *gehalten*, deshalb müssen Stopps explizit geschrieben werden.
 - **Snapshot statt Shared State für die Anzeige.** `App.snapshot` wird pro Frame durch ein neues `Snapshot`-Objekt ersetzt (nie mutiert) und über `snap_cond` signalisiert. Web-Schnittstelle, LCD und Recorder (`--record`, `--record-raw`) lesen nur daraus; `render()` zeichnet das Overlay erst auf Anfrage.
 
 ### Konfiguration
 
-`xgonav/config.py` enthält alle Defaults als verschachtelte Dataclasses. Seit 2026-11-12 sind das die Werte des RiderPi (ohne Horizont-Testbetrieb und `/opt`-Pfade); Simulator (`tests/sim_run.py`) und Tests nehmen `Config.neutral()` (`NEUTRAL`, der frühere Stand), neue Tests also `Config.neutral()` statt `Config()`. `deploy/config.example.toml` überschreibt nur Abweichungen; unbekannte Schlüssel lösen beim Laden einen `KeyError` aus. Neue Parameter gehören also zuerst in die Dataclass. CLI-Flags in `__main__.py` überschreiben wiederum die TOML.
+`xgonav/config.py` enthält alle Defaults als verschachtelte Dataclasses. Seit 2026-11-12 sind das die Werte des RiderPi (ohne `/opt`-Pfade), seit 2026-11-17 auch `[imu] pitch_sign = -1` und `time_offset_ms = 10.5` fest (`Config.neutral()`: 0/None = Automatik `ImuSync`); Simulator (`tests/sim_run.py`) und Tests nehmen `Config.neutral()` (`NEUTRAL`, der frühere Stand), neue Tests also `Config.neutral()` statt `Config()`. `deploy/config.example.toml` überschreibt nur Abweichungen; unbekannte Schlüssel lösen beim Laden einen `KeyError` aus. Neue Parameter gehören also zuerst in die Dataclass. CLI-Flags in `__main__.py` überschreiben wiederum die TOML.
 
 ### Austauschbare Backends
 
@@ -93,9 +93,9 @@ Hardware-nahe Teile haben je eine echte und eine Sim-Implementierung mit gleiche
 
 ### Treiber und Display
 
-`kernel_module/` (mit `../constants.h`) ist der Treiber aus `xgo_motorcortex` (github.com/aeinstein/xgo_motorcortex, Stand `c3c888c`) plus die früheren Patches: 0001 Speicherfehler in proc-Handlern + `settings/motion_timeout_ms`; 0002 synchrone Serial-Reads, IMU-Thread mit `/proc/XGORider/imu`, `imu_log`, `serial_stats` (Format `seq t_ns roll pitch yaw`, Milligrad, CLOCK_MONOTONIC); 0003 `force_yaw` hält den Kurs per Impulsen; 0004 `roll` = Roll-Winkel in Grad (0x36), `roll_balance` = 0x61. Im Code wird weiter von „Treiber-Patch 000x“ gesprochen, gemeint ist dieser Stand. `driver-test/run.sh` kompiliert den echten Treibercode gegen `kshim.h` im Userspace und testet ihn mit `esp32_emu.py`. Ohne 0002 ist `imu.py` wirkungslos und `pitch_src` bleibt `"bild"`. `st7789/` ist der Display-Daemon (libdriver, Build in `st7789/project/riderpi`), `deploy/rc.local` startet ihn.
+`kernel_module/` (mit `../constants.h`) ist der Treiber aus `xgo_motorcortex` (github.com/aeinstein/xgo_motorcortex, Stand `c3c888c`) plus die früheren Patches: 0001 Speicherfehler in proc-Handlern + `settings/motion_timeout_ms`; 0002 synchrone Serial-Reads, IMU-Thread mit `/proc/XGORider/imu`, `imu_log`, `serial_stats` (Format `seq t_ns roll pitch yaw`, Milligrad, CLOCK_MONOTONIC); 0004 `roll` = Roll-Winkel in Grad (0x36), `roll_balance` = 0x61. Im Code wird weiter von „Treiber-Patch 000x“ gesprochen, gemeint ist dieser Stand. Seit 2026-11-17 (am Rider nicht eingespielt): 0003 `force_yaw` ist entfernt (xgonav schreibt `force_yaw = 0` nur noch, wenn ein alter Treiber den Eintrag hat); IMU und Räder kommen aus dem Strom der Firmware (0014), ohne Strom fragt der Treiber nur noch 0x0d ab (ältere Lesewege und `settings/wheel_hz` entfernt); der Kurs für `/proc/XGORider/yaw` kommt bei laufendem Strom aus dem Strom. Einspielen: erst xgonav, dann Treiber. `driver-test/run.sh` kompiliert den echten Treibercode gegen `kshim.h` im Userspace und testet ihn mit `esp32_emu.py`. Ohne 0002 ist `imu.py` wirkungslos; fehlt der IMU-Nick zum Bild, steht eine Warnung im Log und `pitch_src` ist `"bild"` (sonst `"imu"`). `st7789/` ist der Display-Daemon (libdriver, Build in `st7789/project/riderpi`), `deploy/rc.local` startet ihn.
 
-`firmware/` baut die ESP32-Firmware R-1.1.6 aus der Referenz `LuwuDynamics/xgorider2_rl` plus Patches in `firmware/patches/`; Patches, Register, Aktionen, Host-Tests und Stand am Rider stehen in `firmware/CLAUDE.md`. Der Treiber erkennt 0x0d/0x0c automatisch und liefert dann `/proc/XGORider/wheels` (Encoder, 1024 Ticks/Umdrehung, Rad 11 = links); `xgonav/wheels.py` liest das (`sim_run.py --wheels`).
+`firmware/` baut die ESP32-Firmware R-1.1.6 aus der Referenz `LuwuDynamics/xgorider2_rl` plus Patches in `firmware/patches/`; Patches, Register, Aktionen, Host-Tests und Stand am Rider stehen in `firmware/CLAUDE.md`. Der Treiber liefert aus dem Strom oder aus 0x0d `/proc/XGORider/wheels` (Encoder, 1024 Ticks/Umdrehung, Rad 11 = links); `xgonav/wheels.py` liest das (`sim_run.py --wheels`).
 
 ## Stolperfallen
 

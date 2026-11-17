@@ -7,7 +7,7 @@ Single device: RiderPi, CM4 2 GB, kernel 6.6.74+rpt-rpi-v8, OV5647 wide-angle, f
 | Item | Status |
 |---|---|
 | Driver patches 0001/0002, IMU ~49 Hz, kernel watchdog | tested |
-| Wheel encoders (0x0d/0x0c), odometry scale | tested (tape measure, 215 cm) |
+| Wheel encoders (0x0d), odometry scale | tested (tape measure, 215 cm) |
 | Wheel heading vs IMU | 2026-11-05, 184 s / 15 m / 25 turns: slope 1.000, 3° apart at the end (track 0.090 m fits) |
 | Camera geometry, lens shading | measured |
 | Manual driving (web UI) | tested |
@@ -20,7 +20,8 @@ Single device: RiderPi, CM4 2 GB, kernel 6.6.74+rpt-rpi-v8, OV5647 wide-angle, f
 | Sound direction (`ortung.py`) | microphones only ≈ 4 mm apart acoustically: needs ≈ 1 s of sound (speech, steady sources), a clap is too short; front/back cannot be told apart. Calibrated once while balancing with a test tone at 1 m (medians within ≈ 12°); **set down, with a TV 2–3 m away, only "right" stands out**. Not checked while driving (motor noise) or with speech; `pet` reacts to it (hearing: turn, calling, startle, talking back), **that part unit tests only**; hearing ran once on the Rider (2026-11-13, ~4 min balancing: startled by a sound, turned to it and found the person, talked back 11 times, searched three times and drove 0.8 m, stopped twice on a blocked arc; calling not triggered); calling drives toward a voice (`call_m`, RiderPi no limit), never near stairs |
 | FloorNet | shadow mode only, makes no decisions; preset goal against hand lines missed ([floornet.md](floornet.md)) |
 | IMU sync while balancing | not verified |
-| Patch 0003 (`force_yaw`) | not tested |
+| Driver patch 0003 (`force_yaw`) | removed 2026-11-17, was never tested |
+| Changes of 2026-11-17 | **not installed on the Rider, not driven**: control step at every frame (24 Hz instead of ~12 Hz; the controllers were tuned at ~12 Hz), fixed IMU sync as default, standing horizon removed, driver without the old read paths and `force_yaw`, `yaw` from the stream |
 | Room map | used by `home` and `explore`; drifts (no markers); glossy floors mirror window sills and furniture edges as obstacles at d = D·h_cam/(h_edge + h_cam), `confirm_dr_m` suppressed them until 2026-11-14 (now 0: one sighting is entered, relying on FloorNet); rug edges stay obstacles; loading assumes the Rider stands at the start point. The boundary row is entered as reported (no row correction since 2026-11-11); its error at a wall base is not measured |
 
 ## System software
@@ -70,7 +71,7 @@ Largest cost: optical flow (`ego.lk_*`). The Python binding does not accept preb
 | Item | Value |
 |---|---|
 | Camera heading | `vis_yaw` drifts during forward drive: depth differences leak into the rotation model (2 m straight: −8.9° / +3°; left vs right image half −0.1° / −7.9°). Analysis: `tools/ego_debug.py` |
-| IMU heading | firmware integrates yaw only at \|rate\| > 2°/s; 60 s balancing idle: IMU +2.5°, image −2.6°. Firmware heading hold (reg 0x0A) and `force_yaw` cannot see this drift. Gyro-z bias is measured once at boot: 2026-11-05 45 min after boot 0.48 °/s off (slope against wheels 0.998); 75 s turn test ended IMU −3.5°, wheels +27.7°, seen ~35° left. Patch 0009 (flashed 2026-11-05) tracks the bias and lowers the dead band to 0.3 °/s: 60 s drive test IMU +13.4°, wheels +15.4°. One stop from ~50 cm/s reverse twisted the Rider ~9° right within 0.5 s; the next run stopped within 2° in both directions (not reproduced, cause unknown). xgonav uses wheel heading (`odom.yaw_source`) |
+| IMU heading | firmware integrates yaw only at \|rate\| > 2°/s; 60 s balancing idle: IMU +2.5°, image −2.6°. Firmware heading hold (reg 0x0A) cannot see this drift. Gyro-z bias is measured once at boot: 2026-11-05 45 min after boot 0.48 °/s off (slope against wheels 0.998); 75 s turn test ended IMU −3.5°, wheels +27.7°, seen ~35° left. Patch 0009 (flashed 2026-11-05) tracks the bias and lowers the dead band to 0.3 °/s: 60 s drive test IMU +13.4°, wheels +15.4°. One stop from ~50 cm/s reverse twisted the Rider ~9° right within 0.5 s; the next run stopped within 2° in both directions (not reproduced, cause unknown). xgonav uses wheel heading (`odom.yaw_source`) |
 | Turn overshoot | after stop command 10–17° further; commands within u8 128 ± 6 ignored. `tools/nudge.py` turns in two stages |
 | Reverse | 2026-11-02 much weaker than forward (u8 109: 4 cm vs u8 147: 86 cm in 2 s). 2026-11-05 with patches up to 0010: symmetric (sent 0.12 forward 0.70 m in 3 s, sent 0.24 reverse 1.30 m in 3 s). `reverse_gain = 2.0` always, `manual_forward_gain = 2.0` manual only. Sent 0.24, 3 s (2026-11-05 21:50): forward 1.09 m, peak 0.49 m/s, reverse 1.39 m, peak 0.53 m/s; same top speed, forward needs ~1 s longer to reach it (cause not examined); heading within 1° forward, 3° reverse; stops in ~0.6 s, pitch ±8°. Sent 0.30 (full stick) not driven yet. Autonomous modes stay at factor 1 forward: simulator (`--dyn`, ~54 cm/s, 8 runs each) 1 collision and home arrived 1 of 4, factor 1: 0 collisions, 4 of 4; free-space thresholds would need retuning |
 | Balancing drift | slow drift in position and heading |

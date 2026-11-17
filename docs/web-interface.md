@@ -16,11 +16,10 @@
 | Area | Content |
 |---|---|
 | Header (sticky) | host, connection, mode, state (balancing/lying), battery (green ≥ 40 %, yellow ≥ 20 %, red < 20 %), pipeline, recording (only while switched on), WLAN (signal dBm: green ≥ −60, yellow ≥ −70, red below; ↓/↑ kB/s of `wlan0`), language DE/EN, **Einstellungen** (modal, see below), **Herunterfahren** (confirm dialog), **Ruhe**, **STOPP**; below 1000 px the two buttons show only ⚙/⏻ |
-| Left | camera image (WebSocket) with camera bar below it: exposure (ms, auto), gain (1–63.9×, auto), checkbox *Bild am IMU-Nick festhalten* (browser shifts the `<img>` by `row_stand − row_imu` via CSS, no pipeline cost; stored in `localStorage`; with `[horizon]` against the stand reference, otherwise normal pose against the pure IMU pitch without image share); checkbox *Roll ausgleichen* (browser rotates the `<img>` by the IMU roll about the horizon point at `cx`; vertical edges stand vertical if the roll is right; `localStorage` `xgonav.roll`), actual values (help in the ⓘ tooltip); mode selector (Idle · Hand · Follow · Explore · Approach · Zum Start) + target class dropdown (classes from `?a=detector`, reloaded after an xgonav restart, last choice in `localStorage`; disabled when YOLO is off), pipeline card with start/stop, Aufzeichnen button and status tiles, raw status JSON |
+| Left | camera image (WebSocket) with camera bar below it: exposure (ms, auto), gain (1–63.9×, auto), checkbox *Bild am IMU-Nick festhalten* (browser shifts the `<img>` by `row_stand − row_imu` via CSS, no pipeline cost; stored in `localStorage`; normal pose against the pure IMU pitch without image share); checkbox *Roll ausgleichen* (browser rotates the `<img>` by the IMU roll about the horizon point at `cx`; vertical edges stand vertical if the roll is right; `localStorage` `xgonav.roll`), actual values (help in the ⓘ tooltip); mode selector (Idle · Hand · Follow · Explore · Approach · Zum Start) + target class dropdown (classes from `?a=detector`, reloaded after an xgonav restart, last choice in `localStorage`; disabled when YOLO is off), pipeline card with start/stop, Aufzeichnen button and status tiles, raw status JSON |
 | Lage (open by default, right column top) | 3D model of the Rider rotated by roll, pitch, yaw from `imu_log`: CAD model `web/rider-model.bin` via WebGL, legs follow the `height`/`roll` setpoints through the linkage, smoothed ~0.33 s, at minimum while state = 254 (sliders keep their value), see limitations; wheels turn by the encoder ticks from `wheels_log` (1024/rev, live packet `imu.wheels`, CAD model only) (built by `tools/step_to_model.py` from `docs/Rider-Pi.STEP`, loaded when Verlauf is first opened); without WebGL or the file, simple boxes on canvas 2D; fixed compass ring on the ground (0° = heading at ESP32 start, + = left), blue line = body forward direction; values below. Samples replayed smoothly ~0.4 s behind; rotation about the wheel axle. Drag (mouse/touch) to orbit the view (elevation 5–85°), double-click resets; view kept in `localStorage` `xgonav.lage3d`; live (5 s buffer, memory); open/closed kept in `localStorage` `xgonav.lage`. Controls: vertical *Kamerahöhe* slider beside the model (shows the camera height the floor geometry uses, in mm, from `cam_h_gerade`, including the × 0.921 correction, so about 8 % below a folding-rule reading; writes u8 61–205, u8 in the tooltip; shows `u8 …` until xgonav has answered once), roll −20..20° below |
 | Fahren | D-pad, speed 5–100 %, Aufstehen (arm, 255), Neu ausrichten (leveling pulse), Absetzen (disarm, 254), ESP-Neustart (237, firmware patch 0018, only while not balancing); *Extras* sub-section (collapsed, open/closed in `localStorage` `xgonav.extras`): actions 1–6, 4 LEDs + all off + strobe, brightness slider (persistent), display emotions |
 | Raumkarte | room map PNG, view 3/6/10/16/24 m; mouse: drag to pan, wheel to zoom about the pointer (1 m..`grid.size_m`), double-click recentres on the Rider and follows again (touch: page scrolls, no pan). Buttons in three fixed groups: *Karte* (Speichern, sperren/entsperren, Zurücksetzen with confirm), *Start · Pose* (Start hier, Pose verwerfen: only with `reloc`, disabled while the pose is unknown), *Route · Zonen* (Route setzen, Sperrzone, Zonen löschen). Editing bar and pose warning are overlays on the map (top/bottom), groups are disabled while editing; nothing shifts the layout. Status: pose line with distance to start, one reserved line for explore/patrol |
-| Horizont (only with `[horizon] enabled`) | stand reference state, rows stand/IMU/image, image − IMU, ego ok share; green line ±1/±5 px, *Für diese Kamerahöhe speichern*, table (shown as camera height, stored per `height_mm`) with delete |
 | Verlauf (collapsed) | history charts, see below |
 
 Language: German is in the HTML, English in the dictionaries `EN`/`EN_HTML` of `index.php` (keyed by the German text; long help blocks via `data-i18n-html`). Switched in the browser only, choice in `localStorage` `xgonav.lang`; free text from xgonav/`api.php` (status, errors) stays German. `?i18n=debug` logs missing translations to the console. No cost on the Pi.
@@ -67,7 +66,7 @@ works without xgonav.
 
 ## `api.php`
 
-GET only for `status`, `route`, `horizon`, `detector`; all commands POST. Parameters are validated; invalid → HTTP 400.
+GET only for `status`, `route`, `detector`; all commands POST. Parameters are validated; invalid → HTTP 400.
 
 | Request | Target | Range |
 |---|---|---|
@@ -80,16 +79,12 @@ GET only for `status`, `route`, `horizon`, `detector`; all commands POST. Parame
 | `POST ?a=record&on=0\|1` | xgonav `/record` | |
 | `POST ?a=ausrichten` | xgonav `/level` | 409 if not balancing |
 | `POST ?a=drive&v=..&w=..` | xgonav `/drive` | −1..1; mode `manual` only |
-| `POST ?a=exposure&us=..` | xgonav `/exposure` | 0 = auto, 100..33333 (checked by xgonav) |
+| `POST ?a=exposure&us=..` | xgonav `/exposure` | 0 = auto, 100..frame period (`max_us` in `/status`, checked by xgonav) |
 | `POST ?a=gain&g=..` | xgonav `/gain` | 0 = auto, 1..63.9 |
 | `POST ?a=map_reset` | xgonav `/map/reset` | |
 | `POST ?a=map_start` | xgonav `/map/start` | |
 | `POST ?a=map_save` | xgonav `/map/save` | |
 | `POST ?a=map_pose&aktion=start\|hier\|verwerfen` | xgonav `/map/pose` | confirm or discard the pose in the room map (`[reloc] enabled`) |
-| `GET ?a=horizon` | xgonav `/horizon` | |
-| `POST ?a=horizon_edit&row=..` | xgonav `/horizon/edit` | 0..479.9, empty = off |
-| `POST ?a=horizon_cal&row=..` | xgonav `/horizon/cal` | 0..479.9 |
-| `POST ?a=horizon_delete&h=..` | xgonav `/horizon/delete` | mm |
 | `POST ?a=led&i=0..3&c=%23rrggbb` | `/proc/XGORider/leds/<i>` | |
 | `POST ?a=led_brightness&p=0..100` | `/var/lib/xgonav/led_brightness`, then `/proc/XGORider/settings/led_brightness` | percent → n = p·255/100; persistent, set at boot (`rc.local`) and on xgonav start |
 | `POST ?a=action&n=..` | `/proc/XGORider/action` | 1..6, 237, 253, 254, 255; 254 and 237 (ESP32 restart) first call xgonav `/stop?nur=pet` (ends mode `pet`, so it cannot stand up by itself) |
@@ -115,9 +110,8 @@ xgonav unreachable → HTTP 502 `xgonav nicht erreichbar`. Exposure/gain changes
 | Method | Path | Response / effect |
 |---|---|---|
 | GET | `/status` | JSON (mode, pipeline, status, cmd, tracks, free, ttc, fps, loop_ms, loop_p95, loop_max, det_ms, grid, exposure, battery, balancing, yaw_drv, height_mm, height_u8, cam_h_mm, cam_h_gerade `[a, b]` (mm = a + b·u8), pitch_src, pitch_deg, ego, odom, …); `?breakdown=1` adds per-section loop timing |
-| GET | `/ws` | WebSocket, overlay JPEGs; `?nick=1`: per-frame `row_stand`/`row_imu` in the header; `?nick=2`: also roll (deg) and `cx` |
+| GET | `/ws` | WebSocket, overlay JPEGs; `?nick=2`: per-frame IMU values in the header (`ws_kopf`, see Image transport) |
 | GET | `/frame?after=<idx>` | single JPEG newer than idx |
-| GET | `/stream` | MJPEG (legacy) |
 | GET | `/map.png?px=480&view=6[&cx=&cy=]` | room map; px 120..960, view 1..`grid.size_m`; centre `cx`,`cy` in map metres (both or neither; default Rider pose; clamped to ±`grid.size_m`); header `X-Map-View: cx,cy,view,size`; 404 if no map |
 | POST | `/mode?name=..&target=..` | 400 unknown mode, 409 not allowed |
 | POST | `/stop` | standstill, mode idle |
@@ -133,10 +127,8 @@ xgonav unreachable → HTTP 502 `xgonav nicht erreichbar`. Exposure/gain changes
 | POST | `/map/save` | save now to `grid.file`; 404 if no map or no file |
 | POST | `/map/pose?aktion=start\|hier\|verwerfen` | `start`: Rider stands on the start point, pose jumps there; `hier`: shown pose is right; `verwerfen`: pose unknown (needs `[reloc] enabled`). 409 while lying, during `home`/`patrol`/`explore` |
 | GET | `/detector` | selectable targets (detector classes), computed on request only |
-| GET | `/horizon` | horizon table + `stand` (same as `/status` `horizon`); 409 if `[horizon]` off |
-| POST | `/horizon/edit?row=..` | green line in the overlay (full-frame row), empty = off |
-| POST | `/horizon/cal?row=..` | store row for the body height of the stand reference; 409 without valid stand reference |
-| POST | `/horizon/delete?h=..` | delete entry at that height (±1 mm); 404 if none |
+
+Removed 2026-11-17: `/stream` (MJPEG), `/ws?nick=1`, `/horizon`, `/horizon/edit`, `/horizon/cal`, `/horizon/delete` and `api.php?a=horizon|horizon_edit|horizon_cal|horizon_delete`; `/status` has no `horizon` field any more, `pitch_src` is `"imu"` or `"bild"`.
 
 Mode rules: `explore`/`approach`/`home` need `freespace.enabled` (else 409); `follow`/`approach` need a running detector and a target in its classes (else 409); `home` also needs the room map; all modes except `idle`/`manual` need a running pipeline (else 409).
 
@@ -145,7 +137,7 @@ Mode rules: `explore`/`approach`/`home` need `freespace.enabled` (else 409); `fo
 | Item | Value |
 |---|---|
 | Path | `/xgonav/ws` (nginx → xgonav `/ws`, TLS terminates in nginx) |
-| Message | binary: 4-byte frame index + JPEG; with `?nick=1`: index, 2 × float32 BE `row_stand`, `row_imu` (with `[horizon]`: stand reference; otherwise `horizon_row(0)` / `horizon_row(pure IMU pitch)`; NaN = no IMU), JPEG; with `?nick=2` (used by `index.php`) two more float32 after them: roll (deg, + = right side low, as the cyan line) and `cx` |
+| Message | binary: 4-byte frame index + JPEG; with `?nick=2` (used by `index.php`, header from `web.ws_kopf`): index, then 10 × float32 BE: `row_stand`, `row_imu` (`horizon_row(0)` / `horizon_row(pure IMU pitch)`; NaN = no IMU), roll (deg, + = right side low, as the cyan line), `cx`, IMU pitch (deg), IMU heading (deg), age of the IMU sample (ms), pitch rate from image and from IMU (°/s), state (1 = IMU valid, 0 = pitch from the image only, NaN = no IMU); then the JPEG. All from the snapshot, nothing computed anew |
 | Flow control | client sends `ok` per image; xgonav sends the next (newest) image only after ack |
 | Ack timeout | 10 s → connection closed |
 | Reconnect | client after 1 s |
@@ -153,7 +145,7 @@ Mode rules: `explore`/`approach`/`home` need `freespace.enabled` (else 409); `fo
 | Rate | ≤ `output.web_fps` (10) |
 | Overlay | no status text lines in web frames (~10 ms saved per image) |
 
-Replaced MJPEG: on weak Wi-Fi, TCP buffers queued up to 20 s of delay.
+Replaced MJPEG (`/stream`, removed 2026-11-17): on weak Wi-Fi, TCP buffers queued up to 20 s of delay.
 
 ## Live data (WebSocket)
 
@@ -186,7 +178,7 @@ Header button **Ruhe** (with confirmation). Only the web UI wakes it (**Wecken**
 |---|---|---|
 | Rider | set down (action 254) if balancing | stays lying |
 | xgonav | pipeline off, mode idle, raw recording off; `imu`, `wheels` threads idle; `robot` thread reads state/battery every `ruhe.tick_s` (1 s), no keepalive; no LCD, no emotions, no WebSocket re-encode; pipeline and modes other than idle → 409 | threads resume; pipeline stays off |
-| Driver (`settings/`) | `imu_hz`, `imu_stream_hz`, `wheel_hz` → 0, `sleep_ms_on_loop` → `ruhe.sleep_ms_on_loop` (1000); old values kept in memory | old values written back |
+| Driver (`settings/`) | `imu_hz`, `imu_stream_hz` → 0, `sleep_ms_on_loop` → `ruhe.sleep_ms_on_loop` (1000); old values kept in memory | old values written back |
 | CPU (`xgo-ruhe`, root) | governor saved to `/run/xgo-ruhe.gov`, all cores `powersave` | saved governor (fallback `ondemand`) |
 | Display (`api.php`) | plays `sleep` (~4 s, before the governor change); last frame (closed eyes) stays | unchanged until xgonav or an emotion writes the next frame |
 | Page | cover with Wecken + battery; image WebSocket closed, no map polling; live packet every 5 s without IMU | normal rates |
@@ -212,9 +204,7 @@ Header button **Ruhe** (with confirmation). Only the web UI wakes it (**Wecken**
 | Colour | Meaning |
 |---|---|
 | yellow | floor boundary per column from `method`; absent when FloorNet decides (`primary = "net"`) |
-| cyan | horizon (pitch-compensated); with `[horizon]`: horizon from IMU only |
-| white / magenta / green | `[horizon]`: stand horizon of this height / IMU + image pitch since last IMU re-anchor (used for distances) / line being set |
-| orange | `[horizon]`: raw driver pitch (newest `imu_log` sample, no time alignment to the frame), value in degrees at the left |
+| cyan | horizon from the IMU pitch of the frame (rolled by the IMU roll) |
 | bottom bars | free space per sector |
 | red | target track |
 | violet | image motion |

@@ -17,12 +17,6 @@
 #include <linux/reboot.h>
 #include <linux/workqueue.h>
 
-// nur für clion on windows
-//#include <stdint.h>
-//#include <stdbool.h>
-//#include <stdio.h>
-//#include <sys/types.h>
-
 // Enable with: echo 1 > /proc/XGORider/settings/verbose
 static int verbose = 0x00;
 
@@ -36,11 +30,6 @@ uint8_t leds[4][3] = {{0, 0, 0}, {0, 0, 0}, {0, 0, 0}, {0, 0, 0}};
 static uint8_t XGO_Buttons = 0;
 
 // Settings
-static bool XGO_HOLD_YAW = false;
-// Zustand der Kurs-Haltung (force_yaw), siehe forceyaw() in xgo-drv.c
-static bool hold_valid = false;          // wanted_yaw gültig? (false -> beim nächsten Lauf übernehmen)
-static unsigned long hold_next;          // jiffies: frühester nächster Korrekturimpuls
-static unsigned long last_user_turn;     // jiffies: letzter speed_z-Befehl ungleich 128
 static uint8_t XGO_LOW_BATT = 8;
 static bool XGO_SHUTDOWN_ON_LOW_BATT = true;
 static int XGO_MS_SLEEP_ON_LOOP = 200;
@@ -52,14 +41,11 @@ static DECLARE_DELAYED_WORK(motion_wd, motion_watchdog_fn);
 
 static struct task_struct *thread;
 
-static bool read_initial_yaw(void);
 static void batteryCheck(void);
 static void checkState(void);
 static int16_t readYaw(void);
 static int createFilesystem(void);
 static void destroyFilesystem(void);
-static int16_t readYaw(void);
-static void forceyaw(void);
 
 union B2I16 {
 	int16_t i;

@@ -38,8 +38,7 @@ $R python3 /root/rider_nav.py zustand
      Möbel direkt daneben. Hinten und seitlich sieht die Kamera nicht → ist das nicht eindeutig, Nutzer fragen.
    - Steht er schon: Schritt 2–3 überspringen (kein 253 an einen balancierenden Rider).
 3. **Aufspringen + Kalibrierung abwarten:** `$R python3 /root/rider_nav.py aufstehen`
-   - schreibt 253, wartet bis `state` = 1, dann mindestens 6 s (Aufschwung ≤ 2 s, Nivellier-Impuls 2,5–5,5 s)
-     und bei `[horizon]` bis die Standreferenz `gültig` ist (3 s Einschwingen + 3 s Mittel im Stillstand).
+   - schreibt 253, wartet bis `state` = 1, dann mindestens 6 s (Aufschwung ≤ 2 s, Nivellier-Impuls 2,5–5,5 s).
    - `aufstehen` schaltet vorher auf `idle` (`/stop`). Soll er danach in einem Modus laufen (z. B. `pet`):
      nach „bereit“ `curl -s -X POST 'localhost:8088/mode?name=pet'`, sonst steht er nur (2026-11-13).
    - In dieser Zeit nichts schicken. Körperhöhe steht danach auf Firmware-Mitte 128 (≈ 90 mm); Höhe nur auf
@@ -80,7 +79,7 @@ Eingriff in die Bildpipeline. `bild` kodiert ein JPEG (einmalig). `record_status
 
 | Zweck | Aufruf am Rider |
 |---|---|
-| Zustand | `GET /status` (mode, pipeline, frame, yaw_deg, odom, height_mm, horizon.zustand); `/proc/XGORider/state` 1 = balanciert, `battery` % |
+| Zustand | `GET /status` (mode, pipeline, frame, yaw_deg, odom, height_mm); `/proc/XGORider/state` 1 = balanciert, `battery` % |
 | Bildverarbeitung | `POST /pipeline?on=1` / `?on=0` (aus = idle + Stillstand) |
 | Modus | `POST /mode?name=idle\|manual\|follow…`, `POST /stop` = idle + Stillstand |
 | Handsteuerung | `POST /drive?v=&w=` nur im Modus manual, alle < 0,5 s wiederholen |

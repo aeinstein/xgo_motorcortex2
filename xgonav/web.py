@@ -2,7 +2,7 @@
 Moduswechsel, Bildverarbeitung an/aus.
 
 Die Bedienoberfläche ist PHP (web/), ausgeliefert von nginx (deploy/nginx-xgonav.conf);
-nginx reicht /xgonav/ws, /xgonav/frame und /xgonav/stream direkt hierher durch. Keine Authentifizierung: web_host
+nginx reicht /xgonav/ws und /xgonav/frame direkt hierher durch. Keine Authentifizierung: web_host
 auf 127.0.0.1 lassen und nur über nginx veröffentlichen.
 """
 from __future__ import annotations
@@ -38,11 +38,7 @@ def horizont_linie(app, snap) -> tuple[float, float, float]:
 
 def _hz_rows(snap, geo) -> tuple[float, float]:
     """row_stand und row_imu (Vollbild-Zeilen) für „Bild am IMU-Nick festhalten“, fehlend NaN.
-    Mit [horizon] aus Snapshot.horizon (Standreferenz), sonst Normallage gegen den IMU-Nick des Bildes
-    (Snapshot.imu); zwei tan je gesendetem Bild im Web-Thread, die Bildpipeline rechnet nichts."""
-    hz = snap.horizon
-    if hz is not None:
-        return tuple(float("nan") if hz.get(k) is None else float(hz[k]) for k in ("row_stand", "row_imu"))
+    Normallage gegen den IMU-Nick des Bildes (Snapshot.imu); zwei tan je gesendetem Bild im Web-Thread, die Bildpipeline rechnet nichts."""
     if snap.imu is None or snap.imu.pitch is None:
         return float("nan"), float("nan")
     return float(geo.horizon_row(0.0)), float(geo.horizon_row(snap.imu.pitch))
@@ -66,17 +62,14 @@ def ws_kopf(snap, geo, hl) -> bytes:
     return struct.pack("!I10f", snap.idx & 0xFFFFFFFF, *w)
 
 
-API = {"GET": ["/status", "/ws?nick=1|2 (WebSocket: Bilder, Bestätigung je Bild; nick: Horizontzeilen im Kopf, 2: IMU-Wert des Bildes, ws_kopf)",
-               "/frame?after=<idx>&raw=1", "/stream",
+API = {"GET": ["/status", "/ws?nick=2 (WebSocket: Bilder, Bestätigung je Bild; nick=2: IMU-Wert des Bildes im Kopf, ws_kopf)",
+               "/frame?after=<idx>&raw=1",
                "/map.png?px=480&view=6 (Raumkarte)",
-               "/horizon (Horizonttabelle + Stand)",
                "/detector (wählbare Ziele für follow/approach: Klassen des Detektors)"],
        "POST": ["/mode?name=..&target=..", "/stop", "/pipeline?on=0|1", "/ruhe?on=0|1 (Ruhemodus; Wecken startet nichts)", "/wlan?on=0|1 (WLAN-Einrichtung: QR-Code, sonst Hotspot; wie Tasten C+D halten)", "/record?on=0|1 (Rohaufzeichnung, nur balancierend)",
                 "/drive?v=..&w=.. (nur Modus manual)",
-                "/exposure?us=0|100..33333 (0 = Automatik)", "/gain?g=0|1..63.9 (0 = Automatik)",
-                "/map/reset (Raumkarte leeren, Pose auf 0)", "/map/pose?aktion=start|hier|verwerfen (Standort bestätigen)", "/level (Beine neu ausrichten, 3 s)",
-                "/horizon/edit?row=.. (Linie einstellen, leer = aus)", "/horizon/cal?row=.. (für diese Höhe speichern)",
-                "/horizon/delete?h=<mm>"]}
+                "/exposure?us=0|100..max (0 = Automatik)", "/gain?g=0|1..63.9 (0 = Automatik)",
+                "/map/reset (Raumkarte leeren, Pose auf 0)", "/map/pose?aktion=start|hier|verwerfen (Standort bestätigen)", "/level (Beine neu ausrichten, 3 s)"]}
 
 
 WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
@@ -196,20 +189,12 @@ def serve(app: App, host: str, port: int, fps: int, render_cpus=None) -> Threadi
                         "backend": getattr(d, "backend", ""), "classes": cls, "modes": sorted(app.DET_MODES),
                         "default": app.cfg.behavior.target_class}
                 return self._send(200, json.dumps(body).encode())
-            if u.path == "/horizon":
-                try:
-                    body = {**app.horizon_table(), "stand": app.snapshot.horizon}
-                except ValueError as e:   # ModeNotAllowed
-                    return self._send(409, json.dumps({"error": str(e)}).encode())
-                return self._send(200, json.dumps(body).encode())
             if u.path == "/map.png":
                 return self._map_png(parse_qs(u.query))
             if u.path == "/ws":
                 return self._ws(parse_qs(u.query))
             if u.path == "/frame":
                 return self._frame(parse_qs(u.query))
-            if u.path == "/stream":
-                return self._stream()
             self._send(404, b"{}")
 
         def do_POST(self):
@@ -312,36 +297,6 @@ def serve(app: App, host: str, port: int, fps: int, render_cpus=None) -> Threadi
                 except ValueError as e:
                     return self._send(400, json.dumps({"error": str(e) or "g ungültig"}).encode())
                 return self._send(200, json.dumps({"ok": True, "gain": g}).encode())
-            if u.path == "/horizon/edit":
-                # Linie zum Einstellen ins Overlay zeichnen; row leer = aus
-                r = q.get("row", [""])[0]
-                try:
-                    row = float(r) if r != "" else None
-                    if row is not None and not (math.isfinite(row) and 0 <= row < app.cfg.camera.height):
-                        raise ValueError
-                except ValueError:
-                    return self._send(400, b'{"error":"row ungueltig"}')
-                app.hz_edit_row = row
-                return self._send(200, json.dumps({"ok": True, "row": row}).encode())
-            if u.path == "/horizon/cal":
-                try:
-                    row = float(q.get("row", [""])[0])
-                    if not math.isfinite(row):
-                        raise ValueError("row ungültig")
-                    e = app.horizon_calibrate(row)
-                except ModeNotAllowed as e:
-                    return self._send(409, json.dumps({"error": str(e)}).encode())
-                except ValueError as e:
-                    return self._send(400, json.dumps({"error": str(e) or "row ungültig"}).encode())
-                return self._send(200, json.dumps({"ok": True, "eintrag": e}).encode())
-            if u.path == "/horizon/delete":
-                try:
-                    ok = app.horizon_delete(float(q.get("h", [""])[0]))
-                except ModeNotAllowed as e:
-                    return self._send(409, json.dumps({"error": str(e)}).encode())
-                except ValueError:
-                    return self._send(400, b'{"error":"h ungueltig"}')
-                return self._send(200 if ok else 404, json.dumps({"ok": ok}).encode())
             if u.path == "/mode":
                 try:
                     app.set_mode(q.get("name", ["idle"])[0], (q.get("target") or [None])[0] or None,
@@ -398,14 +353,10 @@ def serve(app: App, host: str, port: int, fps: int, render_cpus=None) -> Threadi
             Bestätigung des Browsers (beliebige Nachricht) und schickt dann das neueste Bild.
             So bleibt es bei einer Verbindung, ohne dass sich Bilder in TCP-Puffern stauen
             (MJPEG über schwaches WLAN: bis 20 s). Binärnachricht: 4 Byte Bildnummer + JPEG.
-            nick=1: zwischen Bildnummer und JPEG zwei float32 (big endian) row_stand und row_imu dieses Bildes
-            (NaN ohne gültige Standreferenz). Damit verschiebt der Browser das Bild selbst, sodass die IMU-Linie
-            fest steht (Driftprüfung); die Bildpipeline rechnet dafür nichts.
             nick=2: Kopf aus ws_kopf (IMU-Wert des Bildes: Zeilen, Roll, cx, Nick, Kurs, Alter, Nickraten, Zustand);
             der Browser verschiebt/dreht damit und zeigt die Werte je Bild an."""
             pin_thread(render_cpus, "Bild-Thread", quiet=True)
-            nick = q.get("nick", ["0"])[0]
-            nick = int(nick) if nick in ("1", "2") else 0
+            nick = q.get("nick", ["0"])[0] == "2"
             key = self.headers.get("Sec-WebSocket-Key")
             if not key or "websocket" not in self.headers.get("Upgrade", "").lower():
                 return self._send(400, b'{"error":"WebSocket erwartet"}')
@@ -438,12 +389,7 @@ def serve(app: App, host: str, port: int, fps: int, render_cpus=None) -> Threadi
                     if not ok:
                         continue
                     last = snap.idx
-                    if nick == 2:
-                        kopf = ws_kopf(snap, app.geo, hl)
-                    else:
-                        kopf = struct.pack("!I", snap.idx & 0xFFFFFFFF)
-                        if nick:
-                            kopf += struct.pack("!ff", *_hz_rows(snap, app.geo))
+                    kopf = ws_kopf(snap, app.geo, hl) if nick else struct.pack("!I", snap.idx & 0xFFFFFFFF)
                     self.wfile.write(ws_frame(0x2, kopf + jpg.tobytes()))
                     # auf Bestätigung warten; Ping beantworten, Close beenden
                     while True:
@@ -489,35 +435,6 @@ def serve(app: App, host: str, port: int, fps: int, render_cpus=None) -> Threadi
                 self.send_header("X-Frame-T", "%.6f" % snap.t)
                 self.end_headers()
                 self.wfile.write(body)
-            except (BrokenPipeError, ConnectionResetError):
-                pass
-
-        def _stream(self):
-            pin_thread(render_cpus, "Bild-Thread", quiet=True)
-            self.send_response(200)
-            self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=f")
-            self.send_header("Cache-Control", "no-store")
-            self.end_headers()
-            last = -1
-            period = 1.0 / max(1, fps)
-            try:
-                while app.running:
-                    with app.snap_cond:
-                        app.snap_cond.wait_for(lambda: app.snapshot.idx != last or not app.running, timeout=1.0)
-                        snap = app.snapshot
-                    if snap.idx == last:
-                        continue
-                    last = snap.idx
-                    img = render(snap, text=False, horizont=horizont_linie(app, snap))   # Statuszeilen zeigt die Oberfläche
-                    if img is None:
-                        continue
-                    ok, jpg = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 70])
-                    if not ok:
-                        continue
-                    self.wfile.write(b"--f\r\nContent-Type: image/jpeg\r\nContent-Length: %d\r\n\r\n" % len(jpg))
-                    self.wfile.write(jpg.tobytes())
-                    self.wfile.write(b"\r\n")
-                    time.sleep(period)
             except (BrokenPipeError, ConnectionResetError):
                 pass
 

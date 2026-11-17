@@ -23,7 +23,6 @@ from .freespace import FreeSpace, FreeSpaceEstimator, FreeSpaceWorker, column_ru
 from .gridmap import GridMap, GridWorker
 from .planner import PlannerWorker
 from .geometry import CamGeometry
-from .horizon import HorizonTable, StandRef, row_to_tilt_deg
 from .wheels import WheelOdom, make_wheels
 from .imu import ImuFrame, ImuSource, ImuSync, imu_frame, make_imu
 from .localmap import LocalMap, mask_movable
@@ -52,7 +51,6 @@ class Snapshot:
     tracks_all: list = field(default_factory=list)   # alle Tracks inkl. unbestätigter (Diagnose)
     fs_diag: dict = field(default_factory=dict)      # Diagnose des Bodenmodells
     cam_meta: dict | None = None                     # Weißabgleich, Verstärkung
-    horizon: dict | None = None                      # Horizont im Stand ([horizon] enabled)
     imu: ImuFrame | None = None                      # IMU zur Bildzeit (eine Wahrheit je Bild); None ohne IMU
     nickrate: tuple[float, float] | None = None      # Nickrate aus Bild / IMU (°/s) zwischen den letzten Bildern
     odo: tuple | None = None                         # Wegsumme der Merkkarte zu diesem Bild (LocalMap.odo)
@@ -131,14 +129,6 @@ class App:
         self.tracker = Tracker(cfg.tracker, size)
         self.det = DetectorWorker(cfg.detector, cfg.cpu.detector_cpus)
         self.geo = CamGeometry.from_cfg(cfg)
-        # Horizont im Stand: IMU-Referenz je Aufstehen, Horizontzeile je Körperhöhe (horizon.py)
-        self.stand = StandRef(cfg.horizon) if cfg.horizon.enabled else None
-        self.htable = HorizonTable(cfg.horizon.file) if cfg.horizon.enabled else None
-        self.hz_edit_row: float | None = None    # Linie, die der Nutzer im Web gerade einstellt
-        self._hz_bild: float | None = None       # IMU-Wert beim letzten Abgleich + Bildnick seitdem (rad)
-        self._hz_bild_t = 0.0                    # Bildzeit des letzten Abgleichs mit der IMU
-        self._hz_ok = collections.deque(maxlen=100)   # Ego-Motion ok je Bild
-        self._hz_info: dict | None = None
         self.fse = FreeSpaceEstimator(cfg.freespace, size, self.geo) if cfg.freespace.enabled else None
         if cfg.freespace.primary not in ("method", "net"):
             raise ValueError("freespace.primary muss method oder net sein, nicht %r" % cfg.freespace.primary)
@@ -168,8 +158,6 @@ class App:
         if self.lmap is not None and self.lmap.backend == "c++":
             log.info("Merkkarte, Planer, Frontier-Suche: C++-Kern (navfast)")
         self._fs_in_map = None
-        self._grid_turn_t = -1e9             # letzte schnelle Drehung (grid.turn_settle_s)
-        self._grid_rate_lp = 0.0
         # Raumkarte (Welt-KS ab Startpose), nur Anzeige
         self.gridmap = GridMap(cfg.grid, self.geo, self.fse.W, self.fse.H) \
             if self.fse is not None and cfg.grid.enabled else None
@@ -387,7 +375,7 @@ class App:
             log.info("Bildverarbeitung gestoppt")
 
     # Treiber-Einstellungen, die der Ruhemodus abschaltet: Wert im Ruhemodus (None = aus RuheCfg)
-    RUHE_SETTINGS = {"imu_hz": 0, "imu_stream_hz": 0, "wheel_hz": 0, "sleep_ms_on_loop": None}
+    RUHE_SETTINGS = {"imu_hz": 0, "imu_stream_hz": 0, "sleep_ms_on_loop": None}
 
     @property
     def ruhe(self) -> bool:
@@ -788,7 +776,10 @@ class App:
         tm.mark("fs")
 
         now = time.monotonic()
-        if now - self._last_ctrl >= 1.0 / self.cfg.control_hz:
+        # Regelschritt an dem Bild, das dem Takt am nächsten liegt (halber Bildabstand Toleranz). Ohne die Toleranz
+        # lief er bis 2026-11-17 bei 20 Hz Soll und 41,7 ms Bildabstand nur jedes 2. Bild (~12 Hz); mit
+        # control_hz = Bildrate ließe Jitter sonst Schritte aus.
+        if now - self._last_ctrl >= 1.0 / self.cfg.control_hz - 0.5 / max(self.cfg.camera.fps, 1):
             dt = now - self._last_ctrl if self._last_ctrl else 0.0
             self._last_ctrl = now
             # Freiraum nur aus dem Bodenmodell: Erkennungen (YOLO) sind kein Hindernis (Nutzer 2026-11-13)
@@ -823,17 +814,11 @@ class App:
                     # Nick und Pose der Aufnahme, nicht des Bildes, in dem das Ergebnis ankam
                     pd = free.pitch_dev if free.pitch_dev is not None else pitch_dev
                     self.lmap.add_freespace(free, f.t, pd)      # Bahnprüfung: unmaskiert
-                    view = self._map_view(free, tracks, f.t)     # Raumkarte: ohne Personen und Tiere
+                    view = self._map_view(free, tracks)     # Raumkarte: ohne Personen und Tiere
                     # Raumkarte nur auf den Rädern (liegend sieht die Kamera etwas anderes) und
                     # ohne schnelle Drehung
                     rate = abs(math.degrees(dyaw)) / dt if dt > 0 else 0.0
-                    # geglättet (~0,2 s): einzelne Lenkspitzen in der Fahrt sind keine Wende
-                    self._grid_rate_lp += 0.35 * (rate - self._grid_rate_lp)
-                    if self._grid_rate_lp > self.cfg.grid.turn_settle_dps:
-                        self._grid_turn_t = now
-                    # ... und nach einer Wende (turn_settle_dps) noch turn_settle_s: die IMU-Neigung stimmt dann nicht
-                    if (self.robot.state.balancing and rate <= self.cfg.grid.max_turn_dps
-                            and now - self._grid_turn_t >= self.cfg.grid.turn_settle_s):
+                    if self.robot.state.balancing and rate <= self.cfg.grid.max_turn_dps:
                         if self.grid_worker is not None:
                             self.grid_worker.offer(view, pd)
                         elif self.gridmap is not None:
@@ -895,7 +880,7 @@ class App:
                 self._emotion_tick(any(t.cls == cls and t.lost_s(f.t) < 0.5 for t in tracks))
         tm.mark("ctrl")
 
-        snap = Snapshot(frame=f.bgr, idx=f.idx, t=f.t, pitch_dev=pitch_dev, tracks=list(tracks), horizon=self._hz_info,
+        snap = Snapshot(frame=f.bgr, idx=f.idx, t=f.t, pitch_dev=pitch_dev, tracks=list(tracks),
                         imu=self._imu_frame, nickrate=self._nickrate,
                         odo=self.lmap.odo if self.lmap is not None else None, geo=self.geo,
                         tracks_all=list(self.tracker.tracks), cam_meta=f.meta,
@@ -930,7 +915,6 @@ class App:
                                "balancing": self.robot.state.balancing,
                                "height_mm": round(self.geo.body_height_mm, 1),
                                "pitch_src": self.pitch_src, "pitch_deg": round(math.degrees(pitch_dev), 2),
-                               "horizon": self._hz_info,
                                "imu": None if self.imu is None else {
                                    "hz": round(self.imu.rate_hz, 1), "sync": self.imu_sync.reliable,
                                    "sign": self.imu_sync.sign, "offset_ms": round(self.imu_sync.offset * 1000),
@@ -1141,16 +1125,17 @@ class App:
                 log.warning("Emotion: %s", e)
 
     def _pitch_dev(self, f, ego) -> float:
-        """Nickabweichung der Kamera: mit [horizon] aus IMU minus Standreferenz; sonst der reine IMU-Nick zur
+        """Nickabweichung der Kamera: der reine IMU-Nick zur
         Bildzeit (imu_frame, Versatz [imu] time_offset_ms); ohne gültige IMU nur der schnelle Anteil aus dem Bild
         (langsame Neigung dann unbekannt, pitch_src "bild"). Bis 2026-11-17 lief hier ein Komplementärfilter
         (IMU-Tiefpass + Bildanteil); der Bildanteil ist jetzt nur noch Vergleich (Snapshot.nickrate)."""
         prev = self._imu_frame
         self._imu_frame = None
         if self.imu is not None:
-            if ego.ok and ego.dt > 0:
-                self.imu_sync.add(f.t - ego.dt, f.t, ego.pitch)
-            self.imu_sync.update(self.imu, time.monotonic())
+            if not self.imu_sync.fixed:               # fest eingetragen (RiderPi): nichts zu schätzen
+                if ego.ok and ego.dt > 0:
+                    self.imu_sync.add(f.t - ego.dt, f.t, ego.pitch)
+                self.imu_sync.update(self.imu, time.monotonic())
             self._imu_frame = imu_frame(self.imu_sync, self.imu, f.t)
             fr = self._imu_frame
             if (ego.ok and ego.dt > 0 and fr.pitch is not None and prev is not None and prev.pitch is not None
@@ -1159,98 +1144,15 @@ class App:
                 self._nickrate = (math.degrees(ego.pitch / ego.dt), math.degrees((fr.pitch - prev.pitch) / d))
             else:
                 self._nickrate = None
-        if self.stand is not None:
-            pd = self._pitch_dev_stand(f, ego)
-            if pd is not None:
-                return pd
-            self.geo.tilt_deg = self.cfg.camera.tilt_deg
         if self._imu_frame is not None and self._imu_frame.pitch is not None:
             self.pitch_src = "imu"
             self.geo.pitch_sigma_deg = self.cfg.imu.sigma_deg
             return self._imu_frame.pitch
+        if self.pitch_src != "bild" and self.imu is not None:
+            log.warning("IMU-Nick fehlt (Probe zu alt oder Sync unsicher): Nick nur noch aus dem Bild")
         self.pitch_src = "bild"
         self.geo.pitch_sigma_deg = 1.5
         return ego.pitch_dev
-
-    def _pitch_dev_stand(self, f, ego) -> float | None:
-        """Nick gegen die Standreferenz: IMU minus Mittel im Stand (kein Tiefpass). Schnelle Änderungen aus
-        dem Bild: ab dem IMU-Wert wird der Bildnick aufsummiert und spätestens nach [horizon] bild_max_s wieder
-        auf die IMU gesetzt; diese Linie (magenta) geht in die Geometrie, die reine IMU (cyan) ist Vergleich.
-        None: noch keine Referenz (vor dem Aufstehen, beim Einschwingen) oder IMU fehlt/veraltet."""
-        now = time.monotonic()
-        cmd = self.robot.command
-        still = abs(cmd[0]) < 1e-3 and abs(cmd[1]) < 1e-3
-        h = self.robot.height_mm if self.robot.height_mm is not None else self.geo.body_height_mm
-        new = self.stand.update(now, self.robot.state.balancing, h, still, self.imu)
-        self._hz_ok.append(bool(ego.ok))
-        st = self.stand
-        row_cal = self.htable.row_at(h)
-        info = {"zustand": st.state, "hoehe_mm": round(h, 1),
-                "ref_deg": None if st.ref is None else round(math.degrees(st.ref), 2),
-                "std_deg": None if st.std is None else round(math.degrees(st.std), 2),
-                "verworfen": st.verworfen, "row_cal": None if row_cal is None else round(row_cal, 1),
-                "tabelle_deckt": self.htable.covers(h), "edit_row": self.hz_edit_row,
-                "ego_ok": round(sum(self._hz_ok) / len(self._hz_ok), 2),
-                "row_stand": None, "row_imu": None, "row_bild": None, "bild_minus_imu_deg": None,
-                "imu_alter_ms": None, "row_imu_roh": None, "imu_roh_deg": None}
-        self._hz_info = info
-        pd = None
-        if st.ref is not None and self.imu is not None and self.imu_sync.reliable:
-            lt = self.imu.latest_t()
-            t_imu = f.t + self.imu_sync.offset
-            if lt is not None:
-                info["imu_alter_ms"] = round((t_imu - lt) * 1000)
-            p = self.imu.pitch_at(t_imu) if lt is not None and t_imu - lt <= self.cfg.imu.max_age_s else None
-            if p is not None:
-                pd = self.imu_sync.sign * (float(p) - st.ref)
-        if pd is None:
-            self._hz_bild = None
-            return None
-        self.geo.tilt_deg = row_to_tilt_deg(row_cal, self.geo.f, self.geo.H) if row_cal is not None \
-            else self.cfg.camera.tilt_deg
-        max_s = self.cfg.horizon.bild_max_s
-        if new or self._hz_bild is None or max_s <= 0 or f.t - self._hz_bild_t >= max_s:
-            self._hz_bild, self._hz_bild_t = pd, f.t        # Abgleich: Bildlinie auf die IMU
-        elif ego.ok:
-            self._hz_bild += ego.pitch                      # schnelle Änderung aus dem Bild
-        info["row_stand"] = round(self.geo.horizon_row(0.0), 1)
-        info["row_imu"] = round(self.geo.horizon_row(pd), 1)
-        info["row_bild"] = round(self.geo.horizon_row(self._hz_bild), 1)
-        info["bild_minus_imu_deg"] = round(math.degrees(self._hz_bild - pd), 2)
-        # roher Nick des Treibers: neueste Probe aus imu_log, ohne Zeitabgleich zum Bild (zeigt die Reaktion)
-        _, ps = self.imu.arrays()
-        if len(ps):
-            info["imu_roh_deg"] = round(math.degrees(float(ps[-1])), 2)
-            info["row_imu_roh"] = round(self.geo.horizon_row(self.imu_sync.sign * (float(ps[-1]) - st.ref)), 1)
-        self.pitch_src = "stand+bild" if max_s > 0 else "stand"
-        self.geo.pitch_sigma_deg = self.cfg.imu.sigma_deg
-        return self._hz_bild
-
-    def horizon_table(self) -> dict:
-        if self.htable is None:
-            raise ModeNotAllowed("Horizont aus ([horizon] enabled = false)")
-        # kamera_mm nur für die Anzeige; Schlüssel der Tabelle bleibt height_mm
-        return {"datei": self.htable.path,
-                "punkte": [{**p, "kamera_mm": round(self.geo.cam_h_at(p["height_mm"]), 1)} for p in self.htable.points]}
-
-    def horizon_calibrate(self, row: float) -> dict:
-        """Horizontzeile (Vollbild) für die Körperhöhe der Standreferenz speichern. Nur im Stand mit gültiger
-        Referenz: Die Zeile gilt für die mittlere Lage, nicht für einen Augenblick beim Pendeln."""
-        if self.stand is None:
-            raise ModeNotAllowed("Horizont aus ([horizon] enabled = false)")
-        if self.stand.state != "gültig" or self.stand.ref is None:
-            raise ModeNotAllowed("erst aufstehen und still stehen lassen (Standreferenz: %s)" % self.stand.state)
-        if not 0 <= row < self.cfg.camera.height:
-            raise ValueError("Zeile außerhalb des Bildes")
-        h = self.stand.height_mm if self.stand.height_mm is not None else self.geo.body_height_mm
-        e = self.htable.set(h, row, math.degrees(self.stand.ref))
-        log.info("Horizont eingestellt: %.1f mm -> Zeile %.1f (IMU im Stand %+.2f°)", h, row, e["ref_deg"])
-        return e
-
-    def horizon_delete(self, height_mm: float) -> bool:
-        if self.htable is None:
-            raise ModeNotAllowed("Horizont aus ([horizon] enabled = false)")
-        return self.htable.delete(height_mm)
 
     def _plan_tick(self, w: World) -> None:
         """Verhalten mit Planung: fertiges Ergebnis übergeben, bei Bedarf neu planen (eigener Thread)."""
@@ -1286,7 +1188,7 @@ class App:
             return np.column_stack([x + p[:, 0] * c - p[:, 1] * s, y + p[:, 0] * s + p[:, 1] * c])
         return world
 
-    def _map_view(self, free: FreeSpace, tracks, now: float) -> FreeSpace:
+    def _map_view(self, free: FreeSpace, tracks) -> FreeSpace:
         return mask_movable(free, [(t.cls, t.box) for t in tracks], self.cfg.camera.width, self.cfg.camera.height)
 
     def _arc_check(self, cmd: Command) -> Command:
@@ -1401,21 +1303,6 @@ def render(snap: Snapshot, text: bool = True, horizont: tuple[float, float, floa
         cv2.rectangle(img, (x1, y1), (x2, y2), col, 3 if tgt else 1)
         cv2.putText(img, f"#{t.id} {t.cls} {t.conf:.2f}", (x1, max(12, y1 - 4)),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.45, col, 1, cv2.LINE_AA)
-    hz = snap.horizon
-    if hz is not None:
-        # weiß: Standhorizont dieser Höhe, cyan: IMU, magenta: Bild, orange: roher IMU-Nick, grün: Einstellen
-        roh = hz.get("imu_roh_deg")
-        for key, col, th, lab in (("row_stand", (255, 255, 255), 1, "Stand"), ("row_imu", (255, 255, 0), 2, "IMU"),
-                                  ("row_bild", (255, 0, 255), 1, "Bild"),
-                                  ("row_imu_roh", (0, 140, 255), 1, "roh %+.1f" % roh if roh is not None else "roh"),
-                                  ("edit_row", (0, 255, 0), 1, "Einst.")):
-            r = hz.get(key)
-            if r is None:
-                continue
-            y = int(round(r))
-            cv2.line(img, (0, y), (W, y), col, th)
-            cv2.putText(img, _ascii(lab), (W - 70 if key != "row_imu_roh" else 6, y - 3),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.4, col, 1, cv2.LINE_AA)
     e = snap.ego
     if e is not None:
         c = (W // 2, H // 2)

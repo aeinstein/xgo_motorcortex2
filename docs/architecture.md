@@ -16,10 +16,10 @@ camera.FrameSource ─► egomotion.EgoMotion ─► tracker.Tracker ◄── d
 
 | Loop | Rate | Does |
 |---|---|---|
-| Image loop | camera fps (RiderPi config: 25) | ego-motion, tracker update, free space, snapshot |
-| Control step | `control_hz` = 20 Hz | build `World`, run behaviour, safety, `drive()` |
+| Image loop | camera fps (`camera.fps` = 24) | ego-motion, tracker update, free space, snapshot |
+| Control step | `control_hz` = 24 Hz (sim: 20), at the frame nearest to the beat (threshold `1/control_hz − 0.5/fps`), so at most the frame rate: RiderPi every frame. Until 2026-11-17 `control_hz` 20 gave only every 2nd frame (~12 Hz) on the Rider: the 50 ms threshold was reached only at the second frame (41.7 ms apart). 24 Hz **not installed, not driven** | build `World`, run behaviour, safety, `drive()` |
 | Detector | `detector.max_hz` (RiderPi: 5 Hz), only in `follow`/`approach`/`pet` | YOLO on sharp frames, own thread; recognition only, never obstacles |
-| IMU / wheels | 50 Hz (`imu.imu_hz`) / `wheel_hz` | kernel thread, read from `/proc/XGORider/imu_log`, `wheels_log` |
+| IMU / wheels | firmware stream `imu.stream_hz` (100 Hz); without stream 50 Hz polling of 0x0d (`imu.imu_hz`) | kernel thread, read from `/proc/XGORider/imu_log`, `wheels_log` |
 
 ## Rules
 
@@ -33,7 +33,7 @@ camera.FrameSource ─► egomotion.EgoMotion ─► tracker.Tracker ◄── d
 |---|---|
 | `camera.py` | `PiCameraSource` (picamera2), `OpenCVSource` (index/file) |
 | `egomotion.py` | LK optical flow + RANSAC → rotation model, sharpness, time-to-contact; C++ core `native/egofast.cpp` (ctypes, optional) |
-| `imu.py` | `ProcImu`, `ImuSync`: sign/time offset by correlation; `imu_frame`: pitch, roll, heading at frame time + offset, used by geometry, floor model, maps, tilt, overlay and web (`Snapshot.imu`); image pitch only as comparison (`Snapshot.nickrate`) |
+| `imu.py` | `ProcImu`, `ImuSync`: sign/time offset by correlation, only when not fixed in `[imu]` (default: fixed, simulator: auto); `imu_frame`: pitch, roll, heading at frame time + offset, used by geometry, floor model, maps, tilt, overlay and web (`Snapshot.imu`); image pitch only as comparison (`Snapshot.nickrate`) |
 | `detector.py` | `DetectorWorker`: YOLO via NCNN (`YoloNcnn`) or onnxruntime (`YoloOnnx`), fallback model; disabled if none is usable |
 | `tracker.py` | Tracks, ego-motion compensation, latency compensation, Kalman distance/velocity |
 | `geometry.py` | Camera geometry, ground-plane distance |

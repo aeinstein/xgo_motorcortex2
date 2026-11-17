@@ -321,15 +321,15 @@
       {
        "key": "pitch_sign",
        "typ": "int",
-       "default": 0,
-       "hilfe": "0 = automatisch aus Bild-Korrelation, sonst +1/-1"
+       "default": -1,
+       "hilfe": "Vorzeichen und Zeitversatz fest (RiderPi, gemessen 2026-11-17 mit tools/imu_versatz.py). 0 bzw. None = automatisch aus der Bild-Korrelation (ImuSync, Simulator): rechnet dann einmal je Sekunde, gilt erst nach der ersten Bewegung und fällt bei schwacher Korrelation auf den Bildnick zurück. +1/-1; 0 = automatisch"
       },
       {
        "key": "time_offset_ms",
        "typ": "float",
        "nullbar": true,
-       "default": null,
-       "hilfe": "IMU-Zeit = Bildzeit + dies; None = automatisch (RiderPi 10,5: tools/imu_versatz.py)"
+       "default": 10.5,
+       "hilfe": "IMU-Zeit = Bildzeit + dies; None = automatisch"
       },
       {
        "key": "pitch_ref_deg",
@@ -586,8 +586,8 @@
       {
        "key": "control_hz",
        "typ": "float",
-       "default": 20.0,
-       "hilfe": ""
+       "default": 24.0,
+       "hilfe": "Regelschritte je Sekunde. Mit Bildverarbeitung an dem Bild, das dem Takt am nächsten liegt (App._step), also höchstens die Bildrate: 24 = jedes Bild. Bis 2026-11-17 stand hier 20, geregelt wurde am Rider aber nur jedes 2. Bild (~12 Hz). Ohne Bildverarbeitung (manual) nach der Uhr."
       }
      ]
     }
@@ -914,7 +914,7 @@
        "key": "shadow_net",
        "typ": "str",
        "default": "models/floornet.bin",
-       "hilfe": "FloorNet im Schattenbetrieb (xgonav/floornet.py): Gewichte, z. B. \"models/floornet.bin\". Rechnet im Bodenmodell-Thread mit (threaded = true) und erscheint im Overlay, entscheidet aber nichts. \"\" = aus."
+       "hilfe": "FloorNet (xgonav/floornet.py): Gewichte, z. B. \"models/floornet.bin\". Rechnet im Bodenmodell-Thread (threaded = true); ob es entscheidet oder nur im Schatten mitläuft, sagt primary. \"\" = aus."
       },
       {
        "key": "primary",
@@ -1041,54 +1041,6 @@
        "typ": "float",
        "default": 8.0,
        "hilfe": ""
-      }
-     ]
-    },
-    {
-     "name": "horizon",
-     "doc": "Horizont im Stand (xgonav/horizon.py, docs/calibration.md): IMU-Referenz je Aufstehen, Horizontzeile je Körperhöhe. Aus: Nick wie bisher aus pitch_ref_deg + tilt_deg.",
-     "felder": [
-      {
-       "key": "enabled",
-       "typ": "bool",
-       "default": false,
-       "hilfe": ""
-      },
-      {
-       "key": "file",
-       "typ": "str",
-       "default": "horizont.json",
-       "hilfe": "Tabelle Körperhöhe -> Horizontzeile (vom Web geschrieben)"
-      },
-      {
-       "key": "settle_s",
-       "typ": "float",
-       "default": 3.0,
-       "hilfe": "nach Aufstehen/Höhenänderung warten"
-      },
-      {
-       "key": "window_s",
-       "typ": "float",
-       "default": 3.0,
-       "hilfe": "dann über so lange den IMU-Rohnick mitteln"
-      },
-      {
-       "key": "max_std_deg",
-       "typ": "float",
-       "default": 0.5,
-       "hilfe": "größere Streuung: Fenster verwerfen, neu messen"
-      },
-      {
-       "key": "min_samples",
-       "typ": "int",
-       "default": 50,
-       "hilfe": "IMU-Proben im Fenster (50 Hz -> 150 erwartet)"
-      },
-      {
-       "key": "bild_max_s",
-       "typ": "float",
-       "default": 0.5,
-       "hilfe": "Schnelle Änderungen aus dem Bild: Bildnick ab dem letzten IMU-Wert aufsummiert, spätestens nach bild_max_s wieder auf die IMU gesetzt (aufsummierter Bildnick driftet, 2026-11-07 ~0,13°/min). 0 = nur IMU."
       }
      ]
     }
@@ -1244,18 +1196,6 @@
        "typ": "float",
        "default": 40.0,
        "hilfe": "bei schnellerer Drehung nichts eintragen (Unschärfe, Pose)"
-      },
-      {
-       "key": "turn_settle_s",
-       "typ": "float",
-       "default": 0.0,
-       "hilfe": "Nach einer Drehung über turn_settle_dps noch turn_settle_s lang nichts eintragen: Die IMU-Neigung stimmt dann nicht (Fahrt 20261117-144500: nach der Wende mit w 0,5 für 3-4 s um 2-3,5° daneben, die Flurwand stand 0,55 statt 0,9 m neben ihm in der Karte: Doppelwand). Eigene Schwelle auf die geglättete Drehrate (~0,2 s), weil das Lenken in der Fahrt in einzelnen Schritten schon 40-84 °/s erreicht, Wenden 110-180 °/s über mehrere Schritte. Mit 3 s auf die ungeglättete Rate stockte die Karte voraus und er wendete im Flur (Fahrt 20261117-151254). turn_settle_s 0 = aus (Simulator). Seit 2026-11-17 15:40 aus: mit 2 s war am Rider kein Erkunden mehr möglich (Fahrt 20261117-153038, Ursache ungeklärt); erst wieder einschalten, wenn die Zielwechsel im Log stehen."
-      },
-      {
-       "key": "turn_settle_dps",
-       "typ": "float",
-       "default": 60.0,
-       "hilfe": ""
       },
       {
        "key": "occ_free_factor",
@@ -1534,24 +1474,6 @@
        "hilfe": "so viel vom Scan muss in kartiertem Gebiet liegen"
       },
       {
-       "key": "scan_extra_deg",
-       "typ": "float",
-       "default": 30.0,
-       "hilfe": "Modus locate: Rundumblick 360° + so viel, Abbruch bei so viel Verschiebung, Versuche"
-      },
-      {
-       "key": "max_shift_m",
-       "typ": "float",
-       "default": 0.15,
-       "hilfe": ""
-      },
-      {
-       "key": "tries",
-       "typ": "int",
-       "default": 2,
-       "hilfe": ""
-      },
-      {
        "key": "blind_s",
        "typ": "float",
        "default": 2.0,
@@ -1761,12 +1683,6 @@
        "hilfe": ""
       },
       {
-       "key": "weak_wall_l",
-       "typ": "float",
-       "default": -1.0,
-       "hilfe": "Zellen mit Treffern, die noch nicht als belegt gelten (Log-Odds über diesem Wert, unter grid.l_show), zählen für die Zielsuche nicht als unbekannt: Im Vorbeifahren bekommt eine Wand stellenweise nur einen Treffer, das Loch wurde zum Ziel hinter ihm (Fahrt 20261117-144500, 6,8 m zurück). Negativ = aus (Simulator). Seit 2026-11-17 15:40 aus (-1): Wirkung am Rider nicht belegt, das Loch der Fahrt blieb auch so ein Ziel."
-      },
-      {
        "key": "gain_radius_m",
        "typ": "float",
        "default": 1.2,
@@ -1819,12 +1735,6 @@
        "typ": "float",
        "default": 3.0,
        "hilfe": ""
-      },
-      {
-       "key": "pass_turn_max_deg",
-       "typ": "float",
-       "default": 180.0,
-       "hilfe": "... und nur, wenn das nächste Ziel höchstens so weit seitlich liegt (Grad zum Kurs): Stockt die Karte voraus, erreicht er die Stelle, und das vorausgeplante Ziel (ohne diese Stelle) liegt hinter ihm; er wendete im geraden Flur um 180° (Fahrten 20261117-144500 am Kartenrand, -151254). Sonst anhalten, schauen, neu suchen. 180 = immer übernehmen (Simulator). Seit 2026-11-17 15:40 auf 180 (aus), am Rider nie wirksam gesehen; 100 war der Versuch."
       },
       {
        "key": "tight_max",

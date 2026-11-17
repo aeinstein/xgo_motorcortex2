@@ -11,15 +11,6 @@ import os
 log = logging.getLogger(__name__)
 
 
-def available_cpus() -> set[int]:
-    if hasattr(os, "sched_getaffinity"):
-        try:
-            return set(os.sched_getaffinity(0))
-        except OSError:
-            pass
-    return set(range(os.cpu_count() or 1))
-
-
 def pin_thread(cpus, name: str, quiet: bool = False) -> set[int]:
     """Den aufrufenden Thread auf die Kerne `cpus` legen (unter Linux gilt
     sched_setaffinity(0) nur für diesen Thread; danach erzeugte Threads erben es).

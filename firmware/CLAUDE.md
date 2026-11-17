@@ -53,6 +53,6 @@ g++ -std=c++17 -ffp-contract=off -I $S firmware/tests/test_turn_hold.cpp $S/cont
 
 ## Schnittstelle zum Pi
 
-- Treiber `xgo-drv` erkennt 0x0d/0x0c automatisch und liefert dann `/proc/XGORider/wheels` (Encoder, 1024 Ticks/Umdrehung, Rad 11 = links); `xgonav/wheels.py` liest das (`sim_run.py --wheels`).
+- Treiber `xgo-drv` liefert aus dem Strom (0014) oder, ohne Strom, aus 0x0d (0x0c fragt er seit 2026-11-17 nicht mehr ab) `/proc/XGORider/wheels` (Encoder, 1024 Ticks/Umdrehung, Rad 11 = links); `xgonav/wheels.py` liest das (`sim_run.py --wheels`).
 - `api.php` schreibt `action` direkt nach `/proc`; wer 254 schreibt, ohne vorher `POST /stop` zu rufen, lässt ihn nach einer Ohnmacht (Modus `pet`) wieder aufspringen.
 - Körperhöhe: Nach jedem Aufstehen nimmt die Firmware ihre Mittelstellung 128 (≈ 90 mm), `/proc` zeigt dann noch den alten Wert (`robot.FW_HEIGHT_STANDUP_U8`); gefahren wird nur u8 55..200.

@@ -37,7 +37,7 @@ python3 -m venv .venv && .venv/bin/pip install "opencv-python-headless>=4.6" "nu
 | `python tools/reloc_eval.py bench [--karte raumkarte.npz]` | timing of field, local match, global search; run on the Pi | |
 | `python tools/map_eval.py reloc B.pkl --karte A.pkl [--schlupf 0.03 --dreh 0.02 --kursdrift 0.1]` | simulator, against ground truth: drive B with drifting odometry matched against the finished map of drive A (same scene), pose error without / with matching; global search of pieces of B in map A. Without `--karte`: matching while the map is being built | |
 | `python -m pytest -q tests/test_reloc.py` | map matching on synthetic maps: finds the pose, reports "unsure" for identical corners, corridor, too little wall | <1 s |
-| `driver-test/run.sh kernel_module 6 50 --faults` | driver code vs ESP32 emulator | ~6 s |
+| `driver-test/run.sh kernel_module 6 50 --wheels --combo --faults` | driver code vs ESP32 emulator (without `--wheels --combo` the driver does not poll IMU/wheels) | ~6 s |
 
 `replay_raw.py`: run in the directory containing `shading.json`.
 
@@ -67,7 +67,7 @@ FloorNet tests (`tests/test_floornet_*.py`): those that need torch are skipped o
 | Person distance, IMU + image | −3 cm bias, ±7 cm |
 | IMU sync | finds sign −1 and −8 ms offset (correlation 0.99) |
 | Ego-motion vs truth | 0.03° pitch/yaw error per frame |
-| Driver vs ESP32 emulator | 49 Hz at 50 (block: 97 Hz at 100), pitch error 0.06° median, recovers from drops/noise/bad checksums |
+| Driver vs ESP32 emulator | polling 0x0d: 49 Hz at 50, pitch error 0.06° median, recovers from drops/noise/bad checksums |
 
 ## Tested environments
 
