@@ -28,14 +28,45 @@ from .route import parse_points, parse_zones
 log = logging.getLogger(__name__)
 START = time.time()      # Startzeit des Prozesses: Oberfläche verbindet den Stream nach Neustart neu
 
-def _hz_rows(hz: dict | None) -> tuple[float, float]:
-    """row_stand und row_imu (Vollbild-Zeilen) aus Snapshot.horizon, fehlend NaN."""
-    hz = hz or {}
-    return tuple(float("nan") if hz.get(k) is None else float(hz[k]) for k in ("row_stand", "row_imu"))
+def horizont_linie(app, snap) -> tuple[float, float, float]:
+    """Cyan Horizontlinie fürs Overlay: (Zeile bei cx, Roll in Grad, cx), Vollbild-Pixel. Zeile aus dem Nick
+    des Bildes (pitch_dev wie in der Geometrie, ungeklemmt; das Bodenmodell klemmt seine auf 20..80 %), Roll
+    aus dem IMU-Wert des Bildes (Snapshot.imu, 0 ohne IMU). Ein tan je gesendetem Bild im Web-Thread."""
+    roll = snap.imu.roll_deg if snap.imu is not None else 0.0
+    return float(app.geo.horizon_row(snap.pitch_dev)), float(roll), float(app.geo.cx)
 
 
-# Schnittstelle für die PHP-Oberfläche (web/) bzw. nginx. Keine HTML-Seite mehr hier.
-API = {"GET": ["/status", "/ws?nick=1 (WebSocket: Bilder, Bestätigung je Bild; nick: Horizontzeilen im Kopf)",
+def _hz_rows(snap, geo) -> tuple[float, float]:
+    """row_stand und row_imu (Vollbild-Zeilen) für „Bild am IMU-Nick festhalten“, fehlend NaN.
+    Mit [horizon] aus Snapshot.horizon (Standreferenz), sonst Normallage gegen den IMU-Nick des Bildes
+    (Snapshot.imu); zwei tan je gesendetem Bild im Web-Thread, die Bildpipeline rechnet nichts."""
+    hz = snap.horizon
+    if hz is not None:
+        return tuple(float("nan") if hz.get(k) is None else float(hz[k]) for k in ("row_stand", "row_imu"))
+    if snap.imu is None or snap.imu.pitch is None:
+        return float("nan"), float("nan")
+    return float(geo.horizon_row(0.0)), float(geo.horizon_row(snap.imu.pitch))
+
+
+NAN = float("nan")
+
+
+def ws_kopf(snap, geo, hl) -> bytes:
+    """Kopf je Bild (/ws?nick=2), big endian: Bildnummer u32, dann 10 float32: row_stand, row_imu, Roll (Grad,
+    + = rechts tief), cx, IMU-Nick (Grad, wie pitch_dev), IMU-Kurs (Grad), Alter der IMU-Probe (ms), Nickrate aus
+    dem Bild und aus der IMU (°/s), Zustand (1 = IMU gültig, 0 = ohne IMU: Nick nur aus dem Bild, NaN = keine IMU).
+    Alles aus dem Snapshot, nichts neu gerechnet."""
+    fr, nr = snap.imu, snap.nickrate
+    w = (*_hz_rows(snap, geo), hl[1], hl[2],
+         NAN if fr is None or fr.pitch is None else math.degrees(fr.pitch),
+         NAN if fr is None or fr.yaw is None else math.degrees(fr.yaw),
+         NAN if fr is None or fr.alter_ms is None else fr.alter_ms,
+         NAN if nr is None else nr[0], NAN if nr is None else nr[1],
+         NAN if fr is None else float(fr.ok))
+    return struct.pack("!I10f", snap.idx & 0xFFFFFFFF, *w)
+
+
+API = {"GET": ["/status", "/ws?nick=1|2 (WebSocket: Bilder, Bestätigung je Bild; nick: Horizontzeilen im Kopf, 2: IMU-Wert des Bildes, ws_kopf)",
                "/frame?after=<idx>&raw=1", "/stream",
                "/map.png?px=480&view=6 (Raumkarte)",
                "/horizon (Horizonttabelle + Stand)",
@@ -369,9 +400,12 @@ def serve(app: App, host: str, port: int, fps: int, render_cpus=None) -> Threadi
             (MJPEG über schwaches WLAN: bis 20 s). Binärnachricht: 4 Byte Bildnummer + JPEG.
             nick=1: zwischen Bildnummer und JPEG zwei float32 (big endian) row_stand und row_imu dieses Bildes
             (NaN ohne gültige Standreferenz). Damit verschiebt der Browser das Bild selbst, sodass die IMU-Linie
-            fest steht (Driftprüfung); die Bildpipeline rechnet dafür nichts."""
+            fest steht (Driftprüfung); die Bildpipeline rechnet dafür nichts.
+            nick=2: Kopf aus ws_kopf (IMU-Wert des Bildes: Zeilen, Roll, cx, Nick, Kurs, Alter, Nickraten, Zustand);
+            der Browser verschiebt/dreht damit und zeigt die Werte je Bild an."""
             pin_thread(render_cpus, "Bild-Thread", quiet=True)
-            nick = q.get("nick", ["0"])[0] == "1"
+            nick = q.get("nick", ["0"])[0]
+            nick = int(nick) if nick in ("1", "2") else 0
             key = self.headers.get("Sec-WebSocket-Key")
             if not key or "websocket" not in self.headers.get("Upgrade", "").lower():
                 return self._send(400, b'{"error":"WebSocket erwartet"}')
@@ -396,16 +430,20 @@ def serve(app: App, host: str, port: int, fps: int, render_cpus=None) -> Threadi
                         break
                     if (app.ruhe or not app.pipeline_on) and snap.idx == last:
                         continue                    # Ruhe/Bildverarbeitung aus: dasselbe Bild nicht neu kodieren
-                    img = render(snap, text=False)   # Statuszeilen zeigt die Oberfläche
+                    hl = horizont_linie(app, snap)
+                    img = render(snap, text=False, horizont=hl)   # Statuszeilen zeigt die Oberfläche
                     if img is None:
                         continue
                     ok, jpg = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 70])
                     if not ok:
                         continue
                     last = snap.idx
-                    kopf = struct.pack("!I", snap.idx & 0xFFFFFFFF)
-                    if nick:
-                        kopf += struct.pack("!ff", *_hz_rows(snap.horizon))
+                    if nick == 2:
+                        kopf = ws_kopf(snap, app.geo, hl)
+                    else:
+                        kopf = struct.pack("!I", snap.idx & 0xFFFFFFFF)
+                        if nick:
+                            kopf += struct.pack("!ff", *_hz_rows(snap, app.geo))
                     self.wfile.write(ws_frame(0x2, kopf + jpg.tobytes()))
                     # auf Bestätigung warten; Ping beantworten, Close beenden
                     while True:
@@ -435,7 +473,7 @@ def serve(app: App, host: str, port: int, fps: int, render_cpus=None) -> Threadi
                 app.snap_cond.wait_for(lambda: app.snapshot.idx != after or not app.running, timeout=1.0)
                 snap = app.snapshot
             raw = q.get("raw", ["0"])[0] == "1"     # Rohbild ohne Overlay (Kalibrierung)
-            img = snap.frame if raw else render(snap, text=False)   # Statuszeilen zeigt die Oberfläche
+            img = snap.frame if raw else render(snap, text=False, horizont=horizont_linie(app, snap))   # Statuszeilen zeigt die Oberfläche
             if img is None:
                 return self._send(503, b'{"error":"kein Bild"}')
             ok, jpg = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 95 if raw else 70])
@@ -470,7 +508,7 @@ def serve(app: App, host: str, port: int, fps: int, render_cpus=None) -> Threadi
                     if snap.idx == last:
                         continue
                     last = snap.idx
-                    img = render(snap, text=False)   # Statuszeilen zeigt die Oberfläche
+                    img = render(snap, text=False, horizont=horizont_linie(app, snap))   # Statuszeilen zeigt die Oberfläche
                     if img is None:
                         continue
                     ok, jpg = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 70])

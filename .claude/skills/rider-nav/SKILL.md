@@ -54,6 +54,8 @@ $R python3 /root/rider_nav.py zustand
    - Handsteuerung prüft **kein** Bodenmodell und keine Bahn: Strecken klein halten, Richtung vorher ansagen.
    - Abbruch des Nutzers („stopp“, Tool abgelehnt): sofort `$R python3 /root/rider_nav.py absetzen` bzw. bei
      abgebrochenem SSH prüfen, ob `rider_nav.py` am Rider noch läuft (`pkill -f "[r]ider_nav.py"`, danach `/stop`).
+   - `hoehe U8` – Körperhöhe wie der Web-Regler (u8 61..200, nur balancierend und in idle, Akku ≥ 20 %), wartet
+     danach `--ruhe` s (Standard 4). Nur auf Ansage des Nutzers; Kamerahöhe ≈ 109,4 + 0,1126·u8 mm.
 5. **Danach immer:** `$R python3 /root/rider_nav.py ende` – idle, 254 (absetzen), wartet bis er liegt, dann
    Bildverarbeitung aus (Akku schonen). Nur weglassen, wenn der Nutzer ausdrücklich weiterfahren will.
 

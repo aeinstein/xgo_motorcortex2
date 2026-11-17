@@ -7,6 +7,7 @@
   python3 /root/rider_nav.py aufstehen            # nur wenn er liegt: 253, warten bis er balanciert + Kalibrierung
   python3 /root/rider_nav.py fahr 0.10 0 2.0      # Handsteuerung: v w Sekunden (normiert, v>0 vor, w>0 links)
   python3 /root/rider_nav.py dreh 90              # um Grad drehen (+ = links), Kurs aus /status yaw_deg
+  python3 /root/rider_nav.py hoehe 150            # Körperhöhe (u8 61..200, nur balancierend), dann ruhig stehen lassen
   python3 /root/rider_nav.py absetzen             # idle, 254, warten bis er liegt (beendet record_status.py)
   python3 /root/rider_nav.py ende                 # absetzen + Bildverarbeitung aus
 
@@ -29,6 +30,7 @@ B = "http://127.0.0.1:8088"
 P = "/proc/XGORider"
 HZ = 10.0                  # Sollwerte für manual (HOLD_S 0,5 s) mit 10 Hz nachschicken
 MIN_AKKU = 20              # darunter keine Fahrt
+HOEHE_MIN, HOEHE_MAX = 61, 200   # u8 wie web/api.php: Minimum + 10 mm (+4 mm fürs Ausrichten); xgonav fährt 55..200
 
 
 def req(path: str, post: bool = False, timeout: float = 3.0) -> tuple[int, bytes]:
@@ -272,6 +274,34 @@ def cmd_dreh(a) -> int:
     return 0
 
 
+def cmd_hoehe(a) -> int:
+    """Körperhöhe setzen wie der Regler im Web (/proc/XGORider/height, u8). Nur balancierend und im Modus idle;
+    xgonav liest den Sollwert alle 0,2 s für die Bodengeometrie. Danach a.ruhe Sekunden warten (Beine fahren,
+    er schwingt nach)."""
+    u = int(round(a.u8))
+    if not HOEHE_MIN <= u <= HOEHE_MAX:
+        print("u8 %d außerhalb %d..%d (nie unter Minimum + 10 mm)" % (u, HOEHE_MIN, HOEHE_MAX))
+        return 1
+    if not balanciert():
+        print("liegt – Höhe nur balancierend")
+        return 1
+    s = status()
+    if s.get("mode") != "idle":
+        print("Modus %s – Nutzer fragen" % s.get("mode"))
+        return 1
+    k = akku()
+    if k is not None and k < MIN_AKKU:
+        print("Akku %d %% – nicht bewegen" % k)
+        return 1
+    vorher = proc("height")
+    proc_write("height", u)
+    time.sleep(a.ruhe)
+    s = status()
+    print("Höhe u8 %s -> %d, Kamerahöhe %s mm, Nick %s°, balanciert %s" % (
+        vorher, u, s.get("cam_h_mm"), s.get("pitch_deg"), balanciert()))
+    return 0 if balanciert() else 1
+
+
 def cmd_absetzen(a) -> int:
     try:
         post("/stop")
@@ -317,6 +347,8 @@ def main() -> int:
     p.add_argument("--tol", type=float, default=3.0)
     p.add_argument("--timeout", type=float, default=None, help="Standard: 10 s + 1 s je 20°")
     p.set_defaults(f=cmd_dreh)
+    p = sp.add_parser("hoehe"); p.add_argument("u8", type=float)
+    p.add_argument("--ruhe", type=float, default=4.0, help="danach so lange warten (s)"); p.set_defaults(f=cmd_hoehe)
     for n, f in (("absetzen", cmd_absetzen), ("ende", cmd_ende)):
         p = sp.add_parser(n); p.add_argument("--timeout", type=float, default=5.0); p.set_defaults(f=f)
     a = ap.parse_args()
