@@ -3234,3 +3234,51 @@ def test_frontier_engstelle_voraus_mit_zuschlag(monkeypatch):
     assert not p.tight and p.frontier[0] < -0.5                              # alte Regel: Abstand geht vor
     p = frontier.next_goal(gm, (0.0, 0.0, 0.0), cfg.home, cfg.explore, allow_tight=False)
     assert not p.tight
+
+
+def test_localmap_traegt_an_der_aufnahmepose_ein():
+    """Ergebnis aus dem Bodenmodell-Thread (FreeSpace.odo): Eintragen an der Aufnahmepose und danach mitfahren
+    ergibt dasselbe wie sofort eintragen und dann fahren (beide Wege: C++ und numpy)."""
+    from xgonav.freespace import FreeSpace
+    from xgonav.localmap import LocalMap
+    geo = CamGeometry(640, 480, 91.0, 0.0, 43.0, 85.0)
+    fw, fh = 160, 120
+    cols = np.full(fw, 0.5)
+    cols[:40] = np.nan
+    for native in (True, False):
+        a = LocalMap(geo, fw, fh, native=native)
+        b = LocalMap(geo, fw, fh, native=native)
+        for lm in (a, b):
+            lm.move(0.3, 0.2)                              # irgendeine Vorgeschichte
+            lm.add_freespace(FreeSpace([1.0] * 5, np.full(fw, 0.7), fh / 2, None, True), 0.0, 0.0)
+        odo = b.odo
+        a.add_freespace(FreeSpace([1.0] * 5, cols, fh / 2, None, True), 0.1, 0.01)
+        for lm in (a, b):
+            lm.move(0.05, 0.15)
+            lm.move(0.04, -0.05)
+        fs = FreeSpace([1.0] * 5, cols, fh / 2, None, True)
+        fs.odo = odo
+        b.add_freespace(fs, 0.1, 0.01)
+        assert len(a.pts) == len(b.pts) > 0
+        assert np.allclose(np.sort(a.pts, axis=0), np.sort(b.pts, axis=0), atol=1e-9)
+        assert a.odo == b.odo
+
+
+def test_render_netzlinie_auf_aktuelles_bild():
+    """Die FloorNet-Linie gehört zu einem älteren Bild: beim Zeichnen mit Nick und Wegsumme umrechnen."""
+    from xgonav.app import Snapshot, net_rows_jetzt
+    from xgonav.freespace import FreeSpace
+    geo = CamGeometry(640, 480, 91.8, 0.0, 109.0, 85.0)
+    rows = np.full(80, 330.0, np.float32)
+    fs = FreeSpace([1.0] * 5, None, 60.0, None, True, None, 0.0)
+    fs.net_rows, fs.odo = rows, (0.0, 0.0, 0.0)
+    gleich = net_rows_jetzt(Snapshot(free=fs, pitch_dev=0.0, odo=(0.0, 0.0, 0.0), geo=geo))
+    assert np.allclose(gleich, rows)
+    # Kamera nickt 2° hoch: alles im Bild wandert nach unten (wie horizon_row)
+    hoch = net_rows_jetzt(Snapshot(free=fs, pitch_dev=math.radians(2), odo=(0.0, 0.0, 0.0), geo=geo))
+    assert np.all(hoch > rows + 5)
+    # vorgefahren: dieselbe Bodenstelle ist näher, also tiefer im Bild
+    vor = net_rows_jetzt(Snapshot(free=fs, pitch_dev=0.0, odo=(0.05, 0.0, 0.0), geo=geo))
+    assert np.nanmedian(vor) > 335
+    # ohne Geometrie (alte Aufrufer): unverändert
+    assert np.allclose(net_rows_jetzt(Snapshot(free=fs, pitch_dev=0.1)), rows)

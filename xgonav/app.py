@@ -55,6 +55,8 @@ class Snapshot:
     horizon: dict | None = None                      # Horizont im Stand ([horizon] enabled)
     imu: ImuFrame | None = None                      # IMU zur Bildzeit (eine Wahrheit je Bild); None ohne IMU
     nickrate: tuple[float, float] | None = None      # Nickrate aus Bild / IMU (°/s) zwischen den letzten Bildern
+    odo: tuple | None = None                         # Wegsumme der Merkkarte zu diesem Bild (LocalMap.odo)
+    geo: object = None                               # CamGeometry (Verweis), für das Umrechnen der Netzlinie
 
 
 class ModeNotAllowed(ValueError):
@@ -775,10 +777,12 @@ class App:
             if f.idx % 2 == 0 or self._free is None:
                 roll = self._imu_frame.roll_deg if self._imu_frame is not None else 0.0
                 self.fs_worker.offer(f.bgr, pitch_dev, [t.box for t in self.tracker.tracks],
-                                     self.gridmap.pose() if self.gridmap is not None else None, f.t, roll)
+                                     self.gridmap.pose() if self.gridmap is not None else None, f.t, roll,
+                                     self.lmap.odo if self.lmap is not None else None)
         elif self.fse is not None and (f.idx % 2 == 0 or self._free is None):
             self._free = self.fse.update(f.bgr, pitch_dev, [t.box for t in self.tracker.tracks])
             self._free.pose = self.gridmap.pose() if self.gridmap is not None else None
+            self._free.odo = self.lmap.odo if self.lmap is not None else None
             tm.fs_ran = True
         tracks = self.tracker.confirmed(f.t)
         tm.mark("fs")
@@ -893,6 +897,7 @@ class App:
 
         snap = Snapshot(frame=f.bgr, idx=f.idx, t=f.t, pitch_dev=pitch_dev, tracks=list(tracks), horizon=self._hz_info,
                         imu=self._imu_frame, nickrate=self._nickrate,
+                        odo=self.lmap.odo if self.lmap is not None else None, geo=self.geo,
                         tracks_all=list(self.tracker.tracks), cam_meta=f.meta,
                         fs_diag=dict(self.fse.diag) if self.fse is not None else {},
                         free=self._free_ctrl or self._free,
@@ -1327,6 +1332,28 @@ def _ascii(s: str) -> str:
     return s.translate(_ASCII).encode("ascii", "replace").decode()
 
 
+def net_rows_jetzt(snap: Snapshot) -> np.ndarray:
+    """FloorNet-Grenzzeilen auf das Bild des Snapshots umgerechnet: Das Netz rechnet im eigenen Thread, sein
+    Ergebnis gehört zu einem 1-3 Bilder älteren Bild. Über die Bodenebene mit Nick und Wegsumme der Aufnahme
+    (ZeilenGlaetter.umrechnen). Nur zum Zeichnen (auf Anfrage), nichts entscheidet damit. NaN: keine Aussage."""
+    fs = snap.free
+    rows = np.asarray(fs.net_rows, np.float32)
+    if snap.geo is None or fs.pitch_dev is None:
+        return rows
+    from .floornet import ZeilenGlaetter
+    p0 = fs.odo if fs.odo is not None and snap.odo is not None else (0.0, 0.0, 0.0)
+    p1 = snap.odo if fs.odo is not None and snap.odo is not None else (0.0, 0.0, 0.0)
+    if p0 == p1 and fs.pitch_dev == snap.pitch_dev:
+        return rows
+    try:
+        neu = ZeilenGlaetter.umrechnen(rows, p0, fs.pitch_dev, p1, snap.pitch_dev, snap.geo)
+    except Exception:
+        return rows
+    # am Horizont oder aus dem Bild gedreht (keine Bodenaussage): mit dem Horizont mitschieben statt Lücke
+    dh = snap.geo.horizon_row(snap.pitch_dev) - snap.geo.horizon_row(fs.pitch_dev)
+    return np.where(np.isfinite(neu), neu, rows + dh).astype(np.float32)
+
+
 def render(snap: Snapshot, text: bool = True, horizont: tuple[float, float, float] | None = None) -> np.ndarray | None:
     """Debug-Overlay zeichnen (nur auf Anfrage, kostet Zeit). text=False lässt die
     Statuszeilen weg (~10 ms je Bild am CM4); die Weboberfläche zeigt sie als HTML.
@@ -1362,9 +1389,11 @@ def render(snap: Snapshot, text: bool = True, horizont: tuple[float, float, floa
             col = (0, int(255 * s), int(255 * (1 - s)))
             cv2.rectangle(img, (x0 + 2, H - 8), (x1 - 2, H - 2), col, -1)
     if fs is not None and fs.net_rows is not None:       # FloorNet
-        n = len(fs.net_rows)
-        pts = [(int((i + 0.5) * W / n), int(r)) for i, r in enumerate(fs.net_rows)]
-        cv2.polylines(img, [np.array(pts, np.int32)], False, (255, 0, 255), 2)
+        rows = net_rows_jetzt(snap)
+        n = len(rows)
+        for a, b in column_runs(rows):
+            pts = [(int((i + 0.5) * W / n), int(round(rows[i]))) for i in range(a, b)]
+            cv2.polylines(img, [np.array(pts, np.int32)], False, (255, 0, 255), 2)
     for t in snap.tracks:
         x1, y1, x2, y2 = map(int, t.box)
         tgt = t.id == snap.cmd.target_id

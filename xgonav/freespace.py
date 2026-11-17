@@ -46,6 +46,8 @@ class FreeSpace:
     # streuen um Dezimeter (Nicken ±3° bei 2,5 Hz). None = nicht bekannt (Tests, alte Aufrufer).
     pitch_dev: float | None = None
     pose: tuple | None = None
+    # Wegsumme der Merkkarte (LocalMap.odo) zur Aufnahme; None = Ergebnis gilt für die aktuelle Pose
+    odo: tuple | None = None
     # FloorNet: Grenzzeile je Netzspalte (Vollbild). Geht nur mit src = "net" in Entscheidungen ein.
     net_rows: np.ndarray | None = None
     # Mit net_smooth_n: Ausgabe des Netzes vor dem Glätten über die Zeit (net_rows ist dann die geglättete).
@@ -757,12 +759,14 @@ class FreeSpaceWorker:
         if self.net is not None and not (self._thread and self._thread.is_alive()):
             self.net.close()
 
-    def offer(self, bgr, pitch_dev: float, boxes, pose=None, t: float | None = None, roll_deg: float = 0.0) -> None:
+    def offer(self, bgr, pitch_dev: float, boxes, pose=None, t: float | None = None, roll_deg: float = 0.0,
+              odo=None) -> None:
         """pose: Kartenpose zum Bild, wird dem Ergebnis mitgegeben. t: Aufnahmezeit (s, monoton), für das Glätten.
-        roll_deg: Roll der Kamera zur Bildzeit (nur der Netzweg dreht die Grenze damit gerade)."""
+        roll_deg: Roll der Kamera zur Bildzeit (nur der Netzweg dreht die Grenze damit gerade).
+        odo: Wegsumme der Merkkarte zum Bild, wird dem Ergebnis mitgegeben (FreeSpace.odo)."""
         import time
         with self._cond:
-            self._job = (bgr, pitch_dev, list(boxes), pose, time.monotonic() if t is None else t, roll_deg)
+            self._job = (bgr, pitch_dev, list(boxes), pose, time.monotonic() if t is None else t, roll_deg, odo)
             self._cond.notify()
 
     def poll(self) -> FreeSpace | None:
@@ -789,7 +793,7 @@ class FreeSpaceWorker:
                 t0 = time.perf_counter()
                 try:
                     fs = self.est.update(*job[:3])
-                    fs.pose = job[3]
+                    fs.pose, fs.odo = job[3], job[6]
                 except Exception:
                     log.exception("Bodenmodell fehlgeschlagen")
                     fs = None
@@ -818,7 +822,7 @@ class FreeSpaceWorker:
             fs.net_rows = rows
             if self.smooth is not None:
                 fs.net_rows_raw = roh
-            fs.pose = job[3]
+            fs.pose, fs.odo = job[3], job[6]
         except Exception:
             log.exception("FloorNet fehlgeschlagen: aus, das Verfahren entscheidet")
             self.net = None

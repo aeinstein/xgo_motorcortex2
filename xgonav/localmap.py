@@ -40,9 +40,14 @@ class LocalMap:
         self.t = np.zeros(0)
         self.obs = np.zeros(0, np.int64)     # Nummer der Beobachtung, aus der der Punkt stammt
         self._obs_n = 0
+        # Eigene Wegsumme (x, y, th) aus move(): Pose der Aufnahme merken (FreeSpace.odo), damit ein Ergebnis aus
+        # dem Bodenmodell-Thread dort eingetragen wird, wo es gesehen wurde, nicht 1-3 Bilder später
+        self.odo = (0.0, 0.0, 0.0)
 
     def move(self, ds: float, dyaw: float) -> None:
         """Roboter fuhr ds Meter vor und drehte um dyaw (rad, links +)."""
+        x, y, th = self.odo
+        self.odo = (x + ds * math.cos(th), y + ds * math.sin(th), th + dyaw)
         if not len(self.pts):
             return
         c, s = math.cos(-dyaw), math.sin(-dyaw)
@@ -53,10 +58,38 @@ class LocalMap:
         px, py = self.pts[:, 0] - ds, self.pts[:, 1]
         self.pts = np.column_stack([px * c - py * s, px * s + py * c])
 
+    @staticmethod
+    def rebase(pts: np.ndarray, frm, to) -> np.ndarray:
+        """Punkte im Roboter-KS der Pose frm (x, y, th der Wegsumme) -> Roboter-KS der Pose to."""
+        dth = frm[2] - to[2]
+        c0, s0 = math.cos(-to[2]), math.sin(-to[2])
+        ex, ey = frm[0] - to[0], frm[1] - to[1]
+        dx, dy = ex * c0 - ey * s0, ex * s0 + ey * c0
+        c, s = math.cos(dth), math.sin(dth)
+        px, py = pts[:, 0], pts[:, 1]
+        return np.column_stack([px * c - py * s + dx, px * s + py * c + dy])
+
     def add_freespace(self, fs: FreeSpace, now: float, pitch_dev: float) -> None:
-        """Bodengrenzen eintragen. Spalten mit NaN gelten als verdeckt (unbekannt)."""
+        """Bodengrenzen eintragen. Spalten mit NaN gelten als verdeckt (unbekannt). Mit fs.odo (Wegsumme zur
+        Aufnahme) wird im KS der Aufnahme eingetragen und freigeräumt, danach zurück ins aktuelle KS."""
         if fs is None or fs.columns is None:
             return
+        odo = getattr(fs, "odo", None)
+        if odo is not None and tuple(odo) != self.odo:
+            jetzt = self.odo
+            if len(self.pts):
+                self.pts = self.rebase(self.pts, jetzt, odo)
+            self.odo = tuple(odo)
+            try:
+                self._add(fs, now, pitch_dev)
+            finally:
+                self.odo = jetzt
+                if len(self.pts):
+                    self.pts = self.rebase(self.pts, odo, jetzt)
+            return
+        self._add(fs, now, pitch_dev)
+
+    def _add(self, fs: FreeSpace, now: float, pitch_dev: float) -> None:
         sc = self.geo.W / self.fw
         span = self.fh - fs.horizon_row
         if self._lib is not None:
