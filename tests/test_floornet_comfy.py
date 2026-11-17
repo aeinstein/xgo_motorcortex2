@@ -456,6 +456,10 @@ def test_betrachter_server_neu_malen(tmp_path, monkeypatch):
         assert d["args"] == ["--dir", str(tmp_path), "--prompt", "", "p11", "r/000001"]
         code, d = post({"ansicht": "p11", "id": "r/000001", "prompt": "t2"})
         assert code == 200 and d["args"][2:4] == ["--prompt", "t2"]
+        code, d = post({"ansicht": "p11", "id": "r/000001", "seed": 12345})       # letzter Seed vom Vorbild
+        assert code == 200 and d["args"][4:6] == ["--seed", "12345"]
+        assert post({"ansicht": "p11", "id": "r/000001", "seed": "1; rm"})[0] == 400
+        assert post({"ansicht": "p11", "id": "r/000001", "seed": 0})[0] == 400
         assert post({"ansicht": "p11", "id": "r/000001", "prompt": "../x"})[0] == 400
         assert post({"ansicht": "p11", "id": "r/000002"})[0] == 400             # Bild gibt es nicht: kein Prozess
         assert post({"ansicht": "p11", "id": "../x/1"})[0] == 400
@@ -465,3 +469,44 @@ def test_betrachter_server_neu_malen(tmp_path, monkeypatch):
     finally:
         srv.shutdown()
         srv.server_close()
+
+
+def test_betrachter_server_name_setzen(tmp_path):
+    """POST /name: Anzeigename je Fahrt in netz/namen.json, leer löscht ihn; nur vorhandene Fahrten, kurze Namen."""
+    import betrachter_server as BS
+    (tmp_path / "data" / "rider" / "fahrt" / "20261115-161345").mkdir(parents=True)
+    (tmp_path / "netz").mkdir()
+    f, n = BS.name_setzen(str(tmp_path), "20261115-161345", "  Leiter\tumgefahren \n")
+    assert f == "" and n == {"20261115-161345": "Leiter umgefahren"}
+    assert json.loads((tmp_path / "netz" / "namen.json").read_text(encoding="utf-8")) == n
+    assert BS.name_setzen(str(tmp_path), "20261115-999999", "x")[0] == "Fahrt gibt es nicht"
+    assert BS.name_setzen(str(tmp_path), "../netz", "x")[0] == "ungültige Fahrt"
+    assert BS.name_setzen(str(tmp_path), "20261115-161345", "x" * 81)[0].startswith("Name zu lang")
+    assert BS.name_setzen(str(tmp_path), "20261115-161345", 5)[0] == "ungültiger Name"
+    f, n = BS.name_setzen(str(tmp_path), "20261115-161345", "")
+    assert f == "" and n == {} and json.loads((tmp_path / "netz" / "namen.json").read_text(encoding="utf-8")) == {}
+
+
+def test_betrachter_server_prompt_setzen(tmp_path):
+    """GET /prompte, POST /prompt: Prompte unter comfy/prompte, beim Start aus den Vorlagen angelegt; Speichern legt
+    den alten Text nach alt/; neu_malen.py nimmt die bearbeitete Fassung."""
+    import betrachter_server as BS
+    import neu_malen as NM
+    root = str(tmp_path)
+    BS.prompte_anlegen(root)
+    p = BS.prompte_lesen(root)
+    assert set(p) == {"11", "t1", "t2"} and p["11"].startswith("Recolor the floor")
+    alt11 = p["11"]
+    f, p = BS.prompt_setzen(root, "11", "  Recolor only the floor.\r\nNothing else.  ")
+    assert f == "" and p["11"] == "Recolor only the floor.\nNothing else."
+    alt = list((tmp_path / "comfy" / "prompte" / "alt").iterdir())
+    assert len(alt) == 1 and alt[0].name.startswith("11-") and alt[0].read_text(encoding="utf-8").strip() == alt11
+    assert NM.prompt_datei("11", root).read_text(encoding="utf-8").strip() == "Recolor only the floor.\nNothing else."
+    assert NM.prompt_datei("11").name == "comfy_prompt11.txt"                  # ohne Verzeichnis: Vorlage
+    BS.prompte_anlegen(root)                                                   # vorhandene bleiben
+    assert BS.prompte_lesen(root)["11"] == "Recolor only the floor.\nNothing else."
+    assert BS.prompt_setzen(root, "neu", "x")[0] == "Prompt gibt es nicht"
+    assert BS.prompt_setzen(root, "../11", "x")[0] == "ungültiger Prompt-Name"
+    assert BS.prompt_setzen(root, "11", "   ")[0].startswith("Prompt leer")
+    assert BS.prompt_setzen(root, "11", "x" * 4001)[0].startswith("Prompt leer oder zu lang")
+    assert BS.prompt_setzen(root, "11", "a\tb")[0] == "Steuerzeichen im Prompt"

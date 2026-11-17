@@ -6,9 +6,11 @@
 Die alte Bearbeitung in Stage1 wird ÜBERSCHRIEBEN (Nutzer 2026-11-12: so lange neu würfeln, bis kein Gegenstand mehr
 übermalt ist), ebenso die Masken in Stage2 und Stage3. Eingangskette wie comfy_batch.py --eingang auto. Jeder Lauf
 steht in <stage1>/neu.jsonl ({"id", "seed", "prompt", "eingang", "zeit"}); Seed (1) und Prompt des Stapellaufs gelten
-für diese Bilder nicht mehr. --prompt wählt eine Variante für die Situation im Bild: Name x -> comfy_promptx.txt oder
-comfy_prompt_x.txt neben diesem Skript (11 = Standard der Ansicht, t1 = Teppichsatz, t2 = Teppich und Dinge einzeln
-genannt); eine neue Variante ist eine neue Datei dort plus ein Eintrag in der Auswahl von netz_betrachter.html. Letzte Zeile der Ausgabe: JSON {"id", "seed", "rows"} (Labelzeile je 8-px-Spalte wie stage3_npz.py).
+für diese Bilder nicht mehr. --prompt wählt eine Variante für die Situation im Bild (11 = Standard der Ansicht,
+t1 = Teppichsatz, t2 = Teppich und Dinge einzeln genannt): Name x -> <dir>/comfy/prompte/x.txt (im Netz-Betrachter
+bearbeitbar, betrachter_server.py legt sie beim Start aus den Dateien hier an), sonst comfy_promptx.txt oder
+comfy_prompt_x.txt neben diesem Skript; eine neue Variante ist eine neue Datei plus ein Eintrag in der Auswahl von
+netz_betrachter.html. Letzte Zeile der Ausgabe: JSON {"id", "seed", "rows"} (Labelzeile je 8-px-Spalte wie stage3_npz.py).
 """
 from __future__ import annotations
 
@@ -24,13 +26,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 # Ansicht -> Verzeichnisse unter --dir, Prompt-Datei neben diesem Skript, Grünschwelle von stage2.py --gruen
 ANSICHT = {"p11": {"stage1": "stage1_p11", "stage2": "stage2_p11", "stage3": "stage3_p11",
-                   "prompt": "comfy_prompt11.txt", "gruen": 30}}
+                   "prompt": "11", "gruen": 30}}
 LOG = "neu.jsonl"
 
 
-def prompt_datei(name: str) -> Path:
-    """Variante -> Prompt-Datei neben diesem Skript. KeyError, wenn es sie nicht gibt oder der Name nicht taugt."""
+def prompt_datei(name: str, root: str = "") -> Path:
+    """Variante -> Prompt-Datei: erst <root>/comfy/prompte/<name>.txt (im Betrachter bearbeitet), sonst neben diesem
+    Skript. KeyError, wenn es sie nicht gibt oder der Name nicht taugt."""
     if name.isascii() and name.isalnum() and len(name) <= 12:
+        if root and (Path(root) / "comfy" / "prompte" / (name + ".txt")).exists():
+            return Path(root) / "comfy" / "prompte" / (name + ".txt")
         for f in ("comfy_prompt%s.txt" % name, "comfy_prompt_%s.txt" % name):
             p = Path(__file__).resolve().parent / f
             if p.exists():
@@ -50,7 +55,7 @@ def neu(root: str, ansicht: str, bild: str, seed: int, data: str = "", variante:
     quelle = os.path.join(data or os.path.join(root, "data", "rider", "fahrt"), bild + ".jpg")
     if not os.path.exists(quelle):
         raise FileNotFoundError("Rohbild fehlt: " + quelle)
-    with open(prompt_datei(variante) if variante else Path(__file__).resolve().parent / a["prompt"], encoding="utf-8") as f:
+    with open(prompt_datei(variante or a["prompt"], root), encoding="utf-8") as f:
         prompt = f.read().strip()
     s1, s2, s3 = (os.path.join(root, a[k], bild + ".png") for k in ("stage1", "stage2", "stage3"))
     eingang = B.kette(quelle)[0]

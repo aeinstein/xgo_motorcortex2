@@ -7,37 +7,71 @@
 <style>
   :root { color-scheme: dark; }
   html, body { margin: 0; height: 100%; background: #111; color: #ddd; font: 14px system-ui, sans-serif; }
-  #kopf { padding: 8px 12px; display: flex; gap: 16px; align-items: baseline; flex-wrap: wrap; }
-  #id { font-size: 18px; font-weight: 600; color: #fff; }
-  #hilfe { margin-left: auto; color: #888; }
+  /* Kopf: zwei feste Zeilen, nichts bricht um. Was nicht passt, wird gekürzt; ausgeblendete Bedienelemente behalten
+     ihren Platz (visibility), damit beim Wechsel von Bild, Fahrt oder Meldung nichts springt. */
+  #kopf { padding: 6px 12px 4px; background: #181818; border-bottom: 1px solid #2a2a2a; display: grid; row-gap: 6px; }
+  .zeile { display: flex; gap: 14px; align-items: center; white-space: nowrap; min-width: 0; height: 26px; }
+  #id { font-size: 18px; font-weight: 600; color: #fff; min-width: 21ch; max-width: 40ch; overflow: hidden;
+        text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+  #pos { color: #aaa; min-width: 13ch; font-variant-numeric: tabular-nums; }
+  #aus { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .zeile label { display: flex; gap: 6px; align-items: center; color: #aaa; }
+  .zeile select { max-width: 34ch; text-overflow: ellipsis; }
+  .trenner { width: 1px; align-self: stretch; background: #333; }
+  #tasten { position: relative; }
+  #hilfe { display: none; position: absolute; right: 0; top: 100%; margin-top: 4px; z-index: 5; width: 26em;
+           white-space: normal; background: #222; border: 1px solid #444; padding: 8px 10px; color: #ccc; line-height: 1.6; }
+  #tasten:hover #hilfe, #tasten:focus-within #hilfe { display: block; }
+  button { background: #222; color: #ddd; border: 1px solid #444; font: inherit; padding: 2px 8px; cursor: pointer; }
   select { background: #222; color: #ddd; border: 1px solid #444; font: inherit; padding: 2px 4px; }
   #bilder { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; padding: 0 6px; }
   #bilder.mitplan, #bilder.mitgruen { grid-template-columns: repeat(3, 1fr); }
-  #text { padding: 0 12px 6px; color: #fc6; min-height: 1.3em; font-family: ui-monospace, monospace; }
+  #text { padding: 4px 12px; color: #fc6; height: 1.4em; font-family: ui-monospace, monospace;
+          white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   #planfig, #gruenfig { display: none; }
   .mitgruen #gruenfig { display: block; }
   #aus { color: #f66; font-weight: 600; }
   .mitplan #planfig { display: block; }
   #plan { aspect-ratio: auto; max-height: 80vh; object-fit: contain; }
   figure { margin: 0; min-width: 0; }
-  figcaption { padding: 2px 0 4px; color: #aaa; }
+  figcaption { padding: 2px 0 4px; color: #aaa; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   img, canvas { display: block; width: 100%; aspect-ratio: 4 / 3; background: #000; }
+  dialog { background: #1a1a1a; color: #ddd; border: 1px solid #555; width: min(900px, 92vw); }
+  dialog::backdrop { background: rgba(0, 0, 0, 0.6); }
+  #ptext { width: 100%; box-sizing: border-box; min-height: 16em; background: #111; color: #eee; border: 1px solid #444;
+           font: 14px/1.4 ui-monospace, monospace; padding: 6px; resize: vertical; }
+  #pfuss { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+  #pinfo { color: #aaa; margin-right: auto; }
 </style>
 </head>
 <body>
 <div id="kopf">
-  <span id="id"></span><span id="pos"></span><span id="aus"></span>
-  <label>Netz <select id="lauf"></select></label>
-  <label>Fahrt <select id="fahrt"></select></label>
-  <label id="gesehenwahl" style="display: none"><input type="checkbox" id="gesehen"> Gesichtete zeigen (G)</label>
-  <label id="promptwahl">Prompt für N <select id="prompt">
-    <option value="">1 · Standard (Prompt 11)</option>
-    <option value="t2">2 · Teppich und Dinge einzeln genannt (T2)</option>
-    <option value="t1">3 · Teppichsatz (T1)</option>
-  </select></label>
-  <span id="hilfe">← voriges · nächstes → · Bild auf/ab ±20 · F Fläche an/aus · K Karte an/aus<span id="hilfeaus"> · X aussortieren · U zurückholen · N neu malen (ComfyUI, neuer Seed) · 1–3 Prompt wählen</span></span>
+  <div class="zeile">
+    <span id="id"></span><span id="pos"></span><span id="aus"></span>
+    <span id="tasten"><button type="button">Tasten</button>
+      <span id="hilfe">← voriges · nächstes →<br>Bild auf/ab: ±20<br>F Fläche an/aus · K Karte an/aus<br>R Fahrt umbenennen<span id="hilfeaus"><br>X aussortieren · U zurückholen<br>N neu malen (ComfyUI; erst letzter Seed, dann neuer)<br>1–3 Prompt wählen · P Prompt bearbeiten<br>G Gesichtete zeigen</span></span></span>
+  </div>
+  <div class="zeile">
+    <label>Netz <select id="lauf"></select></label>
+    <label>Fahrt <select id="fahrt"></select></label>
+    <button id="umbenennen" title="Anzeigenamen der Fahrt ändern (R); die Kennung bleibt">Umbenennen</button>
+    <span class="trenner"></span>
+    <label id="gesehenwahl" style="visibility: hidden"><input type="checkbox" id="gesehen"> Gesichtete zeigen</label>
+    <label id="promptwahl" style="visibility: hidden">Prompt für N <select id="prompt">
+      <option value="">1 · Standard (Prompt 11)</option>
+      <option value="t2">2 · Teppich und Dinge einzeln genannt (T2)</option>
+      <option value="t1">3 · Teppichsatz (T1)</option>
+    </select></label>
+    <button id="pbearbeiten" style="visibility: hidden" title="Text des gewählten Prompts ändern (P)">Prompt bearbeiten</button>
+  </div>
 </div>
 <div id="text"></div>
+<dialog id="pdialog">
+  <div><b id="ptitel">Prompt</b></div>
+  <textarea id="ptext" spellcheck="false"></textarea>
+  <div id="pfuss"><span id="pinfo">Gilt sofort für N und für den nächsten ComfyUI-Stapellauf; ein laufender behält seinen.</span>
+    <button id="pspeichern">Speichern</button><button id="pabbrechen">Abbrechen</button></div>
+</dialog>
 <div id="bilder">
   <figure><figcaption>Eingabebild</figcaption><img id="original" alt="Eingabebild"></figure>
   <figure><figcaption>Netzergebnis: türkis frei, magenta Grenze<span id="legende"></span></figcaption><canvas id="netz" width="640" height="480"></canvas></figure>
@@ -59,11 +93,12 @@
 const DATEN = "netz/";
 const B = 640, H = 480;
 let netze = {}, D = null, pos = 0, flaeche = true, karte = true;
+let namen = {};                                  // Anzeigenamen der Fahrten (netz/namen.json, POST /name)
 const STAGE1 = { p11: "stage1_p11", hd: "stage1_hd", g0h: "stage1_g0h", p8: "stage1" };   // wie betrachter_server.py
 const aus = new Set();                           // IDs der Handliste der Ansicht von D
 const elLauf = document.getElementById("lauf"), elFahrt = document.getElementById("fahrt");
 const elGesehen = document.getElementById("gesehen");
-const elPrompt = document.getElementById("prompt");   // Varianten: comfy_prompt*.txt neben neu_malen.py
+const elPrompt = document.getElementById("prompt");   // Varianten: comfy/prompte/<name>.txt (Wert "" = 11)
 const cv = document.getElementById("netz"), cx = cv.getContext("2d");
 const bild = new Image(), planBild = new Image();
 const pv = document.getElementById("plan"), px = pv.getContext("2d");
@@ -76,11 +111,12 @@ function laden(url, fertig) {
   document.head.appendChild(s);
 }
 
-function fuellen(el, werte, wahl) {
+function fuellen(el, werte, wahl, mitNamen) {
   el.textContent = "";
   for (const w of werte) {
     const o = document.createElement("option");
     o.value = o.textContent = w;
+    if (mitNamen && namen[w]) o.textContent = namen[w] + " (" + w + ")";
     el.appendChild(o);
   }
   if (werte.includes(wahl)) el.value = wahl;
@@ -211,6 +247,7 @@ function neuLaden() {                            // neu.jsonl der Ansicht: neu g
       let e;
       try { e = JSON.parse(z); } catch (x) { continue; }
       neuStand.set(e.id, e.seed);                // andere Adresse fürs Grünbild: der Browser hält das alte einen Tag
+      if (Number.isInteger(e.seed) && e.seed > 1) letzterSeed = e.seed;
       if (stelle.has(e.id) && d.label && Array.isArray(e.rows)) d.label[stelle.get(e.id)] = e.rows;
     }
     if (D === d) { zeigen(pos); zeichnen(); }
@@ -218,23 +255,65 @@ function neuLaden() {                            // neu.jsonl der Ansicht: neu g
 }
 
 let malt = false;                               // läuft gerade ein Neu-Malen (nur eines zugleich)
+// Nutzer 2026-11-17: beim ersten N auf einem Bild zuerst den Seed, mit dem zuletzt neu gemalt wurde (beim Vorbild
+// passte er), erst weitere N auf demselben Bild würfeln neu. letzterSeed kommt nach dem Laden aus neu.jsonl.
+let letzterSeed = 0;
+const seedProbiert = new Set();                  // Bilder, bei denen der letzte Seed schon probiert wurde
 const neuStand = new Map();                      // ID -> Seed der neuesten Bearbeitung, gegen den Zwischenspeicher
 
 function neuMalen() {
   if (!D || !D.ansicht || !D.label || malt) return;
   const id = kennung(pos), i = pos, daten = D, feld = document.getElementById("aus");
   malt = true;
-  feld.textContent = "ComfyUI malt neu …";
-  fetch("/neu", { method: "POST", headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ ansicht: D.ansicht, id: id, prompt: elPrompt.value }) })
+  const seed = letzterSeed && !seedProbiert.has(id) && neuStand.get(id) !== letzterSeed ? letzterSeed : 0;
+  if (seed) seedProbiert.add(id);
+  feld.textContent = seed ? "ComfyUI malt neu mit dem letzten Seed " + seed + " …" : "ComfyUI malt neu …";
+  const anfrage = { ansicht: D.ansicht, id: id, prompt: elPrompt.value };
+  if (seed) anfrage.seed = seed;
+  fetch("/neu", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(anfrage) })
     .then((r) => r.json()).then((d) => {
       malt = false;
       if (!d.ok) { feld.textContent = "Fehler: " + d.fehler; return; }
       daten.label[i] = d.rows;
       neuStand.set(id, d.seed);
+      letzterSeed = d.seed;
       if (D === daten && pos === i) { zeigen(pos); zeichnen(); feld.textContent = "neu gemalt, Seed " + d.seed + ", " + elPrompt.options[elPrompt.selectedIndex].textContent; }
     }).catch(() => { malt = false; feld.textContent = "Fehler: Server antwortet nicht"; });
 }
+
+const pdialog = document.getElementById("pdialog"), ptext = document.getElementById("ptext");
+const pinfo = document.getElementById("pinfo");
+let pname = "";
+
+function promptBearbeiten() {                    // GET /prompte, POST /prompt (betrachter_server.py)
+  pname = elPrompt.value || "11";
+  document.getElementById("ptitel").textContent = "Prompt " + elPrompt.options[elPrompt.selectedIndex].textContent;
+  ptext.value = "lädt …";
+  ptext.disabled = true;
+  pinfo.textContent = "Gilt sofort für N und für den nächsten ComfyUI-Stapellauf; ein laufender behält seinen.";
+  pdialog.showModal();
+  fetch("/prompte", { cache: "no-store" }).then((r) => r.json()).then((d) => {
+    if (!(pname in (d.prompte || {}))) { ptext.value = ""; pinfo.textContent = "Fehler: Prompt " + pname + " gibt es nicht"; return; }
+    ptext.value = d.prompte[pname];
+    ptext.disabled = false;
+    ptext.focus();
+  }).catch(() => { ptext.value = ""; pinfo.textContent = "Fehler: Server antwortet nicht"; });
+}
+
+function promptSpeichern() {
+  if (ptext.disabled) return;
+  pinfo.textContent = "speichert …";
+  fetch("/prompt", { method: "POST", headers: { "Content-Type": "application/json" },
+                     body: JSON.stringify({ name: pname, text: ptext.value }) })
+    .then((r) => r.json()).then((d) => {
+      if (!d.ok) { pinfo.textContent = "Fehler: " + d.fehler; return; }
+      pdialog.close();
+      document.getElementById("aus").textContent = "Prompt " + pname + " gespeichert";
+    }).catch(() => { pinfo.textContent = "Fehler: Server antwortet nicht"; });
+}
+document.getElementById("pbearbeiten").onclick = promptBearbeiten;
+document.getElementById("pspeichern").onclick = promptSpeichern;
+document.getElementById("pabbrechen").onclick = () => pdialog.close();
 
 function zeigen(p) {
   if (!D) return;
@@ -258,7 +337,7 @@ function fahrtLaden(datei) {                     // datei: Bild, bei dem begonne
   laden(DATEN + lauf + "/" + fahrt + ".js", (ok) => {
     if (!ok || !window.NETZ) { document.getElementById("id").textContent = "Daten fehlen: " + lauf + "/" + fahrt; return; }
     D = window.NETZ;
-    document.getElementById("gesehenwahl").style.display = D.sichten ? "" : "none";
+    document.getElementById("gesehenwahl").style.visibility = D.sichten ? "visible" : "hidden";
     if (D.sichten && !elGesehen.checked) {         // Sichtungsliste: schon Gesichtetes erst holen, dann ausblenden
       const d = D;
       fetch(STAGE1[d.ansicht] + "/gesichtet.txt", { cache: "no-store" }).then((r) => r.ok ? r.text() : "").then((t) => {
@@ -283,8 +362,9 @@ function fahrtFertig(lauf, gleich, anteil) {
     document.getElementById("bilder").classList.toggle("mitplan", !!D.plan);
     document.getElementById("bilder").classList.toggle("mitgruen", !!(D.ansicht && STAGE1[D.ansicht]));
     document.getElementById("hilfeaus").style.display = D.ansicht ? "" : "none";
-    document.getElementById("promptwahl").style.display = D.ansicht && D.label ? "" : "none";
-    document.getElementById("legende").textContent = (D.label ? ", grün Label" : "") + (D.karte ? ", gelb Raumkarte" : "");
+    document.getElementById("promptwahl").style.visibility = D.ansicht && D.label ? "visible" : "hidden";
+    document.getElementById("pbearbeiten").style.visibility = D.ansicht && D.label ? "visible" : "hidden";
+    document.getElementById("legende").textContent = (D.netz ? " (Netz " + D.netz + ")" : "") + (D.label ? ", grün Label" : "") + (D.karte ? ", gelb Raumkarte" : "");
     handlisteLaden();
     neuLaden();
     if (D.plan) planBild.src = DATEN + lauf + "/" + D.plan.bild + "?" + Date.now();
@@ -293,9 +373,24 @@ function fahrtFertig(lauf, gleich, anteil) {
 }
 
 function laufGewaehlt(fahrt, datei) {
-  fuellen(elFahrt, netze[elLauf.value] || [], fahrt || elFahrt.value);
+  fuellen(elFahrt, netze[elLauf.value] || [], fahrt || elFahrt.value, true);
   fahrtLaden(datei);
 }
+
+function umbenennen() {                          // nur der Anzeigename; Verzeichnis und Bild-IDs bleiben
+  const fahrt = elFahrt.value;
+  if (!fahrt) return;
+  const neu = prompt("Name für " + fahrt + " (leer = keiner):", namen[fahrt] || "");
+  if (neu === null) return;
+  fetch("/name", { method: "POST", headers: { "Content-Type": "application/json" },
+                   body: JSON.stringify({ fahrt: fahrt, name: neu }) })
+    .then((r) => r.json()).then((d) => {
+      if (!d.ok) { document.getElementById("aus").textContent = "Fehler: " + d.fehler; return; }
+      namen = d.namen || {};
+      fuellen(elFahrt, netze[elLauf.value] || [], fahrt, true);
+    }).catch(() => { document.getElementById("aus").textContent = "Fehler: Server antwortet nicht"; });
+}
+document.getElementById("umbenennen").onclick = umbenennen;
 
 bild.onload = zeichnen;
 planBild.onload = planZeichnen;
@@ -303,17 +398,23 @@ elLauf.onchange = () => laufGewaehlt();          // gleiches Bild im anderen Net
 elFahrt.onchange = () => { D = null; fahrtLaden(); };
 elGesehen.onchange = () => { gesichtetSenden(); D = null; fahrtLaden(); };
 addEventListener("keydown", (e) => {
+  if (pdialog.open) return;                      // im Prompt-Feld tippen löst keine Tasten aus (Esc schließt)
   const schritt = { ArrowRight: 1, ArrowLeft: -1, PageDown: 20, PageUp: -20 }[e.key];
   if (schritt) { zeigen(pos + schritt); e.preventDefault(); }
   if (e.key === "f" || e.key === "F") { flaeche = !flaeche; zeichnen(); }
   if (e.key === "k" || e.key === "K") { karte = !karte; zeichnen(); }
+  if (e.key === "r" || e.key === "R") { umbenennen(); e.preventDefault(); }
   if (e.key === "x" || e.key === "X") aussortieren(true);
   if (e.key === "u" || e.key === "U") aussortieren(false);
   if (e.key === "n" || e.key === "N") neuMalen();
+  if ((e.key === "p" || e.key === "P") && D && D.ansicht && D.label) { promptBearbeiten(); e.preventDefault(); }
   if ((e.key === "g" || e.key === "G") && D && D.sichten) { elGesehen.checked = !elGesehen.checked; elGesehen.onchange(); }
   if (D && D.ansicht && "123".includes(e.key) && elPrompt.options[+e.key - 1]) elPrompt.selectedIndex = +e.key - 1;
 });
-laden(DATEN + "index.js", (ok) => {
+const namenGeladen = fetch(DATEN + "namen.json", { cache: "no-store" }).then((r) => r.ok ? r.json() : {})
+  .then((n) => { namen = n || {}; }).catch(() => {});
+laden(DATEN + "index.js", async (ok) => {
+  await namenGeladen;
   netze = (ok && window.NETZE) || {};
   const namen = Object.keys(netze);
   if (!namen.length) { document.getElementById("id").textContent = "Keine Daten: netz/index.js fehlt oder ist leer"; return; }
