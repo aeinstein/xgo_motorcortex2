@@ -123,7 +123,7 @@ details.hilfe p{margin:4px 0 0}
 
 /* --- Bild und Modus */
 #bild-rahmen{overflow:hidden;background:#000;border:1px solid var(--rand);border-radius:var(--r)}
-.bild-fenster{overflow:hidden}   /* „Bild festhalten“ verschiebt das <img>; die Leiste darunter bleibt frei */
+.bild-fenster{overflow:hidden;position:relative}   /* „Bild festhalten“ verschiebt das <img>; die Leiste darunter bleibt frei */
 /* Ein Raster für beide Regler (display:contents), Spalten je nach Breite des Bildrahmens: breit eine Zeile,
    enger Ist-Wert in eigener Zeile, schmal die Regler untereinander. Nichts darf unter seinen Inhalt schrumpfen. */
 #bild-rahmen{container-type:inline-size}
@@ -148,6 +148,13 @@ details.hilfe p{margin:4px 0 0}
   font:600 10px/1 system-ui,sans-serif;color:var(--leise);cursor:help}
 #bild{width:100%;height:auto;aspect-ratio:4/3;object-fit:contain;display:block;background:#000}
 #bild.aus{opacity:.35}
+/* konfigurierte Bildmitte (Spalte W/2 + cx_offset_px, Zeile H/2), wandert mit Verschieben/Drehen des Bildes */
+#bild-mitte{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible}
+#bild-mitte line,#bild-mitte circle{fill:none;vector-effect:non-scaling-stroke}
+#bild-mitte .halo{stroke:#000;stroke-width:3;opacity:.6}
+#bild-mitte .strich{stroke:#fff;stroke-width:1}
+#bild-mitte .lot{stroke-dasharray:6 6}
+#bild-mitte.aus{display:none}
 .modus{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .segment{display:inline-flex;border:1px solid var(--rand2);border-radius:7px;overflow:hidden;flex-wrap:wrap}
 .segment button{border:0;border-radius:0;border-right:1px solid var(--rand2);margin:0}
@@ -329,7 +336,7 @@ details.extras[open]>summary{margin-bottom:8px}
 <main>
 <div class="spalte">
   <div id="bild-rahmen">
-    <div class="bild-fenster"><img id="bild" alt="" aria-label="Kamerabild" width="640" height="480"></div>
+    <div class="bild-fenster"><img id="bild" alt="" aria-label="Kamerabild" width="640" height="480"><svg id="bild-mitte" viewBox="0 0 640 480" preserveAspectRatio="xMidYMid meet" aria-hidden="true"><g class="halo"><line class="lot" x1="320" y1="0" x2="320" y2="480"/><line class="qx" x1="305" y1="240" x2="335" y2="240"/><circle cx="320" cy="240" r="8"/></g><g class="strich"><line class="lot" x1="320" y1="0" x2="320" y2="480"/><line class="qx" x1="305" y1="240" x2="335" y2="240"/><circle cx="320" cy="240" r="8"/></g></svg></div>
     <div class="bild-leiste">
       <div class="regler">
         <label for="belicht">Belichtung</label>
@@ -345,7 +352,7 @@ details.extras[open]>summary{margin-bottom:8px}
         <span class="w" id="gain-w">-</span>
         <button id="gain-auto" onclick="verstaerkung(0)">Auto</button>
       </div>
-      <span class="ist"><label title="Bild senkrecht so verschieben, dass der IMU-Nick fest steht: stimmt die IMU, steht die Szene still"><input type="checkbox" id="hz-stabil" onchange="hzStabil(this.checked)"> Bild am IMU-Nick festhalten</label><label title="Bild um den IMU-Roll drehen: stimmt der Roll, stehen senkrechte Kanten senkrecht und die cyan Linie waagerecht"><input type="checkbox" id="hz-roll" onchange="hzRoll(this.checked)"> Roll ausgleichen</label><span class="leise" id="belicht-ist">-</span><span class="info" tabindex="0" title="Gilt bis zum Neustart von xgonav. Kürzere Belichtung = weniger Bewegungsunschärfe, aber dunkler; mehr Verstärkung = heller, aber mehr Rauschen (Automatik nur bis 8; über ~8× wird der Rauschabstand nicht besser, nur das Bild heller). Dauerhaft über [camera] exposure_us / analogue_gain in config.toml.">i</span></span>
+      <span class="ist"><label title="Bild senkrecht so verschieben, dass der IMU-Nick fest steht: stimmt die IMU, steht die Szene still"><input type="checkbox" id="hz-stabil" onchange="hzStabil(this.checked)"> Bild am IMU-Nick festhalten</label><label title="Bild um den IMU-Roll drehen: stimmt der Roll, stehen senkrechte Kanten senkrecht und die cyan Linie waagerecht"><input type="checkbox" id="hz-roll" onchange="hzRoll(this.checked)"> Roll ausgleichen</label><label title="Konfigurierte Bildmitte einblenden: gestrichelt die Spalte der Fahrtrichtung (W/2 + [camera] cx_offset_px), Kreis bei Zeile H/2"><input type="checkbox" id="hz-mitte" onchange="hzMitte(this.checked)"> Bildmitte</label><span class="leise" id="belicht-ist">-</span><span class="info" tabindex="0" title="Gilt bis zum Neustart von xgonav. Kürzere Belichtung = weniger Bewegungsunschärfe, aber dunkler; mehr Verstärkung = heller, aber mehr Rauschen (Automatik nur bis 8; über ~8× wird der Rauschabstand nicht besser, nur das Bild heller). Dauerhaft über [camera] exposure_us / analogue_gain in config.toml.">i</span></span>
       <div class="imu-bild leise" id="imu-bild" title="IMU-Wert dieses Bildes (Bildzeit + [imu] time_offset_ms), mit dem xgonav Boden, Karten und die cyan Linie rechnet. Nickrate: aus dem Bild (Ego-Motion) gegen die IMU; weichen sie dauerhaft ab, stimmen Zeitversatz oder Brennweite nicht">-</div>
     </div>
   </div>
@@ -629,7 +636,9 @@ const EN = {
   'Alle aus': 'All off', 'Strobe': 'Strobe', 'Gilt für alle LEDs, bleibt über Neustarts gespeichert': 'Applies to all LEDs, kept across restarts',
   'Helligkeit': 'Brightness', 'Emotionen (Display)': 'Emotions (display)', 'keine gefunden in': 'none found in',
   'Bild senkrecht so verschieben, dass der IMU-Nick fest steht: stimmt die IMU, steht die Szene still': 'Shift the image vertically so the IMU pitch stays fixed: if the IMU is right, the scene stands still',
-  'Bild am IMU-Nick festhalten': 'Pin image to IMU pitch', 'Roll ausgleichen': 'Level roll',
+  'Bild am IMU-Nick festhalten': 'Pin image to IMU pitch', 'Roll ausgleichen': 'Level roll', 'Bildmitte': 'Image centre',
+  'Konfigurierte Bildmitte einblenden: gestrichelt die Spalte der Fahrtrichtung (W/2 + [camera] cx_offset_px), Kreis bei Zeile H/2':
+    'Show the configured image centre: dashed the column of the driving direction (W/2 + [camera] cx_offset_px), circle at row H/2',
   'IMU zum Bild': 'IMU at frame', 'IMU fehlt – Nick nur aus dem Bild': 'IMU missing – pitch from image only',
   'ohne IMU': 'without IMU', 'keine IMU': 'no IMU', 'Kurs': 'Heading', 'Alter': 'Age', 'Nickrate Bild/IMU': 'Pitch rate image/IMU',
   'IMU-Wert dieses Bildes (Bildzeit + [imu] time_offset_ms), mit dem xgonav Boden, Karten und die cyan Linie rechnet. Nickrate: aus dem Bild (Ego-Motion) gegen die IMU; weichen sie dauerhaft ab, stimmen Zeitversatz oder Brennweite nicht': 'IMU value of this frame (frame time + [imu] time_offset_ms) that xgonav uses for floor, maps and the cyan line. Pitch rate: from the image (ego-motion) vs. IMU; a lasting difference means time offset or focal length are off',
@@ -859,11 +868,29 @@ function verbindungWeg() { pille('p-verb', tr('getrennt'), 'schlecht'); }
 // IMU-Roll gedreht (CSS rotate, im Uhrzeigersinn = rechts tief ausgleichen). Stimmt der Roll, stehen senkrechte
 // Kanten senkrecht und die cyan Linie liegt waagerecht. Am Pi rechnet dafür nichts zusätzlich.
 let bildUrl = null, bildDy = 0, bildRoll = 0, bildCx = NaN, bildRowImu = NaN;
-let bildStabil = false, bildRollAn = false;
+let bildStabil = false, bildRollAn = false, bildMitteAn = true;
 try { bildStabil = localStorage.getItem('xgonav.stabil') === '1'; } catch (e) {}
 try { bildRollAn = localStorage.getItem('xgonav.roll') === '1'; } catch (e) {}
+try { bildMitteAn = localStorage.getItem('xgonav.mitte') !== '0'; } catch (e) {}
 $('hz-stabil').checked = bildStabil;
 $('hz-roll').checked = bildRollAn;
+$('hz-mitte').checked = bildMitteAn;
+// Konfigurierte Bildmitte (Spalte cx aus dem Bild-Kopf = W/2 + cx_offset_px, Zeile H/2 wie geometry.py) als SVG über
+// dem Bild; bekommt dieselbe CSS-Verschiebung/Drehung wie das <img>, steht also immer auf demselben Bildpunkt.
+function bildMitte(W, H, transform, origin) {
+  const s = $('bild-mitte');
+  s.classList.toggle('aus', !bildMitteAn);
+  if (!bildMitteAn) return;
+  const x = Number.isFinite(bildCx) ? bildCx : W / 2, y = H / 2;
+  s.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+  for (const l of s.querySelectorAll('.lot')) { l.setAttribute('x1', x); l.setAttribute('x2', x); l.setAttribute('y2', H); }
+  for (const l of s.querySelectorAll('.qx')) {
+    l.setAttribute('x1', x - 15); l.setAttribute('x2', x + 15); l.setAttribute('y1', y); l.setAttribute('y2', y);
+  }
+  for (const c of s.querySelectorAll('circle')) { c.setAttribute('cx', x); c.setAttribute('cy', y); }
+  s.style.transformOrigin = origin;
+  s.style.transform = transform;
+}
 function bildVerschieben() {
   const b = $('bild'), H = b.naturalHeight || 480, W = b.naturalWidth || 640;
   const t = [];
@@ -874,6 +901,7 @@ function bildVerschieben() {
     b.style.transformOrigin = ox.toFixed(2) + '% ' + oy.toFixed(2) + '%';
   }
   b.style.transform = t.join(' ');
+  bildMitte(W, H, b.style.transform, b.style.transformOrigin);
 }
 // IMU-Wert des gezeigten Bildes (aus dem Bild-Kopf, nicht aus live.php): damit rechnet xgonav dieses Bild.
 // Zählt Bilder ohne gültige IMU seit dem Laden (dann Nick nur aus dem Bild, rot).
@@ -1073,6 +1101,11 @@ function hoeheSetzen(u) {
 function hzRoll(an) {
   bildRollAn = an;
   try { localStorage.setItem('xgonav.roll', an ? '1' : '0'); } catch (e) {}
+  bildVerschieben();
+}
+function hzMitte(an) {
+  bildMitteAn = an;
+  try { localStorage.setItem('xgonav.mitte', an ? '1' : '0'); } catch (e) {}
   bildVerschieben();
 }
 function hzStabil(an) {
