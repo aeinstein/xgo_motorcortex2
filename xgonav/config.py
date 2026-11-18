@@ -145,8 +145,11 @@ class ImuCfg:
     pitch_sign: int = -1           # +1/-1; 0 = automatisch
     time_offset_ms: float | None = 10.5   # IMU-Zeit = Bildzeit + dies; None = automatisch
     # IMU-Rohpitch bei der Kamerakalibrierung (calibrate.py wall): -4.43; seit 2026-11-17 -4.23 (Nick +0,2°): Flur
-    # mit 2,04 m befahrbarer Breite (Nutzer) kam in drei Rundumblicken mit Roll-Korrektur auf 1,98 m, mit +0,25° auf 2,03-2,05 m
-    pitch_ref_deg: float = -4.23
+    # mit 2,04 m befahrbarer Breite (Nutzer) kam in drei Rundumblicken mit Roll-Korrektur auf 1,98 m, mit +0,25° auf 2,03-2,05 m.
+    # Seit 2026-11-18 -6.23: Firmware 0021 (Lage aus dem Schwerkraftvektor, Nick-Kreisel kalibriert) liefert den Nick ~2° tiefer
+    # (vorher stand er wegen des unkalibrierten Nick-Kreisels ~2,3° zu hoch); Nutzer am Bild im Browser geprüft.
+    # Wirksam ist nur tilt_deg + pitch_ref_deg (geometry: Blickwinkel = tilt_deg + pitch_ref_deg - IMU-Nick).
+    pitch_ref_deg: float = -6.23
     # Skalenfehler des Firmware-Kurses (Gier), je Drehrichtung getrennt: Kursänderungen nach links mal
     # yaw_scale_left, nach rechts mal yaw_scale_right. RiderPi 2026-11-18, auf der Stelle an einer Marke, Winkelmesser:
     # 10 × 360° rechts echt 3560°, IMU 3551,3° (1,0025); 10 × links echt 3556°, IMU 3548,4° (1,0021); 4 × links
