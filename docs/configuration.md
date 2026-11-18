@@ -74,6 +74,8 @@ Default = `config.py`; since 2026-11-12 these are the RiderPi values (`/opt/xgon
 | `exposure_us` | 20000 (sim: 4000) | | 0 = auto; runtime-adjustable from web |
 | `analogue_gain` | 16.0 (sim: 0.0) | | 1..63.9, 0 = auto (auto max 8) |
 | `hfov_deg` | 91.8 | 91.8 [K] | f = 310 px @ 640, from turns vs IMU heading (calibration.md §0) |
+| `lens_knots_px`, `lens_g_px`, `lens_center` | 18 knots, centre (322.5, 232.5) (sim: empty = off) | | Lens distortion, removed right after the camera (`camera.lens_maps`, one remap per frame: `native/linsefast.cpp` 3.9 ms on one core, bit-identical to `cv2.remap`, which needs 7 ms wall / 17 ms CPU on the CM4). Model: measured pixel → ideal pixel, radial `g(r)` in px at the knots. From ~67 000 straight edges of 12 drives (2026-11-18): ≤ 2 px up to r 340 px, up to 18 px in the corners. Raw recordings are undistorted from then on (`cam.entzerrt` in `meta.jsonl`) |
+| `lens_native` | true | | Remap in the C++ core (self-check against `cv2.remap` at start); false or core missing: `cv2.remap` |
 | `mount_offset_mm` | 43.0 (sim: 45.0) | | camera height = body height + offset; only used without `cam_h_u8` |
 | `cam_h_u8` | `[109.4, 0.1126]` (sim: `[]`) | | camera height = a + b·u8 (height set-point): measured lens centre while balancing, confirmed by the floor grid 2026-11-10 (calibration.md §2) |
 | `cx_offset_px` | 13.0 (sim: 0.0) | | column of the driving direction minus image centre (px at `width`); bearings in maps, follow and simulator use `W/2 + cx_offset_px`. RiderPi: focus of expansion while driving straight (calibration.md §0); ego-motion still uses the image centre |
@@ -90,6 +92,7 @@ Default = `config.py`; since 2026-11-12 these are the RiderPi values (`/opt/xgon
 | `stream_hz` | 100 (sim: 0) | | > 0: written to `settings/imu_stream_hz` → firmware stream (patch 0014) with the firmware's sample time; driver without it: warning, polling |
 | `idle_hz` | 5 | 5 | While the Rider is set down (not balancing): stream rate and read rate of the IMU thread; back to `stream_hz` and `poll_s` on stand-up. Saves ~6 % of one core on the CM4. `0` = never switch. Sleep mode still turns the stream off |
 | `pitch_sign` | -1 (sim: 0) | | +1/-1 fixed; 0 = auto from image correlation (`ImuSync`: once per second, valid only after the first motion). Fixed since 2026-11-17: the online estimate no longer runs; no IMU pitch for a frame → log warning, `pitch_src` = `"bild"` |
+| `yaw_scale_left`, `yaw_scale_right` | 1.0021, 1.0025 (sim: 1.0) | | Factor on heading changes of the firmware yaw (gyro scale error), separate for left (+) and right turns. Measured 2026-11-18 on the spot against a floor mark: 10 × 360° right 3560° real vs. 3551.3° IMU, 10 × left 3556° vs. 3548.4°. Recorded IMU samples are already corrected |
 | `time_offset_ms` | 10.5 (sim: None) | | IMU time = frame time + this. None = auto. 10.5: `tools/imu_versatz.py` on a raw recording (2026-11-17, 8 sections +9.9..+12.0 ms, correlation 0.99). Pitch for the geometry is the pure IMU pitch at this time (no image share since 2026-11-17) |
 | `pitch_ref_deg` | -4.23 (sim: 0.0) | | raw IMU pitch at camera calibration (-4.43; R-1.1.3: -2.7) plus 0.2° from a corridor of 2.04 m drivable width (three start scans 2026-11-17 gave 1.98 m) |
 | `use_roll` / `roll_ref_deg` | true / 1.25 (sim: false / 0) | | FloorNet boundary is rotated by (IMU roll − `roll_ref_deg`) per frame before it reaches maps and safety (`freespace.roll_columns`); the camera sits ~2° rolled. Without it one corridor wall lay at 0.7 or 1.2 m depending on the image edge (wall 33–48 cm thick in the start scan, 10–14 cm with it; three scans 2026-11-17) |
@@ -256,7 +259,7 @@ All keys with comments: `PetCfg` in `xgonav/config.py`.
 |---|---|---|
 | `enabled` / `source` | true / `auto` | `auto` = wheels if fresh, else command × `vx_limit` |
 | `wheel_diameter_m` | 0.060 | |
-| `track_m` | 0.090 | |
+| `track_m` | 0.090 | | Turn test 2026-11-18: wheel heading 0.0–0.4 % low, within slip scatter, unchanged |
 | `ticks_per_rev` | 1024 | |
 | `scale_left` / `scale_right` | 1.0073 / 1.0087 [K] (sim: 1.0 / 1.0) | |
 | `poll_hz` / `max_age_s` / `max_jump_ticks` | 25 / 0.3 / 2048 | |

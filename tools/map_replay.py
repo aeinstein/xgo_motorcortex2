@@ -20,6 +20,10 @@ verwendet. Eine Variante ist "name:schlüssel=wert,..." und ändert die Basis:
   roll=GRAD|imu    Grenzzeile je Spalte um diesen Roll gedreht; imu = Roll aus den Proben der Aufnahme
                    (nur Aufnahmen mit IMU-Proben), abzüglich --roll-ref
   kurs=imu         Kurs zur Bildzeit aus den IMU-Proben der Aufnahme statt aus der Posenfolge
+  kursfaktor=F     Kursänderungen der Posenfolge mal F, Weg mitgedreht (Skalenfehler des IMU-Kurses, z. B. 1.0113)
+  kursdatei=PFAD   Kurskorrektur über der Zeit aus einer JSON-Datei [[t, Grad], ...], Weg mitgedreht
+  rollgrenze=GRAD  Bilder nicht eintragen, deren IMU-Roll weiter als so vom Median der Fahrt liegt
+  nickgrenze=GRAD  dasselbe für den Nick (pitch_dev)
   grid.X=WERT      Parameter aus [grid], z. B. grid.max_range_m=1.5
   abgleich=1       laufender Kartenabgleich (xgonav/reloc.py): Pose alle paar Sekunden auf die Karte legen;
                    reloc.X=WERT stellt ihn ein, z. B. reloc.gain=1.0
@@ -95,6 +99,27 @@ class Bahn:
     def rate_dps(self, tq, win: float = 0.1):
         a, b = self.at(np.asarray(tq) - win)[2], self.at(np.asarray(tq) + win)[2]
         return np.abs(np.degrees(b - a)) / (2 * win)
+
+
+def kursversatz(bahn: "Bahn", d: np.ndarray) -> "Bahn":
+    """Bahn mit um d (rad, je Stützstelle) verschobenem Kurs, jeder Wegschritt um den Versatz mitgedreht."""
+    d = np.asarray(d, float)
+    dm = (d[:-1] + d[1:]) / 2
+    dx, dy = np.diff(bahn.x), np.diff(bahn.y)
+    x = bahn.x[0] + np.concatenate([[0.0], np.cumsum(dx * np.cos(dm) - dy * np.sin(dm))])
+    y = bahn.y[0] + np.concatenate([[0.0], np.cumsum(dx * np.sin(dm) + dy * np.cos(dm))])
+    return Bahn(bahn.t, x, y, bahn.th + d)
+
+
+def kursfaktor(bahn: "Bahn", f: float) -> "Bahn":
+    """Bahn mit um f gestrecktem Kurs (Skalenfehler des IMU-Kurses): Kursänderungen mal f."""
+    return kursversatz(bahn, (f - 1.0) * (bahn.th - bahn.th[0]))
+
+
+def kursdatei(bahn: "Bahn", pfad: str) -> "Bahn":
+    """Kurskorrektur aus einer Datei [[t, Grad], ...] (z. B. aus den Fliesenfugen), dazwischen linear."""
+    k = np.array(json.load(open(pfad, encoding="utf-8")), float)
+    return kursversatz(bahn, np.radians(np.interp(bahn.t, k[:, 0], k[:, 1])))
 
 
 def fortlaufend_deg(a) -> np.ndarray:
@@ -175,8 +200,13 @@ def rechne(t, bahn: Bahn, views: dict, pitch, cfg, geo, fw: int, fh: int, varian
     rate_pose = bahn.rate_dps(t)
     if rate_rad is None:
         rate_rad = rate_pose
+    roll_med = float(np.median(roll_imu)) if roll_imu is not None else 0.0
+    nick_med = float(np.median(np.asarray(pitch, float)))
     out = []
     for name, p in varianten:
+        b = kursfaktor(bahn, float(p["kursfaktor"])) if "kursfaktor" in p else bahn
+        if "kursdatei" in p:
+            b = kursdatei(b, p["kursdatei"])
         gcfg = dataclasses.replace(cfg.grid)
         for k, v in p.items():
             if k.startswith("grid."):
@@ -192,7 +222,7 @@ def rechne(t, bahn: Bahn, views: dict, pitch, cfg, geo, fw: int, fh: int, varian
         if (roll == "imu" and roll_imu is None) or (p.get("kurs") == "imu" and kurs_imu is None):
             continue                        # Aufnahme ohne IMU-Proben
         gm = GridMap(gcfg, geo, fw, fh)
-        x0, y0, th0 = bahn.at(t[0])
+        x0, y0, th0 = b.at(t[0])
         gm.x, gm.y, gm.th = float(x0), float(y0), float(th0)
         gm.path = [(gm.x, gm.y)]
         ab = Abgleich(dataclasses.replace(cfg.reloc), p, gcfg) if p.get("abgleich", "0") not in ("0", "") else None
@@ -203,7 +233,7 @@ def rechne(t, bahn: Bahn, views: dict, pitch, cfg, geo, fw: int, fh: int, varian
             j = min(i + ankunft, len(t) - 1)
             k = ab.k if ab else (0.0, 0.0, 0.0)
             for q in range(j0, j + 1):
-                kb[q] = reloc.anwenden(k, (bahn.x[q], bahn.y[q], bahn.th[q]))
+                kb[q] = reloc.anwenden(k, (b.x[q], b.y[q], b.th[q]))
             j0 = max(j0, j + 1)
             _fahre(gm, *(float(v) for v in kb[j]))
             if beobachter is not None:
@@ -215,7 +245,13 @@ def rechne(t, bahn: Bahn, views: dict, pitch, cfg, geo, fw: int, fh: int, varian
             if rate > sperre or t[j] - t_dreh < ruhe:
                 n_sperre += 1
                 continue
-            px, py, pth = (float(v) for v in bahn.at(t[i] + versatz))
+            if "rollgrenze" in p and roll_imu is not None and abs(roll_imu[i] - roll_med) > float(p["rollgrenze"]):
+                n_sperre += 1
+                continue
+            if "nickgrenze" in p and abs(math.degrees(float(pitch[i]) - nick_med)) > float(p["nickgrenze"]):
+                n_sperre += 1
+                continue
+            px, py, pth = (float(v) for v in b.at(t[i] + versatz))
             if p.get("kurs") == "imu":
                 pth = float(kurs_imu(t[i]))
             view = views[i]
@@ -227,7 +263,7 @@ def rechne(t, bahn: Bahn, views: dict, pitch, cfg, geo, fw: int, fh: int, varian
             n_in += 1
         k = ab.k if ab else (0.0, 0.0, 0.0)
         for q in range(j0, len(t)):
-            kb[q] = reloc.anwenden(k, (bahn.x[q], bahn.y[q], bahn.th[q]))
+            kb[q] = reloc.anwenden(k, (b.x[q], b.y[q], b.th[q]))
         _fahre(gm, *(float(v) for v in kb[-1]))
         zellen, zw = doppelt(gm)
         kand = 0 if gm.conf is None else int((np.isfinite(gm.rmin) & ~gm.conf & (gm.lo <= gcfg.l_show)).sum())
@@ -235,7 +271,7 @@ def rechne(t, bahn: Bahn, views: dict, pitch, cfg, geo, fw: int, fh: int, varian
         z = {"eingetragen": n_in, "gesperrt": n_sperre, "belegte Zellen": zellen, "Zwischenzellen": zw,
              "Kandidaten": kand, "Breite quer m": breite, "Stellen quer": stellen, "Parameter": p}
         if ab:
-            z["Abgleich"] = ab.bericht((float(bahn.x[-1]), float(bahn.y[-1]), float(bahn.th[-1])))
+            z["Abgleich"] = ab.bericht((float(b.x[-1]), float(b.y[-1]), float(b.th[-1])))
         out.append((name, gm, z))
     return out
 

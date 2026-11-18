@@ -6,9 +6,12 @@ import threading
 import time
 from dataclasses import dataclass
 
+import ctypes
+
 import cv2
 import numpy as np
 
+from . import fastlib
 from .config import CameraCfg
 
 log = logging.getLogger(__name__)
@@ -151,6 +154,70 @@ class FrameSource:
     def _grab(self) -> bool: raise NotImplementedError
 
 
+def lens_maps(cfg: CameraCfg):
+    """Tabellen für cv2.remap (Festkomma), die das Kamerabild entzerren, oder None ohne Linsenmodell.
+    Je Zielpixel (ideal) das Quellpixel im Kamerabild: Umkehrung von ideal = c + q * (1 + g(r) / r) per
+    Festpunktiteration. Einmal beim Start gerechnet."""
+    if not cfg.lens_knots_px or len(cfg.lens_knots_px) != len(cfg.lens_g_px) or len(cfg.lens_center) != 2:
+        return None
+    kn, g = np.asarray(cfg.lens_knots_px, float), np.asarray(cfg.lens_g_px, float)
+    c = np.asarray(cfg.lens_center, float)
+
+    def vor(p):
+        q = p - c
+        r = np.hypot(q[..., 0], q[..., 1])
+        return c + q * (1.0 + np.interp(r, kn, g) / np.maximum(r, 1e-6))[..., None]
+
+    gx, gy = np.meshgrid(np.arange(cfg.width, dtype=np.float64), np.arange(cfg.height, dtype=np.float64))
+    u = np.stack([gx, gy], -1)
+    p = u.copy()
+    for _ in range(10):
+        p = p + (u - vor(p))
+    return cv2.convertMaps(p[..., 0].astype(np.float32), p[..., 1].astype(np.float32), cv2.CV_16SC2)
+
+
+_LENS_ABI = 1
+
+
+def lens_remap(cfg: CameraCfg):
+    """Funktion Bild -> entzerrtes Bild für diese Kamera, oder None ohne Linsenmodell. Mit C++-Kern
+    (native/linsefast.cpp), wenn er für Rauschbild und glattes Bild bitgleich zu cv2.remap rechnet; sonst cv2.remap."""
+    maps = lens_maps(cfg)
+    if maps is None:
+        return None
+    m1, m2 = np.ascontiguousarray(maps[0]), np.ascontiguousarray(maps[1])
+    h, w = m2.shape
+
+    def mit_cv(img):
+        return cv2.remap(img, m1, m2, cv2.INTER_LINEAR)
+
+    lib = fastlib.load() if cfg.lens_native else None
+    if not cfg.lens_native or not fastlib.check_abi(lib, "lens_abi", _LENS_ABI):
+        log.info("Linsenverzeichnung wird entzerrt (cv2.remap)")
+        return mit_cv
+    lib.lens_remap.restype = ctypes.c_int
+    lib.lens_remap.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_void_p,
+                               ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_int]
+
+    def mit_kern(img):
+        if img.ndim != 3 or img.dtype != np.uint8 or not img.flags.c_contiguous:
+            return mit_cv(img)
+        out = np.empty((h, w, img.shape[2]), np.uint8)
+        if lib.lens_remap(img.ctypes.data, img.shape[1], img.shape[0], img.strides[0], img.shape[2], m1.ctypes.data,
+                          m2.ctypes.data, out.ctypes.data, w, h, out.strides[0]) != 0:
+            return mit_cv(img)
+        return out
+
+    rng = np.random.default_rng(11)
+    probe = rng.integers(0, 256, (cfg.height, cfg.width, 3), dtype=np.uint8)
+    for img in (probe, cv2.GaussianBlur(probe, (0, 0), 3)):
+        if not np.array_equal(mit_kern(img), mit_cv(img)):
+            log.info("lens_remap weicht von cv2.remap ab – Linsenverzeichnung wird mit OpenCV entzerrt")
+            return mit_cv
+    log.info("Linsenverzeichnung wird entzerrt (C++-Kern)")
+    return mit_kern
+
+
 class PiCameraSource(FrameSource):
     """OV5647 über libcamera/picamera2. Kurze feste Belichtung, AGC regelt nur Gain
     (beides zur Laufzeit umstellbar, siehe set_exposure/set_gain)."""
@@ -159,6 +226,7 @@ class PiCameraSource(FrameSource):
         from picamera2 import Picamera2  # nur auf dem Pi verfügbar
 
         self.cam = Picamera2()
+        self._lens = lens_remap(self.cfg)
         frame_us = int(1e6 / self.cfg.fps * self.cfg.frame_clock_corr)
         controls = {"FrameDurationLimits": (frame_us, frame_us)}
         if self.cfg.scaler_crop:
@@ -198,6 +266,8 @@ class PiCameraSource(FrameSource):
             md = req.get_metadata()
         finally:
             req.release()
+        if self._lens is not None:
+            arr = self._lens(arr)
         ts = md.get("SensorTimestamp")
         t = ts / 1e9 if ts else time.monotonic()
         cg = md.get("ColourGains")
@@ -205,7 +275,7 @@ class PiCameraSource(FrameSource):
                       {"awb": [round(float(v), 3) for v in cg] if cg else None,
                        "gain": round(float(md.get("AnalogueGain", 0.0)), 2),
                        "exp_us": md.get("ExposureTime"), "frame_us": md.get("FrameDuration"),
-                       "crop": md.get("ScalerCrop")})
+                       "crop": md.get("ScalerCrop"), "entzerrt": self._lens is not None})
         return True
 
     def _suspend(self) -> None:

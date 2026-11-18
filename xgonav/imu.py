@@ -76,7 +76,8 @@ class ImuSource:
             self._thread.join(timeout=1)
 
     def add(self, seq: int, t: float, roll: float, pitch: float, yaw: float | None = None) -> None:
-        """yaw: Firmware-Kurs (rad, links +) oder None. Sprünge über ±π werden entfaltet."""
+        """yaw: Firmware-Kurs (rad, links +) oder None. Sprünge über ±π werden entfaltet, Änderungen mal
+        cfg.yaw_scale_left bzw. yaw_scale_right gerechnet (Skalenfehler des Gyros je Drehrichtung)."""
         with self._lock:
             if seq <= self._last_seq:
                 return
@@ -89,7 +90,7 @@ class ImuSource:
                 y = yaw
             else:
                 d = (yaw - self._y_last + math.pi) % (2 * math.pi) - math.pi
-                y = (y_alt if y_alt is not None else yaw) + d
+                y = (y_alt if y_alt is not None else yaw) + d * (self.cfg.yaw_scale_left if d > 0 else self.cfg.yaw_scale_right)
             if yaw is not None:
                 self._y_last = yaw
             if b == buf.shape[1]:

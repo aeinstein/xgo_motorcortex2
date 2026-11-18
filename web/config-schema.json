@@ -237,6 +237,74 @@
        "hilfe": "RiderPi: aus Drehungen gegen den IMU-Kurs gemessen (2026-11-07, f = 310 px @ 640, 304–313 in drei Aufnahmen; Verzeichnung vernachlässigbar). Der Zollstock (88,5°) legt nur f·h fest. RPi Cam v1 hätte 62,2."
       },
       {
+       "key": "lens_knots_px",
+       "typ": "liste",
+       "elem": "zahl",
+       "default": [
+        0,
+        40,
+        80,
+        120,
+        160,
+        200,
+        240,
+        260,
+        280,
+        300,
+        320,
+        340,
+        360,
+        380,
+        400,
+        420,
+        440,
+        460
+       ],
+       "hilfe": "Linsenverzeichnung: Das Bild wird direkt nach der Kamera entzerrt (camera.lens_maps, eine Tabelle, cv2.remap), alles Weitere rechnet mit dem entzerrten Bild als Lochkamera. Modell: gemessenes Pixel -> ideales Pixel, radial um lens_center: ideal = c + q * (1 + g(r) / r), g(r) in px an den Stützstellen lens_knots_px (linear dazwischen). RiderPi 2026-11-18 aus ~67 000 geraden Kanten von 12 Fahrten (Fugen, Rahmen), geprüft an 4 anderen: bis r 340 px höchstens 2 px, in den Ecken bis 18 px (Fugen am unteren Rand: Bogen 6 px -> < 1 px). Leere Listen = aus (Simulator). Nur die echte Kamera entzerrt; Rohaufnahmen sind ab dann entzerrt (meta.jsonl: cam.entzerrt)."
+      },
+      {
+       "key": "lens_g_px",
+       "typ": "liste",
+       "elem": "zahl",
+       "default": [
+        0.0,
+        -0.38,
+        -0.53,
+        -0.24,
+        0.43,
+        1.5,
+        2.13,
+        1.92,
+        1.43,
+        0.63,
+        0.07,
+        0.46,
+        3.16,
+        9.23,
+        17.95,
+        26.69,
+        35.43,
+        44.17
+       ],
+       "hilfe": ""
+      },
+      {
+       "key": "lens_center",
+       "typ": "liste",
+       "elem": "zahl",
+       "default": [
+        322.5,
+        232.5
+       ],
+       "hilfe": ""
+      },
+      {
+       "key": "lens_native",
+       "typ": "bool",
+       "default": true,
+       "hilfe": "Entzerren im C++-Kern (native/linsefast.cpp, ein Kern, bitgleich zu cv2.remap; nur aktiv nach Selbstprüfung beim Start). False oder Kern fehlt: cv2.remap (CM4: 6,4 ms je Bild auf vier Kernen)."
+      },
+      {
        "key": "mount_offset_mm",
        "typ": "float",
        "default": 43.0,
@@ -338,6 +406,18 @@
        "hilfe": "IMU-Rohpitch bei der Kamerakalibrierung (calibrate.py wall): -4.43; seit 2026-11-17 -4.23 (Nick +0,2°): Flur mit 2,04 m befahrbarer Breite (Nutzer) kam in drei Rundumblicken mit Roll-Korrektur auf 1,98 m, mit +0,25° auf 2,03-2,05 m"
       },
       {
+       "key": "yaw_scale_left",
+       "typ": "float",
+       "default": 1.0021,
+       "hilfe": "Skalenfehler des Firmware-Kurses (Gier), je Drehrichtung getrennt: Kursänderungen nach links mal yaw_scale_left, nach rechts mal yaw_scale_right. RiderPi 2026-11-18, auf der Stelle an einer Marke, Winkelmesser: 10 × 360° rechts echt 3560°, IMU 3551,3° (1,0025); 10 × links echt 3556°, IMU 3548,4° (1,0021); 4 × links 1431° / 1428,0°. Eine erste Messung (4 × links 1470° / 1453,3°) hat sich nicht wiederholt. Die aufgezeichneten Proben sind schon korrigiert."
+      },
+      {
+       "key": "yaw_scale_right",
+       "typ": "float",
+       "default": 1.0025,
+       "hilfe": ""
+      },
+      {
        "key": "use_roll",
        "typ": "bool",
        "default": true,
@@ -419,7 +499,7 @@
        "key": "track_m",
        "typ": "float",
        "default": 0.09,
-       "hilfe": "Spurweite (Abstand der Radaufstandspunkte)"
+       "hilfe": "Spurweite (Abstand der Radaufstandspunkte). Drehmessung 2026-11-18 (10 × 360° je Richtung): Radkurs rechts 0,36 % zu wenig, links 0,0 %; die Streuung (Schlupf) ist größer als eine Korrektur, deshalb unverändert."
       },
       {
        "key": "ticks_per_rev",

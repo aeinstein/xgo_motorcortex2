@@ -3271,3 +3271,75 @@ def test_render_netzlinie_auf_aktuelles_bild():
     assert np.nanmedian(vor) > 335
     # ohne Geometrie (alte Aufrufer): unverändert
     assert np.allclose(net_rows_jetzt(Snapshot(free=fs, pitch_dev=0.1)), rows)
+
+
+def test_imu_kurs_skalenfaktor():
+    """[imu] yaw_scale_left/right strecken Kursänderungen je Drehrichtung (Skalenfehler des Gyros), auch über den
+    ±180°-Sprung; der erste Wert bleibt, wie er ist."""
+    from xgonav.imu import ImuSource
+    cfg = Config.neutral()
+    assert cfg.imu.yaw_scale_left == 1.0 and cfg.imu.yaw_scale_right == 1.0
+    assert Config().imu.yaw_scale_left == pytest.approx(1.0021) and Config().imu.yaw_scale_right == pytest.approx(1.0025)
+    cfg.imu.yaw_scale_left, cfg.imu.yaw_scale_right = 1.01, 1.02
+    imu = ImuSource(cfg.imu)
+    t0 = time.monotonic()
+    grad = [30.0 + 10.0 * k for k in range(73)] + [750.0 - 10.0 * k for k in range(1, 73)]   # 720° links, 720° zurück
+    for k, deg in enumerate(grad):
+        imu.add(k + 1, t0 + 0.01 * k, 0.0, 0.0, math.radians((deg + 180.0) % 360.0 - 180.0))
+    assert math.degrees(imu.at(t0)[2]) == pytest.approx(30.0)
+    assert math.degrees(imu.at(t0 + 0.72)[2]) == pytest.approx(30.0 + 720.0 * 1.01)
+    assert math.degrees(imu.at(t0 + 1.44)[2]) == pytest.approx(30.0 + 720.0 * 1.01 - 720.0 * 1.02)
+
+
+def test_linse_entzerrt_gerade():
+    """camera.lens_maps: Ein Bild, das mit dem Linsenmodell verzeichnet wurde, kommt entzerrt wieder gerade heraus;
+    ohne Modell (Config.neutral) gibt es keine Tabellen."""
+    import cv2
+    from xgonav.camera import lens_maps
+    assert lens_maps(Config.neutral().camera) is None
+    cam = Config().camera
+    maps = lens_maps(cam)
+    assert maps is not None
+    kn, g, c = np.array(cam.lens_knots_px, float), np.array(cam.lens_g_px, float), np.array(cam.lens_center, float)
+    # ideales Bild: Geraden; verzeichnetes Bild = ideales Bild an den Stellen vor(p) abgetastet
+    ideal = np.zeros((cam.height, cam.width), np.uint8)
+    for y in (420, 450, 470):
+        cv2.line(ideal, (0, y), (cam.width - 1, y - 60), 255, 7)
+    ideal = cv2.GaussianBlur(ideal, (9, 9), 2.0)          # weiche Kanten: der Vergleich misst die Lage, nicht die Interpolation
+    gx, gy = np.meshgrid(np.arange(cam.width, dtype=np.float64), np.arange(cam.height, dtype=np.float64))
+    q = np.stack([gx, gy], -1) - c
+    r = np.hypot(q[..., 0], q[..., 1])
+    v = c + q * (1.0 + np.interp(r, kn, g) / np.maximum(r, 1e-6))[..., None]
+    roh = cv2.remap(ideal, v[..., 0].astype(np.float32), v[..., 1].astype(np.float32), cv2.INTER_LINEAR)
+    ent = cv2.remap(roh, maps[0], maps[1], cv2.INTER_LINEAR)
+    assert np.abs(roh.astype(int) - ideal).mean() > 3 * np.abs(ent.astype(int) - ideal).mean()
+    innen = (slice(20, cam.height - 20), slice(20, cam.width - 20))
+    assert np.abs(ent[innen].astype(int) - ideal[innen]).mean() < 1.0
+
+
+def test_linse_kern_gleich_cv2():
+    """native/linsefast.cpp rechnet bitgleich zu cv2.remap, auch mit Quellpixeln außerhalb des Bilds
+    (ohne Kern übersprungen). camera.lens_remap wählt den Kern nur nach derselben Prüfung."""
+    import ctypes
+    import cv2
+    from xgonav import fastlib
+    from xgonav.camera import _LENS_ABI, lens_maps, lens_remap
+    lib = fastlib.load()
+    if lib is None or not hasattr(lib, "lens_abi"):
+        pytest.skip("C++-Kern ohne linsefast")
+    assert fastlib.check_abi(lib, "lens_abi", _LENS_ABI)
+    lib.lens_remap.restype = ctypes.c_int
+    lib.lens_remap.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_void_p,
+                               ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_int]
+    cam = Config().camera
+    rng = np.random.default_rng(5)
+    img = rng.integers(0, 256, (cam.height, cam.width, 3), dtype=np.uint8)
+    gx, gy = np.meshgrid(np.arange(cam.width, dtype=np.float32), np.arange(cam.height, dtype=np.float32))
+    ueber = cv2.convertMaps(gx * 1.02 - 5.3, gy * 1.02 - 4.7, cv2.CV_16SC2)        # läuft über alle vier Ränder
+    for m1, m2 in (lens_maps(cam), ueber):
+        m1, m2 = np.ascontiguousarray(m1), np.ascontiguousarray(m2)
+        out = np.empty_like(img)
+        assert lib.lens_remap(img.ctypes.data, cam.width, cam.height, img.strides[0], 3, m1.ctypes.data, m2.ctypes.data,
+                              out.ctypes.data, cam.width, cam.height, out.strides[0]) == 0
+        assert np.array_equal(out, cv2.remap(img, m1, m2, cv2.INTER_LINEAR))
+    assert np.array_equal(lens_remap(cam)(img), cv2.remap(img, *lens_maps(cam), cv2.INTER_LINEAR))

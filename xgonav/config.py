@@ -88,6 +88,19 @@ class CameraCfg:
     # RiderPi: aus Drehungen gegen den IMU-Kurs gemessen (2026-11-07, f = 310 px @ 640, 304–313 in drei
     # Aufnahmen; Verzeichnung vernachlässigbar). Der Zollstock (88,5°) legt nur f·h fest. RPi Cam v1 hätte 62,2.
     hfov_deg: float = 91.8
+    # Linsenverzeichnung: Das Bild wird direkt nach der Kamera entzerrt (camera.lens_maps, eine Tabelle, cv2.remap),
+    # alles Weitere rechnet mit dem entzerrten Bild als Lochkamera. Modell: gemessenes Pixel -> ideales Pixel,
+    # radial um lens_center: ideal = c + q * (1 + g(r) / r), g(r) in px an den Stützstellen lens_knots_px (linear
+    # dazwischen). RiderPi 2026-11-18 aus ~67 000 geraden Kanten von 12 Fahrten (Fugen, Rahmen), geprüft an 4
+    # anderen: bis r 340 px höchstens 2 px, in den Ecken bis 18 px (Fugen am unteren Rand: Bogen 6 px -> < 1 px).
+    # Leere Listen = aus (Simulator). Nur die echte Kamera entzerrt; Rohaufnahmen sind ab dann entzerrt
+    # (meta.jsonl: cam.entzerrt).
+    lens_knots_px: list = field(default_factory=lambda: [0, 40, 80, 120, 160, 200, 240, 260, 280, 300, 320, 340, 360, 380, 400, 420, 440, 460])
+    lens_g_px: list = field(default_factory=lambda: [0.0, -0.38, -0.53, -0.24, 0.43, 1.5, 2.13, 1.92, 1.43, 0.63, 0.07, 0.46, 3.16, 9.23, 17.95, 26.69, 35.43, 44.17])
+    lens_center: list = field(default_factory=lambda: [322.5, 232.5])
+    # Entzerren im C++-Kern (native/linsefast.cpp, ein Kern, bitgleich zu cv2.remap; nur aktiv nach Selbstprüfung
+    # beim Start). False oder Kern fehlt: cv2.remap (CM4: 6,4 ms je Bild auf vier Kernen).
+    lens_native: bool = True
     # Geometrie für Entfernung per Bodenebene (KALIBRIEREN, siehe README)
     mount_offset_mm: float = 43.0  # Kamerahöhe über Boden = Körperhöhe + Offset (nur ohne cam_h_u8)
     # Kamerahöhe (Linsenmitte über Boden, mm) = a + b * Höhen-Sollwert u8, [a, b]. RiderPi 2026-11-07 im Stand
@@ -127,6 +140,13 @@ class ImuCfg:
     # IMU-Rohpitch bei der Kamerakalibrierung (calibrate.py wall): -4.43; seit 2026-11-17 -4.23 (Nick +0,2°): Flur
     # mit 2,04 m befahrbarer Breite (Nutzer) kam in drei Rundumblicken mit Roll-Korrektur auf 1,98 m, mit +0,25° auf 2,03-2,05 m
     pitch_ref_deg: float = -4.23
+    # Skalenfehler des Firmware-Kurses (Gier), je Drehrichtung getrennt: Kursänderungen nach links mal
+    # yaw_scale_left, nach rechts mal yaw_scale_right. RiderPi 2026-11-18, auf der Stelle an einer Marke, Winkelmesser:
+    # 10 × 360° rechts echt 3560°, IMU 3551,3° (1,0025); 10 × links echt 3556°, IMU 3548,4° (1,0021); 4 × links
+    # 1431° / 1428,0°. Eine erste Messung (4 × links 1470° / 1453,3°) hat sich nicht wiederholt. Die aufgezeichneten
+    # Proben sind schon korrigiert.
+    yaw_scale_left: float = 1.0021
+    yaw_scale_right: float = 1.0025
     # Roll: Die Bodengrenze des Netzes wird je Bild um (IMU-Roll - roll_ref_deg) gedreht, bevor sie in Karten und
     # Sicherheit geht (freespace.roll_columns). roll_ref_deg = IMU-Rohroll, bei dem das Bild waagerecht ist.
     # Ohne das lag dieselbe Flurwand im Rundumblick je nach Bildrand bei 0,7 oder 1,2 m statt 1,0 m (Wand
@@ -388,7 +408,9 @@ class OdomCfg:
     source: str = "auto"
     proc_dir: str = "/proc/XGORider"
     wheel_diameter_m: float = 0.060    # RiderPi, Angabe des Nutzers
-    track_m: float = 0.090             # Spurweite (Abstand der Radaufstandspunkte)
+    # Spurweite (Abstand der Radaufstandspunkte). Drehmessung 2026-11-18 (10 × 360° je Richtung): Radkurs rechts
+    # 0,36 % zu wenig, links 0,0 %; die Streuung (Schlupf) ist größer als eine Korrektur, deshalb unverändert.
+    track_m: float = 0.090
     ticks_per_rev: int = 1024          # am Rider gemessen (1 U von Hand: 1029 / 1043)
     # Faktor je Rad auf den Weg (tools/calibrate_odom.py): ungleiche Reifen/Schlupf. Für die
     # Strecke zählt der Mittelwert, für den Kurs der Unterschied (2 % = ~1,3° je 10 cm).
@@ -904,9 +926,9 @@ class RelocCfg:
 NEUTRAL = {"pet.call_m": 0.0, "pet.come_m": 0.0, "pet.drive_v": 0.08, "pet.look_w": 0.12, "pet.turn_w": 0.20, "pet.faint": False, "pet.faint_level": 1.0, "pet.seek_m": 0.0, "pet.roam_m": 0.0, "pet.roam_radius_m": 1.0,
            "robot.vx_limit": 1.5, "robot.max_v": 0.25, "robot.max_w": 0.25, "robot.reverse_gain": 1.0,
            "robot.manual_forward_gain": 1.0, "robot.level_after_standup": False, "camera.sensor_mode": "",
-           "camera.scaler_crop": [], "camera.exposure_us": 4000, "camera.analogue_gain": 0.0,
+           "camera.scaler_crop": [], "camera.lens_knots_px": [], "camera.lens_g_px": [], "camera.lens_center": [], "camera.exposure_us": 4000, "camera.analogue_gain": 0.0,
            "camera.mount_offset_mm": 45.0, "camera.cam_h_u8": [], "camera.cam_fwd_mm": 0.0,
-           "camera.cx_offset_px": 0.0, "camera.tilt_deg": 0.0, "imu.stream_hz": 0, "imu.pitch_sign": 0, "imu.time_offset_ms": None, "imu.pitch_ref_deg": 0.0, "imu.use_roll": False, "imu.roll_ref_deg": 0.0,
+           "camera.cx_offset_px": 0.0, "camera.tilt_deg": 0.0, "imu.stream_hz": 0, "imu.pitch_sign": 0, "imu.yaw_scale_left": 1.0, "imu.yaw_scale_right": 1.0, "imu.time_offset_ms": None, "imu.pitch_ref_deg": 0.0, "imu.use_roll": False, "imu.roll_ref_deg": 0.0,
            "detector.max_hz": 0.0, "detector.classes": [], "freespace.threaded": False,
            "freespace.sample_rows": 0.18, "freespace.sample_cols": 0.3, "freespace.shading_file": "",
            "freespace.shading_max_gain": 8.0, "freespace.method": "farbe", "freespace.shadow_net": "",
