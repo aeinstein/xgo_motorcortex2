@@ -148,7 +148,7 @@ details.hilfe p{margin:4px 0 0}
   font:600 10px/1 system-ui,sans-serif;color:var(--leise);cursor:help}
 #bild{width:100%;height:auto;aspect-ratio:4/3;object-fit:contain;display:block;background:#000}
 #bild.aus{opacity:.35}
-/* konfigurierte Bildmitte (Spalte W/2 + cx_offset_px, Zeile H/2), wandert mit Verschieben/Drehen des Bildes */
+/* konfigurierte Bildmitte (Spalte W/2, Zeile H/2), wandert mit Verschieben/Drehen des Bildes */
 #bild-mitte{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible}
 #bild-mitte line,#bild-mitte circle{fill:none;vector-effect:non-scaling-stroke}
 #bild-mitte .halo{stroke:#000;stroke-width:3;opacity:.6}
@@ -352,7 +352,7 @@ details.extras[open]>summary{margin-bottom:8px}
         <span class="w" id="gain-w">-</span>
         <button id="gain-auto" onclick="verstaerkung(0)">Auto</button>
       </div>
-      <span class="ist"><label title="Bild senkrecht so verschieben, dass der IMU-Nick fest steht: stimmt die IMU, steht die Szene still"><input type="checkbox" id="hz-stabil" onchange="hzStabil(this.checked)"> Bild am IMU-Nick festhalten</label><label title="Bild um den IMU-Roll drehen: stimmt der Roll, stehen senkrechte Kanten senkrecht und die cyan Linie waagerecht"><input type="checkbox" id="hz-roll" onchange="hzRoll(this.checked)"> Roll ausgleichen</label><label title="Konfigurierte Bildmitte einblenden: gestrichelt die Spalte der Fahrtrichtung (W/2 + [camera] cx_offset_px), Kreis bei Zeile H/2"><input type="checkbox" id="hz-mitte" onchange="hzMitte(this.checked)"> Bildmitte</label><span class="leise" id="belicht-ist">-</span><span class="info" tabindex="0" title="Gilt bis zum Neustart von xgonav. Kürzere Belichtung = weniger Bewegungsunschärfe, aber dunkler; mehr Verstärkung = heller, aber mehr Rauschen (Automatik nur bis 8; über ~8× wird der Rauschabstand nicht besser, nur das Bild heller). Dauerhaft über [camera] exposure_us / analogue_gain in config.toml.">i</span></span>
+      <span class="ist"><label title="Bild senkrecht so verschieben, dass der IMU-Nick fest steht: stimmt die IMU, steht die Szene still"><input type="checkbox" id="hz-stabil" onchange="hzStabil(this.checked)"> Bild am IMU-Nick festhalten</label><label title="Bild um den IMU-Roll drehen: stimmt der Roll, stehen senkrechte Kanten senkrecht und die cyan Linie waagerecht"><input type="checkbox" id="hz-roll" onchange="hzRoll(this.checked)"> Roll ausgleichen</label><label title="Konfigurierte Bildmitte einblenden: gestrichelt die Spalte der Fahrtrichtung (W/2), Kreis bei Zeile H/2"><input type="checkbox" id="hz-mitte" onchange="hzMitte(this.checked)"> Bildmitte</label><span class="leise" id="belicht-ist">-</span><span class="info" tabindex="0" title="Gilt bis zum Neustart von xgonav. Kürzere Belichtung = weniger Bewegungsunschärfe, aber dunkler; mehr Verstärkung = heller, aber mehr Rauschen (Automatik nur bis 8; über ~8× wird der Rauschabstand nicht besser, nur das Bild heller). Dauerhaft über [camera] exposure_us / analogue_gain in config.toml.">i</span></span>
       <div class="imu-bild leise" id="imu-bild" title="IMU-Wert dieses Bildes (Bildzeit + [imu] time_offset_ms), mit dem xgonav Boden, Karten und die cyan Linie rechnet. Nickrate: aus dem Bild (Ego-Motion) gegen die IMU; weichen sie dauerhaft ab, stimmen Zeitversatz oder Brennweite nicht">-</div>
     </div>
   </div>
@@ -637,8 +637,8 @@ const EN = {
   'Helligkeit': 'Brightness', 'Emotionen (Display)': 'Emotions (display)', 'keine gefunden in': 'none found in',
   'Bild senkrecht so verschieben, dass der IMU-Nick fest steht: stimmt die IMU, steht die Szene still': 'Shift the image vertically so the IMU pitch stays fixed: if the IMU is right, the scene stands still',
   'Bild am IMU-Nick festhalten': 'Pin image to IMU pitch', 'Roll ausgleichen': 'Level roll', 'Bildmitte': 'Image centre',
-  'Konfigurierte Bildmitte einblenden: gestrichelt die Spalte der Fahrtrichtung (W/2 + [camera] cx_offset_px), Kreis bei Zeile H/2':
-    'Show the configured image centre: dashed the column of the driving direction (W/2 + [camera] cx_offset_px), circle at row H/2',
+  'Konfigurierte Bildmitte einblenden: gestrichelt die Spalte der Fahrtrichtung (W/2), Kreis bei Zeile H/2':
+    'Show the configured image centre: dashed the column of the driving direction (W/2), circle at row H/2',
   'IMU zum Bild': 'IMU at frame', 'IMU fehlt – Nick nur aus dem Bild': 'IMU missing – pitch from image only',
   'ohne IMU': 'without IMU', 'keine IMU': 'no IMU', 'Kurs': 'Heading', 'Alter': 'Age', 'Nickrate Bild/IMU': 'Pitch rate image/IMU',
   'IMU-Wert dieses Bildes (Bildzeit + [imu] time_offset_ms), mit dem xgonav Boden, Karten und die cyan Linie rechnet. Nickrate: aus dem Bild (Ego-Motion) gegen die IMU; weichen sie dauerhaft ab, stimmen Zeitversatz oder Brennweite nicht': 'IMU value of this frame (frame time + [imu] time_offset_ms) that xgonav uses for floor, maps and the cyan line. Pitch rate: from the image (ego-motion) vs. IMU; a lasting difference means time offset or focal length are off',
@@ -875,7 +875,7 @@ try { bildMitteAn = localStorage.getItem('xgonav.mitte') !== '0'; } catch (e) {}
 $('hz-stabil').checked = bildStabil;
 $('hz-roll').checked = bildRollAn;
 $('hz-mitte').checked = bildMitteAn;
-// Konfigurierte Bildmitte (Spalte cx aus dem Bild-Kopf = W/2 + cx_offset_px, Zeile H/2 wie geometry.py) als SVG über
+// Konfigurierte Bildmitte (Spalte cx aus dem Bild-Kopf = W/2, Zeile H/2 wie geometry.py) als SVG über
 // dem Bild; bekommt dieselbe CSS-Verschiebung/Drehung wie das <img>, steht also immer auf demselben Bildpunkt.
 function bildMitte(W, H, transform, origin) {
   const s = $('bild-mitte');

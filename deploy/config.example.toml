@@ -34,7 +34,6 @@ mount_offset_mm = 43.0   # nur ohne cam_h_u8: Kamerahöhe = Körperhöhe + Offse
 cam_h_u8 = [109.4, 0.1126]   # [K] Kamerahöhe = a + b·u8; gemessen u8 106/150/200 -> 122/125/132,5 mm; Gitter am Boden
                              # 2026-11-10 bestätigt (u8 128: 124-126, u8 205: 131-133 mm); ohne Zusatzfaktor
 cam_fwd_mm = 36.0        # [K] Linse vor der Radachse (CAD 36,9; Bodenprobe 34/41); Kartenursprung = Radachse
-cx_offset_px = 13.0      # [K] Fahrtrichtung bei Spalte 333: Fluchtpunkt Geradeausfahrt, 8 Fahrten 45 m (2026-11-08)
 tilt_deg = 5.18          # [K] Zollstock 2026-11-04, gilt zusammen mit imu.pitch_ref_deg
 
 [imu]

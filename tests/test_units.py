@@ -482,7 +482,7 @@ def test_imu_alter_im_liegen():
     from xgonav.imu import ImuSource, ImuSync, imu_frame, max_age
     cfg = Config.neutral().imu
     cfg.pitch_sign, cfg.time_offset_ms, cfg.idle_hz, cfg.max_age_s = -1, 0.0, 5, 0.3
-    cfg.use_roll, cfg.roll_ref_deg = True, 0.0
+    cfg.use_roll = True
     imu = ImuSource(cfg)
     for k in range(10):                        # 5 Hz bis t = 1,8 s
         imu.add(k, k * 0.2, math.radians(2.0), math.radians(-20.0))
@@ -1404,35 +1404,6 @@ def test_sim_camera_ahead_of_axle():
         w._integrate(0.0, 0.05)
         imgs.append(w._render(0.0, 0.05)[0])
     assert np.array_equal(imgs[0], imgs[1])
-
-
-def test_cx_offset_bearing_maps_and_sim():
-    """[camera] cx_offset_px: Spalte der Fahrtrichtung liegt rechts der Bildmitte (RiderPi 13 px, Fluchtpunkt)."""
-    import dataclasses
-    from xgonav.gridmap import GridMap
-    from xgonav.localmap import LocalMap
-    from xgonav.sim import Person
-    g0 = CamGeometry(640, 480, 91.8, 1.39, 43.0, 85.0)
-    g13 = CamGeometry(640, 480, 91.8, 1.39, 43.0, 85.0, cx_offset_px=13.0)
-    assert g13.bearing(333.0) == pytest.approx(0.0) and g13.bearing(320.0) > 0      # Bildmitte liegt links
-    wall = _wall_fs(g0, 0.6)
-    a, b = LocalMap(g0, 160, 120), LocalMap(g13, 160, 120)
-    a.add_freespace(wall, 0.0, 0.0); b.add_freespace(wall, 0.0, 0.0)
-    assert np.allclose(b.pts[:, 0], a.pts[:, 0])
-    assert np.allclose(b.pts[:, 1] - a.pts[:, 1], b.pts[:, 0] * 13.0 / g13.f)        # Peilung um 13 px gedreht
-    cfg = Config.neutral()
-    m0, m13 = GridMap(cfg.grid, g0, 160, 120), GridMap(cfg.grid, g13, 160, 120)
-    for _ in range(3):
-        m0.add_freespace(wall, 0.0); m13.add_freespace(wall, 0.0)
-    assert m13.occupied_cells()[:, 1].mean() > m0.occupied_cells()[:, 1].mean() + 0.01
-    # Simulator: Person genau voraus erscheint in Spalte 333
-    cam = dataclasses.replace(cfg.camera, cx_offset_px=13.0)
-    r = SimRobot(cfg.robot)
-    r._height_mm = 85
-    w = SimWorld(cam, r, Person([(3.0, 1.5), (3.0, 1.5)], speed=0.0), start=(1.0, 1.5, 0.0), shake=0.0)
-    w._integrate(0.0, 0.05)
-    _, box, _ = w._render(0.0, 0.05)
-    assert (box[0] + box[2]) / 2 == pytest.approx(333.0, abs=2.5)
 
 
 def test_imu_yaw_unwrap_and_localmap_yaw_source():
@@ -3192,10 +3163,11 @@ def test_imu_kurs_skalenfaktor():
 def test_linse_entzerrt_gerade():
     """camera.lens_maps: Ein Bild, das mit dem Linsenmodell verzeichnet wurde, kommt entzerrt wieder gerade heraus;
     ohne Modell (Config.neutral) gibt es keine Tabellen."""
+    import dataclasses
     import cv2
     from xgonav.camera import lens_maps
     assert lens_maps(Config.neutral().camera) is None
-    cam = Config().camera
+    cam = dataclasses.replace(Config().camera, lens_roll_deg=0.0, lens_yaw_deg=0.0)     # nur die Radialverzeichnung
     maps = lens_maps(cam)
     assert maps is not None
     kn, g, c = np.array(cam.lens_knots_px, float), np.array(cam.lens_g_px, float), np.array(cam.lens_center, float)
@@ -3213,6 +3185,39 @@ def test_linse_entzerrt_gerade():
     assert np.abs(roh.astype(int) - ideal).mean() > 3 * np.abs(ent.astype(int) - ideal).mean()
     innen = (slice(20, cam.height - 20), slice(20, cam.width - 20))
     assert np.abs(ent[innen].astype(int) - ideal[innen]).mean() < 1.0
+
+
+def test_linse_roll_gier():
+    """Einbau-Roll und -Gier in der Entzerrtabelle: Der Roll wirkt genau wie früher [imu] roll_ref_deg in
+    freespace.roll_columns, die Fahrtrichtung (früher cx_offset_px 13, Spalte 333) landet bei W/2; keine Quelle
+    außerhalb des Bilds (Rand aufgefüllt); vorwärts und rückwärts passen zusammen; die Kennung hängt am Block."""
+    import dataclasses
+    import cv2
+    from xgonav import camera as C
+    from xgonav.freespace import roll_columns
+    cam = Config().camera
+    assert C.lens_id(Config.neutral().camera) is None
+    # Roll: Grenzzeilen im Bild ohne Drehung bei IMU-Roll 0, die roll_columns (roll_deg = 0 - roll_ref) waagerecht macht
+    nur_roll = dataclasses.replace(cam, lens_yaw_deg=0.0)
+    H, W, hor = cam.height, cam.width, 200.0
+    u = (np.arange(80) + 0.5) * W / 80
+    rows = 300.0 + (u - W / 2) * math.tan(math.radians(cam.lens_roll_deg))
+    alt = H - roll_columns((H - rows) / (H - hor), hor, H, W, W / 2, -cam.lens_roll_deg) * (H - hor)
+    assert np.ptp(alt) < 0.01
+    neu = C._homog(C.lens_rot(nur_roll), np.stack([u, rows], 1))[:, 1]
+    assert np.ptp(neu) < 0.05
+    # Gier: Fluchtpunkt der Geradeausfahrt (Rohspalte 333, Zeile 240) -> Bildmitte
+    x, y = C.lens_forward(cam, np.array([333.0, 240.0]))
+    assert abs(x - W / 2) < 0.3 and abs(y - H / 2) < 0.3
+    # Tabelle: alle Quellen im Bild, und sie stimmt mit lens_forward überein
+    m1, m2 = C.lens_maps(cam)
+    fx, fy = cv2.convertMaps(m1, m2, cv2.CV_32FC1)
+    assert fx.min() >= 0 and fx.max() <= W - 1 and fy.min() >= 0 and fy.max() <= H - 1
+    gx, gy = np.meshgrid(np.arange(40.0, W - 60, 37), np.arange(40.0, H - 40, 31))
+    v = np.stack([gx, gy], -1)
+    zurueck = C.lens_forward(cam, np.stack([fx[gy.astype(int), gx.astype(int)], fy[gy.astype(int), gx.astype(int)]], -1))
+    assert np.abs(zurueck - v).max() < 0.05
+    assert C.lens_id(cam) != C.lens_id(nur_roll) != C.lens_id(dataclasses.replace(cam, lens_roll_deg=0.0))
 
 
 def test_linse_kern_gleich_cv2():

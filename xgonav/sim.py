@@ -321,7 +321,7 @@ class SimWorld(FrameSource):
         f = (W / 2) / math.tan(math.radians(self.cfg.hfov_deg) / 2)
         th = self.th + self.yaw_jit
         cols = np.arange(W) + 0.5
-        c0 = W / 2 + getattr(self.cfg, "cx_offset_px", 0.0) / self.rs   # Spalte der Fahrtrichtung
+        c0 = W / 2                                    # Spalte der Fahrtrichtung
         self._c0 = c0
         lat = (c0 - cols) / f                         # tan(Winkel) links +
         fwd = np.array([math.cos(th), math.sin(th)])

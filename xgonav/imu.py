@@ -285,7 +285,7 @@ class ImuFrame:
     ok: bool                    # Probe jung genug und Vorzeichen/Versatz bekannt
     frisch: bool                # Probe jung genug (max_age); Roll, Kurs und Rohwerte gelten auch ohne Sync
     pitch: float | None         # Nick gegen die Referenzlage (rad, + = Kamera schaut höher), wie pitch_dev
-    roll_deg: float             # Roll gegen waagerecht (Grad, + = rechts tief) = Roll - roll_ref_deg; 0 aus/ungültig
+    roll_deg: float             # Roll gegen waagerecht (Grad, + = rechts tief); 0 aus/ungültig
     yaw: float | None           # Kurs (rad, links +, entfaltet)
     pitch_raw_deg: float | None  # Rohwerte der IMU (Grad)
     roll_raw_deg: float | None
@@ -304,7 +304,7 @@ def imu_frame(sync: "ImuSync", imu: ImuSource, t_frame: float) -> ImuFrame:
     frisch = alter <= max_age(sync.cfg, imu)
     ok = frisch and sync.reliable
     pitch = sync.sign * (p - math.radians(sync.cfg.pitch_ref_deg)) if ok else None
-    roll = math.degrees(r) - sync.cfg.roll_ref_deg if frisch and sync.cfg.use_roll else 0.0
+    roll = math.degrees(r) if frisch and sync.cfg.use_roll else 0.0
     return ImuFrame(t, ok, frisch, pitch, roll, y if frisch else None, math.degrees(p), math.degrees(r),
                     alter * 1000.0)
 

@@ -379,8 +379,8 @@ def lade(d: str, cfg, bahn_quelle: str = "pose", roll_ref: float = 0.0, imu_vers
         img = cv2.imread(os.path.join(d, m["file"]))
         if img is None:
             continue
-        # Roll wie live (imu.use_roll): Grenze um IMU-Roll - roll_ref_deg geradegedreht
-        rd = float(np.interp(t[i], imu[0], imu[1])) - cfg.imu.roll_ref_deg if cfg.imu.use_roll and imu is not None else 0.0
+        # Roll wie live (imu.use_roll): Grenze um den IMU-Roll geradegedreht
+        rd = float(np.interp(t[i], imu[0], imu[1])) if cfg.imu.use_roll and imu is not None else 0.0
         fs = fse.from_net(net.run(img), m["pitch_dev"], rd)
         tracks = m.get("tracks", [])
         views[i] = mask_movable(fs, [(tr.get("cls"), tr["box"]) for tr in tracks], geo.W, geo.H)

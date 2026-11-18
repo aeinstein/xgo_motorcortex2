@@ -7,6 +7,7 @@ import time
 from dataclasses import dataclass
 
 import ctypes
+import math
 
 import cv2
 import numpy as np
@@ -154,26 +155,76 @@ class FrameSource:
     def _grab(self) -> bool: raise NotImplementedError
 
 
-def lens_maps(cfg: CameraCfg):
-    """Tabellen für cv2.remap (Festkomma), die das Kamerabild entzerren, oder None ohne Linsenmodell.
-    Je Zielpixel (ideal) das Quellpixel im Kamerabild: Umkehrung von ideal = c + q * (1 + g(r) / r) per
-    Festpunktiteration. Einmal beim Start gerechnet."""
-    if not cfg.lens_knots_px or len(cfg.lens_knots_px) != len(cfg.lens_g_px) or len(cfg.lens_center) != 2:
-        return None
+def has_lens(cfg: CameraCfg) -> bool:
+    return bool(cfg.lens_knots_px) and len(cfg.lens_knots_px) == len(cfg.lens_g_px) and len(cfg.lens_center) == 2
+
+
+def lens_radial(cfg: CameraCfg, p: np.ndarray) -> np.ndarray:
+    """Radialverzeichnung: gemessenes Pixel (…, 2) -> ideales Pixel, ideal = c + q * (1 + g(r) / r)."""
     kn, g = np.asarray(cfg.lens_knots_px, float), np.asarray(cfg.lens_g_px, float)
     c = np.asarray(cfg.lens_center, float)
+    q = np.asarray(p, float) - c
+    r = np.hypot(q[..., 0], q[..., 1])
+    return c + q * (1.0 + np.interp(r, kn, g) / np.maximum(r, 1e-6))[..., None]
 
-    def vor(p):
-        q = p - c
-        r = np.hypot(q[..., 0], q[..., 1])
-        return c + q * (1.0 + np.interp(r, kn, g) / np.maximum(r, 1e-6))[..., None]
 
-    gx, gy = np.meshgrid(np.arange(cfg.width, dtype=np.float64), np.arange(cfg.height, dtype=np.float64))
-    u = np.stack([gx, gy], -1)
+def lens_rot(cfg: CameraCfg) -> np.ndarray:
+    """Homographie ideales Pixel -> Zielpixel (virtuelle Kamera): Einbau-Roll und -Gier herausgedreht, um die
+    Bildmitte W/2, H/2 mit f aus hfov_deg. Ohne Roll/Gier die Einheitsmatrix."""
+    f = (cfg.width / 2) / math.tan(math.radians(cfg.hfov_deg) / 2)
+    K = np.array([[f, 0, cfg.width / 2], [0, f, cfg.height / 2], [0, 0, 1.0]])
+    # Vorzeichen: lens_roll_deg wirkt wie früher [imu] roll_ref_deg in freespace.roll_columns (test_linse_roll_gier)
+    a, b = math.radians(cfg.lens_roll_deg), math.radians(cfg.lens_yaw_deg)
+    # Roll: Bild um die Mitte gedreht (Kamera um die Blickachse); Gier: um die senkrechte Achse
+    Rr = np.array([[math.cos(a), -math.sin(a), 0], [math.sin(a), math.cos(a), 0], [0, 0, 1.0]])
+    Ry = np.array([[math.cos(b), 0, math.sin(b)], [0, 1, 0], [-math.sin(b), 0, math.cos(b)]])
+    # ideal = K Ry Rr K^-1 ziel  ->  ziel = (K Ry Rr K^-1)^-1 ideal
+    return np.linalg.inv(K @ Ry @ Rr @ np.linalg.inv(K))
+
+
+def _homog(H: np.ndarray, p: np.ndarray) -> np.ndarray:
+    q = np.asarray(p, float) @ H[:, :2].T + H[:, 2]
+    return q[..., :2] / q[..., 2:3]
+
+
+def lens_forward(cfg: CameraCfg, p: np.ndarray) -> np.ndarray:
+    """Gemessenes Pixel (…, 2) -> Pixel im entzerrten Bild (dieselbe Abbildung wie lens_maps, vorwärts)."""
+    return _homog(lens_rot(cfg), lens_radial(cfg, p))
+
+
+def lens_source(cfg: CameraCfg, v: np.ndarray, iters: int = 10) -> np.ndarray:
+    """Pixel im entzerrten Bild (…, 2) -> gemessenes Pixel: Drehung zurück, dann Radialverzeichnung per
+    Festpunktiteration umgekehrt. Nicht begrenzt."""
+    u = _homog(np.linalg.inv(lens_rot(cfg)), v)
     p = u.copy()
-    for _ in range(10):
-        p = p + (u - vor(p))
-    return cv2.convertMaps(p[..., 0].astype(np.float32), p[..., 1].astype(np.float32), cv2.CV_16SC2)
+    for _ in range(iters):
+        p = p + (u - lens_radial(cfg, p))
+    return p
+
+
+def lens_id(cfg: CameraCfg) -> str | None:
+    """Kurze Kennung des Linsenblocks (alle Werte, die die Tabelle bestimmen); steht je Bild als cam.entzerrt in den
+    Aufnahmen. None ohne Linsenmodell. Ältere Aufnahmen tragen true (nur Radialverzeichnung, ohne Roll/Gier)."""
+    if not has_lens(cfg):
+        return None
+    import hashlib
+    s = repr((list(map(float, cfg.lens_knots_px)), list(map(float, cfg.lens_g_px)), list(map(float, cfg.lens_center)),
+              float(cfg.lens_roll_deg), float(cfg.lens_yaw_deg), int(cfg.width), int(cfg.height), float(cfg.hfov_deg)))
+    return "L" + hashlib.md5(s.encode()).hexdigest()[:8]
+
+
+def lens_maps(cfg: CameraCfg):
+    """Tabellen für cv2.remap (Festkomma), die das Kamerabild entzerren, oder None ohne Linsenmodell.
+    Je Zielpixel das Quellpixel im Kamerabild (lens_source): Einbau-Roll und -Gier zurückgedreht, dann die
+    Radialverzeichnung umgekehrt. Quellen außerhalb des Bilds werden auf den Rand begrenzt (Rand aufgefüllt, keine
+    schwarzen Pixel). Einmal beim Start gerechnet."""
+    if not has_lens(cfg):
+        return None
+    gx, gy = np.meshgrid(np.arange(cfg.width, dtype=np.float64), np.arange(cfg.height, dtype=np.float64))
+    p = lens_source(cfg, np.stack([gx, gy], -1))
+    px = np.clip(p[..., 0], 0.0, cfg.width - 1.0).astype(np.float32)
+    py = np.clip(p[..., 1], 0.0, cfg.height - 1.0).astype(np.float32)
+    return cv2.convertMaps(px, py, cv2.CV_16SC2)
 
 
 _LENS_ABI = 1
@@ -227,6 +278,7 @@ class PiCameraSource(FrameSource):
 
         self.cam = Picamera2()
         self._lens = lens_remap(self.cfg)
+        self._lens_id = lens_id(self.cfg) if self._lens is not None else None
         frame_us = int(1e6 / self.cfg.fps * self.cfg.frame_clock_corr)
         controls = {"FrameDurationLimits": (frame_us, frame_us)}
         if self.cfg.scaler_crop:
@@ -275,7 +327,7 @@ class PiCameraSource(FrameSource):
                       {"awb": [round(float(v), 3) for v in cg] if cg else None,
                        "gain": round(float(md.get("AnalogueGain", 0.0)), 2),
                        "exp_us": md.get("ExposureTime"), "frame_us": md.get("FrameDuration"),
-                       "crop": md.get("ScalerCrop"), "entzerrt": self._lens is not None})
+                       "crop": md.get("ScalerCrop"), "entzerrt": self._lens_id or False})
         return True
 
     def _suspend(self) -> None:

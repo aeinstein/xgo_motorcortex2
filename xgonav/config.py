@@ -99,6 +99,15 @@ class CameraCfg:
     lens_knots_px: list = field(default_factory=lambda: [0, 40, 80, 120, 160, 200, 240, 260, 280, 300, 320, 340, 360, 380, 400, 420, 440, 460])
     lens_g_px: list = field(default_factory=lambda: [0.0, -0.38, -0.53, -0.24, 0.43, 1.5, 2.13, 1.92, 1.43, 0.63, 0.07, 0.46, 3.16, 9.23, 17.95, 26.69, 35.43, 44.17])
     lens_center: list = field(default_factory=lambda: [322.5, 232.5])
+    # Einbaulage der Kamera, in derselben Tabelle herausgedreht (um die Bildmitte W/2, H/2; Nick bleibt tilt_deg,
+    # sonst fehlten unten Zeilen Nahboden). Danach ist das Bild waagerecht, wenn die IMU Roll 0 meldet, und die
+    # Fahrtrichtung liegt in Spalte W/2. Rand ohne Bild wird mit dem Randpixel aufgefüllt (rechts ~13 Spalten).
+    # lens_roll_deg: IMU-Rohroll, bei dem das Kamerabild waagerecht ist (RiderPi 1,25: drei Rundumblicke im Flur
+    # 2026-11-17, früher [imu] roll_ref_deg).
+    lens_roll_deg: float = 1.25
+    # Gier des Einbaus: Fahrtrichtung rechts der Bildmitte (Grad), in der Entzerrtabelle herausgedreht. RiderPi
+    # atan(13 / 309,6) = 2,40: Fluchtpunkt bei Geradeausfahrt Spalte 333, 8 Fahrten 2026-11-08 (früher cx_offset_px).
+    lens_yaw_deg: float = 2.40
     # Entzerren im C++-Kern (native/linsefast.cpp, ein Kern, bitgleich zu cv2.remap; nur aktiv nach Selbstprüfung
     # beim Start). False oder Kern fehlt: cv2.remap (CM4: 6,4 ms je Bild auf vier Kernen).
     lens_native: bool = True
@@ -114,9 +123,6 @@ class CameraCfg:
     # Rider, dort zählen Räder und Sicherheitsradius); Bodenpunkte werden um diesen Versatz nach vorn eingetragen.
     # RiderPi: CAD 36,9, Bodenprobe 34/41 -> 36. 0 = Kamera auf der Achse (Simulator rendert dann wie bisher).
     cam_fwd_mm: float = 36.0
-    # Spalte der Fahrtrichtung minus Bildmitte (px bei width): gedrehter Einbau oder verschobene optische Mitte,
-    # für Peilungen gleich. RiderPi: Fluchtpunkt bei Geradeausfahrt (8 Fahrten, 45 m, 2026-11-08) Spalte 333 -> 13.
-    cx_offset_px: float = 13.0
     tilt_deg: float = 5.18        # >0 = Kamera schaut nach oben
     loop_file: bool = True         # Videodatei endlos abspielen (Replay)
     realtime_file: bool = True     # Videodatei in Echtzeit statt so schnell wie möglich
@@ -148,13 +154,12 @@ class ImuCfg:
     # Proben sind schon korrigiert.
     yaw_scale_left: float = 1.0021
     yaw_scale_right: float = 1.0025
-    # Roll: Die Bodengrenze des Netzes wird je Bild um (IMU-Roll - roll_ref_deg) gedreht, bevor sie in Karten und
-    # Sicherheit geht (freespace.roll_columns). roll_ref_deg = IMU-Rohroll, bei dem das Bild waagerecht ist.
-    # Ohne das lag dieselbe Flurwand im Rundumblick je nach Bildrand bei 0,7 oder 1,2 m statt 1,0 m (Wand
+    # Roll: Die Bodengrenze des Netzes wird je Bild um den IMU-Roll gedreht, bevor sie in Karten und Sicherheit
+    # geht (freespace.roll_columns); der Einbau-Roll der Kamera ist schon aus dem Bild gedreht ([camera]
+    # lens_roll_deg). Ohne das lag dieselbe Flurwand im Rundumblick je nach Bildrand bei 0,7 oder 1,2 m statt 1,0 m (Wand
     # 33-48 cm dick, mit Korrektur 10-14 cm; drei Rundumblicke 2026-11-17, Fahrten 144500, 151254, 153930).
     # use_roll False = aus (Simulator).
     use_roll: bool = True
-    roll_ref_deg: float = 1.25
     sigma_deg: float = 0.3         # Restunsicherheit der Nicklage mit IMU
     min_corr: float = 0.6
     sync_range_ms: float = 100.0
@@ -870,9 +875,9 @@ UMBENANNT = {"freespace.shadow_net": "freespace.net"}
 NEUTRAL = {"pet.call_m": 0.0, "pet.come_m": 0.0, "pet.drive_v": 0.08, "pet.look_w": 0.12, "pet.turn_w": 0.20, "pet.faint": False, "pet.faint_level": 1.0, "pet.seek_m": 0.0, "pet.roam_m": 0.0, "pet.roam_radius_m": 1.0,
            "robot.vx_limit": 1.5, "robot.max_v": 0.25, "robot.max_w": 0.25, "robot.reverse_gain": 1.0,
            "robot.manual_forward_gain": 1.0, "robot.level_after_standup": False, "camera.sensor_mode": "",
-           "camera.scaler_crop": [], "camera.lens_knots_px": [], "camera.lens_g_px": [], "camera.lens_center": [], "camera.exposure_us": 4000, "camera.analogue_gain": 0.0,
+           "camera.scaler_crop": [], "camera.lens_knots_px": [], "camera.lens_g_px": [], "camera.lens_center": [], "camera.lens_roll_deg": 0.0, "camera.lens_yaw_deg": 0.0, "camera.exposure_us": 4000, "camera.analogue_gain": 0.0,
            "camera.mount_offset_mm": 45.0, "camera.cam_h_u8": [], "camera.cam_fwd_mm": 0.0,
-           "camera.cx_offset_px": 0.0, "camera.tilt_deg": 0.0, "imu.stream_hz": 0, "imu.pitch_sign": 0, "imu.yaw_scale_left": 1.0, "imu.yaw_scale_right": 1.0, "imu.time_offset_ms": None, "imu.pitch_ref_deg": 0.0, "imu.use_roll": False, "imu.roll_ref_deg": 0.0,
+           "camera.tilt_deg": 0.0, "imu.stream_hz": 0, "imu.pitch_sign": 0, "imu.yaw_scale_left": 1.0, "imu.yaw_scale_right": 1.0, "imu.time_offset_ms": None, "imu.pitch_ref_deg": 0.0, "imu.use_roll": False,
            "detector.max_hz": 0.0, "detector.classes": [], "freespace.threaded": False,
            "freespace.net": "", "freespace.net_smooth_n": 0, "map.confirm": 1, "map.yaw_source": "odom",
            "behavior.follow_dist_m": 1.2, "behavior.dist_deadband": 0.15, "behavior.search_w": 0.12,

@@ -299,6 +299,18 @@
        "hilfe": ""
       },
       {
+       "key": "lens_roll_deg",
+       "typ": "float",
+       "default": 1.25,
+       "hilfe": "Einbaulage der Kamera, in derselben Tabelle herausgedreht (um die Bildmitte W/2, H/2; Nick bleibt tilt_deg, sonst fehlten unten Zeilen Nahboden). Danach ist das Bild waagerecht, wenn die IMU Roll 0 meldet, und die Fahrtrichtung liegt in Spalte W/2. Rand ohne Bild wird mit dem Randpixel aufgefüllt (rechts ~13 Spalten). lens_roll_deg: IMU-Rohroll, bei dem das Kamerabild waagerecht ist (RiderPi 1,25: drei Rundumblicke im Flur 2026-11-17, früher [imu] roll_ref_deg)."
+      },
+      {
+       "key": "lens_yaw_deg",
+       "typ": "float",
+       "default": 2.4,
+       "hilfe": "Gier des Einbaus: Fahrtrichtung rechts der Bildmitte (Grad), in der Entzerrtabelle herausgedreht. RiderPi atan(13 / 309,6) = 2,40: Fluchtpunkt bei Geradeausfahrt Spalte 333, 8 Fahrten 2026-11-08 (früher cx_offset_px)."
+      },
+      {
        "key": "lens_native",
        "typ": "bool",
        "default": true,
@@ -325,12 +337,6 @@
        "typ": "float",
        "default": 36.0,
        "hilfe": "Linsenmitte vor der Radachse (mm). Ursprung von Merkkarte und Raumkarte ist die Radachse (dort dreht der Rider, dort zählen Räder und Sicherheitsradius); Bodenpunkte werden um diesen Versatz nach vorn eingetragen. RiderPi: CAD 36,9, Bodenprobe 34/41 -> 36. 0 = Kamera auf der Achse (Simulator rendert dann wie bisher)."
-      },
-      {
-       "key": "cx_offset_px",
-       "typ": "float",
-       "default": 13.0,
-       "hilfe": "Spalte der Fahrtrichtung minus Bildmitte (px bei width): gedrehter Einbau oder verschobene optische Mitte, für Peilungen gleich. RiderPi: Fluchtpunkt bei Geradeausfahrt (8 Fahrten, 45 m, 2026-11-08) Spalte 333 -> 13."
       },
       {
        "key": "tilt_deg",
@@ -421,13 +427,7 @@
        "key": "use_roll",
        "typ": "bool",
        "default": true,
-       "hilfe": "Roll: Die Bodengrenze des Netzes wird je Bild um (IMU-Roll - roll_ref_deg) gedreht, bevor sie in Karten und Sicherheit geht (freespace.roll_columns). roll_ref_deg = IMU-Rohroll, bei dem das Bild waagerecht ist. Ohne das lag dieselbe Flurwand im Rundumblick je nach Bildrand bei 0,7 oder 1,2 m statt 1,0 m (Wand 33-48 cm dick, mit Korrektur 10-14 cm; drei Rundumblicke 2026-11-17, Fahrten 144500, 151254, 153930). use_roll False = aus (Simulator)."
-      },
-      {
-       "key": "roll_ref_deg",
-       "typ": "float",
-       "default": 1.25,
-       "hilfe": ""
+       "hilfe": "Roll: Die Bodengrenze des Netzes wird je Bild um den IMU-Roll gedreht, bevor sie in Karten und Sicherheit geht (freespace.roll_columns); der Einbau-Roll der Kamera ist schon aus dem Bild gedreht ([camera] lens_roll_deg). Ohne das lag dieselbe Flurwand im Rundumblick je nach Bildrand bei 0,7 oder 1,2 m statt 1,0 m (Wand 33-48 cm dick, mit Korrektur 10-14 cm; drei Rundumblicke 2026-11-17, Fahrten 144500, 151254, 153930). use_roll False = aus (Simulator)."
       },
       {
        "key": "sigma_deg",
