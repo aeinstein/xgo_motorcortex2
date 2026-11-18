@@ -38,9 +38,12 @@ Die Geschichte erzählt, das Tagebuch protokolliert; beide nicht vermischen.
    abstimmen, nicht eigenmächtig ändern.
 6. **Endkontrolle:** Rechtschreibung der neuen Abschnitte, jede Zahl gegen die Quelle, HTML gültig (nur
    `<h2>`, `<p>`, `<ul><li>`, `<strong>`, `<code>`, `<em>`; Zitate mit „…“ statt `<q>`). Kein neues CSS.
-7. Dem Nutzer die neuen Kapitel kurz nennen. **Commit nur auf Zuruf** (auf dem aktuellen Branch, Präfix
-   „Geschichte: …“, keine Session-Zeile). **Einspielen auf den Rider nur auf Zuruf** (`/var/www/…` bzw. per
-   `deploy/install-all.sh`; nach scp vom Windows-Klon Zeilenenden prüfen).
+7. **Immer sofort auf den Rider einspielen** (Nutzerwunsch 2026-11-18, ohne Rückfrage): Rider-Adresse
+   10.10.0.110 oder 192.168.53.110 probieren, alte Datei nach `/root/geschichte.html.bak-<Datum-Zeit>` sichern,
+   per scp nach `/opt/xgonav/web/geschichte.html` (nginx-Alias `/xgonav/`), danach
+   `chown aeinstein:aeinstein`, `file` (LF, UTF-8) und md5 gegen lokal prüfen. Kein Neustart nötig.
+   Dem Nutzer die neuen Kapitel kurz nennen. **Commit nur auf Zuruf** (auf dem aktuellen Branch, nur die
+   eigenen Dateien, Präfix „Geschichte: …“, keine Session-Zeile).
 
 ## Stil (aus dem bestehenden Text)
 
