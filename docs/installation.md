@@ -45,6 +45,7 @@ sudo rm /etc/nginx/sites-enabled/default
 sudo usermod -aG video www-data
 sudo install -m 0440 deploy/sudoers-xgonav-poweroff /etc/sudoers.d/xgonav-poweroff && sudo visudo -c
 sudo install -m 0755 deploy/xgo-ruhe /usr/local/sbin/xgo-ruhe
+sudo install -m 0644 deploy/nm-wifi-powersave.conf /etc/NetworkManager/conf.d/xgonav-wifi-powersave.conf && sudo systemctl reload NetworkManager
 sudo install -m 0440 deploy/sudoers-xgonav-ruhe /etc/sudoers.d/xgonav-ruhe && sudo visudo -c
 sudo install -m 0755 deploy/xgo-wlan /usr/local/sbin/xgo-wlan
 sudo install -m 0440 deploy/sudoers-xgonav-wlan /etc/sudoers.d/xgonav-wlan && sudo visudo -c
@@ -96,7 +97,7 @@ sudo systemctl enable --now xgonav
 |---|---|
 | Emotions → `/tmp/lcd0` | group `video` |
 | Shutdown | `/etc/sudoers.d/xgonav-poweroff`: `www-data ALL=(root) NOPASSWD: /usr/bin/systemctl poweroff` |
-| Sleep mode | `/usr/local/sbin/xgo-ruhe` (governor), `/etc/sudoers.d/xgonav-ruhe`: `www-data` may run only `xgo-ruhe on` / `xgo-ruhe off` |
+| Sleep mode | `/usr/local/sbin/xgo-ruhe` (governor, Wi-Fi power save), `/etc/sudoers.d/xgonav-ruhe`: `www-data` may run only `xgo-ruhe on` / `xgo-ruhe off` |
 | Wi-Fi setup | `/usr/local/sbin/xgo-wlan` (NetworkManager), `/etc/sudoers.d/xgonav-wlan`: `www-data` may run `connect`/`status`/`scan`, `aeinstein` (xgonav) also `hotspot`/`hotspot-off` ([wifi-setup.md](wifi-setup.md)) |
 | LEDs, actions, height, roll | `/proc/XGORider/*` is mode 0666 |
 

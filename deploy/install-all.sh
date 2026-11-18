@@ -139,6 +139,13 @@ if [ "$DO_WEB" = 1 ]; then
     usermod -aG video www-data
     installiere deploy/xgo-ruhe /usr/local/sbin/xgo-ruhe 0755
     installiere deploy/xgo-wlan /usr/local/sbin/xgo-wlan 0755     # WLAN-Einrichtung (Tasten C+D, wlan.php)
+    # WLAN-Stromsparen aus (Ping bis 1,5 s); im Ruhemodus schaltet xgo-ruhe es an. Gilt ab der nächsten
+    # Verbindung, deshalb jetzt zusätzlich per iw (Verbindung bleibt stehen).
+    if [ -d /etc/NetworkManager/conf.d ]; then
+        installiere deploy/nm-wifi-powersave.conf /etc/NetworkManager/conf.d/xgonav-wifi-powersave.conf 0644
+        systemctl reload NetworkManager 2>/dev/null || true
+        iw dev wlan0 set power_save off 2>/dev/null || true
+    fi
     for regel in poweroff ruhe restart wlan; do
         if visudo -cf "deploy/sudoers-xgonav-$regel" >/dev/null; then
             installiere "deploy/sudoers-xgonav-$regel" "/etc/sudoers.d/xgonav-$regel" 0440

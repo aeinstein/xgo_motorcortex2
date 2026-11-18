@@ -180,6 +180,7 @@ Header button **Ruhe** (with confirmation). Only the web UI wakes it (**Wecken**
 | xgonav | pipeline off, mode idle, raw recording off; `imu`, `wheels` threads idle; `robot` thread reads state/battery every `ruhe.tick_s` (1 s), no keepalive; no LCD, no emotions, no WebSocket re-encode; pipeline and modes other than idle → 409 | threads resume; pipeline stays off |
 | Driver (`settings/`) | `imu_hz`, `imu_stream_hz` → 0, `sleep_ms_on_loop` → `ruhe.sleep_ms_on_loop` (1000); old values kept in memory | old values written back |
 | CPU (`xgo-ruhe`, root) | governor saved to `/run/xgo-ruhe.gov`, all cores `powersave` | saved governor (fallback `ondemand`) |
+| Wi-Fi (`xgo-ruhe`, root) | `iw dev wlan0 set power_save on` | `power_save off` (also default via `/etc/NetworkManager/conf.d/xgonav-wifi-powersave.conf`; with power save ping 535 ms avg / 1.5 s max, without 20 ms, 2026-11-18) |
 | Display (`api.php`) | plays `sleep` (~4 s, before the governor change); last frame (closed eyes) stays | unchanged until xgonav or an emotion writes the next frame |
 | Page | cover with Wecken + battery; image WebSocket closed, no map polling; live packet every 5 s without IMU | normal rates |
 
@@ -187,6 +188,7 @@ Header button **Ruhe** (with confirmation). Only the web UI wakes it (**Wecken**
 - `POST ?a=ruhe&on=1` returns after the animation (~4 s).
 - The ESP32 keeps running (control loop, BLE, amber LEDs).
 - If xgonav restarts during sleep mode, the governor stays `powersave` until **Ruhe** + **Wecken**.
+- If NetworkManager reconnects during sleep mode, Wi-Fi power save is off again (NM setting).
 
 ## Raw recording (`xgonav/rawrec.py`)
 

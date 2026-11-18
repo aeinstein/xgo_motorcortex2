@@ -1,8 +1,11 @@
 #!/bin/sh
-# Ruhemodus, Teil mit root-Rechten: CPU-Takt. Aufruf nur über api.php (sudo-Regel
+# Ruhemodus, Teil mit root-Rechten: CPU-Takt und WLAN-Stromsparen. Aufruf nur über api.php (sudo-Regel
 # deploy/sudoers-xgonav-ruhe), installiert nach /usr/local/sbin/xgo-ruhe (deploy/install-all.sh).
-#   xgo-ruhe on    Governor sichern, alle Kerne auf powersave
-#   xgo-ruhe off   Governor zurück (ohne Sicherung: ondemand)
+#   xgo-ruhe on    Governor sichern, alle Kerne auf powersave, WLAN-Stromsparen an
+#   xgo-ruhe off   Governor zurück (ohne Sicherung: ondemand), WLAN-Stromsparen aus
+# WLAN-Stromsparen kostet wach bis zu 1,5 s Ping (2026-11-18: Mittel 535 ms an, 20 ms aus); außerhalb
+# der Ruhe ist es aus (deploy/nm-wifi-powersave.conf). Verbindet NetworkManager während der Ruhe neu,
+# gilt wieder dessen Einstellung (aus). Fehler (kein wlan0, Hotspot) brechen nichts ab.
 # xgonav selbst (Abfragen, Threads) schaltet POST /ruhe; das ruft api.php getrennt auf.
 # Das Display bleibt an (es lässt sich nicht abschalten): api.php spielt vorher die Schlafaugen ab, das
 # letzte Bild bleibt stehen. SIGUSR2 beim Wecken nur noch für einen Daemon, den ein älterer Stand
@@ -16,6 +19,10 @@ governor() {   # governor <name>: auf alle Kerne schreiben
     done
 }
 
+wlan_sparen() {   # wlan_sparen on|off
+    iw dev wlan0 set power_save "$1" 2>/dev/null || true
+}
+
 case "${1:-}" in
     on)
         f=/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor
@@ -23,6 +30,7 @@ case "${1:-}" in
             cat "$f" > "$SICHERUNG"
         fi
         governor powersave
+        wlan_sparen on
         echo "Ruhe an"
         ;;
     off)
@@ -35,6 +43,7 @@ case "${1:-}" in
             powersave|"") alt=ondemand ;;
         esac
         governor "$alt"
+        wlan_sparen off
         pkill -USR2 -x st7789_server
         echo "Ruhe aus ($alt)"
         ;;
