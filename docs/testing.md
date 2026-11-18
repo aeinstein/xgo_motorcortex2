@@ -21,7 +21,6 @@ python3 -m venv .venv && .venv/bin/pip install "opencv-python-headless>=4.6" "nu
 | `python tests/sim_run.py explore 120 --wheels --dunkel 3.5,3,6,6` | dark zone (x0,y0,x1,y1[,rest light 0.04]): fear of the dark, prints `dunkel` (`angst`, `licht`, `aufgeben`, `ruhe`) | 2026-11-13: 1 fright, light found, 0 collisions; whole room dark: gives up, sleep mode |
 | `python tests/sim_run.py home 60 [--wheels]` | 30 s explore, then `home`; prints true distance to start (`home_end_m`) | |
 | `python tests/sim_run.py follow 40 --imu` | simulated IMU, sign −1 and −8 ms offset (deliberately wrong) | |
-| `python tests/sim_run.py explore 40 --kanten` | any scenario with `freespace.method = "kanten"` | |
 | `python tests/sim_run.py home 60 --wheels --dyn` | any scenario with Rider-like inertia (turn lag, dead band, short roll-back on start) | |
 | `g++ -std=c++17 -ffp-contract=off -I $S firmware/tests/test_imu_yaw_coupling.cpp $S/control/rider_leg_imu.cpp` | firmware host test, patches 0005/0006 (attitude while turning); `S=firmware/build/xgorider2_rl/firmware/src` after `firmware/build.sh` | <1 s |
 | `g++ -std=c++17 -ffp-contract=off -I $S firmware/tests/test_turn_hold.cpp $S/control/rider_motion.cpp $S/control/pid.cpp` | firmware host test, patch 0008 (position hold while turning) | <1 s |
@@ -30,7 +29,7 @@ python3 -m venv .venv && .venv/bin/pip install "opencv-python-headless>=4.6" "nu
 | `g++ -std=c++17 -ffp-contract=off -I $S firmware/tests/test_imu_diag.cpp $S/control/rider_leg_imu.cpp $S/command_protocol.cpp` | firmware host test, patch 0013 (diagnostic register 0x10) | <1 s |
 | `g++ -std=c++17 -ffp-contract=off -I $S firmware/tests/test_imu_stream.cpp $S/command_protocol.cpp` | firmware host test, patch 0014 (IMU/wheel data stream) | <1 s |
 | `python -m xgonav --source video.mp4 --robot sim --mode follow [--fast]` | replay own video | |
-| `python tools/replay_raw.py DIR --config rider.toml [--set k=v] [--video out.mp4]` | replay `--record-raw` capture through floor model, local map, arc check; reports false-alarm rate | |
+| `python tools/replay_raw.py DIR --config rider.toml [--set k=v] [--netz models/floornet.bin] [--video out.mp4]` | replay `--record-raw` capture through FloorNet, local map, arc check; reports false-alarm rate (needs the C++ core) | |
 | `python tools/map_replay.py DIR --config rider.toml --out OUT [--variante name:key=val,...] [--nur]` | room map of one raw recording, once per variant (pose time offset, turn-rate gate, `grid.*`, roll, IMU heading at frame time); `OUT/DIR_karten.png` side by side, `OUT/DIR.json` with occupied cells and cells between walls ≤ 20 cm apart. `roll=imu` and `kurs=imu` need recordings with IMU samples in `meta.jsonl` (`imu`, `raeder` per frame) | |
 | `python tools/map_replay.py DIR --config rider.toml --out OUT --nur --variante abgleich:abgleich=1 [--netz models/floornet.bin]` | same recording without and with running map matching (`xgonav/reloc.py`, `reloc.X=val` tunes it); `--netz`: floor boundary from FloorNet alone, as on the Rider (needs the C++ core) | |
 | `python tools/reloc_eval.py suche DIR --config rider.toml [--netz ...] [--fenster 15] [--mit-stueck]` | global search: cut a piece out of a raw recording, build the map from the rest, search the piece in it; counts right / wrong / unsure. `--mit-stueck` keeps the piece in the map (upper bound) | |
@@ -39,7 +38,7 @@ python3 -m venv .venv && .venv/bin/pip install "opencv-python-headless>=4.6" "nu
 | `python -m pytest -q tests/test_reloc.py` | map matching on synthetic maps: finds the pose, reports "unsure" for identical corners, corridor, too little wall | <1 s |
 | `driver-test/run.sh kernel_module 6 50 --wheels --combo --faults` | driver code vs ESP32 emulator (without `--wheels --combo` the driver does not poll IMU/wheels) | ~6 s |
 
-`replay_raw.py`: run in the directory containing `shading.json`.
+Simulator floor boundary: `sim.SimFloorNet` takes it from the ground truth of each rendered frame (walls, boxes, person); FloorNet only knows real frames. `--phantoms n` adds false alarms. Maps and control are tested against the truth, FloorNet itself only on recordings (`docs/floornet.md`).
 
 FloorNet tests (`tests/test_floornet_*.py`): those that need torch are skipped on the PC; run them on the GPU machine. `test_floornet_native.py` builds the C++ core there with `tests/neon_shim` (result only, not speed).
 

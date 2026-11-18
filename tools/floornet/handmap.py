@@ -3,10 +3,9 @@
 
   python tools/floornet/handmap.py hand.json --labels labels/ --config rider.toml --out labels_hand/
 
-Die Karte aus dem Kantenverfahren trägt nur, was dieses Verfahren sieht: Unter 1 m waren so die Hälfte der
-Labels zu weit, weil Freistrahlen durch dunkle Schränke liefen. Hier stammt die Karte allein aus den Handlinien:
-Unter der Linie ist Boden, auf der Linie steht etwas. Das Ergebnis hat denselben Aufbau wie die Dateien von
-label.py, dazu "hand": Bilder mit eigener Linie (dort gilt die Linie selbst).
+Die Karte stammt allein aus den Handlinien: Unter der Linie ist Boden, auf der Linie steht etwas. --labels gibt
+je Fahrt eine ältere Label-Datei (Bilder, Pose, Nick, Geometrie); das Ergebnis hat denselben Aufbau, dazu "hand":
+Bilder mit eigener Linie (dort gilt die Linie selbst). Ein Feld kanten_row alter Dateien wird nicht übernommen.
 
 Eine so beschriftete Fahrt darf nicht mehr zum Prüfen desselben Netzes dienen: Prüfen über Fahrten getrennt.
 """
@@ -58,7 +57,7 @@ def draw_line(gm: GridMap, hit: np.ndarray, free: np.ndarray, pose, pitch: float
 def label_run(npz: str, items: list, unusable: set, cfg) -> dict:
     """items: (Datei, Zeilen, gültig) der Handbilder dieser Fahrt. Rückgabe: Felder für die neue Label-Datei."""
     z = np.load(npz, allow_pickle=False)
-    d = {k: z[k] for k in z.files}
+    d = {k: z[k] for k in z.files if k != "kanten_row"}
     geo = L.make_geo(cfg)
     pos = {str(f): i for i, f in enumerate(d["files"])}
     src = str(d["source_dir"])

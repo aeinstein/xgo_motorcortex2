@@ -188,7 +188,7 @@ def test_reloc_scan_punkte_wie_karte():
     ys = np.arange(int(hz * 4) + 1, 480)
     y1 = ys[np.nanargmin(np.abs(g.ground_dist_np(ys) - 1.0))]
     col = (120 - y1 / 4) / (120 - hz)
-    fs = FreeSpace([col] * 5, np.full(160, col), hz, np.zeros((120, 160), np.uint8), True, None)
+    fs = FreeSpace([col] * 5, np.full(160, col), hz, True, None)
     for _ in range(3):
         m.add_freespace(fs, 0.0)
     hits, w, free = reloc.scan_punkte(m, fs, 0.0, cfg.reloc)
@@ -207,7 +207,7 @@ def _wand_fs(g):
     ys = np.arange(int(hz * 4) + 1, 480)
     y1 = ys[np.nanargmin(np.abs(g.ground_dist_np(ys) - 1.0))]
     col = (120 - y1 / 4) / (120 - hz)
-    return FreeSpace([col] * 5, np.full(160, col), hz, np.zeros((120, 160), np.uint8), True, None)
+    return FreeSpace([col] * 5, np.full(160, col), hz, True, None)
 
 
 def test_gridmap_pose_unbekannt_sperrt_karte(tmp_path):
@@ -248,13 +248,14 @@ def test_gridmap_pose_unbekannt_sperrt_karte(tmp_path):
 def _app_reloc(enabled=True, file=""):
     from xgonav.app import App
     from xgonav.robot import SimRobot
-    from xgonav.sim import SimWorld
+    from xgonav.sim import SimFloorNet, SimWorld
     cfg = Config.neutral()
     cfg.output.web_port = 0
     cfg.reloc.enabled = enabled
     cfg.grid.file = file
     robot = SimRobot(cfg.robot)
-    return App(cfg, robot, SimWorld(cfg.camera, robot, None), imu=None)
+    world = SimWorld(cfg.camera, robot, None)
+    return App(cfg, robot, world, imu=None, floor_net=SimFloorNet(world))
 
 
 def test_app_pose_unbekannt_sperrt_fahrten():

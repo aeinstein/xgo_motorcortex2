@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""FloorNet: rows.jsonl aus comfy_batch.py -> Label-Dateien für train.py (derselbe Aufbau wie label.py, je Fahrt eine).
+"""FloorNet: rows.jsonl aus comfy_batch.py -> Label-Dateien für train.py (je Fahrt eine).
 
   python tools/floornet/comfy_npz.py labels_comfy8/rows.jsonl --labels labels5/ --out labels_comfy8_npz/
 
@@ -10,7 +10,7 @@ Nicht jedes Bild taugt (Stichprobe 2026-11-08). Es fliegt raus:
 - Bild fast schwarz: Dort rät das Modell, die Linie ist gezackt
 
 Pose und Nick stammen aus meta.jsonl, nicht aus labels5: Dort fehlen Bilder (nur längstes Stück ohne Posesprung,
-nur jedes zweite). Kantenzeilen gibt es hier nicht, also taugen diese Dateien nur fürs Training, nicht als --val.
+nur jedes zweite).
 """
 from __future__ import annotations
 
@@ -28,7 +28,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 EXACT, IGNORE = 1, 0
 NCOLS = 80
-KANTEN_COLS = 160           # Breite von kanten_row in label.py
 ROW_MIN = 205.0             # net.ROW_TOP: Zeilen darüber kann das Netz nicht ausgeben
 MAX_ABOVE = 0.10
 JUMP_PX, MAX_JUMPS = 40.0, 6
@@ -94,9 +93,8 @@ def build_run(run: str, frames: dict, geom: str, src: str, wohnung: str) -> tupl
     d = {"files": np.array(keep, "U10"), "t": np.array([meta[f].get("t", 0.0) for f in keep], float),
          "x": pose[:, 0], "y": pose[:, 1], "th": np.radians(pose[:, 2]),
          "rate": np.zeros(n),                # Drehen stört hier nicht: Die Linie gehört zu genau diesem Bild
-         "pitch": np.array([meta[f].get("pitch_dev", 0.0) for f in keep], np.float32),   # Radiant, wie label.py
+         "pitch": np.array([meta[f].get("pitch_dev", 0.0) for f in keep], np.float32),   # Radiant
          "row": row.astype(np.float32), "kind": kind,
-         "kanten_row": np.full((n, KANTEN_COLS), np.nan, np.float32),
          "run": np.array(run), "wohnung": np.array(wohnung), "geom": np.array(geom), "source_dir": np.array(src)}
     return d, count
 
@@ -104,7 +102,7 @@ def build_run(run: str, frames: dict, geom: str, src: str, wohnung: str) -> tupl
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("rows")
-    ap.add_argument("--labels", required=True, help="Dateien von label.py, liefern Geometrie, Quelle und Wohnung je Fahrt")
+    ap.add_argument("--labels", required=True, help="ältere Label-Dateien derselben Fahrten (früher label.py), liefern Geometrie, Quelle und Wohnung je Fahrt")
     ap.add_argument("--out", required=True)
     ap.add_argument("--min_run", type=int, default=1, help="Fahrten mit weniger Bildern auslassen")
     a = ap.parse_args()

@@ -1,22 +1,19 @@
 #!/usr/bin/env python3
-"""FloorNet: Netz und Kantenverfahren gegen den Prüfsatz von Hand (beschriften.html). Das ist die Entscheidungsgrundlage.
+"""FloorNet: Netz gegen den Prüfsatz von Hand (beschriften.html). Maßstab sind seit 2026-11-10 die Stage3-Labels
+(eval_labels.py); die Handlinien sind gröber.
 
   python tools/floornet/eval_hand.py pruefsatz_beschriftung.json --labels labels/ --lauf lauf2/ [--norm 1]
   python tools/floornet/eval_hand.py hand.json --labels labels/ --lauf a/:streife1,unten2 b/:explore9,unten1 --skip erste.json
   python tools/floornet/eval_hand.py hand.json --labels labels_u3/ --lauf lauf_end/ --hoehe pruefsatz3/hoehe.json
 
 Mehrere Läufe: Jede Fahrt wird nur mit dem Netz gemessen, das sie nicht im Training hatte. --skip lässt Bilder aus,
-die schon zur Fehlersuche dienten. --median 3 glättet die Vorhersage über drei Spalten. --minimum 1 wertet statt
-des Netzes je Spalte die nähere Grenze von Netz und Kanten aus (Plan, Schritt 7). --hoehe wertet je Gruppe aus
+die schon zur Fehlersuche dienten. --median 3 glättet die Vorhersage über drei Spalten. --hoehe wertet je Gruppe aus
 (Gruppenname = Körperhöhe in mm, andere Gruppen fallen weg) und rechnet mit der Kamerahöhe dieser Körperhöhe; die
 Labels nehmen BASE_BODY_MM an (2026-11-07: Höhe während der Fahrt im Web verstellt).
 
 Je Spalte der Fehler in Metern, Bänder nach der Entfernung der Handlinie. Fälschlich frei: Vorhersage mehr als
-15 cm hinter der Linie. Fälschlich blockiert: mehr als 15 cm davor. Der Unterschied wird je Bild ausgezählt und
-per Bootstrap über Bilder abgesichert: Spalten eines Bildes hängen zusammen und zählen nicht einzeln.
-
-Ziel, vorab festgelegt (Plan, Schritt 3): fälschlich frei unter 1 m höchstens halb so oft wie Kanten,
-fälschlich blockiert nicht schlechter. Sonst bleibt das Kantenverfahren.
+15 cm hinter der Linie. Fälschlich blockiert: mehr als 15 cm davor. Ausgezählt wird je Bild (rates); ratio_ci
+vergleicht zwei Fehlerquoten per Bootstrap über Bilder, weil Spalten eines Bildes zusammenhängen.
 """
 from __future__ import annotations
 
@@ -34,7 +31,7 @@ NCOLS = 80
 W, H = 640, 480
 NEAR_M = 1.0                # Band für die Entscheidung
 GROUPS = {"oben": ("explore9", "streife1"), "unten": ("unten1", "unten2")}
-BASE_BODY_MM = 85.0         # Körperhöhe, mit der label.py die Geometrie baut (behavior.height_cruise_mm)
+BASE_BODY_MM = 85.0         # Körperhöhe, mit der die Label-Dateien die Geometrie bauen (behavior.height_cruise_mm)
 
 
 def body_heights(groups: dict) -> tuple[dict, set]:
@@ -108,7 +105,6 @@ def main() -> int:
     ap.add_argument("--lauf", required=True, nargs="+", help="Verzeichnis oder Verzeichnis:Fahrt,Fahrt")
     ap.add_argument("--skip", default="", help="Beschriftung, deren Bilder hier nicht zählen")
     ap.add_argument("--median", type=int, default=0, help="3: Vorhersage über drei Spalten glätten")
-    ap.add_argument("--minimum", type=int, default=0, help="1: je Spalte die nähere Grenze von Netz und Kanten")
     ap.add_argument("--norm", type=int, default=0)
     ap.add_argument("--far", type=float, default=0.15)
     ap.add_argument("--hoehe", default="", help="JSON Gruppe -> Bild-IDs (hoehe.json des Prüfsatzes)")
@@ -161,17 +157,13 @@ def main() -> int:
             pr = decode(nets.get(run, nets.get("*"))(prep(xt, bool(a.norm)))).cpu().numpy() + a.pred_shift
         if a.median == 3:
             pr[:, 1:-1] = np.median(np.stack([pr[:, :-2], pr[:, 1:-1], pr[:, 2:]]), axis=0)
-        kidx = np.linspace(0, d["kanten_row"].shape[1] - 1, NCOLS).round().astype(int)
-        kr = d["kanten_row"][idx][:, kidx]
-        if a.minimum:
-            pr = np.fmax(pr, kr)    # größere Zeile = näher; unbekannte Kanten (NaN) zählen nicht
         rows = np.stack([hand[run + "/" + f][0] for f in files])
         ok = np.stack([hand[run + "/" + f][1] for f in files])
         pitch = d["pitch"][idx]
         ids = [run + "/" + f for f in files]
         geo = dict(geo, cam_h=cam_heights(geo["cam_h"], ids, body)[:, None])
-        res[run] = {"netz": pr, "kanten": kr, "hand": rows, "ok": ok, "dist": T.row_dist(geo, rows, pitch),
-                    "dnetz": T.row_dist(geo, pr, pitch), "dkanten": T.row_dist(geo, kr, pitch)}
+        res[run] = {"netz": pr, "hand": rows, "ok": ok, "dist": T.row_dist(geo, rows, pitch),
+                    "dnetz": T.row_dist(geo, pr, pitch)}
         ids_of[run] = ids
 
     def table(sel, title):
@@ -183,35 +175,27 @@ def main() -> int:
         runs = list(sel)
         print("\n== %s (%s), %d Bilder" % (title, ",".join(runs), sum(len(i) for i in sel.values())))
         for lo, hi in ((0.0, 0.5), (0.5, 1.0), (1.0, 1.5), (1.5, 2.5)):
-            line = "%3.1f-%3.1f m " % (lo, hi)
-            for who, dk in (("netz", "dnetz"), ("kanten", "dkanten")):
-                n = fr = bl = 0.0
-                meds = []
-                for r in runs:
-                    q = sub[r]
-                    m = q["ok"] & (q["dist"] >= lo) & (q["dist"] < hi) & np.isfinite(q[who])
-                    e = q[dk] - q["dist"]
-                    c, f, b = rates(e, m, a.far)
-                    n, fr, bl = n + c.sum(), fr + f.sum(), bl + b.sum()
-                    meds.append(np.abs(np.nan_to_num(e[m], posinf=9.0)))
-                med = float(np.median(np.concatenate(meds)) * 100) if n else float("nan")
-                line += "| %-6s n%6d frei %5.1f%% block %5.1f%% med %4.0f cm " % (who, n, 100 * fr / max(n, 1), 100 * bl / max(n, 1), med)
-            print(line)
-        # Entscheidung: Spalten mit Handlinie unter NEAR_M
-        parts = {"netz": [], "kanten": []}
+            n = fr = bl = 0.0
+            meds = []
+            for r in runs:
+                q = sub[r]
+                m = q["ok"] & (q["dist"] >= lo) & (q["dist"] < hi) & np.isfinite(q["netz"])
+                e = q["dnetz"] - q["dist"]
+                c, f, b = rates(e, m, a.far)
+                n, fr, bl = n + c.sum(), fr + f.sum(), bl + b.sum()
+                meds.append(np.abs(np.nan_to_num(e[m], posinf=9.0)))
+            med = float(np.median(np.concatenate(meds)) * 100) if n else float("nan")
+            print("%3.1f-%3.1f m | netz n%6d frei %5.1f%% block %5.1f%% med %4.0f cm" % (
+                lo, hi, n, 100 * fr / max(n, 1), 100 * bl / max(n, 1), med))
+        # Spalten mit Handlinie unter NEAR_M
+        parts = []
         for r in runs:
             q = sub[r]
-            for who, dk in (("netz", "dnetz"), ("kanten", "dkanten")):
-                m = q["ok"] & (q["dist"] < NEAR_M) & np.isfinite(q[who])
-                parts[who].append(rates(q[dk] - q["dist"], m, a.far))
-        cn, fn, bn = (np.concatenate([p[j] for p in parts["netz"]]) for j in range(3))
-        ck, fk, bk = (np.concatenate([p[j] for p in parts["kanten"]]) for j in range(3))
-        ff = ratio_ci(fn, fk, cn, ck)
-        fb = ratio_ci(bn, bk, cn, ck)
-        print("unter %.1f m: Netz frei %.1f%% block %.1f%% | Kanten frei %.1f%% block %.1f%%" % (
-            NEAR_M, 100 * fn.sum() / max(cn.sum(), 1), 100 * bn.sum() / max(cn.sum(), 1), 100 * fk.sum() / max(ck.sum(), 1), 100 * bk.sum() / max(ck.sum(), 1)))
-        print("unter %.1f m, Netz / Kanten: fälschlich frei %.2f [%.2f..%.2f], fälschlich blockiert %.2f [%.2f..%.2f]" % (NEAR_M, *ff, *fb))
-        print("Ziel fälschlich frei <= 0,5 und fälschlich blockiert <= 1,0: %s" % ("ERREICHT" if ff[0] <= 0.5 and fb[0] <= 1.0 else "nicht erreicht"))
+            m = q["ok"] & (q["dist"] < NEAR_M) & np.isfinite(q["netz"])
+            parts.append(rates(q["dnetz"] - q["dist"], m, a.far))
+        cn, fn, bn = (np.concatenate([p[j] for p in parts]) for j in range(3))
+        print("unter %.1f m: Netz fälschlich frei %.1f%%, fälschlich blockiert %.1f%%" % (
+            NEAR_M, 100 * fn.sum() / max(cn.sum(), 1), 100 * bn.sum() / max(cn.sum(), 1)))
 
     def alle(runs):
         return {r: np.arange(len(res[r]["hand"])) for r in runs if r in res}

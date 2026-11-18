@@ -286,7 +286,7 @@ def serve(app: App, host: str, port: int, fps: int, render_cpus=None) -> Threadi
             if u.path == "/exposure":
                 try:
                     us = app.src.set_exposure(int(q.get("us", [""])[0]))
-                    app.reset_floor()      # andere Belichtung: Bodenfarbe neu lernen
+                    app.reset_floor()      # andere Belichtung: Bodengrenze neu beginnen
                 except ValueError as e:
                     return self._send(400, json.dumps({"error": str(e) or "us ungültig"}).encode())
                 return self._send(200, json.dumps({"ok": True, "exposure_us": us}).encode())

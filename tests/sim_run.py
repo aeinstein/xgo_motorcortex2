@@ -1,18 +1,19 @@
-"""Closed-Loop-Szenarien im Simulator. python3 tests/sim_run.py follow|approach|explore|home [sekunden] [video.mp4] [--dunkel x0,y0,x1,y1[,rest]] [--imu] [--fs-thread] [--wheels] [--kanten] [--dyn] [--rider] [--scene raum|zwei|spalt] [--video-step n] [--set a.b=wert] [--vx-true m/s]
+"""Closed-Loop-Szenarien im Simulator. python3 tests/sim_run.py follow|approach|explore|home [sekunden] [video.mp4] [--dunkel x0,y0,x1,y1[,rest]] [--imu] [--fs-thread] [--wheels] [--dyn] [--rider] [--scene raum|zwei|spalt] [--video-step n] [--set a.b=wert] [--vx-true m/s]
 
 home: erste Hälfte explore, dann Modus home (zurück zum Startpunkt der Raumkarte).
 --dyn: Trägheit wie am RiderPi (Totzone, Nachlaufen der Drehung, Rückrollen beim Anfahren).
 --rider: Einstellungen des RiderPi statt der Defaults (RIDER), Tempo wie gemessen, mit IMU (Vorzeichen und Zeitversatz
 bekannt wie am Rider). Ohne IMU bleibt die langsame Neigung beim Beschleunigen (sim.ACC_DEG) unbemerkt und die
 Raumkarte zeichnet Wände dicker: eine 25-cm-Lücke blieb so in 4 von 5 Läufen zu (2026-11-11).
---vx-true: echte m/s je Firmware-Einheit, abweichend von robot.vx_limit (z. B. 1.3 = rollt schwerer, wie auf Teppich)."""
+--vx-true: echte m/s je Firmware-Einheit, abweichend von robot.vx_limit (z. B. 1.3 = rollt schwerer, wie auf Teppich).
+Die Bodengrenze kommt aus der Ground Truth (sim.SimFloorNet statt FloorNet); --phantoms n täuscht Fehlalarme vor."""
 import logging, math, sys, threading, time
 sys.path.insert(0, ".")
 import numpy as np
 from xgonav.app import App, render
 from xgonav.config import Config
 from xgonav.robot import SimRobot
-from xgonav.sim import FakeDetector, Person, Phantoms, SCENES, SimImu, SimWheels, SimWorld, map_quality
+from xgonav.sim import FakeDetector, Person, Phantoms, SCENES, SimFloorNet, SimImu, SimWheels, SimWorld, map_quality
 
 # Fahrrelevante Abweichungen in deploy/config.example.toml; echtes Tempo 1,8 m/s je Firmware-Einheit
 # (gemessen 2026-11-05: ~27 cm/s bei 0,15)
@@ -47,7 +48,7 @@ def pick_route(gm, cfg, n=3):
     return pts
 
 
-def run(mode="follow", secs=25.0, video=None, shake=1.0, quiet=True, imu=False, fs_thread=False, wheels=False, vx_true=None, method=None, dyn=False,
+def run(mode="follow", secs=25.0, video=None, shake=1.0, quiet=True, imu=False, fs_thread=False, wheels=False, vx_true=None, dyn=False,
         overrides=None, scene="raum", record=None, phantoms=0, animal="person", speed=None, video_step=1, dunkel=None):
     """overrides: siehe apply_overrides. record: Liste, bekommt je Eintrag in die Raumkarte die Beobachtung
     (tools/map_eval.py spielt sie offline ab); dafür trägt die Karte im Regelschritt ein.
@@ -59,8 +60,6 @@ def run(mode="follow", secs=25.0, video=None, shake=1.0, quiet=True, imu=False, 
     cfg.behavior.mode = "explore" if home or patrol else mode
     cfg.output.web_port = 0
     cfg.freespace.threaded = fs_thread
-    if method:
-        cfg.freespace.method = method
     apply_overrides(cfg, overrides)
     if record is not None:
         cfg.grid.threaded = False
@@ -86,12 +85,13 @@ def run(mode="follow", secs=25.0, video=None, shake=1.0, quiet=True, imu=False, 
         cfg.imu.pitch_ref_deg = 2.5   # wie nach calibrate.py wall
     if not wheels:
         cfg.odom.source = "command"          # sonst sucht App die Raddaten in /proc
+    net = SimFloorNet(world)
     app = App(cfg, robot, world, imu=SimImu(world, cfg.imu) if imu else None,
-              wheels=SimWheels(world, cfg.odom) if wheels else None)
+              wheels=SimWheels(world, cfg.odom) if wheels else None, floor_net=net)
     if not imu:
         app.imu = None
     app.det = FakeDetector(world)
-    ph = Phantoms(world, app.fse, phantoms) if phantoms else None
+    ph = Phantoms(world, net, app.geo, phantoms) if phantoms else None
     if record is not None and app.gridmap is not None:
         add = app.gridmap.add_freespace
         def add_rec(fs, pd, pose=None):
@@ -231,7 +231,7 @@ if __name__ == "__main__":
             k, v = sys.argv[i + 1].split("=")
             ov[k] = eval(v, {})
     print(run(mode, secs, args[0] if args else None, imu="--imu" in sys.argv or rider, fs_thread="--fs-thread" in sys.argv,
-              wheels="--wheels" in sys.argv, method="kanten" if "--kanten" in sys.argv else None,
+              wheels="--wheels" in sys.argv,
               dyn="--dyn" in sys.argv, overrides=ov,
               vx_true=float(sys.argv[sys.argv.index("--vx-true") + 1]) if "--vx-true" in sys.argv else RIDER_VX if rider else None,
               scene=sys.argv[sys.argv.index("--scene") + 1] if "--scene" in sys.argv else "raum",

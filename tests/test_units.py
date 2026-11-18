@@ -13,7 +13,7 @@ from xgonav.detector import YoloOnnx, DetectorCfg  # noqa: E402
 from xgonav.egomotion import EgoMotion, warp_box  # noqa: E402
 from xgonav.geometry import CamGeometry  # noqa: E402
 from xgonav.robot import SimRobot, norm_to_u8, u8_to_norm  # noqa: E402
-from xgonav.sim import SimWorld  # noqa: E402
+from xgonav.sim import SimFloorNet, SimWorld  # noqa: E402
 from xgonav.tracker import Tracker  # noqa: E402
 from xgonav.detector import Detection  # noqa: E402
 
@@ -129,7 +129,7 @@ def test_app_geometry_follows_robot_height():
     cfg = Config.neutral(); cfg.output.web_port = 0; cfg.detector.enabled = False
     robot = SimRobot(cfg.robot)
     world = SimWorld(cfg.camera, robot, None, start=(1.0, 1.5, 0.0))
-    app = App(cfg, robot, world, imu=None)
+    app = App(cfg, robot, world, imu=None, floor_net=SimFloorNet(world))
     app.imu = None
     th = threading.Thread(target=app.run, kwargs={"duration": 4.0}, daemon=True)
     th.start()
@@ -158,7 +158,7 @@ def test_egomotion_rotation_vs_sim():
     for k in range(60):
         t = k / 20
         w._integrate(t, 0.05)
-        img, _ = w._render(t, 0.05)
+        img, _, _ = w._render(t, 0.05)
         res = em.update(k, t, img)
         if pp is not None and res.ok:
             ep.append(res.pitch - (w.pitch - pp))
@@ -187,7 +187,7 @@ def test_egomotion_native_matches_python():
     for k in range(60):
         t = k / 20
         w._integrate(t, 0.05)
-        img, _ = w._render(t, 0.05)
+        img, _, _ = w._render(t, 0.05)
         box = [(200.0, 100.0, 300.0, 400.0)]
         a, b = ep.update(k, t, img, box), en.update(k, t, img, box)
         assert (a.ok, a.inliers) == (b.ok, b.inliers)
@@ -301,7 +301,8 @@ def test_status_camera_height_fields():
     cfg = Config.neutral(); cfg.output.web_port = 0; cfg.detector.enabled = False
     cfg.camera.cam_h_u8 = [100.8, 0.1037]
     robot = SimRobot(cfg.robot)
-    app = App(cfg, robot, SimWorld(cfg.camera, robot, None, start=(1.0, 1.5, 0.0)), imu=None)
+    world = SimWorld(cfg.camera, robot, None, start=(1.0, 1.5, 0.0))
+    app = App(cfg, robot, world, imu=None, floor_net=SimFloorNet(world))
     srv = serve(app, "127.0.0.1", 0, 5)
     try:
         def status():
@@ -509,7 +510,7 @@ def _app(freespace: bool, mode: str = "idle"):
     cfg.output.web_port = 0
     robot = SimRobot(cfg.robot)
     world = SimWorld(cfg.camera, robot, None)
-    return App(cfg, robot, world, imu=None)
+    return App(cfg, robot, world, imu=None, floor_net=SimFloorNet(world))
 
 
 def test_modes_need_freespace():
@@ -529,21 +530,6 @@ def test_modes_need_freespace():
 
 
 # ---------------------------------------------------------------- Linsenabschattung
-def test_shading_fit_recovers_radial_falloff():
-    from xgonav.shading import ShadingModel
-    H, W = 240, 320
-    yy, xx = np.mgrid[0:H, 0:W].astype(np.float32)
-    s = ((xx - W / 2) ** 2 + (yy - H / 2) ** 2) / (W / 2) ** 2 / 1.5625   # (r / halbe Diagonale)^2
-    true = np.stack([1 - 0.8 * s, 1 - 0.75 * s, 1 - 2.5 * s + 1.6 * s * s], -1).clip(0.01, 1)
-    flat = (200 * true).astype(np.float32)
-    m = ShadingModel.fit(flat, np.ones((H, W), bool))
-    F = m.falloff(W, H)
-    assert np.abs(F - true)[true > 0.05].max() < 0.03
-    gain, rel = m.gain_and_reliable(W, H, 8.0)
-    assert rel[H // 2, W // 2] and not rel[0, 0]          # Mitte messbar, Ecke nicht
-    assert gain.max() <= 8.0 + 1e-6
-
-
 def test_localmap_unknown_columns_do_not_erase():
     """Spalten ohne messbare Farbe (known_from) dürfen bekannte Hindernisse nicht löschen."""
     from xgonav.freespace import FreeSpace
@@ -561,14 +547,14 @@ def test_localmap_unknown_columns_do_not_erase():
         return lm
 
     # ohne known_from: alles im Sichtfeld wird freigeräumt
-    lm = fresh(); lm.add_freespace(FreeSpace([1.0] * 5, free_cols, horizon, None, True), 0.0, 0.0)
+    lm = fresh(); lm.add_freespace(FreeSpace([1.0] * 5, free_cols, horizon, True), 0.0, 0.0)
     assert len(lm.pts) == 0
     # Mitte erst ab 0,5 m messbar, linke Hälfte gar nicht: nur der ferne Punkt vorn verschwindet
     span = fh - horizon
     row_05 = fh - next(r for r in range(fh, 0, -1) if (geo.ground_dist(r * 4) or 9) >= 0.5) / 1
     kf = np.full(fw, row_05 / span)
     kf[: fw // 2 - 10] = 1.0
-    lm = fresh(); lm.add_freespace(FreeSpace([1.0] * 5, free_cols, horizon, None, True, kf), 0.0, 0.0)
+    lm = fresh(); lm.add_freespace(FreeSpace([1.0] * 5, free_cols, horizon, True, kf), 0.0, 0.0)
     left = {tuple(p) for p in lm.pts.round(2)}
     assert (0.30, 0.0) in left and (0.40, 0.30) in left and (0.80, 0.0) not in left
 
@@ -585,122 +571,6 @@ def test_localmap_confirm_ignores_single_observations():
     lm = LocalMap(geo, 160, 120, confirm=3, confirm_radius_m=0.08)   # drei Punkte, aber ein Bild
     lm.pts = np.array([[0.25, 0.0], [0.27, 0.01], [0.24, -0.02]]); lm.t = np.zeros(3); lm.obs = np.array([5, 5, 5])
     assert lm.arc_clearance(0.15, 0.0, 1.2) == math.inf
-
-
-def test_freespace_flat_spot_vs_upright_object():
-    """Flacher Fleck nah vorn (Fuge, Astloch) ist kein Hindernis, aufrechter Gegenstand schon."""
-    from xgonav.freespace import FreeSpaceEstimator
-    geo = CamGeometry(640, 480, 91.0, 1.39, 43.0, 85.0)
-    est = FreeSpaceEstimator(Config.neutral().freespace, (640, 480), geo)
-    floor = np.full((120, 160), 255, np.uint8)
-    floor[106:114, 70:90] = 0          # 8 Zeilen, darüber wieder Boden
-    floor[60:100, 100:110] = 0         # steht auf, reicht über den Horizont
-    c = est._column_free(floor, 62.5)
-    assert c[75:85].min() == 1.0
-    assert c[102:108].max() < 0.5
-
-
-def _kanten_est(**kw):
-    from xgonav.freespace import FreeSpaceEstimator
-    cfg = Config.neutral()
-    cfg.freespace.method = "kanten"
-    cfg.freespace.shading_file = ""
-    for k, v in kw.items():
-        setattr(cfg.freespace, k, v)
-    geo = CamGeometry(640, 480, 88.5, 5.18, 43.0, 85.0)      # Horizont bei Zeile ~270
-    return FreeSpaceEstimator(cfg.freespace, (640, 480), geo), geo
-
-
-def test_kanten_glare_is_unknown_but_lit_wall_at_border_stays():
-    """Lampenschein auf glänzendem Boden: unbekannt (NaN) statt Hindernis weit vor der Lampe.
-    Gleich aussehender heller Streifen am Bildrand (angestrahlte Wand): bleibt Hindernis."""
-    img = np.full((480, 640, 3), 90, np.uint8)
-    img[:270] = 40                                            # dunkle Wand über dem Horizont
-    img[200:268, 300:340] = 255                               # Lampe (übersteuert)
-    rows = np.arange(270, 330)
-    img[270:330, 296:344] = np.linspace(250, 170, len(rows)).astype(np.uint8)[:, None, None]
-    img[200:268, 0:24] = 255                                  # dasselbe am linken Rand
-    img[270:330, 0:28] = np.linspace(250, 170, len(rows)).astype(np.uint8)[:, None, None]
-    est, _ = _kanten_est()
-    fs = est.update(img, 0.0)
-    c = fs.columns
-    assert np.isnan(c[78:83]).all()                           # Mitte des Scheins
-    assert np.isfinite(c[0:4]).all() and c[0:4].max() < 0.9  # Rand: Hindernis
-    assert np.isfinite(c[20:60]).all() and np.isfinite(c[100:160]).all()
-    est2, _ = _kanten_est(edge_glare=False)
-    c2 = est2.update(img, 0.0).columns
-    assert np.isfinite(c2).all() and c2[78:83].max() < 0.9   # ohne Regel: Hindernis
-
-
-def test_kanten_log_finds_dark_wall_in_dark_scene():
-    """Dunkle Szene: Boden 25, Wand 11 (Grauwerte). Linear ist die Stufe zu klein, als
-    Helligkeitsverhältnis (edge_log_s) wird die Wand erkannt."""
-    img = np.full((480, 640, 3), 25, np.uint8)
-    img[:330] = 11                                            # Wand, Fuß in Zeile 330
-    img[:270] = 9
-    lin, _ = _kanten_est(edge_log_s=0.0)
-    log, _ = _kanten_est(edge_log_s=16.0)
-    assert lin.update(img, 0.0).columns[20:140].min() >= 0.98
-    c = log.update(img, 0.0).columns
-    assert c[20:140].max() < 0.9
-
-
-def test_kanten_native_matches_numpy():
-    """C++-Kantenverfahren (nur wenn gebaut) gleich der numpy-Fassung: Simulator-Bilder,
-    Lampenschein (auch am Rand), dunkle Szene, Rauschen; mit und ohne Log/Schein-Regel."""
-    import cv2
-    from xgonav.freespace import _edge_lib
-    if _edge_lib() is None:
-        pytest.skip("C++-Kern nicht gebaut (make -C xgonav/native)")
-    rng = np.random.default_rng(3)
-    imgs = []
-    g = np.full((480, 640, 3), 90, np.uint8)
-    g[:270] = 40
-    g[200:268, 300:340] = 255
-    g[270:330, 296:344] = np.linspace(250, 170, 60).astype(np.uint8)[:, None, None]
-    g[200:268, 0:24] = 255
-    g[270:330, 0:28] = np.linspace(250, 170, 60).astype(np.uint8)[:, None, None]
-    imgs.append(g)
-    d = np.full((480, 640, 3), 25, np.uint8)
-    d[:330] = 11
-    d[:270] = 9
-    imgs.append(d)
-    for _ in range(4):
-        n = rng.integers(0, 256, (480, 640, 3), dtype=np.uint8)
-        imgs.append(cv2.GaussianBlur(n, (0, 0), 6) if _ % 2 else n)
-    cfg = Config.neutral()
-    r = SimRobot(cfg.robot)
-    r._cur = (0.1, 0.05)
-    r._height_mm = 85
-    w = SimWorld(cfg.camera, r, None, start=(1.0, 1.5, 0.1), shake=1.0, vx_mps=1.5)
-    for k in range(10):
-        w._integrate(k / 10, 0.1)
-        imgs.append(w._render(k / 10, 0.1)[0])
-    for kw in ({}, {"edge_log_s": 0.0}, {"edge_glare": False}, {"edge_thin": False}, {"glare_spread": 0}):
-        en, _ = _kanten_est(**kw)
-        ep, _ = _kanten_est(native=False, **kw)
-        assert (en.edge_backend, ep.edge_backend) == ("c++", "python")
-        for i, img in enumerate(imgs):
-            for pd in (0.0, 0.02):
-                a, b = ep.update(img, pd), en.update(img, pd)
-                assert np.array_equal(a.columns, b.columns, equal_nan=True), (kw, i, pd)
-                assert ep.diag["glare_cols"] == en.diag["glare_cols"]
-
-
-def test_floor_downscale_native_equals_cv2():
-    """Verkleinern im C++-Kern (nur wenn gebaut und beim Start bitgleich) = cv2.resize(INTER_AREA)."""
-    import cv2
-    from xgonav.freespace import _edge_lib
-    if _edge_lib() is None:
-        pytest.skip("C++-Kern nicht gebaut (make -C xgonav/native)")
-    est, _ = _kanten_est()
-    assert est._area is not None, "area_down nicht bitgleich zu cv2.resize"
-    rng = np.random.default_rng(11)
-    img = rng.integers(0, 256, (480, 640, 3), dtype=np.uint8)
-    big = np.zeros((480, 700, 3), np.uint8)          # Zeilenabstand größer als die Breite
-    big[:, :640] = img
-    for x in (img, big[:, :640], cv2.GaussianBlur(img, (0, 0), 2)):
-        assert np.array_equal(est._downscale(x), cv2.resize(x, (160, 120), interpolation=cv2.INTER_AREA))
 
 
 def test_arc_clearance_escape_from_point_inside_radius():
@@ -720,22 +590,13 @@ def test_localmap_confirm_counts_on_insert():
     geo = CamGeometry(640, 480, 91.0, 0.0, 43.0, 85.0)
     lm = LocalMap(geo, 160, 120, confirm=3)
     cols = np.ones(160); cols[76:84] = 0.15           # Grenze ~0,3 m geradeaus
-    fs = FreeSpace([1.0] * 5, cols, 60.0, None, True)
+    fs = FreeSpace([1.0] * 5, cols, 60.0, True)
     for i in range(2):
         lm.add_freespace(fs, i * 0.1, 0.0)
         assert lm.arc_clearance(0.15, 0.0, 1.2) == math.inf, "nach %d Beobachtungen schon bestätigt" % (i + 1)
     lm.move(0.0, 0.05)                                 # starre Bewegung ändert nichts an der Zählung
     lm.add_freespace(fs, 0.3, 0.0)
     assert lm.arc_clearance(0.15, 0.0, 1.2) < math.inf
-
-
-def test_freespace_missing_shading_file_is_tolerated(tmp_path):
-    """Frische Installation ohne shading.json: Warnung statt Absturz, ohne Korrektur."""
-    from xgonav.freespace import FreeSpaceEstimator
-    cfg = Config.neutral()
-    cfg.freespace.shading_file = str(tmp_path / "gibtsnicht.json")
-    est = FreeSpaceEstimator(cfg.freespace, (640, 480), CamGeometry(640, 480, 91.0))
-    assert est._sgain is None and est._srel is None
 
 
 def test_pipeline_pause_and_resume():
@@ -746,7 +607,7 @@ def test_pipeline_pause_and_resume():
     cfg = Config.neutral(); cfg.output.web_port = 0; cfg.detector.enabled = False
     robot = SimRobot(cfg.robot)
     world = SimWorld(cfg.camera, robot, Person([(3.0, 1.5), (3.5, 3.0)], speed=0.3), start=(1.0, 1.5, 0.0))
-    app = App(cfg, robot, world, imu=None)
+    app = App(cfg, robot, world, imu=None, floor_net=SimFloorNet(world))
     app.imu = None
     from xgonav.sim import FakeDetector
     app.det = FakeDetector(world)                       # follow braucht einen Detektor
@@ -774,7 +635,7 @@ def test_manual_drive_and_deadman():
     cfg = Config.neutral(); cfg.output.web_port = 0; cfg.detector.enabled = False
     robot = SimRobot(cfg.robot)
     world = SimWorld(cfg.camera, robot, None, start=(1.0, 1.5, 0.0))
-    app = App(cfg, robot, world, imu=None)
+    app = App(cfg, robot, world, imu=None, floor_net=SimFloorNet(world))
     app.imu = None
     th = threading.Thread(target=app.run, kwargs={"duration": 5.0}, daemon=True)
     th.start()
@@ -801,7 +662,7 @@ def test_manual_without_pipeline():
     cfg = Config.neutral(); cfg.output.web_port = 0; cfg.detector.enabled = False
     robot = SimRobot(cfg.robot)
     world = SimWorld(cfg.camera, robot, None, start=(1.0, 1.5, 0.0))
-    app = App(cfg, robot, world, imu=None)
+    app = App(cfg, robot, world, imu=None, floor_net=SimFloorNet(world))
     app.imu = None
     th = threading.Thread(target=app.run, kwargs={"duration": 6.0}, daemon=True)
     th.start()
@@ -839,7 +700,8 @@ def test_paused_pipeline_keeps_pose_from_wheels():
     cfg = Config.neutral(); cfg.output.web_port = 0; cfg.detector.enabled = False
     robot = SimRobot(cfg.robot)
     wh = WheelOdom(cfg.odom)
-    app = App(cfg, robot, SimWorld(cfg.camera, robot, None), imu=None, wheels=wh)
+    world = SimWorld(cfg.camera, robot, None)
+    app = App(cfg, robot, world, imu=None, wheels=wh, floor_net=SimFloorNet(world))
     k = 1.0 / wh.m_per_tick
     seq = [1]
 
@@ -1153,34 +1015,82 @@ def test_cpu_pinning_helpers(tmp_path):
     assert c.cpu.main_cpus == [0, 1] and c.cpu.detector_cpus == [2, 3] and c.cpu.render_cpus == [0, 1, 2, 3]
 
 
+class _NetzZeilen:
+    """Ersatz für FloorNet: feste Grenzzeile je Netzspalte, zählt die Aufrufe."""
+
+    def __init__(self, row=300.0, fehler=False):
+        self.row, self.fehler, self.n = row, fehler, 0
+
+    def run(self, bgr):
+        self.n += 1
+        if self.fehler:
+            raise RuntimeError("kaputt")
+        return np.full(80, self.row, np.float32)
+
+
 def test_freespace_worker_matches_direct_update():
-    from xgonav.config import FreespaceCfg
+    """Thread und Aufruf im Takt (compute) liefern dasselbe wie from_net, jedes Ergebnis nur einmal."""
     from xgonav.freespace import FreeSpaceEstimator, FreeSpaceWorker
-    rng = np.random.default_rng(3)
-    imgs = []
-    for _ in range(4):                                      # Boden unten grau, oben "Wand"
-        im = np.full((480, 640, 3), 120, np.uint8)
-        im[:200] = (30, 90, 160)
-        imgs.append(np.clip(im + rng.integers(-6, 7, im.shape), 0, 255).astype(np.uint8))
-    direct = FreeSpaceEstimator(Config.neutral().freespace, (640, 480))
-    w = FreeSpaceWorker(FreeSpaceEstimator(Config.neutral().freespace, (640, 480)))
+    est = FreeSpaceEstimator(Config.neutral().freespace, (640, 480))
+    w = FreeSpaceWorker(est, _NetzZeilen())
     w.start()
     try:
         assert w.poll() is None
-        for im in imgs:
-            ref = direct.update(im, 0.0, [])
-            w.offer(im, 0.0, [])
+        for row in (300.0, 360.0, 420.0):
+            w.net.row = row
+            ref = est.from_net(np.full(80, row, np.float32), 0.0)
+            w.offer(np.zeros((480, 640, 3), np.uint8), 0.0)
             t_end = time.monotonic() + 5
             got = None
             while got is None and time.monotonic() < t_end:
                 got = w.poll()
                 time.sleep(0.005)
-            assert got is not None
+            assert got is not None and got.src == "net"
             assert got.sectors == ref.sectors and np.array_equal(got.columns, ref.columns)
             assert w.poll() is None                         # Ergebnis nur einmal
     finally:
         w.close()
     assert not w._thread.is_alive()
+    inline = FreeSpaceWorker(est, _NetzZeilen(420.0)).compute(FreeSpaceWorker.job(None, 0.0))
+    assert np.array_equal(inline.columns, ref.columns)
+
+
+def test_freespace_blind_ohne_oder_nach_ausfall_des_netzes():
+    """Kein Ersatzweg: ohne Netz oder nach einem Fehler im Netz ist der Worker blind und liefert nichts mehr;
+    safety() lässt dann nichts fahren (Nutzer 2026-11-18)."""
+    from xgonav.behaviors import Command, World, safety
+    from xgonav.egomotion import EgoResult
+    from xgonav.freespace import FreeSpaceEstimator, FreeSpaceWorker
+    est = FreeSpaceEstimator(Config.neutral().freespace, (640, 480))
+    assert FreeSpaceWorker(est, None).blind
+    net = _NetzZeilen(fehler=True)
+    w = FreeSpaceWorker(est, net)
+    assert not w.blind
+    assert w.compute(w.job(np.zeros((480, 640, 3), np.uint8), 0.0)) is None
+    assert w.blind and w.net is None
+    assert w.compute(w.job(np.zeros((480, 640, 3), np.uint8), 0.0)) is None and net.n == 1
+    welt = dict(t=1.0, dt=0.05, W=640, H=480, hfov=1.6, ego=EgoResult(0, 10.0, 0.05), tracks=[], free=None,
+                balancing=True, yaw=0.0, cmd_v=0.0)
+    c = safety(Command(0.1, 0.2, None, "x"), World(**welt, blind=True), Config.neutral().behavior)
+    assert (c.v, c.w) == (0.0, 0.0) and "BLIND" in c.status
+    c = safety(Command(0.1, 0.2, None, "x"), World(**welt), Config.neutral().behavior)
+    assert (c.v, c.w) == (0.1, 0.2)
+
+
+def test_app_ohne_floornet_ist_blind(caplog):
+    """Fehlt das Netz, startet xgonav blind: Modi mit Freiraum sind gesperrt, der Status sagt "blind"."""
+    from xgonav.app import App, ModeNotAllowed
+    from xgonav.robot import SimRobot
+    from xgonav.sim import SimWorld
+    cfg = Config.neutral()
+    cfg.output.web_port = 0
+    cfg.odom.source = "command"
+    robot = SimRobot(cfg.robot)
+    app = App(cfg, robot, SimWorld(cfg.camera, robot))
+    assert app.fs_worker is not None and app.fs_worker.blind
+    with pytest.raises(ModeNotAllowed):
+        app._check_mode("explore")
+    assert any("blind" in r.getMessage() for r in caplog.records)
 
 
 def test_wheel_odometry_wrap_reset_and_signs():
@@ -1383,7 +1293,7 @@ def test_gridmap_wall_and_turn():
     ys = np.arange(int(hz * 4) + 1, 480)
     y1 = ys[np.nanargmin(np.abs(g.ground_dist_np(ys) - 1.0))]
     col = (120 - y1 / 4) / (120 - hz)
-    fs = FreeSpace([col] * 5, np.full(160, col), hz, np.zeros((120, 160), np.uint8), True, None)
+    fs = FreeSpace([col] * 5, np.full(160, col), hz, True, None)
     for _ in range(3):
         m.add_freespace(fs, 0.0)
     occ = m.occupied_cells()
@@ -1408,7 +1318,7 @@ def _wall_fs(g, dist):
     ys = np.arange(int(hz * 4) + 1, 480)
     y1 = ys[np.nanargmin(np.abs(g.ground_dist_np(ys) - dist))]
     col = (120 - y1 / 4) / (120 - hz)
-    return FreeSpace([col] * 5, np.full(160, col), hz, np.zeros((120, 160), np.uint8), True, None)
+    return FreeSpace([col] * 5, np.full(160, col), hz, True, None)
 
 
 def test_gridmap_range_hits_and_margin():
@@ -1521,7 +1431,7 @@ def test_cx_offset_bearing_maps_and_sim():
     r._height_mm = 85
     w = SimWorld(cam, r, Person([(3.0, 1.5), (3.0, 1.5)], speed=0.0), start=(1.0, 1.5, 0.0), shake=0.0)
     w._integrate(0.0, 0.05)
-    _, box = w._render(0.0, 0.05)
+    _, box, _ = w._render(0.0, 0.05)
     assert (box[0] + box[2]) / 2 == pytest.approx(333.0, abs=2.5)
 
 
@@ -1545,7 +1455,8 @@ def test_imu_yaw_unwrap_and_localmap_yaw_source():
     cfg.detector.enabled = False
     cfg.map.yaw_source = "imu"
     robot = SimRobot(cfg.robot)
-    app = App(cfg, robot, SimWorld(cfg.camera, robot, None), imu=imu)
+    world = SimWorld(cfg.camera, robot, None)
+    app = App(cfg, robot, world, imu=imu, floor_net=SimFloorNet(world))
     def bild(t):                                                           # wie App._pitch_dev je Bild
         app._imu_frame = imu_frame(app.imu_sync, imu, t)
     now = t0 + 0.07
@@ -1687,9 +1598,9 @@ def test_freespace_keeps_pitch_and_pose_of_capture():
     cfg = Config.neutral()
     g = CamGeometry(640, 480, 91.0, 1.39, 43.0, 85.0)
     est = FreeSpaceEstimator(cfg.freespace, (640, 480), g)
-    w = FreeSpaceWorker(est)
+    w = FreeSpaceWorker(est, _NetzZeilen())
     w.start()
-    w.offer(np.full((480, 640, 3), 90, np.uint8), 0.03, [], (1.0, 2.0, 0.5))
+    w.offer(np.full((480, 640, 3), 90, np.uint8), 0.03, (1.0, 2.0, 0.5))
     t_end = time.monotonic() + 5
     fs = None
     while fs is None and time.monotonic() < t_end:
@@ -1713,7 +1624,7 @@ def test_gridworker_uses_pose_of_observation():
     ys = np.arange(int(hz * 4) + 1, 480)
     y1 = ys[np.nanargmin(np.abs(g.ground_dist_np(ys) - 1.0))]
     col = (120 - y1 / 4) / (120 - hz)
-    fs = FreeSpace([col] * 5, np.full(160, col), hz, np.zeros((120, 160), np.uint8), True, None)
+    fs = FreeSpace([col] * 5, np.full(160, col), hz, True, None)
     direct = GridMap(cfg.grid, g, 160, 120)
     m = GridMap(cfg.grid, g, 160, 120)
     w = GridWorker(m)
@@ -1752,7 +1663,7 @@ def test_gridmap_native_matches_numpy():
         cols[rng.random(160) < 0.1] = np.nan
         cols[rng.random(160) < 0.15] = 1.0                       # frei bis Horizont
         kf = None if k % 3 == 0 else np.clip(rng.uniform(-0.1, 0.3, 160), 0, 1)
-        fs = FreeSpace([0.5] * 5, cols, hz, np.zeros((120, 160), np.uint8), True, kf)
+        fs = FreeSpace([0.5] * 5, cols, hz, True, kf)
         pose += (rng.normal(0, 0.05), rng.normal(0, 0.05), rng.normal(0, 0.2))
         if k == 150:
             pose[:] = (7.9, -7.95, 1.0)                          # Kartenrand: Strahlen laufen hinaus
@@ -1812,7 +1723,7 @@ def test_gridmap_confirm_from_two_distances(tmp_path):
     hz = g.horizon_row(0) / 4
     for k in range(200):
         cols = rng.uniform(0.0, 1.0, 160)
-        fs = FreeSpace([0.5] * 5, cols, hz, np.zeros((120, 160), np.uint8), True, None)
+        fs = FreeSpace([0.5] * 5, cols, hz, True, None)
         pose = (0.01 * k, 0.0, 0.0)
         mn.add_freespace(fs, 0.0, pose)
         mp.add_freespace(fs, 0.0, pose)
@@ -2048,32 +1959,6 @@ def test_home_needs_gridmap():
         app.set_mode("home")
 
 
-def test_freespace_reset_and_dark_sample():
-    """Dunkle Probe (Kamerastart) darf das Modell nicht verderben; reset() lernt neu."""
-    import numpy as np
-    from xgonav.config import FreespaceCfg
-    from xgonav.freespace import FreeSpaceEstimator
-    cfg = Config.neutral().freespace
-    est = FreeSpaceEstimator(cfg, (640, 480))
-    floor = np.full((480, 640, 3), (90, 110, 130), np.uint8)       # gleichmäßiger Boden
-    floor[:200] = (200, 60, 40)                                     # Wand oben, andere Farbe
-    for _ in range(3):
-        fs = est.update(floor)
-    good = list(fs.sectors)
-    assert min(good) > 0.5
-    dark = np.full_like(floor, 3)
-    for _ in range(20):                                             # schwarze Bilder: nicht lernen
-        est.update(dark)
-    assert min(est.update(floor).sectors) > 0.5
-    # verdorbenes Modell (z. B. von früher): reset() lernt aus dem nächsten Bild neu
-    est.model = est.model * 0
-    est.model[0, 0] = 255
-    assert max(est.update(floor).sectors) < 0.5                      # alles "blockiert"
-    est.reset()
-    assert min(est.update(floor).sectors) > 0.5
-
-
-# ---------------------------------------------------------------- Erkunden (frontier.py, MapExplore)
 def _room_map(door=False):
     """Bekannter Raum 2,4 x 2,4 m um den Ursprung, Wände belegt; door: 0,8 m Lücke in der +x-Wand
     (dahinter unbekannt)."""
@@ -2475,28 +2360,40 @@ def test_plan_after_load_searches_known_area():
 
 
 def test_phantoms_shorten_columns():
-    """Der Simulator speist Fehlalarme wirklich ein."""
-    from xgonav.freespace import FreeSpace
+    """Der Simulator speist Fehlalarme wirklich ein (Grenzzeilen im Vollbild weiter unten = näher)."""
     from xgonav.sim import Phantoms, SimScene
 
-    class Est:
-        H, W = 120, 160
-        geo = CamGeometry(640, 480, 88.5, 1.39, 43.0, 85.0)
-
-        def update(self, bgr, pitch_dev=0.0, boxes=()):
-            hz = self.geo.horizon_row(0) / 4
-            return FreeSpace([1.0] * 5, np.full(160, 1.0), hz, None, True)
+    class Netz:
+        def run(self, bgr):
+            return np.full(80, 200.0, np.float32)          # alles frei bis knapp unter den Horizont
 
     class W:
         scene = SimScene()
-        x, y, th = 1.0, 1.0, 0.0
-    est = Est()
-    p = Phantoms(W, est, n=1, on_prob=1.0)
+        x, y, th, pitch = 1.0, 1.0, 0.0, 0.0
+    net = Netz()
+    p = Phantoms(W, net, CamGeometry(640, 480, 88.5, 1.39, 43.0, 85.0), n=1, on_prob=1.0)
     p.pts = [(2.0, 1.0)]
     p.dirs = [math.pi]                                         # sichtbar aus Richtung des Riders
-    fs = est.update(None)
-    assert p.hits == 1 and np.nanmin(fs.columns) < 0.9
-    assert (fs.columns < 0.9).sum() < 40                       # nur ein Fleck, nicht das ganze Bild
+    rows = net.run(None)
+    assert p.hits == 1 and rows.max() > 250
+    assert (rows > 250).sum() < 20                             # nur ein Fleck, nicht das ganze Bild
+
+
+def test_sim_floornet_grenze_aus_ground_truth():
+    """SimFloorNet: Wand voraus -> Grenze auf Höhe ihres Fußpunkts; das Bild muss eines der letzten sein."""
+    from xgonav.robot import SimRobot
+    from xgonav.sim import SimFloorNet, SimWorld
+    cfg = Config.neutral()
+    robot = SimRobot(cfg.robot)
+    world = SimWorld(cfg.camera, robot, start=(1.0, 1.2, 0.0), shake=0.0)
+    world._integrate(0.0, 0.05)
+    img, _, rows = world._render(0.0, 0.05)
+    world.floor_rows.append((img, rows))
+    net = SimFloorNet(world)
+    got = net.run(img)
+    assert got.shape == (80,) and np.all((got > 240) & (got <= 480))
+    with pytest.raises(ValueError):
+        net.run(img.copy())
 
 
 def test_detections_never_block_path():
@@ -2510,7 +2407,7 @@ def test_detections_never_block_path():
     import xgonav.app as appmod
     assert not hasattr(appmod, "blocking_boxes")
     cols = np.full(160, 0.9)
-    fs = FreeSpace(mask=np.zeros((120, 160), np.uint8), sectors=[0.9] * 7, horizon_row=40.0, columns=cols)
+    fs = FreeSpace(sectors=[0.9] * 7, horizon_row=40.0, columns=cols)
     chair = Track("chair", 320, 400, 120, 160, 0.9, 10.0)
     w = World(t=10.0, dt=0.05, W=640, H=480, hfov=1.6, ego=EgoResult(0, 10.0, 0.05), tracks=[chair], free=fs,
               balancing=True, yaw=0.0, cmd_v=0.1)
@@ -2569,7 +2466,7 @@ def test_detector_only_in_det_modes():
         cfg.behavior.mode = "idle" if mode == "follow" else mode
         robot = SimRobot(cfg.robot)
         world = SimWorld(cfg.camera, robot, None)
-        app = App(cfg, robot, world, imu=None)
+        app = App(cfg, robot, world, imu=None, floor_net=SimFloorNet(world))
         app.imu = None
         det = FakeDetector(world)
         cnt = [0]
@@ -3055,7 +2952,7 @@ def test_locked_map_does_not_change():
     cfg, m = _route_map()
     geo = m.geo
     hz = geo.horizon_row(0) / 4
-    fs = FreeSpace([0.5] * 5, np.full(160, 0.4, np.float32), hz, np.zeros((120, 160), np.uint8), True, None)
+    fs = FreeSpace([0.5] * 5, np.full(160, 0.4, np.float32), hz, True, None)
     m.lock()
     before = m.lo.copy()
     m.add_freespace(fs, 0.0, (0.0, 0.0, 0.0))
@@ -3128,7 +3025,8 @@ def test_ruhe_mode():
     cfg.ruhe.tick_s = 0.2
     robot = SimRobot(cfg.robot)
     robot.settings.update({"imu_hz": "50", "imu_stream_hz": "100", "sleep_ms_on_loop": "200"})
-    app = App(cfg, robot, SimWorld(cfg.camera, robot, None, start=(1.0, 1.5, 0.0)), imu=None)
+    world = SimWorld(cfg.camera, robot, None, start=(1.0, 1.5, 0.0))
+    app = App(cfg, robot, world, imu=None, floor_net=SimFloorNet(world))
     app.imu = None
     th = threading.Thread(target=app.run, kwargs={"duration": 6.0}, daemon=True)
     th.start()
@@ -3239,13 +3137,13 @@ def test_localmap_traegt_an_der_aufnahmepose_ein():
         b = LocalMap(geo, fw, fh, native=native)
         for lm in (a, b):
             lm.move(0.3, 0.2)                              # irgendeine Vorgeschichte
-            lm.add_freespace(FreeSpace([1.0] * 5, np.full(fw, 0.7), fh / 2, None, True), 0.0, 0.0)
+            lm.add_freespace(FreeSpace([1.0] * 5, np.full(fw, 0.7), fh / 2, True), 0.0, 0.0)
         odo = b.odo
-        a.add_freespace(FreeSpace([1.0] * 5, cols, fh / 2, None, True), 0.1, 0.01)
+        a.add_freespace(FreeSpace([1.0] * 5, cols, fh / 2, True), 0.1, 0.01)
         for lm in (a, b):
             lm.move(0.05, 0.15)
             lm.move(0.04, -0.05)
-        fs = FreeSpace([1.0] * 5, cols, fh / 2, None, True)
+        fs = FreeSpace([1.0] * 5, cols, fh / 2, True)
         fs.odo = odo
         b.add_freespace(fs, 0.1, 0.01)
         assert len(a.pts) == len(b.pts) > 0
@@ -3259,7 +3157,7 @@ def test_render_netzlinie_auf_aktuelles_bild():
     from xgonav.freespace import FreeSpace
     geo = CamGeometry(640, 480, 91.8, 0.0, 109.0, 85.0)
     rows = np.full(80, 330.0, np.float32)
-    fs = FreeSpace([1.0] * 5, None, 60.0, None, True, None, 0.0)
+    fs = FreeSpace([1.0] * 5, None, 60.0, True, None, 0.0)
     fs.net_rows, fs.odo = rows, (0.0, 0.0, 0.0)
     gleich = net_rows_jetzt(Snapshot(free=fs, pitch_dev=0.0, odo=(0.0, 0.0, 0.0), geo=geo))
     assert np.allclose(gleich, rows)

@@ -104,6 +104,7 @@ def test_label_run_ueberträgt_und_respektiert_person_und_unbrauchbar(tmp_path, 
     ok[0] = False
     d = H.label_run(npz, [("000000.jpg", own, ok)], {"000002.jpg"}, _cfg())
     assert d["hand"].tolist() == [True, False, False]
+    assert "kanten_row" not in d                # Feld alter Dateien, wird nicht übernommen
     # Eigenes Bild: die Linie selbst, unsichere Spalte zählt nicht
     assert d["row"][0, 40] == pytest.approx(own[40])
     assert d["kind"][0, 0] == L.IGNORE and d["kind"][0, 40] == L.EXACT

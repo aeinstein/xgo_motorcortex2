@@ -1,9 +1,7 @@
 """FloorNet: selbst trainiertes Bodennetz im C++-Kern (native/floornet.cpp, Training unter tools/floornet/).
 
-Liefert je Spalte die Vollbildzeile der Bodengrenze. Mit [freespace] primary = "net" (RiderPi) entscheidet es
-allein, sonst rechnet es im Schatten mit und wird nur im Overlay gezeigt. Fehlt der C++-Kern oder besteht er die
-Selbstprüfung nicht, ist es aus, das Verfahren ([freespace] method) übernimmt.
-"""
+Liefert je Spalte die Vollbildzeile der Bodengrenze; daraus allein rechnet freespace.py den Freiraum. Fehlt der
+C++-Kern oder besteht er die Selbstprüfung nicht, ist der Rider blind (safety() steht still)."""
 from __future__ import annotations
 
 import ctypes

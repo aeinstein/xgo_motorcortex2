@@ -49,13 +49,18 @@ def record(a) -> None:
     rec: list = []
     ov = dict(RIDER)
     ov.update({k: v[0] for k, v in parse_sets(a.set).items()})
-    res = run(a.mode, a.secs, wheels=True, method="kanten", fs_thread=True, dyn=True, vx_true=RIDER_VX,
+    res = run(a.mode, a.secs, wheels=True, fs_thread=True, dyn=True, vx_true=RIDER_VX,
               overrides=ov, scene=a.scene, record=rec)
     start = res.pop("start_pose")
     data = {"obs": rec, "scene": a.scene, "start": start, "path": res.pop("path"), "res": res, "overrides": ov}
     with open(a.file, "wb") as f:
         pickle.dump(data, f)
     print(a.file, {k: res.get(k) for k in ("collisions", "dist_m", "frames")}, res.get("grid"), "Beobachtungen", len(rec))
+
+
+def _fs(o: dict) -> FreeSpace:
+    """Beobachtung der Aufnahme als FreeSpace. Ältere Aufnahmen haben known_from (Kantenweg), neue nicht."""
+    return FreeSpace(columns=o["columns"], horizon_row=o["horizon_row"], valid=True, known_from=o.get("known_from"))
 
 
 def make_grid(cfg: Config, body_h: float) -> GridMap:
@@ -77,7 +82,7 @@ def replay(data: dict, sets: dict, pitch: str, pose: str, max_pitch: float, max_
         pd = o["pitch_" + pitch]
         if abs(pd) > max_pitch or abs(o["w"]) * cfg.robot.vyaw_limit_dps > max_turn or not o["balancing"]:
             continue
-        fs = FreeSpace([], o["columns"], o["horizon_row"], None, True, o["known_from"])
+        fs = _fs(o)
         g.add_freespace(fs, pd, o["pose_" + pose])
         used += 1
     q = map_quality(g.lo, g.res, g.cfg.l_show, scene, data["start"], data["path"])
@@ -194,7 +199,7 @@ def karte_aus(data: dict, cfg: Config) -> GridMap:
     for o in data["obs"]:
         if o["balancing"]:
             g._clear_disk(o["pose_cap"][0], o["pose_cap"][1], g.cfg.driven_free_r_m)
-            g.add_freespace(FreeSpace([], o["columns"], o["horizon_row"], None, True, o["known_from"]),
+            g.add_freespace(_fs(o),
                             o["pitch_cap"], o["pose_cap"])
     return g
 
@@ -216,7 +221,7 @@ def reloc_lokal(data: dict, cfg: Config, a, karte: GridMap | None = None) -> dic
         for o, ti, p in zip(obs, t, odo):
             if not o["balancing"]:
                 continue
-            fs = FreeSpace([], o["columns"], o["horizon_row"], None, True, o["known_from"])
+            fs = _fs(o)
             ein = ab.schritt(g, float(ti), p, fs, o["pitch_cap"]) if ab else True
             pose = reloc.anwenden(ab.k, p) if ab else p
             if karte is None:
@@ -255,7 +260,7 @@ def reloc_global(data: dict, cfg: Config, a, karte: GridMap | None = None) -> di
         for o, ti, d, n in zip(obs, t, drin, nah):
             if not o["balancing"]:
                 continue
-            fs = FreeSpace([], o["columns"], o["horizon_row"], None, True, o["known_from"])
+            fs = _fs(o)
             if d:
                 puffer.add(float(ti), o["pose_cap"], *reloc.scan_punkte(g, fs, o["pitch_cap"], rc))
             elif not n and karte is None:

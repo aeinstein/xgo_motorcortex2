@@ -1,4 +1,4 @@
-"""FloorNet im Schatten und als Entscheider: Ein Fehler im Netz darf das Bodenmodell nie treffen."""
+"""FloorNet als einzige Bodengrenze: Umrechnung, Worker, Overlay, Ausfall (blind, kein Ersatzweg)."""
 from __future__ import annotations
 
 import sys
@@ -17,13 +17,6 @@ from xgonav.floornet import NCOLS, FloorNet  # noqa: E402
 from xgonav.freespace import FreeSpace, FreeSpaceEstimator, FreeSpaceWorker, net_to_columns  # noqa: E402
 
 
-class _Est:
-    """Bodenmodell, das immer dasselbe liefert."""
-
-    def update(self, *a):
-        return FreeSpace(sectors=[0.5] * 5, columns=np.full(160, 0.5, np.float32), valid=True)
-
-
 class _Net:
     def __init__(self, fail: bool = False):
         self.fail = fail
@@ -38,10 +31,15 @@ class _Net:
         self.closed = True
 
 
+def _est(geo=None):
+    """Maße wie am Rider: 160 x 120, Maßstab 4."""
+    return FreeSpaceEstimator(Config.neutral().freespace, (640, 480), geo)
+
+
 def _einmal(net):
-    w = FreeSpaceWorker(_Est(), net=net)
+    w = FreeSpaceWorker(_est(), net)
     w.start()
-    w.offer(np.zeros((480, 640, 3), np.uint8), 0.0, [])
+    w.offer(np.zeros((480, 640, 3), np.uint8), 0.0)
     t0 = time.monotonic()
     fs = None
     while fs is None and time.monotonic() - t0 < 2.0:
@@ -51,24 +49,34 @@ def _einmal(net):
     return w, fs
 
 
-def test_ohne_netz_bleibt_alles_beim_alten():
-    w, fs = _einmal(None)
-    assert fs is not None and fs.net_rows is None and w.net_ms == 0.0
-
-
-def test_netz_haengt_seine_zeilen_ans_ergebnis():
+def test_netz_liefert_die_grenze():
     net = _Net()
     w, fs = _einmal(net)
+    assert fs.src == "net" and fs.valid and not w.blind
     assert fs.net_rows.tolist() == [300.0] * NCOLS
-    assert fs.columns[0] == pytest.approx(0.5)                               # Entscheidungsgrundlage unberührt
+    want = (120 - 300.0 / 4.0) / (120 - fs.horizon_row)
+    assert fs.columns == pytest.approx(want) and fs.sectors == pytest.approx([want] * 5)
     assert w.net_ms > 0.0
     assert net.closed
 
 
-def test_fehler_im_netz_laesst_das_bodenmodell_leben():
+def test_fehler_im_netz_macht_blind():
     w, fs = _einmal(_Net(fail=True))
-    assert fs is not None and fs.valid and fs.net_rows is None
-    assert w.net is None
+    assert fs is None and w.net is None and w.blind
+
+
+def test_ungueltige_zeilen_machen_blind():
+    class _NaN(_Net):
+        def run(self, bgr):
+            return np.full(NCOLS, np.nan, np.float32)
+
+    w, fs = _einmal(_NaN())
+    assert fs is None and w.blind
+
+
+def test_ohne_netz_blind():
+    w, fs = _einmal(None)
+    assert fs is None and w.blind and w.net_ms == 0.0
 
 
 def test_overlay_zeichnet_die_netzlinie():
@@ -78,10 +86,27 @@ def test_overlay_zeichnet_die_netzlinie():
     magenta = (img[:, 320] == (255, 0, 255)).all(axis=1)
     assert magenta[300]
     assert not magenta[200]
+    fs = FreeSpace(sectors=[0.5] * 5, columns=net_to_columns(np.full(NCOLS, 300.0, np.float32), 60.0, 120, 160, 4.0),
+                   horizon_row=60.0, valid=True, net_rows=np.full(NCOLS, 300.0, np.float32))
+    img = render(Snapshot(frame=frame, free=fs), text=False)
+    assert (img[:, 320] == (255, 0, 255)).all(axis=1)[300]
+    assert not (img == (0, 255, 255)).all(axis=2).any()          # keine gelbe Linie (gab es nur fürs Verfahren)
 
 
-def test_schatten_ist_ab_werk_aus():
-    assert Config.neutral().freespace.shadow_net == ""
+def test_netz_ab_werk_nur_am_rider():
+    assert Config.neutral().freespace.net == ""
+    assert Config().freespace.net == "models/floornet.bin"
+
+
+def test_alte_schluessel_in_der_konfig_starten_weiter(caplog):
+    """config.toml am Rider hat noch method, primary, shading_file, shadow_net: Warnung statt KeyError."""
+    cfg = Config()
+    cfg.apply({"freespace": {"method": "kanten", "primary": "net", "shading_file": "shading.json",
+                             "shadow_net": "models/x.bin", "net_smooth_n": 2}})
+    assert cfg.freespace.net == "models/x.bin" and cfg.freespace.net_smooth_n == 2
+    assert not hasattr(cfg.freespace, "method")
+    with pytest.raises(KeyError):
+        cfg.apply({"freespace": {"gibtsnicht": 1}})
 
 
 def test_fehlende_bibliothek_oder_datei_gibt_kein_netz(tmp_path, monkeypatch):
@@ -95,37 +120,6 @@ def test_falsche_bildgroesse_wird_abgelehnt():
         n.run(np.zeros((240, 320, 3), np.uint8))
 
 
-class _EstNetz(_Est):
-    """Wie _Est, mit den Maßen des echten Bodenmodells (160 x 120, Maßstab 4)."""
-    W, H, scale = 160, 120, 4.0
-
-    cfg = Config.neutral().freespace
-    geo = None
-    _net_mask = None
-    diag: dict = {}
-    updates = 0
-
-    def update(self, *a):
-        type(self).updates += 1
-        return FreeSpace(sectors=[0.5] * 5, columns=np.full(160, 0.5, np.float32), horizon_row=60.0, valid=True)
-
-    from_net = FreeSpaceEstimator.from_net
-    adopt_net = FreeSpaceEstimator.adopt_net
-
-
-def _einmal_primaer(net):
-    w = FreeSpaceWorker(_EstNetz(), net=net, net_primary=True)
-    w.start()
-    w.offer(np.zeros((480, 640, 3), np.uint8), 0.0, [])
-    t0 = time.monotonic()
-    fs = None
-    while fs is None and time.monotonic() - t0 < 2.0:
-        fs = w.poll()
-        time.sleep(0.005)
-    w.close()
-    return w, fs
-
-
 def test_net_to_columns_ist_umkehrbar_und_begrenzt():
     rows = np.linspace(200.0, 479.0, NCOLS, dtype=np.float32)
     cols = net_to_columns(rows, 60.0, 120, 160, 4.0)
@@ -137,52 +131,6 @@ def test_net_to_columns_ist_umkehrbar_und_begrenzt():
     # Umkehrung wie in LocalMap und GridMap: Zeile = (H - Wert * Spanne) * Maßstab
     back = (120 - cols[60:] * (120 - 60.0)) * 4.0
     assert back == pytest.approx(rows[30:].repeat(2), abs=1e-3)
-
-
-def test_netz_entscheidet_allein_und_verfahren_rechnet_nicht():
-    _EstNetz.updates = 0
-    w, fs = _einmal_primaer(_Net())
-    assert fs.src == "net" and w.net is not None
-    want = (120 - 300.0 / 4.0) / 60.0
-    assert fs.columns == pytest.approx(want)
-    assert fs.sectors == pytest.approx([want] * 5)
-    assert fs.horizon_row == 60.0 and fs.mask.shape == (120, 160) and fs.valid
-    assert _EstNetz.updates == 0 and w.ms == 0.0 and w.est.diag == {"src": "net"}
-
-
-def test_fehler_im_netz_laesst_das_verfahren_entscheiden():
-    w, fs = _einmal_primaer(_Net(fail=True))
-    assert w.net is None and fs.src == "method"
-    assert fs.columns == pytest.approx(0.5) and fs.net_rows is None
-
-
-def test_ungueltige_zeilen_schalten_das_netz_ab():
-    class _NaN(_Net):
-        def run(self, bgr):
-            return np.full(NCOLS, np.nan, np.float32)
-
-    w, fs = _einmal_primaer(_NaN())
-    assert w.net is None and fs.src == "method" and fs.columns == pytest.approx(0.5)
-
-
-def test_overlay_zeigt_nur_das_netz_wenn_es_entscheidet():
-    frame = np.zeros((480, 640, 3), np.uint8)
-    fs = FreeSpace(sectors=[0.5] * 5, columns=net_to_columns(np.full(NCOLS, 300.0, np.float32), 60.0, 120, 160, 4.0),
-                   horizon_row=60.0, mask=np.zeros((120, 160), np.uint8), valid=True, src="net",
-                   net_rows=np.full(NCOLS, 300.0, np.float32))
-    img = render(Snapshot(frame=frame, free=fs), text=False)
-    assert (img[:, 320] == (255, 0, 255)).all(axis=1)[300]
-    assert not (img == (0, 255, 255)).all(axis=2).any()          # keine gelbe Linie
-    # Entscheidet das Verfahren, bleibt seine Linie gelb und das Netz (Schatten) magenta
-    fs = FreeSpace(sectors=[0.5] * 5, columns=np.full(160, 0.5, np.float32), horizon_row=60.0,
-                   mask=np.zeros((120, 160), np.uint8), valid=True, net_rows=np.full(NCOLS, 300.0, np.float32))
-    img = render(Snapshot(frame=frame, free=fs), text=False)
-    assert (img[:, 320] == (255, 0, 255)).all(axis=1)[300]
-    assert (img[:, 320] == (0, 255, 255)).all(axis=1)[int((120 - 0.5 * 60) * 4)]
-
-
-def test_primaer_ist_ab_werk_das_verfahren():
-    assert Config.neutral().freespace.primary == "method"
 
 
 # ---- ZeilenGlaetter: Kante über die Zeit beruhigen ----
@@ -230,13 +178,11 @@ def test_worker_glaettet_nur_auf_wunsch_und_haelt_die_rohen_zeilen():
             return np.full(NCOLS, 460.0 if self.k == 3 else 350.0, np.float32)      # drittes Bild: Ausreißer
 
     def lauf(n):
-        est = _EstNetz()
-        est.geo = _geo()
-        w = FreeSpaceWorker(est, net=_Folge(), net_primary=True, net_smooth_n=n)
+        w = FreeSpaceWorker(_est(_geo()), _Folge(), net_smooth_n=n)
         w.start()
         out = []
         for k in range(3):
-            w.offer(np.zeros((480, 640, 3), np.uint8), 0.0, [], (0.0, 0.0, 0.0), 0.083 * k)
+            w.offer(np.zeros((480, 640, 3), np.uint8), 0.0, (0.0, 0.0, 0.0), 0.083 * k)
             t0, fs = time.monotonic(), None
             while fs is None and time.monotonic() - t0 < 2.0:
                 fs = w.poll()

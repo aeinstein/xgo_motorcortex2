@@ -72,7 +72,7 @@ NAV_RUHT = pytest.mark.skip(reason="Navigationslogik ruht seit 2026-11-11, siehe
 def test_patrol_route_after_mapping():
     # Kartieren, drei Punkte wählen, abfahren, zum Start; wie am Rider (IMU für das Nicken, Kurs aus den Rädern)
     from sim_run import RIDER, RIDER_VX
-    r = run("patrol", 600.0, wheels=True, imu=True, method="kanten", fs_thread=True, dyn=True, vx_true=RIDER_VX, overrides=RIDER)
+    r = run("patrol", 600.0, wheels=True, imu=True, fs_thread=True, dyn=True, vx_true=RIDER_VX, overrides=RIDER)
     assert r["collisions"] == 0 and r["route_fehler"] == [] and r["streife_s"] is not None
     p = r["explore"]
     assert p["zustand"] == "fertig" and p["erreicht"] == 3 and p["ausgelassen"] == []
@@ -82,9 +82,9 @@ def test_patrol_route_after_mapping():
 @NAV_RUHT
 @pytest.mark.slow
 def test_explore_maps_room():
-    # Bis „Karte fertig“ (3-5 min, zuletzt die Engstellen): mit Rider-Einstellungen, kanten, Rädern und Trägheit
+    # Bis „Karte fertig“ (3-5 min, zuletzt die Engstellen): mit Rider-Einstellungen, Rädern und Trägheit
     from sim_run import RIDER, RIDER_VX
-    r = run("explore", 450.0, wheels=True, imu=True, method="kanten", fs_thread=True, dyn=True, vx_true=RIDER_VX, overrides=RIDER)
+    r = run("explore", 450.0, wheels=True, imu=True, fs_thread=True, dyn=True, vx_true=RIDER_VX, overrides=RIDER)
     g = r["grid"]
     assert r["collisions"] == 0
     assert r["status"].startswith("Karte fertig") and r["fertig_s"] is not None

@@ -5,7 +5,6 @@ import json
 import math
 import sys
 from pathlib import Path
-from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -83,67 +82,6 @@ def test_unbekanntes_gilt_als_mindestens_frei_oder_nichts():
     gm.lo[:] = 0.0                                                           # gar nichts bekannt
     _, kinds = L.cast_labels(gm, g, a, a, a, a)
     assert (kinds == L.IGNORE).all()
-
-
-def test_stillstand_und_drehen_sind_kein_neuer_blick():
-    a = (0.0, 0.0, 0.0)
-    assert not L.moved_enough(a, (0.03, -0.02, math.radians(3.0)))           # Pendeln im Stand
-    assert not L.moved_enough(a, (0.0, 0.0, math.radians(90.0)))             # Drehen auf der Stelle
-    assert L.moved_enough(a, (0.12, 0.0, 0.0))
-
-
-def test_karte_verlangt_treffer_aus_zwei_blicken(monkeypatch):
-    # Zelle 0: nur im Stand gesehen, viele Bilder. Zelle 1: im Stand bis zum Anschlag, dann aus einer zweiten
-    # Pose. Zelle 2: einmal aus der zweiten Pose.
-    plan = [[0, 1]] * 30 + [[1, 2]]
-    x = np.array([0.0] * 60 + [0.5] * 2)
-    traj = (x, np.zeros(len(x)), np.zeros(len(x)), np.zeros(len(x)))
-
-    class Fse:
-        W, H = 160, 120
-
-        def __init__(self, *a):
-            pass
-
-        def update(self, *a):
-            return SimpleNamespace(columns=np.zeros(160), horizon_row=30)
-
-    class Gm:
-        def __init__(self, cfg, *a):
-            self.cfg, self.lo, self.k = cfg, np.zeros((4, 4), np.float32), 0
-
-        def add_freespace(self, *a):
-            for c in plan[self.k]:
-                self.lo[0, c] = min(self.lo[0, c] + self.cfg.l_occ, self.cfg.l_max)
-            self.k += 1
-
-        def _clear_disk(self, *a):
-            pass
-
-    monkeypatch.setattr(L, "FreeSpaceEstimator", Fse)
-    monkeypatch.setattr(L, "GridMap", Gm)
-    monkeypatch.setattr(L.cv2, "imread", lambda *a: np.zeros((480, 640, 3), np.uint8))
-    ms = [{"file": "x.jpg", "pitch_dev": 0.0} for _ in x]
-    gm, used, _ = L.build_map("", ms, traj, Config.neutral(), _geo())
-    assert len(used) == 31
-    assert gm.lo[0, 0] == 0.0
-    assert gm.lo[0, 1] > 2.0
-    assert gm.lo[0, 2] == 0.0
-
-
-def test_nah_gilt_die_kantenzeile_wenn_sie_zur_karte_passt():
-    g = _geo()
-    p = np.array([0.02])
-    near, far = float(L.ground_row(g, 0.4, 0.02)), float(L.ground_row(g, 1.5, 0.02))
-    kanten = near + 6.0                                                      # 6 px ~ 1 cm vor dem Label
-    rows = np.array([[near, near, near, far]], np.float32)
-    kinds = np.array([[L.EXACT, L.ATLEAST, L.EXACT, L.EXACT]], np.uint8)
-    kr = np.array([[kanten, kanten, float(L.ground_row(g, 0.8, 0.02)), far + 20.0]], np.float32)
-    out = L.snap_near(rows, kinds, kr, g, p)
-    assert out[0, 0] == pytest.approx(kanten)                                # nah, passt: Kantenzeile gilt
-    assert out[0, 1] == pytest.approx(near)                                  # ATLEAST bleibt
-    assert out[0, 2] == pytest.approx(near)                                  # Kanten 0,4 m daneben: Karte gilt
-    assert out[0, 3] == pytest.approx(far)                                   # Ferne: Karte ist feiner
 
 
 def test_row_dist_ist_umkehrung_von_ground_row():

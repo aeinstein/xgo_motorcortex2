@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import dataclasses
+import logging
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -79,7 +80,7 @@ class CameraCfg:
     # 2x2-Binning (weniger Rauschen), Zeitbasis stimmt; der ISP skaliert auf width x height.
     sensor_mode: str = "1296x972"
     # Sensorausschnitt [x, y, w, h] in Vollbild-Pixeln (ScalerCrop); leer = ganzer Modus.
-    # [16, 0, 2560, 1920] = Ausschnitt des 640x480-Modus, damit hfov/tilt/shading.json gültig bleiben.
+    # [16, 0, 2560, 1920] = Ausschnitt des 640x480-Modus, damit hfov und tilt gültig bleiben.
     scaler_crop: list = field(default_factory=lambda: [16, 0, 2560, 1920])
     # Bilddauer-Korrektur, nur nötig im 640x480-Modus (dort ~1.061): angefragt = 1/fps * Faktor.
     frame_clock_corr: float = 1.0
@@ -212,98 +213,29 @@ class TrackerCfg:
 
 @dataclass
 class FreespaceCfg:
+    # Bodengrenze von FloorNet (xgonav/floornet.py, C++-Kern). Es gibt keinen Ersatzweg: ohne Netz ist der Rider
+    # blind und fährt nicht selbst (safety() steht still), Handsteuerung geht weiter.
     enabled: bool = True
-    # Bodenmodell in eigenem Thread (FreeSpaceWorker): nimmt der Hauptschleife jedes 2. Bild
-    # ~13 ms ab (CM4); das Ergebnis kommt dafür ein Bild später an. False = wie früher im Takt.
+    # FloorNet in eigenem Thread (FreeSpaceWorker): nimmt der Hauptschleife jedes 2. Bild die Netzzeit ab, das
+    # Ergebnis kommt dafür 1-3 Bilder später an. False = im Takt (Simulator, Tests).
     threaded: bool = True
-    width: int = 160
-    sample_rows: float = 0.34      # Höhe der Boden-Referenz (Anteil der Bildhöhe)
-    sample_bottom: float = 0.0     # Abstand der Referenz vom unteren Bildrand (Anteil der Bildhöhe)
-    sample_cols: float = 0.5       # mittlerer Bildanteil
+    width: int = 160               # Spalten der Arbeitsauflösung (Karten, Sektoren)
     sectors: int = 5
-    hist_bins: int = 16
-    floor_thresh: float = 0.08     # Rückprojektions-Schwelle
-    edge_weight: float = 0.4       # Faktor an Kanten; 0.15 machte Laminatfugen zu Hindernissen (RiderPi)
-    min_obst_rows: int = 6         # Hindernis erst ab so vielen Zeilen Höhe (Arbeitsauflösung, 120 Zeilen)
-    # Ein Nicht-Boden-Lauf zählt erst, wenn er so hoch ist wie ein aufrechter Gegenstand dieser
-    # Höhe an seinem Fußpunkt (oder bis zum Horizont reicht). Flache Flecken, Fugen und Kabel
-    # auf dem Boden sind kürzer. 0 = aus. Braucht die Kamerageometrie.
-    min_obst_height_m: float = 0.04
-    # Linsenabschattung (tools/calibrate.py shading -> JSON). "" = aus (Simulator).
-    # Pixel, die mehr als shading_max_gain Verstärkung bräuchten, gelten als unzuverlässig
-    # und nie als Hindernis (RiderPi: untere Ecken, äußere Ränder).
-    shading_file: str = "shading.json"
-    shading_max_gain: float = 5.0
-    # Spalten, in denen zwischen Horizont und unterem Rand weniger als dieser Anteil messbar ist
-    # (Linsenabschattung: am RiderPi je ~32 von 160 Spalten am Rand gar nicht), gelten als
-    # unbekannt (NaN) statt "frei bis Horizont". Den nicht messbaren Streifen unten in den
-    # übrigen Spalten behandelt known_from.
-    min_known_frac: float = 0.2
-    # Zweites Bodenmodell ohne Rotkanal für den Rand: Wo Rot nicht mehr messbar ist (Abschattung),
-    # Blau und Grün aber bis shading_max_gain_bg korrigierbar sind, entscheidet ein Histogramm aus
-    # Grünanteil G/(B+G) und Helligkeit (B+G)/2, gelernt aus derselben Probe. Am RiderPi sind mit
-    # allen Kanälen nur ~46 % der Pixel messbar, mit Blau+Grün bis Faktor 8 alle.
-    bg_model: bool = False         # aus: Fehlalarme in den unteren Ecken bei dunklem Bild (RiderPi 2026-11-04)
-    # Probe mit mittlerer Helligkeit (V, nach Abschattungs-Korrektur) darunter wird nicht nachgelernt
-    # (z. B. erste Bilder nach dem Kamerastart).
-    min_learn_v: float = 12.0
-    # Neu lernen nach Start der Bildverarbeitung, Aufstehen und geänderter Belichtung; so lange
-    # vorher kein Bodenmodell rechnen (Belichtung/Lage regeln sich ein). Anlass: Ein Modell aus
-    # anderer Lage passte nie mehr (Nachführung nur bei passender Probe) -> alles blockiert.
+    # Nach Start der Bildverarbeitung, Aufstehen und geänderter Belichtung so lange keine Bodengrenze übernehmen
+    # (Belichtung und Lage regeln sich ein).
     restart_hold_s: float = 1.0
-    shading_max_gain_bg: float = 8.0
-    # Horizontregel: Boden liegt nie über dem Horizont. Ist der Streifen knapp darüber
-    # (horizon_band_rows Zeilen, horizon_margin_rows Abstand gegen Nickfehler; Arbeitsauflösung)
-    # zu horizon_floor_frac "Boden", ist die Spalte eine Wand in Bodenfarbe; Fußpunkt = erste
-    # senkrechte Helligkeitsstufe >= wall_edge_thr (Grauwerte je Zeile) unter dem Horizont.
-    horizon_wall: bool = False     # aus: im Simulator Fehlalarme durch Nickfehler (Boden knapp über dem Horizont)
-    # Verfahren für die Bodengrenze: "farbe" (Histogramm der Bodenfarbe, bisher) oder "kanten"
-    # (erste Stufe von unten, über der es anders aussieht; unempfindlich gegen Abschattung und
-    # graue Wand über grauem Boden). Das Farbmodell lernt in beiden Fällen weiter (Rand unten).
-    # "beide": Kanten, und wo diese in einer Spalte nichts finden (frei bis edge_fallback_free),
-    # das Farbmodell (Nutzer: Farbe im Dunkeln besser, Kanten im Hellen).
-    method: str = "kanten"
-    # FloorNet (xgonav/floornet.py): Gewichte, z. B. "models/floornet.bin". Rechnet im Bodenmodell-Thread
-    # (threaded = true); ob es entscheidet oder nur im Schatten mitläuft, sagt primary. "" = aus.
-    shadow_net: str = "models/floornet.bin"
-    # Wer entscheidet: "method" (das Verfahren oben, FloorNet rechnet höchstens mit) oder "net" (FloorNet liefert die
-    # Grenze für Karten und Regelung allein; das Verfahren wird dann weder gerechnet noch gezeichnet). "net" braucht
-    # shadow_net und threaded; fehlt das Netz oder fällt es aus, rechnet und entscheidet wieder das Verfahren.
-    primary: str = "net"
-    # FloorNet, einzelne Zacken herausnehmen (1-3 Spalten breite Sprünge an senkrechten Kanten): Weicht eine Spalte um
+    # Gewichte von FloorNet. "" = kein Netz, also blind.
+    net: str = "models/floornet.bin"
+    # Einzelne Zacken herausnehmen (1-3 Spalten breite Sprünge an senkrechten Kanten): Weicht eine Spalte um
     # mehr als net_outlier_px Vollbildzeilen vom Median der 7 Spalten um sie ab und liegt beim Medianwert mindestens
     # net_outlier_ratio der Masse ihres eigenen Gipfels, gilt das beste Fach beim Medianwert. 0 = aus.
     net_outlier_px: float = 25.0
     net_outlier_ratio: float = 0.3
-    # FloorNet, Kante über die Zeit beruhigen (floornet.ZeilenGlaetter, nur mit primary = "net"): die letzten
-    # net_smooth_n Ausgaben werden über Pose und Nicken auf das aktuelle Bild umgerechnet, je Spalte gilt der Median.
-    # 3: ein Ausreißer in einem einzelnen Bild verschwindet, ein neues Hindernis erscheint ein Netzbild (83 ms) später.
-    # 0 oder 1 = aus. Braucht die Kartenpose; ohne sie gilt die Ausgabe unverändert.
+    # Kante über die Zeit beruhigen (floornet.ZeilenGlaetter): die letzten net_smooth_n Ausgaben werden über Pose
+    # und Nicken auf das aktuelle Bild umgerechnet, je Spalte gilt der Median. 3: ein Ausreißer in einem einzelnen
+    # Bild verschwindet, ein neues Hindernis erscheint ein Netzbild (83 ms) später. 0 oder 1 = aus. Braucht die
+    # Kartenpose; ohne sie gilt die Ausgabe unverändert.
     net_smooth_n: int = 3
-    edge_fallback_free: float = 0.98
-    edge_thin: bool = True         # dünne Linien vorher entfernen (Fugen – aber auch Kontaktschatten)
-    edge_k: int = 3                # Zeilen je Seite für den Stufenvergleich (Arbeitsauflösung)
-    edge_chroma_w: float = 2.0     # Gewicht der LAB-Farbkanäle a/b gegenüber der Helligkeit L
-    edge_step_thr: float = 35.0    # Mindest-Stufe (Summe |ΔL| + w·(|Δa|+|Δb|), 0..255-Skala)
-    edge_seg_thr: float = 28.0     # Mindest-Abweichung des Stücks über der Stufe vom Boden darunter
-    # Lichtschein: Spiegelung einer Lampe im glänzenden Boden erzeugt eine Stufe weit vor der Lampe
-    # (bei 12,8 cm Kamerahöhe etwa ein Viertel ihrer Entfernung). Erkennung: über der Stufe heller
-    # als darunter (>= glare_dl) und zwischen Stufe und Horizont >= glare_px übersteuerte Pixel
-    # (Maximum der Kanäle >= glare_v). Solche Spalten gelten als unbekannt (NaN), nicht als frei.
-    # Helligkeit für die Stufe logarithmisch (Verhältnis statt Differenz): L' = 255·ln(1+L/s)/ln(1+255/s).
-    # Hebt dunkle Szenen an (graue Wand im Dunkeln: L 25 gegen 11), dämpft helle. 0 = linear.
-    edge_log_s: float = 16.0
-    edge_glare: bool = True
-    glare_v: int = 250
-    glare_px: int = 2
-    glare_dl: float = 8.0
-    glare_spread: int = 8          # Schein auf helle Nachbarspalten mit ähnlicher Stufenzeile ausdehnen
-    # Kantenverfahren im C++-Kern (xgonav/native, make -C xgonav/native), sonst numpy; gleiches Ergebnis
-    native: bool = True
-    horizon_margin_rows: int = 2
-    horizon_band_rows: int = 6
-    horizon_floor_frac: float = 0.6
-    wall_edge_thr: float = 8.0
 
 
 @dataclass
@@ -921,6 +853,18 @@ class RelocCfg:
     blind_s: float = 2.0               # balancierend so lange ohne frische Raddaten: Pose unbekannt
 
 
+_log = logging.getLogger(__name__)
+
+# Schlüssel, die es nicht mehr gibt: in einer alten config.toml Warnung statt KeyError (der Dienst startet weiter).
+_KANTEN = "klassisches Bodenmodell entfernt 2026-11-18, nur noch FloorNet"
+ENTFERNT = {f"freespace.{k}": _KANTEN for k in (
+    "primary", "method", "shading_file", "shading_max_gain", "shading_max_gain_bg", "bg_model", "sample_rows",
+    "sample_bottom", "sample_cols", "hist_bins", "floor_thresh", "edge_weight", "min_obst_rows", "min_obst_height_m",
+    "min_known_frac", "min_learn_v", "horizon_wall", "horizon_margin_rows", "horizon_band_rows", "horizon_floor_frac",
+    "wall_edge_thr", "edge_fallback_free", "edge_thin", "edge_k", "edge_chroma_w", "edge_step_thr", "edge_seg_thr",
+    "edge_log_s", "edge_glare", "glare_v", "glare_px", "glare_dl", "glare_spread", "native")}
+UMBENANNT = {"freespace.shadow_net": "freespace.net"}
+
 # Die Defaults oben sind seit 2026-11-12 die Werte des RiderPi (/opt/xgonav/config.toml ohne Testbetrieb und
 # ohne Pfade unter /opt). Simulator und Tests rechnen mit dem früheren neutralen Stand: Config.neutral().
 NEUTRAL = {"pet.call_m": 0.0, "pet.come_m": 0.0, "pet.drive_v": 0.08, "pet.look_w": 0.12, "pet.turn_w": 0.20, "pet.faint": False, "pet.faint_level": 1.0, "pet.seek_m": 0.0, "pet.roam_m": 0.0, "pet.roam_radius_m": 1.0,
@@ -930,9 +874,7 @@ NEUTRAL = {"pet.call_m": 0.0, "pet.come_m": 0.0, "pet.drive_v": 0.08, "pet.look_
            "camera.mount_offset_mm": 45.0, "camera.cam_h_u8": [], "camera.cam_fwd_mm": 0.0,
            "camera.cx_offset_px": 0.0, "camera.tilt_deg": 0.0, "imu.stream_hz": 0, "imu.pitch_sign": 0, "imu.yaw_scale_left": 1.0, "imu.yaw_scale_right": 1.0, "imu.time_offset_ms": None, "imu.pitch_ref_deg": 0.0, "imu.use_roll": False, "imu.roll_ref_deg": 0.0,
            "detector.max_hz": 0.0, "detector.classes": [], "freespace.threaded": False,
-           "freespace.sample_rows": 0.18, "freespace.sample_cols": 0.3, "freespace.shading_file": "",
-           "freespace.shading_max_gain": 8.0, "freespace.method": "farbe", "freespace.shadow_net": "",
-           "freespace.primary": "method", "freespace.net_smooth_n": 0, "map.confirm": 1, "map.yaw_source": "odom",
+           "freespace.net": "", "freespace.net_smooth_n": 0, "map.confirm": 1, "map.yaw_source": "odom",
            "behavior.follow_dist_m": 1.2, "behavior.dist_deadband": 0.15, "behavior.search_w": 0.12,
            "behavior.turn_w": 0.18, "behavior.search_timeout_s": 20.0, "behavior.height_search_mm": 115.0,
            "behavior.height_fast_mm": 70.0, "output.lcd_fifo": "/tmp/lcd0", "cpu.main_cpus": [],
@@ -974,8 +916,8 @@ class Config:
 
     @classmethod
     def neutral(cls) -> "Config":
-        """Stand vor den RiderPi-Defaults (NEUTRAL): Kamera ohne Neigung und Kalibrierung, Farbmodell, keine
-        CPU-Bindung, Kartenabgleich aus. Für Simulator und Tests; tests/sim_run.py --rider setzt Rider-Werte darauf."""
+        """Stand vor den RiderPi-Defaults (NEUTRAL): Kamera ohne Neigung und Kalibrierung, kein FloorNet (der
+        Simulator gibt sim.SimFloorNet mit), keine CPU-Bindung, Kartenabgleich aus. Für Simulator und Tests; tests/sim_run.py --rider setzt Rider-Werte darauf."""
         cfg = cls()
         for name, wert in NEUTRAL.items():
             ziel, _, key = name.rpartition(".")           # ohne Punkt: Schlüssel auf oberster Ebene
@@ -998,6 +940,13 @@ class Config:
             cur = getattr(self, key)
             if dataclasses.is_dataclass(cur) and isinstance(val, dict):
                 for k, v in val.items():
+                    name = f"{key}.{k}"
+                    if name in UMBENANNT:
+                        _log.warning("Config: %s heißt jetzt %s", name, UMBENANNT[name])
+                        k = UMBENANNT[name].rpartition(".")[2]
+                    elif name in ENTFERNT:
+                        _log.warning("Config: %s gibt es nicht mehr (%s), wird ignoriert", name, ENTFERNT[name])
+                        continue
                     if not hasattr(cur, k):
                         raise KeyError(f"Unbekannter Config-Schlüssel: {key}.{k}")
                     setattr(cur, k, v)

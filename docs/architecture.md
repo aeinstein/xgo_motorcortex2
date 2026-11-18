@@ -6,7 +6,7 @@
 camera.FrameSource ─► egomotion.EgoMotion ─► tracker.Tracker ◄── detector.DetectorWorker (thread)
                             │                       │
                             ├─► imu.imu_frame (IMU at frame time, one value per frame → pitch_dev, roll, heading)
-                            ├─► freespace.FreeSpaceEstimator (opt. thread) ─► localmap.LocalMap
+                            ├─► freespace.FreeSpaceWorker: FloorNet (thread) ─► localmap.LocalMap
                             ├─► wheels (odometry) ─► gridmap.GridMap (thread, display only)
                             ▼
               behaviors.World ─► Behavior.step() ─► behaviors.safety() ─► App._arc_check() ─► robot.Robot.drive()
@@ -37,10 +37,10 @@ camera.FrameSource ─► egomotion.EgoMotion ─► tracker.Tracker ◄── d
 | `detector.py` | `DetectorWorker`: YOLO via NCNN (`YoloNcnn`) or onnxruntime (`YoloOnnx`), fallback model; disabled if none is usable |
 | `tracker.py` | Tracks, ego-motion compensation, latency compensation, Kalman distance/velocity |
 | `geometry.py` | Camera geometry, ground-plane distance |
-| `freespace.py`, `shading.py` | Floor colour model → free/blocked per image column; lens-shading correction; edge scan and downscale optionally in C++ (`native/floorfast.cpp`) |
+| `freespace.py` | FloorNet boundary rows → free fraction per column and sectors, rolled by the camera roll; `FreeSpaceWorker` runs the network in its own thread. No fallback: without the network the Rider is blind (`safety()` stops) |
 | `fastlib.py` | loads optional C++ core `native/libxgofast.so` (ctypes), ABI check per function group |
 | `navfast.py` | ctypes binding of `native/navfast.cpp`: A* + path shortening, wavefront, frontier group scoring, local map (move, enter, confirm, arc check), wall distance, path-follower target; used by `planner.py`, `frontier.py`, `localmap.py`, `gridmap.py`, `behaviors.py`, each keeps an equivalent Python path |
-| `floornet.py` | self-trained floor network in the C++ core (`native/floornet.cpp`); runs in the freespace thread: shadow mode (no decisions) or, with `primary = "net"`, alone instead of `method` ([floornet.md](floornet.md)) |
+| `floornet.py` | self-trained floor network in the C++ core (`native/floornet.cpp`), the only source of the floor boundary; `ZeilenGlaetter` smooths it over time ([floornet.md](floornet.md)). Simulator: `sim.SimFloorNet` (ground truth) |
 | `localmap.py` | Short-term obstacle memory in robot frame (`map.max_age_s` = 4 s); move, enter, confirm and arc check optionally in C++ (`native/navfast.cpp`) |
 | `wheels.py` | Wheel odometry from `wheels_log` |
 | `gridmap.py` | Room occupancy grid in world frame, start point, save/load; entering an observation (rays, free rays, hits) optionally in C++ (`native/gridfast.cpp`) |
@@ -63,6 +63,7 @@ camera.FrameSource ─► egomotion.EgoMotion ─► tracker.Tracker ◄── d
 | Robot | `robot.ProcRobot` | `robot.SimRobot` |
 | Detector | `detector.DetectorWorker` | `sim.FakeDetector` (ground truth, 180 ms latency, 5 Hz) |
 | IMU | `imu.ProcImu` | `sim.SimImu` |
+| Floor boundary | `floornet.FloorNet` | `sim.SimFloorNet` (ground truth of the rendered frame; `sim.Phantoms` adds false alarms) |
 
 `--robot` default: `proc` if `camera.source = "picam"`, else `sim`. LCD and emotions only with `proc`.
 
@@ -70,7 +71,7 @@ camera.FrameSource ─► egomotion.EgoMotion ─► tracker.Tracker ◄── d
 
 | Layer | Action |
 |---|---|
-| `behaviors.safety()` | not balancing → stop; centre free space < `blocked_free`·0.6 → no forward; < `slow_free` → scale v (≥ 0.25); TTC < `ttc_stop_s` (0.8 s) → no forward |
+| `behaviors.safety()` | not balancing → stop; blind (no FloorNet) → stop; centre free space < `blocked_free`·0.6 → no forward; < `slow_free` → scale v (≥ 0.25); TTC < `ttc_stop_s` (0.8 s) → no forward |
 | `App._arc_check()` | planned arc (forward and reverse) checked against local map |
 | `Robot` | clamp to `max_v`/`max_w`, ramp (`accel_v`, `accel_w`), keepalive 0.3 s, userspace watchdog `stall_timeout_s` 0.5 s |
 | Kernel | `settings/motion_timeout_ms` (xgonav sets `robot.kernel_watchdog_ms` = 1000) |

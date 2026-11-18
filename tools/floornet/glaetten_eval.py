@@ -107,7 +107,7 @@ def main() -> int:
         for n in ns:
             zeilen["glatt%d" % n] = glatt(zeilen["roh"], posen, r["pitch"], t, geo, n)
         for f in fassungen:
-            res[f][r["run"]] = {"netz": T.band_report(zeilen[f], r["row"], r["kind"], r["pitch"], r["geom"]), "kanten": {}}
+            res[f][r["run"]] = {"netz": T.band_report(zeilen[f], r["row"], r["kind"], r["pitch"], r["geom"])}
             nah[f] += E.near_counts(zeilen[f], r["row"], r["kind"], r["pitch"], r["geom"], T.EXACT, T.FAR_M)
             spr[f].append(spruenge(zeilen[f], posen, r["pitch"], t, geo))
             if a.out:
@@ -122,7 +122,7 @@ def main() -> int:
         print("%-10s %5d Bilder" % (r["run"], len(r["imgs"])), flush=True)
     for f in fassungen:
         print("\n== %s ==" % f)
-        print("\n".join(z for z in T.show(res[f]).split("\n") if " kanten " not in z))
+        print(T.show(res[f]))
         n, fr, bl = nah[f]
         s = np.concatenate(spr[f])
         print("unter %.1f m: Spalten %d, fälschlich frei %.2f %%, fälschlich blockiert %.2f %%" % (E.NEAR_M, n, 100 * fr / n, 100 * bl / n))

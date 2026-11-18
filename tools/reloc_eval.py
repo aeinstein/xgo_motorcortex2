@@ -160,7 +160,7 @@ def main() -> int:
     s.add_argument("--abstand", type=float, default=10.0)
     s.add_argument("--out", default="", help="Ergebnis je Fahrt als JSON in diesen Ordner")
     s.add_argument("--set", action="append", default=[], metavar="ABSCHNITT.SCHLÜSSEL=WERT")
-    s.add_argument("--netz", default="", help="Bodengrenze allein aus FloorNet mit diesen Gewichten (wie am Rider)")
+    s.add_argument("--netz", default="", help="Gewichte von FloorNet (Default: [freespace] net der Konfiguration)")
     s.add_argument("--mit-stueck", action="store_true",
                    help="das Stück bleibt in der Karte (Obergrenze: so gut ginge es, wenn die Karte die Stelle kennt)")
     b = sub.add_parser("bench")

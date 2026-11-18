@@ -102,8 +102,8 @@ class LocalMap:
             self._obs_n += 1
             return
         cols = np.asarray(fs.columns, float)
-        # Entfernung, ab der die Spalte überhaupt etwas weiß (Linsenabschattung: darunter
-        # ist die Farbe nicht messbar). Spalten ohne messbaren Boden gelten als verdeckt.
+        # Entfernung, ab der die Spalte überhaupt etwas weiß (known_from, FloorNet: None; darunter
+        # ist nichts messbar). Spalten ohne messbaren Boden gelten als verdeckt.
         known_from = None
         if fs.known_from is not None:
             kf = np.asarray(fs.known_from, float)

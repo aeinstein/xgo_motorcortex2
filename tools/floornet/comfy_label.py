@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """Bodenlabels aus ComfyUI (Qwen-Image-Edit 2511 + Lightning 4 Schritte): Das Modell färbt den Boden grün, aus dem
 Ergebnis wird je Spalte die Bodengrenze (unterste Zeile, über der kein Boden mehr kommt). Prüfung gegen die
-Handlinien (teil3.json) mit derselben Rechnung wie tools/floornet/eval_hand.py, daneben das Kantenverfahren.
+Handlinien (teil3.json) mit derselben Rechnung wie tools/floornet/eval_hand.py.
 
   python comfy_label.py --hand ~/floornet/hand/teil3.json --labels ~/floornet/labels5 --n 8 --out lauf1
   python comfy_label.py ... --n 287 --out lauf2          # alle Handbilder
 
-Ausgabe in --out: <id>_edit.png (Modell), <id>_vgl.jpg (Linien: grün Hand, magenta Modell, gelb Kanten),
+Ausgabe in --out: <id>_edit.png (Modell), <id>_vgl.jpg (Linien: grün Hand, magenta Modell),
 ergebnis.json (Zeilen je Bild) und die Tabelle auf stdout. Bereits gerechnete Bilder werden übersprungen.
 """
 from __future__ import annotations
@@ -206,17 +206,15 @@ def main() -> int:
             print("%-40s %.1f s" % (k, res[k]["s"]), flush=True)
         rows = np.array(res[k]["rows"], np.float32)
         hr, ok = polyline_rows(hd[k]["pts"])
-        kidx = np.linspace(0, d["kanten_row"].shape[1] - 1, NCOLS).round().astype(int)
-        kr = d["kanten_row"][i][kidx]
         geo = json.loads(str(d["geom"]))
         if k in body:                                   # Labels rechnen mit 85 mm Körperhöhe (eval_hand.py)
             geo["cam_h"] = geo["cam_h"] + (body[k] - 85.0) / 1000.0
         pitch = np.array([d["pitch"][i]])
-        per_run.setdefault(run, []).append((rows, kr, hr, ok, pitch, geo))
+        per_run.setdefault(run, []).append((rows, hr, ok, pitch, geo))
         # Vergleichsbild
         img = cv2.imread(src)
         xs = ((np.arange(NCOLS) + 0.5) * W / NCOLS).astype(int)
-        for r_, col in ((hr, (0, 220, 0)), (kr, (0, 230, 230)), (rows, (255, 0, 255))):
+        for r_, col in ((hr, (0, 220, 0)), (rows, (255, 0, 255))):
             pts = [(int(x), int(y)) for x, y in zip(xs, r_) if np.isfinite(y)]
             if len(pts) > 1:
                 cv2.polylines(img, [np.array(pts, np.int32)], False, col, 2)
@@ -226,25 +224,21 @@ def main() -> int:
     # Auswertung wie eval_hand.py: Fehler in Metern je Spalte, Bänder nach Entfernung der Handlinie
     print("\n%d Bilder, Modell %.1f s je Bild (Median)" % (len(ids), float(np.median([res[k]["s"] for k in ids]))))
     for lo, hi in ((0.0, 0.5), (0.5, 1.0), (1.0, 1.5), (1.5, 2.5)):
-        line = "%3.1f-%3.1f m " % (lo, hi)
-        for who in (0, 1):
-            n = fr = bl = 0
-            meds = []
-            for run, lst in per_run.items():
-                for rows, kr, hr, ok, pitch, geo in lst:
-                    pr = rows if who == 0 else kr
-                    dh = row_dist(geo, hr[None], pitch)[0]
-                    dp = row_dist(geo, pr[None], pitch)[0]
-                    m = ok & (dh >= lo) & (dh < hi) & np.isfinite(pr)
-                    e = dp - dh
-                    n += int(m.sum())
-                    fr += int(((e > FAR) & m).sum())
-                    bl += int(((e < -FAR) & m).sum())
-                    meds.append(np.abs(np.nan_to_num(e[m], posinf=9.0)))
-            med = float(np.median(np.concatenate(meds)) * 100) if n else float("nan")
-            line += "| %-6s n%5d frei %5.1f%% block %5.1f%% med %4.0f cm " % (
-                ("modell", "kanten")[who], n, 100 * fr / max(n, 1), 100 * bl / max(n, 1), med)
-        print(line)
+        n = fr = bl = 0
+        meds = []
+        for run, lst in per_run.items():
+            for pr, hr, ok, pitch, geo in lst:
+                dh = row_dist(geo, hr[None], pitch)[0]
+                dp = row_dist(geo, pr[None], pitch)[0]
+                m = ok & (dh >= lo) & (dh < hi) & np.isfinite(pr)
+                e = dp - dh
+                n += int(m.sum())
+                fr += int(((e > FAR) & m).sum())
+                bl += int(((e < -FAR) & m).sum())
+                meds.append(np.abs(np.nan_to_num(e[m], posinf=9.0)))
+        med = float(np.median(np.concatenate(meds)) * 100) if n else float("nan")
+        print("%3.1f-%3.1f m | modell n%5d frei %5.1f%% block %5.1f%% med %4.0f cm" % (
+            lo, hi, n, 100 * fr / max(n, 1), 100 * bl / max(n, 1), med))
     return 0
 
 

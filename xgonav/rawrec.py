@@ -67,7 +67,7 @@ def _meta_zeile(snap, name: str, imu=None, raeder=None) -> str:
                     "box": [round(v, 1) for v in t.box]} for t in snap.tracks],
         "tracks_all": [{"id": t.id, "cls": t.cls, "hits": t.hits, "seen": round(snap.t - t.t_seen, 2),
                         "box": [round(v, 1) for v in t.box]} for t in snap.tracks_all],
-        "fs": snap.fs_diag, "cam": snap.cam_meta,
+        "cam": snap.cam_meta,
         "imu": None if imu is None else [[round(t, 4), round(math.degrees(r), 3), round(math.degrees(p), 3),
                                           round(math.degrees(y), 3)] for t, r, p, y in imu],
         "raeder": None if raeder is None else [[round(t, 4), round(l, 5), round(r, 5)] for t, l, r in raeder],

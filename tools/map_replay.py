@@ -8,7 +8,8 @@ Wozu: Am Rider entstehen Doppelwände. Dieselbe Fahrt wird mit einzeln umgeschal
 eingetragen; die Karten stehen nebeneinander in FAHRT_karten.png, Kennzahlen in FAHRT.json. Was die
 Doppelwand beseitigt, zeigt das Bild; die Kennzahlen sind Beiwerk.
 
-Die Bodengrenze wird je Bild einmal gerechnet (jedes zweite Bild, wie live) und für alle Varianten
+Die Bodengrenze kommt aus FloorNet ([freespace] net oder --netz, braucht den C++-Kern), je Bild einmal
+gerechnet (jedes zweite Bild, wie live) und für alle Varianten
 verwendet. Eine Variante ist "name:schlüssel=wert,..." und ändert die Basis:
   versatz=MS       Pose zur Zeit Bildzeit + MS aus der aufgezeichneten Posenfolge (Basis: ein Bild früher,
                    so trägt die App ein: Pose des letzten Regelschritts vor dem Bild; 0 = Pose des Bildes)
@@ -337,15 +338,14 @@ def imu_proben(ms: list[dict]):
 
 def lade(d: str, cfg, bahn_quelle: str = "pose", roll_ref: float = 0.0, imu_versatz_ms: float = 0.0,
          netz: str = "") -> dict:
-    """Eine Rohaufnahme laden und die Bodengrenze je Bild rechnen (jedes zweite, wie live): alles, was
-    rechne() braucht. Auch tools/reloc_eval.py arbeitet damit. netz: Gewichte von FloorNet; dann kommt
-    die Grenze allein aus dem Netz (wie am Rider mit freespace.primary = "net", braucht den C++-Kern)."""
-    net = None
-    if netz:
-        from xgonav.floornet import FloorNet
-        net = FloorNet.load(netz, cfg.freespace.net_outlier_px, cfg.freespace.net_outlier_ratio)
-        if net is None:
-            raise SystemExit("FloorNet %s nicht ladbar (C++-Kern xgonav/native/libxgofast.so?)" % netz)
+    """Eine Rohaufnahme laden und die Bodengrenze je Bild aus FloorNet rechnen (jedes zweite, wie live): alles,
+    was rechne() braucht. Auch tools/reloc_eval.py arbeitet damit. netz: Gewichte von FloorNet ("" =
+    [freespace] net der Konfiguration); braucht den C++-Kern."""
+    from xgonav.floornet import FloorNet
+    netz = netz or cfg.freespace.net
+    net = FloorNet.load(netz, cfg.freespace.net_outlier_px, cfg.freespace.net_outlier_ratio)
+    if net is None:
+        raise SystemExit("FloorNet %s nicht ladbar (C++-Kern xgonav/native/libxgofast.so?)" % netz)
     geo = make_geo(cfg)
     ms = select_segment(load_run(d))
     if len(ms) < 10:
@@ -379,12 +379,9 @@ def lade(d: str, cfg, bahn_quelle: str = "pose", roll_ref: float = 0.0, imu_vers
         img = cv2.imread(os.path.join(d, m["file"]))
         if img is None:
             continue
-        if net is not None:
-            # Roll wie live (imu.use_roll): Grenze um IMU-Roll - roll_ref_deg geradegedreht
-            rd = float(np.interp(t[i], imu[0], imu[1])) - cfg.imu.roll_ref_deg if cfg.imu.use_roll and imu is not None else 0.0
-            fs = fse.from_net(net.run(img), m["pitch_dev"], rd)
-        else:
-            fs = fse.update(img, m["pitch_dev"], [tr["box"] for tr in m.get("tracks_all", m.get("tracks", []))])
+        # Roll wie live (imu.use_roll): Grenze um IMU-Roll - roll_ref_deg geradegedreht
+        rd = float(np.interp(t[i], imu[0], imu[1])) - cfg.imu.roll_ref_deg if cfg.imu.use_roll and imu is not None else 0.0
+        fs = fse.from_net(net.run(img), m["pitch_dev"], rd)
         tracks = m.get("tracks", [])
         views[i] = mask_movable(fs, [(tr.get("cls"), tr["box"]) for tr in tracks], geo.W, geo.H)
     pitch = np.array([m["pitch_dev"] for m in ms], float)
@@ -425,7 +422,7 @@ def main() -> int:
     ap.add_argument("--roll-ref", type=float, default=0.0, help="IMU-Roll bei waagerechtem Bild (Grad)")
     ap.add_argument("--imu-versatz-ms", type=float, default=0.0, help="IMU-Zeit = Bildzeit + so viel")
     ap.add_argument("--set", action="append", default=[], metavar="ABSCHNITT.SCHLÜSSEL=WERT")
-    ap.add_argument("--netz", default="", help="Bodengrenze allein aus FloorNet mit diesen Gewichten (wie am Rider)")
+    ap.add_argument("--netz", default="", help="Gewichte von FloorNet (Default: [freespace] net der Konfiguration)")
     a = ap.parse_args()
     cfg = load_cfg(a.config, a.set)
     specs = (["basis:"] if a.nur else PRESETS + ["roll_imu:roll=imu", "kurs_imu:kurs=imu", "abgleich:abgleich=1"]) + a.variante

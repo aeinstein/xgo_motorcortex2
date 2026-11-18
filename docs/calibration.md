@@ -85,21 +85,9 @@ python tools/imu_versatz.py ~/fahrt/<recording> [--fenster idx,idx,... --halb 48
 Web: the line under the camera image shows the IMU value of each frame (pitch, roll, heading, sample age, pitch rate image vs. IMU) and counts frames without a valid IMU value (red).
 Drift check: *Bild am IMU-Nick festhalten* (camera bar) shifts each frame in the browser by `row_stand − row_imu` (normal pose against the pure IMU pitch; black border, no load on the pipeline); the cyan line is then fixed. Scene moving against it = IMU or time-sync drift.
 
-## 3. Lens shading — `[freespace] shading_file`
+## 3. Lens shading — removed 2026-11-18
 
-```
-python tools/calibrate.py shading [shading.json]
-```
-| Item | Value |
-|---|---|
-| Target | uniformly white self-luminous surface filling the frame (laptop, white fullscreen, max brightness; focus irrelevant) |
-| Browser page | `data:text/html,<body style="background:#fff;cursor:none">` |
-| Rejected if | coverage < 75 % of frame, or overexposed |
-| Camera setup | same as xgonav from `config.toml`: `sensor_mode`, `scaler_crop`, `fps` (auto exposure). Before 2026-11-04 the tool used the 640x480 sensor mode without crop → mismatched file |
-| Config | `shading_file = "shading.json"`, `shading_max_gain` (RiderPi 5.0) |
-| Missing file | runs uncorrected (log warning); with `method = "farbe"` the RiderPi then sees dark lower corners as obstacles |
-| `method = "kanten"` | boundary from the uncorrected image; shading only affects the color model (bottom strip, `beide`) |
-| RiderPi status | ISP (libcamera ALSC) already corrects most shading. 2026-11-04 recalibrations (`shading-neu*.json`, last one centered) helped the color model less than the old file in dark scenes → old `shading.json` kept |
+Only the classic colour floor model used `shading.json`. FloorNet works on the uncorrected (lens-undistorted) frame; `tools/calibrate.py shading` and `[freespace] shading_file` are gone.
 
 ## 4. Wheel odometry — `[odom] scale_left`, `scale_right`, `track_m`
 

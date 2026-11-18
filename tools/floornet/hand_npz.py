@@ -24,12 +24,12 @@ EXACT, IGNORE = 1, 0
 
 
 def build_run(z, items: dict) -> dict:
-    """z: Felder der Datei von label.py als dict. items: Datei -> (Zeilen, gültig). Rückgabe: nur diese Bilder, hand = True."""
+    """z: Felder einer Label-Datei (früher label.py) als dict. items: Datei -> (Zeilen, gültig). Rückgabe: nur diese Bilder, hand = True."""
     pos = {str(f): i for i, f in enumerate(z["files"])}
     names = sorted(f for f in items if f in pos)
     idx = np.array([pos[f] for f in names], int)
-    d = {k: v for k, v in z.items() if k not in ("lo", "hand")}
-    for k in ("files", "t", "x", "y", "th", "rate", "pitch", "kanten_row"):
+    d = {k: v for k, v in z.items() if k not in ("lo", "hand", "kanten_row")}   # kanten_row: nur in alten Dateien
+    for k in ("files", "t", "x", "y", "th", "rate", "pitch"):
         d[k] = d[k][idx]
     d["row"] = np.stack([items[f][0] for f in names]).astype(np.float32)
     d["kind"] = np.stack([np.where(items[f][1], EXACT, IGNORE) for f in names]).astype(np.uint8)

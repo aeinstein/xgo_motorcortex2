@@ -24,7 +24,7 @@ width = 640
 height = 480
 fps = 24               # fest; max. Belichtung damit 41,7 ms
 sensor_mode = "1296x972"  # reines 2x2-Binning, richtige Zeitbasis (640x480-Modus lief ~6 % zu schnell)
-scaler_crop = [16, 0, 2560, 1920]   # Ausschnitt wie im 640x480-Modus: hfov/tilt/shading bleiben gültig
+scaler_crop = [16, 0, 2560, 1920]   # Ausschnitt wie im 640x480-Modus: hfov/tilt bleiben gültig
 hfov_deg = 91.8       # [K] aus Drehungen gegen IMU-Kurs (2026-11-07, f 310 px); Zollstock (88,5) legt nur f·h fest
 # 4 ms war bei Wohnraum-Licht (15–50 Lux) fast schwarz. 15 ms reichte bei Tages- und
 # Lampenlicht, kostet aber Schärfe bei schnellen Drehungen. 0 = Auto (Modus "short").
@@ -60,22 +60,12 @@ conf = 0.35
 classes = ["person", "chair", "couch", "dining table", "potted plant", "bed", "dog", "cat"]
 
 [freespace]
-# net_outlier_px = 25.0 ist Standard: einzelne Zacken der FloorNet-Grenze herausnehmen (0 = aus), docs/floornet.md
-# net_smooth_n = 3      # FloorNet-Kante über 3 Netzbilder beruhigen (Median je Spalte nach Umrechnen mit Pose und
-                        # Nicken); nur mit primary = "net", 0 = aus; 3 ist Default, docs/floornet.md
-# primary = "net"       # (Default) FloorNet entscheidet allein, das Verfahren (method) rechnet nur bei Ausfall des Netzes;
-                        # braucht shadow_net und threaded. Am RiderPi seit 2026-11-10 gesetzt, nicht gefahren
-method = "kanten"        # Bodengrenze aus Stufenkanten; replay 2026-11-04: Fehlalarme 0,2–16 % statt 25–53 % (Farbe)
-# edge_log_s = 16 und edge_glare = true sind Standard (2026-11-05): dunkle Wände/Möbel werden
-# erkannt, Lampenschein auf glänzendem Boden gilt als unbekannt statt als Hindernis.
-threaded = true          # Bodenmodell in eigenem Thread: Schleife p95 27 -> 17 ms (CM4, 2026-11-02)
-# [K] Linsenabschattung: tools/calibrate.py shading erzeugt shading.json. Fehlt die
-# Datei, läuft xgonav ohne Korrektur (Warnung im Log) – dann hält das Bodenmodell am
-# RiderPi die Bildränder für Hindernisse und die Bahnprüfung blockiert.
-shading_file = "shading.json"
-shading_max_gain = 5.0   # Nahbereich mit verrauschtem Rot gilt als unbekannt statt Hindernis
-sample_rows = 0.34       # Bodenprobe vom unteren Rand bis ~0,6 m (naher und ferner Boden)
-sample_cols = 0.5
+# Bodengrenze nur aus FloorNet (net = "models/floornet.bin" ist Standard). Ohne Netz ist der Rider blind und fährt
+# nicht selbst; das klassische Bodenmodell (kanten, farbe, Linsenabschattung) gibt es seit 2026-11-18 nicht mehr.
+# net_outlier_px = 25.0 ist Standard: einzelne Zacken der Grenze herausnehmen (0 = aus), docs/floornet.md
+# net_smooth_n = 3      # Kante über 3 Netzbilder beruhigen (Median je Spalte nach Umrechnen mit Pose und Nicken),
+                        # 0 = aus; 3 ist Default, docs/floornet.md
+threaded = true          # Netz in eigenem Thread
 
 [grid]
 file = "/opt/xgonav/raumkarte.npz"   # Raumkarte speichern/laden; beim Laden muss der Rider am Startpunkt stehen

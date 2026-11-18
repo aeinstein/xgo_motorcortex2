@@ -64,7 +64,7 @@ python3 -m venv .venv && .venv/bin/pip install "opencv-python-headless>=4.6" "nu
 | [architecture.md](docs/architecture.md) | Data flow, modules, threads, safety layers, conventions |
 | [installation.md](docs/installation.md) | install-all, manual steps, nginx/php-fpm, permissions, model export |
 | [configuration.md](docs/configuration.md) | TOML overrides, CLI flags, parameters per section |
-| [calibration.md](docs/calibration.md) | FOV, turn rate, camera height/tilt, lens shading, odometry, reverse gain |
+| [calibration.md](docs/calibration.md) | FOV, turn rate, camera height/tilt, odometry, reverse gain |
 | [driver.md](docs/driver.md) | `xgo-drv`, patches, `/proc/XGORider` reference, UART, driver test |
 | [web-interface.md](docs/web-interface.md) | Web UI, `api.php`, xgonav local API, WebSocket protocol |
 | [mapping.md](docs/mapping.md) | Odometry, short-term local map, room map (occupancy grid) |

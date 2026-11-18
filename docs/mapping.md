@@ -42,7 +42,7 @@ Status JSON: `odom.src` = `räder` | `befehl`, `odom.m` = total distance.
 | Pitch, pose | pitch of the captured image (`FreeSpace.pitch_dev`); pose (`.pose`) as of the last control step before that image was processed, not of the later frame the result arrives in. Not interpolated to the capture time: while turning the pose is older than the image by an unmeasured amount (40 °/s × 50 ms = 2°) |
 | Filter | only while balancing, below `max_turn_dps` 40 °/s (the pause after a fast turn, `turn_settle_s`, was removed 2026-11-17; offline still `tools/map_replay.py` variant `ruhe=S`); the rate is the wheel heading (`odom.yaw_source`) at the control step in which the result arrives, not at capture |
 | Driven path | `driven_free_r_m` 0.10 m around the path counts as free |
-| Unknown | columns without measurable floor (lens shading) stay unknown |
+| Unknown | columns without measurable floor (`known_from`; FloorNet reports none) stay unknown |
 | Thread | `GridWorker` (cores = `cpu.freespace_cpus`), the pose handed to the floor model is passed along |
 | Use | display; path planning for modes `home` and `explore` |
 | Drift | no correction (no markers); drifts over time |

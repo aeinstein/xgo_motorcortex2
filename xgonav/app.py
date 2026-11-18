@@ -49,7 +49,6 @@ class Snapshot:
     t: float = 0.0                 # Aufnahmezeit des Frames (monoton, s)
     pitch_dev: float = 0.0         # Nickabweichung rad, wie in der Geometrie verwendet
     tracks_all: list = field(default_factory=list)   # alle Tracks inkl. unbestätigter (Diagnose)
-    fs_diag: dict = field(default_factory=dict)      # Diagnose des Bodenmodells
     cam_meta: dict | None = None                     # Weißabgleich, Verstärkung
     imu: ImuFrame | None = None                      # IMU zur Bildzeit (eine Wahrheit je Bild); None ohne IMU
     nickrate: tuple[float, float] | None = None      # Nickrate aus Bild / IMU (°/s) zwischen den letzten Bildern
@@ -102,7 +101,8 @@ ARC_FAST_MPS, ARC_FAST_K = 0.3, 0.8
 
 class App:
     def __init__(self, cfg: Config, robot: Robot, source: FrameSource | None = None,
-                 imu: ImuSource | None = None, wheels: WheelOdom | None = None):
+                 imu: ImuSource | None = None, wheels: WheelOdom | None = None, floor_net=None):
+        """floor_net: Bodengrenze statt FloorNet aus [freespace] net (Simulator: sim.SimFloorNet)."""
         self.cfg = cfg
         self.imu = imu if imu is not None else make_imu(cfg.imu)
         self.wheels = wheels if wheels is not None else make_wheels(cfg.odom)
@@ -130,27 +130,16 @@ class App:
         self.det = DetectorWorker(cfg.detector, cfg.cpu.detector_cpus)
         self.geo = CamGeometry.from_cfg(cfg)
         self.fse = FreeSpaceEstimator(cfg.freespace, size, self.geo) if cfg.freespace.enabled else None
-        if cfg.freespace.primary not in ("method", "net"):
-            raise ValueError("freespace.primary muss method oder net sein, nicht %r" % cfg.freespace.primary)
-        shadow = None
-        if self.fse is not None and cfg.freespace.shadow_net:
-            if cfg.freespace.threaded:
-                shadow = FloorNet.load(cfg.freespace.shadow_net, cfg.freespace.net_outlier_px,
-                                       cfg.freespace.net_outlier_ratio)
-            else:
-                log.warning("[floornet] braucht freespace.threaded: aus")
-        net_primary = cfg.freespace.primary == "net" and shadow is not None
-        if cfg.freespace.primary == "net":
-            if net_primary:
-                log.info("[floornet] Netz entscheidet allein, Verfahren %s rechnet nur bei Ausfall des Netzes",
-                         cfg.freespace.method)
-            elif self.fse is not None:
-                log.warning("[floornet] primary = net, aber kein Netz: Verfahren %s entscheidet", cfg.freespace.method)
-        if net_primary and cfg.freespace.net_smooth_n > 1:
-            log.info("[floornet] Kante über %d Netzbilder beruhigt (net_smooth_n)", cfg.freespace.net_smooth_n)
-        self.fs_worker = FreeSpaceWorker(self.fse, cfg.cpu.freespace_cpus, shadow, net_primary,
-                                         cfg.freespace.net_smooth_n if net_primary else 0) \
-            if self.fse is not None and cfg.freespace.threaded else None
+        self.fs_worker = None
+        if self.fse is not None:
+            net = floor_net
+            if net is None and cfg.freespace.net:
+                net = FloorNet.load(cfg.freespace.net, cfg.freespace.net_outlier_px, cfg.freespace.net_outlier_ratio)
+            if net is None:
+                log.error("Kein FloorNet ([freespace] net = %r): blind, der Rider fährt nicht selbst", cfg.freespace.net)
+            elif cfg.freespace.net_smooth_n > 1:
+                log.info("[floornet] Kante über %d Netzbilder beruhigt (net_smooth_n)", cfg.freespace.net_smooth_n)
+            self.fs_worker = FreeSpaceWorker(self.fse, net, cfg.cpu.freespace_cpus, cfg.freespace.net_smooth_n)
         m = cfg.map
         self.lmap = LocalMap(self.geo, self.fse.W, self.fse.H, max_age_s=m.max_age_s, confirm=m.confirm,
                              confirm_radius_m=m.confirm_radius_m, radius_m=m.radius_m, native=m.native) \
@@ -302,8 +291,8 @@ class App:
         log.info("Pose in der Raumkarte bestätigt (%s)", "am Startpunkt" if aktion == "start" else "wie angezeigt")
 
     def _check_mode(self, name: str, confirmed: bool = False, target: str | None = None) -> None:
-        if name in self.NEEDS_FREESPACE and self.fse is None:
-            raise ModeNotAllowed(f"Modus {name} braucht die Freiraum-Erkennung (freespace.enabled)")
+        if name in self.NEEDS_FREESPACE and (self.fs_worker is None or self.fs_worker.blind):
+            raise ModeNotAllowed(f"Modus {name} braucht die Bodengrenze (FloorNet), die fehlt oder ist ausgefallen")
         if name in self.TARGET_MODES:
             # Ohne Detektor oder mit einer Klasse, die er nicht meldet, suchte follow ewig bzw. erkundete approach ewig
             avail = self.det.classes() if hasattr(self.det, "classes") else []
@@ -546,13 +535,13 @@ class App:
         return f.idx if f is not None else last
 
     def reset_floor(self, hold_s: float = 0.0) -> None:
-        """Bodenmodell neu lernen lassen; hold_s: so lange vorher kein Bodenmodell rechnen
-        (nach Kamerastart sind die ersten Bilder dunkel). Bis dahin kein Freiraum-Ergebnis."""
-        if self.fse is None:
+        """Bodengrenze neu beginnen (Glätten verwerfen); hold_s: so lange vorher keine übernehmen (nach Kamerastart
+        sind die ersten Bilder dunkel, nach dem Aufstehen schwankt die Lage). Bis dahin kein Freiraum-Ergebnis."""
+        if self.fs_worker is None:
             return
         self._fs_hold_until = time.monotonic() + hold_s
         self._free = None
-        self.fse.reset()
+        self.fs_worker.reset()
 
     def set_manual(self, v: float, w: float) -> None:
         """Sollwert der Handsteuerung (normiert, v > 0 vor, w > 0 links). Nur im Modus manual;
@@ -595,7 +584,7 @@ class App:
         self.robot.start()
         self.src.start()
         has_det = self.det.start()
-        if self.fs_worker is not None:
+        if self.fs_worker is not None and self.cfg.freespace.threaded:
             self.fs_worker.start()
         if self.wheels is not None and not self.wheels.start():
             self.wheels = None
@@ -749,29 +738,28 @@ class App:
         bal = self.robot.state.balancing
         self._imu_idle_tick()
         if bal and self._was_balancing is False:
-            # aufgestanden: Kamera sieht den Boden jetzt aus anderer Höhe/Lage. Ein im Liegen
-            # gelerntes Modell passte am RiderPi danach nie mehr (Nachführung nur bei passender
-            # Probe) und meldete überall "blockiert" (2026-11-04).
-            log.info("Rider steht auf: Bodenmodell lernt neu")
+            # aufgestanden: Kamera sieht den Boden jetzt aus anderer Höhe und Lage
+            log.info("Rider steht auf: Bodengrenze neu")
             self.reset_floor(hold_s=self.cfg.freespace.restart_hold_s)
         self._was_balancing = bal
-        if time.monotonic() < self._fs_hold_until:
-            pass                          # nach Kamerastart: Belichtung abwarten, nichts lernen
-        elif self.fs_worker is not None:
-            # eigener Thread: neuestes Ergebnis übernehmen, jedes 2. Bild einen Auftrag geben
+        if time.monotonic() < self._fs_hold_until or self.fs_worker is None:
+            pass                          # nach Kamerastart/Aufstehen: Belichtung und Lage abwarten
+        elif f.idx % 2 == 0 or self._free is None:
+            # FloorNet jedes 2. Bild: im eigenen Thread (neuestes Ergebnis übernehmen) oder im Takt
+            roll = self._imu_frame.roll_deg if self._imu_frame is not None else 0.0
+            args = (f.bgr, pitch_dev, self.gridmap.pose() if self.gridmap is not None else None, f.t, roll,
+                    self.lmap.odo if self.lmap is not None else None)
+            if self.cfg.freespace.threaded:
+                self.fs_worker.offer(*args)
+            else:
+                r = self.fs_worker.compute(self.fs_worker.job(*args))
+                if r is not None:
+                    self._free = r
+                    tm.fs_ran = True
+        if self.fs_worker is not None and self.cfg.freespace.threaded and time.monotonic() >= self._fs_hold_until:
             r = self.fs_worker.poll()
             if r is not None:
                 self._free = r
-            if f.idx % 2 == 0 or self._free is None:
-                roll = self._imu_frame.roll_deg if self._imu_frame is not None else 0.0
-                self.fs_worker.offer(f.bgr, pitch_dev, [t.box for t in self.tracker.tracks],
-                                     self.gridmap.pose() if self.gridmap is not None else None, f.t, roll,
-                                     self.lmap.odo if self.lmap is not None else None)
-        elif self.fse is not None and (f.idx % 2 == 0 or self._free is None):
-            self._free = self.fse.update(f.bgr, pitch_dev, [t.box for t in self.tracker.tracks])
-            self._free.pose = self.gridmap.pose() if self.gridmap is not None else None
-            self._free.odo = self.lmap.odo if self.lmap is not None else None
-            tm.fs_ran = True
         tracks = self.tracker.confirmed(f.t)
         tm.mark("fs")
 
@@ -799,7 +787,8 @@ class App:
             w = World(t=f.t, dt=dt, W=self.cfg.camera.width, H=self.cfg.camera.height, hfov=self.hfov,
                       ego=ego, tracks=tracks, free=free, balancing=self.robot.state.balancing,
                       yaw=self.yaw, cmd_v=self.robot.command[0],
-                      geo=self.geo, pitch_dev=pitch_dev, battery=self.robot.state.battery)
+                      geo=self.geo, pitch_dev=pitch_dev, battery=self.robot.state.battery,
+                      blind=self.fs_worker is not None and self.fs_worker.blind)
             if self.behavior.name == "pet":
                 self._pet_world(w, ds, now)
             if self.lmap is not None:
@@ -884,7 +873,6 @@ class App:
                         imu=self._imu_frame, nickrate=self._nickrate,
                         odo=self.lmap.odo if self.lmap is not None else None, geo=self.geo,
                         tracks_all=list(self.tracker.tracks), cam_meta=f.meta,
-                        fs_diag=dict(self.fse.diag) if self.fse is not None else {},
                         free=self._free_ctrl or self._free,
                         ego=ego, cmd=self._cmd, sent=self.robot.command,
                         stats={"fps": round(self.src.fps_measured, 1), "loop_ms": round(self._loop_ms, 1),
@@ -894,9 +882,9 @@ class App:
                                "explore": self.behavior.info() if self.behavior.name == "explore" and hasattr(self.behavior, "info") else None,
                                "patrol": self.behavior.info() if self.behavior.name == "patrol" else None,
                                "pet": self.behavior.info() if self.behavior.name == "pet" else None,
-                               "fs_ms": round(self.fs_worker.ms, 1) if self.fs_worker is not None else None,
                                "net_ms": round(self.fs_worker.net_ms, 1) if self.fs_worker is not None and self.fs_worker.net is not None else None,
-                               "fs_src": self._free.src if self._free is not None else None,
+                               "fs_src": None if self.fs_worker is None else "blind" if self.fs_worker.blind else
+                               self._free.src if self._free is not None else None,
                                "grid": None if self.gridmap is None else {
                                    **self.gridmap.stats(),
                                    "reloc": self.cfg.reloc.enabled, "pose_grund": self.pose_grund,
@@ -1274,16 +1262,8 @@ def render(snap: Snapshot, text: bool = True, horizont: tuple[float, float, floa
                 cv2.line(img, (0, int(round(y0))), (W, int(round(y1))), (255, 255, 0), 1, cv2.LINE_AA)
     fs = snap.free
     if fs is not None and fs.columns is not None:
-        sc = W / len(fs.columns)
-        span = (fs.mask.shape[0] - fs.horizon_row)
-        fh = fs.mask.shape[0]
-        # Gelb ist das Verfahren; entscheidet das Netz, gibt es nur dessen Linie (unten, magenta)
-        cols = fs.columns
-        for a, b in (column_runs(cols) if fs.src != "net" else ()):   # unbekannte Spalten (NaN): Lücke
-            pts = [(int(i * sc), int((fh - cols[i] * span) * H / fh)) for i in range(a, b)]
-            cv2.polylines(img, [np.array(pts, np.int32)], False, (0, 255, 255), 2)
         if horizont is None:
-            hy = int(fs.horizon_row * H / fh)
+            hy = int(fs.horizon_row * W / len(fs.columns))      # Arbeitsauflösung -> Bild (gleiches Seitenverhältnis)
             cv2.line(img, (0, hy), (W, hy), (255, 255, 0), 1)
         n = len(fs.sectors)
         for i, s in enumerate(fs.sectors):

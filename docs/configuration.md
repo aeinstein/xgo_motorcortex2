@@ -70,7 +70,7 @@ Default = `config.py`; since 2026-11-12 these are the RiderPi values (`/opt/xgon
 | `width` × `height` | 640 × 480 | | |
 | `fps` | 24 | 24 | |
 | `sensor_mode` | `1296x972` (sim: `""`) | | pure 2×2 binning; 640x480 mode runs 26.5 instead of 25 fps |
-| `scaler_crop` | `[16, 0, 2560, 1920]` (sim: `[]`) | | keeps FOV/tilt/shading of 640x480 mode |
+| `scaler_crop` | `[16, 0, 2560, 1920]` (sim: `[]`) | | keeps FOV/tilt of 640x480 mode |
 | `exposure_us` | 20000 (sim: 4000) | | 0 = auto; runtime-adjustable from web |
 | `analogue_gain` | 16.0 (sim: 0.0) | | 1..63.9, 0 = auto (auto max 8) |
 | `hfov_deg` | 91.8 | 91.8 [K] | f = 310 px @ 640, from turns vs IMU heading (calibration.md §0) |
@@ -137,43 +137,19 @@ Must not be in `config.toml` any more (`KeyError` at load):
 `iou_match` 0.25, `max_lost_s` 1.5, `min_hits` 2.
 
 ### `[freespace]`
+Floor boundary from FloorNet only (`xgonav/freespace.py`, `docs/floornet.md`). There is no fallback: without the network (file missing, C++ core missing or self-test failed, runtime error, invalid rows) the Rider is **blind**: `safety()` stops every mode except `manual`, `explore`/`approach`/`home`/`patrol` are refused, `/status` `fs_src` = `"blind"`. The classic floor model (`farbe`, `kanten`, lens shading) was removed on 2026-11-18. Its keys in an old `config.toml` log a warning and are ignored; `shadow_net` is read as `net`.
+
 | Key | Default | RiderPi | Note |
 |---|---|---|---|
 | `enabled` | true | | false → only `idle`, `follow`, `manual` allowed |
-| `threaded` | true (sim: false) | | |
-| `width` | 160 | | columns |
-| `sample_rows` / `sample_cols` / `sample_bottom` | 0.34 / 0.5 / 0.0 (sim: 0.18 / 0.30 / 0.0) | | floor reference patch |
+| `threaded` | true (sim: false) | | network in its own thread (`FreeSpaceWorker`); false = in the frame loop |
+| `width` | 160 | | columns of the working resolution (maps, sectors) |
 | `sectors` | 5 | | |
-| `floor_thresh` | 0.08 | | |
-| `edge_weight` | 0.4 | | |
-| `min_obst_rows` | 6 | | |
-| `min_obst_height_m` | 0.04 | | |
-| `shading_file` | `shading.json` (sim: `""`) | | |
-| `shading_max_gain` | 5.0 (sim: 8.0) | | |
-| `min_known_frac` | 0.2 | | columns below → unknown |
-| `bg_model` / `shading_max_gain_bg` | false / 8.0 | false | edge model from blue+green where red is unmeasurable; full width, but false obstacles in dark lower corners |
-| `min_learn_v` | 12 | | no learning from (nearly) black samples |
-| `restart_hold_s` | 1.0 | | relearn after pipeline start, standing up, exposure/gain change |
-| `method` | `kanten` (sim: `farbe`) | | floor boundary: `farbe` = color histogram; `kanten` = first step edge from the bottom with a differing patch above (uncorrected image, insensitive to shading and gray-on-gray walls); `beide` = `kanten`, color model where no edge is found |
-| `shadow_net` | `models/floornet.bin` (sim: `""`) | | FloorNet weights (`tools/floornet/export.py`, e.g. `models/floornet.bin`). Runs in the freespace thread (needs `threaded = true`) and is drawn in the overlay in magenta; makes no decisions. Off if the C++ core is missing or its self-test fails |
-| `primary` | `net` (sim: `method`) | | Who decides. `"net"`: FloorNet supplies `columns` and `sectors` for maps and control, alone: `method` is neither computed nor drawn (saves its ~12 ms per floor run on the CM4; overlay shows only the magenta line). Needs `shadow_net` and `threaded`. If the network is missing, fails or returns invalid rows, it stays off and `method` computes and decides from then on. `/status` `fs_src` shows the source. Set on the RiderPi since 2026-11-10, not yet driven |
+| `restart_hold_s` | 1.0 | | no boundary taken for this long after pipeline start, standing up, exposure/gain change |
+| `net` | `models/floornet.bin` (sim: `""`) | | FloorNet weights (`tools/floornet/export.py`). The simulator injects `sim.SimFloorNet` (boundary from ground truth) instead |
 | `net_outlier_px` | `25.0` | `25.0` | FloorNet decoder, spike removal: a column further than this many full-frame rows from the median of the 7 columns around it takes the best bin at that median, if enough probability mass lies there. `0` = plain best bin. See `docs/floornet.md` |
 | `net_outlier_ratio` | `0.3` | `0.3` | Mass (5 bins) required at the median, relative to the mass at the column's own peak |
-| `net_smooth_n` | 3 (sim: 0) | | FloorNet boundary smoothed over time, only with `primary = "net"`: the last n outputs are mapped onto the current frame (map pose, pitch) and the median per column counts; never averaged. `3` removes a spike seen in one frame, a new obstacle appears one network frame (83 ms) later. `0`/`1` = off; without a map pose the output passes unchanged (`docs/floornet.md`) |
-| `edge_thin` / `edge_k` | true / 3 | | remove thin lines (joints) first; rows per side of the step |
-| `edge_chroma_w` | 2.0 | | weight of LAB a/b vs. L |
-| `edge_step_thr` / `edge_seg_thr` | 35 / 28 | | min step; min deviation of the patch above (min obstacle height) from the floor below |
-| `edge_log_s` | 16 | | step on log brightness `ln(1+L/s)` (ratio instead of difference): dark walls/furniture in dark scenes; 0 = linear |
-| `edge_glare` | true | | lamp glare on glossy floor → column unknown (NaN) instead of obstacle |
-| `glare_v` / `glare_px` / `glare_dl` / `glare_spread` | 250 / 2 / 8 / 8 | | glare = brighter above the step (≥ `glare_dl`, linear L) and ≥ `glare_px` saturated pixels between step and horizon−12 rows; grown to bright neighbours with similar step row; not at the image border (lamp-lit wall looks the same) |
-| `native` | true | | C++ core (`xgonav/native/floorfast.cpp`) if built: `kanten`/`beide` edge scan and the 4:1 downscale (NEON, only if bit-identical to `cv2.resize` at startup); same result as numpy |
-| `edge_fallback_free` | 0.98 | | `beide`: column counts as "nothing found" from this free fraction |
-| `horizon_wall` | false | | `farbe` only: floor color continuing above the horizon = wall, base at first strong edge (false alarms in the simulator from pitch errors) |
-| `horizon_margin_rows` / `horizon_band_rows` / `horizon_floor_frac` / `wall_edge_thr` | 2 / 6 / 0.6 / 8 | | horizon rule band and edge threshold |
-
-Replay of three evening drives (`tools/replay_raw.py`, 2026-11-04), false alarms: `farbe` 25 / 35 / 53 %, `kanten` 0.2 / 2.4 / 16 %.
-
-2026-11-05 (`edge_log_s` 16, `edge_glare`): replay 0 / 0 / 54 % — follow11 now sees the kitchen cabinet side 0.16 m beside the path and the 0.33 m gray wall it missed before; the replay counts these as false alarms (person far). Manual test cases (19 frames): 17 OK (before 13). Cost +0.2 ms per call on a PC.
+| `net_smooth_n` | 3 (sim: 0) | | boundary smoothed over time: the last n outputs are mapped onto the current frame (map pose, pitch) and the median per column counts; never averaged. `3` removes a spike seen in one frame, a new obstacle appears one network frame (83 ms) later. `0`/`1` = off; without a map pose the output passes unchanged |
 
 ### `[map]` (short-term local map)
 `max_age_s` 4.0, `confirm` 3 (sim: 1), `confirm_radius_m` 0.08, `radius_m` 0.18 (path check: a confirmed point closer than this to the arc brakes), `radius_tight_m` 0.08 (same while the path follower drives a tight spot, `home.tight_m`; Rider half width 5.8 cm per CAD), `yaw_source` `imu` (sim: `odom`): heading for moving the points; `odom` = like `[odom] yaw_source` (wheels, else camera), `imu` = firmware heading from `imu_log` (~50 Hz), falls back to `odom` when the IMU is missing or older than `imu.max_age_s`. RiderPi 2026-11-08, full turns against images: IMU 0.997, wheels 0.992 of the true angle; per turn the two differ randomly by ~2° (p90 ~8°). Status: `lmap_yaw_src`. `native` true: moving, entering (ground geometry, clear seen floor, thin, forget), confirming and the arc check in the C++ core (`xgonav/native/navfast.cpp`) if built; same result as numpy (CM4, 2000 points: arc check after a new observation 5.8 → 0.4 ms, confirmed points for the planner 94 → 0.6 ms).

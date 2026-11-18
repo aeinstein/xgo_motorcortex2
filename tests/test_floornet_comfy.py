@@ -351,7 +351,7 @@ def test_hand_npz_keeps_only_lined_frames():
     d = HN.build_run(z, {"c.jpg": (GUT, ok), "fehlt.jpg": (GUT, ok)})
     assert list(d["files"]) == ["c.jpg"] and d["hand"].all() and "lo" not in d
     assert d["row"][0, 0] == 280.0 and d["kind"][0, 0] == HN.IGNORE and d["kind"][0, 5] == HN.EXACT
-    assert d["kanten_row"].shape == (1, 160)
+    assert "kanten_row" not in d                # Feld alter Dateien, wird nicht mehr übernommen
 
 
 def test_frame_reason_filters():
@@ -392,7 +392,7 @@ def test_build_run_fields(tmp_path):
     d, count = Z.build_run("x", frames, "{}", str(src), "a")
     assert count == {"liegt": 1, "dunkel": 1}
     assert list(d["files"]) == ["000000.jpg"]
-    assert d["row"].shape == (1, 80) and d["kanten_row"].shape == (1, Z.KANTEN_COLS)
+    assert d["row"].shape == (1, 80) and "kanten_row" not in d
     # Spalte über dem Bereich des Netzes zählt nicht, der Rest ist exakt
     assert d["kind"][0, 3] == Z.IGNORE and d["kind"][0, 4] == Z.EXACT
     assert abs(d["th"][0] - np.pi / 2) < 1e-9 and abs(d["pitch"][0] - 0.25) < 1e-6

@@ -1,16 +1,14 @@
 #!/usr/bin/env python3
-"""FloorNet trainieren (GPU), Labels aus label.py. Daten liegen als Fächer je Bild im Speicher der GPU.
+"""FloorNet trainieren (GPU), Labels aus stage3_npz.py / comfy_npz.py. Daten liegen als Fächer je Bild im Speicher der GPU.
 
   python tools/floornet/train.py --labels labels/ --out lauf1/ \\
       --train explore2,explore3,explore4,explore5,explore6,explore7,explore8 --val explore9,streife1,unten1
 
-Mit --hand_labels und --hand_train kommen Fahrten mit Labels aus Handlinien dazu (handmap.py). Die Labels aus dem
-Kantenverfahren lassen sich abschwächen: --far_atleast macht ferne Grenzen zu "mindestens", --cap_atleast begrenzt,
-wie weit "mindestens" gilt.
+Mit --hand_labels und --hand_train kommen Fahrten mit Labels aus Handlinien dazu (handmap.py). Labels aus der
+Raumkarte (ältere Dateien) lassen sich abschwächen: --far_atleast macht ferne Grenzen zu "mindestens",
+--cap_atleast begrenzt, wie weit "mindestens" gilt.
 
-Bericht je Prüffahrt: Abstand der Vorhersage zu den Labels in Metern je Entfernungsband, daneben dasselbe für
-das Kantenverfahren. Die Labels stammen aus dem Kantenverfahren, der Vergleich begünstigt es also. Er zeigt,
-ob das Netz die Grenze gelernt hat, nicht, ob es besser ist; das kann nur ein Prüfsatz von Hand zeigen.
+Bericht je Prüffahrt: Abstand der Vorhersage zu den Labels in Metern je Entfernungsband.
 """
 from __future__ import annotations
 
@@ -68,12 +66,12 @@ def load_run(npz: str, cache: str, dist: float, yaw: float, pool, min_labeled: f
         np.save(path, imgs)
     if len(imgs) != len(idx):
         raise RuntimeError("Zwischenspeicher passt nicht zu den Labels: " + path)
-    return {"run": run, "imgs": imgs, "row": d["row"][idx], "kind": d["kind"][idx], "kanten": d["kanten_row"][idx], "hand": hand[idx],
+    return {"run": run, "imgs": imgs, "row": d["row"][idx], "kind": d["kind"][idx], "hand": hand[idx],
             "pitch": d["pitch"][idx], "files": d["files"][idx], "source": str(d["source_dir"]), "geom": json.loads(str(d["geom"]))}
 
 
 def soften(run: dict, far_atleast: float = 0.0, cap_atleast: float = 0.0) -> None:
-    """Labels aus dem Kantenverfahren abschwächen, wo sie nachweislich schief liegen (Vergleich mit Handlinien):
+    """Labels aus der Raumkarte (ältere Dateien) abschwächen, wo sie nachweislich schief liegen (Vergleich mit Handlinien):
     Ferne Grenzen liegen oft zu nah (erste Zelle einer verschmierten Wand), also nur noch "mindestens".
     "Mindestens" läuft oft durch dunkle Hindernisse (Freistrahl), also nur noch bis cap_atleast Meter behaupten."""
     geo, pitch = run["geom"], run["pitch"]
@@ -195,9 +193,7 @@ def evaluate(net, runs: list[dict], dev, norm: bool = False) -> dict:
     res = {}
     for r in runs:
         pr = predict(net, r, dev, norm)
-        idx = np.linspace(0, r["kanten"].shape[1] - 1, NCOLS).round().astype(int)
-        res[r["run"]] = {"netz": band_report(pr, r["row"], r["kind"], r["pitch"], r["geom"]),
-                         "kanten": band_report(r["kanten"][:, idx],r["row"], r["kind"], r["pitch"], r["geom"])}
+        res[r["run"]] = {"netz": band_report(pr, r["row"], r["kind"], r["pitch"], r["geom"])}
     return res
 
 
@@ -205,7 +201,7 @@ def show(res: dict) -> str:
     lines = ["%-10s %-7s %s" % ("Fahrt", "", "  ".join("%-22s" % ("%s m" % b) for b in ("0.0-0.5", "0.5-1.0", "1.0-1.5", "1.5-2.5")))
              + " mind.blockiert"]
     for run, r in res.items():
-        for who in ("netz", "kanten"):
+        for who in r:
             cells = []
             for b in ("0.0-0.5", "0.5-1.0", "1.0-1.5", "1.5-2.5"):
                 v = r[who].get(b)
@@ -216,19 +212,15 @@ def show(res: dict) -> str:
 
 
 def tiles(net, run: dict, out: str, dev, norm: bool = False, n: int = 12) -> None:
-    """Grün Label, blau mindestens, gelb Kanten, magenta Netz."""
+    """Grün Label, blau mindestens, magenta Netz."""
     pr = predict(net, run, dev, norm)
     picks = np.linspace(0, len(pr) - 1, n + 2)[1:-1].round().astype(int)
-    idx = np.linspace(0, run["kanten"].shape[1] - 1, NCOLS).round().astype(int)
     xs = ((np.arange(NCOLS) + 0.5) * 640 / NCOLS).astype(int)
     rows = []
     for i in picks:
         img = cv2.imread(os.path.join(run["source"], str(run["files"][i])))
         img = np.clip(255 * (img / 255.0) ** 0.7, 0, 255).astype(np.uint8)
         for c, x in enumerate(xs):
-            k = run["kanten"][i, idx[c]]
-            if np.isfinite(k):
-                cv2.circle(img, (x, int(k)), 2, (0, 255, 255), -1)
             col = {EXACT: (0, 255, 0), ATLEAST: (255, 128, 0)}.get(int(run["kind"][i, c]))
             if col:
                 cv2.circle(img, (x, int(run["row"][i, c])), 2, col, -1)

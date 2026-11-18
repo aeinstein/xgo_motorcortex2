@@ -53,6 +53,8 @@ class World:
     height_mm: float | None = None    # Höhen-Sollwert
     sound: tuple | None = None        # (ortung.Schall, Alter s) der letzten Schallmeldung, nur für pet
     map_ok: bool = False              # Merkkarte vorhanden
+    # Bodengrenze fehlt (FloorNet nicht geladen oder ausgefallen): safety() lässt nichts fahren
+    blind: bool = False
     # Engstellen (PathFollower): wall_fn(x, y, reach_m) = Abstand zur nächsten belegten Zelle der Raumkarte
     # (inf ab reach_m), gap_fn() = Mitte der Lücke voraus laut Merkkarte (x, y im Rider-KS) oder None
     wall_fn: object = None
@@ -1208,6 +1210,8 @@ def safety(cmd: Command, w: World, cfg: BehaviorCfg) -> Command:
     """Letzte Instanz: gefallen -> Stopp; Hindernis/TTC -> keine Vorwärtsfahrt."""
     if not w.balancing:
         return Command(0, 0, None, "GEFALLEN – Stopp", cmd.target_id)
+    if w.blind:
+        return Command(0, 0, None, "BLIND – keine Bodengrenze (FloorNet), Stopp", cmd.target_id)
     if cmd.v > 0:
         fs = w.free
         center = fs.center if fs and fs.valid else 1.0

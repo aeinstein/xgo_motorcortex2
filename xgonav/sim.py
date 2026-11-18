@@ -3,7 +3,8 @@
 Raycasting-Renderer (Raum + Kisten + Personen-Billboard), Kamera auf
 balancierendem Roboter: Nicken (Pendeln + Beschleunigungsneigung), Kurszittern
 und vertikale Bewegungsunschärfe. Die Fahrbefehle des SimRobot bewegen die
-Kamera. Ein FakeDetector liefert Ground-Truth-Boxen mit realistischer Latenz.
+Kamera. Ein FakeDetector liefert Ground-Truth-Boxen mit realistischer Latenz, SimFloorNet die
+Bodengrenze aus der Ground Truth (statt FloorNet, das nur echte Bilder kennt).
 """
 from __future__ import annotations
 
@@ -19,6 +20,8 @@ from .camera import FrameSource
 from .config import CameraCfg
 from .detector import Detection, DetectionBatch
 from .robot import SimRobot
+
+SIM_NET_COLS = 80          # Spalten der Bodengrenze wie FloorNet (floornet.NCOLS)
 
 
 def _blob_tex(seed: int, base, w=256, h=128) -> np.ndarray:
@@ -226,6 +229,8 @@ class SimWorld(FrameSource):
         # hängt (Schlupf) – wie echte Encoder. Spurweite wie am RiderPi.
         self.track_m = 0.090
         self.wheel_l = self.wheel_r = 0.0
+        # Bodengrenze je Bild aus der Ground Truth (SimFloorNet): (Bild, Zeilen) der letzten Bilder
+        self.floor_rows: list[tuple[np.ndarray, np.ndarray]] = []
 
     # ------------------------------------------------------------------
     def _grab(self) -> bool:
@@ -241,7 +246,8 @@ class SimWorld(FrameSource):
         self._last = now
         t = now - self._t0
         self._integrate(t, dt)
-        img, box = self._render(t, dt)
+        img, box, rows = self._render(t, dt)
+        self.floor_rows = (self.floor_rows + [(img, rows)])[-8:]
         self.truth = {"t": now, "box": box, "pitch": self.pitch}
         self.truth_by_t[now] = self.truth
         if len(self.truth_by_t) > 200:
@@ -374,8 +380,14 @@ class SimWorld(FrameSource):
             fl = np.clip(base[None, None, :] + n[..., None], 0, 255).astype(np.uint8)
             img[floor] = fl[floor]
         box = None
+        obst = ~floor
         if self.person:
-            box = self._draw_person(img, f, th, depth, W, H)
+            box = self._draw_person(img, f, th, depth, W, H, obst)
+        # Bodengrenze je Spalte wie FloorNet: unterste Zeile, ab der von unten gesehen kein Boden mehr ist
+        # (Vollbild); je Netzspalte die nächste (größte Zeile) ihrer Bildspalten
+        run = np.where(obst.any(axis=0), np.argmax(obst[::-1], axis=0), H)
+        grenze = (H - run).astype(np.float32) * self.rs
+        rows = grenze.reshape(SIM_NET_COLS, -1).max(axis=1)
         img = cv2.resize(img, (self.cfg.width, self.cfg.height), interpolation=cv2.INTER_LINEAR)
         # Bewegungsunschärfe ~ Nickrate * Belichtungszeit (hier übertrieben, 8 ms)
         prate = (self.pitch - self._pitch_prev) / max(dt, 1e-3)
@@ -392,7 +404,7 @@ class SimWorld(FrameSource):
                 img = cv2.convertScaleAbs(img, alpha=k)
         if box is not None:
             box = tuple(v * self.rs for v in box)
-        return img, box
+        return img, box, rows
 
     def _licht_bei(self, x: float, y: float) -> float:
         k = 1.0
@@ -409,7 +421,7 @@ class SimWorld(FrameSource):
         ax, ay = cx + 1.5 * math.cos(self.th), cy + 1.5 * math.sin(self.th)
         return 0.35 * self._licht_bei(cx, cy) + 0.65 * self._licht_bei(ax, ay)
 
-    def _draw_person(self, img, f, th, depth, W, H):
+    def _draw_person(self, img, f, th, depth, W, H, obst=None):
         pr = self.person
         cx, cy = self._cam_xy
         rel = np.array([pr.x - cx, pr.y - cy])
@@ -438,6 +450,8 @@ class SimWorld(FrameSource):
             col = (150, 180, 220) if fr < 0.13 else (180, 60, 30) if fr < 0.55 else (50, 40, 40)
             seg = img[yy, x1:x2]
             seg[vis] = col
+            if obst is not None:
+                obst[yy, x1:x2] |= vis
         vx = np.nonzero(vis)[0]
         bx1, bx2 = x1 + vx.min(), x1 + vx.max() + 1
         if (bx2 - bx1) < 0.3 * (c2 - c1):
@@ -509,13 +523,28 @@ class SimWheels:
         return _SimWheels(*a, **k)
 
 
+class SimFloorNet:
+    """Ersetzt FloorNet im Simulator: Bodengrenze je Netzspalte (Vollbildzeile) aus der Ground Truth des gerenderten
+    Bildes, Wände, Kisten und Person. Fehlalarme gibt es nur mit Phantoms."""
+
+    def __init__(self, world: "SimWorld"):
+        self.world = world
+
+    def run(self, bgr: np.ndarray) -> np.ndarray:
+        for img, rows in reversed(self.world.floor_rows):
+            if img is bgr:
+                return rows.copy()
+        raise ValueError("SimFloorNet: Bild unbekannt (zu alt?)")
+
+
 class Phantoms:
     """Fehlalarme des Bodenmodells, die der Simulator sonst nicht kennt: n ortsfeste Flecken (wie
     Spiegelungen oder Lichtpfützen), die aus manchen Blickwinkeln und nur zeitweise eine Bodengrenze
-    vortäuschen. Wickelt FreeSpaceEstimator.update ein."""
+    vortäuschen. Wickelt SimFloorNet.run ein (Zeilen im Vollbild)."""
 
-    def __init__(self, world: "SimWorld", est, n: int = 6, seed: int = 3, radius: float = 0.15, on_prob: float = 0.5):
-        self.world, self.est = world, est
+    def __init__(self, world: "SimWorld", net: SimFloorNet, geo, n: int = 6, seed: int = 3, radius: float = 0.15,
+                 on_prob: float = 0.5):
+        self.world, self.net, self.geo = world, net, geo
         rng = np.random.default_rng(seed)
         pts = []
         while len(pts) < n:
@@ -528,19 +557,15 @@ class Phantoms:
         self.dirs = rng.uniform(-math.pi, math.pi, n)
         self._rng = rng
         self.hits = 0
-        self._update = est.update
-        est.update = self.update
+        self._run = net.run
+        net.run = self.run
 
-    def update(self, bgr, pitch_dev=0.0, exclude_boxes=()):
-        fs = self._update(bgr, pitch_dev, exclude_boxes)
-        est, w = self.est, self.world
-        geo = est.geo
-        if fs is None or fs.columns is None or geo is None:
-            return fs
-        span = est.H - fs.horizon_row
-        sc = geo.W / est.W
-        n = len(fs.columns)
-        bear = geo.bearing((np.arange(n) + 0.5) * sc)
+    def run(self, bgr: np.ndarray) -> np.ndarray:
+        rows = self._run(bgr)
+        w, geo = self.world, self.geo
+        n = len(rows)
+        bear = geo.bearing((np.arange(n) + 0.5) * geo.W / n)
+        pitch = w.pitch                                   # Nicken des Bildes, wie gerendert
         cx, cy = getattr(w, "_cam_xy", (w.x, w.y))      # Kamera, nicht Radachse
         for (px, py), d0 in zip(self.pts, self.dirs):
             dx, dy = px - cx, py - cy
@@ -558,12 +583,11 @@ class Phantoms:
             fwd = dist * math.cos(ang)
             if fwd <= 0.05:
                 continue
-            y = geo.H / 2 + geo.f * math.tan(math.atan2(geo.cam_h, fwd) + math.radians(geo.tilt_deg) + pitch_dev)
-            v = (est.H - y / sc) / span
-            if 0.0 <= v < 1.0:
-                fs.columns[cols] = np.fmin(fs.columns[cols], v)
+            y = geo.H / 2 + geo.f * math.tan(math.atan2(geo.cam_h, fwd) + math.radians(geo.tilt_deg) + pitch)
+            if 0.0 <= y < geo.H:
+                rows[cols] = np.fmax(rows[cols], y)       # näher = weiter unten im Bild
                 self.hits += 1
-        return fs
+        return rows
 
 
 class FakeDetector:

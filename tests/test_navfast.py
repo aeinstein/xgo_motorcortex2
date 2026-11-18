@@ -205,7 +205,7 @@ def test_localmap_matches_numpy():
             cols = np.clip(base + rng.normal(0, 0.02, 160), 0.0, 1.0)
             cols[rng.random(160) < 0.05] = np.nan
             cols[rng.random(160) < 0.1] = rng.uniform(0.2, 1.0)        # flackernde Fehlalarme
-            fs = FreeSpace([0.5] * 5, cols, hz, np.zeros((120, 160), np.uint8), True, None)
+            fs = FreeSpace([0.5] * 5, cols, hz, True, None)
             pd = float(rng.normal(0, 0.004))
             ds, dyaw = float(rng.normal(0.01, 0.01)), float(rng.normal(0, 0.03))
             for m in (a, b):
@@ -267,7 +267,7 @@ def test_localmap_add_edge_cases_match_numpy():
         kf = None if k % 3 == 0 else np.clip(rng.uniform(-0.1, 0.4, 160), 0, 1)
         if kf is not None and k % 5 == 0:
             kf[rng.random(160) < 0.2] = 1.0
-        fs = FreeSpace([0.5] * 5, cols, hz, np.zeros((120, 160), np.uint8), True, kf)
+        fs = FreeSpace([0.5] * 5, cols, hz, True, kf)
         pd, t = float(rng.normal(0, 0.01)), 0.1 * k + (5.0 if k == 60 else 0.0)
         ds, dyaw = float(rng.normal(0.02, 0.02)), float(rng.normal(0, 0.1))
         for m in (a, b):
@@ -349,7 +349,7 @@ def test_gridmap_observe_matches_numpy():
             kf = None if k % 3 == 0 else np.clip(rng.uniform(-0.1, 0.3, 160), 0, 1)
             if kf is not None and k % 4 == 0:
                 kf[rng.random(160) < 0.2] = 1.0
-            fs = FreeSpace([0.5] * 5, cols, hz, np.zeros((120, 160), np.uint8), True, kf)
+            fs = FreeSpace([0.5] * 5, cols, hz, True, kf)
             pose += (rng.normal(0.02, 0.03), rng.normal(0, 0.03), rng.normal(0, 0.15))
             if k == 150:
                 pose[:] = (7.9, -7.95, 1.0)                          # Kartenrand: Strahlen laufen hinaus

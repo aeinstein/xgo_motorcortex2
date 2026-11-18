@@ -210,7 +210,7 @@
         2560,
         1920
        ],
-       "hilfe": "Sensorausschnitt [x, y, w, h] in Vollbild-Pixeln (ScalerCrop); leer = ganzer Modus. [16, 0, 2560, 1920] = Ausschnitt des 640x480-Modus, damit hfov/tilt/shading.json gültig bleiben."
+       "hilfe": "Sensorausschnitt [x, y, w, h] in Vollbild-Pixeln (ScalerCrop); leer = ganzer Modus. [16, 0, 2560, 1920] = Ausschnitt des 640x480-Modus, damit hfov und tilt gültig bleiben."
       },
       {
        "key": "frame_clock_corr",
@@ -868,37 +868,19 @@
        "key": "enabled",
        "typ": "bool",
        "default": true,
-       "hilfe": ""
+       "hilfe": "Bodengrenze von FloorNet (xgonav/floornet.py, C++-Kern). Es gibt keinen Ersatzweg: ohne Netz ist der Rider blind und fährt nicht selbst (safety() steht still), Handsteuerung geht weiter."
       },
       {
        "key": "threaded",
        "typ": "bool",
        "default": true,
-       "hilfe": "Bodenmodell in eigenem Thread (FreeSpaceWorker): nimmt der Hauptschleife jedes 2. Bild ~13 ms ab (CM4); das Ergebnis kommt dafür ein Bild später an. False = wie früher im Takt."
+       "hilfe": "FloorNet in eigenem Thread (FreeSpaceWorker): nimmt der Hauptschleife jedes 2. Bild die Netzzeit ab, das Ergebnis kommt dafür 1-3 Bilder später an. False = im Takt (Simulator, Tests)."
       },
       {
        "key": "width",
        "typ": "int",
        "default": 160,
-       "hilfe": ""
-      },
-      {
-       "key": "sample_rows",
-       "typ": "float",
-       "default": 0.34,
-       "hilfe": "Höhe der Boden-Referenz (Anteil der Bildhöhe)"
-      },
-      {
-       "key": "sample_bottom",
-       "typ": "float",
-       "default": 0.0,
-       "hilfe": "Abstand der Referenz vom unteren Bildrand (Anteil der Bildhöhe)"
-      },
-      {
-       "key": "sample_cols",
-       "typ": "float",
-       "default": 0.5,
-       "hilfe": "mittlerer Bildanteil"
+       "hilfe": "Spalten der Arbeitsauflösung (Karten, Sektoren)"
       },
       {
        "key": "sectors",
@@ -907,106 +889,22 @@
        "hilfe": ""
       },
       {
-       "key": "hist_bins",
-       "typ": "int",
-       "default": 16,
-       "hilfe": ""
-      },
-      {
-       "key": "floor_thresh",
-       "typ": "float",
-       "default": 0.08,
-       "hilfe": "Rückprojektions-Schwelle"
-      },
-      {
-       "key": "edge_weight",
-       "typ": "float",
-       "default": 0.4,
-       "hilfe": "Faktor an Kanten; 0.15 machte Laminatfugen zu Hindernissen (RiderPi)"
-      },
-      {
-       "key": "min_obst_rows",
-       "typ": "int",
-       "default": 6,
-       "hilfe": "Hindernis erst ab so vielen Zeilen Höhe (Arbeitsauflösung, 120 Zeilen)"
-      },
-      {
-       "key": "min_obst_height_m",
-       "typ": "float",
-       "default": 0.04,
-       "hilfe": "Ein Nicht-Boden-Lauf zählt erst, wenn er so hoch ist wie ein aufrechter Gegenstand dieser Höhe an seinem Fußpunkt (oder bis zum Horizont reicht). Flache Flecken, Fugen und Kabel auf dem Boden sind kürzer. 0 = aus. Braucht die Kamerageometrie."
-      },
-      {
-       "key": "shading_file",
-       "typ": "str",
-       "default": "shading.json",
-       "hilfe": "Linsenabschattung (tools/calibrate.py shading -> JSON). \"\" = aus (Simulator). Pixel, die mehr als shading_max_gain Verstärkung bräuchten, gelten als unzuverlässig und nie als Hindernis (RiderPi: untere Ecken, äußere Ränder)."
-      },
-      {
-       "key": "shading_max_gain",
-       "typ": "float",
-       "default": 5.0,
-       "hilfe": ""
-      },
-      {
-       "key": "min_known_frac",
-       "typ": "float",
-       "default": 0.2,
-       "hilfe": "Spalten, in denen zwischen Horizont und unterem Rand weniger als dieser Anteil messbar ist (Linsenabschattung: am RiderPi je ~32 von 160 Spalten am Rand gar nicht), gelten als unbekannt (NaN) statt \"frei bis Horizont\". Den nicht messbaren Streifen unten in den übrigen Spalten behandelt known_from."
-      },
-      {
-       "key": "bg_model",
-       "typ": "bool",
-       "default": false,
-       "hilfe": "Zweites Bodenmodell ohne Rotkanal für den Rand: Wo Rot nicht mehr messbar ist (Abschattung), Blau und Grün aber bis shading_max_gain_bg korrigierbar sind, entscheidet ein Histogramm aus Grünanteil G/(B+G) und Helligkeit (B+G)/2, gelernt aus derselben Probe. Am RiderPi sind mit allen Kanälen nur ~46 % der Pixel messbar, mit Blau+Grün bis Faktor 8 alle. aus: Fehlalarme in den unteren Ecken bei dunklem Bild (RiderPi 2026-11-04)"
-      },
-      {
-       "key": "min_learn_v",
-       "typ": "float",
-       "default": 12.0,
-       "hilfe": "Probe mit mittlerer Helligkeit (V, nach Abschattungs-Korrektur) darunter wird nicht nachgelernt (z. B. erste Bilder nach dem Kamerastart)."
-      },
-      {
        "key": "restart_hold_s",
        "typ": "float",
        "default": 1.0,
-       "hilfe": "Neu lernen nach Start der Bildverarbeitung, Aufstehen und geänderter Belichtung; so lange vorher kein Bodenmodell rechnen (Belichtung/Lage regeln sich ein). Anlass: Ein Modell aus anderer Lage passte nie mehr (Nachführung nur bei passender Probe) -> alles blockiert."
+       "hilfe": "Nach Start der Bildverarbeitung, Aufstehen und geänderter Belichtung so lange keine Bodengrenze übernehmen (Belichtung und Lage regeln sich ein)."
       },
       {
-       "key": "shading_max_gain_bg",
-       "typ": "float",
-       "default": 8.0,
-       "hilfe": ""
-      },
-      {
-       "key": "horizon_wall",
-       "typ": "bool",
-       "default": false,
-       "hilfe": "Horizontregel: Boden liegt nie über dem Horizont. Ist der Streifen knapp darüber (horizon_band_rows Zeilen, horizon_margin_rows Abstand gegen Nickfehler; Arbeitsauflösung) zu horizon_floor_frac \"Boden\", ist die Spalte eine Wand in Bodenfarbe; Fußpunkt = erste senkrechte Helligkeitsstufe >= wall_edge_thr (Grauwerte je Zeile) unter dem Horizont. aus: im Simulator Fehlalarme durch Nickfehler (Boden knapp über dem Horizont)"
-      },
-      {
-       "key": "method",
-       "typ": "str",
-       "default": "kanten",
-       "hilfe": "Verfahren für die Bodengrenze: \"farbe\" (Histogramm der Bodenfarbe, bisher) oder \"kanten\" (erste Stufe von unten, über der es anders aussieht; unempfindlich gegen Abschattung und graue Wand über grauem Boden). Das Farbmodell lernt in beiden Fällen weiter (Rand unten). \"beide\": Kanten, und wo diese in einer Spalte nichts finden (frei bis edge_fallback_free), das Farbmodell (Nutzer: Farbe im Dunkeln besser, Kanten im Hellen)."
-      },
-      {
-       "key": "shadow_net",
+       "key": "net",
        "typ": "str",
        "default": "models/floornet.bin",
-       "hilfe": "FloorNet (xgonav/floornet.py): Gewichte, z. B. \"models/floornet.bin\". Rechnet im Bodenmodell-Thread (threaded = true); ob es entscheidet oder nur im Schatten mitläuft, sagt primary. \"\" = aus."
-      },
-      {
-       "key": "primary",
-       "typ": "str",
-       "default": "net",
-       "hilfe": "Wer entscheidet: \"method\" (das Verfahren oben, FloorNet rechnet höchstens mit) oder \"net\" (FloorNet liefert die Grenze für Karten und Regelung allein; das Verfahren wird dann weder gerechnet noch gezeichnet). \"net\" braucht shadow_net und threaded; fehlt das Netz oder fällt es aus, rechnet und entscheidet wieder das Verfahren."
+       "hilfe": "Gewichte von FloorNet. \"\" = kein Netz, also blind."
       },
       {
        "key": "net_outlier_px",
        "typ": "float",
        "default": 25.0,
-       "hilfe": "FloorNet, einzelne Zacken herausnehmen (1-3 Spalten breite Sprünge an senkrechten Kanten): Weicht eine Spalte um mehr als net_outlier_px Vollbildzeilen vom Median der 7 Spalten um sie ab und liegt beim Medianwert mindestens net_outlier_ratio der Masse ihres eigenen Gipfels, gilt das beste Fach beim Medianwert. 0 = aus."
+       "hilfe": "Einzelne Zacken herausnehmen (1-3 Spalten breite Sprünge an senkrechten Kanten): Weicht eine Spalte um mehr als net_outlier_px Vollbildzeilen vom Median der 7 Spalten um sie ab und liegt beim Medianwert mindestens net_outlier_ratio der Masse ihres eigenen Gipfels, gilt das beste Fach beim Medianwert. 0 = aus."
       },
       {
        "key": "net_outlier_ratio",
@@ -1018,109 +916,7 @@
        "key": "net_smooth_n",
        "typ": "int",
        "default": 3,
-       "hilfe": "FloorNet, Kante über die Zeit beruhigen (floornet.ZeilenGlaetter, nur mit primary = \"net\"): die letzten net_smooth_n Ausgaben werden über Pose und Nicken auf das aktuelle Bild umgerechnet, je Spalte gilt der Median. 3: ein Ausreißer in einem einzelnen Bild verschwindet, ein neues Hindernis erscheint ein Netzbild (83 ms) später. 0 oder 1 = aus. Braucht die Kartenpose; ohne sie gilt die Ausgabe unverändert."
-      },
-      {
-       "key": "edge_fallback_free",
-       "typ": "float",
-       "default": 0.98,
-       "hilfe": ""
-      },
-      {
-       "key": "edge_thin",
-       "typ": "bool",
-       "default": true,
-       "hilfe": "dünne Linien vorher entfernen (Fugen – aber auch Kontaktschatten)"
-      },
-      {
-       "key": "edge_k",
-       "typ": "int",
-       "default": 3,
-       "hilfe": "Zeilen je Seite für den Stufenvergleich (Arbeitsauflösung)"
-      },
-      {
-       "key": "edge_chroma_w",
-       "typ": "float",
-       "default": 2.0,
-       "hilfe": "Gewicht der LAB-Farbkanäle a/b gegenüber der Helligkeit L"
-      },
-      {
-       "key": "edge_step_thr",
-       "typ": "float",
-       "default": 35.0,
-       "hilfe": "Mindest-Stufe (Summe |ΔL| + w·(|Δa|+|Δb|), 0..255-Skala)"
-      },
-      {
-       "key": "edge_seg_thr",
-       "typ": "float",
-       "default": 28.0,
-       "hilfe": "Mindest-Abweichung des Stücks über der Stufe vom Boden darunter"
-      },
-      {
-       "key": "edge_log_s",
-       "typ": "float",
-       "default": 16.0,
-       "hilfe": "Lichtschein: Spiegelung einer Lampe im glänzenden Boden erzeugt eine Stufe weit vor der Lampe (bei 12,8 cm Kamerahöhe etwa ein Viertel ihrer Entfernung). Erkennung: über der Stufe heller als darunter (>= glare_dl) und zwischen Stufe und Horizont >= glare_px übersteuerte Pixel (Maximum der Kanäle >= glare_v). Solche Spalten gelten als unbekannt (NaN), nicht als frei. Helligkeit für die Stufe logarithmisch (Verhältnis statt Differenz): L' = 255·ln(1+L/s)/ln(1+255/s). Hebt dunkle Szenen an (graue Wand im Dunkeln: L 25 gegen 11), dämpft helle. 0 = linear."
-      },
-      {
-       "key": "edge_glare",
-       "typ": "bool",
-       "default": true,
-       "hilfe": ""
-      },
-      {
-       "key": "glare_v",
-       "typ": "int",
-       "default": 250,
-       "hilfe": ""
-      },
-      {
-       "key": "glare_px",
-       "typ": "int",
-       "default": 2,
-       "hilfe": ""
-      },
-      {
-       "key": "glare_dl",
-       "typ": "float",
-       "default": 8.0,
-       "hilfe": ""
-      },
-      {
-       "key": "glare_spread",
-       "typ": "int",
-       "default": 8,
-       "hilfe": "Schein auf helle Nachbarspalten mit ähnlicher Stufenzeile ausdehnen"
-      },
-      {
-       "key": "native",
-       "typ": "bool",
-       "default": true,
-       "hilfe": "Kantenverfahren im C++-Kern (xgonav/native, make -C xgonav/native), sonst numpy; gleiches Ergebnis"
-      },
-      {
-       "key": "horizon_margin_rows",
-       "typ": "int",
-       "default": 2,
-       "hilfe": ""
-      },
-      {
-       "key": "horizon_band_rows",
-       "typ": "int",
-       "default": 6,
-       "hilfe": ""
-      },
-      {
-       "key": "horizon_floor_frac",
-       "typ": "float",
-       "default": 0.6,
-       "hilfe": ""
-      },
-      {
-       "key": "wall_edge_thr",
-       "typ": "float",
-       "default": 8.0,
-       "hilfe": ""
+       "hilfe": "Kante über die Zeit beruhigen (floornet.ZeilenGlaetter): die letzten net_smooth_n Ausgaben werden über Pose und Nicken auf das aktuelle Bild umgerechnet, je Spalte gilt der Median. 3: ein Ausreißer in einem einzelnen Bild verschwindet, ein neues Hindernis erscheint ein Netzbild (83 ms) später. 0 oder 1 = aus. Braucht die Kartenpose; ohne sie gilt die Ausgabe unverändert."
       }
      ]
     }

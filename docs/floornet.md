@@ -1,6 +1,6 @@
 # FloorNet
 
-Self-trained network for the floor boundary, one row per image column. **Status: decides on the RiderPi since 2026-11-10 (`primary = "net"`, `kanten` no longer computed there), not driven yet; default is shadow mode.** In shadow mode it runs next to `kanten`, is drawn in the overlay in magenta and makes no decisions. The network trained on ComfyUI labels (2026-11-09, on the Rider since then) reaches the preset goal on other runs of the same rooms but misses it in a room it has not seen (see below), so `kanten` still decides.
+Self-trained network for the floor boundary, one row per image column. **Status: the only floor boundary since 2026-11-18; the classic model (`kanten`, `farbe`, lens shading) was removed from the code. Decides on the RiderPi since 2026-11-10, not driven yet.** Without the network (file or C++ core missing, self-test or runtime failure) the Rider is blind and does not drive by itself (`docs/configuration.md`). `kanten` figures below are history: it was the reference the network was measured against.
 
 ## Network
 
@@ -19,7 +19,7 @@ Constraints from the kernel: no ReLU and no bias after the depthwise convolution
 
 | File | Purpose |
 |---|---|
-| `tools/floornet/label.py` | labels from the room map: `kanten` over a run → occupancy grid → raycast into every frame |
+| `tools/floornet/label.py` | helpers only (load run, trajectory, raycast `cast_labels`, camera geometry); the labels from a `kanten` room map it produced are gone with `kanten` (existing label files stay usable) |
 | `tools/floornet/handmap.py` | labels from hand lines: same raycast, map built only from hand lines |
 | `tools/floornet/beschriften.html`, `make_testset.py` | click tool for hand lines, runs from the file system, stores in the browser, exports JSON |
 | `tools/floornet/schnitt.py` | time window of a recording as its own run: `label.py` uses only the longest stretch without a pose jump (> 12 cm between frames) |
@@ -35,7 +35,6 @@ Constraints from the kernel: no ReLU and no bias after the depthwise convolution
 | `tools/floornet/ids_fahrt.py` | frame list of raw recordings for `comfy_batch.py --ids`: every n-th frame, standing frames dropped |
 | `tools/floornet/comfy_npz.py` | `rows.jsonl` of `comfy_batch.py` → label files for `train.py`; drops frames lying down, tilting (> 10 % of columns above row 205), torn masks (> 6 jumps > 40 px), dark (mean grey < 12) |
 | `tools/floornet/hand_npz.py` | hand lines → label files holding only frames with their own line, no map; for `train.py --hand_only 1` |
-| `tools/floornet/vergleich_fahrten.py` | network and `kanten` as deciders over recorded runs: jumps, flicker, stops, path blocks, maps; no Rider needed |
 | `tools/floornet/net.py`, `train.py` | network, folding, training (GPU) |
 | `tools/floornet/export.py` | weights and test vector for the C++ core (`models/floornet.bin`; the repo holds `lauf_p11a`, the network on the RiderPi since 2026-11-11) |
 | `tools/floornet/bench_kern.cpp` | timing of untrained variants on the CM4 |
@@ -45,7 +44,7 @@ Constraints from the kernel: no ReLU and no bias after the depthwise convolution
 ## Workflow
 
 ```
-python tools/floornet/label.py DIR... --config rider.toml --out labels/
+# labels/: existing label files (the label.py CLI that made them from `kanten` is gone), new runs via stage3_npz.py
 python tools/floornet/make_testset.py labels/ --out pruefsatz/ --runs explore9:80,streife1:80,unten1:130,unten2:30
 python tools/floornet/handmap.py hand.json --labels labels/ --config rider.toml --out labels_hand/
 python tools/floornet/train.py --labels labels/ --out run/ --train explore2,explore3 --val "" --dist 0.005 --yaw 0.5 --epochs 100 \
@@ -54,7 +53,7 @@ python tools/floornet/eval_hand.py hand.json --labels labels/ --lauf run/:streif
 python tools/floornet/export.py run/floornet.pt --out models/floornet.bin
 ```
 
-Then `[freespace] shadow_net = "models/floornet.bin"`, needs `threaded = true`. Training takes about a minute on the GPU. `[freespace] primary = "net"` lets the network decide alone (`method` is then not computed and not drawn, it only takes over if the network fails). RiderPi: set since 2026-11-10, not driven.
+Then `[freespace] net = "models/floornet.bin"` (default). Training takes about a minute on the GPU.
 
 Spike removal in the decoder (`[freespace] net_outlier_px`, default 25, 0 = off; `net.decode(logits, outlier_px, outlier_ratio)` in PyTorch, `decode` in `native/floornet.cpp`, both tested against each other): the raw output has 1–3 column wide jumps at vertical high-contrast edges, the output there is bimodal. A column further than `net_outlier_px` rows from the median of the 7 columns around it takes the best bin within ±2 bins of that median, if the probability mass there (5 bins) is at least `net_outlier_ratio` (0.3) of the mass at its own peak. Columns without a second peak keep their value (narrow obstacles). Cost on the Rider: a 7-value median per column, `exp` only in outlier columns.
 

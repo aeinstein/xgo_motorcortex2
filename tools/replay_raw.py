@@ -1,9 +1,9 @@
-"""Rohaufnahme (xgonav --record-raw DIR) am PC durch Bodenmodell, Merkkarte und
-Bahnprüfung spielen – mit den aufgezeichneten Nickwinkeln, Fahrbefehlen, Kursen und
-Objekten, wie in App._step. Zum Vergleichen von Parametern ohne Fahrt am Rider.
+"""Rohaufnahme (xgonav --record-raw DIR) am PC durch FloorNet, Merkkarte und Bahnprüfung
+spielen – mit den aufgezeichneten Nickwinkeln, Fahrbefehlen und Kursen, wie in App._step.
+Zum Vergleichen von Parametern ohne Fahrt am Rider. Braucht den C++-Kern (FloorNet).
 
   python tools/replay_raw.py DIR --config rider.toml
-  python tools/replay_raw.py DIR --config rider.toml --set freespace.edge_weight=0.4 --set freespace.min_obst_rows=6
+  python tools/replay_raw.py DIR --config rider.toml --set map.confirm=3 --netz models/floornet.bin
   python tools/replay_raw.py DIR --config rider.toml --video out.mp4  # Bodengrenze + Karte einzeichnen
 
 Bewertet wird je Regelschritt (control_hz), ob die Bahn geradeaus mit max_v blockiert
@@ -26,7 +26,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from xgonav.config import Config  # noqa: E402
-from xgonav.freespace import FreeSpace, FreeSpaceEstimator, column_runs  # noqa: E402
+from xgonav.freespace import FreeSpaceEstimator, column_runs  # noqa: E402
 from xgonav.geometry import CamGeometry  # noqa: E402
 from xgonav.localmap import LocalMap  # noqa: E402
 
@@ -44,7 +44,13 @@ def set_param(cfg: Config, expr: str) -> None:
 
 
 def replay(d: str, cfg: Config, person_min: float = 1.2, video: str | None = None,
-           quiet: bool = False, exclude: bool = True) -> dict:
+           quiet: bool = False, netz: str = "") -> dict:
+    """netz: Gewichte von FloorNet ("" = [freespace] net der Konfiguration)."""
+    from xgonav.floornet import FloorNet
+    netz = netz or cfg.freespace.net
+    net = FloorNet.load(netz, cfg.freespace.net_outlier_px, cfg.freespace.net_outlier_ratio)
+    if net is None:
+        raise SystemExit("FloorNet %s nicht ladbar (C++-Kern xgonav/native/libxgofast.so?)" % netz)
     meta = [json.loads(line) for line in open(os.path.join(d, "meta.jsonl"))]
     W, H = cfg.camera.width, cfg.camera.height
     geo = CamGeometry.from_cfg(cfg)
@@ -63,9 +69,7 @@ def replay(d: str, cfg: Config, person_min: float = 1.2, video: str | None = Non
         if img is None:
             continue
         if m["idx"] % 2 == 0 or free_raw is None:
-            # live schließt alle Tracks aus (auch unbestätigte); ältere Aufnahmen kennen nur bestätigte
-            excl = [tr["box"] for tr in m.get("tracks_all", m["tracks"])] if exclude else ()
-            free_raw = fse.update(img, m["pitch_dev"], excl)
+            free_raw = fse.from_net(net.run(img), m["pitch_dev"])
         t = m["t"]
         if last_ctrl is not None and t - last_ctrl < 1.0 / cfg.control_hz:
             continue
@@ -131,14 +135,14 @@ def main() -> None:
     ap.add_argument("dir")
     ap.add_argument("--config")
     ap.add_argument("--set", action="append", default=[], metavar="ABSCHNITT.SCHLÜSSEL=WERT")
-    ap.add_argument("--no-exclude", action="store_true", help="Bodenmodell auch aus Objektboxen lernen (altes Verhalten)")
+    ap.add_argument("--netz", default="", help="Gewichte von FloorNet (Default: [freespace] net der Konfiguration)")
     ap.add_argument("--person-min", type=float, default=1.2)
     ap.add_argument("--video")
     a = ap.parse_args()
     cfg = Config.load(a.config)
     for e in a.set:
         set_param(cfg, e)
-    replay(a.dir, cfg, person_min=a.person_min, video=a.video, exclude=not a.no_exclude)
+    replay(a.dir, cfg, person_min=a.person_min, video=a.video, netz=a.netz)
 
 
 if __name__ == "__main__":

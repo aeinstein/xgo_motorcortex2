@@ -8,7 +8,7 @@ driftet sie mit der Zeit.
 
 Jede Bildspalte des Bodenmodells wird ein Strahl: frei bis zur Bodengrenze, belegt an der
 Grenze (Log-Odds, begrenzt). Spalten "frei bis Horizont" setzen nur frei bis max_range,
-nicht messbare Bereiche (Linsenabschattung) bleiben unbekannt. Für Fahrentscheidungen wird
+nicht messbare Bereiche (known_from) bleiben unbekannt. Für Fahrentscheidungen wird
 die Karte (noch) nicht benutzt, nur angezeigt.
 """
 from __future__ import annotations
