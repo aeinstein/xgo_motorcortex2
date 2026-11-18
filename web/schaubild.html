@@ -31,13 +31,13 @@
 * { box-sizing:border-box; }
 body { margin:0; background:var(--bg); color:var(--fg);
   font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
-main { max-width:1560px; margin:0 auto; padding:20px 16px 40px; }
+main { max-width:1900px; margin:0 auto; padding:20px 16px 40px; }
 h1 { font-size:22px; margin:0 0 4px; }
 h2 { font-size:17px; margin:28px 0 8px; }
 p.sub { color:var(--mut); margin:0 0 14px; }
 a { color:var(--cpp); }
 .scroll { overflow-x:auto; border:1px solid var(--line); border-radius:12px; background:var(--surf); }
-.scroll svg { display:block; min-width:1100px; width:100%; height:auto; }
+.scroll svg { display:block; min-width:1350px; width:100%; height:auto; }
 .legend { display:flex; flex-wrap:wrap; gap:8px 18px; margin:12px 0 0; color:var(--mut); font-size:13px; }
 .legend span { display:inline-flex; align-items:center; gap:6px; }
 .sw { width:14px; height:14px; border-radius:4px; border:2px solid; display:inline-block; }
@@ -66,7 +66,8 @@ ul.k li { margin:3px 0; }
 .k-off rect:first-child { stroke:var(--off); stroke-dasharray:5 4; }
 .k-off text { fill:var(--mut); }
 .bt { font-size:13px; font-weight:700; fill:var(--fg); }
-.bl { font-size:11.6px; fill:var(--fg); }
+.bl { font-size:11.6px; fill:var(--fg); white-space:pre; }
+.unc { fill:var(--mut); font-style:italic; }
 .tag { stroke:none; }
 .tag-cpp { fill:var(--cpp); } .tag-py { fill:var(--py); } .tag-mix { fill:var(--mix); } .tag-off { fill:var(--off); }
 .tagt { font-size:10.5px; font-weight:700; fill:#fff; }
@@ -83,7 +84,7 @@ ul.k li { margin:3px 0; }
 <body>
 <main>
 <h1>Bildpipeline xgonav</h1>
-<p class="sub">Stand 2026-11-18, aus dem Code und der <code>config.toml</code> am Rider. Sie zeigt alle Stufen je Bild mit ihren Korrekturen, die Threads und Prozesse, die daran hängen, und was in die Pipeline hineinfließt. Die Seite ist statisch und kostet am Pi keine Rechenzeit. <a href="./">← Oberfläche</a></p>
+<p class="sub">Stand 2026-11-18, aus dem Code und der <code>config.toml</code> am Rider. Sie zeigt alle Stufen je Bild mit ihren Korrekturen, die Threads und Prozesse, die daran hängen, und was in die Pipeline hineinfließt. Die Seite ist statisch und kostet am Pi keine Rechenzeit. Wie IMU- und Raddaten von den Servos über die ESP32-Firmware und die serielle Leitung in den Treiber kommen, zeigt das <a href="#hw">zweite Schaubild</a>. <a href="./">← Oberfläche</a></p>
 
 <div class="scroll">
 <svg viewBox="0 0 1500 1100" role="img" aria-labelledby="t1" xmlns="http://www.w3.org/2000/svg">
@@ -99,7 +100,7 @@ ul.k li { margin:3px 0; }
 <text x="740" y="30" class="colh" text-anchor="middle">Pipeline</text>
 <text x="1325" y="30" class="colh" text-anchor="middle">Abnehmer</text>
 <rect x="20" y="245" width="290" height="595" rx="10" class="grp"/>
-<text x="30" y="263" class="bandl">Kernel xgo-drv · /proc/XGORider ← ESP32 (UART)</text>
+<a href="#hw"><text x="30" y="263" class="bandl">Kernel xgo-drv · /proc/XGORider ← ESP32 (UART) ↓</text></a>
 <rect x="345" y="50" width="790" height="165" rx="10" class="band b-cam"/>
 <text x="357" y="69" class="bandl">Kamera-Thread · CPU 0–1 · 24 fps</text>
 <rect x="345" y="235" width="790" height="175" rx="10" class="band b-main"/>
@@ -486,6 +487,336 @@ ul.k li { margin:3px 0; }
   <span><i class="ln" style="border-color:var(--a-out)"></i>zur Anzeige</span>
   <span><i class="sw" style="background:var(--badge);border-color:var(--badge)"></i>so noch nicht gefahren</span>
 </div>
+
+<h2 id="hw">Vom Servo bis /proc: ESP32, serielle Leitung, Treiber</h2>
+<p class="sub">Aus dem Firmware-Build (<code>firmware/build/xgorider2_rl</code>, Patches 0001–0019, am Rider geflasht) und <code>kernel_module/</code>. Der Treiberstand vom 2026-11-17 (nur noch Strom oder 0x0d, ohne <code>force_yaw</code>) ist am Rider noch nicht eingespielt. Kursiv und grau steht, was der Code nicht bestätigt.</p>
+<div class="scroll">
+<svg viewBox="0 0 1500 915" role="img" aria-labelledby="t2" xmlns="http://www.w3.org/2000/svg">
+<title id="t2">Datenweg von Servos und IMU über die ESP32-Firmware und die serielle Leitung in den Treiber</title>
+<text x="145" y="30" class="colh" text-anchor="middle">Hardware</text>
+<text x="467" y="30" class="colh" text-anchor="middle">ESP32</text>
+<text x="772" y="30" class="colh" text-anchor="middle">Leitung</text>
+<text x="1055" y="30" class="colh" text-anchor="middle">Treiber xgo-drv</text>
+<text x="1355" y="30" class="colh" text-anchor="middle">/proc und Leser</text>
+<rect x="12" y="45" width="266" height="860" rx="10" class="band b-snap"/>
+<text x="22" y="64" class="bandl">am ESP32 angeschlossen</text>
+<rect x="292" y="45" width="351" height="860" rx="10" class="band b-work"/>
+<text x="302" y="64" class="bandl">Firmware R-1.1.6 · Patches 0001–0019</text>
+<rect x="652" y="45" width="241" height="860" rx="10" class="band b-cam"/>
+<text x="662" y="64" class="bandl">Pi ↔ ESP32</text>
+<rect x="902" y="45" width="306" height="860" rx="10" class="band b-main"/>
+<text x="912" y="64" class="bandl">Kernel 6.6.74 · Treiberstand 2026-11-17</text>
+<rect x="1222" y="45" width="266" height="860" rx="10" class="band b-ctrl"/>
+<text x="1232" y="64" class="bandl">Userspace am Pi</text>
+<path d="M270,115 L300,115" class="ar ar-data" marker-end="url(#m-data)"/>
+<path d="M270,225 L300,225" class="ar ar-data" marker-end="url(#m-data)"/>
+<path d="M350,271.5 L350,290" class="ar ar-data" marker-end="url(#m-data)"/>
+<path d="M270,330 L300,330" class="ar ar-data" marker-end="url(#m-data)"/>
+<path d="M270,440 L300,440" class="ar ar-data" marker-end="url(#m-data)"/>
+<path d="M420,497 L420,517" class="ar ar-data" marker-end="url(#m-data)"/>
+<path d="M300,485 L288,485 L288,700 L300,700" class="ar ar-data" marker-end="url(#m-data)"/>
+<path d="M635,580 L660,580" class="ar ar-data" marker-end="url(#m-data)"/>
+<path d="M885,580 L910,580" class="ar ar-data" marker-end="url(#m-data)"/>
+<path d="M635,700 L660,700" class="ar ar-data" marker-end="url(#m-data)"/>
+<path d="M885,700 L897,700 L897,635 L910,635" class="ar ar-data" marker-end="url(#m-data)"/>
+<path d="M1200,475 L1215,475 L1215,415 L1230,415" class="ar ar-data" marker-end="url(#m-data)"/>
+<path d="M1200,300 L1230,300" class="ar ar-data" marker-end="url(#m-data)"/>
+<path d="M1200,150 L1215,150 L1215,280 L1230,280" class="ar ar-data" marker-end="url(#m-data)"/>
+<path d="M1355,260 L1355,240.5" class="ar ar-data" marker-end="url(#m-data)"/>
+<path d="M600,290 L600,271.5" class="ar ar-ctrl" marker-end="url(#m-ctrl)"/>
+<path d="M300,150 L270,150" class="ar ar-ctrl" marker-end="url(#m-ctrl)"/>
+<path d="M300,255 L270,255" class="ar ar-ctrl" marker-end="url(#m-ctrl)"/>
+<path d="M300,770 L270,770" class="ar ar-ctrl" marker-end="url(#m-ctrl)"/>
+<path d="M910,740 L885,740" class="ar ar-ctrl" marker-end="url(#m-ctrl)"/>
+<path d="M660,740 L635,740" class="ar ar-ctrl" marker-end="url(#m-ctrl)"/>
+<path d="M770,763.5 L770,860 L635,860" class="ar ar-ctrl" marker-end="url(#m-ctrl)"/>
+<path d="M1230,600 L1215,600 L1215,720 L1200,720" class="ar ar-ctrl" marker-end="url(#m-ctrl)"/>
+<path d="M1355,670 L1355,651" class="ar ar-ctrl" marker-end="url(#m-ctrl)"/>
+<g class="box k-in" id="h_rad">
+<rect x="20" y="80" width="250" height="98.5" rx="7"/>
+<text x="29" y="98" class="bt">Räder 11 (links) / 21 (rechts)</text>
+<text x="29" y="116.0" class="bl" xml:space="preserve">Busmotoren, 1024 Ticks je Umdrehung</text>
+<text x="29" y="131.5" class="bl" xml:space="preserve">melden Position, Drehzahl, Last</text>
+<text x="29" y="147.0" class="bl" xml:space="preserve">Rad 21 im Vorzeichen gedreht:</text>
+<text x="29" y="162.5" class="bl" xml:space="preserve">vorwärts zählen beide positiv</text>
+</g>
+<g class="box k-in" id="h_bein">
+<rect x="20" y="195" width="250" height="83.0" rx="7"/>
+<text x="29" y="213" class="bt">Beinservos 12 / 22</text>
+<text x="29" y="231.0" class="bl" xml:space="preserve">Körperhöhe und Roll</text>
+<text x="29" y="246.5" class="bl unc" xml:space="preserve">Seite links/rechts nur abgeleitet</text>
+<text x="29" y="262.0" class="bl" xml:space="preserve">Drehmoment an/aus (Adresse 0x18)</text>
+</g>
+<g class="box k-in" id="h_imu">
+<rect x="20" y="295" width="250" height="98.5" rx="7"/>
+<text x="29" y="313" class="bt">IMU (I²C)</text>
+<text x="29" y="331.0" class="bl" xml:space="preserve">SDA 18 / SCL 19, 400 kHz</text>
+<text x="29" y="346.5" class="bl" xml:space="preserve">Adresse 0x69, ab Reg 0x0b 12 B</text>
+<text x="29" y="362.0" class="bl" xml:space="preserve">Beschleunigung + Kreisel xyz, BE</text>
+<text x="29" y="377.5" class="bl unc" xml:space="preserve">Chiptyp im Code nicht genannt</text>
+</g>
+<g class="box k-in" id="h_akku">
+<rect x="20" y="410" width="250" height="67.5" rx="7"/>
+<text x="29" y="428" class="bt">Akku (ADC GPIO33)</text>
+<text x="29" y="446.0" class="bl" xml:space="preserve">12 Bit, Teiler ×3, Mittel über 15</text>
+<text x="29" y="461.5" class="bl" xml:space="preserve">gelesen in sensor()</text>
+</g>
+<g class="box k-in" id="h_taste">
+<rect x="20" y="497" width="250" height="52.0" rx="7"/>
+<text x="29" y="515" class="bt">Kalibriertaster GPIO21</text>
+<text x="29" y="533.0" class="bl" xml:space="preserve">Pull-up, entprellt</text>
+</g>
+<g class="box k-in" id="h_led">
+<rect x="20" y="735" width="250" height="67.5" rx="7"/>
+<text x="29" y="753" class="bt">4 RGB-LEDs (RMT, GPIO27)</text>
+<text x="29" y="771.0" class="bl" xml:space="preserve">GRB, alle ≥ 20 ms, Helligkeit n/256</text>
+<text x="29" y="786.5" class="bl unc" xml:space="preserve">Typ WS2812 nur abgeleitet</text>
+</g>
+<g class="box k-mix" id="e_bus">
+<rect x="300" y="80" width="335" height="191.5" rx="7"/>
+<text x="309" y="98" class="bt">Servobus (UART2, 1 Mbaud)</text>
+<rect x="589.0" y="86" width="40.0" height="16" rx="8" class="tag tag-mix"/>
+<text x="609.0" y="98" class="tagt" text-anchor="middle">ESP32</text>
+<text x="309" y="116.0" class="bl" xml:space="preserve">RX GPIO13, TX GPIO14, Halbduplex</text>
+<text x="309" y="131.5" class="bl" xml:space="preserve">Rahmen FF FF ID LEN INSTR … ~Summe</text>
+<text x="309" y="147.0" class="bl" xml:space="preserve">Lesen: FF FF id 04 02 24 06 → 6 B</text>
+<text x="309" y="162.5" class="bl" xml:space="preserve">  Position, Drehzahl, Last</text>
+<text x="309" y="178.0" class="bl" xml:space="preserve">Folge 11 21 11 21 11 21 11 21 12 22</text>
+<text x="309" y="193.5" class="bl" xml:space="preserve">eine Anfrage alle ≥ 2 ms, Timeout 4 ms</text>
+<text x="309" y="209.0" class="bl unc" xml:space="preserve">≈ 200 Hz je Rad, ≈ 50 Hz je Bein (berechnet)</text>
+<text x="309" y="224.5" class="bl" xml:space="preserve">Schreiben: Sync-Write 0x83 ab 0x1E</text>
+<text x="309" y="240.0" class="bl" xml:space="preserve">Drehzahl → mm/s, Filter 0,75 / 0,25</text>
+<text x="309" y="255.5" class="bl" xml:space="preserve">Ticks je Rad aufsummiert (int32)</text>
+</g>
+<g class="box k-mix" id="e_task">
+<rect x="300" y="290" width="335" height="207.0" rx="7"/>
+<text x="309" y="308" class="bt">Task rider_control · Kern 1</text>
+<rect x="589.0" y="296" width="40.0" height="16" rx="8" class="tag tag-mix"/>
+<text x="609.0" y="308" class="tagt" text-anchor="middle">ESP32</text>
+<text x="309" y="326.0" class="bl" xml:space="preserve">FreeRTOS, Priorität 3, 16 KB Stack</text>
+<text x="309" y="341.5" class="bl" xml:space="preserve">sensor() alle 2 ms: IMU (real ~3 ms,</text>
+<text x="309" y="357.0" class="bl" xml:space="preserve">  ~333 Hz), Akku, Radweg</text>
+<text x="309" y="372.5" class="bl" xml:space="preserve">Lagefusion → roll, pitch, yaw:</text>
+<text x="309" y="388.0" class="bl" xml:space="preserve">  0005 Gier aus Nick-/Rollrate herausgerechnet</text>
+<text x="309" y="403.5" class="bl" xml:space="preserve">  0006 Beschl.-Winkel ab 25 °/s eingefroren</text>
+<text x="309" y="419.0" class="bl" xml:space="preserve">  0009 Gier-Nullpunkt laufend nachgeführt</text>
+<text x="309" y="434.5" class="bl" xml:space="preserve">  0017 Nick ungefiltert, 0019 Startkalibrierung</text>
+<text x="309" y="450.0" class="bl" xml:space="preserve">control() alle 4 ms (250 Hz): Balance,</text>
+<text x="309" y="465.5" class="bl" xml:space="preserve">  Fahren (0015), Halten (0008), Beine</text>
+<text x="309" y="481.0" class="bl" xml:space="preserve">publish() alle 10 ms: Register-Schnappschuss</text>
+</g>
+<g class="box k-mix" id="e_loop">
+<rect x="300" y="517" width="335" height="129.5" rx="7"/>
+<text x="309" y="535" class="bt">loop() · Kommunikation</text>
+<rect x="589.0" y="523" width="40.0" height="16" rx="8" class="tag tag-mix"/>
+<text x="609.0" y="535" class="tagt" text-anchor="middle">ESP32</text>
+<text x="309" y="553.0" class="bl" xml:space="preserve">Ring mit 16 Proben aus sensor()</text>
+<text x="309" y="568.5" class="bl" xml:space="preserve">sendet ≤ 8 Strompakete je Durchlauf</text>
+<text x="309" y="584.0" class="bl" xml:space="preserve">UART-Puffer voll → verworfen (Lücke in seq)</text>
+<text x="309" y="599.5" class="bl" xml:space="preserve">Befehle von USB, Aux-UART, BLE</text>
+<text x="309" y="615.0" class="bl" xml:space="preserve">Reg 0x11 = Stromrate 0..250 Hz</text>
+<text x="309" y="630.5" class="bl" xml:space="preserve">Strom aus nach 5 s ohne Byte vom Pi</text>
+</g>
+<g class="box k-mix" id="e_reg">
+<rect x="300" y="665" width="335" height="145.0" rx="7"/>
+<text x="309" y="683" class="bt">Register (aus dem Schnappschuss)</text>
+<rect x="589.0" y="671" width="40.0" height="16" rx="8" class="tag tag-mix"/>
+<text x="609.0" y="683" class="tagt" text-anchor="middle">ESP32</text>
+<text x="309" y="701.0" class="bl" xml:space="preserve">0x0d 24 B: roll, pitch, yaw, Ticks, t_ms</text>
+<text x="309" y="716.5" class="bl" xml:space="preserve">0x0c 16 B: Ticks + Rohposition</text>
+<text x="309" y="732.0" class="bl" xml:space="preserve">0x0e / 0x0f / 0x10 Diagnose (raw_reg)</text>
+<text x="309" y="747.5" class="bl" xml:space="preserve">0x01 Akku %, 0x02 Zustand, 0x68 Gier</text>
+<text x="309" y="763.0" class="bl" xml:space="preserve">Schreiben: 0x30 vor, 0x32 drehen, 0x35 Höhe,</text>
+<text x="309" y="778.5" class="bl" xml:space="preserve">0x36 Roll, 0x61 Nivellieren, 0x3e Aktion,</text>
+<text x="309" y="794.0" class="bl" xml:space="preserve">0x69–0x6c LEDs, 0x12 Helligkeit, 0x11 Strom</text>
+</g>
+<g class="box k-mix" id="e_akt">
+<rect x="300" y="830" width="335" height="67.5" rx="7"/>
+<text x="309" y="848" class="bt">Aktionen (Reg 0x3e)</text>
+<rect x="589.0" y="836" width="40.0" height="16" rx="8" class="tag tag-mix"/>
+<text x="609.0" y="848" class="tagt" text-anchor="middle">ESP32</text>
+<text x="309" y="866.0" class="bl" xml:space="preserve">255 scharf, 254 Not-Aus, 253 Aufstehen</text>
+<text x="309" y="881.5" class="bl" xml:space="preserve">241/240 Halten, 239/238 Integral, 237 Neustart</text>
+</g>
+<g class="box k-in" id="l_uart">
+<rect x="660" y="80" width="225" height="160.5" rx="7"/>
+<text x="669" y="98" class="bt">UART · 115200 8N1</text>
+<text x="669" y="116.0" class="bl" xml:space="preserve">ESP32 UART1: RX GPIO4, TX GPIO5</text>
+<text x="669" y="131.5" class="bl" xml:space="preserve">Pi: /dev/ttyAMA0, Rohmodus</text>
+<text x="669" y="147.0" class="bl" xml:space="preserve">  (stty min 0 time 1, rc.local)</text>
+<text x="669" y="162.5" class="bl" xml:space="preserve">Rahmen:</text>
+<text x="669" y="178.0" class="bl" xml:space="preserve">  55 00 LEN TYPE REG</text>
+<text x="669" y="193.5" class="bl" xml:space="preserve">  DATA… CHK 00 AA</text>
+<text x="669" y="209.0" class="bl" xml:space="preserve">LEN = Nutzdaten + 8</text>
+<text x="669" y="224.5" class="bl" xml:space="preserve">CHK = ~(LEN+TYPE+REG+Σ DATA)</text>
+</g>
+<g class="box k-in" id="l_strom">
+<rect x="660" y="455" width="225" height="191.5" rx="7"/>
+<text x="669" y="473" class="bt">Strom · Typ 0x14 · 34 B</text>
+<text x="669" y="491.0" class="bl" xml:space="preserve">55 00 22 14 11 + 26 B + CHK 00 AA</text>
+<text x="669" y="506.5" class="bl" xml:space="preserve">+0   u16  seq</text>
+<text x="669" y="522.0" class="bl" xml:space="preserve">+2   u32  t_us (IMU-Lesezeit)</text>
+<text x="669" y="537.5" class="bl" xml:space="preserve">+6   f32  roll °</text>
+<text x="669" y="553.0" class="bl" xml:space="preserve">+10  f32  pitch °</text>
+<text x="669" y="568.5" class="bl" xml:space="preserve">+14  f32  yaw °</text>
+<text x="669" y="584.0" class="bl" xml:space="preserve">+18  s32  Ticks Rad 11</text>
+<text x="669" y="599.5" class="bl" xml:space="preserve">+22  s32  Ticks Rad 21</text>
+<text x="669" y="615.0" class="bl" xml:space="preserve">100 Hz ≈ 34 kbit/s</text>
+<text x="669" y="630.5" class="bl" xml:space="preserve">≈ 30 % der Leitung</text>
+</g>
+<g class="box k-in" id="l_reg">
+<rect x="660" y="665" width="225" height="98.5" rx="7"/>
+<text x="669" y="683" class="bt">Abfragen und Schreiben</text>
+<text x="669" y="701.0" class="bl" xml:space="preserve">Anfrage Typ 0x02, 9 B: Reg, Länge</text>
+<text x="669" y="716.5" class="bl" xml:space="preserve">Antwort Typ 0x12, feste Länge</text>
+<text x="669" y="732.0" class="bl" xml:space="preserve">aus Schnappschuss, ≤ 10 ms alt</text>
+<text x="669" y="747.5" class="bl" xml:space="preserve">Schreiben Typ 0x01, unquittiert</text>
+</g>
+<g class="box k-cpp" id="t_main">
+<rect x="910" y="80" width="290" height="129.5" rx="7"/>
+<text x="919" y="98" class="bt">Thread xgo_main · alle 200 ms</text>
+<rect x="1176.0" y="86" width="18.0" height="16" rx="8" class="tag tag-cpp"/>
+<text x="1185.0" y="98" class="tagt" text-anchor="middle">C</text>
+<text x="919" y="116.0" class="bl" xml:space="preserve">Taster Pi-GPIO 17/22/23/24 (A–D)</text>
+<text x="919" y="131.5" class="bl" xml:space="preserve">  A+B → Ausschalten</text>
+<text x="919" y="147.0" class="bl" xml:space="preserve">Zustand 0x02 in jeder Runde</text>
+<text x="919" y="162.5" class="bl" xml:space="preserve">Akku 0x01 alle 10 Runden (~2 s)</text>
+<text x="919" y="178.0" class="bl" xml:space="preserve">  &lt; 8 % → orderly_poweroff</text>
+<text x="919" y="193.5" class="bl" xml:space="preserve">Gier 0x68 nur ohne Strom, in Zustand 1</text>
+</g>
+<g class="box k-cpp" id="t_imu">
+<rect x="910" y="228" width="290" height="114.0" rx="7"/>
+<text x="919" y="246" class="bt">Thread xgo_imu</text>
+<rect x="1176.0" y="234" width="18.0" height="16" rx="8" class="tag tag-cpp"/>
+<text x="1185.0" y="246" class="tagt" text-anchor="middle">C</text>
+<text x="919" y="264.0" class="bl" xml:space="preserve">Strom aktiv (Paket jünger als</text>
+<text x="919" y="279.5" class="bl" xml:space="preserve">  max(200 ms, 2,5 Abstände)): schläft 20 ms</text>
+<text x="919" y="295.0" class="bl" xml:space="preserve">ohne Strom: 0x0d mit imu_hz 50 Hz,</text>
+<text x="919" y="310.5" class="bl" xml:space="preserve">  synchron, Timeout 20 ms</text>
+<text x="919" y="326.0" class="bl" xml:space="preserve">stream_tick: 0x11 jede Sekunde neu</text>
+</g>
+<g class="box k-cpp" id="t_set">
+<rect x="910" y="360" width="290" height="67.5" rx="7"/>
+<text x="919" y="378" class="bt">nur im Treiber (settings/)</text>
+<rect x="1176.0" y="366" width="18.0" height="16" rx="8" class="tag tag-cpp"/>
+<text x="1185.0" y="378" class="tagt" text-anchor="middle">C</text>
+<text x="919" y="396.0" class="bl" xml:space="preserve">imu_hz, motion_timeout_ms, low_batt_level,</text>
+<text x="919" y="411.5" class="bl" xml:space="preserve">shutdown_on_low_batt, sleep_ms_on_loop</text>
+</g>
+<g class="box k-cpp" id="t_rx">
+<rect x="910" y="445" width="290" height="207.0" rx="7"/>
+<text x="919" y="463" class="bt">Thread xgo_serial_rx</text>
+<rect x="1176.0" y="451" width="18.0" height="16" rx="8" class="tag tag-cpp"/>
+<text x="1185.0" y="463" class="tagt" text-anchor="middle">C</text>
+<text x="919" y="481.0" class="bl" xml:space="preserve">kernel_read in 64-B-Blöcken, ohne Pause</text>
+<text x="919" y="496.5" class="bl" xml:space="preserve">  (kehrt nach 100 ms leer zurück)</text>
+<text x="919" y="512.0" class="bl" xml:space="preserve">handle_frame: Rahmen suchen, CHK prüfen</text>
+<text x="919" y="527.5" class="bl" xml:space="preserve">Typ 0x14 → stream_frame:</text>
+<text x="919" y="543.0" class="bl" xml:space="preserve">  seq-Lücken zählen (serial_stats)</text>
+<text x="919" y="558.5" class="bl" xml:space="preserve">  t_us entfalten, Versatz = Minimum</text>
+<text x="919" y="574.0" class="bl" xml:space="preserve">  über ~2 s − 2,95 ms Übertragung</text>
+<text x="919" y="589.5" class="bl" xml:space="preserve">  float → Milligrad, CLOCK_MONOTONIC</text>
+<text x="919" y="605.0" class="bl" xml:space="preserve">  je Paket in imu_log und wheels_log</text>
+<text x="919" y="620.5" class="bl" xml:space="preserve">Antwort 0x12 → wartender Leser</text>
+<text x="919" y="636.0" class="bl" xml:space="preserve">sonst: unsolicited</text>
+<rect x="1076.7" y="630.0" width="117.3" height="16" rx="8" class="badge"/>
+<text x="1135.4" y="642.0" class="badget" text-anchor="middle">nicht eingespielt</text>
+</g>
+<g class="box k-cpp" id="t_tx">
+<rect x="910" y="670" width="290" height="98.5" rx="7"/>
+<text x="919" y="688" class="bt">Senden (kernel_write)</text>
+<rect x="1176.0" y="676" width="18.0" height="16" rx="8" class="tag tag-cpp"/>
+<text x="1185.0" y="688" class="tagt" text-anchor="middle">C</text>
+<text x="919" y="706.0" class="bl" xml:space="preserve">proc-Schreiben → Typ 0x01, ohne Quittung</text>
+<text x="919" y="721.5" class="bl" xml:space="preserve">read_addr_sync: Mutex + completion,</text>
+<text x="919" y="737.0" class="bl" xml:space="preserve">  Timeout 20–500 ms</text>
+<text x="919" y="752.5" class="bl" xml:space="preserve">motion_timeout_ms: Kernel-Watchdog</text>
+</g>
+<g class="box k-py" id="p_les">
+<rect x="1230" y="80" width="250" height="160.5" rx="7"/>
+<text x="1239" y="98" class="bt">Leser</text>
+<rect x="1426.0" y="86" width="48.0" height="16" rx="8" class="tag tag-py"/>
+<text x="1450.0" y="98" class="tagt" text-anchor="middle">PHP/Py</text>
+<text x="1239" y="116.0" class="bl" xml:space="preserve">imu.py: imu_log alle 10 ms</text>
+<text x="1239" y="131.5" class="bl" xml:space="preserve">  → IMU je Bild (Bildpipeline)</text>
+<text x="1239" y="147.0" class="bl" xml:space="preserve">wheels.py: wheels_log mit 25 Hz</text>
+<text x="1239" y="162.5" class="bl" xml:space="preserve">  → Odometrie</text>
+<text x="1239" y="178.0" class="bl" xml:space="preserve">robot.py: state, yaw, battery,</text>
+<text x="1239" y="193.5" class="bl" xml:space="preserve">  buttons, height alle 0,2 s</text>
+<text x="1239" y="209.0" class="bl" xml:space="preserve">live.php: imu/wheels_log 0,3 s,</text>
+<text x="1239" y="224.5" class="bl" xml:space="preserve">  Zustand 1 s → Browser</text>
+</g>
+<g class="box k-out" id="p_r">
+<rect x="1230" y="260" width="250" height="176.0" rx="7"/>
+<text x="1239" y="278" class="bt">/proc/XGORider · lesen</text>
+<text x="1239" y="296.0" class="bl" xml:space="preserve">imu, imu_log (128 Einträge):</text>
+<text x="1239" y="311.5" class="bl" xml:space="preserve">  seq t_ns roll pitch yaw (m°)</text>
+<text x="1239" y="327.0" class="bl" xml:space="preserve">wheels, wheels_log (64):</text>
+<text x="1239" y="342.5" class="bl" xml:space="preserve">  seq t_ns t11 t21 fw_ms</text>
+<text x="1239" y="358.0" class="bl" xml:space="preserve">yaw (ganze Grad, nur Zustand 1)</text>
+<text x="1239" y="373.5" class="bl" xml:space="preserve">state (0x02), battery (0x01)</text>
+<text x="1239" y="389.0" class="bl" xml:space="preserve">buttons (A–D, aktiv low)</text>
+<text x="1239" y="404.5" class="bl" xml:space="preserve">serial_stats (Lücken, Fehler)</text>
+<text x="1239" y="420.0" class="bl" xml:space="preserve">raw_reg (0600, Diagnose)</text>
+</g>
+<g class="box k-out" id="p_w">
+<rect x="1230" y="475" width="250" height="176.0" rx="7"/>
+<text x="1239" y="493" class="bt">/proc/XGORider · schreiben</text>
+<text x="1239" y="511.0" class="bl" xml:space="preserve">speed_x → 0x30, speed_z → 0x32</text>
+<text x="1239" y="526.5" class="bl" xml:space="preserve">height → 0x35, roll → 0x36</text>
+<text x="1239" y="542.0" class="bl" xml:space="preserve">roll_balance → 0x61</text>
+<text x="1239" y="557.5" class="bl" xml:space="preserve">action → 0x3e</text>
+<text x="1239" y="573.0" class="bl" xml:space="preserve">leds/0..3 → 0x69–0x6c</text>
+<text x="1239" y="588.5" class="bl" xml:space="preserve">settings/led_brightness → 0x12</text>
+<text x="1239" y="604.0" class="bl" xml:space="preserve">settings/imu_stream_hz → 0x11</text>
+<text x="1239" y="619.5" class="bl" xml:space="preserve">settings/calibration → 0x04</text>
+<text x="1239" y="635.0" class="bl" xml:space="preserve">settings/pitch_calibration → 0x09</text>
+</g>
+<g class="box k-py" id="p_sch">
+<rect x="1230" y="670" width="250" height="98.5" rx="7"/>
+<text x="1239" y="688" class="bt">Schreiber</text>
+<rect x="1426.0" y="676" width="48.0" height="16" rx="8" class="tag tag-py"/>
+<text x="1450.0" y="688" class="tagt" text-anchor="middle">PHP/Py</text>
+<text x="1239" y="706.0" class="bl" xml:space="preserve">robot.py: speed_x/z 50 Hz, action,</text>
+<text x="1239" y="721.5" class="bl" xml:space="preserve">  roll, roll_balance, height</text>
+<text x="1239" y="737.0" class="bl" xml:space="preserve">imu.py: Strom 100 Hz, abgesetzt 5</text>
+<text x="1239" y="752.5" class="bl" xml:space="preserve">api.php: action, LEDs, Höhe, Roll</text>
+</g>
+<text x="358" y="285" class="al" text-anchor="start">Ist-Werte</text>
+<text x="592" y="285" class="al" text-anchor="end">Sollwerte</text>
+<text x="428" y="511" class="al" text-anchor="start">Probe je IMU-Lesung</text>
+<text x="778" y="852" class="al" text-anchor="start">Aktion</text>
+</svg>
+</div>
+
+<div class="legend">
+  <span><i class="sw" style="border-color:var(--in)"></i>Hardware, Leitung</span>
+  <span><i class="sw" style="border-color:var(--mix)"></i>ESP32-Firmware</span>
+  <span><i class="sw" style="border-color:var(--cpp)"></i>Kerneltreiber (C)</span>
+  <span><i class="sw" style="border-color:var(--out)"></i>/proc-Einträge</span>
+  <span><i class="sw" style="border-color:var(--py)"></i>Leser und Schreiber am Pi</span>
+  <span><i class="ln" style="border-color:var(--a-data)"></i>Messwerte zum Pi</span>
+  <span><i class="ln" style="border-color:var(--a-ctrl)"></i>Befehle zur Hardware</span>
+</div>
+
+<h2>Takte und Puffer auf dem Weg</h2>
+<div class="tw"><table>
+<thead><tr><th>Stufe</th><th>Ort</th><th>Takt</th><th>Format, Puffer</th><th>Code</th></tr></thead>
+<tbody>
+<tr><td>Servobus lesen</td><td>ESP32, rider_control</td><td>1 Anfrage je ≥ 2 ms, ≈ 200 Hz je Rad, ≈ 50 Hz je Bein (berechnet)</td><td>UART2 1 Mbaud, 6 B je Antwort</td><td><code>actuator_bus.cpp</code></td></tr>
+<tr><td>IMU lesen + Lagefusion</td><td>ESP32, sensor()</td><td>alle 2 ms angesetzt, real ~333 Hz</td><td>I²C 400 kHz, 12 B</td><td><code>board_imu.cpp, control/rider_leg_imu.cpp</code></td></tr>
+<tr><td>Balance-Regler</td><td>ESP32, control()</td><td>250 Hz</td><td>–</td><td><code>main.cpp, control/rider_motion.cpp</code></td></tr>
+<tr><td>Register-Schnappschuss</td><td>ESP32, publish()</td><td>100 Hz</td><td>Antworten ≤ 10 ms alt</td><td><code>main.cpp, command_protocol.cpp</code></td></tr>
+<tr><td>Datenstrom 0x14</td><td>ESP32, loop()</td><td>Rate aus Reg 0x11, am Rider 100 Hz</td><td>Ring 16, ≤ 8 je Durchlauf, 34 B je Paket</td><td><code>imu_stream.h, main.cpp</code></td></tr>
+<tr><td>Leitung</td><td>UART1 ↔ ttyAMA0</td><td>115200 Baud</td><td>Strom ≈ 30 % Auslastung</td><td><code>xgo-serial.h</code></td></tr>
+<tr><td>Empfang</td><td>Kernel, xgo_serial_rx</td><td>laufend</td><td>64-B-Blöcke; imu_log 128, wheels_log 64 Einträge (≈ 1,3 s / 0,6 s)</td><td><code>xgo-serial.c stream_frame</code></td></tr>
+<tr><td>Ersatzabfrage</td><td>Kernel, xgo_imu</td><td>bei Strom 20 ms Pause, sonst 0x0d mit 50 Hz</td><td>24 B</td><td><code>xgo-drv.c</code></td></tr>
+<tr><td>Zustand, Akku, Taster</td><td>Kernel, xgo_main</td><td>200 ms, Akku ~2 s</td><td>–</td><td><code>xgo-drv.c, xgo-gpio.h</code></td></tr>
+<tr><td>IMU-Leser</td><td>xgonav ProcImu</td><td>10 ms</td><td>imu_log</td><td><code>xgonav/imu.py</code></td></tr>
+<tr><td>Rad-Leser</td><td>xgonav ProcWheels</td><td>25 Hz (abgesetzt 5 Hz)</td><td>wheels_log</td><td><code>xgonav/wheels.py</code></td></tr>
+<tr><td>Fahrbefehle, Zustand</td><td>xgonav ProcRobot</td><td>schreibt 50 Hz, liest 0,2 s</td><td>speed_x/z u8, 128 = Stand</td><td><code>xgonav/robot.py</code></td></tr>
+<tr><td>Live-Anzeige</td><td>live.php</td><td>0,3 s balancierend, sonst 1 s</td><td>imu_log, wheels_log</td><td><code>tools/live.php</code></td></tr>
+</tbody></table></div>
 
 <h2>Korrekturen auf einen Blick</h2>
 <ul class="k">
