@@ -1,0 +1,507 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bildpipeline xgonav</title>
+<style>
+:root {
+  --bg:#f6f7f9; --fg:#1d2330; --mut:#5d6677; --surf:#ffffff; --line:#c9cfda;
+  --cam:#e3eefc; --main:#e4f4ea; --work:#efe8fb; --ctrl:#fdf0e1; --snap:#eceef2; --grp:#f1f3f6;
+  --cpp:#2f6fd6; --py:#3c9a5f; --mix:#8a55d1; --off:#9aa1ad; --in:#56606f; --out:#0f8a8a;
+  --a-data:#4b5566; --a-ctrl:#d9731a; --a-cmd:#d9731a; --a-out:#0f8a8a; --a-off:#9aa1ad;
+  --badge:#c43d3d;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg:#14171d; --fg:#e4e8ef; --mut:#9aa3b2; --surf:#1e232c; --line:#3a4250;
+    --cam:#1a2738; --main:#1a2d22; --work:#251f35; --ctrl:#33271a; --snap:#23272f; --grp:#1a1e25;
+    --cpp:#6ea2ff; --py:#6cc78f; --mix:#b68cf0; --off:#6d7480; --in:#a5adbb; --out:#4cc7c7;
+    --a-data:#a5adbb; --a-ctrl:#f0a050; --a-cmd:#f0a050; --a-out:#4cc7c7; --a-off:#6d7480;
+    --badge:#e06666;
+  }
+}
+:root[data-theme="dark"] {
+  --bg:#14171d; --fg:#e4e8ef; --mut:#9aa3b2; --surf:#1e232c; --line:#3a4250;
+  --cam:#1a2738; --main:#1a2d22; --work:#251f35; --ctrl:#33271a; --snap:#23272f; --grp:#1a1e25;
+  --cpp:#6ea2ff; --py:#6cc78f; --mix:#b68cf0; --off:#6d7480; --in:#a5adbb; --out:#4cc7c7;
+  --a-data:#a5adbb; --a-ctrl:#f0a050; --a-cmd:#f0a050; --a-out:#4cc7c7; --a-off:#6d7480;
+  --badge:#e06666;
+}
+* { box-sizing:border-box; }
+body { margin:0; background:var(--bg); color:var(--fg);
+  font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+main { max-width:1560px; margin:0 auto; padding:20px 16px 40px; }
+h1 { font-size:22px; margin:0 0 4px; }
+h2 { font-size:17px; margin:28px 0 8px; }
+p.sub { color:var(--mut); margin:0 0 14px; }
+a { color:var(--cpp); }
+.scroll { overflow-x:auto; border:1px solid var(--line); border-radius:12px; background:var(--surf); }
+.scroll svg { display:block; min-width:1100px; width:100%; height:auto; }
+.legend { display:flex; flex-wrap:wrap; gap:8px 18px; margin:12px 0 0; color:var(--mut); font-size:13px; }
+.legend span { display:inline-flex; align-items:center; gap:6px; }
+.sw { width:14px; height:14px; border-radius:4px; border:2px solid; display:inline-block; }
+.ln { width:26px; height:0; border-top:2px solid; display:inline-block; }
+table { border-collapse:collapse; width:100%; font-size:13px; background:var(--surf); }
+th,td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
+th { color:var(--mut); font-weight:600; }
+td code, li code { font-size:12px; }
+.tw { overflow-x:auto; border:1px solid var(--line); border-radius:12px; }
+ul.k { margin:0; padding-left:18px; }
+ul.k li { margin:3px 0; }
+.foot { color:var(--mut); font-size:12.5px; margin-top:24px; }
+/* SVG */
+.colh { font-size:15px; font-weight:700; fill:var(--mut); letter-spacing:.04em; text-transform:uppercase; }
+.band { stroke:none; }
+.b-cam { fill:var(--cam); } .b-main { fill:var(--main); } .b-work { fill:var(--work); }
+.b-ctrl { fill:var(--ctrl); } .b-snap { fill:var(--snap); }
+.grp { fill:var(--grp); stroke:var(--line); stroke-dasharray:4 3; }
+.bandl { font-size:12.5px; font-weight:600; fill:var(--mut); }
+.box rect:first-child { fill:var(--surf); stroke-width:1.6; }
+.k-cpp rect:first-child { stroke:var(--cpp); }
+.k-py rect:first-child { stroke:var(--py); }
+.k-mix rect:first-child { stroke:var(--mix); }
+.k-in rect:first-child { stroke:var(--in); }
+.k-out rect:first-child { stroke:var(--out); }
+.k-off rect:first-child { stroke:var(--off); stroke-dasharray:5 4; }
+.k-off text { fill:var(--mut); }
+.bt { font-size:13px; font-weight:700; fill:var(--fg); }
+.bl { font-size:11.6px; fill:var(--fg); }
+.tag { stroke:none; }
+.tag-cpp { fill:var(--cpp); } .tag-py { fill:var(--py); } .tag-mix { fill:var(--mix); } .tag-off { fill:var(--off); }
+.tagt { font-size:10.5px; font-weight:700; fill:#fff; }
+.badge { fill:var(--badge); }
+.badget { font-size:10px; font-weight:700; fill:#fff; }
+.ar { fill:none; stroke-width:1.8; }
+.ar-data { stroke:var(--a-data); } .ar-ctrl { stroke:var(--a-ctrl); stroke-width:2.2; }
+.ar-cmd { stroke:var(--a-cmd); stroke-dasharray:6 4; } .ar-out { stroke:var(--a-out); }
+.ar-off { stroke:var(--a-off); stroke-dasharray:4 4; }
+.mk-data { fill:var(--a-data); } .mk-ctrl,.mk-cmd { fill:var(--a-ctrl); } .mk-out { fill:var(--a-out); } .mk-off { fill:var(--a-off); }
+.al { font-size:11px; font-style:italic; fill:var(--mut); paint-order:stroke; stroke:var(--surf); stroke-width:4px; stroke-linejoin:round; }
+</style>
+</head>
+<body>
+<main>
+<h1>Bildpipeline xgonav</h1>
+<p class="sub">Stand 2026-11-18, aus dem Code und der <code>config.toml</code> am Rider. Sie zeigt alle Stufen je Bild mit ihren Korrekturen, die Threads und Prozesse, die daran hängen, und was in die Pipeline hineinfließt. Die Seite ist statisch und kostet am Pi keine Rechenzeit. <a href="./">← Oberfläche</a></p>
+
+<div class="scroll">
+<svg viewBox="0 0 1500 1100" role="img" aria-labelledby="t1" xmlns="http://www.w3.org/2000/svg">
+<title id="t1">Bildpipeline von xgonav am Rider</title>
+<defs>
+<marker id="m-data" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk mk-data"/></marker>
+<marker id="m-ctrl" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk mk-ctrl"/></marker>
+<marker id="m-cmd" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk mk-cmd"/></marker>
+<marker id="m-out" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk mk-out"/></marker>
+<marker id="m-off" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk mk-off"/></marker>
+</defs>
+<text x="165" y="30" class="colh" text-anchor="middle">Eingänge</text>
+<text x="740" y="30" class="colh" text-anchor="middle">Pipeline</text>
+<text x="1325" y="30" class="colh" text-anchor="middle">Abnehmer</text>
+<rect x="20" y="245" width="290" height="595" rx="10" class="grp"/>
+<text x="30" y="263" class="bandl">Kernel xgo-drv · /proc/XGORider ← ESP32 (UART)</text>
+<rect x="345" y="50" width="790" height="165" rx="10" class="band b-cam"/>
+<text x="357" y="69" class="bandl">Kamera-Thread · CPU 0–1 · 24 fps</text>
+<rect x="345" y="235" width="790" height="175" rx="10" class="band b-main"/>
+<text x="1123" y="254" class="bandl" text-anchor="end">Hauptschleife App._step() · je Bild</text>
+<rect x="345" y="430" width="510" height="180" rx="10" class="band b-work"/>
+<text x="357" y="449" class="bandl">Bodenmodell-Thread (FreeSpaceWorker) · CPU 2–3</text>
+<rect x="870" y="430" width="265" height="180" rx="10" class="band b-work"/>
+<text x="882" y="449" class="bandl">Detektor · CPU 2–3</text>
+<rect x="345" y="630" width="790" height="330" rx="10" class="band b-ctrl"/>
+<text x="1123" y="649" class="bandl" text-anchor="end">Regelschritt · control_hz 24 → am Rider jedes Bild</text>
+<rect x="345" y="980" width="790" height="100" rx="10" class="band b-snap"/>
+<text x="357" y="999" class="bandl">Übergabe an die Anzeige</text>
+<path d="M310,142 L360,142" class="ar ar-data" marker-end="url(#m-data)"/>
+<path d="M610,142 L630,142" class="ar ar-data" marker-end="url(#m-data)"/>
+<path d="M900,142 L920,142" class="ar ar-data" marker-end="url(#m-data)"/>
+<path d="M1020,200 L1020,222 L442,222 L442,265" class="ar ar-data" marker-end="url(#m-data)"/>
+<path d="M525,330 L540,330" class="ar ar-data" marker-end="url(#m-data)"/>
+<path d="M745,330 L760,330" class="ar ar-data" marker-end="url(#m-data)"/>
+<path d="M965,330 L980,330" class="ar ar-data" marker-end="url(#m-data)"/>
+<path d="M300,300 L326,300 L326,250 L862,250 L862,265" class="ar ar-data" marker-end="url(#m-data)"/>
+<path d="M165,425 L165,395" class="ar ar-data" marker-end="url(#m-data)"/>
+<path d="M165,545 L165,690" class="ar ar-data" marker-end="url(#m-data)"/>
+<path d="M820,395 L820,460" class="ar ar-data" marker-end="url(#m-data)"/>
+<path d="M1030,395 L1030,460" class="ar ar-data" marker-end="url(#m-data)"/>
+<path d="M1085,460 L1085,395" class="ar ar-data" marker-end="url(#m-data)"/>
+<path d="M735,595 L735,665" class="ar ar-data" marker-end="url(#m-data)"/>
+<path d="M1120,345 L1141,345 L1141,621 L475,621 L475,665" class="ar ar-data" marker-end="url(#m-data)"/>
+<path d="M300,340 L333,340 L333,690 L360,690" class="ar ar-data" marker-end="url(#m-data)"/>
+<path d="M300,717 L360,717" class="ar ar-data" marker-end="url(#m-data)"/>
+<path d="M300,795 L340,795 L340,752 L360,752" class="ar ar-data" marker-end="url(#m-data)"/>
+<path d="M310,900 L327,900 L327,762 L360,762" class="ar ar-data" marker-end="url(#m-data)"/>
+<path d="M310,1030 L318,1030 L318,229 L400,229 L400,265" class="ar ar-cmd" marker-end="url(#m-cmd)"/>
+<path d="M590,717 L610,717" class="ar ar-data" marker-end="url(#m-data)"/>
+<path d="M860,717 L880,717" class="ar ar-data" marker-end="url(#m-data)"/>
+<path d="M560,770 L560,830" class="ar ar-data" marker-end="url(#m-data)"/>
+<path d="M800,770 L800,830" class="ar ar-data" marker-end="url(#m-data)"/>
+<path d="M1000,770 L1000,800 L440,800 L440,830" class="ar ar-data" marker-end="url(#m-data)"/>
+<path d="M520,887 L535,887" class="ar ar-data" marker-end="url(#m-data)"/>
+<path d="M725,887 L740,887" class="ar ar-data" marker-end="url(#m-data)"/>
+<path d="M910,887 L925,887" class="ar ar-data" marker-end="url(#m-data)"/>
+<path d="M1120,887 L1170,887" class="ar ar-ctrl" marker-end="url(#m-ctrl)"/>
+<path d="M1022,945 L1022,1005" class="ar ar-data" marker-end="url(#m-data)"/>
+<path d="M1120,1035 L1150,1035 L1150,150 L1170,150" class="ar ar-out" marker-end="url(#m-out)"/>
+<path d="M1150,615 L1170,615" class="ar ar-off" marker-end="url(#m-off)"/>
+<path d="M1150,972 L1170,972" class="ar ar-out" marker-end="url(#m-out)"/>
+<path d="M1150,1055 L1170,1055" class="ar ar-out" marker-end="url(#m-out)"/>
+<path d="M1135,715 L1170,715" class="ar ar-ctrl" marker-end="url(#m-ctrl)"/>
+<path d="M1325,225 L1325,245" class="ar ar-out" marker-end="url(#m-out)"/>
+<path d="M1480,170 L1492,170 L1492,412 L1480,412" class="ar ar-out" marker-end="url(#m-out)"/>
+<path d="M1205,340 L1205,485" class="ar ar-out" marker-end="url(#m-out)"/>
+<path d="M1365,465 L1365,485" class="ar ar-out" marker-end="url(#m-out)"/>
+<g class="box k-in" id="in_cam">
+<rect x="20" y="85" width="290" height="115" rx="7"/>
+<text x="29" y="103" class="bt">Kamera OV5647 (CSI)</text>
+<text x="29" y="121.0" class="bl">Weitwinkelobjektiv, fest montiert</text>
+<text x="29" y="136.5" class="bl">Belichtung und Gain per Web änderbar</text>
+<text x="29" y="152.0" class="bl">(POST /exposure, /gain)</text>
+<text x="29" y="167.5" class="bl">danach lernt das Bodenmodell neu</text>
+</g>
+<g class="box k-in" id="in_imu">
+<rect x="30" y="275" width="270" height="120" rx="7"/>
+<text x="39" y="293" class="bt">IMU-Thread (imu_log)</text>
+<text x="39" y="311.0" class="bl">seq t_ns roll pitch yaw (Milligrad)</text>
+<text x="39" y="326.5" class="bl">Strom 100 Hz, gelesen alle 10 ms</text>
+<text x="39" y="342.0" class="bl">Kurs-Korrektur je Probe:</text>
+<text x="39" y="357.5" class="bl">links ×1,0021 · rechts ×1,0025</text>
+<rect x="215.8" y="373" width="78.2" height="16" rx="8" class="badge"/>
+<text x="254.89999999999998" y="385" class="badget" text-anchor="middle">uncommittet</text>
+</g>
+<g class="box k-in" id="in_fw">
+<rect x="30" y="425" width="270" height="120" rx="7"/>
+<text x="39" y="443" class="bt">ESP32-Firmware R-1.1.6</text>
+<text x="39" y="461.0" class="bl">Balance-Regler, hält Sollwerte</text>
+<text x="39" y="476.5" class="bl">Nick-Fusion (0017)</text>
+<text x="39" y="492.0" class="bl">Strom IMU + Räder (0014)</text>
+<text x="39" y="507.5" class="bl">Encoder 1024 Ticks/U, Rad 11 = links</text>
+</g>
+<g class="box k-in" id="in_whl">
+<rect x="30" y="690" width="270" height="55" rx="7"/>
+<text x="39" y="708" class="bt">Räder (wheels_log)</text>
+<text x="39" y="726.0" class="bl">Wegsumme je Rad, Thread 25 Hz</text>
+</g>
+<g class="box k-in" id="in_st">
+<rect x="30" y="760" width="270" height="70" rx="7"/>
+<text x="39" y="778" class="bt">Zustand (alle 0,2 s, Robot)</text>
+<text x="39" y="796.0" class="bl">state, yaw, height, battery,</text>
+<text x="39" y="811.5" class="bl">buttons (WLAN-Tasten C+D)</text>
+</g>
+<g class="box k-in" id="in_mic">
+<rect x="20" y="855" width="290" height="100" rx="7"/>
+<text x="29" y="873" class="bt">Mikrofon → Ortungs-Thread</text>
+<text x="29" y="891.0" class="bl">arecord hw:0,0, 48 kHz, 2 Mikrofone</text>
+<text x="29" y="906.5" class="bl">GCC-PHAT (ortfast.cpp), 1 s Mittel</text>
+<text x="29" y="922.0" class="bl">nur in idle und pet</text>
+<text x="29" y="937.5" class="bl">→ Schallrichtung in World (pet)</text>
+</g>
+<g class="box k-in" id="in_web">
+<rect x="20" y="975" width="290" height="110" rx="7"/>
+<text x="29" y="993" class="bt">Web-Befehle (api.php → :8088)</text>
+<text x="29" y="1011.0" class="bl">Modus, Ziel, Fahren (manual)</text>
+<text x="29" y="1026.5" class="bl">Belichtung, Gain, Karte, Pose</text>
+<text x="29" y="1042.0" class="bl">Ruhe, Pipeline an/aus, Aufzeichnen</text>
+<text x="29" y="1057.5" class="bl">Modus wirkt am Anfang von _step</text>
+</g>
+<g class="box k-py" id="A">
+<rect x="360" y="85" width="250" height="115" rx="7"/>
+<text x="369" y="103" class="bt">Aufnahme (picamera2)</text>
+<rect x="557.6" y="91" width="46.400000000000006" height="16" rx="8" class="tag tag-py"/>
+<text x="580.8" y="103" class="tagt" text-anchor="middle">Python</text>
+<text x="369" y="121.0" class="bl">Sensor 1296×972, 2×2-Binning</text>
+<text x="369" y="136.5" class="bl">Crop [16,0,2560,1920] → 640×480</text>
+<text x="369" y="152.0" class="bl">24 fps fest, 20 ms, Gain 16</text>
+<text x="369" y="167.5" class="bl">kein eigener Weißabgleich</text>
+<text x="369" y="183.0" class="bl">hfov 91,8°, tilt 5,18°, cx +13 px</text>
+</g>
+<g class="box k-cpp" id="B">
+<rect x="630" y="85" width="270" height="115" rx="7"/>
+<text x="639" y="103" class="bt">Linsenentzerrung</text>
+<rect x="866.8" y="91" width="27.200000000000003" height="16" rx="8" class="tag tag-cpp"/>
+<text x="880.4" y="103" class="tagt" text-anchor="middle">C++</text>
+<text x="639" y="121.0" class="bl">linsefast.cpp, bitgleich cv2.remap</text>
+<text x="639" y="136.5" class="bl">radial, 18 Stützstellen bis 460 px</text>
+<text x="639" y="152.0" class="bl">Ecken bis 18 px, r ≤ 340 px ≤ 2 px</text>
+<text x="639" y="167.5" class="bl">Selbsttest beim Start, sonst cv2</text>
+<text x="639" y="183.0" class="bl">~3,9 ms je Bild (NEON)</text>
+<rect x="797.2" y="178" width="96.8" height="16" rx="8" class="badge"/>
+<text x="845.6" y="190" class="badget" text-anchor="middle">nicht gefahren</text>
+</g>
+<g class="box k-py" id="C">
+<rect x="920" y="85" width="200" height="115" rx="7"/>
+<text x="929" y="103" class="bt">Zeitstempel + Ablage</text>
+<rect x="1067.6" y="91" width="46.400000000000006" height="16" rx="8" class="tag tag-py"/>
+<text x="1090.8" y="103" class="tagt" text-anchor="middle">Python</text>
+<text x="929" y="121.0" class="bl">SensorTimestamp (MONOTONIC)</text>
+<text x="929" y="136.5" class="bl">get(): nur das neueste Bild,</text>
+<text x="929" y="152.0" class="bl">ältere verworfen, keine Queue</text>
+<text x="929" y="167.5" class="bl">fps_measured ≈ 24,0</text>
+</g>
+<g class="box k-py" id="D">
+<rect x="360" y="265" width="165" height="130" rx="7"/>
+<text x="369" y="283" class="bt">Vorlauf</text>
+<rect x="472.6" y="271" width="46.400000000000006" height="16" rx="8" class="tag tag-py"/>
+<text x="495.8" y="283" class="tagt" text-anchor="middle">Python</text>
+<text x="369" y="301.0" class="bl">Moduswechsel aus Web</text>
+<text x="369" y="316.5" class="bl">(_apply_pending_mode)</text>
+<text x="369" y="332.0" class="bl">Dunkelangst: Helligkeit</text>
+<text x="369" y="347.5" class="bl">mit 4 Hz prüfen</text>
+<text x="369" y="363.0" class="bl">Aufstehen → Boden neu</text>
+</g>
+<g class="box k-cpp" id="E">
+<rect x="540" y="265" width="205" height="130" rx="7"/>
+<text x="549" y="283" class="bt">EgoMotion</text>
+<rect x="711.8" y="271" width="27.200000000000003" height="16" rx="8" class="tag tag-cpp"/>
+<text x="725.4" y="283" class="tagt" text-anchor="middle">C++</text>
+<text x="549" y="301.0" class="bl">egofast.cpp, eine Pyramide</text>
+<text x="549" y="316.5" class="bl">Grau + 2:1 → 320×240</text>
+<text x="549" y="332.0" class="bl">LK-Fluss, 150 Merkmale, RANSAC</text>
+<text x="549" y="347.5" class="bl">→ Homographie A, pitch_dev</text>
+<text x="549" y="363.0" class="bl">Track-Boxen ausmaskiert</text>
+<text x="549" y="378.5" class="bl">~4,7 ms (p95 6,4)</text>
+</g>
+<g class="box k-py" id="F">
+<rect x="760" y="265" width="205" height="130" rx="7"/>
+<text x="769" y="283" class="bt">IMU je Bild</text>
+<rect x="912.6" y="271" width="46.400000000000006" height="16" rx="8" class="tag tag-py"/>
+<text x="935.8" y="283" class="tagt" text-anchor="middle">Python</text>
+<text x="769" y="301.0" class="bl">imu_frame: Probe Bildzeit +10,5 ms</text>
+<text x="769" y="316.5" class="bl">Vorzeichen −1 (fest, kein Sync)</text>
+<text x="769" y="332.0" class="bl">Nick − pitch_ref (−4,23°)</text>
+<text x="769" y="347.5" class="bl">Roll − roll_ref (1,25°)</text>
+<text x="769" y="363.0" class="bl">Probe ≤ 0,3 s alt, sonst</text>
+<text x="769" y="378.5" class="bl">Rückfall Bild-Nick (±1,5°)</text>
+</g>
+<g class="box k-py" id="G">
+<rect x="980" y="265" width="140" height="130" rx="7"/>
+<text x="989" y="283" class="bt">Tracker</text>
+<rect x="1067.6" y="271" width="46.400000000000006" height="16" rx="8" class="tag tag-py"/>
+<text x="1090.8" y="283" class="tagt" text-anchor="middle">Python</text>
+<text x="989" y="301.0" class="bl">predict(A):</text>
+<text x="989" y="316.5" class="bl">Boxen mitschieben</text>
+<text x="989" y="332.0" class="bl">Detektionen per</text>
+<text x="989" y="347.5" class="bl">transform_between</text>
+<text x="989" y="363.0" class="bl">aufs Bild, update,</text>
+<text x="989" y="378.5" class="bl">prune</text>
+</g>
+<g class="box k-cpp" id="H">
+<rect x="360" y="460" width="480" height="135" rx="7"/>
+<text x="369" y="478" class="bt">Bodenmodell: FloorNet entscheidet (primary = net)</text>
+<rect x="806.8" y="466" width="27.200000000000003" height="16" rx="8" class="tag tag-cpp"/>
+<text x="820.4" y="478" class="tagt" text-anchor="middle">C++</text>
+<text x="369" y="496.0" class="bl">jedes 2. Bild (~12 Hz); Auftrag mit Nick, Roll, Kartenpose, Bildzeit</text>
+<text x="369" y="511.5" class="bl">FloorNet (floornet.cpp, lauf_p11a): 640×480 → 80 Spalten, ~16 ms</text>
+<text x="369" y="527.0" class="bl">ZeilenGlätter: Median über 3 Netzbilder, per Pose und Nick umgerechnet</text>
+<text x="369" y="542.5" class="bl">roll_columns: Roll der Kamera ausgleichen → Bodengrenze je Spalte</text>
+<text x="369" y="558.0" class="bl">Rückfall bei Netzausfall: kanten auf 160×120 (floorfast.cpp)</text>
+<text x="369" y="573.5" class="bl">   + Shading-Korrektur (shading.json, max_gain 5); sonst inaktiv</text>
+<rect x="737.2" y="573" width="96.8" height="16" rx="8" class="badge"/>
+<text x="785.6" y="585" class="badget" text-anchor="middle">nicht gefahren</text>
+</g>
+<g class="box k-mix" id="I">
+<rect x="885" y="460" width="235" height="135" rx="7"/>
+<text x="894" y="478" class="bt">Detektor (DetectorWorker)</text>
+<rect x="1080.4" y="466" width="33.6" height="16" rx="8" class="tag tag-mix"/>
+<text x="1097.2" y="478" class="tagt" text-anchor="middle">NCNN</text>
+<text x="894" y="496.0" class="bl">YOLO11n 256, NCNN (Rückfall ONNX)</text>
+<text x="894" y="511.5" class="bl">nur follow / approach / pet</text>
+<text x="894" y="527.0" class="bl">≤ 5 Hz, nur scharfe Bilder</text>
+<text x="894" y="542.5" class="bl">~96 ms je Bild, 2 Threads</text>
+<text x="894" y="558.0" class="bl">nur Ziele, nie Hindernisse</text>
+</g>
+<g class="box k-py" id="J">
+<rect x="360" y="665" width="230" height="105" rx="7"/>
+<text x="369" y="683" class="bt">Odometrie, Kurs, World</text>
+<rect x="537.6" y="671" width="46.400000000000006" height="16" rx="8" class="tag tag-py"/>
+<text x="560.8" y="683" class="tagt" text-anchor="middle">Python</text>
+<text x="369" y="701.0" class="bl">Weg aus Rädern (×1,0073 / 1,0087)</text>
+<text x="369" y="716.5" class="bl">sonst Befehl × vx_limit 1,8</text>
+<text x="369" y="732.0" class="bl">Kurs: IMU; Pose-Wache (blind 2 s)</text>
+<text x="369" y="747.5" class="bl">World: Ziele, Freiraum, TTC, Akku,</text>
+<text x="369" y="763.0" class="bl">Höhe (cam_h_u8), Schall</text>
+</g>
+<g class="box k-cpp" id="L">
+<rect x="610" y="665" width="250" height="105" rx="7"/>
+<text x="619" y="683" class="bt">Merkkarte (LocalMap)</text>
+<rect x="826.8" y="671" width="27.200000000000003" height="16" rx="8" class="tag tag-cpp"/>
+<text x="840.4" y="683" class="tagt" text-anchor="middle">C++</text>
+<text x="619" y="701.0" class="bl">navfast.cpp: mitdrehen mit IMU-Kurs</text>
+<text x="619" y="716.5" class="bl">Spalten mit Nick der Aufnahme</text>
+<text x="619" y="732.0" class="bl">an der Aufnahmepose eintragen</text>
+<text x="619" y="747.5" class="bl">confirm 3, max_age 4 s, r 0,18 m</text>
+<text x="619" y="763.0" class="bl">→ Bahnprüfung, TTC</text>
+</g>
+<g class="box k-cpp" id="M">
+<rect x="880" y="665" width="240" height="105" rx="7"/>
+<text x="889" y="683" class="bt">Raumkarte (GridWorker)</text>
+<rect x="1086.8" y="671" width="27.200000000000003" height="16" rx="8" class="tag tag-cpp"/>
+<text x="1100.4" y="683" class="tagt" text-anchor="middle">C++</text>
+<text x="889" y="701.0" class="bl">eigener Thread, gridfast.cpp, ~2,7 ms</text>
+<text x="889" y="716.5" class="bl">nur balancierend, ≤ 40°/s drehend</text>
+<text x="889" y="732.0" class="bl">Personen/Tiere ausmaskiert</text>
+<text x="889" y="747.5" class="bl">Treffer und frei bis 1,5 m</text>
+<text x="889" y="763.0" class="bl">reloc: Abgleich aus (track = false)</text>
+</g>
+<g class="box k-cpp" id="N">
+<rect x="360" y="830" width="160" height="115" rx="7"/>
+<text x="369" y="848" class="bt">Planer-Thread</text>
+<rect x="486.8" y="836" width="27.200000000000003" height="16" rx="8" class="tag tag-cpp"/>
+<text x="500.4" y="848" class="tagt" text-anchor="middle">C++</text>
+<text x="369" y="866.0" class="bl">PlannerWorker</text>
+<text x="369" y="881.5" class="bl">A*, Wegkürzen,</text>
+<text x="369" y="897.0" class="bl">Frontier-Suche</text>
+<text x="369" y="912.5" class="bl">home/explore/patrol</text>
+<text x="369" y="928.0" class="bl">(navfast.cpp)</text>
+</g>
+<g class="box k-py" id="O">
+<rect x="535" y="830" width="190" height="115" rx="7"/>
+<text x="544" y="848" class="bt">Verhalten + safety()</text>
+<rect x="672.6" y="836" width="46.400000000000006" height="16" rx="8" class="tag tag-py"/>
+<text x="695.8" y="848" class="tagt" text-anchor="middle">Python</text>
+<text x="544" y="866.0" class="bl">Behavior.step(World)</text>
+<text x="544" y="881.5" class="bl">→ safety(): gefallen,</text>
+<text x="544" y="897.0" class="bl">Freiraum, TTC</text>
+<text x="544" y="912.5" class="bl">→ Dunkelangst-Tick</text>
+<text x="544" y="928.0" class="bl">Pfad blockiert? (Bogen)</text>
+</g>
+<g class="box k-cpp" id="P">
+<rect x="740" y="830" width="170" height="115" rx="7"/>
+<text x="749" y="848" class="bt">Bahnprüfung</text>
+<rect x="876.8" y="836" width="27.200000000000003" height="16" rx="8" class="tag tag-cpp"/>
+<text x="890.4" y="848" class="tagt" text-anchor="middle">C++</text>
+<text x="749" y="866.0" class="bl">_arc_check gegen</text>
+<text x="749" y="881.5" class="bl">Merkkarte + Sperrzonen</text>
+<text x="749" y="897.0" class="bl">Horizont 1,2 s,</text>
+<text x="749" y="912.5" class="bl">auch rückwärts</text>
+<text x="749" y="928.0" class="bl">(navfast.cpp)</text>
+</g>
+<g class="box k-py" id="Q">
+<rect x="925" y="830" width="195" height="115" rx="7"/>
+<text x="934" y="848" class="bt">Robot (ProcRobot)</text>
+<rect x="1067.6" y="836" width="46.400000000000006" height="16" rx="8" class="tag tag-py"/>
+<text x="1090.8" y="848" class="tagt" text-anchor="middle">Python</text>
+<text x="934" y="866.0" class="bl">Clamp max_v / max_w 0,5</text>
+<text x="934" y="881.5" class="bl">Rampe, Thread 50 Hz</text>
+<text x="934" y="897.0" class="bl">Keepalive 0,3 s, Watchdog</text>
+<text x="934" y="912.5" class="bl">Höhe alle 0,2 s rücklesen</text>
+<text x="934" y="928.0" class="bl">Kernel-Watchdog 1000 ms</text>
+</g>
+<g class="box k-py" id="R">
+<rect x="360" y="1005" width="760" height="60" rx="7"/>
+<text x="369" y="1023" class="bt">Snapshot: je Bild neu angelegt, nie verändert · snap_cond.notify_all()</text>
+<rect x="1067.6" y="1011" width="46.400000000000006" height="16" rx="8" class="tag tag-py"/>
+<text x="1090.8" y="1023" class="tagt" text-anchor="middle">Python</text>
+<text x="369" y="1041.0" class="bl">Anzeige, LCD und Aufzeichnung lesen nur hieraus. Das Overlay (render) zeichnet erst</text>
+<text x="369" y="1056.5" class="bl">der anfragende Thread, nicht die Bildschleife.</text>
+</g>
+<g class="box k-out" id="o_web">
+<rect x="1170" y="85" width="310" height="140" rx="7"/>
+<text x="1179" y="103" class="bt">web.py · 127.0.0.1:8088</text>
+<text x="1179" y="121.0" class="bl">eigene Threads, render() auf CPU 0–3</text>
+<text x="1179" y="136.5" class="bl">/status (?breakdown=1), /detector, /route</text>
+<text x="1179" y="152.0" class="bl">/ws: JPEG q70, ≤ 10 fps, nach Quittung</text>
+<text x="1179" y="167.5" class="bl">/frame (?raw=1: q95 ohne Overlay)</text>
+<text x="1179" y="183.0" class="bl">/map.png (Raumkarte)</text>
+<text x="1179" y="198.5" class="bl">POST /mode, /drive, /exposure, …</text>
+</g>
+<g class="box k-out" id="o_ngx">
+<rect x="1170" y="245" width="310" height="95" rx="7"/>
+<text x="1179" y="263" class="bt">nginx :443 + php-fpm</text>
+<text x="1179" y="281.0" class="bl">/xgonav/ → index.php, api.php</text>
+<text x="1179" y="296.5" class="bl">api.php leitet an :8088 weiter und</text>
+<text x="1179" y="312.0" class="bl">schreibt LED, Aktion, Höhe, Roll nach /proc</text>
+</g>
+<g class="box k-out" id="o_live">
+<rect x="1250" y="360" width="230" height="105" rx="7"/>
+<text x="1259" y="378" class="bt">live.php :8089 (WebSocket)</text>
+<text x="1259" y="396.0" class="bl">/xgonav/live, PHP-CLI</text>
+<text x="1259" y="411.5" class="bl">/status 1× je Sekunde</text>
+<text x="1259" y="427.0" class="bl">imu_log, wheels_log direkt</text>
+<text x="1259" y="442.5" class="bl">aus /proc (0,3 s / 1 s)</text>
+</g>
+<g class="box k-out" id="o_br">
+<rect x="1170" y="485" width="310" height="70" rx="7"/>
+<text x="1179" y="503" class="bt">Browser</text>
+<text x="1179" y="521.0" class="bl">Oberfläche, Video, Karte, Schallradar</text>
+<text x="1179" y="536.5" class="bl">Anzeige rechnet hier, nicht am Pi</text>
+</g>
+<g class="box k-off" id="o_lcd">
+<rect x="1170" y="575" width="310" height="80" rx="7"/>
+<text x="1179" y="593" class="bt">LCD-Thread → /tmp/lcd0</text>
+<rect x="1446.8" y="581" width="27.200000000000003" height="16" rx="8" class="tag tag-off"/>
+<text x="1460.4" y="593" class="tagt" text-anchor="middle">aus</text>
+<text x="1179" y="611.0" class="bl">320×240 RGB565, 15 fps → st7789_server</text>
+<text x="1179" y="626.5" class="bl">am Rider aus (lcd_fifo = &quot;&quot;)</text>
+</g>
+<g class="box k-out" id="o_emo">
+<rect x="1170" y="675" width="310" height="80" rx="7"/>
+<text x="1179" y="693" class="bt">Emotionen + Töne</text>
+<text x="1179" y="711.0" class="bl">Augen über dasselbe FIFO, Töne per aplay</text>
+<text x="1179" y="726.5" class="bl">aus dem Regelschritt (_emotion_tick)</text>
+</g>
+<g class="box k-out" id="o_drv">
+<rect x="1170" y="780" width="310" height="135" rx="7"/>
+<text x="1179" y="798" class="bt">Fahrbefehl → xgo-drv → ESP32</text>
+<text x="1179" y="816.0" class="bl">speed_x / speed_z (u8, 128 = Stand)</text>
+<text x="1179" y="831.5" class="bl">height, roll, roll_balance</text>
+<text x="1179" y="847.0" class="bl">Firmware hält Sollwerte:</text>
+<text x="1179" y="862.5" class="bl">Stopps müssen geschrieben werden</text>
+<text x="1179" y="878.0" class="bl">kommt als IMU/Räder zurück (links)</text>
+</g>
+<g class="box k-out" id="o_raw">
+<rect x="1170" y="935" width="310" height="75" rx="7"/>
+<text x="1179" y="953" class="bt">Aufzeichnen (rawrec)</text>
+<text x="1179" y="971.0" class="bl">JPEG q92 je Bild + meta.jsonl (IMU, Räder)</text>
+<text x="1179" y="986.5" class="bl">nur balancierend, endet beim Absetzen</text>
+</g>
+<g class="box k-out" id="o_rec">
+<rect x="1170" y="1025" width="310" height="60" rx="7"/>
+<text x="1179" y="1043" class="bt">--record</text>
+<text x="1179" y="1061.0" class="bl">mp4 mit Overlay (eigener Thread)</text>
+</g>
+<text x="700" y="218" class="al" text-anchor="middle">Bild f · 640×480 entzerrt</text>
+<text x="600" y="246" class="al" text-anchor="middle">IMU-Proben</text>
+<text x="760" y="424" class="al" text-anchor="middle">Nick, Roll, Pose</text>
+<text x="1008" y="424" class="al" text-anchor="middle">offer</text>
+<text x="1106" y="424" class="al" text-anchor="middle">poll</text>
+<text x="800" y="607" class="al" text-anchor="middle">Spalten (jedes 2. Bild)</text>
+<text x="960" y="617" class="al" text-anchor="middle">Ziele (bestätigte Tracks)</text>
+<text x="333" y="520" class="al" text-anchor="middle">Kurs</text>
+<text x="586" y="822" class="al" text-anchor="middle">World</text>
+<text x="836" y="822" class="al" text-anchor="middle">Hindernisse</text>
+<text x="680" y="796" class="al" text-anchor="middle">Raumkarte → Planer</text>
+<text x="1022" y="978" class="al" text-anchor="middle">Zustand aller Stufen</text>
+</svg>
+</div>
+
+<div class="legend">
+  <span><i class="sw" style="border-color:var(--cpp)"></i>C++-Kern (libxgofast.so)</span>
+  <span><i class="sw" style="border-color:var(--py)"></i>Python</span>
+  <span><i class="sw" style="border-color:var(--mix)"></i>NCNN/ONNX</span>
+  <span><i class="sw" style="border-color:var(--in)"></i>Eingang</span>
+  <span><i class="sw" style="border-color:var(--out)"></i>Abnehmer</span>
+  <span><i class="sw" style="border-color:var(--off);border-style:dashed"></i>am Rider aus</span>
+  <span><i class="ln" style="border-color:var(--a-data)"></i>Daten</span>
+  <span><i class="ln" style="border-color:var(--a-ctrl)"></i>Fahr- und Ausdrucksbefehle</span>
+  <span><i class="ln" style="border-color:var(--a-cmd);border-top-style:dashed"></i>Web-Befehle</span>
+  <span><i class="ln" style="border-color:var(--a-out)"></i>zur Anzeige</span>
+  <span><i class="sw" style="background:var(--badge);border-color:var(--badge)"></i>so noch nicht gefahren</span>
+</div>
+
+<h2>Korrekturen auf einen Blick</h2>
+<ul class="k">
+<li><b>Linse:</b> radiale Verzeichnung entfernt, bevor irgendeine Stufe das Bild sieht (Kamera-Thread).</li><li><b>Kamerageometrie:</b> hfov 91,8°, tilt 5,18°, cx_offset 13 px, cam_fwd 36 mm, Kamerahöhe aus dem Höhen-Sollwert (cam_h_u8).</li><li><b>Eigenbewegung:</b> Homographie A je Bild; Tracks, verspätete Detektionen und der Bild-Nick werden damit umgerechnet.</li><li><b>Nick, Roll:</b> IMU-Probe zur Bildzeit (+10,5 ms), Vorzeichen −1, Bezug −4,23° bzw. 1,25°. Ohne IMU: Nick aus dem Bild.</li><li><b>Kurs:</b> Skalierung je Drehrichtung (1,0021 / 1,0025) im IMU-Thread. Merkkarte und Raumkarte drehen mit dem IMU-Kurs.</li><li><b>Weg:</b> Radweg ×1,0073 / ×1,0087; ohne Räder Befehl × vx_limit 1,8.</li><li><b>Bodengrenze:</b> FloorNet-Spalten über 3 Netzbilder geglättet (per Pose und Nick), Roll der Kamera je Spalte ausgeglichen.</li><li><b>Zeitversatz der Karte:</b> Merkkarte trägt an der Aufnahmepose ein, nicht an der aktuellen Pose.</li><li><b>Linsenabschattung:</b> shading.json, nur im Rückfallweg kanten. Mit primary = net ist sie inaktiv.</li>
+</ul>
+
+<h2>Stufen im Einzelnen</h2>
+<div class="tw"><table>
+<thead><tr><th>Stufe</th><th>Thread</th><th>Takt</th><th>Kosten am Pi</th><th>Kern</th><th>Konfiguration</th><th>Code (xgonav/)</th></tr></thead>
+<tbody>
+<tr><td>Aufnahme</td><td>Kamera</td><td>24 fps</td><td>–</td><td>Python/ISP</td><td><code>[camera] width, height, fps, sensor_mode, scaler_crop, exposure_us, analogue_gain</code></td><td><code>camera.py PiCameraSource</code></td></tr><tr><td>Linsenentzerrung</td><td>Kamera</td><td>je Bild</td><td>~3,9 ms</td><td>C++ (linsefast.cpp)</td><td><code>[camera] lens_*</code></td><td><code>camera.lens_remap, native/linsefast.cpp</code></td></tr><tr><td>EgoMotion</td><td>Haupt</td><td>je Bild</td><td>~4,7 ms</td><td>C++ (egofast.cpp)</td><td><code>[ego] native, proc_width</code></td><td><code>egomotion.py</code></td></tr><tr><td>IMU je Bild</td><td>Haupt</td><td>je Bild</td><td>&lt; 0,1 ms</td><td>Python</td><td><code>[imu] pitch_sign, time_offset_ms, pitch_ref_deg, roll_ref_deg, max_age_s</code></td><td><code>imu.py imu_frame</code></td></tr><tr><td>Kurs-Korrektur</td><td>IMU</td><td>100 Hz</td><td>–</td><td>Python</td><td><code>[imu] yaw_scale_left, yaw_scale_right</code></td><td><code>imu.py</code></td></tr><tr><td>Tracker</td><td>Haupt</td><td>je Bild</td><td>klein</td><td>Python</td><td><code>[tracker]</code></td><td><code>tracker.py</code></td></tr><tr><td>FloorNet + Glätten + Roll</td><td>Bodenmodell</td><td>jedes 2. Bild</td><td>~16 ms</td><td>C++ (floornet.cpp)</td><td><code>[freespace] primary, shadow_net, net_smooth_n</code></td><td><code>freespace.py FreeSpaceWorker, floornet.py</code></td></tr><tr><td>kanten + Shading (Rückfall)</td><td>Bodenmodell</td><td>nur bei Netzausfall</td><td>–</td><td>C++ (floorfast.cpp)</td><td><code>[freespace] method, shading_file, shading_max_gain</code></td><td><code>freespace.py, shading.py</code></td></tr><tr><td>Detektor</td><td>Detektor</td><td>≤ 5 Hz, nur follow/approach/pet</td><td>~96 ms</td><td>NCNN</td><td><code>[detector] model, max_hz, threads</code></td><td><code>detector.py</code></td></tr><tr><td>Odometrie, Kurs, World</td><td>Haupt (Regelschritt)</td><td>24 Hz</td><td>klein</td><td>Python</td><td><code>[odom] scale_left/right, [robot] vx_limit</code></td><td><code>app.py _odom_ds, behaviors.World</code></td></tr><tr><td>Merkkarte</td><td>Haupt (Regelschritt)</td><td>24 Hz</td><td>klein</td><td>C++ (navfast.cpp)</td><td><code>[map] confirm, max_age_s, radius_m, yaw_source</code></td><td><code>localmap.py</code></td></tr><tr><td>Raumkarte + reloc</td><td>GridWorker</td><td>je Bodenmodell-Ergebnis</td><td>~2,7 ms</td><td>C++ (gridfast.cpp)</td><td><code>[grid] max_range_m, free_range_m, [reloc] track</code></td><td><code>gridmap.py, reloc.py</code></td></tr><tr><td>Planer, Frontier</td><td>Planer</td><td>bei Bedarf</td><td>–</td><td>C++ (navfast.cpp)</td><td><code>[home] native</code></td><td><code>planner.py, frontier.py</code></td></tr><tr><td>Verhalten, safety()</td><td>Haupt (Regelschritt)</td><td>24 Hz</td><td>klein</td><td>Python</td><td><code>[behavior], [safety]</code></td><td><code>behaviors.py</code></td></tr><tr><td>Bahnprüfung</td><td>Haupt (Regelschritt)</td><td>24 Hz</td><td>klein</td><td>C++ (navfast.cpp)</td><td><code>[map]</code></td><td><code>app.py _arc_check</code></td></tr><tr><td>Robot</td><td>robot</td><td>50 Hz</td><td>–</td><td>Python</td><td><code>[robot] max_v, max_w, kernel_watchdog_ms</code></td><td><code>robot.py ProcRobot</code></td></tr><tr><td>Snapshot</td><td>Haupt</td><td>je Bild</td><td>klein</td><td>Python</td><td><code>–</code></td><td><code>app.py _step</code></td></tr><tr><td>Overlay render()</td><td>web.py / LCD / Recorder</td><td>auf Anfrage</td><td>nicht in der Schleife</td><td>Python/OpenCV</td><td><code>[output] web_fps, lcd_fifo, [cpu] render_cpus</code></td><td><code>app.render</code></td></tr>
+</tbody></table></div>
+
+<p class="foot">Kosten sind gemessene Mittelwerte am CM4, soweit vorhanden (Ego-Motion aus /status?breakdown, FloorNet net_ms im Stand, Raumkarte Median), sonst „klein“ oder „–“. Noch nicht gefahren sind: die Linsenentzerrung (seit 2026-11-18 11:51, uncommittet), FloorNet als alleinige Bodengrenze (seit 2026-11-10) und der Regelschritt je Bild mit 24 Hz (seit 2026-11-17). Die CPU-Zuordnung kommt aus <code>[cpu]</code>: Hauptschleife und Kamera auf 0–1, YOLO und Bodenmodell auf 2–3, Overlay auf 0–3.</p>
+</main>
+</body>
+</html>
