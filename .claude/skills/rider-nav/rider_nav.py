@@ -228,6 +228,33 @@ def cmd_fahr(a) -> int:
     return 0
 
 
+def cmd_folge(a) -> int:
+    """Abschnitte "v,w,sek" nacheinander ohne Halt dazwischen (z. B. aus der Fahrt heraus drehen)."""
+    try:
+        teile = [tuple(float(x) for x in s.split(",")) for s in a.abschnitte]
+        if any(len(t) != 3 or t[2] < 0 for t in teile):
+            raise RuntimeError("Abschnitt muss v,w,sek sein")
+        _bereit_zum_fahren()
+        print("vorher:", _pose())
+        for v, w, sek in teile:
+            v, w = max(-1.0, min(1.0, v)), max(-1.0, min(1.0, w))
+            print("  v %+.3f w %+.3f %.1f s ab %.3f" % (v, w, sek, time.monotonic()), flush=True)
+            t_end = time.monotonic() + sek
+            while time.monotonic() < t_end:
+                if not balanciert():
+                    raise RuntimeError("liegt (state %s)" % proc("state"))
+                post("/drive?v=%.3f&w=%.3f" % (v, w))
+                time.sleep(1.0 / HZ)
+    except (RuntimeError, ValueError, KeyboardInterrupt) as e:
+        print("Abbruch:", e or "Strg+C")
+        _halt()
+        return 1
+    _halt()
+    time.sleep(0.5)
+    print("nachher:", _pose())
+    return 0
+
+
 def cmd_dreh(a) -> int:
     try:
         _bereit_zum_fahren()
@@ -332,6 +359,8 @@ def main() -> int:
     p.set_defaults(f=cmd_aufstehen)
     p = sp.add_parser("fahr"); p.add_argument("v", type=float); p.add_argument("w", type=float)
     p.add_argument("sekunden", type=float); p.set_defaults(f=cmd_fahr)
+    p = sp.add_parser("folge"); p.add_argument("abschnitte", nargs="+", metavar="V,W,SEK")
+    p.set_defaults(f=cmd_folge)
     p = sp.add_parser("dreh"); p.add_argument("grad", type=float)
     p.add_argument("--w", type=float, default=0.20, help="höchste Drehrate (normiert)")
     p.add_argument("--tol", type=float, default=3.0)
