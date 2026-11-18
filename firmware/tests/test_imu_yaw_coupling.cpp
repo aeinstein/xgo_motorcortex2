@@ -1,12 +1,12 @@
-// Host-Test für die Patches 0005/0006: updateImu mit synthetischen Rohdaten. Sensor gekippt wie
-// beim balancierenden RiderPi (Roll +2,2°, Nick -1,1°) und nicht auf der Drehachse (d vor/hinter,
-// 2 cm seitlich: Fliehkraft auf den Beschleunigungssensor), Nick-Kreisel mit -2,4 % Gier-Übersprechen
-// wie am RiderPi gemessen (Register 0x10, 2026-11-07). 5 s Stillstand (Kalibrierung),
-// 3 s Drehung um die Senkrechte mit 40 bzw. 85 °/s in beide Richtungen, 3 s Stillstand. Die
-// wahre Lage ändert sich nicht.
-//   Original: Nick bis 5,6° daneben (am Rider gemessen +2..3° bei 40 °/s)
-//   0005 (Kippraten ohne Gier-Anteil): Fliehkraft verfälscht bei 85 °/s noch ~1°
-//   0006 (Beschleunigungswinkel bei > 25 °/s eingefroren): Grenze 0,15°
+// Host-Test für Drehungen um die Senkrechte (früher Patches 0005/0006, seit Patch 0021 die Lagefusion als
+// Richtungsvektor): updateImu mit synthetischen Rohdaten. Sensor gekippt wie beim balancierenden RiderPi
+// (Roll +2,2°, Nick -1,1°) und nicht genau auf der Drehachse (wirksam ~4 cm vor/hinter, 4 mm seitlich:
+// Fliehkraft auf den Beschleunigungssensor), Roll- und Nick-Kreisel mit den am RiderPi gemessenen
+// Achsfehlern gegen die Gierrate (2026-11-18). 5 s Stillstand (Kalibrierung), 3 s Drehung um die
+// Senkrechte mit 40 bzw. 85 °/s in beide Richtungen, 3 s Stillstand. Die wahre Lage ändert sich nicht.
+//   Original: Nick bis 5,6° daneben
+//   0021: Grenze 0,25° (kein Winkel wird festgehalten; die Fliehkraft zählt wegen des langsamen
+//   Nachziehens und des kleineren Gewichts beim Drehen kaum)
 // Nach firmware/build.sh (Quellen mit Patches in firmware/build/), im Repo-Root:
 //   S=firmware/build/xgorider2_rl/firmware/src
 //   g++ -std=c++17 -ffp-contract=off -I $S firmware/tests/test_imu_yaw_coupling.cpp $S/control/rider_leg_imu.cpp -o t && ./t
@@ -36,9 +36,9 @@ int main() {
     const double g = 9.8;
     const double ka = 1.0 / (0.000030517578125 * 19.6);   // m/s^2 -> Rohwert (±2 g)
     const double kg = 1.0 / (0.000030517578125 * 2000.0); // °/s -> Rohwert (±2000 °/s)
-    const double e = 0.02;                                 // m seitlich der Drehachse (Sensor-x)
-    const double xtalk = -0.024;                           // Nick-Kreisel misst xtalk * Gierrate mit
-    for (double d : {0.11, -0.11}) {                       // m vor/hinter der Drehachse (Sensor-y)
+    const double e = 0.004;                                // m seitlich der Drehachse (Sensor-x), CAD 4,3 mm
+    const double xn = -0.0124, xr = 0.0099;                // Roll-/Nick-Kreisel sehen diesen Teil der Gierrate mit (rider_leg_imu.h)
+    for (double d : {0.04, -0.04}) {                       // m vor/hinter der Drehachse (Sensor-y), wirksam gemessen ~0,04
         for (double omega : {40.0, -40.0, 85.0, -85.0}) {
             ImuState s;
             double p0 = 0, r0 = 0, dp = 0, dr = 0;
@@ -51,8 +51,8 @@ int main() {
                 put(raw + 0, (g * ux - w2 * e) * ka);  // Firmware: acc[0] = -AX, acc[1] = -AY, acc[2] = +AZ
                 put(raw + 2, (g * uy - w2 * d) * ka);
                 put(raw + 4, g * uz * ka);
-                put(raw + 6, (w * ux + xtalk * w * uz) * kg);   // gyro[1] (Nick) = +GX, mit Übersprechen
-                put(raw + 8, w * uy * kg);             // gyro[0] (Roll) = -GY
+                put(raw + 6, (w * ux + xn * w * uz) * kg);      // gyro[1] (Nick) = +GX, mit Achsfehler
+                put(raw + 8, (w * uy + xr * w * uz) * kg);      // gyro[0] (Roll) = -GY, mit Achsfehler
                 put(raw + 10, w * uz * kg);            // gyro[2] (Gier) = +GZ
                 us += 5000;
                 updateImu(s, raw, 12, us, std::uint32_t(t * 1000) + 1000, 1);
@@ -64,7 +64,7 @@ int main() {
             }
             std::printf("d %+5.2f m, Drehung %+4.0f °/s: Lage vorher Roll %+5.2f° Nick %+5.2f° | "
                         "größte Abweichung Nick %+6.2f°, Roll %+6.2f°\n", d, omega, r0, p0, dp, dr);
-            if (std::fabs(dp) > 0.15 || std::fabs(dr) > 0.15) fail = 1;
+            if (std::fabs(dp) > 0.25 || std::fabs(dr) > 0.25) fail = 1;
         }
     }
     std::printf(fail ? "FEHLER: Drehung verfälscht die Lageschätzung\n" : "ok\n");

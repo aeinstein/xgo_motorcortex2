@@ -1,6 +1,6 @@
 // Host-Test für Patch 0013: Diagnose-Register 0x10 (Lagefusion). Prüft, dass updateImu die Zwischenwerte
-// richtig ablegt (Beschleunigungswinkel, Abzug 0005, Einfrieren 0006) und 0x10 als 32-Byte-Antwort kommt.
-// Die Lagerechnung selbst ändert 0013 nicht; das prüfen test_imu_yaw_coupling und test_yaw_bias mit.
+// richtig ablegt (Beschleunigungswinkel; seit Patch 0021 Gewicht der Beschleunigung, Nullpunkte, Abzug der
+// Querbeschleunigung statt Abzug 0005 / Einfrieren 0006) und 0x10 als 32-Byte-Antwort kommt.
 // Nach firmware/build.sh, im Repo-Root:
 //   S=firmware/build/xgorider2_rl/firmware/src
 //   g++ -std=c++17 -ffp-contract=off -I $S firmware/tests/test_imu_diag.cpp $S/control/rider_leg_imu.cpp $S/command_protocol.cpp -o t && ./t
@@ -50,19 +50,18 @@ int main() {
     check(s.diag_accel_pitch == exp_p && s.diag_accel_roll == exp_r, "Beschleunigungswinkel wie in updateImu");
     check(std::fabs(s.diag_accel_pitch - 3.0f) < 0.05f && std::fabs(s.diag_accel_roll - 2.0f) < 0.05f,
           "Beschleunigungswinkel 3° Nick / 2° Roll");
-    check(!s.diag_accel_frozen, "im Stand nicht eingefroren");
+    // Patch 0021: Gewicht der Beschleunigung im Stand nahe 1 (Betrag 9,8 gegen kGravity 9,99), beim Drehen kleiner
+    std::printf("       Gewicht im Stand %.3f\n", s.diag_weight);
+    check(s.diag_weight > 0.8f && s.diag_weight <= 1.0f, "Gewicht der Beschleunigung im Stand > 0,8");
+    check(s.bias_from_boot && std::fabs(s.gyro_bias[0]) < 0.05f && std::fabs(s.gyro_bias[1]) < 0.05f,
+          "Nullpunkte Roll/Nick aus der Startkalibrierung (hier 0)");
     check(std::uint8_t(s.diag_samples - n0) == 1, "Probenzähler zählt je Probe");
-    for (int k = 0; k < 199; ++k) step(80);             // 0,4 s Drehung mit 80 °/s
-    const float r0 = s.accel_roll_filtered, p0 = s.accel_pitch_filtered;   // 0005: gefilterte Beschleunigungswinkel
-    step(80);
-    const float yaw_rate = s.gyro_deg_s[2] - s.gyro_bias[2];
-    check(s.diag_accel_frozen, "bei 80 °/s eingefroren (0006)");
-    std::printf("       Abzug Nick %+.3f °/s, Roll %+.3f °/s (gz %+.1f, Beschl.-Roll %+.2f°, Beschl.-Nick %+.2f°)\n",
-                s.diag_pitch_coupling, s.diag_roll_coupling, yaw_rate, r0, p0);
-    check(s.diag_pitch_coupling == yaw_rate * (std::tan(r0 * 0.017453292f) + 0.024f), "Abzug Nick = gz*(tan(Beschl.-Roll) + 2,4 %)");
-    check(s.diag_roll_coupling == -(yaw_rate * std::tan(p0 * 0.017453292f)), "Abzug Roll = -gz*tan(Beschl.-Nick)");
+    for (int k = 0; k < 200; ++k) step(80);             // 0,4 s Drehung mit 80 °/s
+    std::printf("       Gewicht bei 80 °/s %.3f, Lage Nick %.2f° Roll %.2f°\n", s.diag_weight, s.pitch_deg, s.roll_deg);
+    check(s.diag_weight > 0.2f && s.diag_weight < 0.5f, "Gewicht bei 80 °/s Drehung zwischen 0,2 und 0,5 (stufenlos, nichts eingefroren)");
+    check(s.diag_lateral == 0.0f, "ohne frische Radticks kein Abzug der Querbeschleunigung");
     step(0);
-    check(!s.diag_accel_frozen, "nach der Drehung wieder frei");
+    check(s.diag_weight > 0.8f, "nach der Drehung wieder volles Gewicht");
 
     // Register 0x10: 32 Byte, Inhalt aus Telemetry::imudiag
     using namespace rider2::protocol;

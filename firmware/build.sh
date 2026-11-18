@@ -30,6 +30,8 @@
 #   0017 Nick-Fusion mit ungefiltertem Beschleunigungs-Nick (Vorfilter hinkte nach: Nickbewegungen ~6 % zu klein)
 #   0018 Aktion 0x3e = 237 / !restart: ESP32 neu starten (nur wenn er nicht balanciert)
 #   0019 Startkalibrierung des Gier-Nullpunkts nur im Stillstand (sonst wiederholen, höchstens 20 Fenster)
+#   0020 Diagnose-Register 0x15 (laufende Summen der IMU-Rohwerte + Radticks, Leser tools/rawdiag.py)
+#   0021 Lagefusion neu: Lage als Richtungsvektor, alle Kreisel-Nullpunkte, kein Einfrieren (ersetzt die Rechnung von 0005/0006/0017)
 # Braucht: git, python3 (venv), Internet beim ersten Lauf (PlatformIO lädt Toolchain ~1 GB).
 set -euo pipefail
 

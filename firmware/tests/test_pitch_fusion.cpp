@@ -5,9 +5,10 @@
 // Paare mit 10..50 °/s.
 //   vor 0017: 1,059 / 1,053 / 1,027 (Beschleunigungs-Nick mit ~0,1 s vorgefiltert, hinkt nach)
 //   0017:     1,00 ± 0,01
-// Dazu: gehaltene Stellungen stimmen auf 0,05°, und ein Nick-Kreisel-Nullpunkt von -1,2 °/s verschiebt
-// den Winkel wie vorher um ~1,8° (Gleichgewichtspunkt unverändert). Drehungen um die Senkrechte
-// (0005/0006) prüft test_imu_yaw_coupling weiter.
+// Dazu: gehaltene Stellungen stimmen auf 0,05°. Seit Patch 0021 (neue Lagefusion, Nullpunkte aller Achsen
+// aus der Startkalibrierung) verschiebt ein Nick-Kreisel-Nullpunkt von -1,2 °/s den Winkel nicht mehr
+// (bis 0020: ~1,8°). Drehungen um die Senkrechte prüft test_imu_yaw_coupling, echte Fahrdaten
+// test_lagefusion_replay.
 // Nach firmware/build.sh (Quellen mit Patches in firmware/build/), im Repo-Root:
 //   S=firmware/build/xgorider2_rl/firmware/src
 //   g++ -std=c++17 -ffp-contract=off -I $S firmware/tests/test_pitch_fusion.cpp $S/control/rider_leg_imu.cpp -o t && ./t
@@ -117,11 +118,44 @@ int main() {
         std::snprintf(text, sizeof text, "30° in 0,3 s: größte Abweichung danach %.3f° (Grenze 0,1°)", e);
         check(e < 0.1, text);
     }
-    {   // Nick-Kreisel-Nullpunkt -1,2 °/s wie am RiderPi: Versatz wie vor 0017 (~1,8°)
+    {   // Nick-Kreisel-Nullpunkt -1,2 °/s wie am RiderPi: seit 0021 kalibriert, kein Versatz mehr (vorher ~1,8°)
         const auto o = lauf([](double) { return 0.0; }, 30.0, -1.2);
         char text[96];
-        std::snprintf(text, sizeof text, "Nullpunkt -1,2 °/s: Versatz %.3f° (erwartet 1,80 ± 0,05°)", o.back().imu);
-        check(std::fabs(o.back().imu - 1.80) < 0.05, text);
+        std::snprintf(text, sizeof text, "Nullpunkt -1,2 °/s: Versatz %.3f° (Grenze 0,05°)", o.back().imu);
+        check(std::fabs(o.back().imu) < 0.05, text);
+    }
+    {   // derselbe Nullpunkt, dabei 30° in 0,3 s genickt und 20 s gehalten: bleibt beim wahren Winkel
+        const auto o = lauf([](double t) { return rampe(t, 2, 0.0, 30.0, 100); }, 22.0, -1.2);
+        double e = 0;
+        for (double t : {2.5, 5.0, 12.0, 21.9}) {
+            const auto& p = o[std::size_t(t / 0.003)];
+            if (std::fabs(p.imu - p.wahr) > e) e = std::fabs(p.imu - p.wahr);
+        }
+        char text[96];
+        std::snprintf(text, sizeof text, "Nullpunkt -1,2 °/s, 30° genickt: größte Abweichung %.3f° (Grenze 0,1°)", e);
+        check(e < 0.1, text);
+    }
+    {   // Startkalibrierung bewegt (Gierrate zappelt, 20 Fenster verworfen, dann angenommen): Nullpunkte Nick/Roll
+        // unbekannt. Die schnelle Nachführung (30 s) holt den Nick-Nullpunkt von -1,2 °/s, der Nick steht richtig.
+        const double kg = 1.0 / (0.000030517578125 * 2000.0), ka = 1.0 / (0.000030517578125 * 19.6);
+        ImuState s;
+        std::uint32_t us = 0;
+        double worst_late = 0;
+        int cal_at = -1;
+        for (int k = 0; k < int(60.0 / 0.003); ++k) {
+            std::uint8_t raw[12];
+            put(raw + 0, 0.0); put(raw + 2, 0.0); put(raw + 4, 9.8 * ka);
+            put(raw + 6, -1.2 * kg); put(raw + 8, 0.0);
+            put(raw + 10, (s.calibrated ? 0.0 : (k / 20 % 2 ? 1.0 : -1.0)) * kg);
+            us += 3000;
+            updateImu(s, raw, 12, us, std::uint32_t(k * 3) + 1000, 1);
+            if (s.calibrated && cal_at < 0) cal_at = k;
+            if (cal_at >= 0 && k > cal_at + int(20.0 / 0.003) && std::fabs(s.pitch_deg) > worst_late) worst_late = std::fabs(s.pitch_deg);
+        }
+        char text[200];
+        std::snprintf(text, sizeof text, "Kalibrierung bewegt angenommen nach %.1f s: Nick-Nullpunkt am Ende %+.3f °/s, Nick ab 20 s danach höchstens %.3f° (Grenze 0,3°)",
+                      cal_at * 0.003, s.gyro_bias[1], worst_late);
+        check(cal_at > 0 && !s.bias_from_boot && std::fabs(s.gyro_bias[1] + 1.2f) < 0.1f && worst_late < 0.3, text);
     }
     std::printf(fail ? "FEHLER\n" : "ok\n");
     return fail;
