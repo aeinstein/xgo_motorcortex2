@@ -34,7 +34,7 @@ Status JSON: `odom.src` = `räder` | `befehl`, `odom.m` = total distance.
 | Size | 16 m × 16 m, 0.05 m cells, start in the centre |
 | Rays | every 2nd of 160 floor-model columns |
 | Free | up to boundary − (0.10 m + 0.05 × d²); `l_free` −0.4; occupied cells reduced only ×0.5 |
-| Occupied | at boundary, `l_occ` +0.5: two hits until shown as occupied |
+| Occupied | at boundary ± `hit_band_quad` × d² along the ray (0.05; sim 0 = one cell), `l_occ` +0.5: two hits until shown as occupied |
 | Clamp | −3.0 .. +3.5; shown as free/occupied beyond ±0.7 |
 | Range | hits 0.15–`max_range_m` 1.5 m (1.25 until 2026-11-14 and in the simulator), free rays to `free_range_m` 1.5 m (RiderPi 1.1 m from 2026-11-06 to 2026-11-14) (one image row at 2 m is ~40 cm; a step was seen as floor from > 1 m on 2026-11-06, simulator with 1.1: floor known 0.43–0.83, occupied precision 0.84–0.92); "free to horizon" columns mark free up to 1.5 m only |
 | Confirmation | off since 2026-11-14 (`confirm_dr_m` 0: with FloorNet one sighting is enough; not driven). Before: `confirm_dr_m` (RiderPi 0.2 m, ± `confirm_cells` 2): occupied only after hits on the same spot from two ranges ≥ 0.2 m apart. RiderPi 2026-11-08: the window sill mirrored in the tiles was entered at 0.56 m from the start and 0.82 m from 0.72 m further on (d = D·h_cam/(h_edge + h_cam)), i.e. a second wall. Simulator explore 120 s: walls 82 % → 73 %, precision 0.90 → 0.93, 0 collisions. Tried and dropped the same day: hits only up to 0.7 m (walls 25 %, explore ended early) and a half-resolution edge band (the 4 cm test compares a mean over the segment, so resolution hardly matters; tape at 0.98 m unchanged) |

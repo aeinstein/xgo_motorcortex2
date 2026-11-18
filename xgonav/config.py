@@ -395,6 +395,12 @@ class GridCfg:
     l_occ: float = 0.5                 # zwei Treffer bis "belegt" (l_show): ein Ausreißer sperrt nichts
     free_margin_m: float = 0.10        # Freistrahl endet so weit vor der Grenze (Messrauschen)
     free_margin_quad: float = 0.05     # dazu so viel x Entfernung² (der Fehler wächst quadratisch)
+    # Treffer als Band entlang des Strahls (± so viel x Entfernung², m) statt einer Zelle. Die Entfernung aus dem
+    # Bild streut quadratisch: Fahrt 20261118-135118 sah die Wand hinter den Stühlen ab 1–1,5 m mit ±0,3 m, kaum
+    # eine Zelle bekam zwei Treffer, Freistrahlen anderer Bilder bauten sie wieder ab; dicht wurde die Wand erst
+    # aus der Nähe. 0,05: 1 m ±5 cm, 1,5 m ±11 cm, Wand dort schon aus der Ferne geschlossen; 0,08 ließ Stuhl- und
+    # Tischbeine unter dem Tisch zusammenwachsen. 0 = eine Zelle (Simulator). Seit 2026-11-18, nicht gefahren.
+    hit_band_quad: float = 0.05
     # Freistrahlen bis hierhin (Treffer nur bis max_range_m); 0 = wie max_range_m. RiderPi 1,1 ab 2026-11-06 (eine
     # Stufe wurde aus > 1 m als Boden gesehen und bei 1,5 m als frei eingetragen), seit 2026-11-14 wieder 1,5
     # (Nutzer: offenen Boden so weit sehen wie Hindernisse; mit dem Bodennetz, nicht gefahren)
@@ -884,7 +890,7 @@ NEUTRAL = {"pet.call_m": 0.0, "pet.come_m": 0.0, "pet.drive_v": 0.08, "pet.look_
            "behavior.turn_w": 0.18, "behavior.search_timeout_s": 20.0, "behavior.height_search_mm": 115.0,
            "behavior.height_fast_mm": 70.0, "output.lcd_fifo": "/tmp/lcd0", "cpu.main_cpus": [],
            "cpu.detector_cpus": [], "cpu.render_cpus": [], "cpu.freespace_cpus": [], "odom.scale_left": 1.0,
-           "odom.scale_right": 1.0, "explore.turn_dps": 40.0, "explore.tight_max": 3, "explore.tight_penalty_s": -1.0, "grid.confirm_dr_m": 0.0, "grid.max_range_m": 1.25, "grid.free_range_m": 1.5, "grid.size_m": 16.0, "home.turn_w_max": 1.0, "grid.yaw_source": "räder",
+           "odom.scale_right": 1.0, "explore.turn_dps": 40.0, "explore.tight_max": 3, "explore.tight_penalty_s": -1.0, "grid.confirm_dr_m": 0.0, "grid.hit_band_quad": 0.0, "grid.max_range_m": 1.25, "grid.free_range_m": 1.5, "grid.size_m": 16.0, "home.turn_w_max": 1.0, "grid.yaw_source": "räder",
            "reloc.enabled": False, "reloc.track": False,
            "control_hz": 20.0}
 

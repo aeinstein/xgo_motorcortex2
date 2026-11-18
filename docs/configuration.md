@@ -255,6 +255,7 @@ All keys with comments: `PetCfg` in `xgonav/config.py`.
 | `l_free` / `l_occ` | -0.4 / 0.5 (two hits to `l_show`) |
 | `l_min` / `l_max` / `l_show` | -3.0 / 3.5 / 0.7 |
 | `free_margin_m` / `occ_free_factor` | 0.10 / 0.5 |
+| `hit_band_quad` | 0.05 (sim 0): a hit is entered as a band ± this × d² along the ray (1 m ±5 cm, 1.5 m ±11 cm), not one cell. Ranges from the image scatter ±0.3 m at 1–1.5 m (drive 20261118-135118, wall behind chairs): single cells rarely got two hits and free rays of other frames removed them. 0.08 merged chair and table legs. Since 2026-11-18, not driven |
 | `view_m` | 6.0 |
 | `yaw_source` | `imu` (sim: `räder`); `räder` (wheels), `kamera` or `imu` (firmware heading from `imu_log`, 100 Hz with the stream; older than `imu.max_age_s` → `/proc` yaw at ~5 Hz; neither → wheels). Status: `grid_yaw_src` (`imu`, `status`, `odom`); see `docs/limitations.md` |
 | `threaded` | true |

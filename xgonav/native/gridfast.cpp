@@ -17,7 +17,7 @@
 
 namespace {
 
-constexpr int kGridAbi = 2;   // bei Änderung der Strukturen erhöhen (gridmap.py prüft das)
+constexpr int kGridAbi = 3;   // bei Änderung der Strukturen erhöhen (gridmap.py prüft das)
 
 }  // namespace
 
@@ -30,6 +30,7 @@ struct GridParams {
     double l_show, l_free_occ, l_free, l_min, l_occ, l_max;   // l_free_occ = l_free * occ_free_factor
     double min_range, max_range, free_r;            // free_r = free_range_m, sonst max_range_m
     double margin0, margin_quad, confirm_dr;        // margin0 = max(res, free_margin_m); confirm_dr <= 0: aus
+    double band_quad;                               // Treffer als Band ± band_quad * dist² entlang des Strahls; 0: eine Zelle
     GeoRow geo;
 };
 
@@ -106,22 +107,27 @@ XGO_API int64_t grid_observe(const GridParams* p, float* lo, uint32_t* stamp, ui
             lo[lin] = static_cast<float>(std::max(static_cast<double>(cur) + step, p->l_min));
         }
     }
-    // Treffer: jede Zelle einmal, mit der Entfernung des ersten Strahls, der sie trifft
+    // Treffer: jede Zelle einmal, mit der Entfernung des ersten Strahls, der sie trifft. Mit band_quad > 0 ein
+    // Band entlang des Strahls: Stützstellen dist + k * half, |k| <= ceil(band_quad * dist² / half) (wie numpy)
     const uint32_t g2 = gen + 1;
     std::vector<int64_t> cells;
     std::vector<float> first;
     for (int j = 0; j < nr; ++j) {
         if (!hit[j]) continue;
-        const double ox = p->px + dist[j] * ca[j];
-        const double oy = p->py + dist[j] * sa[j];
-        const int64_t c = static_cast<int64_t>(std::floor(ox / p->res + nh));
-        const int64_t r = static_cast<int64_t>(std::floor(oy / p->res + nh));
-        if (r < 0 || r >= n || c < 0 || c >= n) continue;
-        const int64_t lin = r * n + c;
-        if (stamp[lin] == g2) continue;
-        stamp[lin] = g2;
-        cells.push_back(lin);
-        first.push_back(static_cast<float>(dist[j]));
+        const int64_t nb = p->band_quad > 0 ? static_cast<int64_t>(std::ceil(p->band_quad * dist[j] * dist[j] / p->half)) : 0;
+        for (int64_t k = -nb; k <= nb; ++k) {
+            const double s = dist[j] + static_cast<double>(k) * p->half;
+            const double ox = p->px + s * ca[j];
+            const double oy = p->py + s * sa[j];
+            const int64_t c = static_cast<int64_t>(std::floor(ox / p->res + nh));
+            const int64_t r = static_cast<int64_t>(std::floor(oy / p->res + nh));
+            if (r < 0 || r >= n || c < 0 || c >= n) continue;
+            const int64_t lin = r * n + c;
+            if (stamp[lin] == g2) continue;
+            stamp[lin] = g2;
+            cells.push_back(lin);
+            first.push_back(static_cast<float>(dist[j]));
+        }
     }
     std::vector<uint8_t> zaehlt(cells.size(), 1);
     if (conf && !cells.empty()) {

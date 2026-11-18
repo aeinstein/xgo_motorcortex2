@@ -1056,6 +1056,12 @@
        "hilfe": "dazu so viel x Entfernung² (der Fehler wächst quadratisch)"
       },
       {
+       "key": "hit_band_quad",
+       "typ": "float",
+       "default": 0.05,
+       "hilfe": "Treffer als Band entlang des Strahls (± so viel x Entfernung², m) statt einer Zelle. Die Entfernung aus dem Bild streut quadratisch: Fahrt 20261118-135118 sah die Wand hinter den Stühlen ab 1–1,5 m mit ±0,3 m, kaum eine Zelle bekam zwei Treffer, Freistrahlen anderer Bilder bauten sie wieder ab; dicht wurde die Wand erst aus der Nähe. 0,05: 1 m ±5 cm, 1,5 m ±11 cm, Wand dort schon aus der Ferne geschlossen; 0,08 ließ Stuhl- und Tischbeine unter dem Tisch zusammenwachsen. 0 = eine Zelle (Simulator). Seit 2026-11-18, nicht gefahren."
+      },
+      {
        "key": "free_range_m",
        "typ": "float",
        "default": 1.5,

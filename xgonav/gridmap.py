@@ -32,14 +32,14 @@ from .geometry import CamGeometry
 log = logging.getLogger("xgonav.gridmap")
 
 # ------------------------------------------------------------------ C++-Kern (optional)
-_GRID_ABI = 2
+_GRID_ABI = 3
 
 
 class _GridParams(ctypes.Structure):         # = GridParams in native/gridfast.cpp
     _fields_ = [(n, ctypes.c_int32) for n in ("n", "nrays", "step", "confirm_cells")] + \
                [(n, ctypes.c_double) for n in ("res", "half", "px", "py", "cp", "sp", "l_show", "l_free_occ", "l_free",
                                                "l_min", "l_occ", "l_max", "min_range", "max_range", "free_r",
-                                               "margin0", "margin_quad", "confirm_dr")] + \
+                                               "margin0", "margin_quad", "confirm_dr", "band_quad")] + \
                [("geo", navfast.GeoRow)]
 
 
@@ -76,7 +76,7 @@ class GridMap:
                                    confirm_cells=max(0, int(c.confirm_cells)), min_range=c.min_range_m,
                                    max_range=c.max_range_m, free_r=c.free_range_m if c.free_range_m > 0 else c.max_range_m,
                                    margin0=max(self.res, c.free_margin_m), margin_quad=c.free_margin_quad,
-                                   confirm_dr=c.confirm_dr_m)
+                                   confirm_dr=c.confirm_dr_m, band_quad=c.hit_band_quad)
             log.info("Raumkarte: C++-Kern %s", fastlib.PATH)
         self.backend = "c++" if self._lib is not None else "python"
         self._nav = navfast.lib() if getattr(cfg, "native", False) else None   # wall_dist (native/navfast.cpp)
@@ -484,13 +484,22 @@ class GridMap:
         if not hit.any():
             return
         cfg = self.cfg
-        ox = px + dist[hit] * ca[hit]
-        oy = py + dist[hit] * sa[hit]
+        dh = dist[hit]
+        # Band entlang des Strahls: Stützstellen dist + k·res/2, |k| <= ceil(hit_band_quad·dist²/(res/2))
+        half = self.res / 2
+        nb = np.ceil(cfg.hit_band_quad * dh * dh / half).astype(np.int64) if cfg.hit_band_quad > 0 \
+            else np.zeros(len(dh), np.int64)
+        cnt = 2 * nb + 1
+        ray = np.repeat(np.arange(len(dh)), cnt)
+        k = np.arange(cnt.sum()) - np.repeat(np.cumsum(cnt) - cnt, cnt) - np.repeat(nb, cnt)
+        s = dh[ray] + k * half
+        ox = px + s * ca[hit][ray]
+        oy = py + s * sa[hit][ray]
         r, c = self.cell(ox, oy)
         m = (r >= 0) & (r < self.n) & (c >= 0) & (c < self.n)
         lin, first = np.unique(r[m] * self.n + c[m], return_index=True)
         if self.conf is not None and lin.size:
-            d = dist[hit][m][first].astype(np.float32)
+            d = dh[ray][m][first].astype(np.float32)
             # Nachbarschaft in einem Zugriff (je Treffer (2k+1)² Zellen, am Rand abgeschnitten)
             k = max(0, int(cfg.confirm_cells))
             o = np.arange(-k, k + 1)

@@ -332,9 +332,9 @@ def test_gridmap_observe_matches_numpy():
     if _grid_lib() is None:
         pytest.skip("Raumkarten-Kern nicht gebaut (make -C xgonav/native)")
     cfg = Config.neutral()
-    for dr, schritt in ((0.2, 2), (0.0, 1)):
+    for dr, schritt, band in ((0.2, 2, 0.0), (0.0, 1, 0.0), (0.2, 2, 0.08), (0.0, 1, 0.3)):
         geo = CamGeometry(640, 480, 91.0, 1.39, 43.0, 85.0, cam_fwd_mm=30.0)
-        gc = replace(cfg.grid, confirm_dr_m=dr, column_step=schritt, file="")
+        gc = replace(cfg.grid, confirm_dr_m=dr, column_step=schritt, hit_band_quad=band, file="")
         mn, mp = GridMap(gc, geo, 160, 120), GridMap(replace(gc, native=False), geo, 160, 120)
         assert (mn.backend, mp.backend) == ("c++", "python")
         rng = np.random.default_rng(21)
