@@ -78,6 +78,12 @@ def load_run(d: str) -> list[dict]:
     return [m for m in runs[best] if m["file"] not in later and os.path.exists(os.path.join(d, m["file"]))]
 
 
+def kurs(m: dict) -> float | None:
+    """Kurs in Grad: yaw_imu (IMU-Strom, ab 2026-11-19), in älteren Aufnahmen yaw_drv (/proc yaw, ganze Grad)."""
+    y = m.get("yaw_imu")
+    return m.get("yaw_drv") if y is None else y
+
+
 def select_segment(ms: list[dict]) -> list[dict]:
     """Längstes zusammenhängendes Stück ab dem ersten fahrenden Modus: balancierend, IMU-Nick,
     Pose bekannt, ohne Posesprung. Davor liegen Aufstehen und das Rücksetzen der Pose beim Start."""
@@ -86,7 +92,7 @@ def select_segment(ms: list[dict]) -> list[dict]:
         return []
     segs, cur, last = [], [], None
     for m in ms[first:]:
-        ok = m.get("pose") and m.get("yaw_drv") is not None and m.get("balancing") and m.get("pitch_src") in IMU_PITCH
+        ok = m.get("pose") and kurs(m) is not None and m.get("balancing") and m.get("pitch_src") in IMU_PITCH
         if ok and last is not None and math.hypot(m["pose"][0] - last[0], m["pose"][1] - last[1]) > JUMP_M:
             ok = False
         if ok:
@@ -103,12 +109,12 @@ def select_segment(ms: list[dict]) -> list[dict]:
 
 def trajectory(ms: list[dict]) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Bahn neu rechnen: Strecke aus der aufgezeichneten Pose, Kurs aus der Firmware-IMU.
-    Die IMU ist nur als Treppe bekannt (~5 Hz, ganze Grad), darum zwischen ihren Änderungen linear
-    interpoliert. Räder rutschen beim Drehen (Fahrt 6: 75 cm nach 32 m), die IMU kaum.
+    In älteren Aufnahmen ist die IMU nur als Treppe bekannt (~5 Hz, ganze Grad), darum zwischen ihren
+    Änderungen linear interpoliert. Räder rutschen beim Drehen (Fahrt 6: 75 cm nach 32 m), die IMU kaum.
     Rückgabe x, y, th (rad), Drehrate (°/s)."""
     t = np.array([m["t"] for m in ms], float)
     pose = np.array([m["pose"] for m in ms], float)
-    drv = np.array([m["yaw_drv"] for m in ms], float)
+    drv = np.array([kurs(m) for m in ms], float)
     delta = (np.diff(drv) + 180.0) % 360.0 - 180.0
     unwrapped = np.concatenate([[0.0], np.cumsum(delta)])
     keep = np.concatenate([[True], delta != 0.0])

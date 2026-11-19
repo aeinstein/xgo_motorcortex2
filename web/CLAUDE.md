@@ -21,6 +21,8 @@ Weboberfläche des RiderPi in PHP (`web/index.php`, `web/api.php`) hinter nginx 
 
 ## Regeln
 
+- `schaubild.html` (Datenfluss, Takte, Kosten, Korrekturen) bei jeder Änderung mitpflegen, die es betreffen könnte, ungefragt. Kein Generator: SVG-Text von Hand, Kastenzeilen ≤ ~38 Zeichen.
+
 - Rechenzeit am Rider hat oberste Priorität: Anzeige und Komfort im Browser rechnen, nie in der Bildpipeline oder je Bild am CM4. In jedem Plan die Kosten am Pi nennen.
 - `api.php` schreibt `action` direkt nach `/proc`; wer sonst 254 schreibt, ohne vorher `POST /stop` zu rufen, lässt den Rider nach einer Ohnmacht (Modus `pet`) wieder aufspringen.
 - Aktionen 3–5 fahren bzw. drehen über den Fahr-Sollwert der Firmware; der Keepalive von xgonav hielte sie an. `api.php` gibt sie deshalb an xgonav `POST /action` (nur Modus `idle`, Keepalive und Kernel-Watchdog so lange aus, Bahnprüfung je Regelschritt, sonst Abbruch); am Rider nie gefahren.

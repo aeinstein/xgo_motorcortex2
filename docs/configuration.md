@@ -258,7 +258,7 @@ All keys with comments: `PetCfg` in `xgonav/config.py`.
 | `free_margin_m` / `occ_free_factor` | 0.10 / 0.5 |
 | `hit_band_quad` | 0.05 (sim 0): a hit is entered as a band ± this × d² along the ray (1 m ±5 cm, 1.5 m ±11 cm), not one cell. Ranges from the image scatter ±0.3 m at 1–1.5 m (drive 20261118-135118, wall behind chairs): single cells rarely got two hits and free rays of other frames removed them. 0.08 merged chair and table legs. Since 2026-11-18, not driven |
 | `view_m` | 6.0 |
-| `yaw_source` | `imu` (sim: `räder`); `räder` (wheels), `kamera` or `imu` (firmware heading from `imu_log`, 100 Hz with the stream; older than `imu.max_age_s` → `/proc` yaw at ~5 Hz; neither → wheels). Status: `grid_yaw_src` (`imu`, `status`, `odom`); see `docs/limitations.md` |
+| `yaw_source` | `imu` (sim: `räder`); `räder` (wheels), `kamera` or `imu` (firmware heading from `imu_log`, 100 Hz with the stream; older than `imu.max_age_s` or missing → wheels). Status: `grid_yaw_src` (`imu`, `odom`); see `docs/limitations.md` |
 | `threaded` | true |
 | `native` | true: one observation in one call in the C++ core (`xgonav/native/gridfast.cpp`) if built: rays from the floor boundary, free rays, hits with `confirm_dr_m`; same map as numpy (CM4 1.64 → 0.18 ms per observation). Also `wall_dist` (`navfast.cpp`) |
 | `file` | `""` (off); RiderPi example: `/opt/xgonav/raumkarte.npz` |

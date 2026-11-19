@@ -851,7 +851,7 @@ function sprache(l) {
 const felder = [
   ['Status', s => s.status, true],
   ['Befehl v / w', s => s.cmd ? s.cmd.v.toFixed(2) + ' / ' + s.cmd.w.toFixed(2) : '-'],
-  ['Kurs', s => s.yaw_drv != null ? Math.round(s.yaw_drv) + '°' : '-'],
+  ['Kurs', s => s.yaw_imu != null ? Math.round(s.yaw_imu) + '°' : '-'],
   ['Kamera / Schleife', s => (s.fps ?? '-') + ' fps / ' + (s.loop_ms ?? '-') + ' ms'],
   ['Schleife p95 / max', s => s.loop_p95 != null ? s.loop_p95 + ' / ' + s.loop_max + ' ms' : '-'],
   ['Detektor', s => s.det_ms != null ? Math.round(s.det_ms) + ' ms' : '-'],

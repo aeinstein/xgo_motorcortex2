@@ -72,8 +72,7 @@ def u8_to_norm(u: int) -> float:
 
 @dataclass
 class RobotState:
-    balancing: bool = True
-    yaw_deg: float | None = None
+    balancing: bool = True      # Kurs kommt allein aus dem IMU-Strom (App.kurs_deg), nicht aus /proc yaw
     battery: int | None = None
     buttons: int = 0
     t: float = 0.0
@@ -533,9 +532,6 @@ class ProcRobot(Robot):
             if bal != self.state.balancing:
                 log.warning("Rider %s", "balanciert" if bal else "GEFALLEN – Stopp")
             self.state.balancing = bal
-        yaw = self._read_int("yaw")
-        if yaw is not None:
-            self.state.yaw_deg = float(yaw)
         self.state.battery = self._read_int("battery")
         self.state.buttons = self._read_int("buttons") or 0
         self._poll_height()
@@ -572,8 +568,6 @@ class SimRobot(Robot):
         super().__init__(cfg)
         self.log_cmds = log_cmds
         self.writes: list[tuple[float, str, int | str]] = []
-        self._yaw = 0.0
-        self._last_t = time.monotonic()
         self._up_at: float | None = None     # Aufspringen läuft, balanciert ab dann
         self.state.mode = 1
         self.settings: dict[str, str] = {}   # Treiber-Einstellungen (settings/<name>), für Tests vorbelegbar
@@ -602,9 +596,6 @@ class SimRobot(Robot):
         if self._up_at is not None and now >= self._up_at:
             self.state.balancing, self.state.mode = True, 1
             self._up_at = None
-        self._yaw += u8_to_norm(norm_to_u8(self._cur[1])) * self.cfg.vyaw_limit_dps * (now - self._last_t)
-        self._last_t = now
-        self.state.yaw_deg = self._yaw
         self.state.battery = 100
         self.state.t = now
 

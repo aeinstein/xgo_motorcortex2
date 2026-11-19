@@ -1066,7 +1066,7 @@ class App:
                                "mode": self.behavior.name, "yaw_vis_deg": round(math.degrees(self.vis_yaw), 1),
                                "yaw_deg": round(math.degrees(self.yaw), 1), "yaw_src": self.yaw_src, "lmap_yaw_src": self.lmap_yaw_src,
                                "grid_yaw_src": self.grid_yaw_src,
-                               "yaw_drv": self.robot.state.yaw_deg, "battery": self.robot.state.battery,
+                               "yaw_imu": self.kurs_deg(), "battery": self.robot.state.battery,
                                "balancing": self.robot.state.balancing,
                                "height_mm": round(self.geo.body_height_mm, 1),
                                "pitch_src": self.pitch_src, "pitch_deg": round(math.degrees(pitch_dev), 2),
@@ -1110,26 +1110,22 @@ class App:
         self.lmap_yaw_src = "imu"
         return fallback if last is None else p[1] - last
 
+    def kurs_deg(self) -> float | None:
+        """Kurs für die Anzeige (Grad, links +): neueste Probe des IMU-Stroms, alle Drehungen aufsummiert, nicht
+        auf ±180° gewickelt; dieselbe Quelle wie Karte und Merkkarte. None ohne IMU."""
+        y = self.imu.latest_yaw() if self.imu is not None else None
+        return None if y is None else round(math.degrees(y), 1)
+
     def _grid_dyaw(self, fallback: float, now: float) -> float:
         """Drehung der Kartenpose seit dem letzten Aufruf (rad, links +) bei [grid] yaw_source "imu": Kurs aus
-        imu_log (Strom 100 Hz), ist der zu alt oder fehlt, die 5-Hz-Treppe aus /proc yaw; sonst und beim ersten
-        Wert bzw. Quellenwechsel fallback (Räder bzw. Kamera)."""
-        if self.cfg.grid.yaw_source != "imu":
-            self._grid_yaw, self.grid_yaw_src = None, "odom"
-            return fallback
+        imu_log zur Bildzeit; ist der zu alt oder fehlt, und beim ersten Wert fallback (Räder bzw. Kamera)."""
         fr = self._imu_frame
-        if fr is not None and fr.yaw is not None:      # Kurs zur Bildzeit (imu_frame), gültig wie der Nick
-            cur = ("imu", fr.yaw)
-        elif self.robot.state.yaw_deg is not None:
-            cur = ("status", math.radians(self.robot.state.yaw_deg))
-        else:
+        if self.cfg.grid.yaw_source != "imu" or fr is None or fr.yaw is None:
             self._grid_yaw, self.grid_yaw_src = None, "odom"
             return fallback
-        last, self._grid_yaw = self._grid_yaw, cur
-        self.grid_yaw_src = cur[0]
-        if last is None or last[0] != cur[0]:
-            return fallback
-        return (cur[1] - last[1] + math.pi) % (2 * math.pi) - math.pi
+        last, self._grid_yaw = self._grid_yaw, fr.yaw  # Kurs zur Bildzeit (imu_frame), gültig wie der Nick
+        self.grid_yaw_src = "imu"
+        return fallback if last is None else fr.yaw - last
 
     def _speed_tick(self, now: float) -> None:
         """Geschwindigkeitsregelung (robot.speed_ctrl): Ist aus den Rädern gegen das Soll, Korrektur an den

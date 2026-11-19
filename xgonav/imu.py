@@ -129,6 +129,11 @@ class ImuSource:
             return (float(np.interp(t, ts, self._buf[1, a:b])), float(np.interp(t, ts, self._buf[2, a:b])),
                     y, float(ts[-1]))
 
+    def latest_yaw(self) -> float | None:
+        """Kurs der neuesten Probe (rad, links +, entfaltet: alle Drehungen aufsummiert); None ohne Kurs."""
+        with self._lock:
+            return float(self._buf[3, self._b - 1]) if self._b > self._a and self._y_last is not None else None
+
     def latest_t(self) -> float | None:
         with self._lock:
             return float(self._buf[0, self._b - 1]) if self._b > self._a else None

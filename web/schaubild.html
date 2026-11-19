@@ -626,7 +626,7 @@ ul.k li { margin:3px 0; }
 <rect x="247.6" y="2031" width="46.4" height="16" rx="8" class="tag tag-py"/>
 <text x="270.8" y="2043" class="tagt" text-anchor="middle">Python</text>
 <text x="49" y="2061.0" class="bl" xml:space="preserve">imu_log alle 10 ms</text>
-<text x="49" y="2076.5" class="bl" xml:space="preserve">Kurs ×1,0021 / ×1,0025 je Richtung</text>
+<text x="49" y="2076.5" class="bl" xml:space="preserve">Kurs ×1,0021 / ×1,0025, fortlaufend</text>
 <text x="49" y="2092.0" class="bl" xml:space="preserve">setzt Strom 100 Hz (abgesetzt 5)</text>
 </g>
 <g class="box k-py" id="k_rad">
@@ -642,8 +642,8 @@ ul.k li { margin:3px 0; }
 <text x="49" y="2478" class="bt">Zustand (ProcRobot)</text>
 <rect x="247.6" y="2466" width="46.4" height="16" rx="8" class="tag tag-py"/>
 <text x="270.8" y="2478" class="tagt" text-anchor="middle">Python</text>
-<text x="49" y="2496.0" class="bl" xml:space="preserve">alle 0,2 s: state, yaw, battery,</text>
-<text x="49" y="2511.5" class="bl" xml:space="preserve">buttons, height</text>
+<text x="49" y="2496.0" class="bl" xml:space="preserve">alle 0,2 s: state, battery, buttons,</text>
+<text x="49" y="2511.5" class="bl" xml:space="preserve">height (Kurs nur aus der IMU)</text>
 </g>
 <g class="box k-in" id="k_mic">
 <rect x="40" y="2545" width="260" height="83.0" rx="7"/>
@@ -765,7 +765,7 @@ ul.k li { margin:3px 0; }
 
 <h2>Korrekturen auf einen Blick</h2>
 <ul class="k">
-<li><b>Linse:</b> radiale Verzeichnung entfernt und den Einbau herausgedreht (Roll 1,25°, Gier 2,40° = Fahrtrichtung in Spalte W/2), bevor irgendeine Stufe das Bild sieht (Kamera-Thread, eine Tabelle).</li><li><b>Kamerageometrie:</b> hfov 91,8°, tilt 5,18°, cam_fwd 36 mm, Kamerahöhe aus dem Höhen-Sollwert (cam_h_u8).</li><li><b>Eigenbewegung:</b> Homographie A je Bild; Tracks, verspätete Detektionen und der Bild-Nick werden damit umgerechnet.</li><li><b>Nick, Roll:</b> IMU-Probe zur Bildzeit (+10,5 ms), Vorzeichen −1, Nick-Bezug −4,23°; Roll ohne Bezug, der Einbau-Roll steckt in der Entzerrung. Ohne IMU: Nick aus dem Bild.</li><li><b>Kurs:</b> Skalierung je Drehrichtung (1,0021 / 1,0025) im IMU-Thread. Merkkarte und Raumkarte drehen mit dem IMU-Kurs.</li><li><b>Weg:</b> Radweg ×1,0073 / ×1,0087; ohne Räder Befehl × vx_limit 1,8.</li><li><b>Bodengrenze:</b> FloorNet-Spalten über 3 Netzbilder geglättet (per Pose und Nick), Roll der Kamera je Spalte ausgeglichen.</li><li><b>Zeitversatz der Karte:</b> Merkkarte trägt an der Aufnahmepose ein, nicht an der aktuellen Pose.</li><li><b>Kein Ersatzweg:</b> Das klassische Bodenmodell (kanten, farbe, Linsenabschattung) ist seit 2026-11-18 entfernt. Ohne FloorNet ist der Rider blind und fährt nicht selbst.</li>
+<li><b>Linse:</b> radiale Verzeichnung entfernt und den Einbau herausgedreht (Roll 1,25°, Gier 2,40° = Fahrtrichtung in Spalte W/2), bevor irgendeine Stufe das Bild sieht (Kamera-Thread, eine Tabelle).</li><li><b>Kamerageometrie:</b> hfov 91,8°, tilt 5,18°, cam_fwd 36 mm, Kamerahöhe aus dem Höhen-Sollwert (cam_h_u8).</li><li><b>Eigenbewegung:</b> Homographie A je Bild; Tracks, verspätete Detektionen und der Bild-Nick werden damit umgerechnet.</li><li><b>Nick, Roll:</b> IMU-Probe zur Bildzeit (+10,5 ms), Vorzeichen −1, Nick-Bezug −4,23°; Roll ohne Bezug, der Einbau-Roll steckt in der Entzerrung. Ohne IMU: Nick aus dem Bild.</li><li><b>Kurs:</b> Skalierung je Drehrichtung (1,0021 / 1,0025) im IMU-Thread. Merkkarte und Raumkarte drehen mit dem IMU-Kurs; der Kurs im Status (<code>yaw_imu</code>) ist derselbe, fortlaufend über alle Drehungen, nicht auf ±180° gewickelt. <code>/proc</code> yaw liest xgonav nicht mehr.</li><li><b>Weg:</b> Radweg ×1,0073 / ×1,0087; ohne Räder Befehl × vx_limit 1,8.</li><li><b>Bodengrenze:</b> FloorNet-Spalten über 3 Netzbilder geglättet (per Pose und Nick), Roll der Kamera je Spalte ausgeglichen.</li><li><b>Zeitversatz der Karte:</b> Merkkarte trägt an der Aufnahmepose ein, nicht an der aktuellen Pose.</li><li><b>Kein Ersatzweg:</b> Das klassische Bodenmodell (kanten, farbe, Linsenabschattung) ist seit 2026-11-18 entfernt. Ohne FloorNet ist der Rider blind und fährt nicht selbst.</li>
 </ul>
 
 <h2>Stufen im Einzelnen</h2>

@@ -166,7 +166,7 @@ def serve(app: App, host: str, port: int, fps: int, render_cpus=None) -> Threadi
                     # ohne Bildverarbeitung gibt es keine neuen Snapshots: Roboterwerte live
                     st = app.robot.state
                     body.update({"cmd": {"v": round(app.robot.command[0], 3), "w": round(app.robot.command[1], 3)},
-                                 "battery": st.battery, "balancing": st.balancing, "yaw_drv": st.yaw_deg,
+                                 "battery": st.battery, "balancing": st.balancing, "yaw_imu": app.kurs_deg(),
                                  "height_mm": app.robot.height_mm,
                                  "tracks": [], "free": [], "ttc": None})
                 # Kamerahöhe für den Regler, nur zur Anfragezeit gerechnet: robot.height_mm kennt anders als

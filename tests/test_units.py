@@ -2887,32 +2887,32 @@ def test_map_explore_contact_blocks_goal_at_once():
 
 
 def test_grid_heading_from_imu():
-    """[grid] yaw_source "imu": Kurs aus imu_log zur Bildzeit, ist der alt die /proc-Treppe, sonst Räder;
-    Quellenwechsel ohne Sprung."""
+    """[grid] yaw_source "imu": Kurs aus imu_log zur Bildzeit, ist der alt oder fehlt, Räder; keine zweite
+    Quelle (/proc yaw). Die Anzeige (kurs_deg) summiert über ±180° weiter."""
     from xgonav.imu import ImuSource, imu_frame
     app = _app(freespace=True)
     now = time.monotonic()
     assert app._grid_dyaw(0.5, now) == 0.5                             # Default: Räder
     app.cfg.grid.yaw_source = "imu"
-    app.robot.state.yaw_deg = 179.0
-    assert app._grid_dyaw(0.5, now) == 0.5 and app.grid_yaw_src == "status"   # erster Wert: Räder, merken
-    app.robot.state.yaw_deg = -179.0                                   # über die Naht: +2°
-    assert abs(app._grid_dyaw(0.5, now) - math.radians(2.0)) < 1e-9
-    app.imu = ImuSource(app.cfg.imu)                                   # imu_log-Kurs vorhanden: hat Vorrang
-    app.imu.add(1, now - 0.01, 0.0, 0.0, math.radians(10.0))
-    app.imu.add(2, now, 0.0, 0.0, math.radians(10.0))
+    assert app._grid_dyaw(0.5, now) == 0.5 and app.grid_yaw_src == "odom"     # noch keine IMU
+    app.imu = ImuSource(app.cfg.imu)
+    assert app.kurs_deg() is None
+    app.imu.add(1, now - 0.01, 0.0, 0.0, math.radians(179.0))
+    app.imu.add(2, now, 0.0, 0.0, math.radians(179.0))
 
     def bild(t):                                                       # wie App._pitch_dev je Bild
         app._imu_frame = imu_frame(app.imu_sync, app.imu, t)
     bild(now)
-    assert app._grid_dyaw(0.5, now) == 0.5 and app.grid_yaw_src == "imu"      # Wechsel: Räder, kein Sprung
-    app.imu.add(3, now + 0.01, 0.0, 0.0, math.radians(13.0))
+    assert app._grid_dyaw(0.5, now) == 0.5 and app.grid_yaw_src == "imu"      # erster Wert: Räder, merken
+    app.imu.add(3, now + 0.01, 0.0, 0.0, math.radians(-179.0))         # über die Naht: +2° (mal yaw_scale_left)
     bild(now + 0.01)
-    assert abs(app._grid_dyaw(0.5, now + 0.01) - math.radians(3.0)) < 1e-9
+    d = 2.0 * app.cfg.imu.yaw_scale_left
+    assert abs(app._grid_dyaw(0.5, now + 0.01) - math.radians(d)) < 1e-9
+    assert app.kurs_deg() == round(179.0 + d, 1)                       # nicht gewickelt
     bild(now + 5.0)
-    assert app._grid_dyaw(0.5, now + 5.0) == 0.5 and app.grid_yaw_src == "status"   # imu_log zu alt
-    app.imu, app._imu_frame, app.robot.state.yaw_deg = None, None, None   # keine IMU: Rückfall
-    assert app._grid_dyaw(0.5, now) == 0.5 and app.grid_yaw_src == "odom"
+    assert app._grid_dyaw(0.5, now + 5.0) == 0.5 and app.grid_yaw_src == "odom"   # imu_log zu alt
+    app.imu, app._imu_frame = None, None                               # keine IMU: Rückfall
+    assert app._grid_dyaw(0.5, now) == 0.5 and app.grid_yaw_src == "odom" and app.kurs_deg() is None
 
 
 def test_home_stuck_near_goal_counts_as_arrived():
