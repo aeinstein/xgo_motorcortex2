@@ -2622,6 +2622,18 @@
        "hilfe": "Rufen: Stimme hält von vorn an und niemand ist zu sehen -> sucht dort (call_events Meldungen). Fährt höchstens call_m je Ruf und nie mehr als seek_m, mit Bodenmodell und Bahnprüfung wie das Suchen; 0 = nur umschauen, -1 = ohne Grenze (dann je Ruf eine Etappe von 3 m; RiderPi seit 2026-11-13, Nutzer: keine Treppe)."
       },
       {
+       "key": "hear_seek",
+       "typ": "bool",
+       "default": true,
+       "hilfe": "Nach dem Horchen niemand zu sehen: suchen statt aufgeben (Nutzer 2026-11-19: „er muss ja losfahren und suchen“). Richtung bekannt: dorthin wie beim Rufen (dann reicht schon eine Meldung von vorn); unbekannt (beim Streifen gestutzt, danach still): einmal rundum umschauen, je Blick hear_listen_s lauschen; eine Meldung dabei führt dorthin. Sperre wie das Rufen (call_repeat_s)."
+      },
+      {
+       "key": "seek_home",
+       "typ": "bool",
+       "default": true,
+       "hilfe": "Suchen vorbei, niemand gefunden: zurück zum Start (wo er aufstand), wie explore am Ende (Nutzer 2026-11-19). Der Weg kommt wie alle pet-Fahrten mit Raumkarte vom Planer; findet er vorn keinen Weg zum Rufziel (oder nur einen Umweg über das 1,5-Fache), versucht er die Gegenrichtung (vorn und hinten klingen gleich)."
+      },
+      {
        "key": "call_m",
        "typ": "float",
        "default": -1.0,

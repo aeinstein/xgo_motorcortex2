@@ -760,6 +760,15 @@ class PetCfg:
     # höchstens call_m je Ruf und nie mehr als seek_m, mit Bodenmodell und Bahnprüfung wie das Suchen; 0 = nur
     # umschauen, -1 = ohne Grenze (dann je Ruf eine Etappe von 3 m; RiderPi seit 2026-11-13, Nutzer: keine Treppe).
     call_events: int = 3
+    # Nach dem Horchen niemand zu sehen: suchen statt aufgeben (Nutzer 2026-11-19: „er muss ja losfahren und
+    # suchen“). Richtung bekannt: dorthin wie beim Rufen (dann reicht schon eine Meldung von vorn); unbekannt
+    # (beim Streifen gestutzt, danach still): einmal rundum umschauen, je Blick hear_listen_s lauschen; eine
+    # Meldung dabei führt dorthin. Sperre wie das Rufen (call_repeat_s).
+    hear_seek: bool = True
+    # Suchen vorbei, niemand gefunden: zurück zum Start (wo er aufstand), wie explore am Ende (Nutzer 2026-11-19).
+    # Der Weg kommt wie alle pet-Fahrten mit Raumkarte vom Planer; findet er vorn keinen Weg zum Rufziel (oder nur
+    # einen Umweg über das 1,5-Fache), versucht er die Gegenrichtung (vorn und hinten klingen gleich).
+    seek_home: bool = True
     call_m: float = -1.0
     call_repeat_s: float = 45.0        # frühestens dann wieder (ein Fernseher vorn ruft sonst endlos)
     # Komm her: Er sieht eine Person, die weiter als come_stop_m entfernt ist und spricht (come_events Meldungen

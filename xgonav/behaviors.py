@@ -1315,7 +1315,7 @@ def make_behavior(name: str, cfg: BehaviorCfg, rcfg: RobotCfg, target: str | Non
     """has_map: Raumkarte vorhanden; sonst erkundet explore nur reaktiv."""
     def pet():
         from .pet import Pet          # pet.py importiert dieses Modul
-        return Pet(cfg, rcfg, petcfg)
+        return Pet(cfg, rcfg, petcfg, hcfg=hcfg)
     return {"idle": lambda: Idle(cfg, rcfg),
             "pet": pet,
             "manual": lambda: Manual(cfg, rcfg),

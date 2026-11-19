@@ -26,6 +26,7 @@ def brain(seed=1, **kw):
     kw.setdefault("roam_m", 0.0)
     kw.setdefault("faint", False)            # Standard am RiderPi: an; die Tests schalten es selbst ein
     kw.setdefault("faint_level", 1.0)        # Standard am RiderPi: 0,8; die Tests rechnen mit 1,0
+    kw.setdefault("seek_home", False)        # Standard: nach dem Suchen zurück zum Start; eigene Tests dafür
     return PetBrain(PetCfg(**kw), Config.neutral().robot, seed=seed)
 
 
@@ -826,9 +827,10 @@ def hoeren(b, t0, t1, quelle=None, who=None, db=14.0, takt=1.0, ab=None, bis=Non
     if fahrbar:
         sense = dict(floor_ok=True, free_center=1.5, **sense)
     while t < t1:
-        if quelle is not None and ab <= t <= bis and t >= naechste:
+        q = quelle(t) if callable(quelle) else quelle                # Funktion: Weltwinkel je Zeit, None = still
+        if q is not None and ab <= t <= bis and t >= naechste:
             naechste = t + takt
-            rel = math.radians(quelle) - yaw
+            rel = math.radians(q) - yaw
             heard = Heard(key=t, bearing=math.asin(math.sin(rel)), db=db, age=0.0)
         if heard is not None:
             heard = dataclasses.replace(heard, age=t - heard.key)
@@ -858,11 +860,31 @@ def test_horchen_dreht_zur_quelle(quelle):
 
 
 def test_horchen_stille_endet_fragend():
-    """Ein Geräusch, zu dem er sich dreht, danach nichts mehr: schaut fragend und gibt auf."""
-    b = brain()
+    """Ohne hear_seek: Ein Geräusch, zu dem er sich dreht, danach nichts mehr: schaut fragend und gibt auf."""
+    b = brain(hear_seek=False)
     _, yaw, _, _, evs = hoeren(b, 0.0, 20.0, 60.0, bis=2.5)
     assert wdiff(yaw, 60.0) < 20.0
-    assert b.task is None and ("emotion", "doubt", False) in evs
+    assert b.task is None and ("emotion", "doubt", False) in evs and b.n_seek == 0
+
+
+def test_horchen_stille_sucht_dort():
+    """Ein Geräusch von der Seite, danach still, niemand zu sehen: dreht sich hin und fährt dorthin suchen."""
+    b = brain(seek_m=-1.0, call_m=1.0)
+    _, _, weg, _, _ = hoeren(b, 0.0, 30.0, 60.0, bis=2.5, fahrbar=True)
+    assert b.n_called == 1 and b.n_seek == 1 and 0.3 < weg <= 1.05, weg
+
+
+def test_horchen_beim_streifen_sucht():
+    """Am Rider 2026-11-19: beim Streifen gehört, stehen geblieben, dann still. Er schaut sich um und lauscht
+    dabei; ruft es in einer Pause, fährt er dorthin. Bleibt es still, endet das Suchen nach einer Runde."""
+    def lauf(q):
+        b = brain(seek_m=-1.0, call_m=1.0)
+        _, _, weg, _, _ = hoeren(b, 0.0, 70.0, q, fahrbar=True)
+        return b, weg
+    b, weg = lauf(lambda t: 70.0 if 33.0 <= t <= 34.5 else None)
+    assert b.n_seek == 1 and b.n_called == 0 and weg == 0.0 and b.task is None
+    b, weg = lauf(lambda t: 70.0 if 33.0 <= t <= 34.5 or 41.0 <= t <= 43.5 else None)
+    assert b.n_seek == 2 and b.n_called == 1 and weg > 0.3, weg
 
 
 def test_horchen_nicht_waehrend_eigener_drehung():
@@ -1055,3 +1077,57 @@ def test_horchen_dreht_bei_erster_meldung():
     b = brain(call_events=99)
     _, yaw, _, _, _ = hoeren(b, 0.0, 6.0, 60.0, bis=1.2)         # nur eine Meldung
     assert wdiff(yaw, 60.0) < 20.0
+
+
+def test_nach_dem_suchen_zum_start():
+    """Gerufen, dort niemand: Er sucht, dann fährt er zurück zum Start wie explore (seek_home)."""
+    b = brain(seek_m=-1.0, call_m=1.0, seek_home=True)
+    _, _, weg, _, _ = hoeren(b, 0.0, 60.0, 60.0, bis=2.5, fahrbar=True)
+    assert b.n_called == 1 and weg > 1.0, weg                    # hin und zurück
+    assert math.hypot(b.x, b.y) < 0.35 and b.task is None, (b.x, b.y, b.task)
+
+
+def test_planer_kein_weg_rufziel_gegenrichtung():
+    """Rufen: Findet der Planer vorn keinen Weg, gilt das Ziel hinten (vorn und hinten klingen gleich); findet er
+    auch dort keinen, hält er und schaut sich um."""
+    b = brain(seek_m=-1.0, call_m=1.0)
+    hoeren(b, 0.0, 6.0, 0.0, fahrbar=True)                       # Stimme von vorn -> Rufen
+    assert b.task == "suchen" and b.phase == "fahren" and b._goal[0] > 0.3, b._goal
+    x0 = b.x
+    fahr = dict(floor_ok=True, free_center=1.5, yaw=b.yaw)
+    b.update(Sense(t=6.05, nav_fail=True, **fahr))
+    assert b.phase == "fahren" and b._goal[0] < x0 - 0.3, b._goal
+    b.update(Sense(t=6.10, nav_fail=True, **fahr))
+    assert b.phase == "schauen"
+
+
+def test_planer_wegpunkt_lenkt():
+    """Mit Planer lenkt er auf den Wegpunkt, nicht auf das Ziel; solange der Weg gerechnet wird, steht er."""
+    b = brain(seek_m=-1.0, call_m=1.0)
+    hoeren(b, 0.0, 6.0, 0.0, fahrbar=True)
+    fahr = dict(floor_ok=True, free_center=1.5, yaw=b.yaw)
+    a = b.update(Sense(t=6.05, nav_pending=True, **fahr))
+    assert a.v == 0.0 and a.w == 0.0
+    a = b.update(Sense(t=6.10, nav=(b.x, b.y + 1.0), **fahr))    # Weg biegt links ab
+    assert a.v == 0.0 and a.w > 0.0                               # erst ausrichten, nach links
+
+
+def test_pet_planer_umrechnung_und_umweg():
+    """Pet: Ziel des Gehirns in Kartenkoordinaten und zurück; ein Umweg zum Rufziel gilt als kein Weg."""
+    p = Pet(BehaviorCfg(), Config.neutral().robot, PetCfg(seek_m=-1.0, call_m=1.0))
+    b = p.brain
+    b.x, b.y, b.yaw = 1.0, 2.0, 0.5
+    w = World(t=0.0, dt=0.05, W=640, H=480, hfov=1.6, ego=None, tracks=[], free=None, balancing=True, yaw=0.5, cmd_v=0.0, pose=(-3.0, 0.5, 0.5 + math.pi / 2))
+    vor = (1.0 + math.cos(0.5), 2.0 + math.sin(0.5))
+    q = p._to_grid(w, vor)                                         # 1 m voraus im Gehirn = 1 m voraus in der Karte
+    assert abs(q[0] - (-3.0 + math.cos(0.5 + math.pi / 2))) < 1e-9 and abs(q[1] - (0.5 + math.sin(0.5 + math.pi / 2))) < 1e-9
+    r = p._to_brain(w, q)
+    assert abs(r[0] - vor[0]) < 1e-9 and abs(r[1] - vor[1]) < 1e-9
+    b._goal_flip = (1.0, 2.0)
+    p._nav_goal = p._nav_req = (0.0, 2.0)
+    p.set_path([(0.0, 0.0), (2.0, 0.0), (2.0, 2.0), (0.0, 2.0)])   # 6 m statt 2 m
+    assert p._nav_fail and p.path is None
+    p._nav_fail = False
+    p._nav_req = p._nav_goal
+    p.set_path([(0.0, 0.0), (0.2, 1.0), (0.0, 2.0)])
+    assert not p._nav_fail and p.path is not None
