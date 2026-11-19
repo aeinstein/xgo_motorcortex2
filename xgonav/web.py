@@ -71,6 +71,7 @@ API = {"GET": ["/status", "/ws?nick=2 (WebSocket: Bilder, Bestätigung je Bild; 
        "POST": ["/mode?name=..&target=..", "/stop", "/action?n=3|4|5 (Fahr-Aktion der Firmware, nur idle; Bahnprüfung bleibt)","/pipeline?on=0|1", "/ruhe?on=0|1 (Ruhemodus; Wecken startet nichts)", "/wlan?on=0|1 (WLAN-Einrichtung: QR-Code, sonst Hotspot; wie Tasten C+D halten)", "/record?on=0|1 (Rohaufzeichnung, nur balancierend)",
                 "/drive?v=..&w=.. (nur Modus manual)",
                 "/exposure?us=0|100..max (0 = Automatik)", "/gain?g=0|1..63.9 (0 = Automatik)",
+                "/bild?k=0.5..4&s=0.5..4 (Kontrast/Sättigung im ISP)",
                 "/map/reset (Raumkarte leeren, Pose auf 0)", "/map/pose?aktion=start|hier|verwerfen (Standort bestätigen)", "/level (Beine neu ausrichten, 3 s)",
                 "/floornet?name=<datei>.bin (Bodenmodell wechseln: laden, prüfen, Symlink [freespace] net umstellen; nur idle/manual)"]}
 
@@ -166,7 +167,9 @@ def serve(app: App, host: str, port: int, fps: int, render_cpus=None) -> Threadi
                 body["exposure"] = {"soll_us": app.src.exposure_us, "max_us": app.src.exposure_max_us,
                                     "ist_us": meta.get("exp_us"), "gain": meta.get("gain"),
                                     "gain_soll": app.src.gain, "gain_max": app.src.GAIN_MAX,
-                                    "frame_us": meta.get("frame_us"), "crop": meta.get("crop")}
+                                    "frame_us": meta.get("frame_us"), "crop": meta.get("crop"),
+                                    "contrast": app.src.bild[0], "saturation": app.src.bild[1],
+                                    "bild_min": app.src.BILD_MIN, "bild_max": app.src.BILD_MAX}
                 if not app.pipeline_on:
                     # ohne Bildverarbeitung gibt es keine neuen Snapshots: Roboterwerte live
                     st = app.robot.state
@@ -325,6 +328,14 @@ def serve(app: App, host: str, port: int, fps: int, render_cpus=None) -> Threadi
                     return self._send(400, json.dumps({"error": str(e) or "f ungültig"}).encode())
                 log.info("Tempo -> %.0f %%", app.robot.tempo * 100)
                 return self._send(200, json.dumps({"ok": True, "tempo": app.robot.tempo}).encode())
+            if u.path == "/bild":
+                try:
+                    k0, s0 = app.src.bild
+                    k, s = app.src.set_bild(float(q.get("k", [k0])[0]), float(q.get("s", [s0])[0]))
+                    app.reset_floor()      # anderes Bild: Bodengrenze neu beginnen
+                except ValueError as e:
+                    return self._send(400, json.dumps({"error": str(e) or "k/s ungültig"}).encode())
+                return self._send(200, json.dumps({"ok": True, "contrast": k, "saturation": s}).encode())
             if u.path == "/gain":
                 try:
                     g = app.src.set_gain(float(q.get("g", [""])[0]))

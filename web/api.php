@@ -23,6 +23,7 @@
  *   POST api.php?a=record&on=0|1              (Rohaufzeichnung; schreibt nur, solange der Rider balanciert)
  *   POST api.php?a=drive&v=-1..1&w=-1..1      (nur Modus manual, alle 0,2 s senden)
  *   POST api.php?a=tempo&f=0.05..1            (Temporegler: Anteil für alle Fahr-/Drehbefehle aller Modi)
+ *   POST api.php?a=bild&k=0.5..4&s=0.5..4     (Kontrast/Sättigung im ISP der Kamera; Grenzen prüft xgonav)
  *   POST api.php?a=led&i=0..3&c=%23rrggbb
  *   POST api.php?a=led_brightness&p=0..100    (Prozent; n = p·255/100 nach /proc und dauerhaft nach LED_FILE,
  *                                            das rc.local beim Booten und xgonav beim Start setzen)
@@ -431,6 +432,8 @@ switch ($a) {
         xgonav('POST', '/exposure?us=' . (int)zahl('us', 0, 1000000));   // Grenzen prüft xgonav
     case 'gain':
         xgonav('POST', '/gain?g=' . round(zahl('g', 0, 100), 2));          // Grenzen prüft xgonav
+    case 'bild':
+        xgonav('POST', '/bild?' . http_build_query(['k' => round(zahl('k', 0, 10), 2), 's' => round(zahl('s', 0, 10), 2)]));
     case 'tempo':
         xgonav('POST', '/tempo?f=' . round(zahl('f', 0.05, 1), 3));        // Anteil für alle Fahrbefehle
     case 'led':

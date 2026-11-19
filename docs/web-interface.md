@@ -47,7 +47,7 @@ works without xgonav.
 
 | Chart | Data | Window | Storage |
 |---|---|---|---|
-| CPU | load per core (%), from `/proc/stat` deltas; temperature + loadavg in heading | 10 min | memory |
+| CPU | load per core (%) from `/proc/stat` deltas × cur/max clock (% of max clock); temperature, clock (cur/max MHz) + loadavg in heading | 10 min | memory |
 | WLAN | ↓/↑ kB/s from `wlan0` byte-counter deltas, signal dBm (−90…−30), quality /70 in heading; from live packet field `sys.wlan` (1 Hz, also in a hidden tab) | 10 min | memory |
 | Akku | battery % (from status or `sys`), ≤ 1 point / 30 s | 120 min | `localStorage` `xgonav.akku`; button Leeren |
 
@@ -125,6 +125,7 @@ xgonav unreachable → HTTP 502 `xgonav nicht erreichbar`. Exposure/gain changes
 | POST | `/level` | leveling pulse (roll 0, 3 s `roll_balance`); 409 if not balancing |
 | POST | `/drive?v=..&w=..` | 409 if not mode `manual` |
 | POST | `/exposure?us=..`, `/gain?g=..` | 400 if out of range |
+| POST | `/bild?k=0.5..4&s=0.5..4` | contrast/saturation in the camera ISP (also reaches FloorNet and recordings; `meta.jsonl` `cam.contrast`/`cam.saturation`), until restart; `/status` `exposure.contrast`/`saturation`; the web view can compensate with a CSS filter (checkbox, stored in the browser) |
 | POST | `/tempo?f=0.05..1` | speed slider: factor for all drive/turn commands of all modes (after `max_v`/`max_w`), until restart; `GET /status` → `tempo` |
 | POST | `/map/reset` | clear room map, pose = start = 0 |
 | POST | `/map/start` | start point = current pose |
@@ -163,7 +164,7 @@ Daemon `tools/live.php` (PHP CLI, unit `xgonav-live.service`, user `www-data`, `
 |---|---|
 | Path | `/live` (nginx → `127.0.0.1:8089`) |
 | Idle | no client: blocks in `stream_select`, no `/proc` reads, 0 % CPU |
-| `sys` + `status`, 1 s (sleep mode 5 s) | `sys`: `t`, `cpu` `[[total, idle+iowait], …]` per core (jiffies), `temp_c`, `load`, `battery`, `height`, `roll`, `state`, `wlan` `"rx_bytes tx_bytes dBm quality"` (`-` = unknown); `status`: xgonav `/status` verbatim (timeout 0.5 s) or `null` + `status_fehler` |
+| `sys` + `status`, 1 s (sleep mode 5 s) | `sys`: `t`, `cpu` `[[total, idle+iowait], …]` per core (jiffies), `temp_c`, `load`, `mhz` `[cur, max]` (cpu0 cpufreq) or `null`, `battery`, `height`, `roll`, `state`, `wlan` `"rx_bytes tx_bytes dBm quality"` (`-` = unknown); `status`: xgonav `/status` verbatim (timeout 0.5 s) or `null` + `status_fehler` |
 | `imu`, 0.3 s if `state` = 1 (balancing), else 1 s; none in sleep mode | `seq`, `imu` `[[seq, t_ms, roll, pitch, yaw], …]` (°), `wseq`, `wheels` `[[seq, t_ms, ticks_left, ticks_right], …]`, `state`; only samples newer than the last sent per connection |
 | Packing | `sys` and `imu` due together → one text frame `{"sys":…,"status":…,"imu":…}` |
 | Client → server | `imu 0\|1 [since wsince]`: IMU on/off for this connection (Lage closed or tab hidden → 0); since/wsince after reconnect avoid duplicates |

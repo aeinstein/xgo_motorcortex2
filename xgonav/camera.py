@@ -148,8 +148,28 @@ class FrameSource:
         log.info("Verstärkung -> %s", f"{gain:g}" if gain else "Automatik")
         return gain
 
+    BILD_MIN, BILD_MAX = 0.5, 4.0            # Kontrast/Sättigung im ISP (libcamera erlaubt 0..32, 1 = Standard)
+
+    @property
+    def bild(self) -> tuple[float, float]:
+        """(Kontrast, Sättigung), Sollwerte."""
+        return float(getattr(self.cfg, "contrast", 1.0)), float(getattr(self.cfg, "saturation", 1.0))
+
+    def set_bild(self, kontrast: float, saettigung: float) -> tuple[float, float]:
+        """Kontrast und Sättigung an der Quelle (ISP) setzen. Wirkt nur zur Laufzeit, nicht in config.toml.
+        FloorNet ist auf 1,0 trainiert; die Werte stehen je Bild in den Metadaten (meta.jsonl cam)."""
+        k, s = round(float(kontrast), 2), round(float(saettigung), 2)
+        for name, v in (("Kontrast", k), ("Sättigung", s)):
+            if not (self.BILD_MIN <= v <= self.BILD_MAX):
+                raise ValueError(f"{name} {v} außerhalb {self.BILD_MIN:g}..{self.BILD_MAX:g}")
+        self.cfg.contrast, self.cfg.saturation = k, s
+        self._apply_bild(k, s)
+        log.info("Kontrast %.2f, Sättigung %.2f", k, s)
+        return k, s
+
     def _apply_exposure(self, us: int) -> None: ...   # Quellen ohne steuerbare Kamera
     def _apply_gain(self, gain: float) -> None: ...
+    def _apply_bild(self, kontrast: float, saettigung: float) -> None: ...
     def _suspend(self) -> None: ...          # Gerät anhalten (im Aufnahme-Thread)
     def _resume_device(self) -> None: ...
     def _grab(self) -> bool: raise NotImplementedError
@@ -228,7 +248,7 @@ def lens_maps(cfg: CameraCfg):
 
 
 _LENS_ABI = 1
-_CAM_ABI = 2
+_CAM_ABI = 3
 
 
 def _lens_kern(lib, m1: np.ndarray, m2: np.ndarray):
@@ -307,7 +327,7 @@ def _cam_lib():
     for name, args in (("cam_set_lens", [vp, vp, vp, i, i]), ("cam_start", [vp]), ("cam_stop", [vp]),
                        ("cam_set_exposure", [vp, i]), ("cam_set_gain", [vp, ctypes.c_float]),
                        ("cam_get", [vp, i, vp, i, ctypes.POINTER(_CamMeta)]), ("cam_info", [vp, vp]),
-                       ("cam_zeiten", [vp, vp])):
+                       ("cam_zeiten", [vp, vp]), ("cam_set_bild", [vp, ctypes.c_float, ctypes.c_float])):
         getattr(lib, name).restype = i
         getattr(lib, name).argtypes = args
     lib.cam_close.restype = None
@@ -372,6 +392,7 @@ class PiCameraSource(FrameSource):
         self._zeiten_t = time.monotonic()
         self._apply_exposure(int(self.cfg.exposure_us))
         self._apply_gain(float(self.cfg.analogue_gain))
+        self._apply_bild(*self.bild)
         if lib.cam_start(h) != 0:
             lib.cam_close(h)
             self._nlib = self._nat = None
@@ -406,6 +427,7 @@ class PiCameraSource(FrameSource):
                        "gain": round(float(md.gain), 2),
                        "exp_us": exp, "frame_us": int(md.frame_us) if md.frame_us >= 0 else None,
                        "crop": tuple(int(v) for v in md.crop) if md.has_crop else None,
+                       "contrast": self.cfg.contrast, "saturation": self.cfg.saturation,
                        "entzerrt": self._lens_id or False})
         return True
 
@@ -430,6 +452,7 @@ class PiCameraSource(FrameSource):
         self.cam.configure(conf)
         self._apply_exposure(int(self.cfg.exposure_us))
         self._apply_gain(float(self.cfg.analogue_gain))
+        self._apply_bild(*self.bild)
         self.cam.start()
         log.info("PiCamera gestartet %dx%d@%d (Sensor %s), Belichtung %s µs, Verstärkung %s",
                  self.cfg.width, self.cfg.height, self.cfg.fps,
@@ -453,6 +476,12 @@ class PiCameraSource(FrameSource):
             return
         self.cam.set_controls({"AnalogueGain": max(0.0, float(gain))})
 
+    def _apply_bild(self, kontrast: float, saettigung: float) -> None:
+        if self._nat is not None:
+            self._nlib.cam_set_bild(self._nat, float(kontrast), float(saettigung))
+            return
+        self.cam.set_controls({"Contrast": float(kontrast), "Saturation": float(saettigung)})
+
     def _grab(self) -> bool:
         if self._nat is not None:
             return self._grab_native()
@@ -471,7 +500,8 @@ class PiCameraSource(FrameSource):
                       {"awb": [round(float(v), 3) for v in cg] if cg else None,
                        "gain": round(float(md.get("AnalogueGain", 0.0)), 2),
                        "exp_us": md.get("ExposureTime"), "frame_us": md.get("FrameDuration"),
-                       "crop": md.get("ScalerCrop"), "entzerrt": self._lens_id or False})
+                       "crop": md.get("ScalerCrop"), "contrast": self.cfg.contrast, "saturation": self.cfg.saturation,
+                       "entzerrt": self._lens_id or False})
         return True
 
     def _suspend(self) -> None:

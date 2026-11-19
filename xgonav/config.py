@@ -93,6 +93,12 @@ class CameraCfg:
     frame_clock_corr: float = 1.0
     exposure_us: int = 20000        # kurze Belichtung gegen Bewegungsunschärfe; 0 = Auto
     analogue_gain: float = 16.0     # feste Verstärkung 1..63,9 (OV5647); 0 = Auto
+    # Kontrast und Sättigung im ISP der Kamera (1,0 = Standard, 0,5..4 über den Regler im Web zur Laufzeit).
+    # Idee 2026-11-19: an der Quelle überdrehen, damit FloorNet kräftigere Kanten/Farben bekommt; der Browser zieht
+    # es für die Anzeige wieder herunter (CSS-Filter). FloorNet ist auf 1,0 trainiert: überdrehte Bilder sind für
+    # das Netz eine andere Eingabe, erst ein Training damit kann davon profitieren. Je Bild in meta.jsonl (cam).
+    contrast: float = 1.0
+    saturation: float = 1.0
     # RiderPi: aus Drehungen gegen den IMU-Kurs gemessen (2026-11-07, f = 310 px @ 640, 304–313 in drei
     # Aufnahmen; Verzeichnung vernachlässigbar). Der Zollstock (88,5°) legt nur f·h fest. RPi Cam v1 hätte 62,2.
     hfov_deg: float = 91.8

@@ -41,7 +41,7 @@ extern "C" int lens_remap(const uint8_t* src, int w, int h, int stride, int cn, 
 using namespace libcamera;
 
 namespace {
-constexpr int kCamAbi = 2;   // bei Änderung von Funktionen oder CamMeta erhöhen (camera.py prüft das)
+constexpr int kCamAbi = 3;   // bei Änderung von Funktionen oder CamMeta erhöhen (camera.py prüft das)
 
 struct CamMeta {             // gleiche Reihenfolge wie camera._CamMeta
     int64_t ts_ns;           // SensorTimestamp (CLOCK_MONOTONIC wie bisher), 0 = fehlt
@@ -301,6 +301,16 @@ int cam_set_gain(void* hdl, float gain) {
 #else
     c->set(controls::AnalogueGain, std::max(0.0f, gain));
 #endif
+    return 0;
+}
+
+// Kontrast und Sättigung im ISP (rpi-IPA: 0..32, 1 = Standard). FloorNet ist auf 1,0 trainiert; die Werte stehen
+// je Bild in den Metadaten (camera.py). Wirkt ab dem nächsten eingestellten Request bzw. Start.
+int cam_set_bild(void* hdl, float kontrast, float saettigung) {
+    Cam* c = static_cast<Cam*>(hdl);
+    std::lock_guard<std::mutex> lk(c->mu);
+    c->set(controls::Contrast, kontrast);
+    c->set(controls::Saturation, saettigung);
     return 0;
 }
 

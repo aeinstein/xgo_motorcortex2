@@ -87,11 +87,18 @@ function sys_lesen(): array
     }
     $temp = lies('/sys/class/thermal/thermal_zone0/temp');
     $load = lies('/proc/loadavg');
+    // Takt in MHz [aktuell, höchst]; CM4: alle Kerne in einer Policy, cpu0 reicht. Höchsttakt einmal gelesen.
+    static $max_khz = null;
+    if ($max_khz === null) {
+        $max_khz = zahl_oder_null(lies('/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq')) ?? 0;
+    }
+    $cur_khz = zahl_oder_null(lies('/sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq'));
     return [
         't' => (int)round(microtime(true) * 1000),
         'cpu' => $cpu,
         'temp_c' => is_numeric($temp) ? round((int)$temp / 1000, 1) : null,
         'load' => $load !== '' ? (float)explode(' ', $load)[0] : null,
+        'mhz' => ($cur_khz !== null && $max_khz > 0) ? [intdiv($cur_khz, 1000), intdiv($max_khz, 1000)] : null,
         'battery' => zahl_oder_null(lies(PROC . '/battery')),
         // Sollwerte der Beine, null solange unbekannt (nichts geschrieben seit dem Laden, alter Treiber)
         'height' => zahl_oder_null(lies(PROC . '/height')),

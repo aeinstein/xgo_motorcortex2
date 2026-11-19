@@ -243,6 +243,18 @@
        "hilfe": "feste Verstärkung 1..63,9 (OV5647); 0 = Auto"
       },
       {
+       "key": "contrast",
+       "typ": "float",
+       "default": 1.0,
+       "hilfe": "Kontrast und Sättigung im ISP der Kamera (1,0 = Standard, 0,5..4 über den Regler im Web zur Laufzeit). Idee 2026-11-19: an der Quelle überdrehen, damit FloorNet kräftigere Kanten/Farben bekommt; der Browser zieht es für die Anzeige wieder herunter (CSS-Filter). FloorNet ist auf 1,0 trainiert: überdrehte Bilder sind für das Netz eine andere Eingabe, erst ein Training damit kann davon profitieren. Je Bild in meta.jsonl (cam)."
+      },
+      {
+       "key": "saturation",
+       "typ": "float",
+       "default": 1.0,
+       "hilfe": ""
+      },
+      {
        "key": "hfov_deg",
        "typ": "float",
        "default": 91.8,

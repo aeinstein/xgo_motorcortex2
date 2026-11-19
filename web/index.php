@@ -375,6 +375,21 @@ details.extras[open]>summary{margin-bottom:8px}
         <span class="w" id="gain-w">-</span>
         <button id="gain-auto" onclick="verstaerkung(0)">Auto</button>
       </div>
+      <div class="regler">
+        <label for="kontrast">Kontrast</label>
+        <input type="range" id="kontrast" min="0.5" max="4" value="1" step="0.1"
+          oninput="bildAnzeige()" onchange="bildSetzen()">
+        <span class="w" id="kontrast-w">-</span>
+        <button onclick="bildSetzen(1, null)">1,0</button>
+      </div>
+      <div class="regler">
+        <label for="saettigung">Sättigung</label>
+        <input type="range" id="saettigung" min="0.5" max="4" value="1" step="0.1"
+          oninput="bildAnzeige()" onchange="bildSetzen()">
+        <span class="w" id="saettigung-w">-</span>
+        <button onclick="bildSetzen(null, 1)">1,0</button>
+      </div>
+      <span class="ist"><label title="Kontrast/Sättigung wirken an der Quelle (ISP) und damit auch auf FloorNet und die Aufnahmen. Für die Anzeige hier per CSS-Filter wieder herunterziehen (Näherung; abgeschnittene Lichter und Schatten bleiben weg)."><input type="checkbox" id="bild-ausgleich" onchange="bildAusgleich(this.checked)"> Im Browser ausgleichen</label></span>
       <span class="ist"><label title="Bild senkrecht so verschieben, dass der IMU-Nick fest steht: stimmt die IMU, steht die Szene still"><input type="checkbox" id="hz-stabil" onchange="hzStabil(this.checked)"> Bild am IMU-Nick festhalten</label><label title="Bild um den IMU-Roll drehen: stimmt der Roll, stehen senkrechte Kanten senkrecht und die cyan Linie waagerecht"><input type="checkbox" id="hz-roll" onchange="hzRoll(this.checked)"> Roll ausgleichen</label><label title="Konfigurierte Bildmitte einblenden: gestrichelt die Spalte der Fahrtrichtung (W/2), Kreis bei Zeile H/2"><input type="checkbox" id="hz-mitte" onchange="hzMitte(this.checked)"> Bildmitte</label><span class="leise" id="belicht-ist">-</span><span class="info" tabindex="0" title="Gilt bis zum Neustart von xgonav. Kürzere Belichtung = weniger Bewegungsunschärfe, aber dunkler; mehr Verstärkung = heller, aber mehr Rauschen (Automatik nur bis 8; über ~8× wird der Rauschabstand nicht besser, nur das Bild heller). Dauerhaft über [camera] exposure_us / analogue_gain in config.toml.">i</span></span>
       <div class="tempo-zeile">
         <label for="tempo">Tempo</label>
@@ -418,7 +433,7 @@ details.extras[open]>summary{margin-bottom:8px}
   </div>
   <details class="karte extras" id="verlauf" ontoggle="verlaufUmschalten()">
     <summary><h2>Verlauf</h2><span class="leise">CPU · WLAN · Akku</span></summary>
-    <div class="unter">CPU je Kern, letzte 10 min <span class="rechts" id="v-temp"></span></div>
+    <div class="unter">CPU je Kern (bezogen auf Höchsttakt), letzte 10 min <span class="rechts" id="v-temp"></span></div>
     <div class="legende" id="l-cpu"></div>
     <canvas class="diag" id="d-cpu" data-h="140"></canvas>
     <div class="unter">WLAN-Durchsatz, letzte 10 min <span class="rechts" id="v-wlan"></span></div>
@@ -626,6 +641,9 @@ const EN = {
     'Rider is lying down, vision and polling are off, CPU clock lowered, sleepy eyes on the display. Battery',
   'CPU-Takt und Abfragen wieder hoch; Bildverarbeitung bleibt aus, Rider bleibt liegen': 'CPU clock and polling back up; vision stays off, Rider stays down',
   'Wecken': 'Wake up', 'Kamerabild': 'Camera image', 'Belichtung': 'Exposure', 'Verstärkung': 'Gain',
+  'Kontrast': 'Contrast', 'Sättigung': 'Saturation', 'Im Browser ausgleichen': 'Compensate in browser',
+  'Kontrast/Sättigung wirken an der Quelle (ISP) und damit auch auf FloorNet und die Aufnahmen. Für die Anzeige hier per CSS-Filter wieder herunterziehen (Näherung; abgeschnittene Lichter und Schatten bleiben weg).':
+    'Contrast/saturation act at the source (ISP), so they also reach FloorNet and the recordings. For the view here they are pulled back down by a CSS filter (approximation; clipped highlights and shadows stay lost).',
   'Gilt bis zum Neustart von xgonav. Kürzere Belichtung = weniger Bewegungsunschärfe, aber dunkler; mehr Verstärkung = heller, aber mehr Rauschen (Automatik nur bis 8; über ~8× wird der Rauschabstand nicht besser, nur das Bild heller). Dauerhaft über [camera] exposure_us / analogue_gain in config.toml.':
     'Applies until xgonav restarts. Shorter exposure = less motion blur but darker; more gain = brighter but noisier (auto only up to 8; above ~8× the signal-to-noise ratio does not improve, the image just gets brighter). Permanently via [camera] exposure_us / analogue_gain in config.toml.',
   'Idle': 'Idle', 'Hand': 'Manual', 'Folgen': 'Follow', 'Erkunden': 'Explore', 'Anfahren': 'Approach',
@@ -637,7 +655,7 @@ const EN = {
   'Rohbilder und Metadaten am Rider speichern. Schreibt nur, solange er balanciert; Absetzen beendet die Aufnahme, jedes Aufstehen beginnt eine neue.':
     'Store raw images and metadata on the Rider. Writes only while balancing; sitting down ends the recording, every stand-up starts a new one.',
   'Aufzeichnen': 'Record', 'Status (roh)': 'Status (raw)', 'Verlauf': 'History', 'CPU · WLAN · Akku': 'CPU · Wi-Fi · Battery',
-  'CPU je Kern, letzte 10 min': 'CPU per core, last 10 min', 'WLAN-Durchsatz, letzte 10 min': 'Wi-Fi throughput, last 10 min',
+  'CPU je Kern (bezogen auf Höchsttakt), letzte 10 min': 'CPU per core (relative to max clock), last 10 min', 'WLAN-Durchsatz, letzte 10 min': 'Wi-Fi throughput, last 10 min',
   'WLAN-Empfang (Pegel)': 'Wi-Fi signal (level)', 'Akku, 120 min (im Browser gespeichert)': 'Battery, 120 min (stored in the browser)',
   'Schallradar': 'Sound radar', 'lauscht': 'listening', 'aus': 'off', 'links': 'left', 'rechts': 'right', 'Mitte': 'centre',
   'vorn': 'front', 'hinten': 'rear', 'Güte': 'quality', 'vor {s} s': '{s} s ago', 'noch kein Geräusch': 'no sound yet',
@@ -1253,6 +1271,7 @@ function statusZeigen(s, fehler) {
     }
     belichtStatus(s.exposure);
     gainStatus(s.exposure);
+    bildStatus(s.exposure);
     tempoStatus(s.tempo);
   } catch (e) { console.error(e); }
 }
@@ -1339,6 +1358,45 @@ gainRegler.addEventListener('pointerup', () => gainBewegt = false);
 function gainAnzeige(g) {
   $('gain-w').textContent = Number(g) ? Number(g).toFixed(1) + '×' : tr('Auto');
 }
+// Kontrast/Sättigung an der Quelle (ISP, POST /bild); Ausgleich nur für die Anzeige per CSS-Filter (kostet am Pi nichts)
+const kontrastRegler = $('kontrast'), saettRegler = $('saettigung');
+let bildBewegt = false, bildIst = [1, 1], bildAusgleichAn = true;
+try { bildAusgleichAn = localStorage.getItem('xgonav.bildausgleich') !== '0'; } catch (e) {}
+$('bild-ausgleich').checked = bildAusgleichAn;
+[kontrastRegler, saettRegler].forEach(r => {
+  r.addEventListener('pointerdown', () => bildBewegt = true);
+  r.addEventListener('pointerup', () => bildBewegt = false);
+});
+function bildFilter() {
+  const [k, s] = bildIst;
+  $('bild').style.filter = bildAusgleichAn && (k !== 1 || s !== 1) ? `contrast(${1 / k}) saturate(${1 / s})` : '';
+}
+function bildAnzeige() {
+  $('kontrast-w').textContent = Number(kontrastRegler.value).toFixed(1);
+  $('saettigung-w').textContent = Number(saettRegler.value).toFixed(1);
+}
+function bildSetzen(k = null, s = null) {
+  bildBewegt = false;
+  if (k != null) kontrastRegler.value = k;
+  if (s != null) saettRegler.value = s;
+  bildAnzeige();
+  return befehl('bild', {k: Number(kontrastRegler.value).toFixed(2), s: Number(saettRegler.value).toFixed(2)});
+}
+function bildAusgleich(an) {
+  bildAusgleichAn = an;
+  try { localStorage.setItem('xgonav.bildausgleich', an ? '1' : '0'); } catch (e) {}
+  bildFilter();
+}
+function bildStatus(e) {
+  if (!e || e.contrast == null) return;
+  bildIst = [e.contrast, e.saturation];
+  bildFilter();
+  if (bildBewegt || [kontrastRegler, saettRegler].includes(document.activeElement)) return;
+  kontrastRegler.value = e.contrast;
+  saettRegler.value = e.saturation;
+  bildAnzeige();
+}
+bildAnzeige();
 function gainStatus(e) {
   if (!e || e.gain_soll == null) return;
   if (e.gain_max) gainRegler.max = e.gain_max;
@@ -2399,14 +2457,17 @@ function sysVerarbeiten(s) {
   if (s.roll != null) { beinSoll.r = s.roll; reglerSetzen('roll', s.roll, s.roll + '°'); }
   beinSoll.abgesetzt = s.state === 254;
   const jetzt = Date.now();
+  // Auslastung auf den Höchsttakt bezogen: 100 % bei halbem Takt zählt als 50 %
+  const takt = s.mhz && s.mhz[1] > 0 ? Math.min(1, s.mhz[0] / s.mhz[1]) : 1;
   if (cpuVorher && cpuVorher.length === s.cpu.length)
     cpu.push([jetzt, s.cpu.map((c, k) => {
       const dt = c[0] - cpuVorher[k][0];
-      return dt > 0 ? Math.max(0, Math.min(100, 100 * (1 - (c[1] - cpuVorher[k][1]) / dt))) : 0;
+      return dt > 0 ? takt * Math.max(0, Math.min(100, 100 * (1 - (c[1] - cpuVorher[k][1]) / dt))) : 0;
     })]);
   cpuVorher = s.cpu; cpuZeit = jetzt;
   abschneiden(cpu, jetzt - CPU_MS);
   $('v-temp').textContent = (s.temp_c != null ? s.temp_c.toFixed(1) + ' °C' : '') +
+                            (s.mhz ? ' · ' + s.mhz[0] + '/' + s.mhz[1] + ' MHz' : '') +
                             (s.load != null ? tr(' · Last ') + s.load.toFixed(2) : '');
   akkuMerken(s.battery);
   wlanMerken(s.wlan);
