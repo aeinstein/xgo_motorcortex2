@@ -480,8 +480,8 @@
       {
        "key": "poll_s",
        "typ": "float",
-       "default": 0.01,
-       "hilfe": "imu_log so oft einlesen (s). Bei 0,05 lag der neueste Wert beim Bild bis ~50 ms zurück (Nick wird dann gehalten, nicht interpoliert). RiderPi: ein Lesen 185 µs (128 Zeilen), geparst werden nur neue Zeilen."
+       "default": 0.05,
+       "hilfe": "imu_log so oft im Faden einlesen (s), solange die Bildschleife es nicht selbst tut. Mit laufender Bildverarbeitung liest die Bildschleife je Bild direkt vor imu_frame (ImuSource.refresh), der Wert zum Bild ist so frisch wie möglich. Vorher 0,01 im Faden: 100 Lesen/s, je Lesen formatiert der Treiber 128 Zeilen, am RiderPi ~5,7 % eines Kerns (2026-11-19). Bei 0,05 ohne refresh lag der neueste Wert bis ~50 ms zurück."
       }
      ]
     },

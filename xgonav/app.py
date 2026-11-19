@@ -1256,6 +1256,7 @@ class App:
         prev = self._imu_frame
         self._imu_frame = None
         if self.imu is not None:
+            self.imu.refresh()                        # neueste Proben je Bild selbst lesen (statt alle 10 ms im Faden)
             if not self.imu_sync.fixed:               # fest eingetragen (RiderPi): nichts zu schätzen
                 if ego.ok and ego.dt > 0:
                     self.imu_sync.add(f.t - ego.dt, f.t, ego.pitch)

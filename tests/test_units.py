@@ -1657,6 +1657,28 @@ def test_proc_imu_idle_rate(tmp_path):
     assert sp.read_text() == "0" and imu._wait_s() == pytest.approx(0.2)
 
 
+def test_proc_imu_refresh(tmp_path):
+    """Bildschleife liest selbst (refresh): neue Proben werden übernommen, schon gelesene nicht doppelt; liest
+    gerade der Faden (Sperre) oder ist Ruhe, passiert nichts."""
+    from xgonav.imu import ProcImu
+    (tmp_path / "settings").mkdir()
+    log_ = tmp_path / "imu_log"
+    log_.write_text("1 1000000000 100 -2000 0\n2 1010000000 110 -2100 500\n")
+    cfg = Config.neutral()
+    cfg.imu.proc_dir = str(tmp_path)
+    imu = ProcImu(cfg.imu)
+    assert imu._open()
+    assert imu.refresh() == 2 and imu.latest_t() == pytest.approx(1.01)
+    log_.write_text("1 1000000000 100 -2000 0\n2 1010000000 110 -2100 500\n3 1020000000 120 -2200 900\n")
+    with imu._poll_lock:
+        assert imu.refresh() == 0                        # Faden liest gerade
+    imu.paused = True
+    assert imu.refresh() == 0
+    imu.paused = False
+    assert imu.refresh() == 1 and imu.latest_t() == pytest.approx(1.02)
+    assert imu.refresh() == 0                            # nichts Neues
+
+
 def test_wheels_idle_reads_nothing_and_restarts_without_gap():
     """Abgesetzt werden die Räder nicht gelesen; was sie dazwischen drehten, zählt danach nicht als Weg."""
     import threading

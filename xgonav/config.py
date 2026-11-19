@@ -181,9 +181,11 @@ class ImuCfg:
     sync_range_ms: float = 100.0
     sync_step_ms: float = 4.0
     max_age_s: float = 0.3
-    # imu_log so oft einlesen (s). Bei 0,05 lag der neueste Wert beim Bild bis ~50 ms zurück (Nick wird dann
-    # gehalten, nicht interpoliert). RiderPi: ein Lesen 185 µs (128 Zeilen), geparst werden nur neue Zeilen.
-    poll_s: float = 0.01
+    # imu_log so oft im Faden einlesen (s), solange die Bildschleife es nicht selbst tut. Mit laufender
+    # Bildverarbeitung liest die Bildschleife je Bild direkt vor imu_frame (ImuSource.refresh), der Wert zum Bild
+    # ist so frisch wie möglich. Vorher 0,01 im Faden: 100 Lesen/s, je Lesen formatiert der Treiber 128 Zeilen,
+    # am RiderPi ~5,7 % eines Kerns (2026-11-19). Bei 0,05 ohne refresh lag der neueste Wert bis ~50 ms zurück.
+    poll_s: float = 0.05
 
 
 @dataclass

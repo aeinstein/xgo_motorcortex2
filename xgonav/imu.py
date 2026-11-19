@@ -43,6 +43,8 @@ class ImuSource:
         self.yaw_jumps = 0                              # verworfene Kurssprünge (ESP-Neustart, Lesefehler)
         self._hist = history_s
         self._last_seq = 0
+        self._poll_lock = threading.Lock()              # Faden und Bildschleife (refresh) lesen nie gleichzeitig
+        self._t_poll = 0.0                              # Zeit des letzten Lesens (monoton)
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self.rate_hz = 0.0
@@ -71,6 +73,21 @@ class ImuSource:
         if self.idle:
             return 1.0 / self.cfg.idle_hz
         return getattr(self.cfg, "poll_s", 0.05)
+
+    def refresh(self) -> int:
+        """Neueste Proben sofort einlesen (Bildschleife direkt vor imu_frame): ein Lesen je Bild statt alle 10 ms
+        im Faden, und der Wert zum Bild ist so frisch wie möglich. Liest gerade der Faden, nichts tun (er holt
+        dieselben Proben). Im Ruhemodus und abgesetzt (idle_hz) nicht. Rückgabe: Anzahl neuer Proben."""
+        if self.paused or self.idle or not self._poll_lock.acquire(blocking=False):
+            return 0
+        try:
+            self._t_poll = time.monotonic()
+            return self._poll()
+        except Exception:
+            log.debug("IMU lesen (refresh) fehlgeschlagen", exc_info=True)
+            return 0
+        finally:
+            self._poll_lock.release()
 
     def close(self) -> None:
         self._stop.set()
@@ -161,21 +178,26 @@ class ImuSource:
         return list(map(tuple, rows))
 
     def _run(self) -> None:
-        n0, t0 = 0, time.monotonic()
+        # Läuft die Bildverarbeitung, liest die Bildschleife je Bild selbst (refresh); der Faden liest dann nur,
+        # wenn seit dem letzten Lesen mehr als eine Wartezeit vergangen ist (Bildverarbeitung aus, Anzeige im Web).
+        # Rate aus dem Fortschritt der Sequenznummer, gleich wer gelesen hat.
+        seq0, t0 = self._last_seq, time.monotonic()
         while not self._stop.wait(self._wait_s()):
+            now = time.monotonic()
             if self.paused:
                 self.rate_hz = 0.0
-                n0, t0 = 0, time.monotonic()
+                seq0, t0 = self._last_seq, now
                 continue
-            try:
-                n = self._poll()
-            except Exception:
-                log.exception("IMU lesen fehlgeschlagen")
-                n = 0
-            n0 += n
-            if time.monotonic() - t0 > 2.0:
-                self.rate_hz = n0 / (time.monotonic() - t0)
-                n0, t0 = 0, time.monotonic()
+            if now - self._t_poll >= 0.9 * self._wait_s():
+                with self._poll_lock:
+                    self._t_poll = now
+                    try:
+                        self._poll()
+                    except Exception:
+                        log.exception("IMU lesen fehlgeschlagen")
+            if now - t0 > 2.0:
+                self.rate_hz = max(0, self._last_seq - seq0) / (now - t0)
+                seq0, t0 = self._last_seq, now
 
     def _open(self) -> bool: ...
     def _poll(self) -> int: return 0
