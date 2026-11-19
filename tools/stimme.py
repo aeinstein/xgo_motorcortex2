@@ -109,8 +109,7 @@ def main() -> None:
         if len(a.dateien) != 2:
             raise SystemExit("sittich ein.wav aus.wav")
         x = k.mono16k(_stereo48(a.dateien[0]))
-        x = k.tor(x, c.gate_db, c.knee_db)
-        y = k.sittich(x, c.speed, c.band_lo, c.band_hi, c.vibrato_hz, c.vibrato_ms, c.drive, 10 ** (c.peak_db / 20))
+        y = stimme.sittich_kette(k, x, c)
         stimme.write_wav(a.dateien[1], y, stimme.RATE_OUT, 32767.0)
         print(f"{a.dateien[1]}: {len(y) / stimme.RATE_OUT:.2f} s")
     elif a.was == "vergleich":

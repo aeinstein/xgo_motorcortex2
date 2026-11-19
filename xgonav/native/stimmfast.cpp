@@ -7,6 +7,7 @@
 //               Rahmen unter den lauten (bis laut_db unter der lautesten): spektrale Flachheit 300..3000 Hz unter flat_max und Grundton 70..400 Hz
 //               (Autokorrelation aus dem Leistungsspektrum, durch die des Fensters geteilt) über per_min
 //   st_dtw      DTW im Band (Sakoe-Chiba, um die Diagonale), Kosten je Schritt = Summe / (na + nb)
+//   st_dehne    zeitlich alpha-mal so lang bei gleicher Tonhöhe (WSOLA), mit schnellerem Abspielen danach = höher
 //   st_tor      Rauschtor vor dem Filter: Rahmenenergie ab gate_db unter der lautesten auf knee_db weich zu, je
 //               Abtastwert linear zwischen den Rahmenmitten, Ränder ohne Verstärkung weg
 //   st_sittich  Wellensittich: schneller abspielen (linear), Schnarren (modulierte Verzögerung), Hochpass und Tiefpass
@@ -21,11 +22,12 @@
 
 namespace {
 
-const int kStimmAbi = 4;
+const int kStimmAbi = 5;
 const double kPi = 3.14159265358979323846;
 const int kRateIn = 48000, kRate = 16000, kRateOut = 48000;
 const int kFrame = 400, kHop = 160, kNfft = 512, kNbin = kNfft / 2 + 1, kNmel = 24, kNcep = 13;
 const int kFirN = 31, kLagLo = 40, kLagHi = 228;     // Grundton 400..70 Hz
+const int kWsN = 480, kWsHop = 240, kWsTol = 160;     // WSOLA: 30 ms, Takt 15 ms, Suche +-10 ms
 const double kFirFc = 7000.0, kMelLo = 100.0, kMelHi = 7600.0, kFlatLo = 300.0, kFlatHi = 3000.0;
 
 struct Stimm {
@@ -302,6 +304,41 @@ XGO_API double st_dtw(const double* a, int na, const double* b, int nb, int dim,
         prev.swap(cur);
     }
     return prev[nb - 1] / (na + nb);
+}
+
+// x: n Werte -> out (round(n * alpha) Werte, höchstens max_out). Rückgabe: Anzahl.
+XGO_API int st_dehne(const double* x, int n, double alpha, double* out, int max_out) {
+    const int N = kWsN, Hs = kWsHop;
+    if (n < N + Hs || alpha <= 0.0) {
+        if (n > max_out) return 0;
+        for (int t = 0; t < n; t++) out[t] = x[t];
+        return n;
+    }
+    const int L = (int)std::lround(n * alpha);
+    if (L > max_out) return 0;
+    std::vector<double> win(N), y((size_t)L + N, 0.0);
+    for (int i = 0; i < N; i++) win[i] = 0.5 - 0.5 * std::cos(2.0 * kPi * i / N);
+    for (int i = 0; i < N; i++) y[i] += x[i] * win[i];
+    int prev = 0;
+    for (int k = 1;; k++) {
+        const int nom = (int)std::lround(k * Hs / alpha);
+        if (prev + Hs + N > n || nom + N > n || k * Hs + N > L + N) break;
+        const double* tm = x + prev + Hs;
+        const int lo = nom - kWsTol > 0 ? nom - kWsTol : 0;
+        const int hi = nom + kWsTol < n - N ? nom + kWsTol : n - N;
+        int p = lo;
+        double best = -std::numeric_limits<double>::infinity();
+        for (int j = lo; j <= hi; j++) {
+            double s = 0.0;
+            for (int i = 0; i < N; i++) s += tm[i] * x[j + i];
+            if (s > best) { best = s; p = j; }
+        }
+        double* yo = &y[(size_t)k * Hs];
+        for (int i = 0; i < N; i++) yo[i] += x[p + i] * win[i];
+        prev = p;
+    }
+    for (int t = 0; t < L; t++) out[t] = y[t];
+    return L;
 }
 
 // x: n Werte mit 16 kHz -> out (höchstens n). Rückgabe: Anzahl nach dem Abschneiden der Ränder.

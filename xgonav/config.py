@@ -935,6 +935,7 @@ class StimmeCfg:
     # Sittich-Filter: speed-mal so schnell (höher und kürzer), Bandpass band_lo..band_hi Hz, Schnarren durch
     # Vibrato (modulierte Verzögerung), Weichbegrenzung drive, Spitze peak_db.
     speed: float = 1.0                 # Nutzer 2026-11-19: nicht schneller abspielen (vorher 1,6)
+    pitch_st: float = 12.0             # Halbtöne höher bei gleichem Tempo (WSOLA), Nutzer 2026-11-19: eine Oktave
     band_lo: float = 1000.0
     band_hi: float = 5000.0
     vibrato_hz: float = 25.0

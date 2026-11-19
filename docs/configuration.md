@@ -248,7 +248,7 @@ All keys with comments: `PetCfg` in `xgonav/config.py`.
 | `voiced_min`, `flat_max`, `per_min` | 0.4, 0.3, 0.5 | share of voiced frames; voiced = flatness below and pitch strength above |
 | `match_dist`, `dtw_band`, `len_ratio` | 8, 0.25, 1.6 | DTW match (labelled recording on the Rider: same phrase 5.1–8.2, different ≥ 8.8) |
 | `gate_db`, `knee_db` | 12, 6 | noise gate before the filter |
-| `speed`, `band_lo`, `band_hi`, `vibrato_hz`, `vibrato_ms`, `drive`, `peak_db` | 1.0, 1000, 5000, 25, 0.3, 2, −3 | budgie filter (speed > 1 = higher and faster) |
+| `pitch_st`, `speed`, `band_lo`, `band_hi`, `vibrato_hz`, `vibrato_ms`, `drive`, `peak_db` | 12, 1.0, 1000, 5000, 25, 0.3, 2, −3 | budgie filter: semitones higher at the same tempo, extra tempo factor (> 1 = higher and faster), band, vibrato, drive, peak |
 
 ### `[odom]`
 | Key | Default | RiderPi |

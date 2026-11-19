@@ -230,6 +230,8 @@ def test_native_gleich_numpy():
     assert len(ya) == len(yb) and np.abs(ya - yb).max() < 1e-9
     ta, tb = P.tor(a, 12.0, 6.0), N.tor(a, 12.0, 6.0)
     assert len(ta) == len(tb) and np.abs(ta - tb).max() < 1e-6
+    da, db = P.dehne(ta, 2.0), N.dehne(ta, 2.0)
+    assert len(da) == len(db) and np.abs(da - db).max() < 1e-6 * np.abs(da).max()
 
 
 def test_rauschtor_schneidet_rauschen_ab():
@@ -240,3 +242,18 @@ def test_rauschtor_schneidet_rauschen_ab():
     roh = x[: int(0.4 * stimme.RATE)]
     assert np.sqrt(np.mean(y[:200] ** 2)) <= np.sqrt(np.mean(x ** 2))   # Anfang leiser als der Durchschnitt
     assert np.abs(roh).max() > 0
+
+
+def test_oktave_hoeher_bei_gleichem_tempo(tmp_path):
+    """pitch_st 12: ein 220-Hz-Ton kommt mit 440 Hz heraus, so lang wie vorher (Tor schneidet nichts ab)."""
+    c = cfg(tmp_path)
+    assert c.pitch_st == 12.0 and c.speed == 1.0
+    k = stimme.make_kern(c.flat_max, native=False)
+    n = int(1.0 * stimme.RATE)
+    t = np.arange(n) / stimme.RATE
+    x = 8000.0 * np.sin(2 * np.pi * 220.0 * t)
+    y = stimme.sittich_kette(k, x, dataclasses.replace(c, band_lo=100.0, vibrato_ms=0.0, drive=0.01))
+    assert abs(len(y) / stimme.RATE_OUT - 1.0) < 0.02
+    spec = np.abs(np.fft.rfft(y * np.hanning(len(y))))
+    f = np.argmax(spec) * stimme.RATE_OUT / len(y)
+    assert abs(f - 440.0) < 5.0

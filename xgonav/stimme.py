@@ -37,13 +37,14 @@ from . import fastlib
 
 log = logging.getLogger(__name__)
 
-_STIMM_ABI = 4
+_STIMM_ABI = 5
 RATE_IN, RATE, RATE_OUT = 48000, 16000, 48000
 FRAME, HOP, NFFT, NMEL, NCEP = 400, 160, 512, 24, 13
 FIR_N, FIR_FC = 31, 7000.0
 MEL_LO, MEL_HI = 100.0, 7600.0
 FLAT_LO, FLAT_HI = 300.0, 3000.0
 LAG_LO, LAG_HI = 40, 228             # Grundton 400..70 Hz in Abtastwerten bei 16 kHz
+WS_N, WS_HOP, WS_TOL = 480, 240, 160  # WSOLA: 30-ms-Stücke, Ausgabe-Takt 15 ms, Suche +-10 ms
 VERFALL_TAKT_S = 5.0                 # so oft prüft der Thread stimme, ob Kandidaten verfallen sind
 _lib_cache: list = []
 
@@ -65,6 +66,8 @@ def _lib():
             L.st_mfcc.argtypes = [p, p, i, p, i, p]
             L.st_dtw.restype = d
             L.st_dtw.argtypes = [p, i, p, i, i, d]
+            L.st_dehne.restype = i
+            L.st_dehne.argtypes = [p, i, d, p, i]
             L.st_tor.restype = i
             L.st_tor.argtypes = [p, i, d, d, p]
             L.st_sittich.restype = i
@@ -187,6 +190,33 @@ class _PyKern:
         return prev[nb - 1] / (na + nb)
 
     @staticmethod
+    def dehne(x: np.ndarray, alpha: float) -> np.ndarray:
+        """Zeitlich alpha-mal so lang, Tonhöhe bleibt (WSOLA): je Ausgabe-Takt WS_HOP das 30-ms-Stück aus der Gegend
+        k * WS_HOP / alpha (+-WS_TOL), das am besten an die natürliche Fortsetzung des vorigen passt; Hann, 50 %
+        überlappt. Mit anschließend alpha-mal schnellerem Abspielen: alpha-mal höher bei gleichem Tempo."""
+        n, N, Hs = len(x), WS_N, WS_HOP
+        if n < N + Hs or alpha <= 0.0:
+            return x.copy()
+        win = 0.5 - 0.5 * np.cos(2.0 * np.pi * np.arange(N) / N)
+        L = int(math.floor(n * alpha + 0.5))             # wie lround in C++
+        y = np.zeros(L + N)
+        y[:N] += x[:N] * win
+        prev, k = 0, 1
+        while True:
+            nom = int(math.floor(k * Hs / alpha + 0.5))
+            if prev + Hs + N > n or nom + N > n or k * Hs + N > L + N:
+                break
+            tmpl = x[prev + Hs:prev + Hs + N]
+            lo, hi = max(0, nom - WS_TOL), min(n - N, nom + WS_TOL)
+            seg = x[lo:hi + N]
+            r = np.array([float(np.dot(tmpl, seg[j:j + N])) for j in range(hi - lo + 1)])
+            p = lo + int(np.argmax(r))
+            y[k * Hs:k * Hs + N] += x[p:p + N] * win
+            prev = p
+            k += 1
+        return y[:L].copy()
+
+    @staticmethod
     def tor(x: np.ndarray, gate_db: float, knee_db: float) -> np.ndarray:
         """Rauschtor vor dem Sittich-Filter (16 kHz): Rahmenenergie (25 ms, 10 ms Takt) ab gate_db unter dem
         lautesten Rahmen auf knee_db weich zu, Verstärkung je Abtastwert linear zwischen den Rahmenmitten; Ränder ohne
@@ -294,6 +324,13 @@ class _NativeKern:
         b = np.ascontiguousarray(b, dtype=np.float64)
         return self._L.st_dtw(a.ctypes.data, len(a), b.ctypes.data, len(b), NCEP, band)
 
+    def dehne(self, x: np.ndarray, alpha: float) -> np.ndarray:
+        x = np.ascontiguousarray(x, dtype=np.float64)
+        mx = int(math.floor(len(x) * alpha + 0.5)) + 1
+        out = np.empty(mx)
+        k = self._L.st_dehne(x.ctypes.data, len(x), alpha, out.ctypes.data, mx)
+        return out[:k]
+
     def tor(self, x: np.ndarray, gate_db: float, knee_db: float) -> np.ndarray:
         x = np.ascontiguousarray(x, dtype=np.float64)
         out = np.empty(len(x))
@@ -317,6 +354,17 @@ def make_kern(flat_max: float, native: bool | None = None, per_min: float = 0.5,
     if native:
         raise RuntimeError("stimme: C++-Kern fehlt")
     return _PyKern(flat_max, per_min, trim_db, laut_db)
+
+
+def sittich_kette(kern, x: np.ndarray, c) -> np.ndarray:
+    """Rohprobe (16 kHz) -> abspielfertig (48 kHz, Spitze peak_db): Rauschtor, um pitch_st Halbtöne höher bei
+    unverändertem Tempo (dehnen, dann schneller abspielen), mal speed schneller, Sittich-Filter."""
+    x = kern.tor(x, c.gate_db, c.knee_db)
+    f = 2.0 ** (c.pitch_st / 12.0)
+    if abs(f - 1.0) > 1e-6:
+        x = kern.dehne(x, f)
+    return kern.sittich(x, f * c.speed, c.band_lo, c.band_hi, c.vibrato_hz, c.vibrato_ms, c.drive,
+                        10.0 ** (c.peak_db / 20.0))
 
 
 # ---------------------------------------------------------------------- Dateien
@@ -562,11 +610,7 @@ class Stimmen:
             self.kandidaten = []
 
     def _filter(self, nn: str, x: np.ndarray) -> None:
-        c = self.cfg
-        x = self.kern.tor(x, c.gate_db, c.knee_db)
-        y = self.kern.sittich(x, c.speed, c.band_lo, c.band_hi, c.vibrato_hz, c.vibrato_ms, c.drive,
-                              10.0 ** (c.peak_db / 20.0))
-        write_wav(self.datei(nn), y, RATE_OUT, 32767.0)
+        write_wav(self.datei(nn), sittich_kette(self.kern, x, self.cfg), RATE_OUT, 32767.0)
 
     def _verfall(self) -> None:
         """Unbestätigte Proben älter als kandidat_max_min löschen."""

@@ -3401,6 +3401,12 @@
        "hilfe": "Sittich-Filter: speed-mal so schnell (höher und kürzer), Bandpass band_lo..band_hi Hz, Schnarren durch Vibrato (modulierte Verzögerung), Weichbegrenzung drive, Spitze peak_db. Nutzer 2026-11-19: nicht schneller abspielen (vorher 1,6)"
       },
       {
+       "key": "pitch_st",
+       "typ": "float",
+       "default": 12.0,
+       "hilfe": "Halbtöne höher bei gleichem Tempo (WSOLA), Nutzer 2026-11-19: eine Oktave"
+      },
+      {
        "key": "band_lo",
        "typ": "float",
        "default": 1000.0,
