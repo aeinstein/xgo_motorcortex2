@@ -234,6 +234,7 @@ class PetBrain:
         self._flinch_until = 0.0
         # Nachplappern (stimme.Stimmen): gelernte Proben, fällige Wiederholungen neu bestätigter, Abspielzähler
         self.hoert_zu = False                # App schneidet Stimmproben mit, solange das gilt
+        self._parrot_person_t = -1e9         # zuletzt eine Person im Bild (auch liegend)
         self.n_parrot = 0
         self._parrot_ids: tuple = ()
         self._parrot_due: list[tuple[float, str]] = []
@@ -321,7 +322,12 @@ class PetBrain:
         act.status = "pet: %s%s%s, Vertrauen %.2f" % (self.state, " " + self.zone if self.zone else "",
                                                      " %s/%s" % (self.task, self.phase) if self.task else "", self.trust)
         self._update_gaze(s)
-        self.hoert_zu = bool(c.parrot and self.state == "wach" and s.t - self._person_t <= c.parrot_listen_s)
+        # Mitschneiden wach und liegend (zum Ausprobieren ohne Balancieren); die Mikrofone taugen liegend für den
+        # Pegel, nur die Richtung nicht
+        if any(x.cls == "person" for x in s.seen):
+            self._parrot_person_t = s.t
+        self.hoert_zu = bool(c.parrot and self.state in ("wach", "liegt")
+                             and s.t - self._parrot_person_t <= c.parrot_listen_s)
         self._flush(s.t)
         return act
 

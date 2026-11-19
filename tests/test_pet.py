@@ -1166,3 +1166,16 @@ def test_ohne_proben_immer_brabbeln():
     b = brain(parrot_p=1.0)
     _, _, _, _, evs = hoeren(b, 0.0, 6.0, 0.0, who=lambda t: [seen("person", 1.2, t)], bis=3.2)
     assert [e[1] for e in evs if e[1] == "brabbeln" or e[1].startswith("stimme:")] == ["brabbeln"]
+
+
+def test_liegend_mitschneiden_und_nachplappern():
+    b = brain()
+    wer = lambda t: [seen("person", None, t)]
+    run(b, 0.0, 1.0, who=wer, balancing=False)
+    assert b.state == "liegt" and b.hoert_zu
+    _, _, evs = run(b, 1.0, 1.05, who=wer, balancing=False, stimmen=(("01",), ["01"]))
+    _, _, evs2 = run(b, 1.05, 3.0, who=wer, balancing=False, stimmen=(("01",), []))
+    evs += evs2
+    assert [e for e in evs if e[1].startswith("stimme:")] == [("sound", "stimme:01", True)]
+    run(b, 3.0, 3.0 + b.cfg.parrot_listen_s + 0.5, balancing=False)
+    assert not b.hoert_zu

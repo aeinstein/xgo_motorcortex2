@@ -49,7 +49,7 @@ The pet learns phrases it hears repeatedly and parrots them back, filtered to so
 
 | Item | Value |
 |---|---|
-| Capture | on the `[ortung]` stream (`Ortung.horcher`), only in `pet` while a person is in view or gone ≤ `[pet] parrot_listen_s` (3 s); never during own sounds (+ `nachhall_s`) |
+| Capture | on the `[ortung]` stream (`Ortung.horcher`), only in `pet` (balancing or lying) while a person is in view or gone ≤ `[pet] parrot_listen_s` (3 s); never during own sounds (+ `nachhall_s`) |
 | VAD | ortung level vs. noise floor: opens `vad_on_db` 9, ends after `vad_hang_s` 0.3 s below `vad_off_db` 4; 0.15 s pre-roll; 0.6–3 s (cut at `max_s`) |
 | Features | 48 kHz stereo → 16 kHz mono (FIR 7 kHz), 13 MFCC per 10 ms, silent edges trimmed, mean removed; rejected if < `voiced_min` 0.3 of the loud frames are voiced (flatness 300–3000 Hz < 0.3) |
 | Match | DTW (Sakoe-Chiba 25 %, length ratio ≤ 1.6), cost per step ≤ `match_dist` 8. Windows TTS + room noise: same phrase other rate 2–4, other phrases ≥ 14, same phrase other voice 10–16. Tune on real samples |
