@@ -2714,8 +2714,8 @@
       {
        "key": "parrot_delay_s",
        "typ": "float",
-       "default": 0.8,
-       "hilfe": ""
+       "default": 0.2,
+       "hilfe": "Nutzer 2026-11-19: 0,8 dauerte zu lang (mit Nachlauf 0,6 s ~1,5 s)"
       },
       {
        "key": "parrot_listen_s",

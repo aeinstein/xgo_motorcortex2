@@ -789,7 +789,7 @@ class PetCfg:
     parrot: bool = True
     parrot_p: float = 0.5
     parrot_repeat_s: float = 30.0
-    parrot_delay_s: float = 0.8
+    parrot_delay_s: float = 0.2        # Nutzer 2026-11-19: 0,8 dauerte zu lang (mit Nachlauf 0,6 s ~1,5 s)
     parrot_listen_s: float = 3.0
     seek_m: float = -1.0               # je Verschwinden höchstens so weit zur letzten Stelle
     seek_stop_m: float = 0.4           # so weit vor der letzten Stelle halten
