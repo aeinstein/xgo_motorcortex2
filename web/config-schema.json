@@ -3383,10 +3383,22 @@
        "hilfe": ""
       },
       {
+       "key": "gate_db",
+       "typ": "float",
+       "default": 12.0,
+       "hilfe": "Rauschtor vor dem Filter: bis gate_db unter dem lautesten Rahmen offen, auf weiteren knee_db weich zu, stille Ränder weg. Ohne Tor waren 57-86 % der Proben Kocherrauschen (25-31 dB unter der Stimme), die Weichbegrenzung hob es an: klang wie Wassergluckern (Nutzer 2026-11-19)."
+      },
+      {
+       "key": "knee_db",
+       "typ": "float",
+       "default": 6.0,
+       "hilfe": ""
+      },
+      {
        "key": "speed",
        "typ": "float",
-       "default": 1.6,
-       "hilfe": "Sittich-Filter: speed-mal so schnell (höher und kürzer), Bandpass band_lo..band_hi Hz, Schnarren durch Vibrato (modulierte Verzögerung), Weichbegrenzung drive, Spitze peak_db."
+       "default": 1.0,
+       "hilfe": "Sittich-Filter: speed-mal so schnell (höher und kürzer), Bandpass band_lo..band_hi Hz, Schnarren durch Vibrato (modulierte Verzögerung), Weichbegrenzung drive, Spitze peak_db. Nutzer 2026-11-19: nicht schneller abspielen (vorher 1,6)"
       },
       {
        "key": "band_lo",

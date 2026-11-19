@@ -927,9 +927,14 @@ class StimmeCfg:
     match_dist: float = 8.0
     dtw_band: float = 0.25
     len_ratio: float = 1.6
+    # Rauschtor vor dem Filter: bis gate_db unter dem lautesten Rahmen offen, auf weiteren knee_db weich zu, stille Ränder
+    # weg. Ohne Tor waren 57-86 % der Proben Kocherrauschen (25-31 dB unter der Stimme), die Weichbegrenzung hob es an:
+    # klang wie Wassergluckern (Nutzer 2026-11-19).
+    gate_db: float = 12.0
+    knee_db: float = 6.0
     # Sittich-Filter: speed-mal so schnell (höher und kürzer), Bandpass band_lo..band_hi Hz, Schnarren durch
     # Vibrato (modulierte Verzögerung), Weichbegrenzung drive, Spitze peak_db.
-    speed: float = 1.6
+    speed: float = 1.0                 # Nutzer 2026-11-19: nicht schneller abspielen (vorher 1,6)
     band_lo: float = 1000.0
     band_hi: float = 5000.0
     vibrato_hz: float = 25.0

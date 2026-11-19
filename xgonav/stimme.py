@@ -37,7 +37,7 @@ from . import fastlib
 
 log = logging.getLogger(__name__)
 
-_STIMM_ABI = 3
+_STIMM_ABI = 4
 RATE_IN, RATE, RATE_OUT = 48000, 16000, 48000
 FRAME, HOP, NFFT, NMEL, NCEP = 400, 160, 512, 24, 13
 FIR_N, FIR_FC = 31, 7000.0
@@ -65,6 +65,8 @@ def _lib():
             L.st_mfcc.argtypes = [p, p, i, p, i, p]
             L.st_dtw.restype = d
             L.st_dtw.argtypes = [p, i, p, i, i, d]
+            L.st_tor.restype = i
+            L.st_tor.argtypes = [p, i, d, d, p]
             L.st_sittich.restype = i
             L.st_sittich.argtypes = [p, i, d, d, d, d, d, d, d, p, i]
         _lib_cache.append(L)
@@ -185,6 +187,31 @@ class _PyKern:
         return prev[nb - 1] / (na + nb)
 
     @staticmethod
+    def tor(x: np.ndarray, gate_db: float, knee_db: float) -> np.ndarray:
+        """Rauschtor vor dem Sittich-Filter (16 kHz): Rahmenenergie (25 ms, 10 ms Takt) ab gate_db unter dem
+        lautesten Rahmen auf knee_db weich zu, Verstärkung je Abtastwert linear zwischen den Rahmenmitten; Ränder ohne
+        Verstärkung weg."""
+        n = len(x)
+        if n < FRAME:
+            return x.copy()
+        m = 1 + (n - FRAME) // HOP
+        idx = np.arange(m)[:, None] * HOP + np.arange(FRAME)[None, :]
+        e = (x[idx] * x[idx]).sum(axis=1)
+        if e.max() <= 0.0:
+            return np.zeros(0)
+        ed = 10.0 * np.log10(np.maximum(e, 1e-30) / e.max())
+        g = np.clip((ed + gate_db + knee_db) / max(knee_db, 1e-6), 0.0, 1.0)
+        p = np.clip((np.arange(n) - FRAME / 2) / HOP, 0.0, m - 1)
+        i0 = np.floor(p).astype(np.int64)
+        i1 = np.minimum(i0 + 1, m - 1)
+        fr = p - i0
+        gs = g[i0] * (1.0 - fr) + g[i1] * fr
+        nz = np.nonzero(gs > 0.0)[0]
+        if len(nz) == 0:
+            return np.zeros(0)
+        return (x * gs)[nz[0]:nz[-1] + 1].copy()
+
+    @staticmethod
     def sittich(x: np.ndarray, speed: float, lo: float, hi: float, vib_hz: float, vib_ms: float,
                 drive: float, peak: float) -> np.ndarray:
         """16 kHz (Einheit egal) -> 48 kHz, Spitze `peak` (linear)."""
@@ -266,6 +293,12 @@ class _NativeKern:
         a = np.ascontiguousarray(a, dtype=np.float64)
         b = np.ascontiguousarray(b, dtype=np.float64)
         return self._L.st_dtw(a.ctypes.data, len(a), b.ctypes.data, len(b), NCEP, band)
+
+    def tor(self, x: np.ndarray, gate_db: float, knee_db: float) -> np.ndarray:
+        x = np.ascontiguousarray(x, dtype=np.float64)
+        out = np.empty(len(x))
+        k = self._L.st_tor(x.ctypes.data, len(x), gate_db, knee_db, out.ctypes.data)
+        return out[:k]
 
     def sittich(self, x, speed, lo, hi, vib_hz, vib_ms, drive, peak) -> np.ndarray:
         x = np.ascontiguousarray(x, dtype=np.float64)
@@ -530,6 +563,7 @@ class Stimmen:
 
     def _filter(self, nn: str, x: np.ndarray) -> None:
         c = self.cfg
+        x = self.kern.tor(x, c.gate_db, c.knee_db)
         y = self.kern.sittich(x, c.speed, c.band_lo, c.band_hi, c.vibrato_hz, c.vibrato_ms, c.drive,
                               10.0 ** (c.peak_db / 20.0))
         write_wav(self.datei(nn), y, RATE_OUT, 32767.0)

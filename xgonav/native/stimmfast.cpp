@@ -7,6 +7,8 @@
 //               Rahmen unter den lauten (bis laut_db unter der lautesten): spektrale Flachheit 300..3000 Hz unter flat_max und Grundton 70..400 Hz
 //               (Autokorrelation aus dem Leistungsspektrum, durch die des Fensters geteilt) über per_min
 //   st_dtw      DTW im Band (Sakoe-Chiba, um die Diagonale), Kosten je Schritt = Summe / (na + nb)
+//   st_tor      Rauschtor vor dem Filter: Rahmenenergie ab gate_db unter der lautesten auf knee_db weich zu, je
+//               Abtastwert linear zwischen den Rahmenmitten, Ränder ohne Verstärkung weg
 //   st_sittich  Wellensittich: schneller abspielen (linear), Schnarren (modulierte Verzögerung), Hochpass und Tiefpass
 //               (RBJ-Biquads), tanh-Begrenzung, 10 ms Ein-/Ausblenden, Spitze auf `peak`
 // Rechnet dasselbe wie _PyKern in stimme.py (dort numpy-FFT, deshalb gleich bis auf Rundung, nicht bitgleich).
@@ -19,7 +21,7 @@
 
 namespace {
 
-const int kStimmAbi = 3;
+const int kStimmAbi = 4;
 const double kPi = 3.14159265358979323846;
 const int kRateIn = 48000, kRate = 16000, kRateOut = 48000;
 const int kFrame = 400, kHop = 160, kNfft = 512, kNbin = kNfft / 2 + 1, kNmel = 24, kNcep = 13;
@@ -300,6 +302,51 @@ XGO_API double st_dtw(const double* a, int na, const double* b, int nb, int dim,
         prev.swap(cur);
     }
     return prev[nb - 1] / (na + nb);
+}
+
+// x: n Werte mit 16 kHz -> out (höchstens n). Rückgabe: Anzahl nach dem Abschneiden der Ränder.
+XGO_API int st_tor(const double* x, int n, double gate_db, double knee_db, double* out) {
+    if (n < kFrame) {
+        for (int t = 0; t < n; t++) out[t] = x[t];
+        return n;
+    }
+    const int m = 1 + (n - kFrame) / kHop;
+    std::vector<double> g(m);
+    double emax = 0.0;
+    for (int f = 0; f < m; f++) {
+        double s = 0.0;
+        for (int i = 0; i < kFrame; i++) {
+            const double v = x[f * kHop + i];
+            s += v * v;
+        }
+        g[f] = s;
+        if (s > emax) emax = s;
+    }
+    if (emax <= 0.0) return 0;
+    const double kn = knee_db > 1e-6 ? knee_db : 1e-6;
+    for (int f = 0; f < m; f++) {
+        const double ed = 10.0 * std::log10((g[f] > 1e-30 ? g[f] : 1e-30) / emax);
+        double v = (ed + gate_db + knee_db) / kn;
+        g[f] = v < 0.0 ? 0.0 : (v > 1.0 ? 1.0 : v);
+    }
+    int k = 0, first = -1, last = -1;
+    for (int t = 0; t < n; t++) {
+        double p = (t - kFrame / 2.0) / kHop;
+        if (p < 0.0) p = 0.0;
+        if (p > m - 1) p = m - 1;
+        const int i0 = (int)std::floor(p);
+        const int i1 = i0 + 1 < m ? i0 + 1 : m - 1;
+        const double fr = p - i0;
+        const double gs = g[i0] * (1.0 - fr) + g[i1] * fr;
+        if (gs > 0.0) {
+            if (first < 0) first = t;
+            last = t;
+        }
+        out[t] = x[t] * gs;
+    }
+    if (first < 0) return 0;
+    for (int t = first; t <= last; t++) out[k++] = out[t];
+    return k;
 }
 
 // x: n Werte mit 16 kHz -> out mit 48 kHz (höchstens max_out). Rückgabe: Anzahl.

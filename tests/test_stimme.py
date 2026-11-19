@@ -127,7 +127,7 @@ def test_bestaetigen_filtern_und_wieder_hoeren(tmp_path):
     assert rate == stimme.RATE_OUT
     assert abs(np.abs(y).max() / 32767.0 - 10 ** (st.cfg.peak_db / 20)) < 0.01
     roh, _ = stimme.read_wav(str(tmp_path / "bestaetigt" / "01_roh.wav"))
-    assert abs(len(y) / stimme.RATE_OUT - len(roh) / stimme.RATE / st.cfg.speed) < 0.01
+    assert 0.3 < len(y) / stimme.RATE_OUT <= len(roh) / stimme.RATE / st.cfg.speed + 0.01   # Tor kürzt die Ränder
     assert st.lerne(aeusserung(WORT_A, seed=7)) == "wieder"           # keine zweite Probe desselben Worts
     assert len(st.kandidaten) == 1 and st.drain_neu() == ["01"]       # wiedererkannt: wieder abspielen
 
@@ -228,3 +228,15 @@ def test_native_gleich_numpy():
     assert abs(P.dtw(fa, fc, 0.25) - N.dtw(fa, fc, 0.25)) < 1e-9
     ya, yb = P.sittich(a, 1.6, 1000, 5000, 25, 0.3, 2, 0.7), N.sittich(a, 1.6, 1000, 5000, 25, 0.3, 2, 0.7)
     assert len(ya) == len(yb) and np.abs(ya - yb).max() < 1e-9
+    ta, tb = P.tor(a, 12.0, 6.0), N.tor(a, 12.0, 6.0)
+    assert len(ta) == len(tb) and np.abs(ta - tb).max() < 1e-6
+
+
+def test_rauschtor_schneidet_rauschen_ab():
+    k = stimme.make_kern(0.3, native=False)
+    x = k.mono16k(np.concatenate([stille(0.5), aeusserung(WORT_A, 0.6), stille(0.8)]))
+    y = k.tor(x, 12.0, 6.0)
+    assert 0.4 * stimme.RATE < len(y) < 0.8 * stimme.RATE                # nur der Satz bleibt
+    roh = x[: int(0.4 * stimme.RATE)]
+    assert np.sqrt(np.mean(y[:200] ** 2)) <= np.sqrt(np.mean(x ** 2))   # Anfang leiser als der Durchschnitt
+    assert np.abs(roh).max() > 0
