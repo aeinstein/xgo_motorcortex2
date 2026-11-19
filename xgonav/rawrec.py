@@ -28,6 +28,12 @@ from .jpeg import Jpeg
 
 log = logging.getLogger(__name__)
 
+# Schreibrate bis zur ersten Aufnahme seit dem Start (geschätzt: 640x480 JPEG q95 ~90 kB + meta.jsonl ~2 kB,
+# ~25 Bilder/s); danach gilt die gemessene Rate der letzten Aufnahme. Nur für die Restminuten in der Oberfläche.
+RATE_SCHAETZUNG_MB_S = 2.2
+RATE_MIN_S = 3.0          # erst nach so vielen Sekunden Aufnahme gilt die gemessene Rate
+PLATZ_ALTER_S = 2.0       # freier Platz für status() höchstens so oft neu geholt
+
 
 def raw_run_dir(base: str) -> str:
     """Neues Unterverzeichnis anlegen. idx beginnt nach jedem Start bei 0, im selben Verzeichnis würden
@@ -90,6 +96,11 @@ class RawRecorder:
         self._th: threading.Thread | None = None
         self._t_platz = 0.0
         self._t_imu = self._t_rad = 0.0     # Zeit der letzten geschriebenen Probe
+        self._t_start = 0.0                 # Start der laufenden Aufnahme (monotonic)
+        self._bytes = 0                     # geschrieben in der laufenden Aufnahme
+        self._rate: float | None = None     # MB/s der letzten Aufnahme (gemessen)
+        self._frei_mb: float | None = None
+        self._t_frei = -1e9
         oc = getattr(getattr(app, "cfg", None), "output", None)
         self._q_hw = int(getattr(oc, "record_jpeg_q_hw", 95))
         self._q_cv = int(getattr(oc, "record_jpeg_q_cv", 92))
@@ -106,9 +117,28 @@ class RawRecorder:
             self._th.start()
         self._wake.set()
 
+    def _frei(self) -> float | None:
+        """Nutzbarer Platz in MB bis zur Abbruchgrenze min_frei (ein statvfs höchstens alle PLATZ_ALTER_S)."""
+        now = time.monotonic()
+        if now - self._t_frei >= PLATZ_ALTER_S:
+            self._t_frei = now
+            pfad = self.basis
+            while pfad and not os.path.isdir(pfad):          # Ordner noch nicht angelegt: Elternordner
+                oben = os.path.dirname(pfad)
+                pfad = "" if oben == pfad else oben
+            try:
+                frei = shutil.disk_usage(pfad).free if pfad else None
+            except OSError:
+                frei = None
+            self._frei_mb = None if frei is None else max(0.0, (frei - self.min_frei) / (1024 * 1024))
+        return self._frei_mb
+
     def status(self) -> dict:
+        frei = self._frei()
         return {"an": self.an, "laeuft": self._meta is not None, "ordner": self.ordner, "bilder": self.bilder,
-                "fehler": self.fehler}
+                "fehler": self.fehler, "frei_mb": None if frei is None else round(frei, 1),
+                "rate_mb_s": round(self._rate if self._rate is not None else RATE_SCHAETZUNG_MB_S, 3),
+                "rate_gemessen": self._rate is not None}
 
     def beenden(self) -> None:
         self._ende = True
@@ -167,7 +197,8 @@ class RawRecorder:
             self.ordner = raw_run_dir(self.basis)
             self.bilder = 0
             self._meta = open(os.path.join(self.ordner, "meta.jsonl"), "x", buffering=1)
-            self._t_platz = now
+            self._t_platz = self._t_start = now
+            self._bytes = 0
             self._t_imu = self._t_rad = snap.t - PROBEN_VORLAUF_S
             log.info("Rohaufzeichnung nach %s", self.ordner)
         elif now - self._t_platz >= 1.0:
@@ -192,8 +223,13 @@ class RawRecorder:
             raeder = src.since(self._t_rad)
             if raeder:
                 self._t_rad = raeder[-1][0]
-        self._meta.write(_meta_zeile(snap, name, imu, raeder, self._jpeg.zuletzt))
+        zeile = _meta_zeile(snap, name, imu, raeder, self._jpeg.zuletzt)
+        self._meta.write(zeile)
         self.bilder += 1
+        self._bytes += len(jpg) + len(zeile)
+        dauer = now - self._t_start
+        if dauer >= RATE_MIN_S and dauer > 0:
+            self._rate = self._bytes / dauer / (1024 * 1024)
 
     def _schliessen(self) -> None:
         if self._meta is None:

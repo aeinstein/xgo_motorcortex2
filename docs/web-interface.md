@@ -121,7 +121,7 @@ xgonav unreachable → HTTP 502 `xgonav nicht erreichbar`. Exposure/gain changes
 | POST | `/pipeline?on=0\|1` | stop/start image processing; 409 in sleep mode |
 | POST | `/ruhe?on=0\|1` | sleep mode on/off; `/status` field `ruhe` |
 | POST | `/wlan?on=0\|1` | start/cancel Wi-Fi setup ([wifi-setup.md](wifi-setup.md)); `/status` field `wlan` (`state`, `text`, `detail`, `ssid`, `ip`, `hotspot`) or null. `/status` field `ortung` (sound direction, [audio.md](audio.md#sound-direction-xgonavortungpy)): `aktiv`, `kern`, `fehler`, `n`, `schwach`, `letzter` or null, `verlauf` (≤ 12 sounds of the last 15 s as `[age s, angle °, quality, level dB]`). Card **Schallradar** draws them as rays (up = front, dashed twin to the rear because front/back cannot be told apart, length = level, fading over 12 s, rotating sweep while listening); drawn in the browser only while the card is open, no extra request (data from the 1 s live packet) |
-| POST | `/record?on=0\|1` | switch raw recording; `/status` field `aufzeichnung`: `an`, `laeuft`, `ordner`, `bilder`, `fehler` |
+| POST | `/record?on=0\|1` | switch raw recording; `/status` field `aufzeichnung`: `an`, `laeuft`, `ordner`, `bilder`, `fehler`, `frei_mb` (free down to `record_min_free_mb`, statvfs at most every 2 s), `rate_mb_s` (measured in the last recording, else estimate 2.2), `rate_gemessen`; the web view shows free space and remaining minutes left of the button |
 | POST | `/level` | leveling pulse (roll 0, 3 s `roll_balance`); 409 if not balancing |
 | POST | `/drive?v=..&w=..` | 409 if not mode `manual` |
 | POST | `/exposure?us=..`, `/gain?g=..` | 400 if out of range |

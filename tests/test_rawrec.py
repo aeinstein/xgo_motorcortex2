@@ -190,3 +190,20 @@ def test_ohne_imu_und_raeder_bleiben_die_felder_leer(tmp_path):
     rec.beenden()
     z = json.loads(open(os.path.join(base, laeufe(base)[0], "meta.jsonl")).readline())
     assert z["imu"] is None and z["raeder"] is None
+
+
+def test_status_freier_platz_und_rate(tmp_path):
+    from xgonav import rawrec
+    app, base = FakeApp(), str(tmp_path / "fahrt")
+    rec = RawRecorder(app, base, min_frei_mb=0)
+    st = rec.status()                               # Ordner fehlt noch: Platz vom Elternordner
+    assert st["frei_mb"] is not None and st["frei_mb"] > 0
+    assert not st["rate_gemessen"] and st["rate_mb_s"] == rawrec.RATE_SCHAETZUNG_MB_S
+    with mock.patch.object(rawrec, "RATE_MIN_S", 0.0):
+        rec.schalten(True)
+        assert bilder_bis(app, rec, 3)
+        rec.schalten(False)
+        assert warte(lambda: not rec.status()["laeuft"])
+    st = rec.status()                               # Rate bleibt nach dem Stopp stehen
+    assert st["rate_gemessen"] and rec._rate > 0    # 8x8-Bilder: gerundet 0
+    rec.beenden()

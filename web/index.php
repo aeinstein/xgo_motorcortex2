@@ -448,6 +448,7 @@ details.extras[open]>summary{margin-bottom:8px}
   </div>
   <div class="karte">
     <div class="kopf"><h2>Bildverarbeitung</h2><span class="leise" id="rec-text"></span>
+      <span class="leise" id="rec-platz" hidden title="Frei am Rider bis zur Abbruchgrenze (output.record_min_free_mb); Minuten aus der Schreibrate der letzten Aufnahme (~ = geschätzt)"></span>
       <button id="rec" onclick="aufzeichnungUmschalten()" title="Rohbilder und Metadaten am Rider speichern. Schreibt nur, solange er balanciert; Absetzen beendet die Aufnahme, jedes Aufstehen beginnt eine neue.">Aufzeichnen</button>
       <button id="pip" onclick="pipelineUmschalten()">…</button></div>
     <div class="kacheln" id="kurz"></div>
@@ -679,7 +680,8 @@ const EN = {
   'Bildverarbeitung': 'Vision',
   'Rohbilder und Metadaten am Rider speichern. Schreibt nur, solange er balanciert; Absetzen beendet die Aufnahme, jedes Aufstehen beginnt eine neue.':
     'Store raw images and metadata on the Rider. Writes only while balancing; sitting down ends the recording, every stand-up starts a new one.',
-  'Aufzeichnen': 'Record', 'Status (roh)': 'Status (raw)', 'Verlauf': 'History', 'CPU · WLAN · Akku': 'CPU · Wi-Fi · Battery',
+  'Aufzeichnen': 'Record',
+  'Frei am Rider bis zur Abbruchgrenze (output.record_min_free_mb); Minuten aus der Schreibrate der letzten Aufnahme (~ = geschätzt)': 'Free on the Rider down to the stop limit (output.record_min_free_mb); minutes from the write rate of the last recording (~ = estimated)', 'Status (roh)': 'Status (raw)', 'Verlauf': 'History', 'CPU · WLAN · Akku': 'CPU · Wi-Fi · Battery',
   'CPU je Kern (bezogen auf Höchsttakt), letzte 10 min': 'CPU per core (relative to max clock), last 10 min', 'WLAN-Durchsatz, letzte 10 min': 'Wi-Fi throughput, last 10 min',
   'WLAN-Empfang (Pegel)': 'Wi-Fi signal (level)', 'Akku, 120 min (im Browser gespeichert)': 'Battery, 120 min (stored in the browser)',
   'Schallradar': 'Sound radar', 'lauscht': 'listening', 'aus': 'off', 'links': 'left', 'rechts': 'right', 'Mitte': 'centre',
@@ -1163,9 +1165,23 @@ function poseBestaetigen(aktion) {
 function pipelineUmschalten() { return befehl('pipeline', {on: aktPipeline === 'läuft' ? 0 : 1}); }
 let aktAufzeichnung = false;
 function aufzeichnungUmschalten() { return befehl('record', {on: aktAufzeichnung ? 0 : 1}); }
+// Freier Platz mit 3 Stellen und Komma (987 MB, 1,23 GB, 12,3 GB), gerechnet im Browser
+function platzText(mb) {
+  const [w, e] = mb >= 1000 ? [mb / 1024, ' GB'] : [mb, ' MB'];
+  const t = w >= 100 ? Math.round(w).toString() : w.toFixed(w >= 10 ? 1 : 2);
+  return (LANG === 'en' ? t : t.replace('.', ',')) + e;
+}
+function platzZeigen(a) {
+  const el = $('rec-platz');
+  el.hidden = !a || a.frei_mb == null;
+  if (el.hidden) return;
+  const min = a.rate_mb_s > 0 ? Math.floor(a.frei_mb / a.rate_mb_s / 60) : null;
+  el.textContent = platzText(a.frei_mb) + (min == null ? '' : ' · ' + (a.rate_gemessen ? '' : '~') + min + ' min');
+}
 function aufzeichnungZeigen(s) {
   const a = s.aufzeichnung;
   $('rec').hidden = !a;
+  platzZeigen(a);
   if (!a) return;
   aktAufzeichnung = a.an;
   const rec = $('rec');
