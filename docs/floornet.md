@@ -33,6 +33,7 @@ Constraints from the kernel: no ReLU and no bias after the depthwise convolution
 | `tools/floornet/netz_betrachter.html` | net result per frame (`netz_js.py`, `fahrt_js.py`). Lists with `label` and `ansicht` (check lists label vs. net, new drives) also show the label line (green) and the ComfyUI edit; `X`/`U` write the same hand list as `betrachter.html`, every frame shown counts as seen, lists with `sichten` hide seen frames after reload (`G` shows them). `N` repaints the frame (`POST /neu`), `1`–`3` pick the prompt variant |
 | `tools/floornet/neu_malen.py`, `comfy_prompt_t1.txt`, `comfy_prompt_t2.txt` | one frame through ComfyUI again with a random seed and a prompt variant (`--prompt 11\|t1\|t2`, a new variant = a new `comfy_prompt*.txt`); **overwrites** the stage 1 edit and its stage 2/3 masks, logs seed, prompt and label row to `<stage1>/neu.jsonl`. Called by `betrachter_server.py --python <venv python>` on `POST /neu`, one at a time |
 | `tools/floornet/ids_fahrt.py` | frame list of raw recordings for `comfy_batch.py --ids`: every n-th frame, standing frames dropped |
+| `tools/floornet/geo_label.py` | labels from geometry instead of ComfyUI: MoGe-2 point map, floor plane fitted to the known camera height, hand-line rule as arithmetic per strip; `pruef` against hand lines (with `--vergleich` the same table for another teacher on the same frames), `fahrten` → `rows.jsonl` and label files via `comfy_npz.build_run`. See below |
 | `tools/floornet/comfy_npz.py` | `rows.jsonl` of `comfy_batch.py` → label files for `train.py`; drops frames lying down, tilting (> 10 % of columns above row 205), torn masks (> 6 jumps > 40 px), dark (mean grey < 12) |
 | `tools/floornet/hand_npz.py` | hand lines → label files holding only frames with their own line, no map; for `train.py --hand_only 1` |
 | `tools/floornet/net.py`, `train.py` | network, folding, training (GPU) |
@@ -257,3 +258,40 @@ Two daylight drives downstairs (`unten3`, `unten4`), never used in training. 220
 | Height unclear (first seconds of `explore`) | 2 | `unten3` |
 
 Runs split with `schnitt.py` at pose jumps (seconds from the first meta line): `unten3b` 396.4–end, `unten3c` 511–end, `unten4b` 117–174, `unten4c` 174–212.7, `unten4d` 212.7–255, `unten4e` 255–end. `eval_hand.py --hoehe pruefsatz3/hoehe.json` reports each group and converts rows to metres with the camera height of that group.
+
+## Labels from geometry (2026-11-18)
+
+`tools/floornet/geo_label.py`, model `Ruicheng/moge-2-vitl-normal` (MIT, 331 M parameters; `pip install git+https://github.com/microsoft/MoGe.git`). Aimed at the teacher errors above: tile-clad step painted as floor, floor under overhanging sofas, plain walls from close by.
+
+| Step | Rule |
+|---|---|
+| Points | MoGe-2 with `fov_x = hfov_deg`, principal point at the image centre (matches `CamGeometry`) |
+| Plane | RANSAC (256 planes from 3 points) on points below the IMU horizon + 15 rows; only planes within 8° of the IMU pitch and with distance 0.6–3.0 × `cam_h` in model units (MoGe puts the Rider camera 1.2–1.7× too high; 1.6 rejected 22 % of planes on explore10–12); refined 3× by smallest eigenvector of inliers (tolerance 10 % of `cam_h`) |
+| Scale | everything scaled so the plane lies exactly `cam_h` below the camera; fewer than 2000 inliers → median scale of the run so far, IMU pitch (`art` `ersatz`), shown in the images only: dropped from the label file and from the `pruef` tables (this path marks visible floor as drop) |
+| Pixel class | floor −3 cm ≤ h ≤ 2.5 cm; obstacle 2.5 cm < h < 18 cm; drop h < −3 cm; above 18 cm ignored (table, high sofa) |
+| Row per strip | free floor from the bottom (majority per 8 px strip, gaps ≤ 6 rows, same as `mask_rows`); if the 16th-nearest obstacle pixel of the strip is nearer, the row where the floor has that forward distance (foot point under a low sofa edge) |
+
+Per frame on kimmy: model 80 ms at batch 8 (9.9 GB VRAM), CPU 12 ms in threads (`--jobs`) next to the GPU; ~13 frames/s overall.
+
+| explore10–12 vs. Stage3 p11 (1384 frames, `skala_hi` 3.0, 2.4 % `ersatz`) | median abs. diff | geometry > 15 cm freer | > 15 cm tighter |
+|---|---|---|---|
+| 0–0.5 m | 2 cm | 7 % | 9 % |
+| 0.5–1.0 m | 6 cm | 7 % | 16 % |
+| 1.0–1.5 m | 13 cm | 12 % | 32 % |
+| 1.5–2.5 m | 31 cm | 20 % | 55 % |
+
+Test drives, so thresholds were not tuned on them beyond the scale window. Hand lines were deleted on 2026-11-18, so `pruef` has no current test set.
+
+```
+python tools/floornet/geo_label.py pruef --hand pruefsatz.json --labels labels_u3/ --hoehe pruefsatz3/hoehe.json \
+    --vergleich stage3_p11_labels/ --out geo_p3
+python tools/floornet/geo_label.py fahrten --runs explore10,explore11,explore12 --jedes 2 --config rider.toml --out geo_lab
+```
+
+| Known gap | Effect |
+|---|---|
+| Rugs | geometrically floor, by the hand rule an obstacle: false free on rugs |
+| Glossy floor | reflections may be placed below the plane → drop → false blocked (`--stufe_m 0` turns drops off) |
+| Scale | camera height 128–150 mm is unusual for MoGe; only the plane fit sets the scale |
+
+Tests: `tests/test_floornet_geo.py` (rendered point maps: wall, box, low sofa edge, table, step down, pitch error, scale error, holes; both commands with a fake model).
