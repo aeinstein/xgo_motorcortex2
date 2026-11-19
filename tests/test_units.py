@@ -3595,3 +3595,22 @@ def test_jpeg_anzeige_rueckfall(monkeypatch):
             assert cv2.imdecode(np.frombuffer(b, np.uint8), cv2.IMREAD_COLOR).shape == img.shape
     finally:
         fastlib._cache.clear()
+
+
+def test_robot_tempo_alle_befehle():
+    """Temporegler: jeder Fahrbefehl wird nach der Begrenzung auf max_v/max_w mit tempo malgenommen (alle Modi,
+    auch Drehen); außerhalb 0,05..1 abgelehnt, Wert bleibt."""
+    cfg = Config.neutral()
+    r = SimRobot(cfg.robot)
+    assert r.tempo == 1.0
+    r.drive(1.0, -1.0)
+    assert r._target == (cfg.robot.max_v, -cfg.robot.max_w)
+    r.tempo = 0.4
+    r.drive(1.0, -1.0)
+    assert r._target == pytest.approx((cfg.robot.max_v * 0.4, -cfg.robot.max_w * 0.4))
+    r.drive(0.1, 0.05)
+    assert r._target == pytest.approx((0.04, 0.02))
+    for bad in (0.0, 1.5, -0.2):
+        with pytest.raises(ValueError):
+            r.tempo = bad
+    assert r.tempo == 0.4

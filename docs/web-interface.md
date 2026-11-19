@@ -125,6 +125,7 @@ xgonav unreachable → HTTP 502 `xgonav nicht erreichbar`. Exposure/gain changes
 | POST | `/level` | leveling pulse (roll 0, 3 s `roll_balance`); 409 if not balancing |
 | POST | `/drive?v=..&w=..` | 409 if not mode `manual` |
 | POST | `/exposure?us=..`, `/gain?g=..` | 400 if out of range |
+| POST | `/tempo?f=0.05..1` | speed slider: factor for all drive/turn commands of all modes (after `max_v`/`max_w`), until restart; `GET /status` → `tempo` |
 | POST | `/map/reset` | clear room map, pose = start = 0 |
 | POST | `/map/start` | start point = current pose |
 | POST | `/map/save` | save now to `grid.file`; 404 if no map or no file |
@@ -149,7 +150,7 @@ Mode rules: `explore`/`approach`/`home` need `freespace.enabled` (else 409); `fo
 | Pipeline state | client connects only while `pipeline` = `läuft` (and not sleep mode), closes otherwise; last image stays dimmed. xgonav sends an unchanged image once, no re-encode |
 | Rate | ≤ `output.web_fps` (10) |
 | Overlay | no status text lines in web frames (~10 ms saved per image); drawing ~1 ms per sent image (RiderPi) |
-| JPEG | hardware encoder `/dev/video31` (`jpeg.py`, `native/jpegfast.cpp`, `output.jpeg_native`), self-check at first image; fallback `cv2.imencode` (4.5 ms CPU per 640×480 image on the RiderPi) |
+| JPEG | hardware encoder `/dev/video31` (`jpeg.py`, `native/jpegfast.cpp`, `output.jpeg_native`), self-check at first image; fallback `cv2.imencode` (4.5 ms CPU per 640×480 image on the RiderPi); raw recording see below |
 
 Replaced MJPEG (`/stream`, removed 2026-11-17): on weak Wi-Fi, TCP buffers queued up to 20 s of delay.
 
@@ -202,6 +203,7 @@ Header button **Ruhe** (with confirmation). Only the web UI wakes it (**Wecken**
 |---|---|
 | Writes | JPEG (quality 92) + `meta.jsonl` per frame, format for `tools/replay_raw.py` and `tools/floornet/` |
 | Target | `output.record_dir/YYYYMMDD-HHMMSS` (default `~/fahrt`, as service user) |
+| JPEG | hardware encoder q95 (`output.record_jpeg_q_hw`), fallback libjpeg q92; `meta.jsonl` `"jpeg"` per image (since 2026-11-19) |
 | Condition | switch on, state = balancing, pipeline running; only frames newer than the start |
 | Set down | closes the recording; switch stays on, next stand-up starts a new subdirectory, no empty directories |
 | Off by itself | service restart; free space < `output.record_min_free_mb` or write error (reason shown next to the button) |

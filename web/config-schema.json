@@ -39,6 +39,12 @@
        "hilfe": ""
       },
       {
+       "key": "tempo",
+       "typ": "float",
+       "default": 1.0,
+       "hilfe": "Tempo (Anteil, 0,05..1): jeder Fahr- und Drehbefehl aller Modi wird nach der Begrenzung auf max_v/max_w damit malgenommen (Robot.drive). Startwert; zur Laufzeit über den Temporegler im Web (POST /tempo), gilt bis zum Neustart. Firmware-Aktionen (POST /action) fahren mit eigener Geschwindigkeit."
+      },
+      {
        "key": "max_sent",
        "typ": "float",
        "default": 0.5,
@@ -3139,6 +3145,18 @@
        "typ": "int",
        "default": 500,
        "hilfe": "darunter schaltet sie sich ab"
+      },
+      {
+       "key": "record_jpeg_q_hw",
+       "typ": "int",
+       "default": 95,
+       "hilfe": "JPEG der Rohaufzeichnung: im Hardware-Kodierer (mit jpeg_native) Qualität record_jpeg_q_hw, sonst cv2 mit record_jpeg_q_cv. RiderPi 2026-11-19: cv2 q92 8,6 ms CPU je Bild (bei 24 fps ~20 % eines Kerns), mittl. Abweichung 0,63; Hardware q95 4,6 ms, 0,70, 51 statt 41 KB; über 95 wird er nicht genauer, nur größer. Kodierer je Bild in meta.jsonl (\"jpeg\": \"hw95\" / \"cv92\"). Nutzerentscheidung 2026-11-19: Hardware q95."
+      },
+      {
+       "key": "record_jpeg_q_cv",
+       "typ": "int",
+       "default": 92,
+       "hilfe": ""
       }
      ]
     }

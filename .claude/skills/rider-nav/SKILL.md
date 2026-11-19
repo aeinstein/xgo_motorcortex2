@@ -45,7 +45,7 @@ $R python3 /root/rider_nav.py zustand
      Ansage ändern, nie unter Minimum + 10 mm (u8 ≥ 55 wird gefahren), danach kalibriert die Standreferenz neu.
 4. **Fahrbefehle** (je einzeln, Ergebnis dem Nutzer melden):
    - `fahr V W SEK` – normiert, v > 0 vor, w > 0 links; schickt `/drive` mit 10 Hz (manual hält nur 0,5 s),
-     endet mit Stillstand + idle. Richtwerte: v 0,08 ≈ 10 cm/s, v 0,12 ≈ 26 cm/s (nichtlinear); xgonav begrenzt auf
+     endet mit Stillstand + idle. Der Temporegler im Web (`tempo` in `/status`, xgonav nimmt jeden Befehl damit mal) gilt auch hier; Richtwerte bei Tempo 100 %: v 0,08 ≈ 10 cm/s, v 0,12 ≈ 26 cm/s (nichtlinear); xgonav begrenzt auf
      `max_v`/`max_w` der Konfig (Beispiel 0,15/0,30). Rückwärts wirkt mit `reverse_gain`.
    - Beginnt ein Wert mit Minus, `--` davorsetzen (`folge -- -0.13,0,2.5`, `dreh -- -90`), sonst liest der
      Aufruf ihn als Option und bricht ohne Bewegung ab. Optionen gehören vor das `--`

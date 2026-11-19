@@ -96,6 +96,10 @@ def test_nur_waehrend_des_balancierens_und_neue_aufnahme_je_aufstehen(tmp_path):
     zeilen = [json.loads(z) for z in open(os.path.join(erste, "meta.jsonl"))]
     assert all(z["balancing"] is True for z in zeilen)
     assert all(os.path.exists(os.path.join(erste, z["file"])) for z in zeilen)
+    # ohne Hardware-Kodierer (PC): libjpeg q92 wie vorher, Kodierer je Bild vermerkt, lesbare JPEGs
+    assert all(z["jpeg"] == "cv92" for z in zeilen)
+    import cv2
+    assert cv2.imread(os.path.join(erste, zeilen[0]["file"])) is not None
 
 
 def test_standbild_von_vorher_wird_nicht_aufgenommen(tmp_path):

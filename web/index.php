@@ -1253,19 +1253,31 @@ function statusZeigen(s, fehler) {
     }
     belichtStatus(s.exposure);
     gainStatus(s.exposure);
+    tempoStatus(s.tempo);
   } catch (e) { console.error(e); }
 }
 
 // --- Handsteuerung: solange gedrückt alle 200 ms senden; xgonav hält nach 0,5 s ohne Sollwert an
 const gedrueckt = new Set();
 let fahrtTimer = null;
-const tempo = () => Number($('tempo').value) / 100;
-$('tempo').oninput = () => $('tempo-w').textContent = $('tempo').value + ' %';
-$('tempo').oninput();
+// Temporegler: gilt in xgonav für alle Fahr- und Drehbefehle aller Modi (POST /tempo, Robot.drive nimmt jeden
+// Befehl nach der Begrenzung auf max_v/max_w damit mal). Angezeigt wird der Wert aus /status.
+const tempoRegler = $('tempo');
+let tempoBewegt = false;
+tempoRegler.addEventListener('pointerdown', () => tempoBewegt = true);
+tempoRegler.addEventListener('pointerup', () => tempoBewegt = false);
+tempoRegler.oninput = () => $('tempo-w').textContent = tempoRegler.value + ' %';
+tempoRegler.onchange = () => { tempoBewegt = false; befehl('tempo', {f: (Number(tempoRegler.value) / 100).toFixed(2)}, true); };
+tempoRegler.oninput();
+function tempoStatus(t) {
+  if (t == null || tempoBewegt || document.activeElement === tempoRegler) return;
+  tempoRegler.value = Math.round(t * 100);
+  tempoRegler.oninput();
+}
+// Handsteuerung schickt Vollausschlag, xgonav begrenzt auf max_v/max_w und nimmt mit dem Tempo mal
 function sollwert() {
-  const t = tempo();
-  const v = (gedrueckt.has('vor') ? t : 0) - (gedrueckt.has('zurück') ? t : 0);
-  const w = (gedrueckt.has('links') ? t : 0) - (gedrueckt.has('rechts') ? t : 0);
+  const v = (gedrueckt.has('vor') ? 1 : 0) - (gedrueckt.has('zurück') ? 1 : 0);
+  const w = (gedrueckt.has('links') ? 1 : 0) - (gedrueckt.has('rechts') ? 1 : 0);
   return {v: v.toFixed(3), w: w.toFixed(3)};
 }
 async function fahrtStart(r) {

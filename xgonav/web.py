@@ -153,6 +153,7 @@ def serve(app: App, host: str, port: int, fps: int, render_cpus=None) -> Threadi
                 body["wlan"] = w.status() if w is not None else None
                 body["ortung"] = app.ortung.status() if app.ortung is not None else None
                 body["start"] = START
+                body["tempo"] = app.robot.tempo   # Temporegler: Anteil für alle Fahrbefehle (Robot.drive)
                 if parse_qs(u.query).get("breakdown"):
                     body["loop_breakdown"] = app.loop_breakdown()
                 e = s.ego                     # Werte der früheren Overlay-Textzeilen
@@ -317,6 +318,13 @@ def serve(app: App, host: str, port: int, fps: int, render_cpus=None) -> Threadi
                 except ValueError as e:
                     return self._send(400, json.dumps({"error": str(e) or "us ungültig"}).encode())
                 return self._send(200, json.dumps({"ok": True, "exposure_us": us}).encode())
+            if u.path == "/tempo":
+                try:
+                    app.robot.tempo = round(float(q.get("f", [""])[0]), 3)
+                except ValueError as e:
+                    return self._send(400, json.dumps({"error": str(e) or "f ungültig"}).encode())
+                log.info("Tempo -> %.0f %%", app.robot.tempo * 100)
+                return self._send(200, json.dumps({"ok": True, "tempo": app.robot.tempo}).encode())
             if u.path == "/gain":
                 try:
                     g = app.src.set_gain(float(q.get("g", [""])[0]))

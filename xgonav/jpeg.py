@@ -3,7 +3,8 @@
 Am RiderPi kostete cv2.imencode 640x480 (Qualität 70) 4,5 ms CPU je gesendetem Bild. Der Kodierer wird beim ersten
 Bild geöffnet und geprüft (Prüfbild mit drei verschiedenen Kanälen kodieren, mit OpenCV zurücklesen, muss nahe am
 Original liegen: fängt vertauschte Farben und kaputte Bilder). Schlägt das fehl, fehlt die Bibliothek oder das Gerät,
-oder scheitert er mehrmals in Folge, kodiert cv2. Nur für die Anzeige: Rohaufnahmen bleiben bei libjpeg.
+oder scheitert er mehrmals in Folge, kodiert cv2. Auch die Rohaufzeichnung (rawrec.py) nutzt ihn (eigene Instanz,
+q95; cv2-Rückfall q92 wie vorher), meta.jsonl nennt je Bild den Kodierer ("jpeg").
 """
 from __future__ import annotations
 
@@ -33,6 +34,7 @@ class Jpeg:
         self._out = None
         self._fehler = 0
         self.native = False             # True, sobald der Kodierer geprüft läuft
+        self.zuletzt = ""               # Kodierer des letzten Bildes: "hw<q>" oder "cv<q>"
         if native:
             lib = fastlib.load()
             if fastlib.check_abi(lib, "jpeg_abi", _JPEG_ABI):
@@ -45,14 +47,18 @@ class Jpeg:
                 lib.jpeg_close.argtypes = [vp]
                 self._lib = lib
 
-    def encode(self, img: np.ndarray, quality: int) -> bytes | None:
-        """JPEG-Bytes des BGR-Bilds, None bei Fehler."""
+    def encode(self, img: np.ndarray, quality: int, quality_cv: int | None = None) -> bytes | None:
+        """JPEG-Bytes des BGR-Bilds, None bei Fehler. quality_cv: Qualität im cv2-Rückfall (sonst quality);
+        der Hardware-Kodierer wird ab ~95 nicht genauer, libjpeg erreicht dieselbe Treue schon tiefer."""
         if self._lib is not None and img.ndim == 3 and img.shape[2] == 3 and img.dtype == np.uint8:
             with self._lock:
                 jpg = self._hw(np.ascontiguousarray(img), quality)
             if jpg is not None:
+                self.zuletzt = "hw%d" % quality
                 return jpg
-        ok, jpg = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, int(quality)])
+        q = int(quality if quality_cv is None else quality_cv)
+        ok, jpg = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, q])
+        self.zuletzt = "cv%d" % q
         return jpg.tobytes() if ok else None
 
     def _schliessen(self) -> None:

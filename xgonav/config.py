@@ -19,6 +19,10 @@ class RobotCfg:
     # ~0,9 m/s und 180 °/s; über 0,24 (50 cm/s) ist nie gefahren worden.
     max_v: float = 0.5
     max_w: float = 0.5
+    # Tempo (Anteil, 0,05..1): jeder Fahr- und Drehbefehl aller Modi wird nach der Begrenzung auf max_v/max_w
+    # damit malgenommen (Robot.drive). Startwert; zur Laufzeit über den Temporegler im Web (POST /tempo),
+    # gilt bis zum Neustart. Firmware-Aktionen (POST /action) fahren mit eigener Geschwindigkeit.
+    tempo: float = 1.0
     # Harte Obergrenze für den gesendeten Fahr- und Drehwert, nach allen Faktoren (reverse_gain,
     # manual_forward_gain) und der Geschwindigkeitsregelung: nie mehr als dieser Anteil des Vollausschlags
     max_sent: float = 0.5
@@ -329,6 +333,12 @@ class OutputCfg:
     lcd_fps: int = 15             # CM4 gemessen: kostet die Hauptschleife nichts Messbares
     record_dir: str = "~/fahrt"   # Rohaufzeichnung (Knopf in der Oberfläche): je Aufnahme ein Unterverzeichnis
     record_min_free_mb: int = 500 # darunter schaltet sie sich ab
+    # JPEG der Rohaufzeichnung: im Hardware-Kodierer (mit jpeg_native) Qualität record_jpeg_q_hw, sonst cv2 mit
+    # record_jpeg_q_cv. RiderPi 2026-11-19: cv2 q92 8,6 ms CPU je Bild (bei 24 fps ~20 % eines Kerns), mittl.
+    # Abweichung 0,63; Hardware q95 4,6 ms, 0,70, 51 statt 41 KB; über 95 wird er nicht genauer, nur größer.
+    # Kodierer je Bild in meta.jsonl ("jpeg": "hw95" / "cv92"). Nutzerentscheidung 2026-11-19: Hardware q95.
+    record_jpeg_q_hw: int = 95
+    record_jpeg_q_cv: int = 92
 
 
 @dataclass

@@ -42,6 +42,7 @@ Default = `config.py`; since 2026-11-12 these are the RiderPi values (`/opt/xgon
 | `max_v` | 0.5 (sim: 0.25) | | normalised; RiderPi 0.15 → 0.5 on 2026-11-13 (user), **never driven above 0.24**. Sent 0.12 ≈ 26 cm/s, 0.24 ≈ 50 cm/s. |
 | `max_sent` | 0.5 | | hard cap on the sent drive and turn value, after the gains below and `speed_ctrl` |
 | `max_w` | 0.5 (sim: 0.25) | | normalised; 0.25 ≈ 90 °/s (firmware scale assumed); RiderPi 0.30 → 0.5 on 2026-11-13 (user) |
+| `tempo` | 1.0 | | start value of the speed slider: every drive and turn command of every mode is multiplied by it after the `max_v`/`max_w` clamp (`Robot.drive`); at runtime `POST /tempo?f=0.05..1` (web slider), until restart. Firmware actions run at their own speed |
 | `manual_forward_gain` | 2.0 (sim: 1.0) | | multiplier for positive v, manual mode only (applied after `max_v`, capped by `max_sent`) |
 | `reverse_gain` | 2.0 (sim: 1.0) | | multiplier for negative v (applied after `max_v`, capped by `max_sent`) |
 | `level_pulse_s` | 3.0 | | length of one leveling pulse (roll command 0, firmware `roll_balance` on, then off) |
@@ -177,7 +178,7 @@ Floor boundary from FloorNet only (`xgonav/freespace.py`, `docs/floornet.md`). T
 | `height_cruise_mm` / `height_search_mm` / `height_fast_mm` | 85 / 100 / 80 (sim: 85 / 115 / 70) | |
 
 ### `[output]`
-`web_host` 127.0.0.1, `web_port` 8088 (0 = off), `web_fps` 10, `jpeg_native` true (browser JPEG in the hardware encoder `jpeg_dev` = `/dev/video31`, fallback `cv2.imencode`), `lcd_fifo` `""` = off (sim: `/tmp/lcd0`), `lcd_fps` 15, `record_dir` `~/fahrt` (raw recording), `record_min_free_mb` 500 (below: recording switches itself off).
+`web_host` 127.0.0.1, `web_port` 8088 (0 = off), `web_fps` 10, `jpeg_native` true (browser JPEG in the hardware encoder `jpeg_dev` = `/dev/video31`, fallback `cv2.imencode`), `lcd_fifo` `""` = off (sim: `/tmp/lcd0`), `lcd_fps` 15, `record_dir` `~/fahrt` (raw recording), `record_min_free_mb` 500 (below: recording switches itself off), `record_jpeg_q_hw` 95 (raw-recording JPEG in the hardware encoder; RiderPi: 4.6 instead of 8.6 ms CPU per image, mean deviation 0.70 vs 0.63, 51 vs 41 KB; above 95 only larger), `record_jpeg_q_cv` 92 (libjpeg fallback). `meta.jsonl` names the encoder per image (`"jpeg": "hw95"`/`"cv92"`; missing before 2026-11-19 = libjpeg q92).
 
 ### `[emotion]`
 `enabled` true, `dir` `/opt/xgonav/emotions`, `fifo` `/tmp/lcd0`, `gap_s` 5, `lost_s` 2, `battery_low` 20 %, `battery_repeat_s` 300.

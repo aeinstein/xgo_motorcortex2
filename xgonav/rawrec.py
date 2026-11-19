@@ -23,9 +23,8 @@ import shutil
 import threading
 import time
 
-import cv2
-
 from .affinity import pin_thread
+from .jpeg import Jpeg
 
 log = logging.getLogger(__name__)
 
@@ -49,11 +48,12 @@ def raw_run_dir(base: str) -> str:
 PROBEN_VORLAUF_S = 0.2      # erstes Bild einer Aufnahme: Proben ab so lange vor der Bildzeit
 
 
-def _meta_zeile(snap, name: str, imu=None, raeder=None) -> str:
-    """imu: Proben (t, roll, pitch, yaw in rad), raeder: (t, s_links, s_rechts in m); None = Quelle fehlt."""
+def _meta_zeile(snap, name: str, imu=None, raeder=None, jpeg: str | None = None) -> str:
+    """imu: Proben (t, roll, pitch, yaw in rad), raeder: (t, s_links, s_rechts in m); None = Quelle fehlt.
+    jpeg: Kodierer des Bildes ("hw95" Hardware, "cv92" libjpeg; fehlt in Aufnahmen vor 2026-11-19 = cv92)."""
     st = snap.stats
     return json.dumps({
-        "idx": snap.idx, "t": round(snap.t, 4), "file": name,
+        "idx": snap.idx, "t": round(snap.t, 4), "file": name, "jpeg": jpeg,
         "pitch_dev": round(snap.pitch_dev, 6), "pitch_src": st.get("pitch_src"),
         "sent": [round(snap.sent[0], 4), round(snap.sent[1], 4)],
         "status": snap.cmd.status, "target": snap.cmd.target_id,
@@ -90,6 +90,12 @@ class RawRecorder:
         self._th: threading.Thread | None = None
         self._t_platz = 0.0
         self._t_imu = self._t_rad = 0.0     # Zeit der letzten geschriebenen Probe
+        oc = getattr(getattr(app, "cfg", None), "output", None)
+        self._q_hw = int(getattr(oc, "record_jpeg_q_hw", 95))
+        self._q_cv = int(getattr(oc, "record_jpeg_q_cv", 92))
+        self._jpeg_native = bool(getattr(oc, "jpeg_native", True))
+        self._jpeg_dev = getattr(oc, "jpeg_dev", "/dev/video31")
+        self._jpeg: Jpeg | None = None      # eigener Kodierer, erst im Aufzeichnungs-Faden geöffnet
 
     def schalten(self, an: bool) -> None:
         if an:
@@ -168,8 +174,13 @@ class RawRecorder:
             self._t_platz = now
             self._platz_pruefen()
         name = "%06d.jpg" % snap.idx
-        if not cv2.imwrite(os.path.join(self.ordner, name), snap.frame, [cv2.IMWRITE_JPEG_QUALITY, 92]):
-            raise OSError("JPEG nicht geschrieben: " + name)
+        if self._jpeg is None:
+            self._jpeg = Jpeg(self._jpeg_native, self._jpeg_dev)
+        jpg = self._jpeg.encode(snap.frame, self._q_hw, self._q_cv)
+        if jpg is None:
+            raise OSError("JPEG nicht kodiert: " + name)
+        with open(os.path.join(self.ordner, name), "wb") as f:
+            f.write(jpg)
         imu = raeder = None
         src = getattr(self.app, "imu", None)
         if src is not None:
@@ -181,7 +192,7 @@ class RawRecorder:
             raeder = src.since(self._t_rad)
             if raeder:
                 self._t_rad = raeder[-1][0]
-        self._meta.write(_meta_zeile(snap, name, imu, raeder))
+        self._meta.write(_meta_zeile(snap, name, imu, raeder, self._jpeg.zuletzt))
         self.bilder += 1
 
     def _schliessen(self) -> None:

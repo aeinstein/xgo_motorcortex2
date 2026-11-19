@@ -128,6 +128,8 @@ class Robot:
         self.forward_gain = 1.0              # App: manual_forward_gain in der Handsteuerung, sonst 1
         self.v_trim = 0.0                    # App: Korrektur der Geschwindigkeitsregelung (SpeedCtrl), sonst 0
         self.max_v_fwd: float | None = None  # App: Grenze vorwärts statt cfg.max_v (Modus explore), sonst None
+        self._tempo = 1.0
+        self.tempo = getattr(cfg, "tempo", 1.0)
         self._lock = threading.Lock()
         self._target = (0.0, 0.0)
         self._cur = (0.0, 0.0)
@@ -168,9 +170,25 @@ class Robot:
         self._emergency_stop()
         self._teardown()
 
+    TEMPO_MIN = 0.05
+
+    @property
+    def tempo(self) -> float:
+        """Anteil, mit dem jeder Fahrbefehl nach der Begrenzung malgenommen wird (Temporegler im Web)."""
+        return self._tempo
+
+    @tempo.setter
+    def tempo(self, f: float) -> None:
+        f = float(f)
+        if not (self.TEMPO_MIN <= f <= 1.0):
+            raise ValueError(f"Tempo {f} außerhalb {self.TEMPO_MIN}..1")
+        self._tempo = f
+
     def drive(self, v: float, w: float) -> None:
-        v = max(-self.cfg.max_v, min(self.max_v_fwd or self.cfg.max_v, v))
-        w = max(-self.cfg.max_w, min(self.cfg.max_w, w))
+        # Erst begrenzen, dann Tempo: 100 % = bisheriges Verhalten, darunter alle Modi gleichmäßig langsamer
+        # (Fahren und Drehen, Verhältnis v/w und damit die geprüfte Bahn bleiben gleich).
+        v = max(-self.cfg.max_v, min(self.max_v_fwd or self.cfg.max_v, v)) * self._tempo
+        w = max(-self.cfg.max_w, min(self.cfg.max_w, w)) * self._tempo
         with self._lock:
             self._target = (v, w)
             self._last_cmd_t = time.monotonic()
