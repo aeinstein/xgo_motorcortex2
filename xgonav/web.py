@@ -65,11 +65,13 @@ def ws_kopf(snap, geo, hl) -> bytes:
 API = {"GET": ["/status", "/ws?nick=2 (WebSocket: Bilder, Bestätigung je Bild; nick=2: IMU-Wert des Bildes im Kopf, ws_kopf)",
                "/frame?after=<idx>&raw=1",
                "/map.png?px=480&view=6 (Raumkarte)",
-               "/detector (wählbare Ziele für follow/approach: Klassen des Detektors)"],
-       "POST": ["/mode?name=..&target=..", "/stop", "/pipeline?on=0|1", "/ruhe?on=0|1 (Ruhemodus; Wecken startet nichts)", "/wlan?on=0|1 (WLAN-Einrichtung: QR-Code, sonst Hotspot; wie Tasten C+D halten)", "/record?on=0|1 (Rohaufzeichnung, nur balancierend)",
+               "/detector (wählbare Ziele für follow/approach: Klassen des Detektors)",
+               "/floornet (wählbare Bodenmodelle in [freespace] net_dir, aktives und geladenes)"],
+       "POST": ["/mode?name=..&target=..", "/stop", "/action?n=3|4|5 (Fahr-Aktion der Firmware, nur idle; Bahnprüfung bleibt)","/pipeline?on=0|1", "/ruhe?on=0|1 (Ruhemodus; Wecken startet nichts)", "/wlan?on=0|1 (WLAN-Einrichtung: QR-Code, sonst Hotspot; wie Tasten C+D halten)", "/record?on=0|1 (Rohaufzeichnung, nur balancierend)",
                 "/drive?v=..&w=.. (nur Modus manual)",
                 "/exposure?us=0|100..max (0 = Automatik)", "/gain?g=0|1..63.9 (0 = Automatik)",
-                "/map/reset (Raumkarte leeren, Pose auf 0)", "/map/pose?aktion=start|hier|verwerfen (Standort bestätigen)", "/level (Beine neu ausrichten, 3 s)"]}
+                "/map/reset (Raumkarte leeren, Pose auf 0)", "/map/pose?aktion=start|hier|verwerfen (Standort bestätigen)", "/level (Beine neu ausrichten, 3 s)",
+                "/floornet?name=<datei>.bin (Bodenmodell wechseln: laden, prüfen, Symlink [freespace] net umstellen; nur idle/manual)"]}
 
 
 WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
@@ -189,6 +191,8 @@ def serve(app: App, host: str, port: int, fps: int, render_cpus=None) -> Threadi
                         "backend": getattr(d, "backend", ""), "classes": cls, "modes": sorted(app.DET_MODES),
                         "default": app.cfg.behavior.target_class}
                 return self._send(200, json.dumps(body).encode())
+            if u.path == "/floornet":
+                return self._send(200, json.dumps(app.floornet_info()).encode())
             if u.path == "/map.png":
                 return self._map_png(parse_qs(u.query))
             if u.path == "/ws":
@@ -208,6 +212,25 @@ def serve(app: App, host: str, port: int, fps: int, render_cpus=None) -> Threadi
                 app.set_mode("idle")
                 app.robot.stop()
                 return self._send(200, b'{"ok":true}')
+            if u.path == "/action":
+                # Fahr-Aktionen der Firmware (3, 4, 5): Keepalive aus, Bahnprüfung bleibt (App.fw_action)
+                try:
+                    app.fw_action(int(q.get("n", [""])[0]))
+                except ModeNotAllowed as e:
+                    return self._send(409, json.dumps({"error": str(e)}).encode())
+                except (KeyError, ValueError):
+                    return self._send(400, b'{"error":"Aktion ungueltig (3, 4, 5)"}')
+                return self._send(200, b'{"ok":true}')
+            if u.path == "/floornet":
+                try:
+                    name = app.floornet_wechseln(q.get("name", [""])[0])
+                except ModeNotAllowed as e:
+                    return self._send(409, json.dumps({"error": str(e)}).encode())
+                except ValueError as e:
+                    return self._send(400, json.dumps({"error": str(e)}).encode())
+                except OSError as e:
+                    return self._send(500, json.dumps({"error": f"Symlink nicht umstellbar: {e}"}).encode())
+                return self._send(200, json.dumps({"ok": True, "geladen": name}).encode())
             if u.path == "/level":
                 if not app.robot.request_level():
                     return self._send(409, b'{"error":"Rider balanciert nicht"}')

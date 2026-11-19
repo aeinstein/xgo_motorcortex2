@@ -157,6 +157,7 @@ class FreeSpaceWorker:
         self.est = est
         self.net = net
         self.blind = net is None
+        self._net_lock = threading.Lock()  # set_net tauscht das Netz nie während run
         self.smooth = None                 # Kante über die Zeit beruhigen
         if net_smooth_n > 1:
             from .floornet import ZeilenGlaetter
@@ -182,6 +183,16 @@ class FreeSpaceWorker:
             self._thread.join(timeout=2)
         if self.net is not None and hasattr(self.net, "close") and not (self._thread and self._thread.is_alive()):
             self.net.close()
+
+    def set_net(self, net):
+        """Netz tauschen (Bodenmodell aus dem Web wechseln): wartet ein laufendes run ab, dann gilt das neue Netz
+        ab dem nächsten Auftrag, das Glätten beginnt neu. Gibt das alte Netz zurück (der Aufrufer schließt es)."""
+        with self._net_lock:
+            alt, self.net = self.net, net
+            self.blind = net is None
+            if self.smooth is not None:
+                self.smooth.reset()
+        return alt
 
     def reset(self) -> None:
         """Glätten neu beginnen (nach Kamerastart, Aufstehen, geänderter Belichtung)."""
@@ -228,22 +239,25 @@ class FreeSpaceWorker:
             return None
         bgr, pitch_dev, pose, t, roll_deg, odo = job
         t0 = time.perf_counter()
-        try:
-            rows = np.asarray(self.net.run(bgr), np.float32)
-            if not np.isfinite(rows).all():
-                raise ValueError("FloorNet liefert ungültige Zeilen")
-            roh = rows
-            if self.smooth is not None:
-                rows = self.smooth.glaetten(roh, pose, pitch_dev, t, self.est.geo)
-            fs = self.est.from_net(rows, pitch_dev, roll_deg)
-            if self.smooth is not None:
-                fs.net_rows_raw = roh
-            fs.pose, fs.odo = pose, odo
-        except Exception:
-            log.exception("FloorNet fehlgeschlagen: blind, der Rider fährt nicht mehr selbst")
-            self.net = None
-            self.blind = True
-            return None
+        with self._net_lock:
+            if self.net is None:
+                return None
+            try:
+                rows = np.asarray(self.net.run(bgr), np.float32)
+                if not np.isfinite(rows).all():
+                    raise ValueError("FloorNet liefert ungültige Zeilen")
+                roh = rows
+                if self.smooth is not None:
+                    rows = self.smooth.glaetten(roh, pose, pitch_dev, t, self.est.geo)
+                fs = self.est.from_net(rows, pitch_dev, roll_deg)
+                if self.smooth is not None:
+                    fs.net_rows_raw = roh
+                fs.pose, fs.odo = pose, odo
+            except Exception:
+                log.exception("FloorNet fehlgeschlagen: blind, der Rider fährt nicht mehr selbst")
+                self.net = None
+                self.blind = True
+                return None
         ms = (time.perf_counter() - t0) * 1000
         self.net_ms = 0.8 * self.net_ms + 0.2 * ms if self.net_ms else ms
         return fs

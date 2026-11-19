@@ -56,6 +56,8 @@ python tools/floornet/export.py run/floornet.pt --out models/floornet.bin
 
 Then `[freespace] net = "models/floornet.bin"` (default). Training takes about a minute on the GPU.
 
+On the Rider `models/floornet.bin` is a symlink into `models/floornet/` (`[freespace] net_dir`); copy further nets there as `<name>.bin` and pick one in the web (*Bodenmodell*, idle/manual only, no restart; cost on the Pi: one load + self-test on demand, nothing per frame except an uncontended lock around the inference).
+
 Spike removal in the decoder (`[freespace] net_outlier_px`, default 25, 0 = off; `net.decode(logits, outlier_px, outlier_ratio)` in PyTorch, `decode` in `native/floornet.cpp`, both tested against each other): the raw output has 1–3 column wide jumps at vertical high-contrast edges, the output there is bimodal. A column further than `net_outlier_px` rows from the median of the 7 columns around it takes the best bin within ±2 bins of that median, if the probability mass there (5 bins) is at least `net_outlier_ratio` (0.3) of the mass at its own peak. Columns without a second peak keep their value (narrow obstacles). Cost on the Rider: a 7-value median per column, `exp` only in outlier columns.
 
 | explore10–12 (never trained), 4551 frames | < 1 m falsely free / blocked | frames with spike down / up |
@@ -202,6 +204,8 @@ python comfy_batch.py --prompt comfy_prompt8.txt --ids ids_alle.txt --edits edit
 ```
 
 `comfy_batch.py` keeps every edit (`<edits>/<run>/<frame>.png`), so masks can be recomputed without the model. Seed fixed (`SEED` = 1, as for all Prompt 8 masks).
+
+Brightening (2026-11-19, `aufhellen.py`): `--aufhellen S` runs Zero-DCE (DCE-Net from keras-io/low-light-image-enhancement, ported to torch, weights `~/floornet/comfy/zerodce.npz` on kimmy, not in the repo) on dark frames (brightness < `--hell_ab`) before the chain; curve step scaled by `S` (1 = Keras example, which lifted mean grey ~63 → 188 and was judged too strong; 0.5 → ~128, 0.25 → ~94). `--dunkel farbe|g0h` picks the chain for dark frames. With `--aufhellen`, `--dunkel_aus` is not linked. Moss-Image-Edit instead of Qwen: no frame better than the Qwen green image (user, 40 probe frames).
 
 Chosen 2026-11-09 by inspecting edits: Prompt 10 (`comfy_prompt10.txt`; Prompt 9 without its rug sentence, which made the model invent dark mats in dark frames, while the real rugs in 4 test frames stayed unpainted without it) with `--eingang g0h` (green channel 0, larger of R and B set to the grey value; colour kept for rugs, dark green-tinted frames not black), mask with hue and saturation as before and green lead G − max(R, B) ≥ 30 (`stage2.py --gruen 30`), then `stage3.py`. The green channel alone (G > 0) fails: the image decoder leaves small green values on unpainted pixels. Low thresholds count the faint green shimmer the model adds to walls next to the floor (`unten2/002400`: walls up to 48, floor from 170). Every input variant invents something somewhere; no hand-line numbers for this input yet.
 

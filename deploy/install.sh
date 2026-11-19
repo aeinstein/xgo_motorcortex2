@@ -18,7 +18,18 @@ mkdir -p "$DEST" "$DEST/models"
 cp -r xgonav tools web "$DEST/"
 [ -f "$DEST/config.toml" ] || cp deploy/config.example.toml "$DEST/config.toml"
 cp -n models/*.onnx "$DEST/models/" 2>/dev/null || echo "Hinweis: kein ONNX-Modell in models/ – siehe tools/export_model.sh"
-cp -f models/floornet.bin "$DEST/models/" 2>/dev/null || true   # FloorNet ([freespace] net), ohne Netz ist der Rider blind
+# FloorNet ([freespace] net), ohne Netz ist der Rider blind. Wählbare Netze liegen in models/floornet/ ([freespace]
+# net_dir, Auswahl im Web), models/floornet.bin ist ein Symlink auf das aktive. Nie mit cp auf den Symlink schreiben:
+# das überschriebe das gewählte Netz. Das Netz aus dem Repo heißt dort p11a.bin.
+install -d "$DEST/models/floornet"
+if [ -f "$DEST/models/floornet.bin" ] && [ ! -L "$DEST/models/floornet.bin" ]; then
+    mv "$DEST/models/floornet.bin" "$DEST/models/floornet/vorher-$(date +%Y%m%d-%H%M).bin"
+    ln -s "floornet/$(basename "$(ls -t "$DEST"/models/floornet/vorher-*.bin | head -1)")" "$DEST/models/floornet.bin"
+fi
+[ -f models/floornet.bin ] && cp -n models/floornet.bin "$DEST/models/floornet/p11a.bin"
+for f in models/floornet/*.bin; do [ -f "$f" ] && cp -n "$f" "$DEST/models/floornet/"; done
+[ -e "$DEST/models/floornet.bin" ] || ln -sfn floornet/p11a.bin "$DEST/models/floornet.bin"
+cp -r models/wechat_qr "$DEST/models/" 2>/dev/null || true   # WeChat-QR für die WLAN-Einrichtung ([wlan] qr_model_dir; github.com/WeChatCV/opencv_3rdparty, Apache-2.0)
 for d in models/*_ncnn; do [ -d "$d" ] && [ ! -e "$DEST/$d" ] && cp -r "$d" "$DEST/models/"; done
 # C++-Kern der Ego-Motion bauen; scheitert das, rechnet xgonav in Python (langsamer)
 make -C "$DEST/xgonav/native" || echo "Hinweis: C++-Kern nicht gebaut – Ego-Motion läuft in Python"

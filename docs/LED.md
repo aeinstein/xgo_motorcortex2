@@ -21,7 +21,8 @@ Fault colour depends on `last_stop_reason` (`ledFaultFor(driving,last_stop)`), n
 
 | Colour | Pattern | Meaning |
 |---|---|---|
-| **Pink** (R192 G0 B63), steady, all 4 | constant | **Just powered on / ESP reset.** `BoardSupport::begin()` sets the user LEDs once to palette index 234 (`fillPalette(0,4,234)`) and shows them. In mode 253 nothing redraws, so pink stays until a fault/stop colour, balancing (user LEDs, still pink by default), driving (green) or written user LEDs. |
+| **Pink** (R192 G0 B63), swelling, all 4 | soft wave, period 1.2 s, 12–100 % | **Gyro boot calibration running** (patch 0022, `!ImuState::calibrated`): keep the Rider still. ~1.5 s after power-on at standstill, up to ~15 s when moved, forever while `\|roll\| ≥ 4°`; again after an IMU fusion restart (then in the current user colours). Low battery, mode 0 and fault colours go first. |
+| **Pink** (R192 G0 B63), steady, all 4 | constant | **Powered on / ESP reset, gyro calibrated.** `BoardSupport::begin()` sets the user LEDs to palette index 234 (`fillPalette(0,4,234)`); drawn steady once when the calibration ends. In mode 253 nothing redraws, so pink stays until a fault/stop colour, balancing (user LEDs, still pink by default), driving (green) or written user LEDs. |
 
 ## Fault / stop colours (Rider NOT standing, servos usually released)
 

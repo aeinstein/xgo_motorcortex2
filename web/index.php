@@ -191,6 +191,8 @@ pre{background:#0b0d10;border-radius:6px;padding:8px;overflow:auto;max-height:40
 .regler .w{font-variant-numeric:tabular-nums;text-align:right;font-size:13px}
 .regler button{padding:3px 8px;font-size:12px}
 .regler .leer{width:0}
+.fn-wahl{margin-top:8px}
+.fn-wahl select{min-width:0}
 .trenner{border:0;border-top:1px solid var(--rand);margin:10px 0}
 
 /* --- Raumkarte */
@@ -376,6 +378,13 @@ details.extras[open]>summary{margin-bottom:8px}
       <button id="rec" onclick="aufzeichnungUmschalten()" title="Rohbilder und Metadaten am Rider speichern. Schreibt nur, solange er balanciert; Absetzen beendet die Aufnahme, jedes Aufstehen beginnt eine neue.">Aufzeichnen</button>
       <button id="pip" onclick="pipelineUmschalten()">…</button></div>
     <div class="kacheln" id="kurz"></div>
+    <div class="regler fn-wahl">
+      <label for="fn-wahl">Bodenmodell</label>
+      <select id="fn-wahl" aria-label="Bodenmodell" title="FloorNet-Gewichte aus [freespace] net_dir"></select>
+      <span class="leer"></span>
+      <button id="fn-an" onclick="bodenmodellAktivieren()" title="xgonav lädt und prüft das Netz, stellt den Symlink [freespace] net um und tauscht das Bodenmodell ohne Neustart (nur Idle/Hand)">Aktivieren</button>
+    </div>
+    <div class="leise" id="fn-text"></div>
     <details class="roh"><summary>Status (roh)</summary><pre id="roh"></pre></details>
   </div>
   <details class="karte extras" id="verlauf" ontoggle="verlaufUmschalten()">
@@ -475,7 +484,7 @@ details.extras[open]>summary{margin-bottom:8px}
       <summary><h3>Extras</h3><span class="leise">Aktionen · LEDs · Emotionen</span></summary>
       <div class="unter">Aktionen</div>
       <div class="knoepfe">
-        <?php for ($i = 1; $i <= 6; $i++): ?><button onclick="befehl('action', {n: <?= $i ?>})"><?= $i ?></button><?php endfor; ?>
+        <?php for ($i = 1; $i <= 6; $i++): ?><button onclick="befehl('action', {n: <?= $i ?>})"<?= $i >= 3 && $i <= 5 ? ' title="Fährt bzw. dreht selbst: nur im Modus idle, braucht Platz"' : '' ?>><?= $i ?></button><?php endfor; ?>
       </div>
       <div class="unter">LEDs</div>
       <div class="ledzeile">
@@ -633,6 +642,7 @@ const EN = {
   'Aufspringen': 'Jump up', 'Roll auf 0° und die Beine 3 s nivellieren (nur wenn er steht)': 'Roll to 0° and level the legs for 3 s (only while standing)',
   'Neu ausrichten': 'Re-level', 'Aktion 254, Not-Stopp': 'Action 254, emergency stop', 'Absetzen': 'Sit down',
   'Extras': 'Extras', 'Aktionen · LEDs · Emotionen': 'Actions · LEDs · Emotions', 'Aktionen': 'Actions', 'LEDs': 'LEDs',
+  'Fährt bzw. dreht selbst: nur im Modus idle, braucht Platz': 'Drives or turns by itself: mode idle only, needs room',
   'Alle aus': 'All off', 'Strobe': 'Strobe', 'Gilt für alle LEDs, bleibt über Neustarts gespeichert': 'Applies to all LEDs, kept across restarts',
   'Helligkeit': 'Brightness', 'Emotionen (Display)': 'Emotions (display)', 'keine gefunden in': 'none found in',
   'Bild senkrecht so verschieben, dass der IMU-Nick fest steht: stimmt die IMU, steht die Szene still': 'Shift the image vertically so the IMU pitch stays fixed: if the IMU is right, the scene stands still',
@@ -675,6 +685,13 @@ const EN = {
   'balanciert': 'balancing', 'liegt': 'lying', 'läuft': 'running', 'gestoppt': 'stopped', 'Stoppen': 'Stop', 'Starten': 'Start',
   'Aufzeichnung aus': 'Stop recording', 'Bilder': 'frames', 'wartet: liegt': 'waiting: lying down',
   'wartet: Bildverarb. aus': 'waiting: vision off', 'wartet auf Bild': 'waiting for image', 'Aufzeichnung aus: ': 'Recording off: ',
+  'Bodenmodell': 'Floor model', 'Aktivieren': 'Activate', 'FloorNet-Gewichte aus [freespace] net_dir': 'FloorNet weights from [freespace] net_dir',
+  'xgonav lädt und prüft das Netz, stellt den Symlink [freespace] net um und tauscht das Bodenmodell ohne Neustart (nur Idle/Hand)':
+    'xgonav loads and checks the net, repoints the symlink [freespace] net and swaps the floor model without restart (idle/manual only)',
+  'geladen: ': 'loaded: ', 'keins': 'none', ' – blind': ' – blind', 'kein Modell in ': 'no model in ',
+  ' (net ist kein Symlink: Wechsel erst nach deploy/install.sh)': ' (net is not a symlink: switching only after deploy/install.sh)',
+  'Bodenmodell wechseln auf ': 'Switch floor model to ', '? Nur in Idle oder Hand; das Bodenmodell ist danach kurz aus.': '? Idle or manual only; the floor model is briefly off afterwards.',
+  'lädt …': 'loading …',
   'YOLO aus': 'YOLO off', ' – YOLO ist aus ([detector] enabled)': ' – YOLO is off ([detector] enabled)',
   'Ruhemodus? Der Rider setzt sich ab, Bildverarbeitung aus, CPU-Takt runter.': 'Rest mode? The Rider sits down, vision off, CPU clock down.',
   'Steht der Rider (aufgestanden) am Startpunkt, in Startrichtung? Die Pose springt dann dorthin. Sind Treppen und Kanten abgesperrt?':
@@ -819,6 +836,7 @@ function sprache(l) {
   spracheAnwenden();
   if (window.letzterStatus) statusZeigen(window.letzterStatus);
   zieleLaden();
+  bodenmodellLaden();
   if (einst.d) { einstSicherungen(); einstZeigen(); }
   verlaufZeichnen();
 }
@@ -1049,6 +1067,30 @@ async function zieleLaden() {
     b.title = (b.dataset.titel ? tr(b.dataset.titel) : '') + hinweis;
   });
 }
+// Bodenmodell (FloorNet): Liste nur auf Anfrage (Seitenaufruf, Neustart, nach dem Wechsel), am Rider nur ein Verzeichnis lesen
+async function bodenmodellLaden() {
+  let d = null;
+  try { const r = await fetch('api.php?a=floornet'); if (r.ok) d = await r.json(); } catch (e) {}
+  const sel = $('fn-wahl'), txt = $('fn-text');
+  if (!d) { sel.disabled = $('fn-an').disabled = true; txt.textContent = ''; return; }
+  const m = d.modelle || [];
+  sel.innerHTML = m.map(x => '<option value="' + esc(x.name) + '">' + esc(x.name) + ' (' + x.kb + ' kB, ' +
+    new Date(x.zeit * 1000).toLocaleDateString(LANG === 'en' ? 'en-GB' : 'de-DE') + ')</option>').join('');
+  if (d.aktiv && m.some(x => x.name === d.aktiv)) sel.value = d.aktiv;
+  sel.disabled = !m.length;
+  $('fn-an').disabled = !m.length || !d.ist_link;
+  txt.textContent = !m.length ? tr('kein Modell in ') + (d.ordner || '-')
+    : tr('geladen: ') + (d.geladen || tr('keins')) + (d.blind ? tr(' – blind') : '') +
+      (d.ist_link ? '' : tr(' (net ist kein Symlink: Wechsel erst nach deploy/install.sh)'));
+}
+async function bodenmodellAktivieren() {
+  const n = $('fn-wahl').value;
+  if (!n || !confirm(tr('Bodenmodell wechseln auf ') + n + tr('? Nur in Idle oder Hand; das Bodenmodell ist danach kurz aus.'))) return;
+  $('fn-an').disabled = true;
+  $('fn-text').textContent = tr('lädt …');
+  await befehl('floornet', {name: n});
+  bodenmodellLaden();
+}
 $('ziel').addEventListener('change', e => { try { localStorage.setItem('xgonav.ziel', e.target.value); } catch (x) {} });
 function streife() {
   if (!confirm(tr('Steht der Rider (aufgestanden) am Startpunkt, in Startrichtung? Die Pose springt dann dorthin. Sind Treppen und Kanten abgesperrt?'))) return;
@@ -1147,7 +1189,7 @@ function statusZeigen(s, fehler) {
     bildSoll(!s.ruhe && s.pipeline === 'läuft');
     aktModus = s.mode;
     aktPipeline = s.pipeline;
-    if (s.start != null && s.start !== zieleStart) { zieleStart = s.start; zieleLaden(); }   // nach Neustart neu
+    if (s.start != null && s.start !== zieleStart) { zieleStart = s.start; zieleLaden(); bodenmodellLaden(); }   // nach Neustart neu
     window.letzterStatus = s;
     if (s.cam_h_gerade) kamGerade = s.cam_h_gerade;
     hoeheAusStatus = s.height_u8 != null;

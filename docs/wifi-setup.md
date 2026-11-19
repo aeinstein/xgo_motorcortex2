@@ -22,9 +22,10 @@ Hotspot closes by itself after 60 s (countdown); each newly joined device restar
 | During setup | sleep mode ended, mode `idle`, `robot.stop()` (a balancing Rider stays standing), camera on, `_step` does not run |
 | After | camera returns to its previous state, mode `idle` |
 | QR | `cv2.QRCodeDetector` on full frame, else 2× centre crop; ≤ `qr_hz = 5`; format `WIFI:T:..;S:..;P:..;H:..;;` with escapes, any order; WPA or open (WEP rejected) |
-| Profile | keyfile `/etc/NetworkManager/system-connections/xgo-wlan-<uuid>.nmconnection` (0600), name `xgo-<ssid>`, `autoconnect-priority = 10`; password never on a command line; same-name `xgo-` profile replaced, others never deleted |
-| Failure | new profile deleted, previous connection (or hotspot) brought back |
+| Profile | keyfile `/etc/NetworkManager/system-connections/xgo-wlan-<uuid>.nmconnection` (0600), name `xgo-<ssid>`, `autoconnect-priority = 10`, `ipv4.may-fail = false` (no IPv4 = failure); password never on a command line; same-name `xgo-` profile replaced, others never deleted |
+| Failure | new profile deleted, previous connection (or hotspot, same SSID/password) brought back |
 | Hotspot | `nmcli dev wifi hotspot`, profile `xgo-hotspot` (autoconnect off), previous connection stored in `/run/xgo-wlan.prev` |
+| Leaving the hotspot | `brcmfmac` reloaded (`chip_reset`, ~5 s) before reconnecting. Without it (measured 2026-11-19): frames to the Rider with WMM priority Voice are lost until reboot; NetworkManager's DHCPv4 uses TOS 0xc0, the router offers, nothing arrives → IPv6 only, unreachable via IPv4 |
 
 ## Cost on the Pi
 

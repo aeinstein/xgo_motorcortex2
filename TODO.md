@@ -1,4 +1,6 @@
 # Firmware
+- Kalibrierung durch LEDs anzeigen
+  
 
 # XGONAV
 

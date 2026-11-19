@@ -12,6 +12,9 @@
  *   GET  api.php?a=route                      (Route und Sperrzonen)
  *   POST api.php?a=route&pts=x,y;x,y&loop=0|1[&zones=x,y;x,y;x,y|...|&nozones=1]   (Meter im Karten-KS)
  *   GET  api.php?a=detector                   (wählbare Ziele für Folgen/Anfahren: aktive YOLO-Klassen)
+ *   GET  api.php?a=floornet                   (Bodenmodelle in [freespace] net_dir, aktives, geladenes)
+ *   POST api.php?a=floornet&name=x.bin        (Bodenmodell wechseln: xgonav lädt und prüft es, stellt den Symlink
+ *                                            [freespace] net um und tauscht das Netz ohne Neustart; nur idle/manual)
  *   POST api.php?a=stop
  *   POST api.php?a=pipeline&on=0|1
  *   POST api.php?a=ruhe&on=0|1                (Ruhemodus: xgonav /ruhe, Schlafaugen aufs Display (bleiben
@@ -24,7 +27,9 @@
  *                                            das rc.local beim Booten und xgonav beim Start setzen)
  *   POST api.php?a=action&n=1..6|237|253|254|255 (R-1.1.6+Patch: 255 = Arm/aufstehen, 254 = Disarm/Not-Stopp,
  *                                            253 = Aufspringen aus dem Liegen (!standup), 237 = ESP32 neu
- *                                            starten (nur wenn er nicht balanciert); 1..6 Aktionen)
+ *                                            starten (nur wenn er nicht balanciert); 1..6 Aktionen, davon
+ *                                            3..5 fahren selbst: über xgonav /action, nur im Modus idle,
+ *                                            Bahnprüfung bleibt)
  *   POST api.php?a=height&h=61..255         (u8; darunter nicht, siehe Höhengrenzen)
  *   POST api.php?a=ausrichten               (Beine neu ausrichten, xgonav /level)
  *   POST api.php?a=roll&deg=-20..20          (Grad, + = nach rechts; Treiber-Patch 0004: Register 0x36)
@@ -104,11 +109,11 @@ function zahl(string $name, float $min, float $max): float
     return (float)$v;
 }
 
-function xgonav(string $method, string $path): never
+function xgonav(string $method, string $path, int $timeout = 3): never
 {
     $ctx = stream_context_create(['http' => [
         'method' => $method,
-        'timeout' => 3,
+        'timeout' => $timeout,
         'ignore_errors' => true,          // auch 4xx/5xx-Antworten von xgonav durchreichen
         'header' => "Content-Length: 0\r\n",
     ]]);
@@ -290,6 +295,9 @@ if ($a === 'route' && !$post) {
 if ($a === 'detector' && !$post) {
     xgonav('GET', '/detector');
 }
+if ($a === 'floornet' && !$post) {
+    xgonav('GET', '/floornet');
+}
 if ($a === 'wlan_status' && !$post) {
     [$rc, $z] = wlan_helfer('status');
     antwort($rc === 0 ? 200 : 500, json_encode($rc === 0 ? wlan_kv($z) : ['error' => end($z) ?: "rc $rc"],
@@ -355,6 +363,12 @@ switch ($a) {
             $q['nozones'] = '1';
         }
         xgonav('POST', '/route?' . http_build_query($q));
+    case 'floornet':
+        $name = $_GET['name'] ?? '';
+        if (!preg_match('/^[A-Za-z0-9_.+-]{1,80}\.bin$/', $name)) {
+            antwort(400, json_encode(['error' => 'Modellname ungültig']));
+        }
+        xgonav('POST', '/floornet?name=' . rawurlencode($name), 20);   // Laden + Selbstprüfung am CM4
     case 'stop':
         xgonav('POST', '/stop');
     case 'ausrichten':
@@ -445,6 +459,22 @@ switch ($a) {
             @file_get_contents(XGONAV . '/stop?nur=pet', false, stream_context_create(['http' => [
                 'method' => 'POST', 'timeout' => 1, 'ignore_errors' => true, 'header' => "Content-Length: 0\r\n",
             ]]));
+        }
+        if ($n >= 3 && $n <= 5) {
+            // 3–5 fahren bzw. drehen selbst über den Fahr-Sollwert der Firmware: Der Keepalive von xgonav
+            // (128/128 alle 0,3 s) hielte sie an. xgonav startet sie deshalb selbst, setzt den Keepalive so
+            // lange aus und prüft die Bahn (POST /action, 409 mit Grund). Läuft xgonav nicht: direkt.
+            $ctx = stream_context_create(['http' => [
+                'method' => 'POST', 'timeout' => 3, 'ignore_errors' => true, 'header' => "Content-Length: 0\r\n",
+            ]]);
+            $body = @file_get_contents(XGONAV . '/action?n=' . $n, false, $ctx);
+            if ($body !== false) {
+                $code = 502;
+                if (isset($http_response_header[0]) && preg_match('#^HTTP/\S+\s+(\d{3})#', $http_response_header[0], $m)) {
+                    $code = (int)$m[1];
+                }
+                antwort($code, $body);
+            }
         }
         proc('action', (string)$n);
     case 'height':

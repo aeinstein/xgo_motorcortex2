@@ -419,6 +419,22 @@ def test_kette_waehlt_nach_helligkeit_und_verlinkt_dunkle(tmp_path):
     assert not B.link_edit(B.edit_path(alt, "r/000002.jpg"), B.edit_path(neu, "r/000002.jpg"))
     assert not B.link_edit(B.edit_path(alt, "r/000003.jpg"), B.edit_path(neu, "r/000003.jpg"))
     assert B.missing_edits(["r/000001.jpg", "r/000002.jpg"], neu) == ["r/000002.jpg"]
+    assert B.kette(str(tmp_path / "d.png"), dunkel="farbe") == ("farbe", 59.0)
+
+
+def test_aufhellen_kurven_staerke():
+    import aufhellen as A
+    rng = np.random.default_rng(2)
+    x = rng.uniform(0.05, 0.4, (6, 8, 3)).astype(np.float32)
+    r = np.full((6, 8, 24), -0.5, np.float32)          # negative Kurven hellen auf (x² − x < 0)
+    assert np.array_equal(A.kurven(x, r, 0.0), x)
+    y1, y5, y10 = (A.kurven(x, r, s) for s in (0.1, 0.5, 1.0))
+    assert (x < y1).all() and (y1 < y5).all() and (y5 < y10).all() and y10.max() <= 1.0
+    # Stärke 1 ist das Keras-Beispiel: achtmal x + r (x² − x)
+    z = x.copy()
+    for _ in range(8):
+        z = z - 0.5 * (z * z - z)
+    np.testing.assert_allclose(y10, z, rtol=1e-6)
 
 
 def test_betrachter_server_neu_malen(tmp_path, monkeypatch):

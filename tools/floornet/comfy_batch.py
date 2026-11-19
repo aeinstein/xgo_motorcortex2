@@ -13,7 +13,12 @@ ohne Modell neu rechnen. Der Seed ist fest (SEED), damit dasselbe Bild dieselbe 
 --eingang auto wählt die Kette je Bild (Nutzer 2026-11-10): Helligkeit ab --hell_ab (60) = helle Szene, das Bild geht
 unverändert ins Modell; darunter G0h. Für dunkle Bilder wird eine vorhandene G0h-Bearbeitung aus --dunkel_aus verlinkt
 statt neu gerechnet (gleicher Prompt und Seed ergeben dasselbe Bild). Welche Kette ein Bild bekam, steht in
-<out>/eingang.jsonl.
+<out>/eingang.jsonl. --dunkel farbe gibt dunkle Bilder farbig statt als G0h ins Modell.
+
+--aufhellen S (Nutzer 2026-11-19: Aufhellung in die Pipeline, dezenter als Zero-DCE im Probelauf): dunkle Bilder
+(Helligkeit unter --hell_ab) vor der Kette mit Zero-DCE der Stärke S aufhellen (aufhellen.py, 1 = Keras-Beispiel,
+0 = aus); helle bleiben unverändert. Mit --aufhellen wird --dunkel_aus nicht verlinkt (die alten Bearbeitungen
+sind nicht aufgehellt).
 """
 from __future__ import annotations
 
@@ -63,9 +68,14 @@ def keep_edit(buf: bytes, comfy_file: str, target: str) -> None:
     os.replace(tmp, target)
 
 
+def gray_image(o: np.ndarray) -> np.ndarray:
+    """Graubild: Ohne Farbe im Eingang stammt alles Grüne im Ergebnis vom Modell, nicht vom Farbstich der Kamera."""
+    return cv2.cvtColor(o, cv2.COLOR_BGR2GRAY)
+
+
 def gray_png(path: str) -> bytes:
-    """Fahrbild als Grau-PNG im Speicher: Ohne Farbe im Eingang stammt alles Grüne im Ergebnis vom Modell, nicht vom Farbstich der Kamera."""
-    return cv2.imencode(".png", cv2.cvtColor(cv2.imread(path), cv2.COLOR_BGR2GRAY))[1].tobytes()
+    """Fahrbild als Grau-PNG im Speicher."""
+    return cv2.imencode(".png", gray_image(cv2.imread(path)))[1].tobytes()
 
 
 def g0h_image(o: np.ndarray) -> np.ndarray:
@@ -87,7 +97,20 @@ def g0h_png(path: str) -> bytes:
 
 
 EINGANG = {"farbe": None, "grau": gray_png, "g0h": g0h_png}
+WANDEL = {"farbe": None, "grau": gray_image, "g0h": g0h_image}       # dasselbe auf einem Bild im Speicher
 HELL_AB = 60.0      # Nutzer 2026-11-10
+_dce = None
+
+
+def aufgehellt_png(path: str, eingang: str, staerke: float) -> bytes:
+    """Fahrbild mit Zero-DCE der Stärke staerke aufhellen, dann wie EINGANG[eingang] wandeln, als PNG im Speicher."""
+    global _dce
+    if _dce is None:
+        import aufhellen
+        _dce = aufhellen.ZeroDCE()
+    o = _dce.aufhellen(cv2.imread(path), staerke)
+    fn = WANDEL[eingang]
+    return cv2.imencode(".png", fn(o) if fn else o)[1].tobytes()
 HELL_ZEILE = 137    # ab hier sieht das FloorNet das Bild (net.py), darüber liegen Fenster und Lampen
 
 
@@ -96,10 +119,10 @@ def helligkeit(o: np.ndarray) -> float:
     return float(cv2.cvtColor(o, cv2.COLOR_BGR2GRAY)[HELL_ZEILE * o.shape[0] // 480:].mean())
 
 
-def kette(path: str, hell_ab: float = HELL_AB) -> tuple[str, float]:
-    """Eingang für --eingang auto: (farbe oder g0h, Helligkeit)."""
+def kette(path: str, hell_ab: float = HELL_AB, dunkel: str = "g0h") -> tuple[str, float]:
+    """Eingang für --eingang auto: (farbe oder dunkel, Helligkeit)."""
     h = helligkeit(cv2.imread(path))
-    return ("farbe" if h >= hell_ab else "g0h"), h
+    return ("farbe" if h >= hell_ab else dunkel), h
 
 
 def link_edit(quelle: str, target: str) -> bool:
@@ -119,10 +142,16 @@ def link_edit(quelle: str, target: str) -> bool:
     return True
 
 
-def edit_and_keep(path: str, prompt: str, target: str, eingang: str = "farbe", seed: int = SEED) -> np.ndarray:
-    """Wie C.run_edit, mit festem Seed (anderer Seed nur für neu_malen.py); die Bearbeitung landet in target. Upload-Name je Prozess, parallele Läufe stören sich nicht."""
+def edit_and_keep(path: str, prompt: str, target: str, eingang: str = "farbe", seed: int = SEED,
+                  aufhellen: float = 0.0) -> np.ndarray:
+    """Wie C.run_edit, mit festem Seed (anderer Seed nur für neu_malen.py); die Bearbeitung landet in target. Upload-Name je Prozess, parallele Läufe stören sich nicht.
+    aufhellen > 0: Bild vorher mit Zero-DCE dieser Stärke aufhellen."""
     fn = EINGANG[eingang]
-    ref = C.upload(fn(path) if fn else path, "batch_%d.png" % os.getpid())
+    if aufhellen > 0:
+        daten = aufgehellt_png(path, eingang, aufhellen)
+    else:
+        daten = fn(path) if fn else path
+    ref = C.upload(daten, "batch_%d.png" % os.getpid())
     req = urllib.request.Request(C.URL + "/prompt", json.dumps({"prompt": C.workflow(ref, prompt, seed)}).encode(),
                                  {"Content-Type": "application/json"})
     pid = json.loads(urllib.request.urlopen(req, timeout=60).read())["prompt_id"]
@@ -158,7 +187,13 @@ def main() -> int:
                                                                                     "auto: je Bild farbe (hell) oder g0h (dunkel)")
     ap.add_argument("--hell_ab", type=float, default=HELL_AB, help="--eingang auto: ab dieser Helligkeit (0..255, unterer Bildteil) farbe")
     ap.add_argument("--dunkel_aus", default="", help="--eingang auto: Archiv mit G0h-Bearbeitungen, die für dunkle Bilder verlinkt statt neu gerechnet werden")
+    ap.add_argument("--dunkel", choices=("g0h", "farbe"), default="g0h", help="--eingang auto: Kette für dunkle Bilder")
+    ap.add_argument("--aufhellen", type=float, default=0.0, help="dunkle Bilder (unter --hell_ab) vorher mit Zero-DCE dieser Stärke "
+                                                                 "aufhellen (1 = Keras-Beispiel, 0 = aus)")
     a = ap.parse_args()
+    if a.aufhellen > 0 and a.dunkel_aus:
+        print("--aufhellen: --dunkel_aus wird nicht verlinkt (alte Bearbeitungen sind nicht aufgehellt)", flush=True)
+        a.dunkel_aus = ""
     prompt = open(a.prompt, encoding="utf-8").read().strip()
     edits = a.edits or os.path.join(a.out, "edits")
     os.makedirs(a.out, exist_ok=True)
@@ -179,7 +214,9 @@ def main() -> int:
     n_all = len(todo)
     todo = missing_edits(todo, edits) if a.nur_edits else [k for k in todo if k not in done]
     json.dump({"prompt": prompt, "runs": a.runs, "step": a.step, "seed": SEED, "eingang": a.eingang,
-               **({"hell_ab": a.hell_ab, "dunkel_aus": a.dunkel_aus} if a.eingang == "auto" else {})}, open(os.path.join(a.out, "info.json"), "w"))
+               **({"hell_ab": a.hell_ab, "dunkel_aus": a.dunkel_aus, "dunkel": a.dunkel} if a.eingang == "auto" else {}),
+               **({"aufhellen": a.aufhellen, "hell_ab": a.hell_ab} if a.aufhellen > 0 else {})},
+              open(os.path.join(a.out, "info.json"), "w"))
     print("zu rechnen: %d (fertig: %d)" % (len(todo), n_all - len(todo)), flush=True)
     t_start, fehler, verlinkt = time.time(), 0, 0
     with open(rows_path, "a") as fo, open(os.path.join(a.out, "eingang.jsonl") if a.eingang == "auto" else os.devnull, "a") as fe:
@@ -187,16 +224,20 @@ def main() -> int:
             run, f = k.split("/", 1)
             t0 = time.time()
             try:
-                eingang, edit = a.eingang, None
+                eingang, edit, staerke = a.eingang, None, 0.0
+                if eingang == "auto" or a.aufhellen > 0:
+                    kt, hell = kette(os.path.join(DATA, run, f), a.hell_ab, a.dunkel)
+                    staerke = a.aufhellen if hell < a.hell_ab else 0.0
                 if eingang == "auto":
-                    eingang, hell = kette(os.path.join(DATA, run, f), a.hell_ab)
+                    eingang = kt
                     if eingang == "g0h" and a.dunkel_aus and link_edit(edit_path(a.dunkel_aus, k), edit_path(edits, k)):
                         edit = cv2.imread(edit_path(edits, k), cv2.IMREAD_COLOR)
                         verlinkt += 1
-                    fe.write(json.dumps({"id": k, "eingang": eingang, "hell": round(hell, 1), "verlinkt": edit is not None}) + "\n")
+                    fe.write(json.dumps({"id": k, "eingang": eingang, "hell": round(hell, 1), "verlinkt": edit is not None,
+                                         **({"aufhellen": staerke} if staerke > 0 else {})}) + "\n")
                     fe.flush()
                 if edit is None:
-                    edit = edit_and_keep(os.path.join(DATA, run, f), prompt, edit_path(edits, k), eingang)
+                    edit = edit_and_keep(os.path.join(DATA, run, f), prompt, edit_path(edits, k), eingang, aufhellen=staerke)
             except Exception as e:                       # einzelnes Bild: weiter, am Ende zählen
                 fehler += 1
                 print("FEHLER %s: %s" % (k, e), flush=True)

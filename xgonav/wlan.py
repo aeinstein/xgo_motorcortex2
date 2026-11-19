@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 import math
+import os
 import secrets
 import subprocess
 import threading
@@ -110,6 +111,63 @@ class PressDetector:
         return hit
 
 
+# ---------------------------------------------------------------- QR lesen
+_WECHAT = ("detect.prototxt", "detect.caffemodel", "sr.prototxt", "sr.caffemodel")
+
+
+class QrLeser:
+    """WeChat-QR (opencv-contrib, CNN-Detektor + Hochskalierung) liest auch gestaltete Codes: Samsung „WLAN
+    teilen“ hat runde Suchmuster, Punkte und ein Logo; cv2.QRCodeDetector fand ihn am Rider nur aus ~4 cm
+    (Aufnahme 2026-11-19: WeChat 64/135 Bilder, QRCodeDetector 0, zbar 4). Ohne Modelle oder contrib:
+    QRCodeDetector auf dem Vollbild, sonst Bildmitte doppelt so groß. Läuft nur in der Einrichtung (≤ qr_hz)."""
+
+    def __init__(self, model_dir: str = ""):
+        self._wc = None
+        pfade = [os.path.join(model_dir, n) for n in _WECHAT] if model_dir else []
+        if pfade and all(os.path.exists(p) for p in pfade) and hasattr(cv2, "wechat_qrcode_WeChatQRCode"):
+            try:
+                self._wc = cv2.wechat_qrcode_WeChatQRCode(*pfade)
+            except cv2.error as e:
+                log.warning("WLAN-Einrichtung: WeChat-QR nicht ladbar (%s), einfacher QR-Detektor", e)
+        elif model_dir:
+            log.warning("WLAN-Einrichtung: WeChat-QR fehlt (%s bzw. opencv-contrib), einfacher QR-Detektor: "
+                        "gestaltete Codes (Samsung) nur aus der Nähe", model_dir)
+        self._cv = cv2.QRCodeDetector()
+        self.art = "wechat" if self._wc is not None else "opencv"
+
+    def lesen(self, gray: np.ndarray) -> str | None:
+        if self._wc is not None:
+            try:
+                texte, _ = self._wc.detectAndDecode(gray)
+            except cv2.error:
+                return None
+            return next((t for t in texte if t), None)
+        text = self._cv_lesen(gray)
+        if text is None:
+            # kleiner Code (Handy weiter weg, Weitwinkel): Bildmitte doppelt so groß
+            h, w = gray.shape[:2]
+            mitte = gray[h // 4: h - h // 4, w // 4: w - w // 4]
+            text = self._cv_lesen(cv2.resize(mitte, None, fx=2, fy=2, interpolation=cv2.INTER_LINEAR))
+        return text
+
+    def _cv_lesen(self, gray: np.ndarray) -> str | None:
+        try:
+            text, _, _ = self._cv.detectAndDecode(gray)
+        except cv2.error:
+            return None
+        return text or None
+
+
+_leser: dict[str, QrLeser] = {}
+
+
+def qr_leser(model_dir: str) -> QrLeser:
+    """Einmal je Verzeichnis laden (Modelle ~1 MB), dann bei jeder Einrichtung wiederverwenden."""
+    if model_dir not in _leser:
+        _leser[model_dir] = QrLeser(model_dir)
+    return _leser[model_dir]
+
+
 # ---------------------------------------------------------------- root-Teil
 class Helfer:
     """Ruft deploy/xgo-wlan per sudo in einem eigenen Thread auf; höchstens ein Auftrag zugleich."""
@@ -179,7 +237,7 @@ class WlanSetup:
         self.hotspot_pw = ""
         self._t_qr = 0.0
         self._t_status = 0.0
-        self._qr = cv2.QRCodeDetector()
+        self._qr = qr_leser(cfg.qr_model_dir)
         self._job = ""                      # laufender Helfer-Auftrag
         self._off_pending = False           # Hotspot schließen, sobald der Helfer frei ist
         self.rest_s: int | None = None      # Countdown (QR-Suche, Hotspot) in ganzen Sekunden
@@ -295,12 +353,7 @@ class WlanSetup:
 
     def _scan(self, bgr: np.ndarray, now: float) -> None:
         gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY) if bgr.ndim == 3 else bgr
-        text = self._decode(gray)
-        if text is None:
-            # kleiner Code (Handy weiter weg, Weitwinkel): Bildmitte doppelt so groß
-            h, w = gray.shape[:2]
-            mitte = gray[h // 4: h - h // 4, w // 4: w - w // 4]
-            text = self._decode(cv2.resize(mitte, None, fx=2, fy=2, interpolation=cv2.INTER_LINEAR))
+        text = self._qr.lesen(gray)
         if text is None:
             return
         wifi = parse_wifi_qr(text)
@@ -312,13 +365,6 @@ class WlanSetup:
         self.ssid, pw, typ, hidden = wifi
         self._set("verbinde", now, f"Verbinde mit {self.ssid} ...")
         self._run("connect", f"{self.ssid}\n{pw}\n{typ}\n{'1' if hidden else '0'}\n", timeout=60.0)
-
-    def _decode(self, gray: np.ndarray) -> str | None:
-        try:
-            text, pts, _ = self._qr.detectAndDecode(gray)
-        except cv2.error:
-            return None
-        return text or None
 
     # -------------------------------------------------------------- Display (LCD-Thread)
     def lcd_frame(self) -> tuple[tuple[int, int], np.ndarray]:

@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import collections
+import copy
 import gc
 import logging
 import math
 import os
+import re
 import threading
 import time
 from dataclasses import dataclass, field
@@ -27,7 +29,7 @@ from .wheels import WheelOdom, make_wheels
 from .imu import ImuFrame, ImuSource, ImuSync, imu_frame, make_imu
 from .localmap import LocalMap, mask_movable
 from .route import arc_hits_zone, check as route_check, load as route_load, save as route_save
-from .robot import Robot, SpeedCtrl
+from .robot import FW_ACTIONS, Robot, SpeedCtrl, action_cmds
 from .tracker import Tracker
 from .wlan import Helfer, HoldDetector, PressDetector, WlanSetup
 from .dunkel import Dunkelangst, helligkeit
@@ -131,10 +133,14 @@ class App:
         self.geo = CamGeometry.from_cfg(cfg)
         self.fse = FreeSpaceEstimator(cfg.freespace, size, self.geo) if cfg.freespace.enabled else None
         self.fs_worker = None
+        self.fn_geladen = None             # Datei des geladenen FloorNet (Web-Auswahl), None = keins oder Simulator
+        self._fn_lock = threading.Lock()
         if self.fse is not None:
             net = floor_net
             if net is None and cfg.freespace.net:
                 net = FloorNet.load(cfg.freespace.net, cfg.freespace.net_outlier_px, cfg.freespace.net_outlier_ratio)
+                if net is not None:
+                    self.fn_geladen = os.path.basename(os.path.realpath(cfg.freespace.net))
             if net is None:
                 log.error("Kein FloorNet ([freespace] net = %r): blind, der Rider fährt nicht selbst", cfg.freespace.net)
             elif cfg.freespace.net_smooth_n > 1:
@@ -217,6 +223,9 @@ class App:
         self._luma: float | None = None
         self._luma_t = 0.0
         self.ortung = None             # ortung.Ortung (Schallrichtung), von __main__ gesetzt (nur am Rider)
+        # Fahr-Aktion der Firmware (robot.FW_ACTIONS): vom Web angefragt, im Regelschritt geprüft und gestartet
+        self._action_pending: int | None = None
+        self._action_note: tuple[str, float] | None = None   # (Meldung, anzeigen bis) für die Statuszeile
 
     # ------------------------------------------------------------------
     # Diese Modi fahren auf Freiraum zu und verlassen sich auf Bodenmodell + Merkkarte.
@@ -361,6 +370,7 @@ class App:
                 self._pending_mode = ("idle", None)
             self.src.pause()
             self.robot.stop()
+            self._action_stop(keep_turn=True)         # ohne Bild keine Bahnprüfung: fahrende Aktion anhalten
             log.info("Bildverarbeitung gestoppt")
 
     # Treiber-Einstellungen, die der Ruhemodus abschaltet: Wert im Ruhemodus (None = aus RuheCfg)
@@ -551,6 +561,93 @@ class App:
             raise ModeNotAllowed("Handsteuerung nur im Modus manual")
         b.set(v, w, time.monotonic())
 
+    # Aktionen der Firmware, die vorwärts/rückwärts fahren (5 dreht nur auf der Stelle)
+    FW_ACTION_DRIVES = {3, 4}
+
+    def fw_action(self, n: int) -> None:
+        """Fahr-Aktion der Firmware (3, 4, 5) anfragen. Gestartet wird sie im nächsten Regelschritt, wenn
+        safety() und die Bahnprüfung ihren ersten Abschnitt ungekürzt durchlassen; solange sie läuft, prüft
+        jeder Regelschritt die laufenden und kommenden Abschnitte und bricht sonst ab (_action_tick).
+        Der Keepalive ist währenddessen aus, sonst hält er die Aktion an (Robot.action_start)."""
+        if n not in FW_ACTIONS:
+            raise KeyError(n)
+        if self.ruhe:
+            raise ModeNotAllowed("Ruhemodus: erst wecken")
+        if self.behavior.name != "idle" or self._pending_mode:
+            raise ModeNotAllowed(f"Aktion {n} fährt selbst: nur im Modus idle")
+        if not self.robot.state.balancing:
+            raise ModeNotAllowed(f"Aktion {n}: Rider balanciert nicht")
+        if self.robot.action is not None or self._action_pending is not None:
+            raise ModeNotAllowed("Es läuft noch eine Aktion")
+        if n in self.FW_ACTION_DRIVES:
+            if not self.pipeline_on:
+                raise ModeNotAllowed(f"Aktion {n} fährt: braucht laufende Bildverarbeitung")
+            if self.fs_worker is None or self.fs_worker.blind:
+                raise ModeNotAllowed(f"Aktion {n} fährt: braucht die Bodengrenze (FloorNet), die fehlt oder ist ausgefallen")
+            if self._free is None:
+                raise ModeNotAllowed(f"Aktion {n} fährt: Bodengrenze noch nicht da, kurz warten")
+        self._action_pending = n
+
+    def _action_stop(self, keep_turn: bool = False) -> None:
+        """Angefragte Aktion verwerfen, laufende abbrechen (keep_turn: die Drehaktion 5 darf weiterlaufen)."""
+        self._action_pending = None
+        act = self.robot.action
+        if act is not None and not (keep_turn and act[0] not in self.FW_ACTION_DRIVES):
+            self.robot.action_abort()
+
+    def _action_blocked(self, n: int, elapsed_s: float, w: World | None) -> str:
+        """Grund, warum Aktion n jetzt nicht (weiter)fahren darf, sonst "". Prüft die Fahrbefehle ihrer
+        laufenden und kommenden Abschnitte wie jeden anderen Fahrbefehl: safety(), dann Bahnprüfung. Kürzen
+        lässt sich der Fahrwert der Firmware nicht, also zählt jede Kürzung als gesperrt.
+        w None: ohne Bildverarbeitung, nur für die Drehaktion."""
+        if not self.robot.state.balancing:
+            return "balanciert nicht"
+        for v, wz in action_cmds(n, elapsed_s, self.cfg.robot.action_tick_s):
+            if abs(v) < 1e-3:
+                continue                              # Drehen auf der Stelle: braucht keinen Freiraum
+            if w is None:
+                return "keine Bildverarbeitung"
+            w2 = copy.copy(w)
+            w2.cmd_v = v                              # TTC-Prüfung in safety() rechnet mit dem gefahrenen Befehl
+            c = self._arc_check(safety(Command(v, wz), w2, self.cfg.behavior))
+            if abs(c.v) < abs(v) - 1e-6:
+                return c.status.strip(" |") or "gestoppt"
+        return ""
+
+    def _action_tick(self, w: World | None, cmd: Command, now: float) -> Command:
+        """Im Regelschritt: angefragte Aktion prüfen und starten, laufende weiter prüfen. Ohne Aktion zwei
+        Vergleiche; mit Aktion bis zu drei Bahnprüfungen je Regelschritt (C++-Kern), nur für deren Dauer."""
+        n, act = self._action_pending, self.robot.action
+        if n is not None:
+            self._action_pending = None
+            grund = "Modus " + self.behavior.name if self.behavior.name != "idle" else self._action_blocked(n, 0.0, w)
+            if not grund:
+                try:
+                    self.robot.action_start(n)
+                except OSError as e:
+                    grund = str(e)
+            if grund:
+                log.warning("Aktion %d nicht gestartet: %s", n, grund)
+                self._action_note = (f"Aktion {n} nicht gestartet: {grund}", now + 4.0)
+            else:
+                self._action_note = None
+                cmd.status = (cmd.status + " | " if cmd.status else "") + f"Aktion {n}"
+        elif act is not None:
+            grund = "Modus " + self.behavior.name if self.behavior.name != "idle" \
+                else self._action_blocked(act[0], time.monotonic() - act[1], w)
+            if grund:
+                self.robot.action_abort()
+                self._action_note = (f"Aktion {act[0]} abgebrochen: {grund}", now + 4.0)
+            else:
+                cmd.status = (cmd.status + " | " if cmd.status else "") + f"Aktion {act[0]}"
+        note = self._action_note
+        if note is not None:
+            if now < note[1]:
+                cmd.status = (cmd.status + " | " if cmd.status else "") + note[0]
+            else:
+                self._action_note = None
+        return cmd
+
     # Modi, die ohne Kamerabild laufen (Regelschritt dann in _paused_tick)
     NO_CAMERA = {"idle", "manual"}
 
@@ -569,8 +666,75 @@ class App:
             raise ModeNotAllowed("Ruhemodus: erst wecken")
         if not self.pipeline_on and name not in self.NO_CAMERA:
             raise ModeNotAllowed(f"Modus {name} braucht laufende Bildverarbeitung")
+        self._action_stop()                           # auch POST /stop (setzt idle): Aktion der Firmware anhalten
         with self._mode_lock:
             self._pending_mode = (name, target)
+
+    # ------------------------------------------------------------ Bodenmodell wählen (Web)
+    FN_NAME = re.compile(r"^[A-Za-z0-9_.+-]{1,80}\.bin$")
+    FN_MODES = {"idle", "manual"}          # Wechsel nur, wenn nichts nach dem Bodenmodell fährt
+
+    def floornet_info(self) -> dict:
+        """Wählbare Netze in [freespace] net_dir, Ziel des Symlinks net, geladenes Netz. Nur auf Anfrage."""
+        fc = self.cfg.freespace
+        modelle = []
+        if fc.net_dir and os.path.isdir(fc.net_dir):
+            for n in sorted(os.listdir(fc.net_dir)):
+                p = os.path.join(fc.net_dir, n)
+                if self.FN_NAME.match(n) and os.path.isfile(p):
+                    st = os.stat(p)
+                    modelle.append({"name": n, "kb": round(st.st_size / 1024), "zeit": int(st.st_mtime)})
+        ist_link = bool(fc.net) and os.path.islink(fc.net)
+        aktiv = None
+        if ist_link and fc.net_dir and os.path.dirname(os.path.realpath(fc.net)) == os.path.realpath(fc.net_dir):
+            aktiv = os.path.basename(os.path.realpath(fc.net))
+        fs = self.fs_worker
+        return {"modelle": modelle, "aktiv": aktiv, "geladen": self.fn_geladen, "link": fc.net,
+                "ist_link": ist_link, "ordner": fc.net_dir, "blind": fs is None or fs.blind,
+                "modes": sorted(self.FN_MODES)}
+
+    def floornet_wechseln(self, name: str) -> str:
+        """FloorNet gegen name aus [freespace] net_dir tauschen, ohne Neustart: neues Netz laden und prüfen (läuft im
+        Web-Thread, nicht in der Bildschleife), erst dann den Symlink net umstellen und das Netz im FreeSpaceWorker
+        tauschen; das alte wird geschlossen. Scheitert das Laden, bleibt alles wie es war. Gibt den Namen zurück."""
+        fc = self.cfg.freespace
+        if self.fs_worker is None:
+            raise ModeNotAllowed("Bodenmodell ist aus ([freespace] enabled)")
+        if not fc.net_dir or not fc.net:
+            raise ModeNotAllowed("[freespace] net_dir oder net leer: nicht wählbar")
+        if not self.FN_NAME.match(name or ""):
+            raise ValueError("Modellname ungültig")
+        pfad = os.path.join(fc.net_dir, name)
+        if not os.path.isfile(pfad):
+            raise ValueError(f"{name} fehlt in {fc.net_dir}")
+        if os.path.exists(fc.net) and not os.path.islink(fc.net):
+            raise ModeNotAllowed(f"{fc.net} ist eine Datei, kein Symlink (deploy/install.sh legt ihn an)")
+        if self.mode not in self.FN_MODES:
+            raise ModeNotAllowed(f"Bodenmodell nur in {', '.join(sorted(self.FN_MODES))} wechseln, nicht in {self.mode}")
+        if not self._fn_lock.acquire(blocking=False):
+            raise ModeNotAllowed("Bodenmodell wird gerade gewechselt")
+        try:
+            t0 = time.monotonic()
+            net = FloorNet.load(pfad, fc.net_outlier_px, fc.net_outlier_ratio)
+            if net is None:
+                raise ModeNotAllowed(f"{name} nicht ladbar oder Selbstprüfung fehlgeschlagen (Log), altes Netz bleibt")
+            if self.mode not in self.FN_MODES:          # während des Ladens umgeschaltet
+                net.close()
+                raise ModeNotAllowed(f"Modus {self.mode} während des Wechsels: altes Netz bleibt")
+            neu = fc.net + ".neu"
+            if os.path.lexists(neu):
+                os.remove(neu)
+            os.symlink(os.path.relpath(pfad, os.path.dirname(fc.net) or "."), neu)
+            os.replace(neu, fc.net)                      # Symlink atomar umstellen
+            alt = self.fs_worker.set_net(net)
+            if alt is not None and hasattr(alt, "close"):
+                alt.close()
+            vorher, self.fn_geladen = self.fn_geladen, name
+            self.reset_floor(self.cfg.freespace.restart_hold_s)
+            log.info("[floornet] gewechselt: %s -> %s (%.0f ms)", vorher, name, (time.monotonic() - t0) * 1000)
+            return name
+        finally:
+            self._fn_lock.release()
 
     @property
     def mode(self) -> str:
@@ -690,7 +854,8 @@ class App:
             self._pet_leave()
             self.behavior = self._make("idle")
         if self.behavior.name != "manual":
-            self._cmd = Command(0.0, 0.0, None, "Bildverarbeitung gestoppt")
+            # Drehaktion 5 der Firmware geht auch ohne Bild; fahrende lehnt fw_action hier schon ab
+            self._cmd = self._action_tick(None, Command(0.0, 0.0, None, "Bildverarbeitung gestoppt"), time.monotonic())
             self._emotion_tick(None)
             time.sleep(0.1)
             return
@@ -851,6 +1016,8 @@ class App:
                 cmd = safety(self.behavior.step(w), w, self.cfg.behavior)
                 cmd = self._dunkel_tick(now, cmd)
                 cmd = self._arc_check(cmd)
+            if self._action_pending is not None or self.robot._act is not None or self._action_note is not None:
+                cmd = self._action_tick(w, cmd, now)
             self._drive(cmd)
             # pet: Abducken beim Schreck darf nicht bis zu 1 s warten; set_height schreibt nur Änderungen
             if cmd.height_mm is not None and (now - self._last_height_t > 1.0 or self.behavior.name == "pet"):

@@ -149,6 +149,7 @@ Floor boundary from FloorNet only (`xgonav/freespace.py`, `docs/floornet.md`). T
 | `net` | `models/floornet.bin` (sim: `""`) | | FloorNet weights (`tools/floornet/export.py`). The simulator injects `sim.SimFloorNet` (boundary from ground truth) instead |
 | `net_outlier_px` | `25.0` | `25.0` | FloorNet decoder, spike removal: a column further than this many full-frame rows from the median of the 7 columns around it takes the best bin at that median, if enough probability mass lies there. `0` = plain best bin. See `docs/floornet.md` |
 | `net_outlier_ratio` | `0.3` | `0.3` | Mass (5 bins) required at the median, relative to the mass at the column's own peak |
+| `net_dir` | `models/floornet` | | folder of selectable FloorNet weights (`*.bin`); web *Bodenmodell* switches by repointing the symlink `net` and reloading the net in-process (`POST /floornet`). `deploy/install.sh` creates folder and symlink (repo net as `p11a.bin`). `""` = not selectable |
 | `net_smooth_n` | 3 (sim: 0) | | boundary smoothed over time: the last n outputs are mapped onto the current frame (map pose, pitch) and the median per column counts; never averaged. `3` removes a spike seen in one frame, a new obstacle appears one network frame (83 ms) later. `0`/`1` = off; without a map pose the output passes unchanged |
 
 ### `[map]` (short-term local map)

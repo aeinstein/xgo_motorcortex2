@@ -25,8 +25,9 @@ def to_rgb565(bgr: np.ndarray) -> bytes:
 
 
 class LcdOut:
-    def __init__(self, app: App, fifo: str, fps: int):
+    def __init__(self, app: App, fifo: str, fps: int, overlay: bool = True):
         self.app, self.fifo, self.period = app, fifo, 1.0 / max(1, fps)
+        self.overlay = overlay          # False: nur WLAN-Einrichtung und pet-Augen, kein Kamerabild
         self._fd: int | None = None
         self._atlas = None              # Augen des Modus pet, beim ersten Bedarf geladen
         self._atlas_tried = False
@@ -88,10 +89,25 @@ class LcdOut:
                 self._gaze_sent = None          # danach das Augenbild neu schreiben
                 time.sleep(0.2)
                 continue
+            wlan = self.app.wlan
+            gaze = getattr(self.app.behavior, "gaze", None)
+            if not self.overlay and wlan is None and (gaze is None or self._atlas_tried and self._atlas is None):
+                # nichts zu zeigen: FIFO frei lassen (Emotionen, Schlafaugen bleiben stehen)
+                if self._fd is not None:
+                    os.close(self._fd)
+                    self._fd = None
+                if self._wlan_sent is not None:
+                    # Einrichtung vorbei: sonst bliebe das letzte WLAN-Bild stehen
+                    self._wlan_sent = None
+                    emo = getattr(self.app, "emotions", None)
+                    if emo is not None:
+                        emo.play("cute")
+                self._gaze_sent = None
+                time.sleep(0.2)
+                continue
             if self._fd is None and not self._open():
                 time.sleep(2.0)
                 continue
-            wlan = self.app.wlan
             if wlan is not None:
                 # WLAN-Einrichtung: Kamerabild mit Hinweis bzw. Hotspot-Daten; schreiben nur bei Änderung
                 v, img = wlan.lcd_frame()
@@ -107,10 +123,11 @@ class LcdOut:
                 time.sleep(0.05 if wlan.state == "qr" else 0.1)   # QR-Suche: Augen mit 20 Bildern/s
                 continue
             self._wlan_sent = None
-            gaze = getattr(self.app.behavior, "gaze", None)
             if gaze is not None and self._gaze_frame(gaze):
                 continue
             self._gaze_sent = None
+            if not self.overlay:
+                continue                    # pet ohne Atlas: nächste Runde schließt das FIFO
             snap = self.app.snapshot
             if snap.idx == getattr(self, "_last_idx", None):   # kein neues Bild (z. B. pausiert)
                 time.sleep(self.period)

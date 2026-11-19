@@ -49,6 +49,67 @@ def test_robot_ramp_clamp_and_watchdog():
     assert r.writes[-1][2] == 128
 
 
+def test_action_cmds_abschnitte():
+    """Fahrbefehle der Firmware-Aktionen: laufender Abschnitt plus die, die bald beginnen können."""
+    from xgonav.robot import action_cmds
+    vor, rueck = u8_to_norm(192), u8_to_norm(64)
+    assert action_cmds(3, 0.0, 0.08) == [(vor, 0.0)]
+    assert action_cmds(3, 0.5, 0.08) == [(vor, 0.0), (rueck, 0.0)]      # Wechsel bei Takt 8: 0,50–0,64 s
+    assert action_cmds(3, 1.0, 0.08) == [(rueck, 0.0)]
+    assert all(v == 0.0 and w != 0.0 for v, w in action_cmds(5, 2.0, 0.08))   # 5 dreht nur
+    assert len(action_cmds(4, 0.0, 0.08)) == 1 and len(action_cmds(4, 1.0, 0.08)) == 2
+
+
+def _speed_writes(r, t0):
+    return [(t, n, v) for t, n, v in r.writes if t > t0 and n in ("speed_x", "speed_z")]
+
+
+def test_robot_action_setzt_keepalive_aus():
+    """Während einer Fahr-Aktion der Firmware schreibt Robot keine Sollwerte (sonst hält der Keepalive sie
+    an) und der Kernel-Watchdog ist aus; danach läuft beides wieder."""
+    cfg = Config.neutral().robot
+    cfg.action_tick_s = 0.01                     # Aktion 3: 20 Takte = 0,2 s + 0,3 s Reserve
+    r = SimRobot(cfg)
+    r.settings["motion_timeout_ms"] = "1000"
+    r.start()
+    try:
+        time.sleep(0.1)
+        assert _speed_writes(r, 0.0)
+        t_end = r.action_start(3)
+        t0 = time.monotonic()
+        assert r.action is not None and r.action[0] == 3
+        time.sleep(0.35)                         # länger als keepalive_s
+        assert _speed_writes(r, t0) == []
+        assert r.settings["motion_timeout_ms"] == "0"
+        assert ("action", 3) in [(n, v) for _, n, v in r.writes]
+        time.sleep(max(0.0, t_end - time.monotonic()) + 0.15)
+        assert r.action is None
+        assert _speed_writes(r, t_end - 1e-3)    # Windows-Uhr rastet auf 15,6 ms: Zeitstempel kann gleich t_end sein
+        assert r.settings["motion_timeout_ms"] == str(cfg.kernel_watchdog_ms)
+    finally:
+        r.close()
+
+
+def test_robot_action_abbruch_schreibt_stillstand():
+    """Abbruch: bis zum Ende der Aktion in jedem Durchlauf 128/128, damit ihr Fahrwert nicht gilt."""
+    cfg = Config.neutral().robot
+    cfg.action_tick_s = 0.01                     # Aktion 4: 0,6 s + Reserve
+    r = SimRobot(cfg)
+    r.start()
+    try:
+        r.action_start(4)
+        time.sleep(0.1)
+        r.action_abort()
+        assert r.action is None
+        t0 = time.monotonic()
+        time.sleep(0.25)
+        w = _speed_writes(r, t0)
+        assert len([1 for _, n, _ in w if n == "speed_x"]) >= 5       # 50 Hz statt alle 0,3 s
+        assert all(v == 128 for _, _, v in w)
+    finally:
+        r.close()
+
+
 def test_robot_height_mapping():
     r = SimRobot(Config.neutral().robot)
     r.set_height(60)
@@ -527,6 +588,80 @@ def test_modes_need_freespace():
     # Start mit gesperrtem Modus -> bleibt im Idle statt blind zu fahren
     assert _app(freespace=False, mode="explore").mode == "idle"
     assert _app(freespace=True, mode="explore").mode == "explore"
+
+
+def test_fw_action_nur_wenn_erlaubt():
+    """Fahr-Aktionen der Firmware: nur idle, balancierend, 3/4 nur mit Bodengrenze; 5 dreht nur."""
+    from xgonav.app import ModeNotAllowed
+    from xgonav.behaviors import Command
+    app = _app(freespace=True)
+    with pytest.raises(KeyError):
+        app.fw_action(1)
+    app._free = None
+    with pytest.raises(ModeNotAllowed):
+        app.fw_action(3)                          # Bodengrenze noch nicht da
+    app.robot.state.balancing = False
+    with pytest.raises(ModeNotAllowed):
+        app.fw_action(5)
+    app.robot.state.balancing = True
+    app.behavior = app._make("manual")
+    with pytest.raises(ModeNotAllowed):
+        app.fw_action(5)
+    app.behavior = app._make("idle")
+    app.fw_action(5)
+    with pytest.raises(ModeNotAllowed):
+        app.fw_action(5)                          # schon angefragt
+    app._action_tick(None, Command(), time.monotonic())      # ohne Bildverarbeitung: 5 startet trotzdem
+    assert app.robot.action is not None and app.robot.action[0] == 5
+    with pytest.raises(ModeNotAllowed):
+        app.fw_action(5)                          # läuft noch
+    app.set_mode("idle")                          # wie POST /stop
+    assert app.robot.action is None
+
+
+def test_fw_action_bahnpruefung():
+    """Die Bahnprüfung gilt für den Fahrbefehl der Aktion: gesperrt startet sie nicht, später bricht sie ab."""
+    from types import SimpleNamespace
+    from xgonav.behaviors import Command
+    app = _app(freespace=True)
+    app.gridmap = None
+
+    class Karte:
+        radius = 0.15
+        frei = 0.05
+
+        def arc_clearance(self, *a, **k):
+            return self.frei
+    app.lmap = Karte()
+    app._free = object()
+    w = SimpleNamespace(balancing=True, blind=False, free=None, ego=SimpleNamespace(ttc=99.0), cmd_v=0.0)
+    now = time.monotonic()
+
+    app.fw_action(3)
+    cmd = app._action_tick(w, Command(), now)
+    assert "nicht gestartet" in cmd.status and "Bahn" in cmd.status
+    assert app.robot.action is None and not any(n == "action" for _, n, _ in app.robot.writes)
+
+    app.lmap.frei = 9.0
+    app.fw_action(3)
+    cmd = app._action_tick(w, Command(), now)
+    assert app.robot.action is not None and "Aktion 3" in cmd.status
+    cmd = app._action_tick(w, Command(), now)
+    assert app.robot.action is not None           # frei: läuft weiter
+
+    app.lmap.frei = 0.05
+    cmd = app._action_tick(w, Command(), now)
+    assert app.robot.action is None and "abgebrochen" in cmd.status
+
+    # blind (FloorNet ausgefallen) hält auch an
+    app.robot._action_end()
+    app.lmap.frei = 9.0
+    app.fw_action(3)
+    app._action_tick(w, Command(), now)
+    assert app.robot.action is not None
+    w.blind = True
+    cmd = app._action_tick(w, Command(), now)
+    assert app.robot.action is None and "BLIND" in cmd.status
 
 
 # ---------------------------------------------------------------- Linsenabschattung
@@ -3246,3 +3381,45 @@ def test_linse_kern_gleich_cv2():
                               out.ctypes.data, cam.width, cam.height, out.strides[0]) == 0
         assert np.array_equal(out, cv2.remap(img, m1, m2, cv2.INTER_LINEAR))
     assert np.array_equal(lens_remap(cam)(img), cv2.remap(img, *lens_maps(cam), cv2.INTER_LINEAR))
+
+
+def test_floornet_wechseln(tmp_path, monkeypatch):
+    """Bodenmodell aus dem Web wechseln: erst laden und prüfen, dann Symlink umstellen und Netz im Worker tauschen;
+    scheitert das Laden, bleibt alles; nur in idle/manual; Namen nur aus dem Ordner."""
+    import os
+    import xgonav.app as appmod
+    from xgonav.app import ModeNotAllowed
+    d = tmp_path / "floornet"
+    d.mkdir()
+    (d / "a.bin").write_bytes(b"a")
+    (d / "b.bin").write_bytes(b"bb")
+    link = tmp_path / "floornet.bin"
+    try:
+        os.symlink("floornet/a.bin", link)
+    except (OSError, NotImplementedError):
+        pytest.skip("Symlinks hier nicht erlaubt (Windows ohne Entwicklermodus)")
+    app = _app(freespace=True)
+    app.cfg.freespace.net, app.cfg.freespace.net_dir = str(link), str(d)
+    info = app.floornet_info()
+    assert [m["name"] for m in info["modelle"]] == ["a.bin", "b.bin"] and info["aktiv"] == "a.bin" and info["ist_link"]
+
+    class Netz:
+        zu = False
+        def run(self, bgr): return np.zeros(80, np.float32)
+        def close(self): self.zu = True
+    alt = app.fs_worker.net
+    monkeypatch.setattr(appmod.FloorNet, "load", staticmethod(lambda p, *a: None))
+    with pytest.raises(ModeNotAllowed):
+        app.floornet_wechseln("b.bin")                     # nicht ladbar: alles bleibt
+    assert os.readlink(link) == "floornet/a.bin" and app.fs_worker.net is alt
+    neu = Netz()
+    monkeypatch.setattr(appmod.FloorNet, "load", staticmethod(lambda p, *a: neu))
+    for falsch in ("../x.bin", "c.bin", "b.txt"):
+        with pytest.raises(ValueError):
+            app.floornet_wechseln(falsch)
+    assert app.floornet_wechseln("b.bin") == "b.bin"
+    assert os.readlink(link) == os.path.join("floornet", "b.bin") and app.fs_worker.net is neu
+    assert not app.fs_worker.blind and app.floornet_info()["aktiv"] == "b.bin" and app.fn_geladen == "b.bin"
+    app.behavior.name = "explore"
+    with pytest.raises(ModeNotAllowed):
+        app.floornet_wechseln("a.bin")                     # fährt nach dem Bodenmodell: kein Wechsel

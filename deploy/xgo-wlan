@@ -29,6 +29,28 @@ vorige_merken() {   # aktive Verbindung merken (nicht den Hotspot, nicht übersc
     fi
 }
 
+# Nach dem Hotspot (AP-Modus) hängt die brcmfmac-Firmware des CM4: Antworten an den Rider mit WMM-Priorität
+# Voice gehen verloren (DHCPv4 von NetworkManager: TOS 0xc0, der Router bietet an, nichts kommt an), bis zum
+# Neustart. Gemessen 2026-11-19; Treiber neu laden setzt den Chip zurück (danach IPv4 nach 4 s).
+chip_reset() {
+    modprobe -r brcmfmac_wcc brcmfmac 2>/dev/null || modprobe -r brcmfmac 2>/dev/null || return 1
+    sleep 1
+    modprobe brcmfmac || return 1
+    i=0
+    while [ $i -lt 20 ]; do   # warten, bis NetworkManager wlan0 wieder verwaltet
+        st=$(nmcli -g GENERAL.STATE dev show "$IF" 2>/dev/null | head -n1)
+        case "$st" in ""|*unavailable*|*nicht\ verfügbar*|*unmanaged*|*nicht\ verwaltet*) ;; *) return 0 ;; esac
+        sleep 1; i=$((i+1))
+    done
+    return 0
+}
+
+hotspot_weg() {   # Hotspot schließen und Chip zurücksetzen
+    nmcli con down id "$HOTSPOT" >/dev/null 2>&1
+    nmcli con delete id "$HOTSPOT" >/dev/null 2>&1
+    chip_reset
+}
+
 vorige_zurueck() {
     if [ -s "$PREV" ]; then
         p=$(cat "$PREV")
@@ -98,6 +120,7 @@ case "${1:-}" in
             echo
             echo "[ipv4]"
             echo "method=auto"
+            echo "may-fail=false"   # ohne IPv4 gilt das Verbinden als gescheitert (sonst "verbunden" nur über IPv6)
             echo
             echo "[ipv6]"
             echo "addr-gen-mode=default"
@@ -106,8 +129,12 @@ case "${1:-}" in
         ziel="$DIR/xgo-wlan-$(cat /proc/sys/kernel/random/uuid).nmconnection"
         mv "$datei" "$ziel"
         nmcli con load "$ziel" >/dev/null 2>&1 || { rm -f "$ziel"; fehler "Profil nicht lesbar"; }
+        if [ "$vorher" = "$HOTSPOT" ]; then
+            hs_ssid=$(nmcli -g 802-11-wireless.ssid con show id "$HOTSPOT" 2>/dev/null)
+            hs_pw=$(nmcli -s -g 802-11-wireless-security.psk con show id "$HOTSPOT" 2>/dev/null)
+            hotspot_weg
+        fi
         if out=$(nmcli --wait 45 con up id "$name" 2>&1); then
-            [ "$vorher" = "$HOTSPOT" ] && nmcli con delete id "$HOTSPOT" >/dev/null 2>&1
             rm -f "$PREV"
             sleep 1
             status
@@ -115,7 +142,8 @@ case "${1:-}" in
         fi
         nmcli con delete id "$name" >/dev/null 2>&1
         if [ "$vorher" = "$HOTSPOT" ]; then
-            nmcli --wait 30 con up id "$HOTSPOT" >/dev/null 2>&1
+            # Hotspot wieder auf (hotspot_weg hat ihn gelöscht); Zugangsdaten stehen am Display
+            printf '%s\n%s\n' "$hs_ssid" "$hs_pw" | "$0" hotspot >/dev/null 2>&1
         else
             vorige_zurueck
         fi
@@ -130,13 +158,12 @@ case "${1:-}" in
         vorige_merken
         nmcli con delete id "$HOTSPOT" >/dev/null 2>&1
         out=$(nmcli dev wifi hotspot ifname "$IF" con-name "$HOTSPOT" ssid "$ssid" password "$pw" 2>&1) \
-            || { vorige_zurueck; fehler "Hotspot fehlgeschlagen: $(printf '%s' "$out" | tail -n1)"; }
+            || { hotspot_weg; vorige_zurueck; fehler "Hotspot fehlgeschlagen: $(printf '%s' "$out" | tail -n1)"; }
         nmcli con modify id "$HOTSPOT" connection.autoconnect no >/dev/null 2>&1
         status
         ;;
     hotspot-off)
-        nmcli con down id "$HOTSPOT" >/dev/null 2>&1
-        nmcli con delete id "$HOTSPOT" >/dev/null 2>&1
+        hotspot_weg
         vorige_zurueck
         status
         ;;

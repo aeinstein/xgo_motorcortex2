@@ -6,3 +6,5 @@
 deploy/**   text eol=lf
 Makefile    text eol=lf
 *.service   text eol=lf
+*.caffemodel binary
+*.prototxt  text eol=lf

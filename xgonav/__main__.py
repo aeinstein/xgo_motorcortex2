@@ -84,9 +84,10 @@ def main(argv=None) -> int:
     if cfg.output.web_port:
         from .web import serve
         serve(app, cfg.output.web_host, cfg.output.web_port, cfg.output.web_fps, cfg.cpu.render_cpus)
-    if cfg.output.lcd_fifo and kind == "proc":
+    if kind == "proc" and (cfg.output.lcd_fifo or cfg.emotion.fifo):
+        # immer: WLAN-Einrichtung und pet-Augen gehen aufs Display; das Kamera-Overlay nur mit lcd_fifo
         from .lcd import LcdOut
-        LcdOut(app, cfg.output.lcd_fifo, cfg.output.lcd_fps)
+        LcdOut(app, cfg.output.lcd_fifo or cfg.emotion.fifo, cfg.output.lcd_fps, overlay=bool(cfg.output.lcd_fifo))
     if cfg.emotion.enabled and kind == "proc":
         from .emotion import Emotions
         app.emotions = Emotions(cfg.emotion, cfg.emotion.fifo)

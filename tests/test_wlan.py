@@ -9,7 +9,8 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from xgonav.config import Config
-from xgonav.wlan import (HoldDetector, PressDetector, WlanSetup, _qr_image, parse_wifi_qr, wifi_qr_text)
+from xgonav.wlan import (HoldDetector, PressDetector, QrLeser, WlanSetup, _qr_image, parse_wifi_qr,
+                         wifi_qr_text)
 
 
 # ---------------------------------------------------------------- QR-Inhalt
@@ -177,3 +178,24 @@ def test_hotspot_zeit_um():
     w.step(None, cfg.hotspot_timeout_s)
     w.step(None, cfg.hotspot_timeout_s + 0.1)
     assert h.calls[-1][0] == "hotspot-off" and w.done
+
+
+# ---------------------------------------------------------------- QR-Leser
+def test_qr_leser_einfach_ohne_modelle():
+    leser = QrLeser("")                     # ohne Modellverzeichnis: cv2.QRCodeDetector, Bildmitte 2x
+    assert leser.art == "opencv"
+    assert parse_wifi_qr(leser.lesen(cv2.cvtColor(_qr_frame(wifi_qr_text("Heim", "geheim123")),
+                                                  cv2.COLOR_BGR2GRAY)))[:2] == ("Heim", "geheim123")
+    assert QrLeser("/gibt/es/nicht").art == "opencv"
+
+
+MODELLE = os.path.join(os.path.dirname(__file__), "..", "models", "wechat_qr")
+
+
+@pytest.mark.skipif(not hasattr(cv2, "wechat_qrcode_WeChatQRCode") or not os.path.isdir(MODELLE),
+                    reason="opencv-contrib (WeChat-QR) oder models/wechat_qr fehlt (am Rider vorhanden)")
+def test_qr_leser_wechat():
+    leser = QrLeser(MODELLE)
+    assert leser.art == "wechat"
+    assert parse_wifi_qr(leser.lesen(cv2.cvtColor(_qr_frame(wifi_qr_text("Heim", "geheim123")),
+                                                  cv2.COLOR_BGR2GRAY)))[:2] == ("Heim", "geheim123")

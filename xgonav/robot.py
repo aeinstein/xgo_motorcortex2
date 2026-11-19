@@ -33,6 +33,32 @@ FW_HEIGHT_STANDUP_U8 = 128
 FW_HEIGHT_MIN_U8, FW_HEIGHT_MAX_U8 = 55, 200
 # Totband der Firmware um 128 (rider_motion.cpp decode: 5 % des Bereichs); darunter fährt er nicht an
 FW_DEADBAND = 0.05
+# Aktionen der Firmware, die selbst fahren oder drehen (action_engine.cpp tick): je Abschnitt
+# (ab Takt, forward u8, turn u8), dazu der Takt, in dem die Aktion endet. Ein Takt ist jeder 21. Durchlauf
+# der Firmware-Schleife (260–333 Hz, also 63–81 ms; RobotCfg.action_tick_s ist die lange Grenze).
+# Die Aktion setzt denselben Sollwert, den speed_x/speed_z schreiben: Jeder Keepalive hält sie an.
+FW_ACTIONS: dict[int, tuple[tuple[tuple[int, int, int], ...], int]] = {
+    3: (((0, 192, 128), (8, 64, 128)), 20),
+    4: (((0, 176, 208), (14, 176, 48), (28, 96, 208), (44, 96, 48)), 60),
+    5: (((0, 128, 32), (46, 128, 208)), 100),
+}
+FW_TICK_FAST = 0.75          # kürzester Takt als Anteil von action_tick_s (333 gegen 260 Hz, mit Reserve)
+FW_ACTION_AHEAD_S = 0.3      # so weit voraus prüft die App die Abschnitte einer Aktion
+FW_ACTION_RESERVE_S = 0.3    # Keepalive bleibt so lange über das gerechnete Ende hinaus aus
+
+
+def action_cmds(n: int, elapsed_s: float, tick_s: float) -> list[tuple[float, float]]:
+    """Fahrbefehle (v, w normiert) der Abschnitte von Aktion n, die elapsed_s nach dem Start laufen können
+    oder in den nächsten FW_ACTION_AHEAD_S beginnen. Mehrere, weil die Taktdauer nur ungefähr bekannt ist."""
+    segs, end = FW_ACTIONS[n]
+    lo = elapsed_s / tick_s
+    hi = (elapsed_s + FW_ACTION_AHEAD_S) / (tick_s * FW_TICK_FAST)
+    out = []
+    for i, (start, fwd, turn) in enumerate(segs):
+        stop = segs[i + 1][0] if i + 1 < len(segs) else end
+        if start <= hi and stop > lo:
+            out.append((u8_to_norm(fwd), u8_to_norm(turn)))
+    return out
 
 
 def norm_to_u8(x: float) -> int:
@@ -124,6 +150,11 @@ class Robot:
         self._thread: threading.Thread | None = None
         self.state = RobotState()
         self.ruhe_tick_s: float | None = None   # Ruhemodus: nur so oft Zustand lesen, nichts schreiben
+        # Aktion der Firmware, die selbst fährt (FW_ACTIONS): (n, Start, Ende). Solange sie läuft, schreibt
+        # _send nichts; nach action_abort bis zum Ende in jedem Durchlauf Stillstand.
+        self._act: tuple[int, float, float] | None = None
+        self._act_abort = False
+        self._act_lock = threading.Lock()       # Start der Aktion gegen einen gerade laufenden Keepalive
 
     # ---- öffentliche API -------------------------------------------------
     def start(self) -> None:
@@ -151,7 +182,64 @@ class Robot:
     def set_down(self) -> None:
         """Absetzen (Firmware-Aktion 254)."""
         self.stop()
+        self.action_abort()
         self._write("action", 254)
+
+    @property
+    def action(self) -> tuple[int, float, float] | None:
+        """Laufende, nicht abgebrochene Fahr-Aktion der Firmware: (n, Start, Ende; time.monotonic) oder None."""
+        a = self._act
+        return None if a is None or self._act_abort else a
+
+    def action_start(self, n: int) -> float:
+        """Fahr-Aktion der Firmware (FW_ACTIONS) starten: Keepalive und Kernel-Watchdog aus, bis sie nach
+        Rechnung vorbei ist (die Firmware setzt den Fahrwert am Ende selbst auf Stillstand). Ob die Bahn frei
+        ist, prüft die App vorher und in jedem Regelschritt (App._action_tick). Rückgabe: Ende."""
+        _, end = FW_ACTIONS[n]
+        self.stop()
+        with self._act_lock:
+            now = time.monotonic()
+            t_end = now + end * self.cfg.action_tick_s + FW_ACTION_RESERVE_S
+            self._kernel_watchdog(0)             # schriebe sonst nach 1 s ohne Keepalive selbst 128/128
+            self._act, self._act_abort = (n, now, t_end), False
+            try:
+                self._write("action", n)
+            except OSError:
+                self._action_end()
+                raise
+        log.info("Aktion %d der Firmware: Keepalive für %.1f s aus", n, t_end - now)
+        return t_end
+
+    def action_abort(self) -> None:
+        """Laufende Fahr-Aktion anhalten: Die Firmware kennt dafür über /proc keinen Befehl, deshalb schreibt
+        _send bis zu ihrem Ende in jedem Durchlauf Stillstand (ihr Fahrwert gilt dann höchstens 20 ms)."""
+        if self._act is not None and not self._act_abort:
+            self._act_abort = True
+            log.warning("Aktion %d der Firmware abgebrochen", self._act[0])
+
+    def _action_end(self) -> None:
+        self._act, self._act_abort = None, False
+        self._sent = None                        # nächster Durchlauf schreibt sofort wieder
+        self._kernel_watchdog(self.cfg.kernel_watchdog_ms)
+
+    def _kernel_watchdog(self, ms: int) -> None:
+        if self._read_text("settings/motion_timeout_ms") is not None:      # Treiber ohne den Eintrag: nichts
+            self.write_setting("motion_timeout_ms", ms)
+
+    def _action_tick(self, now: float) -> bool:
+        """Im Durchlauf der Schleife; True, solange die Aktion ungestört läuft (dann schreibt _send nichts)."""
+        a = self._act
+        if a is None:
+            return False
+        if now >= a[2]:
+            self._action_end()
+            return False
+        if not self.state.balancing:
+            self.action_abort()
+        if self._act_abort:
+            self._sent = None                    # Stillstand in jedem Durchlauf neu schreiben
+            return False
+        return True
 
     def read_setting(self, name: str) -> str | None:
         """Treiber-Einstellung /proc/XGORider/settings/<name> lesen; None, wenn es sie nicht gibt."""
@@ -247,6 +335,7 @@ class Robot:
                 self._poll_state()
                 self._height_tick()
                 self._level_tick(time.monotonic())
+                self._action_tick(time.monotonic())
                 continue
             now = time.monotonic()
             with self._lock:
@@ -261,8 +350,13 @@ class Robot:
                 next_poll = now + 0.2
             if not self.state.balancing:
                 target = (0.0, 0.0)
+            if self._act is not None and self._act_abort:
+                target = (0.0, 0.0)
+                self._cur = (0.0, 0.0)
             self._ramp(target, now)
-            self._send(now)
+            with self._act_lock:
+                if not self._action_tick(now):
+                    self._send(now)
 
     def request_level(self) -> bool:
         """Neu ausrichten (Knopf im Web); False, wenn er nicht balanciert."""

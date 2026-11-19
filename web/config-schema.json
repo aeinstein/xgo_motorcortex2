@@ -129,6 +129,12 @@
        "hilfe": "nur wirksam mit Kernel-Patch (settings/motion_timeout_ms)"
       },
       {
+       "key": "action_tick_s",
+       "typ": "float",
+       "default": 0.08,
+       "hilfe": "Takt der Firmware-Aktionen 3–5 (jeder 21. Durchlauf ihrer Schleife, 260–333 Hz): lange Grenze. So lange setzt xgonav Keepalive und Kernel-Watchdog aus, sonst hält der Keepalive die Aktion an (robot.FW_ACTIONS)."
+      },
+      {
        "key": "height_min_mm",
        "typ": "float",
        "default": 60.0,
@@ -634,6 +640,12 @@
        "hilfe": "QR-Suche höchstens so oft"
       },
       {
+       "key": "qr_model_dir",
+       "typ": "str",
+       "default": "models/wechat_qr",
+       "hilfe": "WeChat-QR (opencv-contrib) für gestaltete Codes; \"\" = einfacher Detektor"
+      },
+      {
        "key": "qr_timeout_s",
        "typ": "float",
        "default": 60.0,
@@ -899,6 +911,12 @@
        "typ": "str",
        "default": "models/floornet.bin",
        "hilfe": "Gewichte von FloorNet. \"\" = kein Netz, also blind."
+      },
+      {
+       "key": "net_dir",
+       "typ": "str",
+       "default": "models/floornet",
+       "hilfe": "Ordner mit wählbaren FloorNet-Gewichten (*.bin). Im Web (Kasten Bildverarbeitung) wählbar: xgonav lädt das Netz neu und zeigt net (dann ein Symlink, deploy/install.sh legt ihn an) auf die Datei. \"\" = nicht wählbar."
       },
       {
        "key": "net_outlier_px",
@@ -3048,7 +3066,7 @@
        "key": "lcd_fifo",
        "typ": "str",
        "default": "",
-       "hilfe": "\"\" = aus"
+       "hilfe": "Kamera-Overlay aufs Display, \"\" = aus; WLAN-Einrichtung und pet-Augen immer (emotion.fifo)"
       },
       {
        "key": "lcd_fps",

@@ -32,6 +32,7 @@
 #   0019 Startkalibrierung des Gier-Nullpunkts nur im Stillstand (sonst wiederholen, höchstens 20 Fenster)
 #   0020 Diagnose-Register 0x15 (laufende Summen der IMU-Rohwerte + Radticks, Leser tools/rawdiag.py)
 #   0021 Lagefusion neu: Lage als Richtungsvektor, alle Kreisel-Nullpunkte, kein Einfrieren (ersetzt die Rechnung von 0005/0006/0017)
+#   0022 LEDs wabern (Nutzerfarbe, 1,2 s), solange der Kreisel beim Start kalibriert; danach fest
 # Braucht: git, python3 (venv), Internet beim ersten Lauf (PlatformIO lädt Toolchain ~1 GB).
 set -euo pipefail
 

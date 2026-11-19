@@ -57,6 +57,9 @@ class RobotCfg:
     keepalive_s: float = 0.3       # Sollwert periodisch neu schreiben
     stall_timeout_s: float = 0.5   # kein drive() mehr -> Stopp (Userspace-Watchdog)
     kernel_watchdog_ms: int = 1000 # nur wirksam mit Kernel-Patch (settings/motion_timeout_ms)
+    # Takt der Firmware-Aktionen 3–5 (jeder 21. Durchlauf ihrer Schleife, 260–333 Hz): lange Grenze. So lange
+    # setzt xgonav Keepalive und Kernel-Watchdog aus, sonst hält der Keepalive die Aktion an (robot.FW_ACTIONS).
+    action_tick_s: float = 0.08
     height_min_mm: float = 60.0
     height_max_mm: float = 120.0   # min/max legen nur die Skala mm -> u8 fest
     height_limit_u8: int = 205     # höchster Sollwert; bei 235 Stopp 252 (2026-11-06, Ursache offen)
@@ -234,6 +237,9 @@ class FreespaceCfg:
     restart_hold_s: float = 1.0
     # Gewichte von FloorNet. "" = kein Netz, also blind.
     net: str = "models/floornet.bin"
+    # Ordner mit wählbaren FloorNet-Gewichten (*.bin). Im Web (Kasten Bildverarbeitung) wählbar: xgonav lädt das
+    # Netz neu und zeigt net (dann ein Symlink, deploy/install.sh legt ihn an) auf die Datei. "" = nicht wählbar.
+    net_dir: str = "models/floornet"
     # Einzelne Zacken herausnehmen (1-3 Spalten breite Sprünge an senkrechten Kanten): Weicht eine Spalte um
     # mehr als net_outlier_px Vollbildzeilen vom Median der 7 Spalten um sie ab und liegt beim Medianwert mindestens
     # net_outlier_ratio der Masse ihres eigenen Gipfels, gilt das beste Fach beim Medianwert. 0 = aus.
@@ -307,7 +313,7 @@ class OutputCfg:
     web_host: str = "127.0.0.1"    # Schnittstelle nur lokal; Oberfläche über nginx (web/, deploy/nginx-xgonav.conf)
     web_port: int = 8088           # 0 = aus
     web_fps: int = 10
-    lcd_fifo: str = ""             # "" = aus
+    lcd_fifo: str = ""             # Kamera-Overlay aufs Display, "" = aus; WLAN-Einrichtung und pet-Augen immer (emotion.fifo)
     lcd_fps: int = 15             # CM4 gemessen: kostet die Hauptschleife nichts Messbares
     record_dir: str = "~/fahrt"   # Rohaufzeichnung (Knopf in der Oberfläche): je Aufnahme ein Unterverzeichnis
     record_min_free_mb: int = 500 # darunter schaltet sie sich ab
@@ -795,6 +801,7 @@ class WlanCfg:
     hold_s: float = 3.0                # so lange halten (im Ruhemodus liest xgonav nur 1x/s)
     cancel_buttons: int = 2            # kurz drücken bricht ab (B)
     qr_hz: float = 5.0                 # QR-Suche höchstens so oft
+    qr_model_dir: str = "models/wechat_qr"   # WeChat-QR (opencv-contrib) für gestaltete Codes; "" = einfacher Detektor
     qr_timeout_s: float = 60.0         # ohne Code danach Hotspot (Countdown am Display)
     hotspot_ssid: str = "xgo-rider"
     hotspot_timeout_s: float = 60.0    # Hotspot so lange (Countdown am Display), dann alte Verbindung zurück
