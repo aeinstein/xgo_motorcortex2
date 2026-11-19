@@ -106,7 +106,7 @@ Status JSON `grid`: `pose [x m, y m, yaw °]`, `start [x m, y m, yaw °]`, `zum_
 
 | Item | Value |
 |---|---|
-| Anchor | grey image + SIFT features while the Rider stands at the start point (≤ 1 cm, ≤ 1°, not turning); once per start point, dropped when the start is set anew |
+| Anchor | grey image + SIFT features while the Rider stands at the start point (≤ 3 cm, ≤ 5°, not turning); once per start point, dropped when the start is set anew ("Start hier") |
 | Ending of `home` | path to a pre-point 0.40 m before the start → turn to start heading → straight onto the start (grey image every 4 cm) → stand 0.5 s → measure → if > 4 cm left: turn to the start, drive, turn back (once) |
 | Measurement | own thread on `cpu.render_cpus`: end image vs. images 0.1–0.3 m earlier, triangulated with the odometry of the straight run (mm-exact over decimetres); anchor matched to these 3D points; anchor pose solved for x, y, heading plus small pitch/roll residuals, camera height fixed (124 mm measured); cross-check free 6-DOF PnP |
 | Camera model | undistorted image, f from hfov, principal point image centre, tilt + `pitch_dev`, IMU roll (without it the 3D points were rotated by the end roll, +2.3° in run 20261119-144940), lens `cam_fwd` ahead of the axle |

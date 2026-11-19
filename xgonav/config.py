@@ -501,9 +501,11 @@ class StartbildCfg:
     agree_m: float = 0.05              # Gegenprobe (frei, 6 Freiheitsgrade) muss so nah liegen
     nach_m: float = 0.04               # Rest nach der Korrektur, ab dem nachgefahren wird (einmal)
     timeout_s: float = 20.0            # so lange auf die Messung warten, dann ohne Korrektur fertig
-    # Anker: Rider steht am Startpunkt (so nah und so wenig gedreht), Merkmale einmal je Startpunkt
-    anker_m: float = 0.01
-    anker_deg: float = 1.0
+    # Anker: Rider steht am Startpunkt (so nah und so wenig gedreht), Merkmale einmal je Startpunkt. Der Anker merkt
+    # sich seine tatsächliche Pose, die Grenze sagt nur „am Start“. 1 cm / 1° war zu streng: Nach dem Aufstehen
+    # stand der Rider 2026-11-19 bei −0,6 cm / −1,7° und bekam keinen Anker.
+    anker_m: float = 0.03
+    anker_deg: float = 5.0
 
 
 @dataclass

@@ -296,7 +296,7 @@ All keys with comments: `PetCfg` in `xgonav/config.py`.
 | `max_lage_deg` / `agree_m` | 1.0 / 0.05 | pitch/roll residual of the anchor; free 6-DOF cross-check must lie this close |
 | `nach_m` | 0.04 | remaining distance after the correction above which `home` drives once more |
 | `timeout_s` | 20 | wait this long for the measurement |
-| `anker_m` / `anker_deg` | 0.01 / 1.0 | anchor image is taken while the Rider stands this close to the start (once per start point) |
+| `anker_m` / `anker_deg` | 0.03 / 5.0 | anchor image is taken while the Rider stands this close to the start (once per start point); the anchor keeps its actual pose, so the limit only means "at the start" (1 cm / 1° was too strict after standing up) |
 
 ### `[home]` (return to start)
 | Key | Default | Meaning |
