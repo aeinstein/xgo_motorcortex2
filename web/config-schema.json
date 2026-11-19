@@ -1446,6 +1446,115 @@
        "hilfe": "balancierend so lange ohne frische Raddaten: Pose unbekannt"
       }
      ]
+    },
+    {
+     "name": "startbild",
+     "doc": "",
+     "felder": [
+      {
+       "key": "enabled",
+       "typ": "bool",
+       "default": true,
+       "hilfe": "Abgleich am Startbild (startbild.py): Bild am Startpunkt (Anker) gegen die Bilder der Heimkehr. home fährt dazu erst einen Vorpunkt vor_m vor dem Start an, dreht auf den Startkurs und fährt gerade auf den Start (die Tiefenbilder); dann misst es die Lage gegen den Anker und korrigiert die Kartenpose. Liegt der Rest über nach_m, fährt es einmal nach. Offline 2026-11-19 (tools/start_abgleich.py): Fahrt 144940 Restfehler von ~12 cm auf ~3 cm, kurze Paare Median 1,1 cm / 0,3°. Seit 2026-11-19, am Rider nicht gefahren."
+      },
+      {
+       "key": "vor_m",
+       "typ": "float",
+       "default": 0.4,
+       "hilfe": "Vorpunkt so weit vor dem Start (gerade Schlussfahrt); Tiefenbilder bis basen[-1]"
+      },
+      {
+       "key": "vor_tol_m",
+       "typ": "float",
+       "default": 0.08,
+       "hilfe": "am Vorpunkt angekommen"
+      },
+      {
+       "key": "gerade_v",
+       "typ": "float",
+       "default": 0.08,
+       "hilfe": "normiertes Tempo der Schlussfahrt (~10 cm/s)"
+      },
+      {
+       "key": "tiefe_schritt_m",
+       "typ": "float",
+       "default": 0.04,
+       "hilfe": "während der Schlussfahrt je so viel Weg ein Graubild merken"
+      },
+      {
+       "key": "basen",
+       "typ": "liste",
+       "elem": "zahl",
+       "default": [
+        0.1,
+        0.15,
+        0.2,
+        0.25,
+        0.3
+       ],
+       "hilfe": "Abstände der Tiefenbilder (m)"
+      },
+      {
+       "key": "features",
+       "typ": "int",
+       "default": 3000,
+       "hilfe": "SIFT-Merkmale je Bild"
+      },
+      {
+       "key": "min_inl",
+       "typ": "int",
+       "default": 30,
+       "hilfe": "weniger stimmige Treffer: keine Korrektur (Ausreißer offline alle < 27)"
+      },
+      {
+       "key": "max_m",
+       "typ": "float",
+       "default": 0.5,
+       "hilfe": "größere Korrektur der Pose gilt als Fehlmessung"
+      },
+      {
+       "key": "max_deg",
+       "typ": "float",
+       "default": 15.0,
+       "hilfe": ""
+      },
+      {
+       "key": "max_lage_deg",
+       "typ": "float",
+       "default": 1.0,
+       "hilfe": "Nick-/Roll-Rest des Ankers (offline +0,3° / −0,2°)"
+      },
+      {
+       "key": "agree_m",
+       "typ": "float",
+       "default": 0.05,
+       "hilfe": "Gegenprobe (frei, 6 Freiheitsgrade) muss so nah liegen"
+      },
+      {
+       "key": "nach_m",
+       "typ": "float",
+       "default": 0.04,
+       "hilfe": "Rest nach der Korrektur, ab dem nachgefahren wird (einmal)"
+      },
+      {
+       "key": "timeout_s",
+       "typ": "float",
+       "default": 20.0,
+       "hilfe": "so lange auf die Messung warten, dann ohne Korrektur fertig"
+      },
+      {
+       "key": "anker_m",
+       "typ": "float",
+       "default": 0.01,
+       "hilfe": "Anker: Rider steht am Startpunkt (so nah und so wenig gedreht), Merkmale einmal je Startpunkt"
+      },
+      {
+       "key": "anker_deg",
+       "typ": "float",
+       "default": 1.0,
+       "hilfe": ""
+      }
+     ]
     }
    ]
   },

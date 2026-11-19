@@ -45,6 +45,7 @@ camera.FrameSource ─► egomotion.EgoMotion ─► tracker.Tracker ◄── d
 | `localmap.py` | Short-term obstacle memory in robot frame (`map.max_age_s` = 4 s); move, enter, confirm and arc check optionally in C++ (`native/navfast.cpp`) |
 | `wheels.py` | Wheel odometry from `wheels_log` |
 | `gridmap.py` | Room occupancy grid in world frame, start point, save/load; entering an observation (rays, free rays, hits) optionally in C++ (`native/gridfast.cpp`) |
+| `startbild.py` | start image check: anchor image at the start, measurement of the pose against it at the end of `home`, own thread |
 | `planner.py` | A* on the room map for `home`, own thread (`PlannerWorker`); A* and shortening optionally in C++ (`native/navfast.cpp`) |
 | `behaviors.py` | `idle`, `manual`, `follow`, `explore` (`MapExplore`, reactive `Explore` without room map), `approach`, `home`; `PathFollower`, `safety()` |
 | `pet.py` | mode `pet`: `PetBrain` (logic only), `Pet` (behavior); reacts to people, cats, dogs. Control step only, nothing per frame |

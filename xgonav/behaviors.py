@@ -59,6 +59,8 @@ class World:
     # (inf ab reach_m), gap_fn() = Mitte der Lücke voraus laut Merkkarte (x, y im Rider-KS) oder None
     wall_fn: object = None
     gap_fn: object = None
+    # Abgleich am Startbild (startbild.py): Anker zum aktuellen Startpunkt vorhanden
+    anker: bool = False
 
     def bearing(self, x: float) -> float:
         """Bildspalte -> Winkel rad (links positiv)."""
@@ -585,12 +587,30 @@ class PathFollower:
 class Home(Behavior):
     """Zurück zum Startpunkt der Raumkarte: Weg plant planner.py (App stößt an, sobald
     want_plan() es verlangt), gefahren wird mit PathFollower. Sicherheitsschicht und
-    Bahnprüfung gelten wie bei explore. Am Ziel optional auf den Startkurs drehen."""
-    name = "home"
+    Bahnprüfung gelten wie bei explore. Am Ziel optional auf den Startkurs drehen.
 
-    def __init__(self, cfg, rcfg, hcfg: HomeCfg | None = None):
+    Mit Startbild ([startbild] enabled, Anker vorhanden: World.anker) endet die Fahrt anders: Weg zum Vorpunkt
+    vor_m vor dem Start, dort auf den Startkurs drehen, gerade auf den Start fahren (App merkt sich dabei die
+    Tiefenbilder), stehen und messen (App: startbild.StartAbgleich, Korrektur der Kartenpose), bei mehr als
+    nach_m Rest einmal nachfahren, auf den Startkurs drehen. Hängt die Schlussfahrt, geht es ohne Startbild
+    weiter wie bisher."""
+    name = "home"
+    SB_RUHE_S = 0.5               # vor dem Messbild so lange stehen (Nicken abklingen lassen)
+
+    def __init__(self, cfg, rcfg, hcfg: HomeCfg | None = None, sbcfg=None):
         super().__init__(cfg, rcfg)
         self.h = hcfg or HomeCfg()
+        self.sb = sbcfg if sbcfg is not None and sbcfg.enabled else None
+        self.phase = "weg"            # mit Startbild: weg -> dreh -> gerade -> messen -> fein -> ende
+        self.t_phase = 0.0
+        self.ohne_sb = False          # Startbild aufgegeben: weiter wie ohne
+        self.want_messung = False     # App: jetzt messen
+        self.messung = None           # App: startbild.Ergebnis
+        self.nach_n = 0
+        self._fein_d: float | None = None
+        self._fein_fahrt = False
+        self._gemessen = False        # Messung für diesen Halt schon angefordert
+        self._grund = "–"             # Ergebnis der Messung (Status am Ende)
         self.f = PathFollower(cfg, rcfg, self.h)
         self.pending = False
         self.t_plan = -1e9
@@ -608,7 +628,7 @@ class Home(Behavior):
 
     # --- Planung (von App bedient) ---
     def want_plan(self, t: float) -> bool:
-        if self.pending or self.done or self.gave_up:
+        if self.pending or self.done or self.gave_up or self.phase != "weg":
             return False
         if self.f.path is None or t - self.t_plan > self.h.replan_s or self.f.stuck:
             self.keep_ok = self.f.path is not None and not self.f.stuck
@@ -617,8 +637,16 @@ class Home(Behavior):
             return True
         return False
 
+    def _mit_sb(self, w: World) -> bool:
+        return self.sb is not None and not self.ohne_sb and (w.anker or self.phase != "weg")
+
+    def _vorpunkt(self, goal: tuple) -> tuple[float, float]:
+        gx, gy, gth = goal
+        return gx - self.sb.vor_m * math.cos(gth), gy - self.sb.vor_m * math.sin(gth)
+
     def request_plan(self, planner, grid, w: World, obstacles) -> int:
-        return planner.request(w.pose[:2], w.goal[:2], keep=self.f.path if self.keep_ok else None, obstacles=obstacles)
+        ziel = self._vorpunkt(w.goal) if self._mit_sb(w) else w.goal[:2]
+        return planner.request(w.pose[:2], ziel, keep=self.f.path if self.keep_ok else None, obstacles=obstacles)
 
     def set_path(self, path: list[tuple[float, float]] | None) -> None:
         self.pending = False
@@ -639,6 +667,12 @@ class Home(Behavior):
         dist = math.hypot(gx - x, gy - y)
         if self.done:
             return Command(0, 0, hmm, "am Start angekommen")
+        if self._mit_sb(w):
+            c = self._startbild(w, x, y, th, gx, gy, gth, dist)
+            if c is not None:
+                return c
+            vx, vy = self._vorpunkt(w.goal)
+            return self._weg(w, math.hypot(vx - x, vy - y), "zum Vorpunkt")
         if dist < self.h.arrive_m:
             err = _wrap(gth - th)
             if self.h.align_heading and abs(err) > math.radians(self.h.align_tol_deg):
@@ -650,6 +684,11 @@ class Home(Behavior):
         if self.stuck_n >= 1 and dist < self.h.near_m:
             self.done = True
             return Command(0, 0, hmm, "am Start angekommen (%.2f m daneben)" % dist)
+        return self._weg(w, dist, "zum Start")
+
+    def _weg(self, w: World, dist: float, label: str) -> Command:
+        """Dem geplanten Weg folgen (zum Start oder zum Vorpunkt); Festfahren und Aufgeben wie gehabt."""
+        hmm = self.cfg.height_cruise_mm
         if dist < self.best_dist - STUCK_PROGRESS_M:
             self.best_dist, self.stuck_n, self.t_best = dist, 0, w.t
         if self.stuck_n >= self.h.max_fail and w.t - self.t_best > self.h.give_up_s:
@@ -657,8 +696,84 @@ class Home(Behavior):
         if self.gave_up:
             return Command(0, 0, hmm, "kein Weg zum Start – stopp")
         if self.f.path is None:
-            return Command(0, 0, hmm, "plane Weg zum Start")
-        return self.f.drive(w, "zum Start %.2f m" % dist)
+            return Command(0, 0, hmm, "plane Weg %s" % label)
+        return self.f.drive(w, "%s %.2f m" % (label, dist))
+
+    # --- Schluss mit Startbild ---
+    def _setze(self, phase: str, w: World) -> None:
+        self.phase, self.t_phase = phase, w.t
+
+    def _startbild(self, w: World, x, y, th, gx, gy, gth, dist) -> Command | None:
+        """Phasen nach dem Weg; None = noch auf dem Weg zum Vorpunkt."""
+        sb, hmm = self.sb, self.cfg.height_cruise_mm
+        if self.phase == "weg":
+            vx, vy = self._vorpunkt((gx, gy, gth))
+            dv = math.hypot(vx - x, vy - y)
+            # am Vorpunkt, oder festgefahren in seiner Nähe (Hindernis darauf): von hier aus weiter
+            if dv >= sb.vor_tol_m and not (self.stuck_n >= 1 and dv < self.h.near_m):
+                return None
+            self.f.clear()
+            self._setze("dreh", w)
+        if self.phase == "dreh":
+            err = _wrap(gth - th)
+            if abs(err) > math.radians(3.0):
+                return self.f.align(err, "Startbild: richte aus")
+            self._setze("gerade", w)
+        if self.phase == "gerade":
+            ux, uy = math.cos(gth), math.sin(gth)
+            rest = (gx - x) * ux + (gy - y) * uy           # bis zum Start entlang des Startkurses
+            if rest <= 0.01:
+                self._setze("messen", w)
+                return Command(0, 0, hmm, "Startbild: stehe")
+            v_ms = max(sb.gerade_v * self.rcfg.vx_limit, 0.02)
+            if w.t - self.t_phase > 3.0 * (sb.vor_m + 0.2) / v_ms + 5.0:
+                # kommt nicht voran (Bahnprüfung, Hindernis am Start): ohne Startbild zu Ende
+                log.info("Startbild: Schlussfahrt hängt, weiter ohne Abgleich")
+                self.ohne_sb = True
+                self._setze("weg", w)
+                return Command(0, 0, hmm, "Startbild: Schlussfahrt hängt")
+            soll = math.atan2(gy - y, gx - x) if rest > 0.10 else gth   # auf den Start zielen, zuletzt Kurs halten
+            err = _wrap(soll - th)
+            wc = clamp(yaw_rate_to_w(self.h.kp_turn * err, self.rcfg), -self.h.turn_w_max, self.h.turn_w_max)
+            return Command(sb.gerade_v, wc, hmm, "Startbild: gerade zum Start %.2f m" % rest)
+        if self.phase == "messen":
+            if self.messung is None:
+                if not self._gemessen and w.t - self.t_phase >= self.SB_RUHE_S:
+                    self.want_messung, self._gemessen = True, True
+                if w.t - self.t_phase > sb.timeout_s + self.SB_RUHE_S:
+                    log.info("Startbild: keine Messung in %.0f s, ohne Abgleich fertig", sb.timeout_s)
+                    self._grund = "keine Messung"
+                    self._setze("ende", w)
+                return Command(0, 0, hmm, "Startbild: messe")
+            erg, self.messung, self._gemessen = self.messung, None, False
+            self._grund = erg.grund
+            # Die App hat die Pose schon korrigiert; dist ist der Rest danach
+            if erg.ok and dist > sb.nach_m and self.nach_n < 1:
+                self.nach_n += 1
+                self._fein_d, self._fein_fahrt = None, False
+                self._setze("fein", w)
+            else:
+                self._setze("ende", w)
+        if self.phase == "fein":
+            if dist < 0.015 or (self._fein_d is not None and self._fein_fahrt and dist > self._fein_d + 0.005):
+                self._setze("ende", w)
+            else:
+                err = _wrap(math.atan2(gy - y, gx - x) - th)
+                if not self._fein_fahrt and abs(err) > math.radians(3.0):
+                    return self.f.align(err, "Startbild: drehe zum Start")
+                self._fein_fahrt = True
+                self._fein_d = dist if self._fein_d is None else min(self._fein_d, dist)
+                wc = clamp(yaw_rate_to_w(self.h.kp_turn * err, self.rcfg), -self.h.turn_w_max, self.h.turn_w_max)
+                if w.t - self.t_phase > 20.0:
+                    self._setze("ende", w)
+                else:
+                    return Command(0.75 * sb.gerade_v, wc, hmm, "Startbild: nachfahren %.2f m" % dist)
+        # ende: auf den Startkurs drehen, fertig
+        err = _wrap(gth - th)
+        if self.h.align_heading and abs(err) > math.radians(self.h.align_tol_deg):
+            return self.f.align(err, "am Start – richte aus")
+        self.done = True
+        return Command(0, 0, hmm, "am Start angekommen (Startbild: %s)" % self._grund)
 
 
 class MapExplore(Behavior):
@@ -1190,7 +1305,7 @@ class Patrol(Behavior):
 
 def make_behavior(name: str, cfg: BehaviorCfg, rcfg: RobotCfg, target: str | None = None,
                   hcfg: HomeCfg | None = None, ecfg: ExploreCfg | None = None, has_map: bool = True,
-                  pcfg: PatrolCfg | None = None, petcfg=None) -> Behavior:
+                  pcfg: PatrolCfg | None = None, petcfg=None, sbcfg=None) -> Behavior:
     """has_map: Raumkarte vorhanden; sonst erkundet explore nur reaktiv."""
     def pet():
         from .pet import Pet          # pet.py importiert dieses Modul
@@ -1201,7 +1316,7 @@ def make_behavior(name: str, cfg: BehaviorCfg, rcfg: RobotCfg, target: str | Non
             "follow": lambda: Follow(cfg, rcfg, target),
             "explore": lambda: MapExplore(cfg, rcfg, hcfg, ecfg) if has_map else Explore(cfg, rcfg),
             "approach": lambda: Approach(cfg, rcfg, target),
-            "home": lambda: Home(cfg, rcfg, hcfg),
+            "home": lambda: Home(cfg, rcfg, hcfg, sbcfg),
             "patrol": lambda: Patrol(cfg, rcfg, hcfg, pcfg)}[name]()
 
 

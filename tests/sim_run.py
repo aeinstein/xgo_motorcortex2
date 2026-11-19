@@ -1,4 +1,4 @@
-"""Closed-Loop-Szenarien im Simulator. python3 tests/sim_run.py follow|approach|explore|home [sekunden] [video.mp4] [--dunkel x0,y0,x1,y1[,rest]] [--imu] [--fs-thread] [--wheels] [--dyn] [--rider] [--scene raum|zwei|spalt] [--video-step n] [--set a.b=wert] [--vx-true m/s]
+"""Closed-Loop-Szenarien im Simulator. python3 tests/sim_run.py follow|approach|explore|home [sekunden] [video.mp4] [--dunkel x0,y0,x1,y1[,rest]] [--yaw-scale 1.01] [--imu] [--fs-thread] [--wheels] [--dyn] [--rider] [--scene raum|zwei|spalt] [--video-step n] [--set a.b=wert] [--vx-true m/s]
 
 home: erste Hälfte explore, dann Modus home (zurück zum Startpunkt der Raumkarte).
 --dyn: Trägheit wie am RiderPi (Totzone, Nachlaufen der Drehung, Rückrollen beim Anfahren).
@@ -49,7 +49,8 @@ def pick_route(gm, cfg, n=3):
 
 
 def run(mode="follow", secs=25.0, video=None, shake=1.0, quiet=True, imu=False, fs_thread=False, wheels=False, vx_true=None, dyn=False,
-        overrides=None, scene="raum", record=None, phantoms=0, animal="person", speed=None, video_step=1, dunkel=None):
+        overrides=None, scene="raum", record=None, phantoms=0, animal="person", speed=None, video_step=1, dunkel=None,
+        yaw_scale=1.0):
     """overrides: siehe apply_overrides. record: Liste, bekommt je Eintrag in die Raumkarte die Beobachtung
     (tools/map_eval.py spielt sie offline ab); dafür trägt die Karte im Regelschritt ein.
     animal, speed (m/s): nur Modus pet, wer auf den Rider zukommt (person, cat, dog)."""
@@ -86,7 +87,7 @@ def run(mode="follow", secs=25.0, video=None, shake=1.0, quiet=True, imu=False, 
     if not wheels:
         cfg.odom.source = "command"          # sonst sucht App die Raddaten in /proc
     net = SimFloorNet(world)
-    app = App(cfg, robot, world, imu=SimImu(world, cfg.imu) if imu else None,
+    app = App(cfg, robot, world, imu=SimImu(world, cfg.imu, yaw_scale=yaw_scale) if imu else None,
               wheels=SimWheels(world, cfg.odom) if wheels else None, floor_net=net)
     if not imu:
         app.imu = None
@@ -190,7 +191,10 @@ def run(mode="follow", secs=25.0, video=None, shake=1.0, quiet=True, imu=False, 
            "v_fahrt": round(float(np.mean([r["v"] for r in L if r["v"] > 0.05] or [0.0])), 3),
            "grid": grid, "status": app._cmd.status, "fertig_s": done_t.get("s"),
            "explore": app.behavior.info() if hasattr(app.behavior, "info") else None,
-           "plan_ms": round(app.planner.ms, 1) if app.planner is not None else None}
+           "plan_ms": round(app.planner.ms, 1) if app.planner is not None else None,
+           # wahrer Abstand vom Startpunkt am Ende (home: so gut traf er ihn wirklich)
+           "start_wahr_m": round(math.hypot(world.x - L[0]["x"], world.y - L[0]["y"]), 3) if L else None,
+           "startbild": app.startbild.info() if getattr(app, "startbild", None) else None}
     if mode == "pet":
         out.update(pet=app.behavior.info() if app.behavior.name == "pet" else None,
                    aktionen=[v for _, n, v in robot.writes if n == "action"],
@@ -223,7 +227,7 @@ def run(mode="follow", secs=25.0, video=None, shake=1.0, quiet=True, imu=False, 
 if __name__ == "__main__":
     mode = sys.argv[1] if len(sys.argv) > 1 else "follow"
     secs = float(sys.argv[2]) if len(sys.argv) > 2 and not sys.argv[2].startswith("--") else 25
-    args = [a for i, a in enumerate(sys.argv) if i >= 3 and not a.startswith("--") and sys.argv[i - 1] not in ("--set", "--scene", "--phantoms", "--animal", "--speed", "--video-step", "--vx-true", "--dunkel")]
+    args = [a for i, a in enumerate(sys.argv) if i >= 3 and not a.startswith("--") and sys.argv[i - 1] not in ("--set", "--scene", "--phantoms", "--animal", "--speed", "--video-step", "--vx-true", "--dunkel", "--yaw-scale")]
     rider = "--rider" in sys.argv
     ov = dict(RIDER) if rider else {}
     for i, a in enumerate(sys.argv):
@@ -239,4 +243,5 @@ if __name__ == "__main__":
               phantoms=int(sys.argv[sys.argv.index("--phantoms") + 1]) if "--phantoms" in sys.argv else 0,
               animal=sys.argv[sys.argv.index("--animal") + 1] if "--animal" in sys.argv else "person",
               speed=float(sys.argv[sys.argv.index("--speed") + 1]) if "--speed" in sys.argv else None,
-              dunkel=[float(v) for v in sys.argv[sys.argv.index("--dunkel") + 1].split(",")] if "--dunkel" in sys.argv else None))
+              dunkel=[float(v) for v in sys.argv[sys.argv.index("--dunkel") + 1].split(",")] if "--dunkel" in sys.argv else None,
+              yaw_scale=float(sys.argv[sys.argv.index("--yaw-scale") + 1]) if "--yaw-scale" in sys.argv else 1.0))

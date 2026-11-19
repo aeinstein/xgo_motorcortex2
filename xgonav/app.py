@@ -27,6 +27,7 @@ from .planner import PlannerWorker
 from .geometry import CamGeometry
 from .wheels import WheelOdom, make_wheels
 from .odomfusion import OdomFusion
+from . import startbild as sbm
 from .imu import ImuFrame, ImuSource, ImuSync, imu_frame, make_imu, max_age as imu_max_age
 from .localmap import LocalMap, mask_movable
 from .route import arc_hits_zone, check as route_check, load as route_load, save as route_save
@@ -177,6 +178,11 @@ class App:
             log.info("Kartenabgleich: laufend, alle %.0f s nach %.1f m oder %.0f°", cfg.reloc.every_s,
                      cfg.reloc.min_move_m, cfg.reloc.min_turn_deg)
         # Planer für den Modus home (Thread startet erst beim ersten Auftrag)
+        # Abgleich am Startbild: nur mit Raumkarte; rechnet in eigenem Faden (startbild.py)
+        self.startbild = sbm.StartAbgleich(cfg.startbild, cfg.cpu.render_cpus) \
+            if cfg.startbild.enabled and self.gridmap is not None else None
+        self._sb_tiefen: list = []          # Graubilder der geraden Schlussfahrt (home)
+        self._sb_t_phase = None
         self.planner = PlannerWorker(self.gridmap, cfg.home, cfg.cpu.freespace_cpus) \
             if self.gridmap is not None else None
         self._plan_seq = 0
@@ -330,7 +336,7 @@ class App:
     def _make(self, name: str, target: str | None = None) -> Behavior:
         b = make_behavior(name, self.cfg.behavior, self.cfg.robot, target, self.cfg.home, self.cfg.explore,
                           has_map=getattr(self, "gridmap", None) is not None, pcfg=self.cfg.patrol,
-                          petcfg=self.cfg.pet)
+                          petcfg=self.cfg.pet, sbcfg=self.cfg.startbild if getattr(self, "startbild", None) else None)
         if name == "patrol" and getattr(self, "gridmap", None) is not None:
             b.set_route(self.gridmap.route, self.gridmap.route_loop)
         return b
@@ -988,6 +994,8 @@ class App:
                 if self.grid_worker is None:
                     self.gridmap.maybe_save(self.cfg.grid.file, self.cfg.grid.save_every_s)
                 w.pose, w.goal = self.gridmap.pose(), self.gridmap.start
+                if self.startbild is not None:
+                    w.pose = self._startbild_tick(f, w, pitch_dev, dyaw, dt)
                 if hasattr(self.behavior, "want_plan"):
                     if self.cfg.home.tight_m > 0:           # Engstellen: der Wegfolger fragt nur bei Bedarf
                         w.wall_fn = self.gridmap.wall_dist
@@ -1010,6 +1018,9 @@ class App:
                 cmd = self._manual_cmd()
             else:
                 cmd = safety(self.behavior.step(w), w, self.cfg.behavior)
+                if getattr(self.behavior, "want_messung", False):
+                    self.behavior.want_messung = False
+                    self._startbild_messen(f, w, pitch_dev)
                 cmd = self._dunkel_tick(now, cmd)
                 cmd = self._arc_check(cmd)
             if self._action_pending is not None or self.robot._act is not None or self._action_note is not None:
@@ -1061,6 +1072,7 @@ class App:
                                         **self.odomf.info(),
                                         "imu_spruenge": self.imu.yaw_jumps if self.imu is not None else None},
                                "speed_ctrl": self._speed_stat,
+                               "startbild": None if self.startbild is None else self.startbild.info(),
                                "mode": self.behavior.name, "yaw_vis_deg": round(math.degrees(self.vis_yaw), 1),
                                "yaw_deg": round(math.degrees(self.yaw), 1), "yaw_src": self.yaw_src,
                                "yaw_imu": self.kurs_deg(), "battery": self.robot.state.battery,
@@ -1077,6 +1089,65 @@ class App:
         tm.mark("snap")
         self._seg_hist.append(tm.done())
 
+
+    def _sb_ansicht(self, f, pose, pitch_dev: float):
+        fr = self._imu_frame
+        roll = fr.roll_deg if fr is not None and fr.frisch else 0.0
+        return sbm.ansicht(f.bgr, pose, self.geo, roll, pitch_dev, f.t)
+
+    def _startbild_tick(self, f, w: World, pitch_dev: float, dyaw: float, dt: float):
+        """Je Regelschritt (nur mit Raumkarte): Ergebnis einer Messung übernehmen, Anker setzen, solange der Rider
+        am Startpunkt steht, und in der geraden Schlussfahrt von home Graubilder merken. Kosten: ein paar
+        Vergleiche; ein Graubild (~1 ms) nur beim Anker und je tiefe_schritt_m Schlussfahrt. Gibt die
+        (womöglich korrigierte) Pose zurück."""
+        sb, gm, c, b = self.startbild, self.gridmap, self.cfg.startbild, self.behavior
+        pose = w.pose
+        erg = sb.poll()
+        if erg is not None:
+            if erg.ok:
+                gm.shift_pose(erg.k)
+                self.yaw += erg.k[2]
+                pose = gm.pose()
+                log.info("Startbild: Pose korrigiert um %.0f cm, %+.1f° (%s)", 100 * erg.info.get("schub_m", 0.0),
+                         math.degrees(erg.k[2]), erg.grund)
+            if hasattr(b, "messung"):
+                b.messung = erg
+        if sb.anker is not None and sb.anker_start != tuple(gm.start):
+            sb.anker_weg("Startpunkt geändert")
+        if sb.anker is None and gm.pose_ok and w.balancing:
+            sx, sy, sth = gm.start
+            rate = abs(dyaw) / dt if dt > 0 else 0.0
+            if (math.hypot(pose[0] - sx, pose[1] - sy) < c.anker_m
+                    and abs((pose[2] - sth + math.pi) % (2 * math.pi) - math.pi) < math.radians(c.anker_deg)
+                    and rate < math.radians(2.0) and abs(self.robot.command[0]) < 0.01):
+                sb.anker_setzen(self._sb_ansicht(f, pose, pitch_dev), gm.start)
+        w.anker = sb.anker is not None and sb.anker_bereit
+        # Schlussfahrt: Graubilder je tiefe_schritt_m (neu bei jedem Beginn der Phase)
+        if b.name == "home" and getattr(b, "phase", "") == "gerade":
+            if self._sb_t_phase != b.t_phase:
+                self._sb_t_phase, self._sb_tiefen = b.t_phase, []
+            last = self._sb_tiefen[-1].pose if self._sb_tiefen else None
+            if last is None or math.hypot(pose[0] - last[0], pose[1] - last[1]) >= c.tiefe_schritt_m:
+                self._sb_tiefen.append(self._sb_ansicht(f, pose, pitch_dev))
+                del self._sb_tiefen[:-24]
+        return pose
+
+    def _startbild_messen(self, f, w: World, pitch_dev: float) -> None:
+        """home steht am Start: Endbild nehmen, je Abstand in [startbild] basen das passende Bild der
+        Schlussfahrt, Messung im Faden starten. Ohne Bilder: Ergebnis 'keine Tiefenbilder'."""
+        ende = self._sb_ansicht(f, w.pose, pitch_dev)
+        tiefen, used = [], set()
+        for basis in self.cfg.startbild.basen:
+            best = None
+            for i, a in enumerate(self._sb_tiefen):
+                d = math.hypot(a.pose[0] - ende.pose[0], a.pose[1] - ende.pose[1])
+                if i not in used and d >= 0.8 * basis and (best is None or abs(d - basis) < best[0]):
+                    best = (abs(d - basis), i)
+            if best is not None:
+                used.add(best[1])
+                tiefen.append(self._sb_tiefen[best[1]])
+        if not tiefen or not self.startbild.messen(ende, tiefen):
+            self.behavior.messung = sbm.Ergebnis(False, "keine Tiefenbilder" if not tiefen else "Messung nicht gestartet")
 
     def _paused_odom(self) -> None:
         """Pose auch bei gestoppter Bildverarbeitung mitführen (Handsteuerung, Balancier-Drift).

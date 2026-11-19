@@ -461,14 +461,18 @@ class SimWorld(FrameSource):
 
 class SimImu:
     """IMU des Simulators: 50 Hz, Rauschen, absichtlich vertauschtes Vorzeichen,
-    Grundneigung (ref) und Zeitstempelversatz – die App muss das selbst herausfinden."""
+    Grundneigung (ref) und Zeitstempelversatz – die App muss das selbst herausfinden.
+    yaw_scale: Kurs zählt jede Drehung so viel mal (Skalenfehler des Kreisels, für den Abgleich am Startbild)."""
 
     def __new__(cls, *a, **k):
         from .imu import ImuSource
 
         class _SimImu(ImuSource):
-            def __init__(self, world, cfg, sign=-1.0, ref_deg=2.5, t_err_ms=-8.0, noise_deg=0.05, hz=50.0):
+            def __init__(self, world, cfg, sign=-1.0, ref_deg=2.5, t_err_ms=-8.0, noise_deg=0.05, hz=50.0,
+                         yaw_scale=1.0):
                 super().__init__(cfg)
+                self.yaw_scale = yaw_scale
+                self._th_alt = self._kurs = None
                 self.world, self.sgn, self.ref = world, sign, math.radians(ref_deg)
                 self.t_err, self.noise, self.hz = t_err_ms / 1000, math.radians(noise_deg), hz
                 self._seq = 0
@@ -487,7 +491,12 @@ class SimImu:
                     p = w.pitch_truth(now - w._t0) if w.robot.state.balancing else math.radians(60.0)
                     raw = self.sgn * p + self.ref + self.noise * self._rng.standard_normal()
                     self._seq += 1
-                    self.add(self._seq, now + self.t_err, 0.0, raw, w.th)
+                    if self._th_alt is None:
+                        self._kurs = w.th
+                    else:
+                        self._kurs += self.yaw_scale * ((w.th - self._th_alt + math.pi) % (2 * math.pi) - math.pi)
+                    self._th_alt = w.th
+                    self.add(self._seq, now + self.t_err, 0.0, raw, (self._kurs + math.pi) % (2 * math.pi) - math.pi)
                     self.rate_hz = self.hz
 
         return _SimImu(*a, **k)

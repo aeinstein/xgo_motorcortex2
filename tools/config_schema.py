@@ -27,7 +27,7 @@ OBEN = "allgemein"          # Pseudo-Abschnitt für Schlüssel auf oberster Eben
 KATEGORIEN = [
     ("Hardware", ["robot", "camera", "imu", "odom", "cpu", "wlan", OBEN]),
     ("Wahrnehmung", ["ego", "detector", "tracker", "freespace"]),
-    ("Karten", ["map", "grid", "reloc"]),
+    ("Karten", ["map", "grid", "reloc", "startbild"]),
     ("Verhalten", ["behavior", "explore", "home", "patrol", "pet", "emotion", "ruhe", "dunkel", "ortung"]),
     ("Ausgabe", ["output"]),
 ]

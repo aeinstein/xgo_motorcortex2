@@ -2685,6 +2685,131 @@ def _world_at(t, pose):
                  balancing=True, yaw=0.0, cmd_v=0.0, pose=pose, goal=(0.0, 0.0, 0.0))
 
 
+def test_home_startbild_phases():
+    """Mit Startbild: Planziel ist der Vorpunkt; dort ausrichten, gerade auf den Start, stehen, nach SB_RUHE_S
+    messen lassen; nach einer Korrektur mit Rest > nach_m einmal nachfahren, dann auf den Startkurs drehen."""
+    from xgonav.behaviors import Home
+    from xgonav.startbild import Ergebnis
+    cfg = Config.neutral()
+    cfg.startbild.enabled = True
+    b = Home(cfg.behavior, cfg.robot, cfg.home, cfg.startbild)
+
+    def w(t, pose, anker=True):
+        x = _world_at(t, pose)
+        x.anker = anker
+        return x
+
+    class Plan:
+        def request(self, start, ziel, keep=None, obstacles=None):
+            self.ziel = ziel
+            return 1
+    pl = Plan()
+    assert b.want_plan(0.0)
+    b.request_plan(pl, None, w(0.0, (2.0, 1.0, 0.0)), None)
+    assert pl.ziel == pytest.approx((-cfg.startbild.vor_m, 0.0))          # Vorpunkt vor dem Start
+    b2 = Home(cfg.behavior, cfg.robot, cfg.home, cfg.startbild)           # ohne Anker: wie bisher zum Start
+    b2.want_plan(0.0)
+    b2.request_plan(pl, None, w(0.0, (2.0, 1.0, 0.0), anker=False), None)
+    assert pl.ziel == pytest.approx((0.0, 0.0))
+    # am Vorpunkt, quer stehend: ausrichten
+    c = b.step(w(1.0, (-0.38, 0.0, math.radians(60))))
+    assert b.phase == "dreh" and c.v == 0 and c.w < 0
+    assert not b.want_plan(1.1)                                            # keine Planung mehr
+    c = b.step(w(1.2, (-0.38, 0.0, math.radians(1))))
+    assert b.phase == "gerade" and c.v == pytest.approx(cfg.startbild.gerade_v)
+    c = b.step(w(3.0, (-0.2, 0.01, 0.0)))
+    assert c.v > 0 and c.w < 0                                             # zielt auf den Start (rechts)
+    c = b.step(w(5.0, (-0.005, 0.0, 0.0)))
+    assert b.phase == "messen" and c.v == 0 and not b.want_messung
+    b.step(w(5.2, (-0.005, 0.0, 0.0)))
+    assert not b.want_messung                                              # erst stehen
+    b.step(w(5.6, (-0.005, 0.0, 0.0)))
+    assert b.want_messung
+    b.want_messung = False
+    b.step(w(5.7, (-0.005, 0.0, 0.0)))
+    assert not b.want_messung                                              # nur einmal anfordern
+    # Korrektur: Pose liegt nun 8 cm rechts vom Start -> nachfahren
+    b.messung = Ergebnis(True, "8 cm")
+    c = b.step(w(6.0, (0.0, -0.08, 0.0)))
+    assert b.phase == "fein" and c.v == 0 and c.w > 0                      # erst zum Start drehen
+    c = b.step(w(7.0, (0.0, -0.08, math.radians(90))))
+    assert c.v > 0
+    c = b.step(w(8.0, (0.0, -0.005, math.radians(90))))
+    assert b.phase == "ende" and c.v == 0 and c.w < 0                      # zurück auf den Startkurs
+    c = b.step(w(9.0, (0.0, -0.005, math.radians(2))))
+    assert b.done and "8 cm" in c.status
+
+
+def test_home_startbild_rejected_and_stuck():
+    """Messung verworfen: kein Nachfahren, fertig mit Grund. Schlussfahrt kommt nicht voran: weiter ohne Startbild."""
+    from xgonav.behaviors import Home
+    from xgonav.startbild import Ergebnis
+    cfg = Config.neutral()
+    cfg.startbild.enabled = True
+    b = Home(cfg.behavior, cfg.robot, cfg.home, cfg.startbild)
+    b.phase, b.t_phase = "messen", 0.0
+    x = _world_at(1.0, (0.0, -0.1, 0.0))
+    x.anker = True
+    b.messung = Ergebnis(False, "zu wenig Treffer")
+    c = b.step(x)
+    assert b.done and "zu wenig Treffer" in c.status
+    b = Home(cfg.behavior, cfg.robot, cfg.home, cfg.startbild)
+    b.phase, b.t_phase = "gerade", 0.0
+    x = _world_at(100.0, (-0.3, 0.0, 0.0))
+    x.anker = True
+    b.step(x)
+    assert b.ohne_sb and b.phase == "weg" and b.want_plan(100.1)
+
+
+def test_startbild_messung_synthetisch():
+    """Rechnung von startbild.messen an einer synthetischen Szene: zufällige Texturpunkte an Wänden, Kamera wie am
+    Rider; das Ende liegt 6 cm vor / 9 cm links / −4° vom Anker, die Odometrie glaubt aber (0, 0, 0). Gemessen
+    wird die wahre Lage, die Korrektur führt das Ende dorthin (Rest 2026-11-19: 0,4 / 1,3 cm, 0,2°)."""
+    import cv2
+    from xgonav import startbild as sbm
+    from xgonav.geometry import CamGeometry
+    cfg = Config()
+    geo = CamGeometry.from_cfg(cfg, 90.0)
+    rng = np.random.default_rng(3)
+    # Wände 2,5–4 m vor und seitlich, Flecken als Merkmale
+    P = np.concatenate([np.c_[rng.uniform(2.5, 4, 600), rng.uniform(-3, 3, 600), rng.uniform(0.0, 1.2, 600)],
+                        np.c_[rng.uniform(0.5, 3, 300), np.full(300, 1.5), rng.uniform(0.0, 1.0, 300)],
+                        np.c_[rng.uniform(0.5, 3, 300), np.full(300, -1.5), rng.uniform(0.0, 1.0, 300)]])
+    farben = rng.integers(0, 255, len(P))
+
+    def bild(pose):
+        a = sbm.Ansicht(np.zeros((480, 640), np.uint8), pose, 0.0, 0.0, geo.f, geo.cx, 240.0, geo.tilt_deg,
+                        geo.cam_h, geo.cam_fwd)
+        K, R, C = sbm.kamera(a)
+        xc = (R @ (P - C).T)
+        uv = ((K @ xc)[:2] / xc[2]).T
+        img = np.full((480, 640), 128, np.uint8)
+        for i in np.argsort(-xc[2]):
+            if xc[2][i] > 0.2:
+                r = max(2, int(60 / xc[2][i] / 4))
+                cv2.circle(img, (int(uv[i, 0]), int(uv[i, 1])), r, int(farben[i]), -1)
+        a.gray = cv2.equalizeHist(cv2.GaussianBlur(img, (3, 3), 0))
+        return a
+    wahr_ende = (0.06, 0.09, math.radians(-4.0))
+    anker = bild((0.0, 0.0, 0.0))
+    # alle Bilder des Endes: wahre Lage in der Szene, Pose laut Odometrie um wahr_ende verschoben (Drift)
+    def mit_drift(pose_wahr):
+        a = bild(pose_wahr)
+        k = sbm.korrektur(wahr_ende, (0.0, 0.0, 0.0))
+        a.pose = sbm.anwenden(k, pose_wahr)
+        return a
+    ende = mit_drift(wahr_ende)
+    th = wahr_ende[2]
+    tiefen = [mit_drift((wahr_ende[0] - d * math.cos(th), wahr_ende[1] - d * math.sin(th), th))
+              for d in cfg.startbild.basen]
+    erg = sbm.messen(anker, ende, tiefen, cfg.startbild)
+    assert erg.ok, erg.grund
+    neu = sbm.anwenden(erg.k, ende.pose)
+    # ~1–2 cm Rest: seitlicher Versatz und Kurs sind bei fernen Punkten fast gleichwertig (0,2° = 1,4 cm in 4 m)
+    assert neu[0] == pytest.approx(wahr_ende[0], abs=0.02) and neu[1] == pytest.approx(wahr_ende[1], abs=0.02)
+    assert math.degrees(neu[2]) == pytest.approx(-4.0, abs=0.5)
+
+
 def test_home_gives_up_when_stuck():
     """Hindernis im Weg: Neuplanen hilft nicht, Fahrt endet mit Meldung statt endlos zu warten."""
     from xgonav.behaviors import Home
