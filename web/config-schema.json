@@ -255,6 +255,12 @@
        "hilfe": ""
       },
       {
+       "key": "brightness",
+       "typ": "float",
+       "default": 0.0,
+       "hilfe": "Helligkeit im ISP (0 = Standard, -0,5..0,5 über den Regler im Web)"
+      },
+      {
        "key": "hfov_deg",
        "typ": "float",
        "default": 91.8,

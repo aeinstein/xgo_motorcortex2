@@ -41,7 +41,7 @@ extern "C" int lens_remap(const uint8_t* src, int w, int h, int stride, int cn, 
 using namespace libcamera;
 
 namespace {
-constexpr int kCamAbi = 3;   // bei Änderung von Funktionen oder CamMeta erhöhen (camera.py prüft das)
+constexpr int kCamAbi = 4;   // bei Änderung von Funktionen oder CamMeta erhöhen (camera.py prüft das)
 
 struct CamMeta {             // gleiche Reihenfolge wie camera._CamMeta
     int64_t ts_ns;           // SensorTimestamp (CLOCK_MONOTONIC wie bisher), 0 = fehlt
@@ -304,13 +304,15 @@ int cam_set_gain(void* hdl, float gain) {
     return 0;
 }
 
-// Kontrast und Sättigung im ISP (rpi-IPA: 0..32, 1 = Standard). FloorNet ist auf 1,0 trainiert; die Werte stehen
-// je Bild in den Metadaten (camera.py). Wirkt ab dem nächsten eingestellten Request bzw. Start.
-int cam_set_bild(void* hdl, float kontrast, float saettigung) {
+// Kontrast und Sättigung (rpi-IPA: 0..32, 1 = Standard) und Helligkeit (-1..1, 0 = Standard) im ISP. FloorNet ist
+// auf 1/1/0 trainiert; die Werte stehen je Bild in den Metadaten (camera.py). Wirkt ab dem nächsten Request bzw. Start.
+// Einen Farbton-Regler hat libcamera nicht (0.5.2); den dreht nur der Browser für die Anzeige.
+int cam_set_bild(void* hdl, float kontrast, float saettigung, float hell) {
     Cam* c = static_cast<Cam*>(hdl);
     std::lock_guard<std::mutex> lk(c->mu);
     c->set(controls::Contrast, kontrast);
     c->set(controls::Saturation, saettigung);
+    c->set(controls::Brightness, hell);
     return 0;
 }
 

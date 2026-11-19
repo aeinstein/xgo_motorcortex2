@@ -129,25 +129,28 @@ details.hilfe p{margin:4px 0 0}
    enger Ist-Wert in eigener Zeile, schmal die Regler untereinander. Nichts darf unter seinen Inhalt schrumpfen. */
 #bild-rahmen{container-type:inline-size}
 .bild-leiste{display:grid;align-items:center;gap:6px 8px;padding:6px 10px;background:var(--karte);border-top:1px solid var(--rand);
-  grid-template-columns:auto minmax(50px,1fr) auto auto auto minmax(50px,1fr) auto auto auto}
-.bild-leiste .regler{display:contents}
+  grid-template-columns:minmax(0,1fr)}
+/* Kameraregler im Klappfeld: zwei Regler je Zeile, schmal untereinander */
+.kamera-klapp>summary{cursor:pointer;user-select:none;display:flex;gap:8px;align-items:center;color:var(--leise);font-size:13px}
+.kamera-klapp>summary .titel{color:var(--text)}
+.kamera-klapp[open]>summary{margin-bottom:6px}
+.kamera-raster{display:grid;align-items:center;gap:6px 8px;
+  grid-template-columns:auto minmax(50px,1fr) auto auto auto minmax(50px,1fr) auto auto}
+.kamera-raster .regler{display:contents}
+.kamera-raster .regler:nth-child(even) label{margin-left:8px}
+.kamera-raster .ausgleich{grid-column:1/-1;display:flex;gap:6px;align-items:center;justify-content:flex-end;flex-wrap:wrap}
 .bild-leiste .w{white-space:nowrap;min-width:3.6em}
 .bild-leiste input[type=range]{min-width:0}
-.bild-leiste .regler+.regler label{margin-left:8px}
-.bild-leiste .ist{display:flex;gap:6px;align-items:center;justify-content:flex-end;white-space:nowrap}
+.bild-leiste .ist{display:flex;gap:6px;align-items:center;justify-content:flex-end;white-space:nowrap;flex-wrap:wrap}
 .bild-leiste .imu-bild{grid-column:1/-1;font-variant-numeric:tabular-nums}
 .bild-leiste .tempo-zeile{grid-column:1/-1;display:flex;align-items:center;gap:8px}
 .tempo-zeile label{color:var(--leise);font-size:13px}
 .tempo-zeile input{flex:1;max-width:320px}
 .tempo-zeile .w{font-variant-numeric:tabular-nums;text-align:right;font-size:13px}
 .bild-leiste .imu-bild.schlecht{color:#ff8a8d}
-@container (max-width:760px){
-  .bild-leiste{grid-template-columns:auto minmax(50px,1fr) auto auto auto minmax(50px,1fr) auto auto}
-  .bild-leiste .ist{grid-column:1/-1}
-}
 @container (max-width:560px){
-  .bild-leiste{grid-template-columns:auto minmax(50px,1fr) auto auto}
-  .bild-leiste .regler+.regler label{margin-left:0}
+  .kamera-raster{grid-template-columns:auto minmax(50px,1fr) auto auto}
+  .kamera-raster .regler:nth-child(even) label{margin-left:0}
 }
 .info{display:inline-grid;place-items:center;width:15px;height:15px;border:1px solid currentColor;border-radius:50%;
   font:600 10px/1 system-ui,sans-serif;color:var(--leise);cursor:help}
@@ -354,6 +357,7 @@ details.extras[open]>summary{margin-bottom:8px}
 <main>
 <div class="spalte">
   <div id="bild-rahmen">
+    <svg width="0" height="0" style="position:absolute" aria-hidden="true"><filter id="bild-filter" color-interpolation-filters="sRGB"><feComponentTransfer><feFuncR id="bf-r" type="linear" slope="1" intercept="0"/><feFuncG id="bf-g" type="linear" slope="1" intercept="0"/><feFuncB id="bf-b" type="linear" slope="1" intercept="0"/></feComponentTransfer><feColorMatrix id="bf-satt" type="saturate" values="1"/><feColorMatrix id="bf-ton" type="hueRotate" values="0"/></filter></svg>
     <div class="bild-fenster"><img id="bild" alt="" aria-label="Kamerabild" width="640" height="480"><svg id="bild-mitte" viewBox="0 0 640 480" preserveAspectRatio="xMidYMid meet" aria-hidden="true"><g class="halo"><line class="lot" x1="320" y1="0" x2="320" y2="480"/><line class="qx" x1="305" y1="240" x2="335" y2="240"/><circle cx="320" cy="240" r="8"/></g><g class="strich"><line class="lot" x1="320" y1="0" x2="320" y2="480"/><line class="qx" x1="305" y1="240" x2="335" y2="240"/><circle cx="320" cy="240" r="8"/></g></svg>
       <div class="pad" title="Gedrückt halten: Maus, Touch, Pfeiltasten/WASD">
         <span></span><button data-fahrt="vor" aria-label="vor">▲</button><span></span>
@@ -361,36 +365,54 @@ details.extras[open]>summary{margin-bottom:8px}
         <span></span><button data-fahrt="zurück" aria-label="zurück">▼</button><span></span>
       </div></div>
     <div class="bild-leiste">
-      <div class="regler">
-        <label for="belicht">Belichtung</label>
-        <input type="range" id="belicht" min="1" max="33" value="15" step="1"
-          oninput="belichtAnzeige(this.value * 1000)" onchange="belichtung(this.value * 1000)">
-        <span class="w" id="belicht-w">-</span>
-        <button id="belicht-auto" onclick="belichtung(0)">Auto</button>
-      </div>
-      <div class="regler">
-        <label for="gain">Verstärkung</label>
-        <input type="range" id="gain" min="1" max="63.9" value="8" step="0.5"
-          oninput="gainAnzeige(this.value)" onchange="verstaerkung(this.value)">
-        <span class="w" id="gain-w">-</span>
-        <button id="gain-auto" onclick="verstaerkung(0)">Auto</button>
-      </div>
-      <div class="regler">
-        <label for="kontrast">Kontrast</label>
-        <input type="range" id="kontrast" min="0.5" max="4" value="1" step="0.1"
-          oninput="bildAnzeige()" onchange="bildSetzen()">
-        <span class="w" id="kontrast-w">-</span>
-        <button onclick="bildSetzen(1, null)">1,0</button>
-      </div>
-      <div class="regler">
-        <label for="saettigung">Sättigung</label>
-        <input type="range" id="saettigung" min="0.5" max="4" value="1" step="0.1"
-          oninput="bildAnzeige()" onchange="bildSetzen()">
-        <span class="w" id="saettigung-w">-</span>
-        <button onclick="bildSetzen(null, 1)">1,0</button>
-      </div>
-      <span class="ist"><label title="Kontrast/Sättigung wirken an der Quelle (ISP) und damit auch auf FloorNet und die Aufnahmen. Für die Anzeige hier per CSS-Filter wieder herunterziehen (Näherung; abgeschnittene Lichter und Schatten bleiben weg)."><input type="checkbox" id="bild-ausgleich" onchange="bildAusgleich(this.checked)"> Im Browser ausgleichen</label></span>
-      <span class="ist"><label title="Bild senkrecht so verschieben, dass der IMU-Nick fest steht: stimmt die IMU, steht die Szene still"><input type="checkbox" id="hz-stabil" onchange="hzStabil(this.checked)"> Bild am IMU-Nick festhalten</label><label title="Bild um den IMU-Roll drehen: stimmt der Roll, stehen senkrechte Kanten senkrecht und die cyan Linie waagerecht"><input type="checkbox" id="hz-roll" onchange="hzRoll(this.checked)"> Roll ausgleichen</label><label title="Konfigurierte Bildmitte einblenden: gestrichelt die Spalte der Fahrtrichtung (W/2), Kreis bei Zeile H/2"><input type="checkbox" id="hz-mitte" onchange="hzMitte(this.checked)"> Bildmitte</label><span class="leise" id="belicht-ist">-</span><span class="info" tabindex="0" title="Gilt bis zum Neustart von xgonav. Kürzere Belichtung = weniger Bewegungsunschärfe, aber dunkler; mehr Verstärkung = heller, aber mehr Rauschen (Automatik nur bis 8; über ~8× wird der Rauschabstand nicht besser, nur das Bild heller). Dauerhaft über [camera] exposure_us / analogue_gain in config.toml.">i</span></span>
+      <details class="kamera-klapp" id="kamera-klapp">
+        <summary><span class="titel">Kamera</span><span class="leise" id="belicht-ist">-</span></summary>
+        <div class="kamera-raster">
+          <div class="regler">
+            <label for="belicht">Belichtung</label>
+            <input type="range" id="belicht" min="1" max="33" value="15" step="1"
+              oninput="belichtAnzeige(this.value * 1000)" onchange="belichtung(this.value * 1000)">
+            <span class="w" id="belicht-w">-</span>
+            <button id="belicht-auto" onclick="belichtung(0)">Auto</button>
+          </div>
+          <div class="regler">
+            <label for="gain">Verstärkung</label>
+            <input type="range" id="gain" min="1" max="63.9" value="8" step="0.5"
+              oninput="gainAnzeige(this.value)" onchange="verstaerkung(this.value)">
+            <span class="w" id="gain-w">-</span>
+            <button id="gain-auto" onclick="verstaerkung(0)">Auto</button>
+          </div>
+          <div class="regler">
+            <label for="hell">Helligkeit</label>
+            <input type="range" id="hell" min="-0.5" max="0.5" value="0" step="0.05"
+              oninput="bildAnzeige()" onchange="bildSetzen()">
+            <span class="w" id="hell-w">-</span>
+            <button onclick="bildSetzen(null, null, 0)">0</button>
+          </div>
+          <div class="regler">
+            <label for="kontrast">Kontrast</label>
+            <input type="range" id="kontrast" min="0.5" max="4" value="1" step="0.1"
+              oninput="bildAnzeige()" onchange="bildSetzen()">
+            <span class="w" id="kontrast-w">-</span>
+            <button onclick="bildSetzen(1, null)">1,0</button>
+          </div>
+          <div class="regler">
+            <label for="saettigung">Sättigung</label>
+            <input type="range" id="saettigung" min="0.5" max="4" value="1" step="0.1"
+              oninput="bildAnzeige()" onchange="bildSetzen()">
+            <span class="w" id="saettigung-w">-</span>
+            <button onclick="bildSetzen(null, 1)">1,0</button>
+          </div>
+          <div class="regler">
+            <label for="farbton" title="Nur Anzeige im Browser (libcamera hat keinen Farbton-Regler): Kamera, FloorNet und Aufnahmen bleiben unverändert">Farbton</label>
+            <input type="range" id="farbton" min="-180" max="180" value="0" step="5" oninput="farbtonSetzen(this.value)">
+            <span class="w" id="farbton-w">-</span>
+            <button onclick="farbtonSetzen(0)">0</button>
+          </div>
+          <span class="ausgleich"><label title="Helligkeit/Kontrast/Sättigung wirken an der Quelle (ISP) und damit auch auf FloorNet und die Aufnahmen. Für die Anzeige hier per Filter wieder herunterziehen (Näherung; abgeschnittene Lichter und Schatten bleiben weg)."><input type="checkbox" id="bild-ausgleich" onchange="bildAusgleich(this.checked)"> Im Browser ausgleichen</label><span class="info" tabindex="0" title="Gilt bis zum Neustart von xgonav. Kürzere Belichtung = weniger Bewegungsunschärfe, aber dunkler; mehr Verstärkung = heller, aber mehr Rauschen (Automatik nur bis 8; über ~8× wird der Rauschabstand nicht besser, nur das Bild heller). Dauerhaft über [camera] exposure_us / analogue_gain in config.toml.">i</span></span>
+        </div>
+      </details>
+      <span class="ist"><label title="Bild senkrecht so verschieben, dass der IMU-Nick fest steht: stimmt die IMU, steht die Szene still"><input type="checkbox" id="hz-stabil" onchange="hzStabil(this.checked)"> Bild am IMU-Nick festhalten</label><label title="Bild um den IMU-Roll drehen: stimmt der Roll, stehen senkrechte Kanten senkrecht und die cyan Linie waagerecht"><input type="checkbox" id="hz-roll" onchange="hzRoll(this.checked)"> Roll ausgleichen</label><label title="Konfigurierte Bildmitte einblenden: gestrichelt die Spalte der Fahrtrichtung (W/2), Kreis bei Zeile H/2"><input type="checkbox" id="hz-mitte" onchange="hzMitte(this.checked)"> Bildmitte</label></span>
       <div class="tempo-zeile">
         <label for="tempo">Tempo</label>
         <input type="range" id="tempo" min="5" max="100" value="60">
@@ -642,8 +664,11 @@ const EN = {
   'CPU-Takt und Abfragen wieder hoch; Bildverarbeitung bleibt aus, Rider bleibt liegen': 'CPU clock and polling back up; vision stays off, Rider stays down',
   'Wecken': 'Wake up', 'Kamerabild': 'Camera image', 'Belichtung': 'Exposure', 'Verstärkung': 'Gain',
   'Kontrast': 'Contrast', 'Sättigung': 'Saturation', 'Im Browser ausgleichen': 'Compensate in browser',
-  'Kontrast/Sättigung wirken an der Quelle (ISP) und damit auch auf FloorNet und die Aufnahmen. Für die Anzeige hier per CSS-Filter wieder herunterziehen (Näherung; abgeschnittene Lichter und Schatten bleiben weg).':
-    'Contrast/saturation act at the source (ISP), so they also reach FloorNet and the recordings. For the view here they are pulled back down by a CSS filter (approximation; clipped highlights and shadows stay lost).',
+  'Helligkeit': 'Brightness', 'Farbton': 'Hue', 'Kamera': 'Camera',
+  'Nur Anzeige im Browser (libcamera hat keinen Farbton-Regler): Kamera, FloorNet und Aufnahmen bleiben unverändert':
+    'Display in the browser only (libcamera has no hue control): camera, FloorNet and recordings stay unchanged',
+  'Helligkeit/Kontrast/Sättigung wirken an der Quelle (ISP) und damit auch auf FloorNet und die Aufnahmen. Für die Anzeige hier per Filter wieder herunterziehen (Näherung; abgeschnittene Lichter und Schatten bleiben weg).':
+    'Brightness/contrast/saturation act at the source (ISP), so they also reach FloorNet and the recordings. For the view here they are pulled back down by a filter (approximation; clipped highlights and shadows stay lost).',
   'Gilt bis zum Neustart von xgonav. Kürzere Belichtung = weniger Bewegungsunschärfe, aber dunkler; mehr Verstärkung = heller, aber mehr Rauschen (Automatik nur bis 8; über ~8× wird der Rauschabstand nicht besser, nur das Bild heller). Dauerhaft über [camera] exposure_us / analogue_gain in config.toml.':
     'Applies until xgonav restarts. Shorter exposure = less motion blur but darker; more gain = brighter but noisier (auto only up to 8; above ~8× the signal-to-noise ratio does not improve, the image just gets brighter). Permanently via [camera] exposure_us / analogue_gain in config.toml.',
   'Idle': 'Idle', 'Hand': 'Manual', 'Folgen': 'Follow', 'Erkunden': 'Explore', 'Anfahren': 'Approach',
@@ -1358,29 +1383,51 @@ gainRegler.addEventListener('pointerup', () => gainBewegt = false);
 function gainAnzeige(g) {
   $('gain-w').textContent = Number(g) ? Number(g).toFixed(1) + '×' : tr('Auto');
 }
-// Kontrast/Sättigung an der Quelle (ISP, POST /bild); Ausgleich nur für die Anzeige per CSS-Filter (kostet am Pi nichts)
-const kontrastRegler = $('kontrast'), saettRegler = $('saettigung');
-let bildBewegt = false, bildIst = [1, 1], bildAusgleichAn = true;
+// Helligkeit/Kontrast/Sättigung an der Quelle (ISP, POST /bild); Ausgleich und Farbton nur für die Anzeige per
+// SVG-Filter im Browser (kostet am Pi nichts). Ausgleich als Näherung der ISP-Kurve: aus = (ein - 0,5 - b)/k + 0,5.
+const kontrastRegler = $('kontrast'), saettRegler = $('saettigung'), hellRegler = $('hell'), tonRegler = $('farbton');
+let bildBewegt = false, bildIst = [1, 1, 0], bildAusgleichAn = true, farbton = 0;
 try { bildAusgleichAn = localStorage.getItem('xgonav.bildausgleich') !== '0'; } catch (e) {}
+try { farbton = Number(localStorage.getItem('xgonav.farbton')) || 0; } catch (e) {}
+try { $('kamera-klapp').open = localStorage.getItem('xgonav.kameraklapp') === '1'; } catch (e) {}
+$('kamera-klapp').addEventListener('toggle', e => {
+  try { localStorage.setItem('xgonav.kameraklapp', e.target.open ? '1' : '0'); } catch (e2) {}
+});
 $('bild-ausgleich').checked = bildAusgleichAn;
-[kontrastRegler, saettRegler].forEach(r => {
+[kontrastRegler, saettRegler, hellRegler].forEach(r => {
   r.addEventListener('pointerdown', () => bildBewegt = true);
   r.addEventListener('pointerup', () => bildBewegt = false);
 });
 function bildFilter() {
-  const [k, s] = bildIst;
-  $('bild').style.filter = bildAusgleichAn && (k !== 1 || s !== 1) ? `contrast(${1 / k}) saturate(${1 / s})` : '';
+  const [k, s, b] = bildAusgleichAn ? bildIst : [1, 1, 0];
+  const slope = 1 / k, icpt = 0.5 - (0.5 + b) / k;
+  ['bf-r', 'bf-g', 'bf-b'].forEach(id => { $(id).setAttribute('slope', slope); $(id).setAttribute('intercept', icpt); });
+  $('bf-satt').setAttribute('values', 1 / s);
+  $('bf-ton').setAttribute('values', farbton);
+  $('bild').style.filter = k !== 1 || s !== 1 || b !== 0 || farbton !== 0 ? 'url(#bild-filter)' : '';
 }
 function bildAnzeige() {
   $('kontrast-w').textContent = Number(kontrastRegler.value).toFixed(1);
   $('saettigung-w').textContent = Number(saettRegler.value).toFixed(1);
+  const h = Number(hellRegler.value);
+  $('hell-w').textContent = (h > 0 ? '+' : '') + h.toFixed(2);
+  tonRegler.value = farbton;
+  $('farbton-w').textContent = (farbton > 0 ? '+' : '') + farbton + '°';
 }
-function bildSetzen(k = null, s = null) {
+function bildSetzen(k = null, s = null, b = null) {
   bildBewegt = false;
   if (k != null) kontrastRegler.value = k;
   if (s != null) saettRegler.value = s;
+  if (b != null) hellRegler.value = b;
   bildAnzeige();
-  return befehl('bild', {k: Number(kontrastRegler.value).toFixed(2), s: Number(saettRegler.value).toFixed(2)});
+  return befehl('bild', {k: Number(kontrastRegler.value).toFixed(2), s: Number(saettRegler.value).toFixed(2),
+                         b: Number(hellRegler.value).toFixed(2)});
+}
+function farbtonSetzen(h) {
+  farbton = Number(h) || 0;
+  try { localStorage.setItem('xgonav.farbton', String(farbton)); } catch (e) {}
+  bildAnzeige();
+  bildFilter();
 }
 function bildAusgleich(an) {
   bildAusgleichAn = an;
@@ -1389,14 +1436,16 @@ function bildAusgleich(an) {
 }
 function bildStatus(e) {
   if (!e || e.contrast == null) return;
-  bildIst = [e.contrast, e.saturation];
+  bildIst = [e.contrast, e.saturation, e.brightness ?? 0];
   bildFilter();
-  if (bildBewegt || [kontrastRegler, saettRegler].includes(document.activeElement)) return;
+  if (bildBewegt || [kontrastRegler, saettRegler, hellRegler].includes(document.activeElement)) return;
   kontrastRegler.value = e.contrast;
   saettRegler.value = e.saturation;
+  hellRegler.value = e.brightness ?? 0;
   bildAnzeige();
 }
 bildAnzeige();
+bildFilter();
 function gainStatus(e) {
   if (!e || e.gain_soll == null) return;
   if (e.gain_max) gainRegler.max = e.gain_max;

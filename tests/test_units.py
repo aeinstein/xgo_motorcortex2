@@ -3617,19 +3617,20 @@ def test_robot_tempo_alle_befehle():
 
 
 def test_kamera_kontrast_saettigung():
-    """Kontrast/Sättigung an der Quelle (ISP): Bereichsprüfung, Werte in cfg (Status/Meta lesen sie daraus) und an
-    das Gerät weitergereicht; ungültig = nichts geändert."""
+    """Kontrast/Sättigung/Helligkeit an der Quelle (ISP): Bereichsprüfung, Werte in cfg (Status/Meta lesen sie daraus)
+    und an das Gerät weitergereicht; ungültig = nichts geändert, Helligkeit None = unverändert."""
     from xgonav.camera import FrameSource
     gesetzt = []
 
     class Quelle(FrameSource):
-        def _apply_bild(self, k, s):
-            gesetzt.append((k, s))
+        def _apply_bild(self, k, s, b):
+            gesetzt.append((k, s, b))
 
     q = Quelle(Config.neutral().camera)
-    assert q.bild == (1.0, 1.0)
-    assert q.set_bild(2.0, 1.5) == (2.0, 1.5) and q.bild == (2.0, 1.5) and gesetzt == [(2.0, 1.5)]
-    for k, s in ((0.2, 1.0), (1.0, 5.0)):
+    assert q.bild == (1.0, 1.0, 0.0)
+    assert q.set_bild(2.0, 1.5, 0.2) == (2.0, 1.5, 0.2) and q.bild == (2.0, 1.5, 0.2) and gesetzt == [(2.0, 1.5, 0.2)]
+    assert q.set_bild(2.0, 1.5) == (2.0, 1.5, 0.2)
+    for k, s, b in ((0.2, 1.0, 0.0), (1.0, 5.0, 0.0), (1.0, 1.0, 0.8)):
         with pytest.raises(ValueError):
-            q.set_bild(k, s)
-    assert q.bild == (2.0, 1.5) and len(gesetzt) == 1
+            q.set_bild(k, s, b)
+    assert q.bild == (2.0, 1.5, 0.2) and len(gesetzt) == 2

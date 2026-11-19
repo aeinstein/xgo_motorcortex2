@@ -125,7 +125,7 @@ xgonav unreachable → HTTP 502 `xgonav nicht erreichbar`. Exposure/gain changes
 | POST | `/level` | leveling pulse (roll 0, 3 s `roll_balance`); 409 if not balancing |
 | POST | `/drive?v=..&w=..` | 409 if not mode `manual` |
 | POST | `/exposure?us=..`, `/gain?g=..` | 400 if out of range |
-| POST | `/bild?k=0.5..4&s=0.5..4` | contrast/saturation in the camera ISP (also reaches FloorNet and recordings; `meta.jsonl` `cam.contrast`/`cam.saturation`), until restart; `/status` `exposure.contrast`/`saturation`; the web view can compensate with a CSS filter (checkbox, stored in the browser) |
+| POST | `/bild?k=0.5..4&s=0.5..4&b=-0.5..0.5` | contrast/saturation/brightness in the camera ISP (`b` optional; also reaches FloorNet and recordings; `meta.jsonl` `cam.contrast`/`saturation`/`brightness`), until restart; `/status` `exposure.contrast`/`saturation`/`brightness`; the web view can compensate with an SVG filter (checkbox, stored in the browser). Camera sliders (exposure, gain, brightness, contrast, saturation, hue) sit in a collapsible „Kamera“ panel below the image (open state stored in the browser); hue is display-only (SVG filter) |
 | POST | `/tempo?f=0.05..1` | speed slider: factor for all drive/turn commands of all modes (after `max_v`/`max_w`), until restart; `GET /status` → `tempo` |
 | POST | `/map/reset` | clear room map, pose = start = 0 |
 | POST | `/map/start` | start point = current pose |

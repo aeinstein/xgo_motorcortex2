@@ -99,6 +99,7 @@ class CameraCfg:
     # das Netz eine andere Eingabe, erst ein Training damit kann davon profitieren. Je Bild in meta.jsonl (cam).
     contrast: float = 1.0
     saturation: float = 1.0
+    brightness: float = 0.0         # Helligkeit im ISP (0 = Standard, -0,5..0,5 über den Regler im Web)
     # RiderPi: aus Drehungen gegen den IMU-Kurs gemessen (2026-11-07, f = 310 px @ 640, 304–313 in drei
     # Aufnahmen; Verzeichnung vernachlässigbar). Der Zollstock (88,5°) legt nur f·h fest. RPi Cam v1 hätte 62,2.
     hfov_deg: float = 91.8
@@ -477,6 +478,32 @@ class GridCfg:
     # vor dem Start von xgonav wieder dort stehen (ohne Marker findet er sich nicht wieder).
     file: str = ""
     save_every_s: float = 60.0         # höchstens so oft, und nur bei Änderungen; dazu beim Beenden
+
+
+@dataclass
+class StartbildCfg:
+    # Abgleich am Startbild (startbild.py): Bild am Startpunkt (Anker) gegen die Bilder der Heimkehr. home fährt dazu
+    # erst einen Vorpunkt vor_m vor dem Start an, dreht auf den Startkurs und fährt gerade auf den Start (die
+    # Tiefenbilder); dann misst es die Lage gegen den Anker und korrigiert die Kartenpose. Liegt der Rest über
+    # nach_m, fährt es einmal nach. Offline 2026-11-19 (tools/start_abgleich.py): Fahrt 144940 Restfehler von
+    # ~12 cm auf ~3 cm, kurze Paare Median 1,1 cm / 0,3°. Seit 2026-11-19, am Rider nicht gefahren.
+    enabled: bool = True
+    vor_m: float = 0.40                # Vorpunkt so weit vor dem Start (gerade Schlussfahrt); Tiefenbilder bis basen[-1]
+    vor_tol_m: float = 0.08            # am Vorpunkt angekommen
+    gerade_v: float = 0.08             # normiertes Tempo der Schlussfahrt (~10 cm/s)
+    tiefe_schritt_m: float = 0.04      # während der Schlussfahrt je so viel Weg ein Graubild merken
+    basen: list = field(default_factory=lambda: [0.1, 0.15, 0.2, 0.25, 0.3])   # Abstände der Tiefenbilder (m)
+    features: int = 3000               # SIFT-Merkmale je Bild
+    min_inl: int = 30                  # weniger stimmige Treffer: keine Korrektur (Ausreißer offline alle < 27)
+    max_m: float = 0.5                 # größere Korrektur der Pose gilt als Fehlmessung
+    max_deg: float = 15.0
+    max_lage_deg: float = 1.0          # Nick-/Roll-Rest des Ankers (offline +0,3° / −0,2°)
+    agree_m: float = 0.05              # Gegenprobe (frei, 6 Freiheitsgrade) muss so nah liegen
+    nach_m: float = 0.04               # Rest nach der Korrektur, ab dem nachgefahren wird (einmal)
+    timeout_s: float = 20.0            # so lange auf die Messung warten, dann ohne Korrektur fertig
+    # Anker: Rider steht am Startpunkt (so nah und so wenig gedreht), Merkmale einmal je Startpunkt
+    anker_m: float = 0.01
+    anker_deg: float = 1.0
 
 
 @dataclass
@@ -948,7 +975,7 @@ NEUTRAL = {"pet.call_m": 0.0, "pet.come_m": 0.0, "pet.drive_v": 0.08, "pet.look_
            "behavior.height_fast_mm": 70.0, "output.lcd_fifo": "/tmp/lcd0", "cpu.main_cpus": [],
            "cpu.detector_cpus": [], "cpu.render_cpus": [], "cpu.freespace_cpus": [], "odom.scale_left": 1.0,
            "odom.scale_right": 1.0, "explore.turn_dps": 40.0, "explore.tight_max": 3, "explore.tight_penalty_s": -1.0, "grid.confirm_dr_m": 0.0, "grid.hit_band_quad": 0.0, "grid.max_range_m": 1.25, "grid.free_range_m": 1.5, "grid.size_m": 16.0, "home.turn_w_max": 1.0,
-           "reloc.enabled": False, "reloc.track": False,
+           "reloc.enabled": False, "reloc.track": False, "startbild.enabled": False,
            "control_hz": 20.0}
 
 
@@ -970,6 +997,7 @@ class Config:
     grid: GridCfg = field(default_factory=GridCfg)
     reloc: RelocCfg = field(default_factory=RelocCfg)
     home: HomeCfg = field(default_factory=HomeCfg)
+    startbild: StartbildCfg = field(default_factory=StartbildCfg)
     explore: ExploreCfg = field(default_factory=ExploreCfg)
     patrol: PatrolCfg = field(default_factory=PatrolCfg)
     pet: PetCfg = field(default_factory=PetCfg)
