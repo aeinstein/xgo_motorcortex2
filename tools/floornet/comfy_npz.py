@@ -26,6 +26,8 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import nick_bezug as NB  # noqa: E402
+
 EXACT, IGNORE = 1, 0
 NCOLS = 80
 ROW_MIN = 205.0             # net.ROW_TOP: Zeilen darüber kann das Netz nicht ausgeben
@@ -93,7 +95,7 @@ def build_run(run: str, frames: dict, geom: str, src: str, wohnung: str) -> tupl
     d = {"files": np.array(keep, "U10"), "t": np.array([meta[f].get("t", 0.0) for f in keep], float),
          "x": pose[:, 0], "y": pose[:, 1], "th": np.radians(pose[:, 2]),
          "rate": np.zeros(n),                # Drehen stört hier nicht: Die Linie gehört zu genau diesem Bild
-         "pitch": np.array([meta[f].get("pitch_dev", 0.0) for f in keep], np.float32),   # Radiant
+         "pitch": np.array([NB.pitch_dev(run, meta[f]) for f in keep], np.float32),   # Radiant, Bezug angeglichen
          "row": row.astype(np.float32), "kind": kind,
          "run": np.array(run), "wohnung": np.array(wohnung), "geom": np.array(geom), "source_dir": np.array(src)}
     return d, count

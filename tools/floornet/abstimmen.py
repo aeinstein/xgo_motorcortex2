@@ -33,6 +33,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import comfy_label as C  # noqa: E402
 import geo_label as G  # noqa: E402
+import nick_bezug as NB  # noqa: E402
 import stage3 as S3  # noqa: E402
 
 
@@ -155,7 +156,7 @@ def main() -> int:
                 if q is None:
                     continue
                 q = cv2.resize(q, (P.shape[2], P.shape[1]), interpolation=cv2.INTER_NEAREST) > 127
-                r = boden_koord(P[j], math.radians(geo.tilt_deg) + float(m.get("pitch_dev", 0.0)), geo.cam_h, geo.f,
+                r = boden_koord(P[j], math.radians(geo.tilt_deg) + NB.pitch_dev(run, m), geo.cam_h, geo.f,
                                 R, a.band_m, a.weit_m)
                 if r is None:
                     bilder.append({"s": s, "t": float(m["t"]), "q": q, "eben": None})

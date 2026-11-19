@@ -526,3 +526,19 @@ def test_betrachter_server_prompt_setzen(tmp_path):
     assert BS.prompt_setzen(root, "11", "   ")[0].startswith("Prompt leer")
     assert BS.prompt_setzen(root, "11", "x" * 4001)[0].startswith("Prompt leer oder zu lang")
     assert BS.prompt_setzen(root, "11", "a\tb")[0] == "Steuerzeichen im Prompt"
+
+
+def test_nick_bezug_gleicht_0021_fahrten_an(tmp_path):
+    import math
+    import nick_bezug as NB
+    assert NB.versatz_rad("20261119-122328") == pytest.approx(math.radians(1.23))
+    assert NB.versatz_rad("20261118-172730") == pytest.approx(math.radians(-0.77))
+    assert NB.versatz_rad("20261119-124952") == 0.0 and NB.versatz_rad("explore10") == 0.0
+    # Label-Datei: pitch mit angeglichenem Bezug
+    src = tmp_path / "20261119-122328"
+    src.mkdir()
+    cv2.imwrite(str(src / "000000.jpg"), np.full((480, 640, 3), 120, np.uint8))
+    (src / "meta.jsonl").write_text(json.dumps({"file": "000000.jpg", "t": 0.0, "pose": [0, 0, 0], "pitch_dev": 0.01,
+                                                "balancing": True}) + "\n")
+    d, _ = Z.build_run("20261119-122328", {"000000.jpg": np.full(80, 300.0, np.float32)}, "{}", str(src), "a")
+    assert d["pitch"][0] == pytest.approx(0.01 + math.radians(1.23), abs=1e-6)

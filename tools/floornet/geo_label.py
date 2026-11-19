@@ -389,6 +389,7 @@ def pruef(a) -> int:
 def fahrten(a) -> int:
     """Fahrbilder labeln: <out>/rows.jsonl (setzt fort), danach je Fahrt <out>/npz/<fahrt>.npz für train.py."""
     import comfy_npz as Z
+    import nick_bezug as NB
     import stage2 as S2
     import stage3_npz as SN
     from xgonav.config import Config
@@ -441,7 +442,7 @@ def fahrten(a) -> int:
                     m = meta.get(teil[j].split("/", 1)[1], {})
                     hb = m.get("height_mm") if isinstance(m.get("height_mm"), (int, float)) else hoehe
                     geo = CamGeometry.from_cfg(cfg, hb)
-                    a_ = math.radians(geo.tilt_deg) + float(m.get("pitch_dev", 0.0))
+                    a_ = math.radians(geo.tilt_deg) + NB.pitch_dev(run, m)
                     return label_bild(P[j], a_, geo.cam_h, geo.f, R, s_e)
 
                 for k, img, (rows, eb, karten) in zip(teil, imgs, pool.map(eins, range(len(teil)))):

@@ -27,6 +27,8 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import nick_bezug as NB  # noqa: E402
+
 R_MAX = 4.0             # so weit wird die Karte ins Bild geworfen (m)
 RAND = 12               # Zellen Rand um den bekannten Teil der Karte im Bild von oben
 ZOOM = 6                # Bildpunkte je Zelle
@@ -93,7 +95,7 @@ def main() -> int:
 
     pose = np.array([m["pose"] for m in ms], float)
     x, y, th = pose[:, 0], pose[:, 1], np.radians(pose[:, 2])
-    pitch = np.array([m.get("pitch_dev", 0.0) for m in ms], float)
+    pitch = np.array([NB.pitch_dev(fahrt, m) for m in ms], float)     # Bezug angeglichen (nick_bezug.py)
     krow, kart = cast_labels(gm, geo, x, y, th, pitch, ncols=N.NCOLS, r_max=R_MAX)
 
     dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")

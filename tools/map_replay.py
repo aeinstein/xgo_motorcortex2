@@ -51,6 +51,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent / "floornet"))
 
 from label import load_cfg, load_run, make_geo, select_segment, trajectory  # noqa: E402
+import nick_bezug as NB  # noqa: E402
 from xgonav.freespace import FreeSpaceEstimator  # noqa: E402
 from xgonav import reloc  # noqa: E402
 from xgonav.gridmap import GridMap  # noqa: E402
@@ -347,6 +348,7 @@ def lade(d: str, cfg, bahn_quelle: str = "pose", roll_ref: float = 0.0, imu_vers
     if net is None:
         raise SystemExit("FloorNet %s nicht ladbar (C++-Kern xgonav/native/libxgofast.so?)" % netz)
     geo = make_geo(cfg)
+    fahrt = os.path.basename(os.path.normpath(d))       # für den Nick-Bezug (nick_bezug.py)
     ms = select_segment(load_run(d))
     if len(ms) < 10:
         raise SystemExit("%s: kein zusammenhängendes Stück mit Pose, balancierend und IMU-Nick" % d)
@@ -381,10 +383,10 @@ def lade(d: str, cfg, bahn_quelle: str = "pose", roll_ref: float = 0.0, imu_vers
             continue
         # Roll wie live (imu.use_roll): Grenze um den IMU-Roll geradegedreht
         rd = float(np.interp(t[i], imu[0], imu[1])) if cfg.imu.use_roll and imu is not None else 0.0
-        fs = fse.from_net(net.run(img), m["pitch_dev"], rd)
+        fs = fse.from_net(net.run(img), NB.pitch_dev(fahrt, m), rd)
         tracks = m.get("tracks", [])
         views[i] = mask_movable(fs, [(tr.get("cls"), tr["box"]) for tr in tracks], geo.W, geo.H)
-    pitch = np.array([m["pitch_dev"] for m in ms], float)
+    pitch = np.array([NB.pitch_dev(fahrt, m) for m in ms], float)
     return {"t": t, "bahn": bahn, "views": views, "pitch": pitch, "geo": geo, "fw": fse.W, "fh": fse.H,
             "rate_rad": rate_rad, "roll_imu": roll_imu, "kurs_imu": kurs_imu, "imu": imu is not None, "bilder": len(ms)}
 
