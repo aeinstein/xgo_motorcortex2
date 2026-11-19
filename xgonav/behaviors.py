@@ -52,6 +52,7 @@ class World:
     fw_mode: int | None = None        # /proc/XGORider/state
     height_mm: float | None = None    # Höhen-Sollwert
     sound: tuple | None = None        # (ortung.Schall, Alter s) der letzten Schallmeldung, nur für pet
+    stimmen: tuple | None = None      # (bestätigte Stimmproben NN, neu bestätigte NN), nur für pet
     map_ok: bool = False              # Merkkarte vorhanden
     # Bodengrenze fehlt (FloorNet nicht geladen oder ausgefallen): safety() lässt nichts fahren
     blind: bool = False

@@ -10,6 +10,7 @@ Die Mikrofone liegen akustisch nur ~4 mm auseinander (Laufzeit höchstens +-11 u
 brauchbar wird die Richtung erst über ~1 s gemittelt, also für Sprache und Dauergeräusche, nicht für ein Klatschen.
 Gleichbleibender Lärm hebt den Ruhepegel (noise_up) und schließt das Tor nach einigen Sekunden wieder.
 Eigene Töne (aplay) werden über `stumm` ausgeblendet, dazu nachhall_s danach.
+Stimmproben (stimme.Stimmen, Modus pet) hängen als `horcher` am selben Strom: arecord hält hw:0,0 allein.
 
 Zwei Mikrofone trennen nur links/rechts: vorn und hinten sind nicht zu unterscheiden, der Winkel gilt gegen
 die Querachse (0 = Mitte, > 0 links wie w > 0). mic_dist_m und tau_offset_us stammen aus einer Messreihe im
@@ -204,6 +205,7 @@ class Ortung:
         self._proc: subprocess.Popen | None = None
         self._killed = False
         self._thread: threading.Thread | None = None
+        self.horcher = None                                  # stimme.Stimmen: bekommt Blöcke, solange es aufnimmt
 
     # ------------------------------------------------------------------ Rechnen
     def feed(self, pcm: np.ndarray, now: float) -> list[Schall]:
@@ -227,6 +229,9 @@ class Ortung:
             return None
         offen = lvl > self.noise * (self._off if self._n else self._on) and lvl > c.min_level
         self.noise += (c.noise_up if lvl > self.noise else c.noise_down) * (lvl - self.noise)
+        h = self.horcher
+        if h is not None and h.aufnahme:                     # Stimmproben (pet): Pegel ist schon gerechnet
+            h.block(pcm, lvl, self.noise, now, self._ist_stumm(now))
         if offen and self._n == 0 and (now < self._next_t or self._ist_stumm(now)):
             return None
         if offen:
@@ -278,7 +283,8 @@ class Ortung:
                             for v in list(self.verlauf) if now - v.t <= VERLAUF_S],
                 "letzter": None if s is None else {"alter_s": round(now - s.t, 2), "winkel_deg": round(s.winkel_deg, 1),
                                                    "tau_us": round(s.tau_us, 1), "guete": round(s.guete, 2),
-                                                   "pegel_db": round(s.pegel_db, 1)}}
+                                                   "pegel_db": round(s.pegel_db, 1)},
+                "stimme": self.horcher.status() if self.horcher is not None else None}
 
     # ------------------------------------------------------------------ Aufnahme (nur am Rider)
     def set_active(self, on: bool) -> None:

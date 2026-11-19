@@ -28,7 +28,7 @@ KATEGORIEN = [
     ("Hardware", ["robot", "camera", "imu", "odom", "cpu", "wlan", OBEN]),
     ("Wahrnehmung", ["ego", "detector", "tracker", "freespace"]),
     ("Karten", ["map", "grid", "reloc", "startbild"]),
-    ("Verhalten", ["behavior", "explore", "home", "patrol", "pet", "emotion", "ruhe", "dunkel", "ortung"]),
+    ("Verhalten", ["behavior", "explore", "home", "patrol", "pet", "emotion", "ruhe", "dunkel", "ortung", "stimme"]),
     ("Ausgabe", ["output"]),
 ]
 

@@ -95,6 +95,11 @@ def main(argv=None) -> int:
         from .ortung import Ortung
         emo = app.emotions
         app.ortung = Ortung(cfg.ortung, stumm=emo.klingt if emo is not None else None)
+        if cfg.stimme.enabled and emo is not None and emo.sound_enabled:
+            from .stimme import Stimmen
+            app.stimmen = Stimmen(cfg.stimme, cfg.ortung.rate, cfg.ortung.block)
+            app.ortung.horcher = app.stimmen
+            emo.stimme_datei = app.stimmen.datei
     recs = []
     if a.record:
         recs.append(threading.Thread(target=_recorder, args=(app, a.record, cfg.camera.fps), daemon=True))

@@ -783,6 +783,14 @@ class PetCfg:
     talk_min_events: int = 2
     talk_pause_s: float = 1.6
     talk_repeat_s: float = 7.0
+    # Nachplappern (xgonav/stimme.py, [stimme]): Proben, die er gelernt hat, spielt er beim Mitreden mit parrot_p statt
+    # des Brabbelns, frühestens parrot_repeat_s nach der letzten; eine neu bestätigte gleich einmal nach parrot_delay_s.
+    # Mitgeschnitten wird nur, solange eine Person zu sehen ist oder höchstens parrot_listen_s weg ist.
+    parrot: bool = True
+    parrot_p: float = 0.5
+    parrot_repeat_s: float = 30.0
+    parrot_delay_s: float = 0.8
+    parrot_listen_s: float = 3.0
     seek_m: float = -1.0               # je Verschwinden höchstens so weit zur letzten Stelle
     seek_stop_m: float = 0.4           # so weit vor der letzten Stelle halten
     roam_m: float = -1.0               # je Phase ohne Begegnung höchstens so weit streifen (endet spätestens mit doze_s)
@@ -878,6 +886,44 @@ class OrtungCfg:
     min_quality: float = 0.4           # Güte 0..1, darunter verwerfen
     nachhall_s: float = 0.3            # nach eigenen Tönen so lange taub
     retry_s: float = 10.0              # arecord beendet: neuer Versuch
+
+
+@dataclass
+class StimmeCfg:
+    # Stimmproben im Modus pet (xgonav/stimme.py): Äußerungen aus dem Ortungsstrom (braucht [ortung]), solange eine
+    # Person zu sehen ist. Gleicht eine neue einer gespeicherten Probe (MFCC + DTW), gilt die Probe als bestätigt und
+    # wird wie ein Wellensittich gefiltert nachgeplappert ([pet] parrot*). Ab max_confirmed lernt er nichts mehr.
+    enabled: bool = True
+    dir: str = "/opt/xgonav/stimmen"   # kandidaten/ (roh, 16 kHz) und bestaetigt/ (NN_roh.wav, NN.wav gefiltert)
+    max_confirmed: int = 10
+    pool_n: int = 30                   # so viele unbestätigte Proben, die älteste fliegt raus
+    kandidat_max_h: float = 72.0       # ältere unbestätigte beim Start löschen
+    # Sprecherkennung (VAD) auf dem Pegel der Ortung: öffnet vad_on_db über dem Ruhepegel, endet nach vad_hang_s
+    # unter vad_off_db; vad_pre_s Vorlauf. Kürzer als min_s verworfen, bei max_s abgeschnitten.
+    vad_on_db: float = 9.0
+    vad_off_db: float = 4.0
+    vad_hang_s: float = 0.3
+    vad_pre_s: float = 0.15
+    min_s: float = 0.6
+    max_s: float = 3.0
+    # Anteil stimmhafter Rahmen (spektrale Flachheit 300-3000 Hz unter flat_max) unter den lauten, sonst kein Sprechen
+    voiced_min: float = 0.3
+    flat_max: float = 0.3
+    # Vergleich: DTW über 13 MFCC (Mittelwert abgezogen), Kosten je Schritt; Längen höchstens len_ratio verschieden.
+    # match_dist aus Windows-Sprachausgabe mit Raumrauschen (2026-11-19): derselbe Satz, andere Sprechrate 2..4,
+    # andere Sätze ab 14, anderer Sprecher derselbe Satz 10..16. An echten Proben nachstellen (tools/stimme.py vergleich).
+    match_dist: float = 8.0
+    dtw_band: float = 0.25
+    len_ratio: float = 1.6
+    # Sittich-Filter: speed-mal so schnell (höher und kürzer), Bandpass band_lo..band_hi Hz, Schnarren durch
+    # Vibrato (modulierte Verzögerung), Weichbegrenzung drive, Spitze peak_db.
+    speed: float = 1.6
+    band_lo: float = 1000.0
+    band_hi: float = 5000.0
+    vibrato_hz: float = 25.0
+    vibrato_ms: float = 0.3
+    drive: float = 2.0
+    peak_db: float = -3.0
 
 
 @dataclass
@@ -1021,6 +1067,7 @@ class Config:
     wlan: WlanCfg = field(default_factory=WlanCfg)
     dunkel: DunkelCfg = field(default_factory=DunkelCfg)
     ortung: OrtungCfg = field(default_factory=OrtungCfg)
+    stimme: StimmeCfg = field(default_factory=StimmeCfg)
     # Regelschritte je Sekunde. Mit Bildverarbeitung an dem Bild, das dem Takt am nächsten liegt (App._step), also
     # höchstens die Bildrate: 24 = jedes Bild. Bis 2026-11-17 stand hier 20, geregelt wurde am Rider aber nur jedes
     # 2. Bild (~12 Hz). Ohne Bildverarbeitung (manual) nach der Uhr.

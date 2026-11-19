@@ -173,6 +173,7 @@ class Emotions:
         self._proc: subprocess.Popen | None = None
         self._snd_proc: subprocess.Popen | None = None
         self._aplay = shutil.which("aplay")
+        self.stimme_datei = None                     # NN -> Pfad (stimme.Stimmen.datei), von __main__ gesetzt
         self.sounds = {"gefunden": os.path.join(cfg.sound_dir, cfg.sound_found),
                        "verloren": os.path.join(cfg.sound_dir, cfg.sound_lost)}
         self.sound_enabled = bool(cfg.sound and self._aplay
@@ -191,9 +192,15 @@ class Emotions:
             log.info("Geräusche aus (aplay oder %s fehlt)", " / ".join(self.sounds.values()))
 
     def sound(self, event: str) -> None:
-        """Geräusch im eigenen Prozess; ein noch laufendes wird abgebrochen."""
-        variants = self.pet_sounds.get(event)
-        f = random.choice(variants) if variants else self.sounds.get(event)
+        """Geräusch im eigenen Prozess; ein noch laufendes wird abgebrochen. "stimme:NN" spielt eine gelernte
+        Stimmprobe (stimme.Stimmen, Datei über self.stimme_datei)."""
+        if event.startswith("stimme:"):
+            f = self.stimme_datei(event[7:]) if self.stimme_datei is not None else None
+            if not f or not os.path.isfile(f):
+                return
+        else:
+            variants = self.pet_sounds.get(event)
+            f = random.choice(variants) if variants else self.sounds.get(event)
         if not f:
             return
         if self._snd_proc is not None and self._snd_proc.poll() is None:

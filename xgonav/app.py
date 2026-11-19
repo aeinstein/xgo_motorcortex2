@@ -227,6 +227,7 @@ class App:
         self._luma: float | None = None
         self._luma_t = 0.0
         self.ortung = None             # ortung.Ortung (Schallrichtung), von __main__ gesetzt (nur am Rider)
+        self.stimmen = None            # stimme.Stimmen (Nachplappern in pet), hängt an der Ortung
         # Fahr-Aktion der Firmware (robot.FW_ACTIONS): vom Web angefragt, im Regelschritt geprüft und gestartet
         self._action_pending: int | None = None
         self._action_note: tuple[str, float] | None = None   # (Meldung, anzeigen bis) für die Statuszeile
@@ -440,7 +441,12 @@ class App:
         WLAN-Einrichtung. Ein Vergleich; an- und ausgeschaltet wird nur beim Wechsel."""
         o = self.ortung
         if o is not None:
-            o.set_active(not self.ruhe and self.wlan is None and self.behavior.name in self.cfg.ortung.modes)
+            an = not self.ruhe and self.wlan is None and self.behavior.name in self.cfg.ortung.modes
+            o.set_active(an)
+            if self.stimmen is not None:              # Stimmproben nur in pet, solange jemand zu sehen ist
+                b = self.behavior
+                self.stimmen.aufnahme = (an and b.name == "pet" and self.cfg.pet.parrot
+                                         and getattr(getattr(b, "brain", None), "hoert_zu", False))
 
     # ------------------------------------------------------------------ Dunkelangst (dunkel.py)
     def _dunkel_tick(self, now: float, cmd: Command) -> Command:
@@ -803,6 +809,8 @@ class App:
             self.det.close()
             if self.ortung is not None:
                 self.ortung.close()
+            if self.stimmen is not None:
+                self.stimmen.close()
             if self.fs_worker is not None:
                 self.fs_worker.close()
             if self.wheels is not None:
@@ -1260,6 +1268,8 @@ class App:
         sch = self.ortung.last if self.ortung is not None else None
         if sch is not None:
             w.sound = (sch, time.monotonic() - sch.t)
+        if self.stimmen is not None:
+            w.stimmen = (self.stimmen.ids, self.stimmen.drain_neu())
         fr = self._imu_frame                  # Roll/Nick roh zur Bildzeit; ungültig (zu alt) = kein Wert
         if fr is not None and fr.frisch:
             w.tilt = (fr.roll_raw_deg, fr.pitch_raw_deg)

@@ -204,6 +204,7 @@ All keys with comments: `PetCfg` in `xgonav/config.py`.
 | `seek_home` | true | search over, nobody found: back to the start via the planner (room map), like explore; calling goals with a wall ahead go the other way |
 | `come_events`, `come_m`, `come_stop_m`, `come_repeat_s` | 1, −1 = no limit (sim: 0), 0.8, 8 | come here: drive toward a visible person who speaks |
 | `talk`, `talk_min_events`, `talk_pause_s`, `talk_repeat_s` | true, 2, 1.6, 7 | talking back |
+| `parrot`, `parrot_p`, `parrot_repeat_s`, `parrot_delay_s`, `parrot_listen_s` | true, 0.5, 30, 0.8, 3 | voice samples: play instead of babbling, min. gap, echo delay on confirmation, capture while person gone ≤ s ([audio.md](audio.md#voice-samples-xgonavstimmepy-mode-pet)) |
 | `faint` | true (sim: false) | hard scare: set down, wake up, stand up by itself; on at the RiderPi since 2026-11-13 |
 | `faint_level` | 0.8 (sim: 1.0) | scare level that triggers a faint |
 | `gestures` | true | false: only eyes and sounds |
@@ -236,6 +237,16 @@ All keys with comments: `PetCfg` in `xgonav/config.py`.
 | `noise_up`, `noise_down`, `warm_blocks` | 0.001, 0.2, 25 | noise floor tracking per block; blocks after start without events |
 | `window_blocks`, `min_blocks`, `hang_blocks`, `min_interval_s` | 47, 24, 12, 0 | blocks per estimate (1 s); shorter sounds dropped; pauses bridged; pause after an estimate |
 | `min_quality`, `nachhall_s`, `retry_s` | 0.4, 0.3, 10 | drop below; deaf after own sounds; retry when `arecord` ends |
+
+### `[stimme]` (voice samples in `pet`, see [audio.md](audio.md#voice-samples-xgonavstimmepy-mode-pet))
+| Key | Default | Meaning |
+|---|---|---|
+| `enabled`, `dir` | true, `/opt/xgonav/stimmen` | needs `[ortung]` and sounds (`aplay`) |
+| `max_confirmed`, `pool_n`, `kandidat_max_h` | 10, 30, 72 | confirmed samples (then no more learning), unconfirmed kept, age limit |
+| `vad_on_db`, `vad_off_db`, `vad_hang_s`, `vad_pre_s`, `min_s`, `max_s` | 9, 4, 0.3, 0.15, 0.6, 3 | utterance detection on the ortung level |
+| `voiced_min`, `flat_max` | 0.3, 0.3 | share of voiced frames, flatness limit |
+| `match_dist`, `dtw_band`, `len_ratio` | 8, 0.25, 1.6 | DTW match (estimated from TTS, tune on the Rider) |
+| `speed`, `band_lo`, `band_hi`, `vibrato_hz`, `vibrato_ms`, `drive`, `peak_db` | 1.6, 1000, 5000, 25, 0.3, 2, −3 | budgie filter |
 
 ### `[odom]`
 | Key | Default | RiderPi |

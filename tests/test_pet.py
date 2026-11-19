@@ -1131,3 +1131,38 @@ def test_pet_planer_umrechnung_und_umweg():
     p._nav_req = p._nav_goal
     p.set_path([(0.0, 0.0), (0.2, 1.0), (0.0, 2.0)])
     assert not p._nav_fail and p.path is not None
+
+
+# ---- Nachplappern (stimme.Stimmen) -----------------------------------------
+def test_neu_bestaetigte_probe_einmal_nachplappern():
+    b = brain()
+    wer = lambda t: [seen("person", 1.2, t)]
+    run(b, 0.0, 1.0, who=wer)
+    assert b.hoert_zu                                            # Person zu sehen: App schneidet mit
+    _, _, evs = run(b, 1.0, 1.05, who=wer, stimmen=(("01",), ["01"]))
+    _, _, evs2 = run(b, 1.05, 3.0, who=wer, stimmen=(("01",), []))
+    alle = [e for e in evs + evs2 if e[1].startswith("stimme:")]
+    assert alle == [("sound", "stimme:01", True)] and b.n_parrot == 1
+
+
+def test_hoert_nicht_zu_ohne_person():
+    b = brain()
+    run(b, 0.0, 1.0, who=lambda t: [seen("person", 1.2, t)])
+    run(b, 1.0, 1.0 + b.cfg.parrot_listen_s + 0.5)
+    assert not b.hoert_zu
+
+
+def test_mitreden_spielt_gelernte_probe_mit_sperre():
+    """Mit parrot_p = 1 kommt beim Mitreden die Probe, beim nächsten Mal (innerhalb parrot_repeat_s) Brabbeln."""
+    b = brain(parrot_p=1.0, talk_repeat_s=0.0)
+    wer = lambda t: [seen("person", 1.2, t)]
+    t, _, _, _, evs = hoeren(b, 0.0, 6.0, 0.0, who=wer, bis=3.2, stimmen=(("01", "02"), []))
+    assert [e[1] for e in evs if e[1].startswith("stimme:") or e[1] == "brabbeln"] in (["stimme:01"], ["stimme:02"])
+    _, _, _, _, evs = hoeren(b, t, t + 6.0, 0.0, who=wer, ab=t, bis=t + 3.2, stimmen=(("01", "02"), []))
+    assert [e[1] for e in evs if e[1].startswith("stimme:") or e[1] == "brabbeln"] == ["brabbeln"]
+
+
+def test_ohne_proben_immer_brabbeln():
+    b = brain(parrot_p=1.0)
+    _, _, _, _, evs = hoeren(b, 0.0, 6.0, 0.0, who=lambda t: [seen("person", 1.2, t)], bis=3.2)
+    assert [e[1] for e in evs if e[1] == "brabbeln" or e[1].startswith("stimme:")] == ["brabbeln"]

@@ -43,6 +43,24 @@ Same code on the recordings **set down** with the TV 2–3 m away (smooth, slopi
 
 Above 2 kHz the channels are not phase-true: at 3.5–4.5 kHz the phase sits at ≈ ±165° whatever the direction (coherence 0.4–0.7). With the first band (500–5000 Hz, 0.13 s windows) this produced apparent delays of −80…−100 µs for every source; those angles meant nothing.
 
+## Voice samples (`xgonav/stimme.py`, mode `pet`)
+
+The pet learns phrases it hears repeatedly and parrots them back, filtered to sound like a budgie. Not yet tried on the Rider (2026-11-19).
+
+| Item | Value |
+|---|---|
+| Capture | on the `[ortung]` stream (`Ortung.horcher`), only in `pet` while a person is in view or gone ≤ `[pet] parrot_listen_s` (3 s); never during own sounds (+ `nachhall_s`) |
+| VAD | ortung level vs. noise floor: opens `vad_on_db` 9, ends after `vad_hang_s` 0.3 s below `vad_off_db` 4; 0.15 s pre-roll; 0.6–3 s (cut at `max_s`) |
+| Features | 48 kHz stereo → 16 kHz mono (FIR 7 kHz), 13 MFCC per 10 ms, silent edges trimmed, mean removed; rejected if < `voiced_min` 0.3 of the loud frames are voiced (flatness 300–3000 Hz < 0.3) |
+| Match | DTW (Sakoe-Chiba 25 %, length ratio ≤ 1.6), cost per step ≤ `match_dist` 8. Windows TTS + room noise: same phrase other rate 2–4, other phrases ≥ 14, same phrase other voice 10–16. Tune on real samples |
+| Learning | no match → candidate (≤ `pool_n` 30, oldest dropped, > 72 h deleted at start); match with a candidate → confirmed (louder take kept), filtered, parroted once after `parrot_delay_s` 0.8 s; match with a confirmed one → only counted. At `max_confirmed` 10 learning stops for good (no capture) |
+| Budgie filter | ×`speed` 1.6 (higher, shorter), vibrato 25 Hz ±0.3 ms, high-pass 1 kHz + low-pass 5 kHz, tanh drive 2, peak −3 dB, 10 ms fades; once per confirmation |
+| Playback | when talking back (`brabbeln`) a learned sample instead with `parrot_p` 0.5, ≥ `parrot_repeat_s` 30 s apart, least played first (sound `stimme:NN`) |
+| Files | `[stimme] dir` (`/opt/xgonav/stimmen`): `kandidaten/<time>.wav` (16 kHz raw), `bestaetigt/NN_roh.wav`, `NN.wav` (48 kHz filtered); delete the directory to forget everything |
+| Status | `GET /status` → `ortung.stimme` (`aufnahme`, `bestaetigt`, `kandidaten`, `voll`, `segmente`, `verworfen`, `wieder`); pet info `nachgeplappert`, `proben` |
+| Cost | per 21 ms block only while capturing: a few comparisons and keeping the block; per utterance C++ core `native/stimmfast.cpp` in thread `stimme` (features + DTW against ≤ 40 samples, PC: < 1 ms each); filter once per confirmation. numpy fallback equal to rounding (1e-13). Nothing in the frame loop; nothing at all once full |
+| Tools | `python tools/stimme.py sittich in.wav out.wav [--set speed=1.8]`, `vergleich a.wav b.wav …` (distance table), `lernen *.wav` (whole flow in a temp dir) |
+
 ## Mixer state (as found, not changed)
 
 | Control | Value |

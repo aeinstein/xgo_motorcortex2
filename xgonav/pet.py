@@ -19,6 +19,8 @@ Mikrofone trennen vorn und hinten nicht). Sieht er eine Person und sie spricht i
 (Rufen, call_m). Plötzlich laut nach Stille: zuckt zusammen und dreht sich schnell hin. Dösend wecken ihn
 Stimmen; liegend nach einer Ohnmacht ist die Luft nicht rein, solange jemand spricht. Sieht er jemanden und
 der macht eine Sprechpause, antwortet er (Mitreden). Während er selbst dreht oder fährt, zählt keine Richtung.
+Nachplappern (Sense.stimmen, stimme.Stimmen): eine neu bestätigte Stimmprobe spielt er einmal gleich nach, beim
+Mitreden mit parrot_p eine gelernte statt des Brabbelns. hoert_zu sagt der App, wann sie mitschneiden darf.
 
 Sicherheit: Fahren nur innerhalb der Budgets retreat_m / creep_m (Standard 0), seek_m / roam_m (RiderPi: ohne Grenze)
 und nur mit Rädern.
@@ -106,6 +108,7 @@ class Sense:
     free_center: float | None = None  # Freiraum im Zentrum (FreeSpace.center), None = Bodenmodell ungültig
     path_blocked: bool = False       # geradeaus mit drive_v laut Merkkarte blockiert (nur während einer Fahrt)
     heard: Heard | None = None       # letzte Schallmeldung (bleibt stehen, bis die nächste kommt)
+    stimmen: tuple | None = None     # (bestätigte Stimmproben NN, neu bestätigte NN) aus stimme.Stimmen
     # Planer über die Raumkarte (Pet.step, nur mit Raumkarte): nächster Punkt auf dem Weg zum Fahrziel in
     # eigenen Koordinaten; None = ohne Planer geradeaus. nav_pending: Weg wird noch gerechnet, nav_fail: keiner.
     nav: tuple | None = None
@@ -229,6 +232,12 @@ class PetBrain:
         self._talk_n = 0                     # Meldungen in Folge (eine Äußerung)
         self._voice_t = -1e9                 # zuletzt eine Stimme von vorn gehört oder jemanden nach dem Horchen gesehen
         self._flinch_until = 0.0
+        # Nachplappern (stimme.Stimmen): gelernte Proben, fällige Wiederholungen neu bestätigter, Abspielzähler
+        self.hoert_zu = False                # App schneidet Stimmproben mit, solange das gilt
+        self.n_parrot = 0
+        self._parrot_ids: tuple = ()
+        self._parrot_due: list[tuple[float, str]] = []
+        self._parrot_n: dict[str, int] = {}
 
     # ---- Ausgabe ----------------------------------------------------------
     def _react(self, t: float, emotion: str | None = None, sound: str | None = None, urgent: bool = False) -> None:
@@ -300,6 +309,7 @@ class PetBrain:
             self._react(s.t, "vertigo", None if s.fw_mode == 0 else "ohnmacht", urgent=True)
         self.target = self._pick(s)
         self._ev = self._hear_new(s)
+        self._parrot_new(s)
         act = {"wach": self._wach, "schreck": self._schreck, "ab": self._ab, "nap": self._nap,
                "lugen": self._lugen, "warnen": self._warnen, "hoch": self._hoch, "settle": self._settle, "liegt": self._liegt,
                "aus": self._aus}[self.state](s)
@@ -311,6 +321,7 @@ class PetBrain:
         act.status = "pet: %s%s%s, Vertrauen %.2f" % (self.state, " " + self.zone if self.zone else "",
                                                      " %s/%s" % (self.task, self.phase) if self.task else "", self.trust)
         self._update_gaze(s)
+        self.hoert_zu = bool(c.parrot and self.state == "wach" and s.t - self._person_t <= c.parrot_listen_s)
         self._flush(s.t)
         return act
 
@@ -375,6 +386,44 @@ class PetBrain:
         self._apply_gesture(s, act, tg)
         return act
 
+    # ---- Nachplappern (stimme.Stimmen) --------------------------------------
+    def _parrot_new(self, s: Sense) -> None:
+        """Neu bestätigte Proben einmal nachplappern (nach parrot_delay_s, dringend: er hat es eben gelernt)."""
+        c, t = self.cfg, s.t
+        if s.stimmen is not None:
+            ids, neu = s.stimmen
+            self._parrot_ids = tuple(ids)
+            for nn in neu:
+                self._parrot_due.append((t + c.parrot_delay_s, nn))
+        if not self._parrot_due:
+            return
+        due = [x for x in self._parrot_due if x[0] <= t]
+        self._parrot_due = [x for x in self._parrot_due if x[0] > t]
+        for _, nn in due:
+            if c.parrot and self.state not in ("aus", "nap"):
+                self._play_parrot(t, nn, urgent=True)
+
+    def _play_parrot(self, t: float, nn: str, urgent: bool = False) -> None:
+        log.info("pet: plappere Probe %s nach", nn)
+        self.n_parrot += 1
+        self._parrot_n[nn] = self._parrot_n.get(nn, 0) + 1
+        self._cool["nachplappern"] = t + self.cfg.parrot_repeat_s
+        self._react(t, None, "stimme:" + nn, urgent=urgent)
+
+    def _babble_sound(self, t: float) -> str:
+        """Beim Mitreden: mit parrot_p eine gelernte Probe (die seltener gespielte), sonst brabbeln."""
+        c, ids = self.cfg, self._parrot_ids
+        if (not c.parrot or not ids or t < self._cool.get("nachplappern", -1e9)
+                or self.rng.random() >= c.parrot_p):
+            return "brabbeln"
+        wenig = min(self._parrot_n.get(nn, 0) for nn in ids)
+        nn = self.rng.choice([x for x in ids if self._parrot_n.get(x, 0) == wenig])
+        self.n_parrot += 1
+        self._parrot_n[nn] = wenig + 1
+        self._cool["nachplappern"] = t + c.parrot_repeat_s
+        log.info("pet: plappere Probe %s", nn)
+        return "stimme:" + nn
+
     # ---- Hören --------------------------------------------------------------
     def _hear_new(self, s: Sense) -> tuple[Heard, bool] | None:
         """Neue Schallmeldung dieses Schritts oder None. Zweiter Wert: Richtung brauchbar (balancierend und das
@@ -405,7 +454,7 @@ class PetBrain:
             self.n_talk += 1
             self._voice_t = t
             self.trust = clamp(self.trust + 0.01, 0.0, 1.0)
-            self._react(t, None, "brabbeln")
+            self._react(t, None, self._babble_sound(t))
             if c.gestures and self.roll_mag > 0:
                 self._gesture = ("kopf", t, t + c.tilt_s)
                 self.roll_deg = self.rng.choice((-1.0, 1.0)) * self.roll_mag
@@ -1364,7 +1413,8 @@ class PetBrain:
                 "schrecks": self.n_startle, "ruck": self.n_retreat, "ohnmacht": self.n_faint, "liegt_weil": self.why_down or None,
                 "aufgabe": "%s/%s" % (self.task, self.phase) if self.task else None, "suchen": self.n_seek,
                 "gefunden": self.n_found, "gefahren_m": round(self.task_m, 2),
-                "gehoert": self.n_heard, "gerufen": self.n_called, "mitgeredet": self.n_talk, "gekommen": self.n_come}
+                "gehoert": self.n_heard, "gerufen": self.n_called, "mitgeredet": self.n_talk, "gekommen": self.n_come,
+                "nachgeplappert": self.n_parrot, "proben": len(self._parrot_ids)}
 
 
 class Pet(Behavior):
@@ -1539,7 +1589,7 @@ class Pet(Behavior):
                   ds=w.ds, ds_measured=w.ds_measured, tilt=w.tilt, fw_mode=w.fw_mode,
                   floor_ok=w.map_ok and w.free is not None and bool(w.free.valid), height_mm=w.height_mm,
                   yaw=w.yaw, free_center=w.free.center if w.free is not None and w.free.valid else None,
-                  path_blocked=w.path_blocked, heard=heard, **self._nav(w))
+                  path_blocked=w.path_blocked, heard=heard, stimmen=w.stimmen, **self._nav(w))
         act = b.update(s)
         if b.want_set_down:
             b.want_set_down, self.want_set_down = False, True

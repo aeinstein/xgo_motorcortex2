@@ -44,6 +44,8 @@ echo "Erzeuge Emotionen (einmalig) ..."
 "$DEST/venv/bin/python" tools/sounds.py "$DEST/sounds"
 # Augen des Modus pet (einmalig; am Rider läuft davon nichts je Bild)
 "$DEST/venv/bin/python" tools/eyes.py --gaze "$DEST/eyes_gaze" || echo "Hinweis: Augen-Atlas nicht erzeugt – Modus pet zeigt das Overlay"
+# Stimmproben des Modus pet ([stimme] dir), bleiben bei jedem Einspielen erhalten
+mkdir -p "$DEST/stimmen"
 chown -R "$USER_NAME":"$USER_NAME" "$DEST"
 usermod -aG video,audio "$USER_NAME"
 # Dauerhafte Einstellungen aus dem Web (LED-Helligkeit): www-data schreibt, xgonav und rc.local lesen
