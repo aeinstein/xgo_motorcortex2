@@ -1,15 +1,17 @@
 diff --git a/firmware/src/board_support.cpp b/firmware/src/board_support.cpp
-index de43afa..7796d4e 100644
+index de43afa..cbdf4c8 100644
 --- a/firmware/src/board_support.cpp
 +++ b/firmware/src/board_support.cpp
-@@ -66,12 +66,22 @@ namespace { volatile std::uint8_t led_brightness256 = kLedBrightnessDefault; }
+@@ -66,12 +66,26 @@ namespace { volatile std::uint8_t led_brightness256 = kLedBrightnessDefault; }
  void setLedBrightness(std::uint8_t per256) { led_brightness256 = per256; }
  std::uint8_t ledBrightness() { return led_brightness256; }
  std::uint8_t brightnessScale(std::uint8_t channel) { return std::uint8_t((unsigned(channel)*unsigned(led_brightness256))>>8); }
-+std::uint8_t calibrationWave(std::uint32_t now) {
-+    const float phase=float(now%kCalibrationWavePeriodMs)/float(kCalibrationWavePeriodMs);
-+    const float level=0.5f-0.5f*std::cos(phase*6.2831853f);   // 0 .. 1 .. 0
-+    return std::uint8_t(float(kCalibrationWaveMin)+level*float(255-kCalibrationWaveMin)+0.5f);
++std::uint8_t calibrationSpin(std::uint32_t now,unsigned led) {
++    // Angle between the spot and this LED in turns, -0.5 .. 0.5; the LEDs sit a quarter turn apart.
++    float d=float(now%kCalibrationSpinPeriodMs)/float(kCalibrationSpinPeriodMs)-0.25f*float(led&3u);
++    d-=std::floor(d+0.5f);
++    const float c=std::fabs(d)<0.25f?std::cos(d*6.2831853f):0.0f;
++    return std::uint8_t(float(kCalibrationSpinMin)+c*c*float(255-kCalibrationSpinMin)+0.5f);
 +}
  bool renderLeds(const LedControl &c,std::uint32_t now,const LedPixels &user,LedPixels &out) {
      Rgb uniform{};
@@ -18,58 +20,44 @@ index de43afa..7796d4e 100644
      else if(c.robot_mode==0)uniform.r=200;
 -    else if(c.pitch_trim_stage==2)uniform.b=now%1000<500?128:0;
 +    else if(c.gyro_calibrating) {
-+        // Patch 0022: the user colours swell until the gyro is calibrated; updateLeds() draws them steady afterwards.
-+        const unsigned wave=calibrationWave(now);
-+        for(unsigned i=0;i<4;++i)out[i]=Rgb{std::uint8_t((user[i].r*wave+128)>>8),std::uint8_t((user[i].g*wave+128)>>8),std::uint8_t((user[i].b*wave+128)>>8)};
++        // Patch 0022: a spot circles in the user colours until the gyro is calibrated.
++        for(unsigned i=0;i<4;++i) {
++            const unsigned f=calibrationSpin(now,i);
++            out[i]=Rgb{std::uint8_t((user[i].r*f+128)>>8),std::uint8_t((user[i].g*f+128)>>8),std::uint8_t((user[i].b*f+128)>>8)};
++        }
 +        fill=false;
 +    } else if(c.pitch_trim_stage==2)uniform.b=now%1000<500?128:0;
      else if(c.roll_period!=0) {
          const int value=std::isfinite(c.roll_request)?int(double(c.roll_request)*0.0625*127.0+128.0):128;
          const auto shade=std::uint8_t(value);
-@@ -150,6 +160,8 @@ void BoardSupport::updateLeds(const LedControl &control,std::uint32_t now) {
-     if(std::uint32_t(now-last_led_ms_)<20)return;
-     last_led_ms_=now;LedPixels pixels;
-     if(renderFaultLeds(control,now,pixels)||renderLeds(control,now,user_,pixels))show(pixels);
-+    else if(was_calibrating_&&!control.gyro_calibrating)show(user_);   // patch 0022: steady once calibrated (mode 253 draws nothing)
-+    was_calibrating_=control.gyro_calibrating;
- }
- void BoardSupport::show(const LedPixels &pixels) {
-     if(!leds_ready_)return;
 diff --git a/firmware/src/board_support.h b/firmware/src/board_support.h
-index 57caf2c..0ba639c 100644
+index 57caf2c..cfe9e6b 100644
 --- a/firmware/src/board_support.h
 +++ b/firmware/src/board_support.h
-@@ -48,7 +48,13 @@ struct LedControl {
+@@ -48,7 +48,14 @@ struct LedControl {
      float height_period=0,roll_period=0,height_request=0,roll_request=0;
      float forward_request=0,turn_request=0;
      LedFault fault=LedFault::None;
 +    bool gyro_calibrating=false;   // patch 0022: boot calibration of the gyro still running
  };
-+// Patch 0022: while the gyro boot calibration runs, the user colours swell softly instead of standing still.
-+// Factor n/256 for every channel: cosine wave, period 1200 ms, 30 (dim) .. 255 (full), starting dim.
-+constexpr std::uint32_t kCalibrationWavePeriodMs = 1200;
-+constexpr std::uint8_t kCalibrationWaveMin = 30;
-+std::uint8_t calibrationWave(std::uint32_t now_ms);
++// Patch 0022: while the gyro boot calibration runs, a bright spot circles over the four LEDs (0 -> 1 -> 2 -> 3,
++// front left, rear left, rear right, front right) in the user colours, like a spinning top.
++// Factor n/256 for one LED: 255 where the spot is, fading softly to kCalibrationSpinMin a quarter turn away.
++constexpr std::uint32_t kCalibrationSpinPeriodMs = 400;   // one revolution
++constexpr std::uint8_t kCalibrationSpinMin = 30;
++std::uint8_t calibrationSpin(std::uint32_t now_ms,unsigned led);
  Rgb paletteColor(std::uint8_t index);
  // Returns false where the original leaves the previous LED frame untouched.
  bool renderLeds(const LedControl&,std::uint32_t now_ms,const LedPixels &user,LedPixels &out);
-@@ -84,6 +90,7 @@ private:
-     LedPixels user_{},shown_{};
-     std::uint32_t last_poll_ms_=0,last_led_ms_=0;
-     bool started_=false,leds_ready_=false;
-+    bool was_calibrating_=false;   // patch 0022: draw the steady frame once when the calibration ends
- };
- #endif
- }} // namespace rider::board
 diff --git a/firmware/src/main.cpp b/firmware/src/main.cpp
-index fc18927..b363051 100644
+index fc18927..9c28512 100644
 --- a/firmware/src/main.cpp
 +++ b/firmware/src/main.cpp
 @@ -913,6 +913,7 @@ public:
              led.height_request=s.motion.command.height;led.roll_request=s.motion.command.roll;
              led.forward_request=s.motion.command.forward;led.turn_request=s.motion.command.turn;
              led.fault=ledFaultFor(driving,s.last_stop_reason);   // the servos-released indication (red/amber) while stopped after a fault
-+            led.gyro_calibrating=!s.imu.calibrated;   // patch 0022: LEDs swell until the gyro boot calibration is done
++            led.gyro_calibrating=!s.imu.calibrated;   // patch 0022: a spot circles over the LEDs until the gyro boot calibration is done
              board.updateLeds(led,now);
              if(uint32_t(now-last_publish_ms)>=10){last_publish_ms=now;publish();}
              vTaskDelay(1);
