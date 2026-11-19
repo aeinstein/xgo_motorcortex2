@@ -196,12 +196,12 @@ pre{background:#0b0d10;border-radius:6px;padding:8px;overflow:auto;max-height:40
 .trenner{border:0;border-top:1px solid var(--rand);margin:10px 0}
 
 /* --- Raumkarte */
-#karte-rahmen{position:relative;max-width:400px;aspect-ratio:1;margin:0 auto;overflow:hidden;background:#808080;border-radius:6px;cursor:grab;user-select:none;-webkit-user-select:none}
+#karte-rahmen{position:relative;aspect-ratio:1;overflow:hidden;background:#808080;border-radius:6px;cursor:grab;user-select:none;-webkit-user-select:none}
 #karte-rahmen.zieht{cursor:grabbing}
 #karte-rahmen.setzt{cursor:crosshair}
 #karte-punkte{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
 /* Knöpfe nach Zweck gruppiert; während Route/Zone gesetzt wird, ist die ganze Gruppe gesperrt (fieldset) */
-#karte-gruppen{border:0;margin:0 0 8px;padding:0;min-width:0;display:grid;gap:5px}
+#karte-gruppen{border:0;margin:8px 0 0;padding:0;min-width:0;display:grid;gap:5px}
 .gruppe{display:grid;grid-template-columns:7.5em 1fr;gap:8px;align-items:center}
 .gruppe .g-name{font-size:12px;color:var(--leise)}
 .gruppe button{padding:4px 9px;font-size:13px}
@@ -372,12 +372,6 @@ details.extras[open]>summary{margin-bottom:8px}
       </div>
       <select id="ziel" title="Ziel für Folgen/Anfahren (aktive YOLO-Klassen)" aria-label="Ziel"><option value="person">person</option></select>
     </div>
-  </div>
-  <div class="karte">
-    <div class="kopf"><h2>Bildverarbeitung</h2><span class="leise" id="rec-text"></span>
-      <button id="rec" onclick="aufzeichnungUmschalten()" title="Rohbilder und Metadaten am Rider speichern. Schreibt nur, solange er balanciert; Absetzen beendet die Aufnahme, jedes Aufstehen beginnt eine neue.">Aufzeichnen</button>
-      <button id="pip" onclick="pipelineUmschalten()">…</button></div>
-    <div class="kacheln" id="kurz"></div>
     <div class="regler fn-wahl">
       <label for="fn-wahl">Bodenmodell</label>
       <select id="fn-wahl" aria-label="Bodenmodell" title="FloorNet-Gewichte aus [freespace] net_dir"></select>
@@ -385,6 +379,12 @@ details.extras[open]>summary{margin-bottom:8px}
       <button id="fn-an" onclick="bodenmodellAktivieren()" title="xgonav lädt und prüft das Netz, stellt den Symlink [freespace] net um und tauscht das Bodenmodell ohne Neustart (nur Idle/Hand)">Aktivieren</button>
     </div>
     <div class="leise" id="fn-text"></div>
+  </div>
+  <div class="karte">
+    <div class="kopf"><h2>Bildverarbeitung</h2><span class="leise" id="rec-text"></span>
+      <button id="rec" onclick="aufzeichnungUmschalten()" title="Rohbilder und Metadaten am Rider speichern. Schreibt nur, solange er balanciert; Absetzen beendet die Aufnahme, jedes Aufstehen beginnt eine neue.">Aufzeichnen</button>
+      <button id="pip" onclick="pipelineUmschalten()">…</button></div>
+    <div class="kacheln" id="kurz"></div>
     <details class="roh"><summary>Status (roh)</summary><pre id="roh"></pre></details>
   </div>
   <details class="karte extras" id="verlauf" ontoggle="verlaufUmschalten()">
@@ -445,8 +445,8 @@ details.extras[open]>summary{margin-bottom:8px}
         Lauscht nur in den Modi aus <code>[ortung] modes</code>, nie im Ruhemodus; eigene Töne werden ausgeblendet.</p>
     </details>
   </details>
-  <section class="karte">
-    <div class="kopf"><h2>Fahren</h2></div>
+  <details class="karte extras" id="fahrkarte" ontoggle="fahrenUmschalten()">
+    <summary><h2>Fahren</h2><span class="leise">Pfeiltasten/WASD</span></summary>
     <div class="fahren">
       <div class="pad">
         <span></span><button data-fahrt="vor" aria-label="vor">▲</button><span></span>
@@ -510,28 +510,12 @@ details.extras[open]>summary{margin-bottom:8px}
         <?php if (!$emotionen): ?><span class="leise">keine gefunden in <?= h(EMOTION_RAW) ?></span><?php endif; ?>
       </div>
     </details>
-  </section>
+  </details>
 
   <section class="karte">
     <div class="kopf"><h2>Raumkarte</h2>
       <select id="karte-view" aria-label="Ausschnitt" onchange="karteView(this.value)"><option value="3">3 m</option><option value="6" selected>6 m</option><option value="10">10 m</option><option value="16">16 m</option><option value="24">24 m</option><option id="karte-view-frei" hidden></option></select>
     </div>
-    <fieldset id="karte-gruppen">
-      <div class="gruppe"><span class="g-name">Karte</span><div class="knoepfe">
-        <button onclick="befehl('map_save')" title="Raumkarte jetzt speichern ([grid] file)">Speichern</button>
-        <button id="karte-sperre" onclick="karteSperren()" title="Gesperrt ändern Fahrten die Karte nicht">Karte sperren</button>
-        <button class="gefahr" onclick="karteZuruecksetzen()" title="Karte leeren; Route und Sperrzonen gehen verloren">Zurücksetzen</button>
-      </div></div>
-      <div class="gruppe"><span class="g-name">Start · Pose</span><div class="knoepfe">
-        <button onclick="befehl('map_start')" title="Startpunkt = aktuelle Pose">Start hier</button>
-        <button id="karte-pose-weg" hidden onclick="befehl('map_pose', {aktion: 'verwerfen'})" title="Der Rider wurde versetzt: Die Karte wird nicht mehr beschrieben, bis der Standort bestätigt ist">Pose verwerfen</button>
-      </div></div>
-      <div class="gruppe"><span class="g-name">Route · Zonen</span><div class="knoepfe">
-        <button onclick="bearbeiten('route')" title="Wegpunkte der Streife per Klick auf die Karte setzen">Route setzen</button>
-        <button onclick="bearbeiten('zone')" title="Bereich, den der Rider nie befährt: Ecken anklicken">Sperrzone</button>
-        <button onclick="zonenLoeschen()" title="Alle Sperrzonen löschen">Zonen löschen</button>
-      </div></div>
-    </fieldset>
     <div id="karte-rahmen" title="ziehen: verschieben · Mausrad: zoomen · Doppelklick: zurück zum Rider">
       <img id="karte" alt="Raumkarte" width="320" height="320" draggable="false">
       <svg id="karte-punkte" viewBox="0 0 1 1" preserveAspectRatio="none"></svg>
@@ -554,6 +538,22 @@ details.extras[open]>summary{margin-bottom:8px}
       <div id="karte-erkunden" class="weg"></div>
       <div id="karte-streife" class="weg"></div>
     </div>
+    <fieldset id="karte-gruppen">
+      <div class="gruppe"><span class="g-name">Karte</span><div class="knoepfe">
+        <button onclick="befehl('map_save')" title="Raumkarte jetzt speichern ([grid] file)">Speichern</button>
+        <button id="karte-sperre" onclick="karteSperren()" title="Gesperrt ändern Fahrten die Karte nicht">Karte sperren</button>
+        <button class="gefahr" onclick="karteZuruecksetzen()" title="Karte leeren; Route und Sperrzonen gehen verloren">Zurücksetzen</button>
+      </div></div>
+      <div class="gruppe"><span class="g-name">Start · Pose</span><div class="knoepfe">
+        <button onclick="befehl('map_start')" title="Startpunkt = aktuelle Pose">Start hier</button>
+        <button id="karte-pose-weg" hidden onclick="befehl('map_pose', {aktion: 'verwerfen'})" title="Der Rider wurde versetzt: Die Karte wird nicht mehr beschrieben, bis der Standort bestätigt ist">Pose verwerfen</button>
+      </div></div>
+      <div class="gruppe"><span class="g-name">Route · Zonen</span><div class="knoepfe">
+        <button onclick="bearbeiten('route')" title="Wegpunkte der Streife per Klick auf die Karte setzen">Route setzen</button>
+        <button onclick="bearbeiten('zone')" title="Bereich, den der Rider nie befährt: Ecken anklicken">Sperrzone</button>
+        <button onclick="zonenLoeschen()" title="Alle Sperrzonen löschen">Zonen löschen</button>
+      </div></div>
+    </fieldset>
     <details class="hilfe" data-i18n-html="hilfe-karte"><summary>grau unbekannt · hell frei · dunkel belegt · grün Weg · cyan Plan · blau Start · rot Rider</summary>
       <p>Maus: ziehen verschiebt, Mausrad zoomt um den Zeiger, Doppelklick zentriert wieder auf den Rider
         und folgt ihm.</p>
@@ -636,7 +636,7 @@ const EN = {
   'Roll': 'Roll', 'Roll auf 0°': 'Roll to 0°',
   'Gier 0° = Kurs beim Start des ESP32; + = links. Roll + = rechts tief, Nick + = vorn tief':
     'Yaw 0° = heading at ESP32 start; + = left. Roll + = right side down, pitch + = front down',
-  'Fahren': 'Drive', 'vor': 'forward', 'links': 'left', 'rechts': 'right', 'zurück': 'back', 'Tempo': 'Speed',
+  'Fahren': 'Drive', 'vor': 'forward', 'links': 'left', 'rechts': 'right', 'zurück': 'back', 'Tempo': 'Speed', 'Pfeiltasten/WASD': 'Arrow keys/WASD',
   'Aktion 255': 'Action 255', 'Aufstehen': 'Stand up',
   'Aktion 253 (!standup): Rider muss stehen und Platz haben': 'Action 253 (!standup): Rider must be upright and have room',
   'Aufspringen': 'Jump up', 'Roll auf 0° und die Beine 3 s nivellieren (nur wenn er steht)': 'Roll to 0° and level the legs for 3 s (only while standing)',
@@ -2270,15 +2270,6 @@ function radarZeichnen(jetzt) {
     g.beginPath(); g.moveTo(cx, cy); g.lineTo(cx + R * Math.sin(a), cy - R * Math.cos(a)); g.stroke();
   }
   g.globalAlpha = 1;
-  if (radarAktiv) {                                      // umlaufender Suchstrahl, nur solange gelauscht wird
-    const a0 = (jetzt / 4000 * 2 * Math.PI) % (2 * Math.PI) - Math.PI / 2;
-    g.fillStyle = gruen;
-    for (let k = 0; k < 24; k++) {
-      g.globalAlpha = 0.16 * (1 - k / 24);
-      g.beginPath(); g.moveTo(cx, cy); g.arc(cx, cy, R, a0 - (k + 1) * 0.035, a0 - k * 0.035); g.closePath(); g.fill();
-    }
-    g.globalAlpha = 1;
-  }
   // Strahlen: Winkel > 0 = links; Zwilling nach hinten gestrichelt (vorn/hinten nicht unterscheidbar)
   for (const s of radarStrahlen) {
     const alter = jetzt - s.t;
@@ -2310,12 +2301,12 @@ function radarZeichnen(jetzt) {
   g.fillText(tr('vorn'), cx, cy - R - 8); g.fillText(tr('hinten'), cx, cy + R + 8);
   g.fillText('L', cx - R - 8, cy); g.fillText('R', cx + R + 8, cy);
 }
-// Schleife nur bei offener Karte und nur, solange sich etwas bewegt (Suchstrahl oder ein Strahl verblasst)
+// Schleife nur bei offener Karte und nur, solange ein Strahl verblasst
 function radarSchleife(jetzt) {
   radarLaeuft = false;
   if (!$('radarkarte').open || document.hidden) return;
   radarZeichnen(jetzt);
-  if (radarAktiv || radarStrahlen.some(s => jetzt - s.t < RADAR_MS)) radarStarten();
+  if (radarStrahlen.some(s => jetzt - s.t < RADAR_MS)) radarStarten();
 }
 function radarStarten() {
   if (radarLaeuft || !$('radarkarte').open) return;
@@ -2328,6 +2319,9 @@ function radarUmschalten() {
 }
 document.addEventListener('visibilitychange', radarStarten);
 window.addEventListener('resize', radarStarten);
+function fahrenUmschalten() {
+  try { localStorage.setItem('xgonav.fahren', $('fahrkarte').open ? '1' : '0'); } catch (e) {}
+}
 function lageUmschalten() {
   try { localStorage.setItem('xgonav.lage', $('lagekarte').open ? '1' : '0'); } catch (e) {}
   liveImu();
@@ -2403,7 +2397,8 @@ try {
   if (localStorage.getItem('xgonav.lage') !== '0') $('lagekarte').open = true;   // Standard: offen
   if (localStorage.getItem('xgonav.extras') === '1') $('extras').open = true;
   if (localStorage.getItem('xgonav.radar') !== '0') $('radarkarte').open = true;   // Standard: offen
-} catch (e) { $('lagekarte').open = true; }
+  if (localStorage.getItem('xgonav.fahren') !== '0') $('fahrkarte').open = true;   // Standard: offen
+} catch (e) { $('lagekarte').open = true; $('fahrkarte').open = true; }
 liveVerbinden();
 lageStarten();
 </script>
