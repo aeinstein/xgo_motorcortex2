@@ -103,7 +103,7 @@ def main() -> None:
     ap.add_argument("--set", help="[stimme]-Werte, z. B. speed=1.8,match_dist=7")
     a = ap.parse_args()
     c = _cfg(a.set)
-    k = stimme.make_kern(c.flat_max, per_min=c.per_min)
+    k = stimme.make_kern(c.flat_max, per_min=c.per_min, trim_db=c.trim_db, laut_db=c.laut_db)
     print(f"Kern {k.name}")
     if a.was == "sittich":
         if len(a.dateien) != 2:

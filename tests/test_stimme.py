@@ -72,7 +72,7 @@ def test_mitschnitt_eine_aeusserung(tmp_path):
 
 def test_mitschnitt_zu_kurz_verworfen(tmp_path):
     st = stimmen(tmp_path)
-    assert mitschnitt(st, stille(2.0), aeusserung(WORT_A, 0.5), stille(1.0)) == []
+    assert mitschnitt(st, stille(2.0), aeusserung(WORT_A, 0.2), stille(1.0)) == []
 
 
 def test_mitschnitt_bei_max_s_abgeschnitten(tmp_path):

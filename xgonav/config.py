@@ -901,24 +901,30 @@ class StimmeCfg:
     kandidat_max_min: float = 1.0      # unbestätigte so lange behalten (Nutzer 2026-11-19), danach gelöscht
     # Sprecherkennung (VAD) auf dem Pegel der Ortung: öffnet vad_on_db über dem Ruhepegel, endet nach vad_hang_s
     # unter vad_off_db; vad_pre_s Vorlauf. Kürzer als min_s verworfen, bei max_s abgeschnitten.
-    vad_on_db: float = 9.0
+    # Gemessen an einer beschrifteten Aufnahme am Rider 2026-11-19 (3 Sätze je 5x, Wasserkocher im Hintergrund):
+    # mit 9 dB und 0,6 s fehlten kurze und leise Sätze („Komm her“).
+    vad_on_db: float = 6.0
     vad_off_db: float = 4.0
     vad_hang_s: float = 0.6            # 0,3 zerschnitt am Rider Sätze an Sprechpausen (2026-11-19)
-    vad_pre_s: float = 0.15
-    min_s: float = 0.6
+    vad_pre_s: float = 0.3             # Vorlauf (Nutzer 2026-11-19)
+    min_s: float = 0.3
     max_s: float = 3.0
+    # Merkmale nur vom Satz: Ränder unter trim_db (unter dem lautesten Rahmen) ab, stimmhaft gezählt nur bis laut_db
+    # darunter. Mit 20 dB blieb das Rauschen in den Merkmalen (1,4 s statt 0,6 s), andere Sätze lagen dann nur bei 7-9.
+    trim_db: float = 12.0
+    laut_db: float = 10.0
     # Anteil stimmhafter Rahmen unter den lauten, sonst kein Sprechen. Stimmhaft: spektrale Flachheit 300-3000 Hz unter
     # flat_max und Grundton 70-400 Hz (Autokorrelation, fensterbereinigt) über per_min. Am Rider 2026-11-19:
-    # Sprachausgabe 0,74-0,96, Wasserrauschen 0,0-0,19 (vorher nur Flachheit und 0,3: Rauschen wurde gelernt), echte
-    # Stimme am Rider 0,60-0,98 und mit 0,6 rund 70 % verworfen: daher 0,4.
+    # Sprachausgabe 0,74-0,96, Wasserrauschen 0,0-0,19 (vorher nur Flachheit und 0,3: Rauschen wurde gelernt). Am
+    # Rider mit laut_db 10: Sprache 0,50-1,0, Wasserkocher allein 0,12-0,21.
     voiced_min: float = 0.4
     flat_max: float = 0.3
     per_min: float = 0.5
     # Vergleich: DTW über 13 MFCC (Mittelwert abgezogen), Kosten je Schritt; Längen höchstens len_ratio verschieden.
     # match_dist aus Windows-Sprachausgabe mit Raumrauschen (2026-11-19): derselbe Satz, andere Sprechrate 2..4,
-    # andere Sätze ab 14, anderer Sprecher derselbe Satz 10..16. Am Rider mit 8 kaum Treffer (Wiederholungen 9..14):
-    # 10 geraten, Nutzer 2026-11-19 „erst Schnellkorrektur“. Nachstellen mit tools/stimme.py strom (beschriftete Aufnahme).
-    match_dist: float = 10.0
+    # andere Sätze ab 14. Beschriftete Aufnahme am Rider (tools/stimme.py strom, trim_db 12): derselbe Satz 5,1-8,2,
+    # verschiedene ab 8,8, meist 9,5-12. Die geratene 10 hätte Sätze verwechselt.
+    match_dist: float = 8.0
     dtw_band: float = 0.25
     len_ratio: float = 1.6
     # Sittich-Filter: speed-mal so schnell (höher und kürzer), Bandpass band_lo..band_hi Hz, Schnarren durch

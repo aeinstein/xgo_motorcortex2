@@ -3,8 +3,8 @@
 //   st_mono16k  Stereo 48 kHz (int16) -> mono 16 kHz: Mittel beider Kanäle, Tiefpass 7 kHz (31 Abgriffe,
 //               Hamming), jeder 3. Wert
 //   st_mfcc     13 MFCC je 10 ms (25 ms Hamming, 512er FFT, 24 Mel-Bänder 100..7600 Hz, DCT-II), stille Ränder
-//               (unter 1 % der lautesten Rahmenenergie) ab, Mittelwert abgezogen; dazu der Anteil stimmhafter
-//               Rahmen unter den lauten: spektrale Flachheit 300..3000 Hz unter flat_max und Grundton 70..400 Hz
+//               (trim_db unter der lautesten Rahmenenergie) ab, Mittelwert abgezogen; dazu der Anteil stimmhafter
+//               Rahmen unter den lauten (bis laut_db unter der lautesten): spektrale Flachheit 300..3000 Hz unter flat_max und Grundton 70..400 Hz
 //               (Autokorrelation aus dem Leistungsspektrum, durch die des Fensters geteilt) über per_min
 //   st_dtw      DTW im Band (Sakoe-Chiba, um die Diagonale), Kosten je Schritt = Summe / (na + nb)
 //   st_sittich  Wellensittich: schneller abspielen (linear), Schnarren (modulierte Verzögerung), Hochpass und Tiefpass
@@ -19,15 +19,15 @@
 
 namespace {
 
-const int kStimmAbi = 2;
+const int kStimmAbi = 3;
 const double kPi = 3.14159265358979323846;
 const int kRateIn = 48000, kRate = 16000, kRateOut = 48000;
 const int kFrame = 400, kHop = 160, kNfft = 512, kNbin = kNfft / 2 + 1, kNmel = 24, kNcep = 13;
 const int kFirN = 31, kLagLo = 40, kLagHi = 228;     // Grundton 400..70 Hz
-const double kFirFc = 7000.0, kMelLo = 100.0, kMelHi = 7600.0, kFlatLo = 300.0, kFlatHi = 3000.0, kTrim = 0.01;
+const double kFirFc = 7000.0, kMelLo = 100.0, kMelHi = 7600.0, kFlatLo = 300.0, kFlatHi = 3000.0;
 
 struct Stimm {
-    double flat_max = 0.3, per_min = 0.5;
+    double flat_max = 0.3, per_min = 0.5, trim = 0.063, laut = 0.1;   // trim/laut linear aus dB
     int k0 = 0, k1 = 0;
     std::vector<double> win, fb, dct, twr, twi, zr, zi;   // fb [b * kNbin + k], dct [n * kNmel + m]
     std::vector<double> rw;                               // Autokorrelation des Fensters / r0, Lag kLagLo..kLagHi
@@ -123,10 +123,12 @@ XGO_API int st_mono16k(const int16_t* pcm, int n, double* out) {
     return k;
 }
 
-XGO_API void* st_new(double flat_max, double per_min) {
+XGO_API void* st_new(double flat_max, double per_min, double trim_db, double laut_db) {
     Stimm* o = new Stimm;
     o->flat_max = flat_max;
     o->per_min = per_min;
+    o->trim = std::pow(10.0, -trim_db / 10.0);
+    o->laut = std::pow(10.0, -laut_db / 10.0);
     o->k0 = (int)std::ceil(kFlatLo * kNfft / kRate);
     o->k1 = (int)std::floor(kFlatHi * kNfft / kRate);
     o->win.resize(kFrame);
@@ -213,7 +215,7 @@ XGO_API int st_mfcc(void* h, const double* x, int n, double* out, int max_frames
         if (es > emax) emax = es;
     }
     if (emax <= 0.0) return 0;
-    const double thr = kTrim * emax;
+    const double thr = o->trim * emax, thr_laut = o->laut * emax;
     int a = 0, b = m;
     while (a < m && e[a] < thr) a++;
     while (b > a && e[b - 1] < thr) b--;
@@ -223,7 +225,7 @@ XGO_API int st_mfcc(void* h, const double* x, int n, double* out, int max_frames
     std::vector<double> mean(kNcep, 0.0), le(kNmel);
     for (int f = a; f < b; f++) {
         const double* p = &P[(size_t)f * kNbin];
-        const bool laut = e[f] >= thr;
+        const bool laut = e[f] >= thr_laut;
         if (laut) {
             double sl = 0.0, sm = 0.0;
             for (int k = o->k0; k <= o->k1; k++) {

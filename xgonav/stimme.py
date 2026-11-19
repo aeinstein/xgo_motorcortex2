@@ -37,7 +37,7 @@ from . import fastlib
 
 log = logging.getLogger(__name__)
 
-_STIMM_ABI = 2
+_STIMM_ABI = 3
 RATE_IN, RATE, RATE_OUT = 48000, 16000, 48000
 FRAME, HOP, NFFT, NMEL, NCEP = 400, 160, 512, 24, 13
 FIR_N, FIR_FC = 31, 7000.0
@@ -45,7 +45,6 @@ MEL_LO, MEL_HI = 100.0, 7600.0
 FLAT_LO, FLAT_HI = 300.0, 3000.0
 LAG_LO, LAG_HI = 40, 228             # Grundton 400..70 Hz in Abtastwerten bei 16 kHz
 VERFALL_TAKT_S = 5.0                 # so oft prüft der Thread stimme, ob Kandidaten verfallen sind
-TRIM = 0.01                          # Rahmen unter 1 % der lautesten Energie gelten als still
 _lib_cache: list = []
 
 
@@ -59,7 +58,7 @@ def _lib():
             L.st_mono16k.restype = i
             L.st_mono16k.argtypes = [p, i, p]
             L.st_new.restype = p
-            L.st_new.argtypes = [d, d]
+            L.st_new.argtypes = [d, d, d, d]
             L.st_free.restype = None
             L.st_free.argtypes = [p]
             L.st_mfcc.restype = i
@@ -109,8 +108,9 @@ class _PyKern:
     """Dasselbe wie native/stimmfast.cpp in numpy."""
     name = "numpy"
 
-    def __init__(self, flat_max: float, per_min: float = 0.5):
+    def __init__(self, flat_max: float, per_min: float = 0.5, trim_db: float = 12.0, laut_db: float = 10.0):
         self.flat_max, self.per_min = flat_max, per_min
+        self.trim, self.laut = 10.0 ** (-trim_db / 10.0), 10.0 ** (-laut_db / 10.0)
         self.h = _fir()
         self.win = 0.54 - 0.46 * np.cos(2.0 * np.pi * np.arange(FRAME) / (FRAME - 1))
         rw = np.fft.irfft(np.abs(np.fft.rfft(self.win, NFFT)) ** 2, NFFT)
@@ -138,11 +138,11 @@ class _PyKern:
         idx = np.arange(m)[:, None] * HOP + np.arange(FRAME)[None, :]
         P = np.abs(np.fft.rfft(y[idx] * self.win, NFFT, axis=1)) ** 2
         e = P.sum(axis=1)
-        laut = e >= TRIM * e.max() if e.max() > 0 else np.zeros(m, bool)
-        if not laut.any():
+        if e.max() <= 0:
             return np.zeros((0, NCEP)), 0.0
-        a, b = int(np.argmax(laut)), m - int(np.argmax(laut[::-1]))
-        P, laut = P[a:b], laut[a:b]
+        drin = e >= self.trim * e.max()                  # Ränder unter trim_db weg (Rauschen vor und nach dem Satz)
+        a, b = int(np.argmax(drin)), m - int(np.argmax(drin[::-1]))
+        P, laut = P[a:b], e[a:b] >= self.laut * e.max()  # stimmhaft gezählt nur bis laut_db unter dem lautesten
         band = P[:, self.k0:self.k1 + 1]
         flat = np.exp(np.log(band + 1e-10).mean(axis=1)) / (band.mean(axis=1) + 1e-10)
         r = np.fft.irfft(P, NFFT, axis=1)
@@ -239,9 +239,9 @@ class _PyKern:
 class _NativeKern:
     name = "native"
 
-    def __init__(self, L, flat_max: float, per_min: float = 0.5):
+    def __init__(self, L, flat_max: float, per_min: float = 0.5, trim_db: float = 12.0, laut_db: float = 10.0):
         self._L = L
-        self._h = L.st_new(flat_max, per_min)
+        self._h = L.st_new(flat_max, per_min, trim_db, laut_db)
         self._v = ctypes.c_double()
 
     def __del__(self):
@@ -275,14 +275,15 @@ class _NativeKern:
         return out[:k]
 
 
-def make_kern(flat_max: float, native: bool | None = None, per_min: float = 0.5):
+def make_kern(flat_max: float, native: bool | None = None, per_min: float = 0.5, trim_db: float = 12.0,
+              laut_db: float = 10.0):
     """native=None: C++-Kern, wenn vorhanden; True/False erzwingt einen Weg (Tests)."""
     L = _lib() if native is not False else None
     if L is not None:
-        return _NativeKern(L, flat_max, per_min)
+        return _NativeKern(L, flat_max, per_min, trim_db, laut_db)
     if native:
         raise RuntimeError("stimme: C++-Kern fehlt")
-    return _PyKern(flat_max, per_min)
+    return _PyKern(flat_max, per_min, trim_db, laut_db)
 
 
 # ---------------------------------------------------------------------- Dateien
@@ -324,7 +325,7 @@ class Stimmen:
     def __init__(self, cfg, rate: int = RATE_IN, block: int = 1024, native: bool | None = None,
                  clock=time.time):
         self.cfg, self.clock = cfg, clock
-        self.kern = make_kern(cfg.flat_max, native, cfg.per_min)
+        self.kern = make_kern(cfg.flat_max, native, cfg.per_min, cfg.trim_db, cfg.laut_db)
         self.ok = rate == RATE_IN
         if not self.ok:
             log.warning("Stimmen aus: Ortung läuft mit %d Hz, nötig sind %d", rate, RATE_IN)

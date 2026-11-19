@@ -243,9 +243,10 @@ All keys with comments: `PetCfg` in `xgonav/config.py`.
 |---|---|---|
 | `enabled`, `dir` | true, `/opt/xgonav/stimmen` | needs `[ortung]` and sounds (`aplay`) |
 | `max_confirmed`, `pool_n`, `kandidat_max_min` | 10, 30, 1 | confirmed samples (then no more learning, recognition continues), unconfirmed kept, minutes to get confirmed |
-| `vad_on_db`, `vad_off_db`, `vad_hang_s`, `vad_pre_s`, `min_s`, `max_s` | 9, 4, 0.6, 0.15, 0.6, 3 | utterance detection on the ortung level |
+| `vad_on_db`, `vad_off_db`, `vad_hang_s`, `vad_pre_s`, `min_s`, `max_s` | 6, 4, 0.6, 0.3, 0.3, 3 | utterance detection on the ortung level (pre-roll, hang-over) |
+| `trim_db`, `laut_db` | 12, 10 | features only within trim_db of the loudest frame; voicing counted within laut_db |
 | `voiced_min`, `flat_max`, `per_min` | 0.4, 0.3, 0.5 | share of voiced frames; voiced = flatness below and pitch strength above |
-| `match_dist`, `dtw_band`, `len_ratio` | 10, 0.25, 1.6 | DTW match (guessed; real repeats on the Rider 9–14; tune with `tools/stimme.py strom`) |
+| `match_dist`, `dtw_band`, `len_ratio` | 8, 0.25, 1.6 | DTW match (labelled recording on the Rider: same phrase 5.1–8.2, different ≥ 8.8) |
 | `speed`, `band_lo`, `band_hi`, `vibrato_hz`, `vibrato_ms`, `drive`, `peak_db` | 1.6, 1000, 5000, 25, 0.3, 2, −3 | budgie filter |
 
 ### `[odom]`
