@@ -125,8 +125,8 @@ freespace_cpus = [2, 3]     # Bodenmodell-Thread: neben YOLO ist dort Luft
 # Faktoren aus tools/calibrate_odom.py (2026-11-04, nach ESP-Neustart): 212,5 cm am Maßband,
 # Räder roh 210,95 / 210,68 cm, Fahrt sichtbar geradeaus (Kurs = 0). Der Kamera-Kurs zeigte dabei
 # −8,9° und taugt nicht als Referenz. Früher 0,9905/1,0068: Reifen saß falsch.
-scale_left = 1.0073
-scale_right = 1.0087
+scale_left = 1.0080     # 2026-11-19 beide gleich: Räder gegen IMU-Kurs in 66 Rohfahrten ohne Unterschied (Maßband 2026-11-04: 1,0073/1,0087)
+scale_right = 1.0080
 
 [reloc]
 # enabled = true         # Pose in der Raumkarte gilt nach Absetzen, Sturz und Neustart als unbekannt: Die Karte wird

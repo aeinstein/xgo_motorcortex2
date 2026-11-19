@@ -23,6 +23,7 @@ import cv2
 
 from .affinity import pin_thread
 from .app import App, ModeNotAllowed, render
+from .jpeg import Jpeg
 from .route import parse_points, parse_zones
 
 log = logging.getLogger(__name__)
@@ -116,6 +117,9 @@ def ws_read(rfile) -> tuple[int, bytes] | None:
 
 
 def serve(app: App, host: str, port: int, fps: int, render_cpus=None) -> ThreadingHTTPServer:
+    oc = getattr(app.cfg, "output", None)
+    jpeg = Jpeg(getattr(oc, "jpeg_native", True), getattr(oc, "jpeg_dev", "/dev/video31"))   # Anzeige-JPEG
+
     class H(BaseHTTPRequestHandler):
         def log_message(self, *a):
             pass
@@ -408,12 +412,12 @@ def serve(app: App, host: str, port: int, fps: int, render_cpus=None) -> Threadi
                     img = render(snap, text=False, horizont=hl)   # Statuszeilen zeigt die Oberfläche
                     if img is None:
                         continue
-                    ok, jpg = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 70])
-                    if not ok:
+                    jpg = jpeg.encode(img, 70)
+                    if jpg is None:
                         continue
                     last = snap.idx
                     kopf = ws_kopf(snap, app.geo, hl) if nick else struct.pack("!I", snap.idx & 0xFFFFFFFF)
-                    self.wfile.write(ws_frame(0x2, kopf + jpg.tobytes()))
+                    self.wfile.write(ws_frame(0x2, kopf + jpg))
                     # auf Bestätigung warten; Ping beantworten, Close beenden
                     while True:
                         m = ws_read(self.rfile)
@@ -445,10 +449,9 @@ def serve(app: App, host: str, port: int, fps: int, render_cpus=None) -> Threadi
             img = snap.frame if raw else render(snap, text=False, horizont=horizont_linie(app, snap))   # Statuszeilen zeigt die Oberfläche
             if img is None:
                 return self._send(503, b'{"error":"kein Bild"}')
-            ok, jpg = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 95 if raw else 70])
-            if not ok:
+            body = jpeg.encode(img, 95 if raw else 70)
+            if body is None:
                 return self._send(500, b'{"error":"JPEG"}')
-            body = jpg.tobytes()
             try:
                 self.send_response(200)
                 self.send_header("Content-Type", "image/jpeg")

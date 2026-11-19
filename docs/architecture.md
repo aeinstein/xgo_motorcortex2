@@ -38,6 +38,7 @@ camera.FrameSource ─► egomotion.EgoMotion ─► tracker.Tracker ◄── d
 | `tracker.py` | Tracks, ego-motion compensation, latency compensation, Kalman distance/velocity |
 | `geometry.py` | Camera geometry, ground-plane distance |
 | `freespace.py` | FloorNet boundary rows → free fraction per column and sectors, rolled by the camera roll; `FreeSpaceWorker` runs the network in its own thread. No fallback: without the network the Rider is blind (`safety()` stops) |
+| `jpeg.py` | JPEG for the browser view in the Pi hardware encoder (`native/jpegfast.cpp`, `/dev/video31`, self-check at first frame), fallback `cv2.imencode`; recordings stay on libjpeg |
 | `fastlib.py` | loads optional C++ core `native/libxgofast.so` and camera library `native/libxgocam.so` (ctypes), ABI check per function group |
 | `navfast.py` | ctypes binding of `native/navfast.cpp`: A* + path shortening, wavefront, frontier group scoring, local map (move, enter, confirm, arc check), wall distance, path-follower target; used by `planner.py`, `frontier.py`, `localmap.py`, `gridmap.py`, `behaviors.py`, each keeps an equivalent Python path |
 | `floornet.py` | self-trained floor network in the C++ core (`native/floornet.cpp`), the only source of the floor boundary; `ZeilenGlaetter` smooths it over time ([floornet.md](floornet.md)). Simulator: `sim.SimFloorNet` (ground truth) |

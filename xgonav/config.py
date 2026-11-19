@@ -321,6 +321,10 @@ class OutputCfg:
     web_host: str = "127.0.0.1"    # Schnittstelle nur lokal; Oberfläche über nginx (web/, deploy/nginx-xgonav.conf)
     web_port: int = 8088           # 0 = aus
     web_fps: int = 10
+    # JPEG für die Anzeige im Hardware-Kodierer (native/jpegfast.cpp, bcm2835-codec-encode_image) statt cv2.imencode
+    # (RiderPi 640x480: 4,5 ms CPU je gesendetem Bild). Geprüft beim ersten Bild, sonst/bei Fehlern cv2.
+    jpeg_native: bool = True
+    jpeg_dev: str = "/dev/video31"
     lcd_fifo: str = ""             # Kamera-Overlay aufs Display, "" = aus; WLAN-Einrichtung und pet-Augen immer (emotion.fifo)
     lcd_fps: int = 15             # CM4 gemessen: kostet die Hauptschleife nichts Messbares
     record_dir: str = "~/fahrt"   # Rohaufzeichnung (Knopf in der Oberfläche): je Aufnahme ein Unterverzeichnis
@@ -368,8 +372,11 @@ class OdomCfg:
     ticks_per_rev: int = 1024          # am Rider gemessen (1 U von Hand: 1029 / 1043)
     # Faktor je Rad auf den Weg (tools/calibrate_odom.py): ungleiche Reifen/Schlupf. Für die
     # Strecke zählt der Mittelwert, für den Kurs der Unterschied (2 % = ~1,3° je 10 cm).
-    scale_left: float = 1.0073
-    scale_right: float = 1.0087
+    # 2026-11-19 beide 1,0080 (Mittel der Maßbandfahrt 2026-11-04, 1,0073/1,0087): Räder gegen IMU-Kurs in 66
+    # Rohfahrten (tools/odom_replay.py, Vorschlag der Koppelnavigation) ergaben keinen Unterschied der Räder
+    # (je Fahrt ±0,2 %), Spur 0,0903.
+    scale_left: float = 1.0080
+    scale_right: float = 1.0080
     poll_hz: float = 25.0              # wheels_log lesen (Treiber puffert 64 Proben)
     # Abgesetzt (Rider balanciert nicht) werden die Räder nicht gelesen; die Pose bleibt dann stehen, auch wenn er
     # von Hand gerollt wird. Beim Aufstehen beginnt das Lesen neu, ohne den Weg dazwischen. true = immer lesen.

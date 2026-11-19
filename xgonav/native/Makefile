@@ -7,7 +7,7 @@ CXXFLAGS ?= -O2 -mcpu=native
 override CXXFLAGS += -std=c++17 -fPIC -Wall -Wextra -ffp-contract=off $(shell pkg-config --cflags opencv4)
 LIBS := -lopencv_video -lopencv_calib3d -lopencv_imgproc -lopencv_core
 
-libxgofast.so: egofast.cpp gridfast.cpp navfast.cpp ortfast.cpp linsefast.cpp floornet.o xgo.h
+libxgofast.so: egofast.cpp gridfast.cpp navfast.cpp ortfast.cpp linsefast.cpp jpegfast.cpp floornet.o xgo.h
 	$(CXX) $(CXXFLAGS) -shared -o $@ $(filter-out %.h,$^) $(LIBS)
 
 # FloorNet: -O3 wie in der Messung (tools/floornet/bench_kern.cpp)

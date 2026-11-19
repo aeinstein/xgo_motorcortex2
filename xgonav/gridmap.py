@@ -540,8 +540,9 @@ class GridMap:
     def _count(self) -> dict:
         with self._lock:
             lo = self.lo
-            occ = int((lo > self.cfg.l_show).sum())
-            free = int((lo < -self.cfg.l_show).sum())
+            # count_nonzero statt .sum(): sum wandelt jedes Feld erst in int64 (am RiderPi 13 % der Hauptschleife)
+            occ = int(np.count_nonzero(lo > self.cfg.l_show))
+            free = int(np.count_nonzero(lo < -self.cfg.l_show))
             return {"belegt_m2": round(occ * self.res ** 2, 2), "frei_m2": round(free * self.res ** 2, 2),
                     "updates": self.updates, "gesperrt": self.locked, "map_id": self.map_id,
                     "route": len(self.route), "zonen": len(self.zones)}

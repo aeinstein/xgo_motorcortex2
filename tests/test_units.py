@@ -3577,3 +3577,21 @@ def test_floornet_wechseln(tmp_path, monkeypatch):
     app.behavior.name = "explore"
     with pytest.raises(ModeNotAllowed):
         app.floornet_wechseln("a.bin")                     # fährt nach dem Bodenmodell: kein Wechsel
+
+
+def test_jpeg_anzeige_rueckfall(monkeypatch):
+    """Anzeige-JPEG (jpeg.py): ohne Hardware-Kodierer kodiert cv2; das Ergebnis ist ein lesbares JPEG in voller
+    Größe. Mit native=False wird die Bibliothek gar nicht erst geladen."""
+    import cv2
+    from xgonav import fastlib
+    from xgonav.jpeg import Jpeg
+    monkeypatch.setattr(fastlib, "PATH", "/gibt/es/nicht/libxgofast.so")
+    fastlib._cache.clear()
+    try:
+        img = np.random.default_rng(2).integers(0, 256, (480, 640, 3), dtype=np.uint8)
+        for j in (Jpeg(True), Jpeg(False)):
+            b = j.encode(img, 70)
+            assert b is not None and not j.native
+            assert cv2.imdecode(np.frombuffer(b, np.uint8), cv2.IMREAD_COLOR).shape == img.shape
+    finally:
+        fastlib._cache.clear()

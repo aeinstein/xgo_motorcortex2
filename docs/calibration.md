@@ -107,6 +107,7 @@ python3 tools/calibrate_odom.py rechne [--ref gerade|kamera|imu|mittel] [--dist-
 | Scale | mean of current kl/kr from config, or `--dist-cm` for the first forward segment (straight drive only, `--nur-vor`) |
 | Heading ref | drives: `gerade` (θ = 0, confirm straight by eye; default), or camera/IMU; turns: IMU |
 | RiderPi (2026-11-04) | 212.5 cm tape, straight by eye (θ = 0), raw 210.95/210.68 cm → `scale_left = 1.0073`, `scale_right = 1.0087` |
+| RiderPi (2026-11-19) | both 1.0080 (mean kept): dead-reckoning suggestion over 66 raw runs, wheels against IMU heading, no left/right difference, track 0.0903 |
 | RiderPi (2026-11-03) | 0.9905/1.0068 — tire was seated wrong, superseded |
 | Pitfalls | camera heading biased during forward drive (−8.9° on 2 m straight); firmware yaw has 2°/s dead zone; ESP gyro bias measured only at boot — restart ESP lying still if Rider rotates while standing |
 | Base values | 60 mm wheel, 1024 ticks/rev (hand-measured 1029/1043), confirmed 29.5 cm on tape |

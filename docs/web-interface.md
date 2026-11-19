@@ -148,7 +148,8 @@ Mode rules: `explore`/`approach`/`home` need `freespace.enabled` (else 409); `fo
 | Reconnect | client after 1 s |
 | Pipeline state | client connects only while `pipeline` = `läuft` (and not sleep mode), closes otherwise; last image stays dimmed. xgonav sends an unchanged image once, no re-encode |
 | Rate | ≤ `output.web_fps` (10) |
-| Overlay | no status text lines in web frames (~10 ms saved per image) |
+| Overlay | no status text lines in web frames (~10 ms saved per image); drawing ~1 ms per sent image (RiderPi) |
+| JPEG | hardware encoder `/dev/video31` (`jpeg.py`, `native/jpegfast.cpp`, `output.jpeg_native`), self-check at first image; fallback `cv2.imencode` (4.5 ms CPU per 640×480 image on the RiderPi) |
 
 Replaced MJPEG (`/stream`, removed 2026-11-17): on weak Wi-Fi, TCP buffers queued up to 20 s of delay.
 

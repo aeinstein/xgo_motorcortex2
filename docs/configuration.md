@@ -177,7 +177,7 @@ Floor boundary from FloorNet only (`xgonav/freespace.py`, `docs/floornet.md`). T
 | `height_cruise_mm` / `height_search_mm` / `height_fast_mm` | 85 / 100 / 80 (sim: 85 / 115 / 70) | |
 
 ### `[output]`
-`web_host` 127.0.0.1, `web_port` 8088 (0 = off), `web_fps` 10, `lcd_fifo` `""` = off (sim: `/tmp/lcd0`), `lcd_fps` 15, `record_dir` `~/fahrt` (raw recording), `record_min_free_mb` 500 (below: recording switches itself off).
+`web_host` 127.0.0.1, `web_port` 8088 (0 = off), `web_fps` 10, `jpeg_native` true (browser JPEG in the hardware encoder `jpeg_dev` = `/dev/video31`, fallback `cv2.imencode`), `lcd_fifo` `""` = off (sim: `/tmp/lcd0`), `lcd_fps` 15, `record_dir` `~/fahrt` (raw recording), `record_min_free_mb` 500 (below: recording switches itself off).
 
 ### `[emotion]`
 `enabled` true, `dir` `/opt/xgonav/emotions`, `fifo` `/tmp/lcd0`, `gap_s` 5, `lost_s` 2, `battery_low` 20 %, `battery_repeat_s` 300.
@@ -240,7 +240,7 @@ All keys with comments: `PetCfg` in `xgonav/config.py`.
 | `wheel_diameter_m` | 0.060 | |
 | `track_m` | 0.090 | | Turn test 2026-11-18: wheel heading 0.0–0.4 % low, within slip scatter, unchanged |
 | `ticks_per_rev` | 1024 | |
-| `scale_left` / `scale_right` | 1.0073 / 1.0087 [K] (sim: 1.0 / 1.0) | |
+| `scale_left` / `scale_right` | 1.0080 / 1.0080 [K] (sim: 1.0 / 1.0) | | since 2026-11-19 equal (mean of the 2026-11-04 tape run): wheels against IMU heading in 66 raw runs (`tools/odom_replay.py`) showed no difference between the wheels (±0.2 % per run) |
 | `poll_hz` / `max_age_s` / `max_jump_ticks` | 25 / 0.3 / 2048 | |
 | `read_idle` | `false` | `false` | `false`: while the Rider is set down (not balancing) the wheel thread reads nothing; the pose stands still even if he is rolled by hand. Reading restarts on stand-up without the travel in between. `true` = always read |
 | `contra_window_s`, `contra_deg`, `contra_frac` | 1.0, 4.0, 0.10 | | dead reckoning (`odomfusion.py`): wheel heading differs from IMU heading by more than `contra_deg` + `contra_frac` × turn within the window → slip (heading stays IMU, distance from the wheel matching the IMU turn) |
