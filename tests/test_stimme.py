@@ -140,20 +140,25 @@ def test_pool_verdraengt_die_aelteste(tmp_path):
     assert len(st.kandidaten) == 3 and len(os.listdir(tmp_path / "kandidaten")) == 3
 
 
-def test_voll_lernt_nichts_mehr_und_neustart_laedt(tmp_path):
-    st = stimmen(tmp_path, max_confirmed=1)
-    st.lerne(aeusserung(WORT_A))
-    assert st.lerne(aeusserung(WORT_A, seed=2)) == "bestaetigt"
-    assert st.voll and st.drain_neu() == ["01"]
-    st.aufnahme = True
-    assert st.aufnahme                                                # voll: erkennt weiter
-    assert st.lerne(aeusserung(WORT_B)) == "voll" and st.kandidaten == []
-    assert st.lerne(aeusserung(WORT_A, seed=3)) == "wieder" and st.drain_neu() == ["01"]
-    neu = stimmen(tmp_path, max_confirmed=1)                          # Neustart
-    assert neu.ids == ("01",) and neu.voll
-    neu2 = stimmen(tmp_path, max_confirmed=2)
-    neu2.lerne(aeusserung(WORT_B, seed=9))
-    assert len(neu2.bestaetigt) == 1 and len(neu2.kandidaten) == 1
+def test_voll_ersetzt_die_seltenste_und_neustart_laedt(tmp_path):
+    worte = [[100, 300], [300, 100], [120, 280, 120]]
+    uhr = [1000.0]
+    st = stimme.Stimmen(cfg(tmp_path, max_confirmed=2), native=False, clock=lambda: uhr[0])
+    for k in (0, 1):                                                  # zwei bestätigt
+        st.lerne(aeusserung(worte[k], seed=20 + k))
+        assert st.lerne(aeusserung(worte[k], seed=30 + k)) == "bestaetigt"
+        uhr[0] += 1
+    assert st.voll and st.drain_neu() == ["01", "02"]
+    assert st.lerne(aeusserung(worte[0], seed=40)) == "wieder"          # 01 jetzt 2-mal, 02 1-mal
+    neu = stimme.Stimmen(cfg(tmp_path, max_confirmed=2), native=False, clock=lambda: uhr[0])   # Neustart: Zähler bleiben
+    neu.laden()
+    assert {p.name: p.n for p in neu.bestaetigt} == {"01": 2, "02": 1}
+    neu.drain_neu()
+    neu.lerne(aeusserung(worte[2], seed=50))
+    assert neu.lerne(aeusserung(worte[2], seed=51)) == "bestaetigt"     # voll: 02 (seltenste) wird ersetzt
+    assert neu.ids == ("01", "02") and neu.drain_neu() == ["02"]
+    assert neu.lerne(aeusserung(worte[1], seed=52)) == "kandidat"       # altes 02 ist vergessen
+    assert neu.lerne(aeusserung(worte[2], seed=53)) == "wieder"
 
 
 def test_alte_kandidaten_beim_start_geloescht(tmp_path):
@@ -187,13 +192,13 @@ def test_thread_raeumt_ohne_neue_aeusserung_auf(tmp_path, monkeypatch):
     uhr = [1000.0]
     st = stimme.Stimmen(cfg(tmp_path), native=False, clock=lambda: uhr[0])
     st._submit(aeusserung(WORT_A))
-    for _ in range(100):
+    for _ in range(500):                                              # bis 10 s (volle Testsuite: Last)
         if st.kandidaten:
             break
         time.sleep(0.02)
     assert len(st.kandidaten) == 1
     uhr[0] += 61
-    for _ in range(100):
+    for _ in range(500):
         if not st.kandidaten:
             break
         time.sleep(0.02)

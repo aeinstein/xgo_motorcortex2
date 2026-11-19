@@ -242,7 +242,7 @@ All keys with comments: `PetCfg` in `xgonav/config.py`.
 | Key | Default | Meaning |
 |---|---|---|
 | `enabled`, `dir` | true, `/opt/xgonav/stimmen` | needs `[ortung]` and sounds (`aplay`) |
-| `max_confirmed`, `pool_n`, `kandidat_max_min` | 10, 30, 1 | confirmed samples (then no more learning, recognition continues), unconfirmed kept, minutes to get confirmed |
+| `max_confirmed`, `pool_n`, `kandidat_max_min` | 10, 30, 1 | confirmed samples (when full, a new one replaces the least heard), unconfirmed kept, minutes to get confirmed |
 | `vad_on_db`, `vad_off_db`, `vad_hang_s`, `vad_pre_s`, `min_s`, `max_s` | 6, 4, 0.6, 0.3, 0.3, 3 | utterance detection on the ortung level (pre-roll, hang-over) |
 | `trim_db`, `laut_db` | 12, 10 | features only within trim_db of the loudest frame; voicing counted within laut_db |
 | `voiced_min`, `flat_max`, `per_min` | 0.4, 0.3, 0.5 | share of voiced frames; voiced = flatness below and pitch strength above |

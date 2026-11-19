@@ -9,7 +9,8 @@ Nachlauf). Eine fertige Äußerung geht an den eigenen Thread `stimme`:
                           Treffer bei einer unbestätigten -> bestätigt (die lautere Aufnahme bleibt), Sittich-Filter,
                                                              Meldung an pet (drain_neu), das plappert sie gleich nach
                           kein Treffer -> neue unbestätigte Probe (höchstens pool_n, die älteste fliegt raus)
-Ab max_confirmed bestätigten lernt er nichts mehr, erkennt aber die bestätigten weiter (DTW nur gegen diese).
+Ab max_confirmed bestätigten ersetzt eine neue Bestätigung die am seltensten gehörte (bei Gleichstand die am längsten
+nicht gehörte); Zähler in bestaetigt/zaehler.json.
 
 Dateien unter [stimme] dir: kandidaten/<Zeit>.wav (16 kHz roh, nach kandidat_max_min gelöscht), bestaetigt/NN_roh.wav und NN.wav (gefiltert, 48 kHz,
 spielt emotion.Emotions.sound("stimme:NN")). Löschen = Verzeichnis leeren.
@@ -22,6 +23,7 @@ from __future__ import annotations
 
 import ctypes
 import glob
+import json
 import logging
 import math
 import os
@@ -397,7 +399,8 @@ class Probe:
     x: np.ndarray                    # 16 kHz, Einheit int16, als int16 gespeichert
     feat: np.ndarray
     rms: float
-    t: float = 0.0                   # angelegt (Uhr wie clock, Kandidaten verfallen nach kandidat_max_min)
+    t: float = 0.0                   # Kandidat: angelegt (verfällt nach kandidat_max_min); bestätigt: zuletzt gehört
+    n: int = 0                       # bestätigt: so oft gehört (Bestätigung + jedes Wiedererkennen)
 
 
 class Stimmen:
@@ -538,8 +541,7 @@ class Stimmen:
 
     # ------------------------------------------------------------------ Lernen (Thread stimme, Tests direkt)
     def lerne(self, pcm: np.ndarray) -> str:
-        """Eine Äußerung (int16 (n, 2), 48 kHz). Rückgabe: "verworfen" | "wieder" | "kandidat" | "bestaetigt" |
-        "voll" (voll und keine bestätigte getroffen: nichts gelernt)."""
+        """Eine Äußerung (int16 (n, 2), 48 kHz). Rückgabe: "verworfen" | "wieder" | "kandidat" | "bestaetigt"."""
         c = self.cfg
         self.laden()
         self._verfall()
@@ -549,14 +551,15 @@ class Stimmen:
             self.n_verworfen += 1
             log.debug("Stimmen: verworfen (%.2f s, stimmhaft %.2f)", len(feat) * HOP / RATE, voiced)
             return "verworfen"
-        art, probe, d = self._naechste(feat, nur_bestaetigt=self.voll)
+        art, probe, d = self._naechste(feat)
         if art == "bestaetigt":                         # wiedererkannt: jedes Mal nachplappern (Nutzer 2026-11-19)
             self.n_wieder += 1
+            probe.n += 1
+            probe.t = self.clock()
+            self._zaehler_speichern()
             self._neu.append(probe.name)
-            log.info("Stimmen: %s wieder gehört (Abstand %.1f)", probe.name, d)
+            log.info("Stimmen: %s wieder gehört (Abstand %.1f, %d-mal)", probe.name, d, probe.n)
             return "wieder"
-        if self.voll:
-            return "voll"
         rms = float(np.sqrt(np.mean(x * x))) if len(x) else 0.0
         if art == "kandidat":
             self._bestaetige(probe, Probe("", x, feat, rms), d)
@@ -574,10 +577,9 @@ class Stimmen:
                  len(self.kandidaten), d)
         return "kandidat"
 
-    def _naechste(self, feat: np.ndarray, nur_bestaetigt: bool = False) -> tuple[str | None, Probe | None, float]:
+    def _naechste(self, feat: np.ndarray) -> tuple[str | None, Probe | None, float]:
         c, best = self.cfg, (None, None, math.inf)
-        listen = [("bestaetigt", self.bestaetigt)] + ([] if nur_bestaetigt else [("kandidat", self.kandidaten)])
-        for art, liste in listen:
+        for art, liste in (("bestaetigt", self.bestaetigt), ("kandidat", self.kandidaten)):
             for p in liste:
                 q = len(feat) / max(1, len(p.feat))
                 if not 1.0 / c.len_ratio <= q <= c.len_ratio:
@@ -593,21 +595,37 @@ class Stimmen:
         c = self.cfg
         keep = neu if neu.rms > kand.rms else kand
         frei = [f"{i:02d}" for i in range(1, c.max_confirmed + 1) if f"{i:02d}" not in self._ids]
+        raus = ""
+        if not frei:                                    # voll: die am seltensten gehörte fliegt raus (Nutzer 2026-11-19)
+            alt = min(self.bestaetigt, key=lambda p: (p.n, p.t))
+            raus = " statt %s (%d-mal gehört)" % (alt.name, alt.n)
+            self.bestaetigt.remove(alt)
+            self._ids = tuple(x for x in self._ids if x != alt.name)
+            _rm(os.path.join(self.d_best, alt.name + "_roh.wav"))
+            _rm(self.datei(alt.name))
+            frei = [alt.name]
         nn = frei[0]
         x = keep.x.astype(np.float64)
         write_wav(os.path.join(self.d_best, nn + "_roh.wav"), x, RATE)
         self._filter(nn, x)
         self.kandidaten.remove(kand)
         _rm(os.path.join(self.d_kand, kand.name + ".wav"))
-        self.bestaetigt.append(Probe(nn, keep.x.astype(np.int16), keep.feat, keep.rms))
+        self.bestaetigt.append(Probe(nn, keep.x.astype(np.int16), keep.feat, keep.rms, self.clock(), 1))
         self._ids = tuple(sorted(self._ids + (nn,)))
+        self._zaehler_speichern()
         self._neu.append(nn)
-        log.info("Stimmen: Probe %s bestätigt (Abstand %.1f, %d von %d)%s", nn, d, len(self._ids), c.max_confirmed,
-                 ", lerne nichts mehr, erkenne nur noch" if self.voll else "")
-        if self.voll:                                   # Kandidaten braucht es nicht mehr
-            for p in self.kandidaten:
-                _rm(os.path.join(self.d_kand, p.name + ".wav"))
-            self.kandidaten = []
+        log.info("Stimmen: Probe %s bestätigt%s (Abstand %.1f, %d von %d)", nn, raus, d, len(self._ids),
+                 c.max_confirmed)
+
+    def _zaehler_speichern(self) -> None:
+        """Wie oft und wann zuletzt je bestätigte Probe gehört (bestaetigt/zaehler.json), für das Ersetzen."""
+        try:
+            tmp = os.path.join(self.d_best, "zaehler.json.tmp")
+            with open(tmp, "w") as f:
+                json.dump({p.name: [p.n, p.t] for p in self.bestaetigt}, f)
+            os.replace(tmp, os.path.join(self.d_best, "zaehler.json"))
+        except OSError as e:
+            log.warning("Stimmen: Zähler nicht gespeichert: %s", e)
 
     def _filter(self, nn: str, x: np.ndarray) -> None:
         write_wav(self.datei(nn), sittich_kette(self.kern, x, self.cfg), RATE_OUT, 32767.0)
@@ -637,11 +655,17 @@ class Stimmen:
         self._geladen = True
         os.makedirs(self.d_kand, exist_ok=True)
         os.makedirs(self.d_best, exist_ok=True)
+        try:
+            with open(os.path.join(self.d_best, "zaehler.json")) as f:
+                zaehler = json.load(f)
+        except (OSError, ValueError):
+            zaehler = {}
         for nn in self._ids:
             try:
                 x, rate = read_wav(os.path.join(self.d_best, nn + "_roh.wav"))
                 feat, _ = self.kern.mfcc(x)
-                self.bestaetigt.append(Probe(nn, x.astype(np.int16), feat, float(np.sqrt(np.mean(x * x)))))
+                n, t = zaehler.get(nn, [1, os.path.getmtime(os.path.join(self.d_best, nn + "_roh.wav"))])
+                self.bestaetigt.append(Probe(nn, x.astype(np.int16), feat, float(np.sqrt(np.mean(x * x))), t, n))
                 if not os.path.isfile(self.datei(nn)):
                     self._filter(nn, x)
             except Exception as e:

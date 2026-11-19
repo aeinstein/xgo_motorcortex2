@@ -893,7 +893,7 @@ class StimmeCfg:
     # Stimmproben im Modus pet (xgonav/stimme.py): Äußerungen aus dem Ortungsstrom (braucht [ortung]), solange eine
     # Person zu sehen ist. Gleicht eine neue einer gespeicherten Probe (MFCC + DTW), gilt die Probe als bestätigt und
     # wird wie ein Wellensittich gefiltert nachgeplappert ([pet] parrot*), danach jedes Mal, wenn er sie wiedererkennt.
-    # Ab max_confirmed lernt er nichts mehr, erkennt aber weiter.
+    # Ab max_confirmed ersetzt eine neue die am seltensten gehörte (Nutzer 2026-11-19).
     enabled: bool = True
     dir: str = "/opt/xgonav/stimmen"   # kandidaten/ (roh, 16 kHz) und bestaetigt/ (NN_roh.wav, NN.wav gefiltert)
     max_confirmed: int = 10
