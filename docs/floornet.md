@@ -1,6 +1,6 @@
 # FloorNet
 
-Self-trained network for the floor boundary, one row per image column. **Status: the only floor boundary since 2026-11-18; the classic model (`kanten`, `farbe`, lens shading) was removed from the code. Decides on the RiderPi since 2026-11-10, not driven yet.** Without the network (file or C++ core missing, self-test or runtime failure) the Rider is blind and does not drive by itself (`docs/configuration.md`). `kanten` figures below are history: it was the reference the network was measured against.
+Self-trained network for the floor boundary, one row per image column. **Status: the only floor boundary since 2026-11-18; the classic model (`kanten`, `farbe`, lens shading) was removed from the code. Decides alone on the RiderPi since 2026-11-10 and drives with it.** Without the network (file or C++ core missing, self-test or runtime failure) the Rider is blind and does not drive by itself (`docs/configuration.md`). `kanten` figures below are history: it was the reference the network was measured against.
 
 ## Network
 

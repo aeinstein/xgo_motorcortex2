@@ -5,7 +5,8 @@
  * Emotionen, Herunterfahren. Keine Authentifizierung.
  *
  * Aufbau: Kopfleiste (immer sichtbar: Sprache, Einstellungen, Herunterfahren, Ruhe, STOPP) – links Bild mit
- * Kameraleiste, Modus, Kennzahlen, Verlauf (eingeklappt) – rechts Lage, Fahren (mit Extras), Raumkarte.
+ * Steuerkreuz als Auflage und Kameraleiste, Modus, Kennzahlen, Verlauf (eingeklappt) – rechts Lage (mit Aufstehen/
+ * Absetzen), Schallradar, Extras, Raumkarte; Tempo in der Kameraleiste.
  * Sprache: Deutsch steht im HTML, Englisch im Wörterbuch EN (nur im Browser umgeschaltet).
  */
 declare(strict_types=1);
@@ -135,6 +136,10 @@ details.hilfe p{margin:4px 0 0}
 .bild-leiste .regler+.regler label{margin-left:8px}
 .bild-leiste .ist{display:flex;gap:6px;align-items:center;justify-content:flex-end;white-space:nowrap}
 .bild-leiste .imu-bild{grid-column:1/-1;font-variant-numeric:tabular-nums}
+.bild-leiste .tempo-zeile{grid-column:1/-1;display:flex;align-items:center;gap:8px}
+.tempo-zeile label{color:var(--leise);font-size:13px}
+.tempo-zeile input{flex:1;max-width:320px}
+.tempo-zeile .w{font-variant-numeric:tabular-nums;text-align:right;font-size:13px}
 .bild-leiste .imu-bild.schlecht{color:#ff8a8d}
 @container (max-width:760px){
   .bild-leiste{grid-template-columns:auto minmax(50px,1fr) auto auto auto minmax(50px,1fr) auto auto}
@@ -161,10 +166,14 @@ details.hilfe p{margin:4px 0 0}
 .segment button:last-child{border-right:0}
 .segment button.aktiv{background:var(--akzent);color:#04121f;font-weight:600}
 #ziel{width:auto;max-width:150px}
+.ziel-gruppe{flex-wrap:nowrap}
+.ziel-gruppe #ziel{border:0;border-radius:0;margin:0}
 @media (max-width:640px){
   .segment{display:grid;grid-template-columns:repeat(3,1fr);width:100%}
   .segment button{padding:7px 2px;font-size:13px}
-  #ziel{flex:1}
+  .segment.ziel-gruppe{display:flex}
+  .ziel-gruppe button{flex:1}
+  #ziel{flex:2;max-width:none}
 }
 
 /* --- Kennzahlen */
@@ -178,14 +187,18 @@ details.roh summary{cursor:pointer;color:var(--leise);font-size:12px;margin-top:
 pre{background:#0b0d10;border-radius:6px;padding:8px;overflow:auto;max-height:40vh;font-size:12px;margin:6px 0 0}
 
 /* --- Fahren */
-.fahren{display:grid;grid-template-columns:auto 1fr;gap:14px;align-items:stretch}
-@media (max-width:420px){.fahren{grid-template-columns:1fr}.pad{justify-self:center}}
-.fahren-rechts{display:flex;flex-direction:column;gap:10px;justify-content:space-between;min-width:0}
-.aktionen{display:grid;grid-template-columns:1fr 1fr;gap:6px}
-.aktionen button{margin:0;padding:8px 6px;min-height:40px}
-.pad{display:grid;grid-template-columns:repeat(3,56px);grid-template-rows:repeat(3,52px);gap:5px;user-select:none;-webkit-user-select:none}
-.pad button{margin:0;padding:0;font-size:20px;border-radius:8px}
-@media (pointer:coarse){.pad{grid-template-columns:repeat(3,64px);grid-template-rows:repeat(3,58px)}}
+/* Aktionen klein in der Lage-Kachel */
+.aktionen{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.aktionen button{margin:0;padding:3px 8px;font-size:12px}
+/* Steuerkreuz als Auflage unten rechts im Kamerabild; nur die Knöpfe fangen Zeiger */
+.pad{position:absolute;right:8px;bottom:8px;z-index:3;display:grid;grid-template-columns:repeat(3,42px);
+  grid-template-rows:repeat(3,38px);gap:4px;user-select:none;-webkit-user-select:none;pointer-events:none}
+.pad button{margin:0;padding:0;font-size:16px;border-radius:8px;pointer-events:auto;touch-action:none;
+  background:rgba(15,17,20,.45);border:1px solid rgba(255,255,255,.3);color:#fff}
+.pad button:hover{background:rgba(15,17,20,.65)}
+.pad button.aktiv{background:var(--akzent);color:#04121f}
+@media (pointer:coarse){.pad{grid-template-columns:repeat(3,52px);grid-template-rows:repeat(3,46px)}}
+@container (max-width:420px){.pad{grid-template-columns:repeat(3,36px);grid-template-rows:repeat(3,32px);gap:3px;right:5px;bottom:5px}}
 .regler{display:grid;grid-template-columns:auto 1fr 3.6em auto;gap:6px 8px;align-items:center}
 .regler label{color:var(--leise);font-size:13px}
 .regler .w{font-variant-numeric:tabular-nums;text-align:right;font-size:13px}
@@ -199,6 +212,7 @@ pre{background:#0b0d10;border-radius:6px;padding:8px;overflow:auto;max-height:40
 /* Rahmen: volle Breite, Höhe höchstens 400 px (schmal quadratisch); darin die quadratische Karte in Kachelbreite,
    senkrecht mittig, oben und unten abgeschnitten. Maßstab: Ausschnitt (m) = Breite. */
 .raumkarte{container-type:inline-size}
+.karte-ausschnitt{display:flex;justify-content:flex-end;align-items:center;gap:6px;margin:0 0 6px;font-size:12px;color:var(--leise)}
 #karte-rahmen{position:relative;width:100%;height:min(400px,100cqw);overflow:hidden;background:#808080;border-radius:6px;cursor:grab;user-select:none;-webkit-user-select:none}
 #karte-rahmen.zieht{cursor:grabbing}
 #karte-rahmen.setzt{cursor:crosshair}
@@ -229,8 +243,6 @@ pre{background:#0b0d10;border-radius:6px;padding:8px;overflow:auto;max-height:40
 details.extras>summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px;user-select:none}
 details.extras>summary::-webkit-details-marker{display:none}
 details.extras>summary :is(h2,h3){font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#a9b4c2;margin:0;flex:1}
-details.fahren-extras{border-top:1px solid var(--rand);margin-top:10px;padding-top:8px}
-details.fahren-extras>summary h3{font-size:12px}
 details.extras>summary::after{content:"▸";color:var(--leise);transition:transform .15s}
 details.extras[open]>summary::after{transform:rotate(90deg)}
 details.extras[open]>summary{margin-bottom:8px}
@@ -342,7 +354,12 @@ details.extras[open]>summary{margin-bottom:8px}
 <main>
 <div class="spalte">
   <div id="bild-rahmen">
-    <div class="bild-fenster"><img id="bild" alt="" aria-label="Kamerabild" width="640" height="480"><svg id="bild-mitte" viewBox="0 0 640 480" preserveAspectRatio="xMidYMid meet" aria-hidden="true"><g class="halo"><line class="lot" x1="320" y1="0" x2="320" y2="480"/><line class="qx" x1="305" y1="240" x2="335" y2="240"/><circle cx="320" cy="240" r="8"/></g><g class="strich"><line class="lot" x1="320" y1="0" x2="320" y2="480"/><line class="qx" x1="305" y1="240" x2="335" y2="240"/><circle cx="320" cy="240" r="8"/></g></svg></div>
+    <div class="bild-fenster"><img id="bild" alt="" aria-label="Kamerabild" width="640" height="480"><svg id="bild-mitte" viewBox="0 0 640 480" preserveAspectRatio="xMidYMid meet" aria-hidden="true"><g class="halo"><line class="lot" x1="320" y1="0" x2="320" y2="480"/><line class="qx" x1="305" y1="240" x2="335" y2="240"/><circle cx="320" cy="240" r="8"/></g><g class="strich"><line class="lot" x1="320" y1="0" x2="320" y2="480"/><line class="qx" x1="305" y1="240" x2="335" y2="240"/><circle cx="320" cy="240" r="8"/></g></svg>
+      <div class="pad" title="Gedrückt halten: Maus, Touch, Pfeiltasten/WASD">
+        <span></span><button data-fahrt="vor" aria-label="vor">▲</button><span></span>
+        <button data-fahrt="links" aria-label="links">◀</button><span></span><button data-fahrt="rechts" aria-label="rechts">▶</button>
+        <span></span><button data-fahrt="zurück" aria-label="zurück">▼</button><span></span>
+      </div></div>
     <div class="bild-leiste">
       <div class="regler">
         <label for="belicht">Belichtung</label>
@@ -359,6 +376,12 @@ details.extras[open]>summary{margin-bottom:8px}
         <button id="gain-auto" onclick="verstaerkung(0)">Auto</button>
       </div>
       <span class="ist"><label title="Bild senkrecht so verschieben, dass der IMU-Nick fest steht: stimmt die IMU, steht die Szene still"><input type="checkbox" id="hz-stabil" onchange="hzStabil(this.checked)"> Bild am IMU-Nick festhalten</label><label title="Bild um den IMU-Roll drehen: stimmt der Roll, stehen senkrechte Kanten senkrecht und die cyan Linie waagerecht"><input type="checkbox" id="hz-roll" onchange="hzRoll(this.checked)"> Roll ausgleichen</label><label title="Konfigurierte Bildmitte einblenden: gestrichelt die Spalte der Fahrtrichtung (W/2), Kreis bei Zeile H/2"><input type="checkbox" id="hz-mitte" onchange="hzMitte(this.checked)"> Bildmitte</label><span class="leise" id="belicht-ist">-</span><span class="info" tabindex="0" title="Gilt bis zum Neustart von xgonav. Kürzere Belichtung = weniger Bewegungsunschärfe, aber dunkler; mehr Verstärkung = heller, aber mehr Rauschen (Automatik nur bis 8; über ~8× wird der Rauschabstand nicht besser, nur das Bild heller). Dauerhaft über [camera] exposure_us / analogue_gain in config.toml.">i</span></span>
+      <div class="tempo-zeile">
+        <label for="tempo">Tempo</label>
+        <input type="range" id="tempo" min="5" max="100" value="60">
+        <span class="w" id="tempo-w"></span>
+        <span class="info" tabindex="0" title="Steuerkreuz im Bild gedrückt halten, oder Pfeiltasten/WASD. Fahren schaltet auf „Hand“ und ist auf max_v/max_w der Konfiguration begrenzt. Ohne Bodenmodell und Bahnprüfung; Sturz-Erkennung und Watchdogs bleiben aktiv.">i</span>
+      </div>
       <div class="imu-bild leise" id="imu-bild" title="IMU-Wert dieses Bildes (Bildzeit + [imu] time_offset_ms), mit dem xgonav Boden, Karten und die cyan Linie rechnet. Nickrate: aus dem Bild (Ego-Motion) gegen die IMU; weichen sie dauerhaft ab, stimmen Zeitversatz oder Brennweite nicht">-</div>
     </div>
   </div>
@@ -369,12 +392,14 @@ details.extras[open]>summary{margin-bottom:8px}
         <button data-modus="manual" onclick="modus('manual')">Hand</button>
         <button data-modus="follow" onclick="modus('follow')">Folgen</button>
         <button data-modus="explore" onclick="modus('explore')">Erkunden</button>
-        <button data-modus="approach" onclick="modus('approach')">Anfahren</button>
         <button data-modus="home" onclick="modus('home')" title="Weg über die Raumkarte zum Startpunkt">Zum Start</button>
         <button data-modus="patrol" onclick="streife()" title="Route auf der Raumkarte abfahren">Streife</button>
         <button data-modus="pet" onclick="modus('pet')" title="Reagiert auf Menschen, Katzen und Hunde">Haustier</button>
       </div>
-      <select id="ziel" title="Ziel für Folgen/Anfahren (aktive YOLO-Klassen)" aria-label="Ziel"><option value="person">person</option></select>
+      <div class="segment ziel-gruppe">
+        <button data-modus="approach" onclick="modus('approach')">Anfahren</button>
+        <select id="ziel" title="Ziel für Folgen/Anfahren (aktive YOLO-Klassen)" aria-label="Ziel"><option value="person">person</option></select>
+      </div>
     </div>
     <div class="regler fn-wahl">
       <label for="fn-wahl">Bodenmodell</label>
@@ -430,12 +455,27 @@ details.extras[open]>summary{margin-bottom:8px}
       <span class="w" id="roll-w">0°</span><button onclick="rollNull()" title="Roll auf 0°">0</button>
     </div>
     <div class="legende" id="l-lage" title="Gier 0° = Kurs beim Start des ESP32; + = links. Roll + = rechts tief, Nick + = vorn tief"></div>
-    <details class="hilfe" data-i18n-html="hilfe-lage"><summary>Kamerahöhe und Roll</summary>
+    <div class="aktionen">
+      <button onclick="arm()" title="Aktion 255">Aufstehen</button>
+      <button onclick="aufspringen()" title="Aktion 253 (!standup): Rider muss stehen und Platz haben">Aufspringen</button>
+      <button onclick="ausrichten()" title="Roll auf 0° und die Beine 3 s nivellieren (nur wenn er steht)">Neu ausrichten</button>
+      <button class="gefahr" onclick="befehl('action', {n: 254})" title="Aktion 254, Not-Stopp">Absetzen</button>
+      <button onclick="espNeustart()" title="Aktion 237: ESP32 neu starten, nur wenn er nicht balanciert">ESP-Neustart</button>
+    </div>
+    <details class="hilfe" data-i18n-html="hilfe-lage"><summary>Kamerahöhe, Roll, Aufstehen und Absetzen</summary>
       <p>Kamerahöhe: Rechenwert der Bodengeometrie aus <code>cam_h_u8</code> (Linsenmitte über Boden, Sollwert u8
         im Tooltip), die Beine brauchen danach etwa 1 s. Der Wert entspricht der Messung mit dem Zollstock
         (Gitter am Boden 2026-11-10). Oberhalb von u8 200 ändert sich nichts
         mehr. Untere Grenze mit Abstand zum Minimum; in Folgen/Erkunden setzt xgonav die Höhe selbst.</p>
       <p>Roll: + = rechts.</p>
+      <p>Balancieren (Firmware R-1.1.6): Nach einem ESP32-Neustart balanciert der Rider erst nach
+        „Aufstehen“. Liegt er, wartet die Firmware, bis er aufrecht steht – dann laufen die Räder sofort an.
+        „Aufspringen“ (Aktion 253, wie <code>!standup</code>) lässt ihn aufspringen – <b>Rider muss stehen und Platz haben</b>.
+        „Absetzen“ ist ein Not-Stopp (Aktion 254, wie <code>!stop</code>): er setzt sich kontrolliert ab und
+        bleibt aus bis zum nächsten Aufstehen.</p>
+      <p>„Neu ausrichten“: Die Beine haben eine Totzone, bei gleichem Befehl steht er bis zu 2,6° unterschiedlich
+        schief. Der Knopf setzt Roll auf 0° und lässt die Firmware 3 s nivellieren; danach bleibt er so stehen. Das
+        passiert auch einmal nach jedem Aufstehen. Beim Fahren kann er langsam wieder schief werden.</p>
     </details>
   </details>
   <details class="karte extras" id="radarkarte" ontoggle="radarUmschalten()">
@@ -449,75 +489,40 @@ details.extras[open]>summary{margin-bottom:8px}
         Lauscht nur in den Modi aus <code>[ortung] modes</code>, nie im Ruhemodus; eigene Töne werden ausgeblendet.</p>
     </details>
   </details>
-  <details class="karte extras" id="fahrkarte" ontoggle="fahrenUmschalten()">
-    <summary><h2>Fahren</h2><span class="leise">Pfeiltasten/WASD</span></summary>
-    <div class="fahren">
-      <div class="pad">
-        <span></span><button data-fahrt="vor" aria-label="vor">▲</button><span></span>
-        <button data-fahrt="links" aria-label="links">◀</button><span></span><button data-fahrt="rechts" aria-label="rechts">▶</button>
-        <span></span><button data-fahrt="zurück" aria-label="zurück">▼</button><span></span>
+  <details class="karte extras" id="extras" ontoggle="extrasUmschalten()">
+    <summary><h2>Extras</h2><span class="leise">Aktionen · LEDs · Emotionen</span></summary>
+    <div class="unter">Aktionen</div>
+    <div class="knoepfe">
+      <?php for ($i = 1; $i <= 6; $i++): ?><button onclick="befehl('action', {n: <?= $i ?>})"<?= $i >= 3 && $i <= 5 ? ' title="Fährt bzw. dreht selbst: nur im Modus idle, braucht Platz"' : '' ?>><?= $i ?></button><?php endfor; ?>
+    </div>
+    <div class="unter">LEDs</div>
+    <div class="ledzeile">
+      <div class="leds">
+        <input type="color" id="led0" onchange="led(0, this.value)" aria-label="LED 0"><input type="color" id="led3" onchange="led(3, this.value)" aria-label="LED 3">
+        <input type="color" id="led1" onchange="led(1, this.value)" aria-label="LED 1"><input type="color" id="led2" onchange="led(2, this.value)" aria-label="LED 2">
       </div>
-      <div class="fahren-rechts">
-        <div class="regler">
-          <label for="tempo">Tempo</label>
-          <input type="range" id="tempo" min="5" max="100" value="60">
-          <span class="w" id="tempo-w"></span><span class="leer"></span>
-        </div>
-        <div class="aktionen">
-          <button onclick="arm()" title="Aktion 255">Aufstehen</button>
-          <button onclick="aufspringen()" title="Aktion 253 (!standup): Rider muss stehen und Platz haben">Aufspringen</button>
-          <button onclick="ausrichten()" title="Roll auf 0° und die Beine 3 s nivellieren (nur wenn er steht)">Neu ausrichten</button>
-          <button class="gefahr" onclick="befehl('action', {n: 254})" title="Aktion 254, Not-Stopp">Absetzen</button>
-          <button onclick="espNeustart()" title="Aktion 237: ESP32 neu starten, nur wenn er nicht balanciert">ESP-Neustart</button>
-        </div>
+      <div class="knoepfe">
+        <button onclick="ledsAus()">Alle aus</button>
+        <button id="strobe" onclick="strobe()">Strobe</button>
       </div>
     </div>
-    <details class="hilfe" data-i18n-html="hilfe-fahren"><summary>Gedrückt halten: Maus, Touch, Pfeiltasten/WASD</summary>
-      <p>Fahren schaltet auf „Hand“ und ist auf max_v/max_w der Konfiguration begrenzt. Ohne Bodenmodell
-        und Bahnprüfung; Sturz-Erkennung und Watchdogs bleiben aktiv.</p>
-      <p>Balancieren (Firmware R-1.1.6): Nach einem ESP32-Neustart balanciert der Rider erst nach
-        „Aufstehen“. Liegt er, wartet die Firmware, bis er aufrecht steht – dann laufen die Räder sofort an.
-        „Aufspringen“ (Aktion 253, wie <code>!standup</code>) lässt ihn aufspringen – <b>Rider muss stehen und Platz haben</b>.
-        „Absetzen“ ist ein Not-Stopp (Aktion 254, wie <code>!stop</code>): er setzt sich kontrolliert ab und
-        bleibt aus bis zum nächsten Aufstehen.</p>
-      <p>„Neu ausrichten“: Die Beine haben eine Totzone, bei gleichem Befehl steht er bis zu 2,6° unterschiedlich
-        schief. Der Knopf setzt Roll auf 0° und lässt die Firmware 3 s nivellieren; danach bleibt er so stehen. Das
-        passiert auch einmal nach jedem Aufstehen. Beim Fahren kann er langsam wieder schief werden.</p>
-    </details>
-    <details class="extras fahren-extras" id="extras" ontoggle="extrasUmschalten()">
-      <summary><h3>Extras</h3><span class="leise">Aktionen · LEDs · Emotionen</span></summary>
-      <div class="unter">Aktionen</div>
-      <div class="knoepfe">
-        <?php for ($i = 1; $i <= 6; $i++): ?><button onclick="befehl('action', {n: <?= $i ?>})"<?= $i >= 3 && $i <= 5 ? ' title="Fährt bzw. dreht selbst: nur im Modus idle, braucht Platz"' : '' ?>><?= $i ?></button><?php endfor; ?>
-      </div>
-      <div class="unter">LEDs</div>
-      <div class="ledzeile">
-        <div class="leds">
-          <input type="color" id="led0" onchange="led(0, this.value)" aria-label="LED 0"><input type="color" id="led3" onchange="led(3, this.value)" aria-label="LED 3">
-          <input type="color" id="led1" onchange="led(1, this.value)" aria-label="LED 1"><input type="color" id="led2" onchange="led(2, this.value)" aria-label="LED 2">
-        </div>
-        <div class="knoepfe">
-          <button onclick="ledsAus()">Alle aus</button>
-          <button id="strobe" onclick="strobe()">Strobe</button>
-        </div>
-      </div>
-      <div class="regler" title="Gilt für alle LEDs, bleibt über Neustarts gespeichert">
-        <label for="ledhell">Helligkeit</label>
-        <input type="range" id="ledhell" min="0" max="100" value="<?= $ledP ?>" step="1"
-          oninput="document.getElementById('ledhell-w').textContent = this.value + ' %'"
-          onchange="befehl('led_brightness', {p: this.value}, true)">
-        <span class="w" id="ledhell-w"><?= $ledP ?> %</span><span class="leer"></span>
-      </div>
-      <div class="unter">Emotionen (Display)</div>
-      <div class="knoepfe">
-        <?php foreach ($emotionen as $e): ?><button onclick="befehl('emotion', {name: '<?= h($e) ?>'})"><?= h($e) ?></button><?php endforeach; ?>
-        <?php if (!$emotionen): ?><span class="leise">keine gefunden in <?= h(EMOTION_RAW) ?></span><?php endif; ?>
-      </div>
-    </details>
+    <div class="regler" title="Gilt für alle LEDs, bleibt über Neustarts gespeichert">
+      <label for="ledhell">Helligkeit</label>
+      <input type="range" id="ledhell" min="0" max="100" value="<?= $ledP ?>" step="1"
+        oninput="document.getElementById('ledhell-w').textContent = this.value + ' %'"
+        onchange="befehl('led_brightness', {p: this.value}, true)">
+      <span class="w" id="ledhell-w"><?= $ledP ?> %</span><span class="leer"></span>
+    </div>
+    <div class="unter">Emotionen (Display)</div>
+    <div class="knoepfe">
+      <?php foreach ($emotionen as $e): ?><button onclick="befehl('emotion', {name: '<?= h($e) ?>'})"><?= h($e) ?></button><?php endforeach; ?>
+      <?php if (!$emotionen): ?><span class="leise">keine gefunden in <?= h(EMOTION_RAW) ?></span><?php endif; ?>
+    </div>
   </details>
 
-  <section class="karte raumkarte">
-    <div class="kopf"><h2>Raumkarte</h2>
+  <details class="karte extras raumkarte" id="raumkarte" ontoggle="raumkarteUmschalten()">
+    <summary><h2>Raumkarte</h2><span class="leise">eingeklappt: kein Nachladen</span></summary>
+    <div class="karte-ausschnitt"><label for="karte-view">Ausschnitt</label>
       <select id="karte-view" aria-label="Ausschnitt" onchange="karteView(this.value)"><option value="3">3 m</option><option value="6" selected>6 m</option><option value="10">10 m</option><option value="16">16 m</option><option value="24">24 m</option><option id="karte-view-frei" hidden></option></select>
     </div>
     <div id="karte-rahmen" title="ziehen: verschieben · Mausrad: zoomen · Doppelklick: zurück zum Rider">
@@ -577,7 +582,7 @@ details.extras[open]>summary{margin-bottom:8px}
       <p>„Zum Start“ plant einen Weg über die Karte und fährt ihn ab. Die Karte wird regelmäßig gespeichert
         und beim Start von xgonav geladen; der Rider muss dann wieder am Startpunkt stehen.</p>
     </details>
-  </section>
+  </details>
 </div>
 </main>
 <dialog id="einst" aria-labelledby="ei-titel">
@@ -644,6 +649,8 @@ const EN = {
     'Yaw 0° = heading at ESP32 start; + = left. Roll + = right side down, pitch + = front down',
   'Fahren': 'Drive', 'vor': 'forward', 'links': 'left', 'rechts': 'right', 'zurück': 'back', 'Tempo': 'Speed', 'Pfeiltasten/WASD': 'Arrow keys/WASD',
   'Aktion 255': 'Action 255', 'Aufstehen': 'Stand up',
+  'Gedrückt halten: Maus, Touch, Pfeiltasten/WASD': 'Hold: mouse, touch, arrow keys/WASD',
+  'Steuerkreuz im Bild gedrückt halten, oder Pfeiltasten/WASD. Fahren schaltet auf „Hand“ und ist auf max_v/max_w der Konfiguration begrenzt. Ohne Bodenmodell und Bahnprüfung; Sturz-Erkennung und Watchdogs bleiben aktiv.': 'Hold the arrow pad on the image, or arrow keys/WASD. Driving switches to “Manual” and is limited to max_v/max_w from the configuration. No floor model and no path check; fall detection and watchdogs stay active.',
   'Aktion 253 (!standup): Rider muss stehen und Platz haben': 'Action 253 (!standup): Rider must be upright and have room',
   'Aufspringen': 'Jump up', 'Roll auf 0° und die Beine 3 s nivellieren (nur wenn er steht)': 'Roll to 0° and level the legs for 3 s (only while standing)',
   'Neu ausrichten': 'Re-level', 'Aktion 254, Not-Stopp': 'Action 254, emergency stop', 'Absetzen': 'Sit down',
@@ -659,7 +666,7 @@ const EN = {
   'ohne IMU': 'without IMU', 'keine IMU': 'no IMU', 'Kurs': 'Heading', 'Alter': 'Age', 'Nickrate Bild/IMU': 'Pitch rate image/IMU',
   'IMU-Wert dieses Bildes (Bildzeit + [imu] time_offset_ms), mit dem xgonav Boden, Karten und die cyan Linie rechnet. Nickrate: aus dem Bild (Ego-Motion) gegen die IMU; weichen sie dauerhaft ab, stimmen Zeitversatz oder Brennweite nicht': 'IMU value of this frame (frame time + [imu] time_offset_ms) that xgonav uses for floor, maps and the cyan line. Pitch rate: from the image (ego-motion) vs. IMU; a lasting difference means time offset or focal length are off',
   'Bild um den IMU-Roll drehen: stimmt der Roll, stehen senkrechte Kanten senkrecht und die cyan Linie waagerecht': 'Rotate the image by the IMU roll: if the roll is right, vertical edges stand vertical and the cyan line is level',
-  'Raumkarte': 'Room map', 'Ausschnitt': 'View', 'Karte': 'Map',
+  'Raumkarte': 'Room map', 'Ausschnitt': 'View', 'eingeklappt: kein Nachladen': 'collapsed: no reloading', 'Karte': 'Map',
   'Raumkarte jetzt speichern ([grid] file)': 'Save the room map now ([grid] file)', 'Speichern': 'Save',
   'Gesperrt ändern Fahrten die Karte nicht': 'While locked, drives do not change the map', 'Karte sperren': 'Lock map', 'Karte entsperren': 'Unlock map',
   'Karte leeren; Route und Sperrzonen gehen verloren': 'Clear the map; route and no-go zones are lost', 'Zurücksetzen': 'Reset',
@@ -746,9 +753,17 @@ const EN = {
   'xgonav startet neu …': 'xgonav is restarting …',
 };
 const EN_HTML = {
-  'hilfe-fahren': `<summary>Hold: mouse, touch, arrow keys/WASD</summary>
-      <p>Driving switches to “Manual” and is limited to max_v/max_w from the configuration. No floor model
-        and no path check; fall detection and watchdogs stay active.</p>
+  'hilfe-radar': `<summary>Ray = sound · length = loudness · fades in 12 s</summary>
+      <p>Direction from the time difference between the two microphones (<code>[ortung]</code>). Up is forward.
+        Two microphones only separate left and right: every ray therefore has a dashed twin to the rear, the
+        source is on one of them. Length = level above the noise floor, opacity = quality and age. Listens only
+        in the modes of <code>[ortung] modes</code>, never in rest mode; own sounds are ignored.</p>`,
+  'hilfe-lage': `<summary>Camera height, roll, stand up and sit down</summary>
+      <p>Camera height: value of the floor geometry from <code>cam_h_u8</code> (lens centre above floor, setpoint u8
+        in the tooltip); the legs need about 1 s afterwards. The value matches the folding-rule measurement
+        (floor grid 2026-11-10). Above u8 200 nothing changes
+        any more. Lower limit keeps a margin to the minimum; in Follow/Explore xgonav sets the height itself.</p>
+      <p>Roll: + = right.</p>
       <p>Balancing (firmware R-1.1.6): after an ESP32 restart the Rider balances only after
         “Stand up”. If it is lying, the firmware waits until it is upright – then the wheels start immediately.
         “Jump up” (action 253, like <code>!standup</code>) makes it jump up – <b>Rider must be upright and have room</b>.
@@ -757,17 +772,6 @@ const EN_HTML = {
       <p>“Re-level”: the legs have a dead band; with the same command it stands up to 2.6° differently
         tilted. The button sets roll to 0° and lets the firmware level for 3 s; it then stays like that. This
         also happens once after every stand-up. While driving it can slowly tilt again.</p>`,
-  'hilfe-radar': `<summary>Ray = sound · length = loudness · fades in 12 s</summary>
-      <p>Direction from the time difference between the two microphones (<code>[ortung]</code>). Up is forward.
-        Two microphones only separate left and right: every ray therefore has a dashed twin to the rear, the
-        source is on one of them. Length = level above the noise floor, opacity = quality and age. Listens only
-        in the modes of <code>[ortung] modes</code>, never in rest mode; own sounds are ignored.</p>`,
-  'hilfe-lage': `<summary>Camera height and roll</summary>
-      <p>Camera height: value of the floor geometry from <code>cam_h_u8</code> (lens centre above floor, setpoint u8
-        in the tooltip); the legs need about 1 s afterwards. The value matches the folding-rule measurement
-        (floor grid 2026-11-10). Above u8 200 nothing changes
-        any more. Lower limit keeps a margin to the minimum; in Follow/Explore xgonav sets the height itself.</p>
-      <p>Roll: + = right.</p>`,
   'hilfe-karte': `<summary>grey unknown · light free · dark occupied · green path · cyan plan · blue start · red Rider</summary>
       <p>Mouse: drag pans, the wheel zooms around the pointer, double-click centres on the Rider again
         and follows it.</p>
@@ -1625,14 +1629,15 @@ async function einstNeustart(ohneFrage = false) {
   setTimeout(() => { if (/startet neu|is restarting/.test($('meldung').textContent)) zeige(''); }, 15000);
 }
 
-// Raumkarte: einmal pro Sekunde neu laden, nächstes Bild erst nach dem vorigen. Verschieben und Zoomen
+// Raumkarte: einmal pro Sekunde neu laden, nächstes Bild erst nach dem vorigen; eingeklappt oder Tab verborgen
+// gar nicht (map.png rechnet am Rider), Aufklappen und Sichtbarwerden stoßen wieder an. Verschieben und Zoomen
 // zeichnet der Server; bis das neue Bild da ist, verschiebt und skaliert CSS das alte.
 // Karten-KS: oben = +x, links = +y (m). cx/cy null = Mitte folgt dem Rider.
 const karte = {cx: null, cy: null, v: 6, bild: null};   // bild: Stand des angezeigten Bildes (X-Map-View)
 let karteUrl = null, karteTimer = null, karteLaeuft = false, karteNochmal = false;
 async function karteHolen() {
   clearTimeout(karteTimer);
-  if (ruhe) return;                                   // Wecken stößt wieder an
+  if (ruhe || !$('raumkarte').open || document.hidden) return;   // Wecken/Aufklappen/Sichtbar stößt wieder an
   if (karteLaeuft) { karteNochmal = true; return; }
   karteLaeuft = true;
   try {
@@ -2329,9 +2334,11 @@ function radarUmschalten() {
 }
 document.addEventListener('visibilitychange', radarStarten);
 window.addEventListener('resize', radarStarten);
-function fahrenUmschalten() {
-  try { localStorage.setItem('xgonav.fahren', $('fahrkarte').open ? '1' : '0'); } catch (e) {}
+function raumkarteUmschalten() {
+  try { localStorage.setItem('xgonav.raumkarte', $('raumkarte').open ? '1' : '0'); } catch (e) {}
+  if ($('raumkarte').open) karteAnstoss(); else clearTimeout(karteTimer);
 }
+document.addEventListener('visibilitychange', () => { if (!document.hidden) karteAnstoss(); });
 function lageUmschalten() {
   try { localStorage.setItem('xgonav.lage', $('lagekarte').open ? '1' : '0'); } catch (e) {}
   liveImu();
@@ -2400,15 +2407,14 @@ document.querySelectorAll('.diag').forEach(cv => {
 });
 window.addEventListener('resize', verlaufZeichnen);
 spracheAnwenden();
-karteHolen();
 status();
 try {
+  if (localStorage.getItem('xgonav.raumkarte') !== '0') $('raumkarte').open = true;   // Standard: offen
   if (localStorage.getItem('xgonav.verlauf') === '1') $('verlauf').open = true;
   if (localStorage.getItem('xgonav.lage') !== '0') $('lagekarte').open = true;   // Standard: offen
   if (localStorage.getItem('xgonav.extras') === '1') $('extras').open = true;
   if (localStorage.getItem('xgonav.radar') !== '0') $('radarkarte').open = true;   // Standard: offen
-  if (localStorage.getItem('xgonav.fahren') !== '0') $('fahrkarte').open = true;   // Standard: offen
-} catch (e) { $('lagekarte').open = true; $('fahrkarte').open = true; }
+} catch (e) { $('lagekarte').open = true; $('raumkarte').open = true; }
 liveVerbinden();
 lageStarten();
 </script>
