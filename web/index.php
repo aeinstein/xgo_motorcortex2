@@ -196,9 +196,13 @@ pre{background:#0b0d10;border-radius:6px;padding:8px;overflow:auto;max-height:40
 .trenner{border:0;border-top:1px solid var(--rand);margin:10px 0}
 
 /* --- Raumkarte */
-#karte-rahmen{position:relative;aspect-ratio:1;overflow:hidden;background:#808080;border-radius:6px;cursor:grab;user-select:none;-webkit-user-select:none}
+/* Rahmen: volle Breite, Höhe höchstens 400 px (schmal quadratisch); darin die quadratische Karte in Kachelbreite,
+   senkrecht mittig, oben und unten abgeschnitten. Maßstab: Ausschnitt (m) = Breite. */
+.raumkarte{container-type:inline-size}
+#karte-rahmen{position:relative;width:100%;height:min(400px,100cqw);overflow:hidden;background:#808080;border-radius:6px;cursor:grab;user-select:none;-webkit-user-select:none}
 #karte-rahmen.zieht{cursor:grabbing}
 #karte-rahmen.setzt{cursor:crosshair}
+#karte-flaeche{position:absolute;left:0;top:50%;width:100%;aspect-ratio:1;transform:translateY(-50%);pointer-events:none}
 #karte-punkte{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
 /* Knöpfe nach Zweck gruppiert; während Route/Zone gesetzt wird, ist die ganze Gruppe gesperrt (fieldset) */
 #karte-gruppen{border:0;margin:8px 0 0;padding:0;min-width:0;display:grid;gap:5px}
@@ -512,13 +516,15 @@ details.extras[open]>summary{margin-bottom:8px}
     </details>
   </details>
 
-  <section class="karte">
+  <section class="karte raumkarte">
     <div class="kopf"><h2>Raumkarte</h2>
       <select id="karte-view" aria-label="Ausschnitt" onchange="karteView(this.value)"><option value="3">3 m</option><option value="6" selected>6 m</option><option value="10">10 m</option><option value="16">16 m</option><option value="24">24 m</option><option id="karte-view-frei" hidden></option></select>
     </div>
     <div id="karte-rahmen" title="ziehen: verschieben · Mausrad: zoomen · Doppelklick: zurück zum Rider">
-      <img id="karte" alt="Raumkarte" width="320" height="320" draggable="false">
-      <svg id="karte-punkte" viewBox="0 0 1 1" preserveAspectRatio="none"></svg>
+      <div id="karte-flaeche">
+        <img id="karte" alt="Raumkarte" width="320" height="320" draggable="false">
+        <svg id="karte-punkte" viewBox="0 0 1 1" preserveAspectRatio="none"></svg>
+      </div>
       <div class="karte-auflage" id="route-edit" hidden>
         <span id="route-hinweis"></span>
         <label id="route-kreis"><input type="checkbox" id="route-loop"> im Kreis</label>
@@ -688,8 +694,8 @@ const EN = {
   'Bodenmodell': 'Floor model', 'Aktivieren': 'Activate', 'FloorNet-Gewichte aus [freespace] net_dir': 'FloorNet weights from [freespace] net_dir',
   'xgonav lädt und prüft das Netz, stellt den Symlink [freespace] net um und tauscht das Bodenmodell ohne Neustart (nur Idle/Hand)':
     'xgonav loads and checks the net, repoints the symlink [freespace] net and swaps the floor model without restart (idle/manual only)',
-  'geladen: ': 'loaded: ', 'keins': 'none', ' – blind': ' – blind', 'kein Modell in ': 'no model in ',
-  ' (net ist kein Symlink: Wechsel erst nach deploy/install.sh)': ' (net is not a symlink: switching only after deploy/install.sh)',
+  ' (geladen)': ' (loaded)', 'kein Netz geladen': 'no net loaded', 'kein Modell in ': 'no model in ',
+  'net ist kein Symlink: Wechsel erst nach deploy/install.sh': 'net is not a symlink: switching only after deploy/install.sh',
   'Bodenmodell wechseln auf ': 'Switch floor model to ', '? Nur in Idle oder Hand; das Bodenmodell ist danach kurz aus.': '? Idle or manual only; the floor model is briefly off afterwards.',
   'lädt …': 'loading …',
   'YOLO aus': 'YOLO off', ' – YOLO ist aus ([detector] enabled)': ' – YOLO is off ([detector] enabled)',
@@ -1075,13 +1081,17 @@ async function bodenmodellLaden() {
   if (!d) { sel.disabled = $('fn-an').disabled = true; txt.textContent = ''; return; }
   const m = d.modelle || [];
   sel.innerHTML = m.map(x => '<option value="' + esc(x.name) + '">' + esc(x.name) + ' (' + x.kb + ' kB, ' +
-    new Date(x.zeit * 1000).toLocaleDateString(LANG === 'en' ? 'en-GB' : 'de-DE') + ')</option>').join('');
+    new Date(x.zeit * 1000).toLocaleDateString(LANG === 'en' ? 'en-GB' : 'de-DE') + ')' +
+    (x.name === d.geladen ? tr(' (geladen)') : '') + '</option>').join('');
   if (d.aktiv && m.some(x => x.name === d.aktiv)) sel.value = d.aktiv;
   sel.disabled = !m.length;
   $('fn-an').disabled = !m.length || !d.ist_link;
-  txt.textContent = !m.length ? tr('kein Modell in ') + (d.ordner || '-')
-    : tr('geladen: ') + (d.geladen || tr('keins')) + (d.blind ? tr(' – blind') : '') +
-      (d.ist_link ? '' : tr(' (net ist kein Symlink: Wechsel erst nach deploy/install.sh)'));
+  // Das geladene Netz steht nur in der Auswahl; hier bleiben Warnungen
+  const warn = [];
+  if (!d.geladen) warn.push(tr('kein Netz geladen'));
+  else if (d.blind) warn.push(tr('blind'));
+  if (!d.ist_link) warn.push(tr('net ist kein Symlink: Wechsel erst nach deploy/install.sh'));
+  txt.textContent = !m.length ? tr('kein Modell in ') + (d.ordner || '-') : warn.join(' · ');
 }
 async function bodenmodellAktivieren() {
   const n = $('fn-wahl').value;
@@ -1627,7 +1637,7 @@ async function karteHolen() {
   karteLaeuft = true;
   try {
     const mitte = karte.cx == null ? '' : '&cx=' + karte.cx.toFixed(3) + '&cy=' + karte.cy.toFixed(3);
-    const r = await fetch('map.png?px=480&view=' + karte.v.toFixed(3) + mitte, {cache: 'no-store'});
+    const r = await fetch('map.png?px=960&view=' + karte.v.toFixed(3) + mitte, {cache: 'no-store'});
     if (r.ok) {
       const [cx, cy, v, size] = (r.headers.get('X-Map-View') || '').split(',').map(Number);
       const url = URL.createObjectURL(await r.blob()), img = $('karte');
@@ -1737,7 +1747,7 @@ function karteView(v) {     // Auswahlfeld
   el.addEventListener('click', e => {
     if (auflage(e)) return;
     if (!bearb.art || !karte.bild || gezogen) { gezogen = false; return; }
-    const q = el.getBoundingClientRect(), [cx, cy] = mitte();
+    const q = $('karte-flaeche').getBoundingClientRect(), [cx, cy] = mitte();   // quadratische Fläche, nicht der Rahmen
     const fx = (e.clientX - q.left) / q.width, fy = (e.clientY - q.top) / q.height;
     bearb.pts.push([cx + (0.5 - fy) * karte.v, cy + (0.5 - fx) * karte.v]);
     bearbeitenHinweis(); punkteZeichnen();
@@ -1767,7 +1777,7 @@ function karteView(v) {     // Auswahlfeld
     const neu = Math.max(1, Math.min(karte.bild.size, karte.v * Math.exp(d * 0.0015)));
     if (neu === karte.v) return;
     // Der Punkt unter dem Mauszeiger bleibt stehen
-    const q = el.getBoundingClientRect(), fx = (e.clientX - q.left) / q.width, fy = (e.clientY - q.top) / q.height, [cx, cy] = mitte();
+    const q = $('karte-flaeche').getBoundingClientRect(), fx = (e.clientX - q.left) / q.width, fy = (e.clientY - q.top) / q.height, [cx, cy] = mitte();
     karte.cx = grenze(cx + (0.5 - fy) * (karte.v - neu)); karte.cy = grenze(cy + (0.5 - fx) * (karte.v - neu));
     karte.v = neu;
     const o = $('karte-view-frei');
