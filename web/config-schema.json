@@ -2697,7 +2697,7 @@
        "key": "parrot",
        "typ": "bool",
        "default": true,
-       "hilfe": "Nachplappern (xgonav/stimme.py, [stimme]): Proben, die er gelernt hat, spielt er beim Mitreden mit parrot_p statt des Brabbelns, frühestens parrot_repeat_s nach der letzten; eine neu bestätigte gleich einmal nach parrot_delay_s. Mitgeschnitten wird nur, solange eine Person zu sehen ist oder höchstens parrot_listen_s weg ist."
+       "hilfe": "Nachplappern (xgonav/stimme.py, [stimme]): Proben, die er gelernt hat, spielt er beim Mitreden mit parrot_p statt des Brabbelns, frühestens parrot_repeat_s nach der letzten; eine neu bestätigte oder wiedererkannte gleich nach parrot_delay_s. Mitgeschnitten wird nur, solange eine Person zu sehen ist oder höchstens parrot_listen_s weg ist."
       },
       {
        "key": "parrot_p",
@@ -3272,7 +3272,7 @@
        "key": "enabled",
        "typ": "bool",
        "default": true,
-       "hilfe": "Stimmproben im Modus pet (xgonav/stimme.py): Äußerungen aus dem Ortungsstrom (braucht [ortung]), solange eine Person zu sehen ist. Gleicht eine neue einer gespeicherten Probe (MFCC + DTW), gilt die Probe als bestätigt und wird wie ein Wellensittich gefiltert nachgeplappert ([pet] parrot*). Ab max_confirmed lernt er nichts mehr."
+       "hilfe": "Stimmproben im Modus pet (xgonav/stimme.py): Äußerungen aus dem Ortungsstrom (braucht [ortung]), solange eine Person zu sehen ist. Gleicht eine neue einer gespeicherten Probe (MFCC + DTW), gilt die Probe als bestätigt und wird wie ein Wellensittich gefiltert nachgeplappert ([pet] parrot*), danach jedes Mal, wenn er sie wiedererkennt. Ab max_confirmed lernt er nichts mehr, erkennt aber weiter."
       },
       {
        "key": "dir",
@@ -3293,10 +3293,10 @@
        "hilfe": "so viele unbestätigte Proben, die älteste fliegt raus"
       },
       {
-       "key": "kandidat_max_h",
+       "key": "kandidat_max_min",
        "typ": "float",
-       "default": 72.0,
-       "hilfe": "ältere unbestätigte beim Start löschen"
+       "default": 1.0,
+       "hilfe": "unbestätigte so lange behalten (Nutzer 2026-11-19), danach gelöscht"
       },
       {
        "key": "vad_on_db",
@@ -3337,13 +3337,19 @@
       {
        "key": "voiced_min",
        "typ": "float",
-       "default": 0.3,
-       "hilfe": "Anteil stimmhafter Rahmen (spektrale Flachheit 300-3000 Hz unter flat_max) unter den lauten, sonst kein Sprechen"
+       "default": 0.6,
+       "hilfe": "Anteil stimmhafter Rahmen unter den lauten, sonst kein Sprechen. Stimmhaft: spektrale Flachheit 300-3000 Hz unter flat_max und Grundton 70-400 Hz (Autokorrelation, fensterbereinigt) über per_min. Am Rider 2026-11-19: Sprache 0,65-0,96, Wasserrauschen 0,0-0,19 (vorher nur Flachheit und 0,3: Rauschen wurde gelernt)."
       },
       {
        "key": "flat_max",
        "typ": "float",
        "default": 0.3,
+       "hilfe": ""
+      },
+      {
+       "key": "per_min",
+       "typ": "float",
+       "default": 0.5,
        "hilfe": ""
       },
       {

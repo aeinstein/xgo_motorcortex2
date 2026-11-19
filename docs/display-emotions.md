@@ -176,7 +176,7 @@ Input: reports of `xgonav/ortung.py` (≈ 1 per second of sound, direction folde
 | lying after a faint | air is not clear while someone speaks (last report < `clear_s`): eyes stay shut, no stand-up |
 | lying (set down from outside), two reports | `doubt`, `horch` (direction is useless lying down) |
 | talking back: person in view (or just found by listening) speaks ≥ `talk_min_events` (2) reports, then pauses `talk_pause_s` (1.6 s) | sound `brabbeln`, head tilt; at most every `talk_repeat_s` (7 s); with `parrot_p` (0.5) a learned voice sample instead, ≥ `parrot_repeat_s` (30 s) apart ([audio.md](audio.md#voice-samples-xgonavstimmepy-mode-pet)) |
-| a voice sample gets confirmed (same phrase heard twice while a person is in view) | parrots it once after `parrot_delay_s` (0.8 s), budgie-filtered |
+| a voice sample gets confirmed (same phrase twice within 1 min while a person is in view, balancing or lying) or a confirmed one is recognized | parrots it after `parrot_delay_s` (0.8 s), budgie-filtered, every time |
 
 Pi cost: a few comparisons per control step; the sound direction itself as in [audio.md](audio.md).
 

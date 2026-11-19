@@ -4,14 +4,14 @@ Solange eine Person zu sehen ist (App setzt `aufnahme`), schneidet Stimmen.block
 Äußerungen mit (Sprecherkennung auf dem Pegel, den die Ortung ohnehin rechnet: Tor über dem Ruhepegel, Vorlauf,
 Nachlauf). Eine fertige Äußerung geht an den eigenen Thread `stimme`:
   Stereo 48 kHz -> mono 16 kHz -> 13 MFCC je 10 ms (Mittelwert abgezogen), stille Ränder ab, Anteil stimmhafter
-  Rahmen (spektrale Flachheit) -> sonst verworfen
-  DTW gegen alle Proben:  Treffer bei einer bestätigten -> nur gezählt
+  Rahmen (spektral nicht flach und mit Grundton) -> sonst verworfen (Rauschen, Wasser, Klappern)
+  DTW gegen alle Proben:  Treffer bei einer bestätigten -> jedes Mal nachplappern (drain_neu)
                           Treffer bei einer unbestätigten -> bestätigt (die lautere Aufnahme bleibt), Sittich-Filter,
                                                              Meldung an pet (drain_neu), das plappert sie gleich nach
                           kein Treffer -> neue unbestätigte Probe (höchstens pool_n, die älteste fliegt raus)
-Ab max_confirmed bestätigten lernt er nichts mehr (keine Aufnahme, kein Rechnen).
+Ab max_confirmed bestätigten lernt er nichts mehr, erkennt aber die bestätigten weiter (DTW nur gegen diese).
 
-Dateien unter [stimme] dir: kandidaten/<Zeit>.wav (16 kHz roh), bestaetigt/NN_roh.wav und NN.wav (gefiltert, 48 kHz,
+Dateien unter [stimme] dir: kandidaten/<Zeit>.wav (16 kHz roh, nach kandidat_max_min gelöscht), bestaetigt/NN_roh.wav und NN.wav (gefiltert, 48 kHz,
 spielt emotion.Emotions.sound("stimme:NN")). Löschen = Verzeichnis leeren.
 
 Kosten am Pi: je Audioblock (21 ms) nur bei `aufnahme` ein paar Vergleiche und das Merken des Blocks; je Äußerung
@@ -37,12 +37,14 @@ from . import fastlib
 
 log = logging.getLogger(__name__)
 
-_STIMM_ABI = 1
+_STIMM_ABI = 2
 RATE_IN, RATE, RATE_OUT = 48000, 16000, 48000
 FRAME, HOP, NFFT, NMEL, NCEP = 400, 160, 512, 24, 13
 FIR_N, FIR_FC = 31, 7000.0
 MEL_LO, MEL_HI = 100.0, 7600.0
 FLAT_LO, FLAT_HI = 300.0, 3000.0
+LAG_LO, LAG_HI = 40, 228             # Grundton 400..70 Hz in Abtastwerten bei 16 kHz
+VERFALL_TAKT_S = 5.0                 # so oft prüft der Thread stimme, ob Kandidaten verfallen sind
 TRIM = 0.01                          # Rahmen unter 1 % der lautesten Energie gelten als still
 _lib_cache: list = []
 
@@ -57,7 +59,7 @@ def _lib():
             L.st_mono16k.restype = i
             L.st_mono16k.argtypes = [p, i, p]
             L.st_new.restype = p
-            L.st_new.argtypes = [d]
+            L.st_new.argtypes = [d, d]
             L.st_free.restype = None
             L.st_free.argtypes = [p]
             L.st_mfcc.restype = i
@@ -107,10 +109,12 @@ class _PyKern:
     """Dasselbe wie native/stimmfast.cpp in numpy."""
     name = "numpy"
 
-    def __init__(self, flat_max: float):
-        self.flat_max = flat_max
+    def __init__(self, flat_max: float, per_min: float = 0.5):
+        self.flat_max, self.per_min = flat_max, per_min
         self.h = _fir()
         self.win = 0.54 - 0.46 * np.cos(2.0 * np.pi * np.arange(FRAME) / (FRAME - 1))
+        rw = np.fft.irfft(np.abs(np.fft.rfft(self.win, NFFT)) ** 2, NFFT)
+        self.rw = rw[LAG_LO:LAG_HI + 1] / rw[0]          # Autokorrelation des Fensters (Boersma)
         self.fb = _melbank()
         self.dct = _dct()
         self.k0 = math.ceil(FLAT_LO * NFFT / RATE)
@@ -141,7 +145,11 @@ class _PyKern:
         P, laut = P[a:b], laut[a:b]
         band = P[:, self.k0:self.k1 + 1]
         flat = np.exp(np.log(band + 1e-10).mean(axis=1)) / (band.mean(axis=1) + 1e-10)
-        voiced = float(((flat < self.flat_max) & laut).sum()) / float(laut.sum())
+        r = np.fft.irfft(P, NFFT, axis=1)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            per = (r[:, LAG_LO:LAG_HI + 1] / r[:, :1] / self.rw).max(axis=1)
+        per = np.where(r[:, 0] > 0, per, 0.0)
+        voiced = float(((flat < self.flat_max) & (per > self.per_min) & laut).sum()) / float(laut.sum())
         logE = np.log(np.maximum(P @ self.fb.T, 1e-10))
         c = logE @ self.dct.T
         return c - c.mean(axis=0), voiced
@@ -231,9 +239,9 @@ class _PyKern:
 class _NativeKern:
     name = "native"
 
-    def __init__(self, L, flat_max: float):
+    def __init__(self, L, flat_max: float, per_min: float = 0.5):
         self._L = L
-        self._h = L.st_new(flat_max)
+        self._h = L.st_new(flat_max, per_min)
         self._v = ctypes.c_double()
 
     def __del__(self):
@@ -267,14 +275,14 @@ class _NativeKern:
         return out[:k]
 
 
-def make_kern(flat_max: float, native: bool | None = None):
+def make_kern(flat_max: float, native: bool | None = None, per_min: float = 0.5):
     """native=None: C++-Kern, wenn vorhanden; True/False erzwingt einen Weg (Tests)."""
     L = _lib() if native is not False else None
     if L is not None:
-        return _NativeKern(L, flat_max)
+        return _NativeKern(L, flat_max, per_min)
     if native:
         raise RuntimeError("stimme: C++-Kern fehlt")
-    return _PyKern(flat_max)
+    return _PyKern(flat_max, per_min)
 
 
 # ---------------------------------------------------------------------- Dateien
@@ -307,6 +315,7 @@ class Probe:
     x: np.ndarray                    # 16 kHz, Einheit int16, als int16 gespeichert
     feat: np.ndarray
     rms: float
+    t: float = 0.0                   # angelegt (Uhr wie clock, Kandidaten verfallen nach kandidat_max_min)
 
 
 class Stimmen:
@@ -315,7 +324,7 @@ class Stimmen:
     def __init__(self, cfg, rate: int = RATE_IN, block: int = 1024, native: bool | None = None,
                  clock=time.time):
         self.cfg, self.clock = cfg, clock
-        self.kern = make_kern(cfg.flat_max, native)
+        self.kern = make_kern(cfg.flat_max, native, cfg.per_min)
         self.ok = rate == RATE_IN
         if not self.ok:
             log.warning("Stimmen aus: Ortung läuft mit %d Hz, nötig sind %d", rate, RATE_IN)
@@ -352,7 +361,7 @@ class Stimmen:
 
     @aufnahme.setter
     def aufnahme(self, on: bool) -> None:
-        on = bool(on and self.ok and self.cfg.enabled and not self.voll)
+        on = bool(on and self.ok and self.cfg.enabled)
         if on != self._aufnahme:
             self._reset_tor()
             self._aufnahme = on
@@ -430,12 +439,16 @@ class Stimmen:
 
     def _run(self) -> None:
         while not self._ende:
-            self._ev.wait()
+            # Kandidaten verfallen auch ohne neue Äußerung; ohne Kandidaten schläft der Thread durch
+            self._ev.wait(VERFALL_TAKT_S if self.kandidaten else None)
             self._ev.clear()
             seg, self._slot = self._slot, None
-            if seg is None or self._ende:
-                continue
+            if self._ende:
+                break
             try:
+                if seg is None:
+                    self._verfall()
+                    continue
                 self.lerne(seg)
             except Exception as e:                      # darf nie etwas anderes stören
                 self.fehler = str(e)
@@ -443,22 +456,25 @@ class Stimmen:
 
     # ------------------------------------------------------------------ Lernen (Thread stimme, Tests direkt)
     def lerne(self, pcm: np.ndarray) -> str:
-        """Eine Äußerung (int16 (n, 2), 48 kHz). Rückgabe: "verworfen" | "wieder" | "kandidat" | "bestaetigt"."""
+        """Eine Äußerung (int16 (n, 2), 48 kHz). Rückgabe: "verworfen" | "wieder" | "kandidat" | "bestaetigt" |
+        "voll" (voll und keine bestätigte getroffen: nichts gelernt)."""
         c = self.cfg
         self.laden()
-        if self.voll:
-            return "voll"
+        self._verfall()
         x = self.kern.mono16k(pcm)
         feat, voiced = self.kern.mfcc(x)
         if len(feat) * HOP / RATE < 0.5 * c.min_s or voiced < c.voiced_min:
             self.n_verworfen += 1
             log.debug("Stimmen: verworfen (%.2f s, stimmhaft %.2f)", len(feat) * HOP / RATE, voiced)
             return "verworfen"
-        art, probe, d = self._naechste(feat)
-        if art == "bestaetigt":
+        art, probe, d = self._naechste(feat, nur_bestaetigt=self.voll)
+        if art == "bestaetigt":                         # wiedererkannt: jedes Mal nachplappern (Nutzer 2026-11-19)
             self.n_wieder += 1
+            self._neu.append(probe.name)
             log.info("Stimmen: %s wieder gehört (Abstand %.1f)", probe.name, d)
             return "wieder"
+        if self.voll:
+            return "voll"
         rms = float(np.sqrt(np.mean(x * x))) if len(x) else 0.0
         if art == "kandidat":
             self._bestaetige(probe, Probe("", x, feat, rms), d)
@@ -468,7 +484,7 @@ class Stimmen:
         while any(p.name == name for p in self.kandidaten) or os.path.exists(os.path.join(self.d_kand, name + ".wav")):
             name += "x"
         write_wav(os.path.join(self.d_kand, name + ".wav"), x, RATE)
-        self.kandidaten.append(Probe(name, x.astype(np.int16), feat, rms))
+        self.kandidaten.append(Probe(name, x.astype(np.int16), feat, rms, jetzt))
         while len(self.kandidaten) > c.pool_n:
             alt = self.kandidaten.pop(0)
             _rm(os.path.join(self.d_kand, alt.name + ".wav"))
@@ -476,9 +492,10 @@ class Stimmen:
                  len(self.kandidaten), d)
         return "kandidat"
 
-    def _naechste(self, feat: np.ndarray) -> tuple[str | None, Probe | None, float]:
+    def _naechste(self, feat: np.ndarray, nur_bestaetigt: bool = False) -> tuple[str | None, Probe | None, float]:
         c, best = self.cfg, (None, None, math.inf)
-        for art, liste in (("bestaetigt", self.bestaetigt), ("kandidat", self.kandidaten)):
+        listen = [("bestaetigt", self.bestaetigt)] + ([] if nur_bestaetigt else [("kandidat", self.kandidaten)])
+        for art, liste in listen:
             for p in liste:
                 q = len(feat) / max(1, len(p.feat))
                 if not 1.0 / c.len_ratio <= q <= c.len_ratio:
@@ -504,15 +521,27 @@ class Stimmen:
         self._ids = tuple(sorted(self._ids + (nn,)))
         self._neu.append(nn)
         log.info("Stimmen: Probe %s bestätigt (Abstand %.1f, %d von %d)%s", nn, d, len(self._ids), c.max_confirmed,
-                 ", lerne nichts mehr" if self.voll else "")
-        if self.voll:
-            self._aufnahme = False
+                 ", lerne nichts mehr, erkenne nur noch" if self.voll else "")
+        if self.voll:                                   # Kandidaten braucht es nicht mehr
+            for p in self.kandidaten:
+                _rm(os.path.join(self.d_kand, p.name + ".wav"))
+            self.kandidaten = []
 
     def _filter(self, nn: str, x: np.ndarray) -> None:
         c = self.cfg
         y = self.kern.sittich(x, c.speed, c.band_lo, c.band_hi, c.vibrato_hz, c.vibrato_ms, c.drive,
                               10.0 ** (c.peak_db / 20.0))
         write_wav(self.datei(nn), y, RATE_OUT, 32767.0)
+
+    def _verfall(self) -> None:
+        """Unbestätigte Proben älter als kandidat_max_min löschen."""
+        grenze = self.clock() - self.cfg.kandidat_max_min * 60.0
+        alt = [p for p in self.kandidaten if p.t < grenze]
+        for p in alt:
+            self.kandidaten.remove(p)
+            _rm(os.path.join(self.d_kand, p.name + ".wav"))
+        if alt:
+            log.info("Stimmen: %d unbestätigte Proben verfallen", len(alt))
 
     def _ids_auf_platte(self) -> list[str]:
         out = []
@@ -529,7 +558,6 @@ class Stimmen:
         self._geladen = True
         os.makedirs(self.d_kand, exist_ok=True)
         os.makedirs(self.d_best, exist_ok=True)
-        jetzt = self.clock()
         for nn in self._ids:
             try:
                 x, rate = read_wav(os.path.join(self.d_best, nn + "_roh.wav"))
@@ -540,14 +568,15 @@ class Stimmen:
             except Exception as e:
                 log.warning("Stimmen: %s nicht lesbar: %s", nn, e)
         for f in sorted(glob.glob(os.path.join(self.d_kand, "*.wav"))):
-            if jetzt - os.path.getmtime(f) > self.cfg.kandidat_max_h * 3600.0:
+            t = os.path.getmtime(f)
+            if self.clock() - t > self.cfg.kandidat_max_min * 60.0:
                 _rm(f)
                 continue
             try:
                 x, rate = read_wav(f)
                 feat, _ = self.kern.mfcc(x)
                 self.kandidaten.append(Probe(os.path.basename(f)[:-4], x.astype(np.int16), feat,
-                                             float(np.sqrt(np.mean(x * x)))))
+                                             float(np.sqrt(np.mean(x * x))), t))
             except Exception as e:
                 log.warning("Stimmen: %s nicht lesbar: %s", f, e)
                 _rm(f)

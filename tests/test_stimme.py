@@ -2,6 +2,7 @@
 import dataclasses
 import os
 import sys
+import time
 from pathlib import Path
 
 import numpy as np
@@ -128,7 +129,7 @@ def test_bestaetigen_filtern_und_wieder_hoeren(tmp_path):
     roh, _ = stimme.read_wav(str(tmp_path / "bestaetigt" / "01_roh.wav"))
     assert abs(len(y) / stimme.RATE_OUT - len(roh) / stimme.RATE / st.cfg.speed) < 0.01
     assert st.lerne(aeusserung(WORT_A, seed=7)) == "wieder"           # keine zweite Probe desselben Worts
-    assert len(st.kandidaten) == 1
+    assert len(st.kandidaten) == 1 and st.drain_neu() == ["01"]       # wiedererkannt: wieder abspielen
 
 
 def test_pool_verdraengt_die_aelteste(tmp_path):
@@ -143,10 +144,11 @@ def test_voll_lernt_nichts_mehr_und_neustart_laedt(tmp_path):
     st = stimmen(tmp_path, max_confirmed=1)
     st.lerne(aeusserung(WORT_A))
     assert st.lerne(aeusserung(WORT_A, seed=2)) == "bestaetigt"
-    assert st.voll and not st.aufnahme
+    assert st.voll and st.drain_neu() == ["01"]
     st.aufnahme = True
-    assert not st.aufnahme                                            # voll: keine Aufnahme mehr
-    assert st.lerne(aeusserung(WORT_B)) == "voll"
+    assert st.aufnahme                                                # voll: erkennt weiter
+    assert st.lerne(aeusserung(WORT_B)) == "voll" and st.kandidaten == []
+    assert st.lerne(aeusserung(WORT_A, seed=3)) == "wieder" and st.drain_neu() == ["01"]
     neu = stimmen(tmp_path, max_confirmed=1)                          # Neustart
     assert neu.ids == ("01",) and neu.voll
     neu2 = stimmen(tmp_path, max_confirmed=2)
@@ -158,11 +160,58 @@ def test_alte_kandidaten_beim_start_geloescht(tmp_path):
     st = stimmen(tmp_path)
     st.lerne(aeusserung(WORT_A))
     f = next((tmp_path / "kandidaten").iterdir())
-    alt = st.clock() - (st.cfg.kandidat_max_h + 1) * 3600
+    alt = st.clock() - (st.cfg.kandidat_max_min + 1) * 60
     os.utime(f, (alt, alt))
     neu = stimmen(tmp_path)
     neu.laden()
     assert neu.kandidaten == [] and not f.exists()
+
+
+def test_kandidaten_verfallen_nach_einer_minute(tmp_path):
+    uhr = [1000.0]
+    st = stimme.Stimmen(cfg(tmp_path), native=False, clock=lambda: uhr[0])
+    assert st.cfg.kandidat_max_min == 1.0
+    assert st.lerne(aeusserung(WORT_A)) == "kandidat"
+    uhr[0] += 50
+    assert st.lerne(aeusserung(WORT_B, seed=4)) == "kandidat"
+    uhr[0] += 20                                                      # WORT_A jetzt 70 s alt
+    assert st.lerne(aeusserung(WORT_A, seed=5)) == "kandidat"         # nicht mehr bestätigt
+    assert len(st.kandidaten) == 2 and len(os.listdir(tmp_path / "kandidaten")) == 2
+    uhr[0] += 61
+    st._verfall()                                                     # der Thread macht das alle 5 s
+    assert st.kandidaten == [] and os.listdir(tmp_path / "kandidaten") == []
+
+
+def test_thread_raeumt_ohne_neue_aeusserung_auf(tmp_path, monkeypatch):
+    monkeypatch.setattr(stimme, "VERFALL_TAKT_S", 0.05)
+    uhr = [1000.0]
+    st = stimme.Stimmen(cfg(tmp_path), native=False, clock=lambda: uhr[0])
+    st._submit(aeusserung(WORT_A))
+    for _ in range(100):
+        if st.kandidaten:
+            break
+        time.sleep(0.02)
+    assert len(st.kandidaten) == 1
+    uhr[0] += 61
+    for _ in range(100):
+        if not st.kandidaten:
+            break
+        time.sleep(0.02)
+    st.close()
+    assert st.kandidaten == [] and os.listdir(tmp_path / "kandidaten") == []
+
+
+def test_gefaerbtes_rauschen_ist_keine_stimme(tmp_path):
+    """Wasserrauschen (am Rider 2026-11-19 gelernt): Rauschen mit abfallendem Spektrum, schwankend laut."""
+    st = stimmen(tmp_path)
+    rng = np.random.default_rng(8)
+    n = int(1.5 * R)
+    x = np.cumsum(rng.normal(0, 1, n))                               # 1/f^2
+    x = x - np.convolve(x, np.ones(48) / 48, "same")                  # tiefe Frequenzen weg
+    x *= 6000.0 / x.std() * (1.0 + 0.5 * np.sin(2 * np.pi * 3 * np.arange(n) / R))
+    pcm = np.stack([x, x], 1).astype(np.int16)
+    assert st.lerne(pcm) == "verworfen"
+    assert st.lerne(pcm) == "verworfen"
 
 
 # ---- C++ gegen numpy ---------------------------------------------------------

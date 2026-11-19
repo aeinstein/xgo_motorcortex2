@@ -784,7 +784,7 @@ class PetCfg:
     talk_pause_s: float = 1.6
     talk_repeat_s: float = 7.0
     # Nachplappern (xgonav/stimme.py, [stimme]): Proben, die er gelernt hat, spielt er beim Mitreden mit parrot_p statt
-    # des Brabbelns, frühestens parrot_repeat_s nach der letzten; eine neu bestätigte gleich einmal nach parrot_delay_s.
+    # des Brabbelns, frühestens parrot_repeat_s nach der letzten; eine neu bestätigte oder wiedererkannte gleich nach parrot_delay_s.
     # Mitgeschnitten wird nur, solange eine Person zu sehen ist oder höchstens parrot_listen_s weg ist.
     parrot: bool = True
     parrot_p: float = 0.5
@@ -892,12 +892,13 @@ class OrtungCfg:
 class StimmeCfg:
     # Stimmproben im Modus pet (xgonav/stimme.py): Äußerungen aus dem Ortungsstrom (braucht [ortung]), solange eine
     # Person zu sehen ist. Gleicht eine neue einer gespeicherten Probe (MFCC + DTW), gilt die Probe als bestätigt und
-    # wird wie ein Wellensittich gefiltert nachgeplappert ([pet] parrot*). Ab max_confirmed lernt er nichts mehr.
+    # wird wie ein Wellensittich gefiltert nachgeplappert ([pet] parrot*), danach jedes Mal, wenn er sie wiedererkennt.
+    # Ab max_confirmed lernt er nichts mehr, erkennt aber weiter.
     enabled: bool = True
     dir: str = "/opt/xgonav/stimmen"   # kandidaten/ (roh, 16 kHz) und bestaetigt/ (NN_roh.wav, NN.wav gefiltert)
     max_confirmed: int = 10
     pool_n: int = 30                   # so viele unbestätigte Proben, die älteste fliegt raus
-    kandidat_max_h: float = 72.0       # ältere unbestätigte beim Start löschen
+    kandidat_max_min: float = 1.0      # unbestätigte so lange behalten (Nutzer 2026-11-19), danach gelöscht
     # Sprecherkennung (VAD) auf dem Pegel der Ortung: öffnet vad_on_db über dem Ruhepegel, endet nach vad_hang_s
     # unter vad_off_db; vad_pre_s Vorlauf. Kürzer als min_s verworfen, bei max_s abgeschnitten.
     vad_on_db: float = 9.0
@@ -906,9 +907,12 @@ class StimmeCfg:
     vad_pre_s: float = 0.15
     min_s: float = 0.6
     max_s: float = 3.0
-    # Anteil stimmhafter Rahmen (spektrale Flachheit 300-3000 Hz unter flat_max) unter den lauten, sonst kein Sprechen
-    voiced_min: float = 0.3
+    # Anteil stimmhafter Rahmen unter den lauten, sonst kein Sprechen. Stimmhaft: spektrale Flachheit 300-3000 Hz unter
+    # flat_max und Grundton 70-400 Hz (Autokorrelation, fensterbereinigt) über per_min. Am Rider 2026-11-19:
+    # Sprache 0,65-0,96, Wasserrauschen 0,0-0,19 (vorher nur Flachheit und 0,3: Rauschen wurde gelernt).
+    voiced_min: float = 0.6
     flat_max: float = 0.3
+    per_min: float = 0.5
     # Vergleich: DTW über 13 MFCC (Mittelwert abgezogen), Kosten je Schritt; Längen höchstens len_ratio verschieden.
     # match_dist aus Windows-Sprachausgabe mit Raumrauschen (2026-11-19): derselbe Satz, andere Sprechrate 2..4,
     # andere Sätze ab 14, anderer Sprecher derselbe Satz 10..16. An echten Proben nachstellen (tools/stimme.py vergleich).

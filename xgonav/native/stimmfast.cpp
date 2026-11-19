@@ -4,7 +4,8 @@
 //               Hamming), jeder 3. Wert
 //   st_mfcc     13 MFCC je 10 ms (25 ms Hamming, 512er FFT, 24 Mel-Bänder 100..7600 Hz, DCT-II), stille Ränder
 //               (unter 1 % der lautesten Rahmenenergie) ab, Mittelwert abgezogen; dazu der Anteil stimmhafter
-//               Rahmen (spektrale Flachheit 300..3000 Hz unter flat_max) unter den lauten
+//               Rahmen unter den lauten: spektrale Flachheit 300..3000 Hz unter flat_max und Grundton 70..400 Hz
+//               (Autokorrelation aus dem Leistungsspektrum, durch die des Fensters geteilt) über per_min
 //   st_dtw      DTW im Band (Sakoe-Chiba, um die Diagonale), Kosten je Schritt = Summe / (na + nb)
 //   st_sittich  Wellensittich: schneller abspielen (linear), Schnarren (modulierte Verzögerung), Hochpass und Tiefpass
 //               (RBJ-Biquads), tanh-Begrenzung, 10 ms Ein-/Ausblenden, Spitze auf `peak`
@@ -18,17 +19,18 @@
 
 namespace {
 
-const int kStimmAbi = 1;
+const int kStimmAbi = 2;
 const double kPi = 3.14159265358979323846;
 const int kRateIn = 48000, kRate = 16000, kRateOut = 48000;
 const int kFrame = 400, kHop = 160, kNfft = 512, kNbin = kNfft / 2 + 1, kNmel = 24, kNcep = 13;
-const int kFirN = 31;
+const int kFirN = 31, kLagLo = 40, kLagHi = 228;     // Grundton 400..70 Hz
 const double kFirFc = 7000.0, kMelLo = 100.0, kMelHi = 7600.0, kFlatLo = 300.0, kFlatHi = 3000.0, kTrim = 0.01;
 
 struct Stimm {
-    double flat_max = 0.3;
+    double flat_max = 0.3, per_min = 0.5;
     int k0 = 0, k1 = 0;
     std::vector<double> win, fb, dct, twr, twi, zr, zi;   // fb [b * kNbin + k], dct [n * kNmel + m]
+    std::vector<double> rw;                               // Autokorrelation des Fensters / r0, Lag kLagLo..kLagHi
     std::vector<int> rev;
 };
 
@@ -90,6 +92,17 @@ void biquad(std::vector<double>& y, double f0, bool hp) {
     }
 }
 
+// Autokorrelation aus dem Leistungsspektrum p (kNbin Werte): r = irfft(p), hier per Vorwärts-FFT des geraden
+// Spektrums (reell) / kNfft. Schreibt r[0..kNfft) nach o.zr.
+void autokorr(Stimm& o, const double* p) {
+    for (int k = 0; k < kNfft; k++) {
+        o.zr[k] = p[k <= kNfft / 2 ? k : kNfft - k];
+        o.zi[k] = 0.0;
+    }
+    fft(o);
+    for (int k = 0; k < kNfft; k++) o.zr[k] /= kNfft;
+}
+
 }  // namespace
 
 extern "C" {
@@ -110,9 +123,10 @@ XGO_API int st_mono16k(const int16_t* pcm, int n, double* out) {
     return k;
 }
 
-XGO_API void* st_new(double flat_max) {
+XGO_API void* st_new(double flat_max, double per_min) {
     Stimm* o = new Stimm;
     o->flat_max = flat_max;
+    o->per_min = per_min;
     o->k0 = (int)std::ceil(kFlatLo * kNfft / kRate);
     o->k1 = (int)std::floor(kFlatHi * kNfft / kRate);
     o->win.resize(kFrame);
@@ -152,6 +166,15 @@ XGO_API void* st_new(double flat_max) {
         o->rev[i] = r;
     }
     o->zr.resize(kNfft); o->zi.resize(kNfft);
+    {
+        for (int i = 0; i < kNfft; i++) { o->zr[i] = i < kFrame ? o->win[i] : 0.0; o->zi[i] = 0.0; }
+        fft(*o);
+        std::vector<double> pw(kNbin);
+        for (int k = 0; k < kNbin; k++) pw[k] = o->zr[k] * o->zr[k] + o->zi[k] * o->zi[k];
+        autokorr(*o, pw.data());
+        o->rw.resize(kLagHi - kLagLo + 1);
+        for (int l = kLagLo; l <= kLagHi; l++) o->rw[l - kLagLo] = o->zr[l] / o->zr[0];
+    }
     return o;
 }
 
@@ -208,8 +231,17 @@ XGO_API int st_mfcc(void* h, const double* x, int n, double* out, int max_frames
                 sm += p[k];
             }
             const double flat = std::exp(sl / nk) / (sm / nk + 1e-10);
+            double per = 0.0;
+            autokorr(*o, p);
+            if (o->zr[0] > 0.0) {
+                per = -std::numeric_limits<double>::infinity();
+                for (int l = kLagLo; l <= kLagHi; l++) {
+                    const double v = o->zr[l] / o->zr[0] / o->rw[l - kLagLo];
+                    if (v > per) per = v;
+                }
+            }
             nlaut++;
-            if (flat < o->flat_max) nvoiced++;
+            if (flat < o->flat_max && per > o->per_min) nvoiced++;
         }
         for (int bb = 0; bb < kNmel; bb++) {
             const double* w = &o->fb[(size_t)bb * kNbin];
