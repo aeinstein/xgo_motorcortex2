@@ -151,8 +151,10 @@ class ImuCfg:
     # mit 2,04 m befahrbarer Breite (Nutzer) kam in drei Rundumblicken mit Roll-Korrektur auf 1,98 m, mit +0,25° auf 2,03-2,05 m.
     # Seit 2026-11-18 -6.23: Firmware 0021 (Lage aus dem Schwerkraftvektor, Nick-Kreisel kalibriert) liefert den Nick ~2° tiefer
     # (vorher stand er wegen des unkalibrierten Nick-Kreisels ~2,3° zu hoch); Nutzer am Bild im Browser geprüft.
+    # Seit 2026-11-19 -5.0: Flurfahrt 20261119-122328 (Flur 2,04 m) kam mit -6.23 auf 1,53 (hin) / 1,67 m (zurück),
+    # 2,04 m bei +1,4° / +1,0°.
     # Wirksam ist nur tilt_deg + pitch_ref_deg (geometry: Blickwinkel = tilt_deg + pitch_ref_deg - IMU-Nick).
-    pitch_ref_deg: float = -6.23
+    pitch_ref_deg: float = -5.0
     # Skalenfehler des Firmware-Kurses (Gier), je Drehrichtung getrennt: Kursänderungen nach links mal
     # yaw_scale_left, nach rechts mal yaw_scale_right. RiderPi 2026-11-18, auf der Stelle an einer Marke, Winkelmesser:
     # 10 × 360° rechts echt 3560°, IMU 3551,3° (1,0025); 10 × links echt 3556°, IMU 3548,4° (1,0021); 4 × links
