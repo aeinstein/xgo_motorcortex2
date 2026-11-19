@@ -500,6 +500,11 @@ class StartbildCfg:
     max_lage_deg: float = 1.0          # Nick-/Roll-Rest des Ankers (offline +0,3° / −0,2°)
     agree_m: float = 0.05              # Gegenprobe (frei, 6 Freiheitsgrade) muss so nah liegen
     nach_m: float = 0.04               # Rest nach der Korrektur, ab dem nachgefahren wird (einmal)
+    # Schlussausrichtung auf den Startkurs nach dem Abgleich: enger als [home] align_tol_deg (10°), die Messung trägt
+    # ~1°. Fahrt 2026-11-19 161006: Ende ~1 cm vom Start, aber −9,5° gedreht stehen geblieben. Dreht er über den
+    # Startkurs hinaus (Vorzeichenwechsel), ist Schluss statt Pendeln; nach end_s ebenfalls.
+    end_deg: float = 2.0
+    end_s: float = 8.0
     timeout_s: float = 20.0            # so lange auf die Messung warten, dann ohne Korrektur fertig
     # Anker: Rider steht am Startpunkt (so nah und so wenig gedreht), Merkmale einmal je Startpunkt. Der Anker merkt
     # sich seine tatsächliche Pose, die Grenze sagt nur „am Start“. 1 cm / 1° war zu streng: Nach dem Aufstehen

@@ -194,6 +194,7 @@ def run(mode="follow", secs=25.0, video=None, shake=1.0, quiet=True, imu=False, 
            "plan_ms": round(app.planner.ms, 1) if app.planner is not None else None,
            # wahrer Abstand vom Startpunkt am Ende (home: so gut traf er ihn wirklich)
            "start_wahr_m": round(math.hypot(world.x - L[0]["x"], world.y - L[0]["y"]), 3) if L else None,
+           "start_wahr_deg": round(math.degrees((world.th - L[0]["th"] + math.pi) % (2 * math.pi) - math.pi), 1) if L else None,
            "startbild": app.startbild.info() if getattr(app, "startbild", None) else None}
     if mode == "pet":
         out.update(pet=app.behavior.info() if app.behavior.name == "pet" else None,

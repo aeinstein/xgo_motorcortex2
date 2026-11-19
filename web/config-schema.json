@@ -1537,6 +1537,18 @@
        "hilfe": "Rest nach der Korrektur, ab dem nachgefahren wird (einmal)"
       },
       {
+       "key": "end_deg",
+       "typ": "float",
+       "default": 2.0,
+       "hilfe": "Schlussausrichtung auf den Startkurs nach dem Abgleich: enger als [home] align_tol_deg (10°), die Messung trägt ~1°. Fahrt 2026-11-19 161006: Ende ~1 cm vom Start, aber −9,5° gedreht stehen geblieben. Dreht er über den Startkurs hinaus (Vorzeichenwechsel), ist Schluss statt Pendeln; nach end_s ebenfalls."
+      },
+      {
+       "key": "end_s",
+       "typ": "float",
+       "default": 8.0,
+       "hilfe": ""
+      },
+      {
        "key": "timeout_s",
        "typ": "float",
        "default": 20.0,

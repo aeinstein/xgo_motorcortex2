@@ -609,6 +609,7 @@ class Home(Behavior):
         self.nach_n = 0
         self._fein_d: float | None = None
         self._fein_fahrt = False
+        self._end_vz = 0.0
         self._gemessen = False        # Messung für diesen Halt schon angefordert
         self._grund = "–"             # Ergebnis der Messung (Status am Ende)
         self.f = PathFollower(cfg, rcfg, self.h)
@@ -768,9 +769,14 @@ class Home(Behavior):
                     self._setze("ende", w)
                 else:
                     return Command(0.75 * sb.gerade_v, wc, hmm, "Startbild: nachfahren %.2f m" % dist)
-        # ende: auf den Startkurs drehen, fertig
+        # ende: auf den Startkurs drehen (enger als sonst, sb.end_deg), fertig; über den Kurs hinaus gedreht oder
+        # nach end_s: stehen bleiben statt pendeln
         err = _wrap(gth - th)
-        if self.h.align_heading and abs(err) > math.radians(self.h.align_tol_deg):
+        vz = math.copysign(1.0, err)
+        ueber = self._end_vz != 0.0 and vz != self._end_vz
+        if (self.h.align_heading and abs(err) > math.radians(sb.end_deg) and not ueber
+                and w.t - self.t_phase < sb.end_s):
+            self._end_vz = vz
             return self.f.align(err, "am Start – richte aus")
         self.done = True
         return Command(0, 0, hmm, "am Start angekommen (Startbild: %s)" % self._grund)

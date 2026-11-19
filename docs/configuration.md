@@ -286,7 +286,7 @@ All keys with comments: `PetCfg` in `xgonav/config.py`.
 
 | Key | Default | Meaning |
 |---|---|---|
-| `enabled` | `true` (sim: `false`) | `home` ends via a pre-point, a straight run onto the start and a measurement against the image taken at the start; the room-map pose is corrected. Not driven on the Rider |
+| `enabled` | `true` (sim: `false`) | `home` ends via a pre-point, a straight run onto the start and a measurement against the image taken at the start; the room-map pose is corrected. Driven once on the Rider (2026-11-19) |
 | `vor_m` / `vor_tol_m` | 0.40 / 0.08 | pre-point this far before the start on the start heading; arrival tolerance there |
 | `gerade_v` | 0.08 | normalised speed of the straight run (~10 cm/s) |
 | `tiefe_schritt_m` / `basen` | 0.04 / 0.1…0.3 | keep a grey image every 4 cm of the straight run; depth images at these distances before the end |
@@ -295,6 +295,7 @@ All keys with comments: `PetCfg` in `xgonav/config.py`.
 | `max_m` / `max_deg` | 0.5 / 15 | larger correction counts as a wrong measurement |
 | `max_lage_deg` / `agree_m` | 1.0 / 0.05 | pitch/roll residual of the anchor; free 6-DOF cross-check must lie this close |
 | `nach_m` | 0.04 | remaining distance after the correction above which `home` drives once more |
+| `end_deg` / `end_s` | 2.0 / 8.0 | final turn to the start heading after the check: tolerance (instead of `[home] align_tol_deg` 10°); stops when it turns past the heading or after `end_s` |
 | `timeout_s` | 20 | wait this long for the measurement |
 | `anker_m` / `anker_deg` | 0.03 / 5.0 | anchor image is taken while the Rider stands this close to the start (once per start point); the anchor keeps its actual pose, so the limit only means "at the start" (1 cm / 1° was too strict after standing up) |
 

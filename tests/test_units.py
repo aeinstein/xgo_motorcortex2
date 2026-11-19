@@ -2736,8 +2736,44 @@ def test_home_startbild_phases():
     assert c.v > 0
     c = b.step(w(8.0, (0.0, -0.005, math.radians(90))))
     assert b.phase == "ende" and c.v == 0 and c.w < 0                      # zurück auf den Startkurs
-    c = b.step(w(9.0, (0.0, -0.005, math.radians(2))))
+    c = b.step(w(9.0, (0.0, -0.005, math.radians(1.5))))
     assert b.done and "8 cm" in c.status
+
+
+def test_home_startbild_endkurs_eng():
+    """Schlussausrichtung nach dem Abgleich: enger als align_tol_deg (Fahrt 161006 blieb bei −9,5° stehen), über den
+    Startkurs hinaus gedreht oder nach end_s: fertig statt pendeln."""
+    from xgonav.behaviors import Home
+    from xgonav.startbild import Ergebnis
+    cfg = Config.neutral()
+    cfg.startbild.enabled = True
+    assert cfg.startbild.end_deg < cfg.home.align_tol_deg
+
+    def neu():
+        b = Home(cfg.behavior, cfg.robot, cfg.home, cfg.startbild)
+        b.phase, b.t_phase = "messen", 0.0
+        b.messung = Ergebnis(True, "ok")
+        return b
+
+    def w(t, deg):
+        x = _world_at(t, (0.0, 0.0, math.radians(deg)))
+        x.anker = True
+        return x
+    b = neu()
+    c = b.step(w(1.0, -9.5))
+    assert b.phase == "ende" and not b.done and c.w > 0                    # früher: 9,5° < 10° -> fertig
+    c = b.step(w(1.5, -4.0))
+    assert not b.done and c.w > 0
+    b.step(w(2.0, -1.0))
+    assert b.done
+    b = neu()
+    b.step(w(1.0, -9.5))
+    b.step(w(1.5, 3.0))                                                   # übers Ziel hinaus: nicht zurückdrehen
+    assert b.done
+    b = neu()
+    b.step(w(1.0, -9.5))
+    b.step(w(1.0 + cfg.startbild.end_s + 0.1, -6.0))                      # dreht nicht: nach end_s fertig
+    assert b.done
 
 
 def test_home_startbild_rejected_and_stuck():
