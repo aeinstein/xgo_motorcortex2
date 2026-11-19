@@ -5,8 +5,7 @@
 | Quantity | Source |
 |---|---|
 | Distance | wheel encoders (`/proc/XGORider/wheels_log`) if fresh (`odom.max_age_s` 0.3 s), else command × `robot.vx_limit` × dt |
-| Heading (local map, safety, explore) | `odom.yaw_source`: `räder` (wheels, fallback camera) or `kamera`; camera heading is biased during forward drive |
-| Heading (room map) | `grid.yaw_source`: `räder` (wheels, fallback camera), `kamera` or, RiderPi, `imu` (firmware heading from `imu_log`, fallback wheels) |
+| Heading (behaviors, local map, room map) | one dead-reckoning step (`xgonav/odomfusion.py`, since 2026-11-19): IMU heading at frame time, else wheels, else ego-motion; wheels checked against IMU (`[odom] contra_*`), contradiction = slip unless the camera, when its possible error is small against the contradiction, sides with the wheels (then wheels for `imu_doubt_s`, window made up); camera heading is biased during forward drive, never a witness there. Status `odom` (`kurs`, `strecke`, `abw_deg`, `schlupf`, `widersprueche`, `imu_zweifel`, `vorschlag`) |
 
 Encoders: 1024 ticks/rev, 60 mm wheel, track 90 mm, left = 11, right = 21, both positive forward.
 int32 overflow and ESP32 restarts handled (`max_jump_ticks` 2048). Firmware R-1.1.3 has no encoders → command fallback.
@@ -18,7 +17,7 @@ Status JSON: `odom.src` = `räder` | `befehl`, `odom.m` = total distance.
 |---|---|
 | Frame | robot (x forward, y left, m), origin = wheel axle; floor points shifted forward by `camera.cam_fwd_mm` |
 | Input | floor-boundary points from the free-space estimator |
-| Motion | distance from wheel odometry; heading per `map.yaw_source`: wheels (else ego-motion) or, RiderPi, the firmware heading from `imu_log` (same source as the room map) |
+| Motion | distance from wheel odometry; heading from the dead-reckoning step (same as the room map); during slip the distance comes from the wheel matching the IMU turn |
 | Lifetime | `map.max_age_s` = 4 s |
 | Range | 2.5 m |
 | Confirmation | point blocks only with ≥ `map.confirm` observations within `confirm_radius_m` (RiderPi: 3 within 0.08 m) |
@@ -40,7 +39,7 @@ Status JSON: `odom.src` = `räder` | `befehl`, `odom.m` = total distance.
 | Confirmation | off since 2026-11-14 (`confirm_dr_m` 0: with FloorNet one sighting is enough; not driven). Before: `confirm_dr_m` (RiderPi 0.2 m, ± `confirm_cells` 2): occupied only after hits on the same spot from two ranges ≥ 0.2 m apart. RiderPi 2026-11-08: the window sill mirrored in the tiles was entered at 0.56 m from the start and 0.82 m from 0.72 m further on (d = D·h_cam/(h_edge + h_cam)), i.e. a second wall. Simulator explore 120 s: walls 82 % → 73 %, precision 0.90 → 0.93, 0 collisions. Tried and dropped the same day: hits only up to 0.7 m (walls 25 %, explore ended early) and a half-resolution edge band (the 4 cm test compares a mean over the segment, so resolution hardly matters; tape at 0.98 m unchanged) |
 | Braking | points the path check brakes for count as confirmed and occupied at once (`grid.mark_blocking`). RiderPi 2026-11-11: the Rider braked for obstacles the map never showed (1382 unconfirmed cells, 1192 occupied) |
 | Pitch, pose | pitch of the captured image (`FreeSpace.pitch_dev`); pose (`.pose`) as of the last control step before that image was processed, not of the later frame the result arrives in. Not interpolated to the capture time: while turning the pose is older than the image by an unmeasured amount (40 °/s × 50 ms = 2°) |
-| Filter | only while balancing, below `max_turn_dps` 40 °/s (the pause after a fast turn, `turn_settle_s`, was removed 2026-11-17; offline still `tools/map_replay.py` variant `ruhe=S`); the rate is the wheel heading (`odom.yaw_source`) at the control step in which the result arrives, not at capture |
+| Filter | only while balancing, below `max_turn_dps` 40 °/s (the pause after a fast turn, `turn_settle_s`, was removed 2026-11-17; offline still `tools/map_replay.py` variant `ruhe=S`); the rate is the dead-reckoning heading at the control step in which the result arrives, not at capture |
 | Driven path | `driven_free_r_m` 0.10 m around the path counts as free |
 | Unknown | columns without measurable floor (`known_from`; FloorNet reports none) stay unknown |
 | Thread | `GridWorker` (cores = `cpu.freespace_cpus`), the pose handed to the floor model is passed along |

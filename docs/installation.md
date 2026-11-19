@@ -65,10 +65,11 @@ Update order from a state before 2026-11-17: xgonav first, then the driver. The 
 
 | Item | Value |
 |---|---|
-| apt packages | `python3-opencv python3-numpy python3-picamera2 python3-venv`; for the C++ core `g++ make pkg-config libopencv-dev` |
+| apt packages | `python3-opencv python3-numpy python3-picamera2 python3-venv`; for the C++ core `g++ make pkg-config libopencv-dev libcamera-dev` |
 | venv | `/opt/xgonav/venv`, `--system-site-packages`, `onnxruntime>=1.16`, `ncnn` |
 | Copied | `xgonav/`, `tools/`, `web/` → `/opt/xgonav/`; `models/*.onnx`, `models/*_ncnn/` (no overwrite) |
 | C++ core | `make -C /opt/xgonav/xgonav/native` → `libxgofast.so` (failure → Python ego-motion, warning) |
+| Camera library | `make -C /opt/xgonav/xgonav/native cam` → `libxgocam.so` (libcamera directly; failure → picamera2). No stable libcamera ABI: rebuild after `apt upgrade` |
 | Config | `deploy/config.example.toml` → `/opt/xgonav/config.toml` only if missing |
 | Emotions | `tools/eyes.py /opt/xgonav/emotions` |
 | Sounds | `tools/sounds.py /opt/xgonav/sounds` |

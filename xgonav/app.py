@@ -26,7 +26,8 @@ from .gridmap import GridMap, GridWorker
 from .planner import PlannerWorker
 from .geometry import CamGeometry
 from .wheels import WheelOdom, make_wheels
-from .imu import ImuFrame, ImuSource, ImuSync, imu_frame, make_imu
+from .odomfusion import OdomFusion
+from .imu import ImuFrame, ImuSource, ImuSync, imu_frame, make_imu, max_age as imu_max_age
 from .localmap import LocalMap, mask_movable
 from .route import arc_hits_zone, check as route_check, load as route_load, save as route_save
 from .robot import FW_ACTIONS, Robot, SpeedCtrl, action_cmds
@@ -108,13 +109,10 @@ class App:
         self.cfg = cfg
         self.imu = imu if imu is not None else make_imu(cfg.imu)
         self.wheels = wheels if wheels is not None else make_wheels(cfg.odom)
-        self._wheel_at_ctrl = None         # Radprobe beim letzten Regelschritt
+        # Koppelnavigation: ein Kurs und eine Strecke je Regelschritt für Verhalten, Merkkarte und Raumkarte
+        self.odomf = OdomFusion(cfg.odom)
         self.odom_src = "befehl"
-        self._wheel_dyaw: float | None = None   # Drehung laut Rädern im letzten Regelschritt
-        self._grid_yaw: tuple[str, float] | None = None   # (Quelle, letzter IMU-Kurs rad) für die Raumkarte
-        self.grid_yaw_src = "odom"
-        self._lmap_yaw: float | None = None     # letzter Kurs aus imu_log (rad) für die Merkkarte
-        self.lmap_yaw_src = "odom"
+        self._vis_gap = False              # seit dem letzten Regelschritt ein Bild ohne Ego-Motion
         self.odom_m = 0.0                  # gefahrene Strecke laut Odometrie (Betrag, seit Start)
         self.speed_ctrl = SpeedCtrl(cfg.robot)
         self._speed_stat: dict | None = None   # None = Regelung aus
@@ -196,7 +194,7 @@ class App:
         self.snap_cond = threading.Condition()
         self.running = False
         self.vis_yaw = 0.0               # Kurs nur aus dem Bild (rad, links +)
-        self.yaw = 0.0                   # Kurs für Verhalten und Merkkarte (Räder, sonst Bild)
+        self.yaw = 0.0                   # Kurs der Koppelnavigation (IMU, sonst Räder, sonst Bild)
         self.yaw_src = "kamera"
         self._free: FreeSpace | None = None
         self._fs_hold_until = 0.0
@@ -881,6 +879,8 @@ class App:
         ego = self.ego.update(f.idx, f.t, f.bgr, excl)
         if ego.ok:
             self.vis_yaw += ego.yaw_rate * ego.dt
+        else:
+            self._vis_gap = True
         pitch_dev = self._pitch_dev(f, ego)
         self.last_pitch_dev = pitch_dev
         self.tracker.predict(ego.A, ego.dt)
@@ -937,18 +937,17 @@ class App:
             self._last_ctrl = now
             # Freiraum nur aus dem Bodenmodell: Erkennungen (YOLO) sind kein Hindernis (Nutzer 2026-11-13)
             free = self._free
-            # Eigenbewegung seit dem letzten Regelschritt. Kurs aus den Rädern, wenn vorhanden:
-            # Der Bild-Kurs verfälscht bei Vorwärtsfahrt (Tiefenunterschiede landen im
-            # Drehmodell, gemessen 2026-11-04: −8,9° bzw. +3° auf 2 m geradeaus).
-            ds = self._odom_ds(now, dt)
-            self._speed_tick(now)
-            self._pose_watch(now)
+            # Eigenbewegung seit dem letzten Regelschritt aus der Koppelnavigation (odomfusion.py): IMU-Kurs und
+            # Radwege zur Bildzeit, gegeneinander geprüft, das Bild als Zeuge im Stand. Ein Ergebnis für alle.
             dyaw_vis = self.vis_yaw - self._yaw_at_ctrl
             self._yaw_at_ctrl = self.vis_yaw
-            use_wheels = self.cfg.odom.yaw_source == "räder" and self._wheel_dyaw is not None
-            dyaw = self._wheel_dyaw if use_wheels else dyaw_vis
-            self.yaw += dyaw
-            self.yaw_src = "räder" if use_wheels else "kamera"
+            fr = self._imu_frame
+            st = self._odom_step(fr.t_imu if fr is not None else f.t, fr.yaw if fr is not None else None,
+                                 None if self._vis_gap else dyaw_vis, dt)
+            self._vis_gap = False
+            ds, dyaw = st.ds, st.dyaw
+            self._speed_tick(now)
+            self._pose_watch(now)
             w = World(t=f.t, dt=dt, W=self.cfg.camera.width, H=self.cfg.camera.height, hfov=self.hfov,
                       ego=ego, tracks=tracks, free=free, balancing=self.robot.state.balancing,
                       yaw=self.yaw, cmd_v=self.robot.command[0],
@@ -957,12 +956,9 @@ class App:
             if self.behavior.name == "pet":
                 self._pet_world(w, ds, now)
             if self.lmap is not None:
-                self.lmap.move(ds, self._lmap_dyaw(dyaw, now))
+                self.lmap.move(ds, dyaw)
                 if self.gridmap is not None:
-                    # Kartenkurs: Räder driften bei Drehungen weniger als die Ego-Motion
-                    gyaw = self._wheel_dyaw if (self.cfg.grid.yaw_source != "kamera"
-                                                and self._wheel_dyaw is not None) else dyaw_vis
-                    self.gridmap.move(ds, self._grid_dyaw(gyaw, now))
+                    self.gridmap.move(ds, dyaw)
                 if free is not None and self._free is not self._fs_in_map:
                     self._fs_in_map = self._free
                     # Nick und Pose der Aufnahme, nicht des Bildes, in dem das Ergebnis ankam
@@ -1061,11 +1057,12 @@ class App:
                                        **self.reloc_track.info(),
                                        "ms_max": round(self.grid_worker.track_ms, 1) if self.grid_worker else None}},
                                "odom": {"src": self.odom_src, "m": round(self.odom_m, 2),
-                                        "hz": round(self.wheels.rate_hz, 1) if self.wheels else None},
+                                        "hz": round(self.wheels.rate_hz, 1) if self.wheels else None,
+                                        **self.odomf.info(),
+                                        "imu_spruenge": self.imu.yaw_jumps if self.imu is not None else None},
                                "speed_ctrl": self._speed_stat,
                                "mode": self.behavior.name, "yaw_vis_deg": round(math.degrees(self.vis_yaw), 1),
-                               "yaw_deg": round(math.degrees(self.yaw), 1), "yaw_src": self.yaw_src, "lmap_yaw_src": self.lmap_yaw_src,
-                               "grid_yaw_src": self.grid_yaw_src,
+                               "yaw_deg": round(math.degrees(self.yaw), 1), "yaw_src": self.yaw_src,
                                "yaw_imu": self.kurs_deg(), "battery": self.robot.state.battery,
                                "balancing": self.robot.state.balancing,
                                "height_mm": round(self.geo.body_height_mm, 1),
@@ -1084,48 +1081,41 @@ class App:
     def _paused_odom(self) -> None:
         """Pose auch bei gestoppter Bildverarbeitung mitführen (Handsteuerung, Balancier-Drift).
         Sonst stand die Raumkarte still, während der Rider per Hand fuhr, und „Zum Start“
-        zielte danach daneben. Nur mit frischen Raddaten: ohne Kamera gibt es sonst keinen Kurs."""
+        zielte danach daneben. Koppelnavigation wie im Regelschritt, nur ohne Bild und ohne Fahrbefehl-Strecke."""
         now = time.monotonic()
-        w = self.wheels
-        if w is None or self.cfg.odom.source == "command" or not w.fresh(now):
-            self._wheel_at_ctrl = None
+        y = None
+        if self.imu is not None:
+            a = self.imu.at(now)
+            if a is not None and a[2] is not None and now - a[3] <= imu_max_age(self.cfg.imu, self.imu):
+                y = a[2]
+        st = self._odom_step(now, y, None, 0.0)
+        if st.ds == 0.0 and st.dyaw == 0.0:
             return
-        ds = self._odom_ds(now, 0.0)
-        dyaw = self._wheel_dyaw or 0.0
-        self.yaw += dyaw
         if self.lmap is not None:
-            self.lmap.move(ds, self._lmap_dyaw(dyaw, now))
+            self.lmap.move(st.ds, st.dyaw)
         if self.gridmap is not None:
-            self.gridmap.move(ds, self._grid_dyaw(dyaw, now))
+            self.gridmap.move(st.ds, st.dyaw)
 
-    def _lmap_dyaw(self, fallback: float, now: float) -> float:
-        """Drehung der Merkkarte seit dem letzten Aufruf (rad, links +): Kurs aus imu_log bei [map] yaw_source
-        "imu", sonst (oder bei fehlender/alter IMU) fallback = Räder bzw. Kamera."""
-        fr = self._imu_frame
-        p = (fr.t_imu, fr.yaw) if self.cfg.map.yaw_source == "imu" and fr is not None and fr.yaw is not None else None
-        if p is None:
-            self._lmap_yaw, self.lmap_yaw_src = None, "odom"
-            return fallback
-        last, self._lmap_yaw = self._lmap_yaw, p[1]
-        self.lmap_yaw_src = "imu"
-        return fallback if last is None else p[1] - last
+    def _odom_step(self, t: float, yaw_imu: float | None, dyaw_vis: float | None, dt: float):
+        """Ein Schritt der Koppelnavigation (odomfusion.py) zur Zeit t (IMU-Zeit des Bildes): Radwege zu t, IMU-Kurs
+        zu t, Bild-Kurs seit dem letzten Schritt; Rückfall für die Strecke ist der Fahrbefehl x vx_limit x dt.
+        Führt self.yaw, yaw_src, odom_src und odom_m mit."""
+        w = self.wheels
+        ws = w.at(t) if w is not None and self.cfg.odom.source != "command" else None
+        ds_cmd = self.robot.command[0] * self.cfg.robot.vx_limit * dt
+        jumps = self.imu.yaw_jumps if self.imu is not None else 0
+        st = self.odomf.step(t, yaw_imu, jumps, ws, dyaw_vis, ds_cmd, self.robot.state.balancing)
+        self.yaw += st.dyaw
+        self.yaw_src = st.kurs_src
+        self.odom_src = "befehl" if st.ds_src == "befehl" else "räder"
+        self.odom_m += abs(st.ds)
+        return st
 
     def kurs_deg(self) -> float | None:
         """Kurs für die Anzeige (Grad, links +): neueste Probe des IMU-Stroms, alle Drehungen aufsummiert, nicht
         auf ±180° gewickelt; dieselbe Quelle wie Karte und Merkkarte. None ohne IMU."""
         y = self.imu.latest_yaw() if self.imu is not None else None
         return None if y is None else round(math.degrees(y), 1)
-
-    def _grid_dyaw(self, fallback: float, now: float) -> float:
-        """Drehung der Kartenpose seit dem letzten Aufruf (rad, links +) bei [grid] yaw_source "imu": Kurs aus
-        imu_log zur Bildzeit; ist der zu alt oder fehlt, und beim ersten Wert fallback (Räder bzw. Kamera)."""
-        fr = self._imu_frame
-        if self.cfg.grid.yaw_source != "imu" or fr is None or fr.yaw is None:
-            self._grid_yaw, self.grid_yaw_src = None, "odom"
-            return fallback
-        last, self._grid_yaw = self._grid_yaw, fr.yaw  # Kurs zur Bildzeit (imu_frame), gültig wie der Nick
-        self.grid_yaw_src = "imu"
-        return fallback if last is None else fr.yaw - last
 
     def _speed_tick(self, now: float) -> None:
         """Geschwindigkeitsregelung (robot.speed_ctrl): Ist aus den Rädern gegen das Soll, Korrektur an den
@@ -1142,23 +1132,6 @@ class App:
         # fürs Web und die Rohaufnahme; hier statt je Bild gebaut
         self._speed_stat = {"trim": round(sc.trim, 3), "soll": round(sc.v_soll, 3),
                             "ist": None if ist is None else round(ist, 3)}
-
-    def _odom_ds(self, now: float, dt: float) -> float:
-        """Strecke seit dem letzten Regelschritt (m): aus den Rad-Encodern, wenn frisch;
-        sonst wie früher Fahrbefehl x vx_limit (unkalibriert). Setzt nebenbei _wheel_dyaw."""
-        w = self.wheels
-        if w is not None and self.cfg.odom.source != "command" and w.fresh(now):
-            cur = w.latest()
-            prev, self._wheel_at_ctrl = self._wheel_at_ctrl, cur
-            self.odom_src = "räder"
-            ds, self._wheel_dyaw = w.motion(prev, cur) if prev is not None else (0.0, 0.0)
-        else:
-            self._wheel_at_ctrl = None
-            self._wheel_dyaw = None
-            self.odom_src = "befehl"
-            ds = self.robot.command[0] * self.cfg.robot.vx_limit * dt
-        self.odom_m += abs(ds)
-        return ds
 
     def loop_breakdown(self) -> dict:
         """Wo die Schleifenzeit hingeht (letzte ~250 Bilder): je Abschnitt Mittel und p95 der

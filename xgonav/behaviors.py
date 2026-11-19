@@ -34,7 +34,7 @@ class World:
     tracks: list[Track]               # bestätigte Tracks
     free: FreeSpace | None
     balancing: bool
-    yaw: float                        # Kurs (rad, links +): Räder, sonst Bild ([odom] yaw_source)
+    yaw: float                        # Kurs (rad, links +): Koppelnavigation (IMU, sonst Räder, sonst Bild)
     cmd_v: float                      # aktuell gefahrener Befehl (nach Rampe)
     geo: CamGeometry | None = None
     pitch_dev: float = 0.0            # hochfrequentes Nicken in rad (aus Ego-Motion)

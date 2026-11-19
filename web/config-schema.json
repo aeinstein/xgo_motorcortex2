@@ -323,6 +323,12 @@
        "hilfe": "Entzerren im C++-Kern (native/linsefast.cpp, ein Kern, bitgleich zu cv2.remap; nur aktiv nach Selbstprüfung beim Start). False oder Kern fehlt: cv2.remap (CM4: 6,4 ms je Bild auf vier Kernen)."
       },
       {
+       "key": "capture_native",
+       "typ": "bool",
+       "default": true,
+       "hilfe": "Aufnahme direkt über libcamera (native/camfast.cpp, libxgocam.so): das Bild wird aus dem DMA-Puffer heraus entzerrt, die Pixel laufen nicht durch Python (eine Kopie von 0,9 MB je Bild entfällt, kein picamera2-Faden). Nur mit lens_native bzw. ohne Linsenmodell; entzerrt nur nach derselben Selbstprüfung gegen cv2.remap. False, Bibliothek fehlt oder Kamera lässt sich so nicht öffnen: picamera2."
+      },
+      {
        "key": "mount_offset_mm",
        "typ": "float",
        "default": 43.0,
@@ -430,6 +436,12 @@
        "hilfe": ""
       },
       {
+       "key": "yaw_jump_dps",
+       "typ": "float",
+       "default": 500.0,
+       "hilfe": "Schneller dreht der Rider nie (°/s): Ein größerer Kurssprung zwischen zwei Proben ist kein Drehen, sondern ein ESP-Neustart (Kurs beginnt bei 0) oder ein Lesefehler; er wird nicht in den Kurs übernommen (ImuSource.yaw_jumps)."
+      },
+      {
        "key": "use_roll",
        "typ": "bool",
        "default": true,
@@ -481,7 +493,7 @@
        "key": "enabled",
        "typ": "bool",
        "default": true,
-       "hilfe": "Rad-Odometrie aus /proc/XGORider/wheels_log (Firmware R-1.1.6+Patch, Treiber mit 0x0d/0x0c). source: \"auto\" = Räder, wenn vorhanden und frisch, sonst Fahrbefehl x vx_limit; \"command\" = immer Fahrbefehl (wie früher)."
+       "hilfe": "Rad-Odometrie aus /proc/XGORider/wheels_log: die Radhälfte des IMU-Stroms (Firmware 0014), ohne Strom aus 0x0d. source: \"auto\" = Räder, wenn vorhanden und frisch, sonst Fahrbefehl x vx_limit; \"command\" = immer Fahrbefehl (wie früher)."
       },
       {
        "key": "source",
@@ -550,10 +562,52 @@
        "hilfe": "größerer Sprung zwischen zwei Proben = Neustart/Fehler"
       },
       {
-       "key": "yaw_source",
-       "typ": "str",
-       "default": "räder",
-       "hilfe": "Kurs für Verhalten (explore) und Merkkarte: \"räder\" (wenn frisch, sonst Kamera) oder \"kamera\". Der Bild-Kurs verfälscht bei Vorwärtsfahrt (2026-11-04: −8,9° auf 2 m geradeaus)."
+       "key": "contra_window_s",
+       "typ": "float",
+       "default": 1.0,
+       "hilfe": "Koppelnavigation (odomfusion.py): ein Kurs und eine Strecke für Verhalten, Merkkarte und Raumkarte. Kurs aus der IMU (RiderPi 2026-11-06, 32 m: IMU ~6 cm, Räder 75 cm Fehler durch Schlupf beim Drehen), sonst aus den Rädern, sonst aus dem Bild. Strecke aus den Rädern, sonst Fahrbefehl x vx_limit. Widerspruch: Weicht der Radkurs über contra_window_s um mehr als contra_deg + contra_frac x Drehung vom IMU-Kurs ab, ist das Schlupf (Strecke dann aus dem Rad, das zur IMU-Drehung passt und weniger zurücklegt) – außer das Bild gibt klar den Rädern recht: Dann gilt die IMU imu_doubt_s lang als zweifelhaft, der Kurs kommt aus den Rädern und das Fenster wird nachgeholt. Das Bild zählt nur, wenn sein möglicher Fehler cam_err_deg + cam_err_deg_m je gefahrenem Meter (2026-11-04: −8,9° auf 2 m geradeaus) unter einem Viertel des Widerspruchs liegt. 67 Rohfahrten 2026-11-10..19 (tools/odom_replay.py): Räder minus IMU je 1 s p95 ~2°, p99 ~3,5°."
+      },
+      {
+       "key": "contra_deg",
+       "typ": "float",
+       "default": 4.0,
+       "hilfe": ""
+      },
+      {
+       "key": "contra_frac",
+       "typ": "float",
+       "default": 0.1,
+       "hilfe": ""
+      },
+      {
+       "key": "cam_err_deg",
+       "typ": "float",
+       "default": 1.0,
+       "hilfe": ""
+      },
+      {
+       "key": "cam_err_deg_m",
+       "typ": "float",
+       "default": 5.0,
+       "hilfe": ""
+      },
+      {
+       "key": "imu_doubt_s",
+       "typ": "float",
+       "default": 5.0,
+       "hilfe": ""
+      },
+      {
+       "key": "calib_seg_s",
+       "typ": "float",
+       "default": 2.0,
+       "hilfe": "Vorschlag für scale_left/scale_right/track_m aus Rädern gegen IMU-Kurs (nur messen und anzeigen, /status odom.vorschlag): Abschnitte von calib_seg_s ohne Schlupf, die letzten calib_n davon. Die Gesamtskala bleibt beim Mittel der eingestellten Faktoren (sie kennt nur ein Maßband). 0 = aus."
+      },
+      {
+       "key": "calib_n",
+       "typ": "int",
+       "default": 300,
+       "hilfe": ""
       }
      ]
     },
@@ -978,12 +1032,6 @@
        "hilfe": "Derselbe Radius, solange der Wegfolger eine Engstelle fährt ([home] tight_m). Der Rider ist laut CAD 11,5 cm breit (halbe Breite 5,8 cm); 0,08 lässt ihn mittig durch eine 25 cm breite Lücke (Punkte bei ±12,5 cm) mit 4,5 cm Spiel für Kurs und Rauschen."
       },
       {
-       "key": "yaw_source",
-       "typ": "str",
-       "default": "imu",
-       "hilfe": "Drehung der Merkkarte: \"odom\" = wie [odom] yaw_source (Räder, sonst Kamera); \"imu\" = Firmware-Kurs aus imu_log (~50 Hz), bei fehlender/alter IMU wie \"odom\". RiderPi 2026-11-08, volle Drehungen gegen Bilder: IMU 0,997, Räder 0,992 des wahren Winkels; je Drehung weichen beide zufällig ~2° (p90 ~8°) voneinander ab."
-      },
-      {
        "key": "native",
        "typ": "bool",
        "default": true,
@@ -1126,12 +1174,6 @@
        "typ": "float",
        "default": 6.0,
        "hilfe": "Bildausschnitt für die Anzeige"
-      },
-      {
-       "key": "yaw_source",
-       "typ": "str",
-       "default": "imu",
-       "hilfe": "Drehung der Kartenpose: \"räder\" (Rad-Odometrie, sonst Kamera), \"kamera\" (Ego-Motion) oder \"imu\" (Firmware-Kurs aus imu_log, ist der zu alt die 5-Hz-Treppe aus /proc yaw, sonst wie \"räder\"). RiderPi 2026-11-06, 32 m: mit Rädern 75 cm Fehler (Schlupf beim Drehen), mit IMU ~6 cm."
       },
       {
        "key": "threaded",

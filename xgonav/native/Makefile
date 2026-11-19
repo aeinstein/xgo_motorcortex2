@@ -14,7 +14,15 @@ libxgofast.so: egofast.cpp gridfast.cpp navfast.cpp ortfast.cpp linsefast.cpp fl
 floornet.o: floornet.cpp floornet_kern.h
 	$(CXX) $(CXXFLAGS) -O3 -c -o $@ floornet.cpp
 
-clean:
-	rm -f libxgofast.so floornet.o
+# Kamera direkt über libcamera (statt picamera2), eigene Bibliothek: make -C xgonav/native cam
+# C++20 (libcamera ab 0.8 nimmt std::span). Braucht libcamera-dev passend zur installierten libcamera (keine stabile ABI: nach apt upgrade neu bauen).
+# Fehlt sie, nimmt camera.py picamera2.
+cam: libxgocam.so
 
-.PHONY: clean
+libxgocam.so: camfast.cpp linsefast.cpp
+	$(CXX) $(CXXFLAGS) -std=c++20 $(shell pkg-config --cflags libcamera) -shared -o $@ $^ $(shell pkg-config --libs libcamera)
+
+clean:
+	rm -f libxgofast.so libxgocam.so floornet.o
+
+.PHONY: clean cam

@@ -8,6 +8,8 @@ USER_NAME=${SUDO_USER:-pi}
 apt-get install -y python3-opencv python3-numpy python3-picamera2 python3-venv
 # Bau des C++-Kerns (xgonav/native): gleiche OpenCV-Version wie python3-opencv
 apt-get install -y g++ make pkg-config libopencv-dev
+# Kamera direkt über libcamera (xgonav/native cam); fehlt es, nimmt xgonav picamera2
+apt-get install -y libcamera-dev || echo "Hinweis: libcamera-dev fehlt – Kamera über picamera2"
 
 # venv mit Systempaketen (picamera2/libcamera kommen nur aus apt)
 python3 -m venv --system-site-packages "$DEST/venv"
@@ -33,6 +35,8 @@ cp -r models/wechat_qr "$DEST/models/" 2>/dev/null || true   # WeChat-QR für di
 for d in models/*_ncnn; do [ -d "$d" ] && [ ! -e "$DEST/$d" ] && cp -r "$d" "$DEST/models/"; done
 # C++-Kern der Ego-Motion bauen; scheitert das, rechnet xgonav in Python (langsamer)
 make -C "$DEST/xgonav/native" || echo "Hinweis: C++-Kern nicht gebaut – Ego-Motion läuft in Python"
+# Kamera direkt über libcamera; nach jedem apt upgrade von libcamera neu bauen (keine stabile ABI)
+make -C "$DEST/xgonav/native" cam || echo "Hinweis: libxgocam.so nicht gebaut – Kamera über picamera2"
 # Emotionen einmalig als RGB565 erzeugen (am Rider läuft davon nichts je Bild).
 echo "Erzeuge Emotionen (einmalig) ..."
 "$DEST/venv/bin/python" tools/eyes.py "$DEST/emotions" || echo "Hinweis: Emotionen nicht erzeugt"

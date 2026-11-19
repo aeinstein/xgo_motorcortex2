@@ -1,7 +1,8 @@
 """Rad-Odometrie aus den Encodern der ESP32-Firmware (/proc/XGORider/wheels_log).
 
-Der Treiber liest die Rad-Ticks (R-1.1.6+Patch, Register 0x0d bzw. 0x0c) mit ~50 Hz und
-stempelt sie mit CLOCK_MONOTONIC: "seq t_ns ticks11 ticks21 fw_ms", 1024 Ticks je
+Kein eigener Datenweg: Der Treiber teilt jedes Paket des IMU-Stroms (Firmware 0014, stream_hz) in Lage
+(imu_log, imu.py) und Rad-Ticks (wheels_log, hier) mit derselben Messzeit auf; ohne Strom kommen beide aus
+der Abfrage von 0x0d. Format "seq t_ns ticks11 ticks21 fw_ms" (CLOCK_MONOTONIC), 1024 Ticks je
 Umdrehung, beide Räder vorwärts positiv, 11 = links, 21 = rechts.
 
 Daraus: Strecke je Rad in Metern (fortlaufend, int32-Überlauf und ESP32-Neustarts
@@ -127,6 +128,25 @@ class WheelOdom:
                     break
                 out.append(p)
             return out[::-1]
+
+    def at(self, t: float) -> tuple[float, float] | None:
+        """(s_links, s_rechts in m) zur Zeit t, linear zwischen den Proben; nach der neuesten Probe deren Wert,
+        solange die höchstens max_age_s alt ist. None ohne Proben, vor der ältesten oder zu alt. Damit sehen
+        Räder und IMU-Kurs dieselbe Zeitspanne (Koppelnavigation). Sucht von hinten, meist 1–3 Schritte."""
+        with self._lock:
+            h = self._hist
+            if not h or t < h[0][0]:
+                return None
+            b = h[-1]
+            if t >= b[0]:
+                return (b[1], b[2]) if t - b[0] <= self.cfg.max_age_s else None
+            for i in range(len(h) - 2, -1, -1):
+                a = h[i]
+                if a[0] <= t:
+                    f = (t - a[0]) / (b[0] - a[0]) if b[0] > a[0] else 1.0
+                    return a[1] + f * (b[1] - a[1]), a[2] + f * (b[2] - a[2])
+                b = a
+        return None
 
     def fresh(self, now: float) -> bool:
         p = self.latest()

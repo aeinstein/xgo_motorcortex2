@@ -31,14 +31,14 @@ camera.FrameSource ─► egomotion.EgoMotion ─► tracker.Tracker ◄── d
 
 | Module | Role |
 |---|---|
-| `camera.py` | `PiCameraSource` (picamera2), `OpenCVSource` (index/file) |
+| `camera.py` | `PiCameraSource`: libcamera directly via `native/camfast.cpp` (`libxgocam.so`, undistorts straight from the DMA buffer, pixels never pass through Python), fallback picamera2; `OpenCVSource` (index/file) |
 | `egomotion.py` | LK optical flow + RANSAC → rotation model, sharpness, time-to-contact; C++ core `native/egofast.cpp` (ctypes, optional) |
 | `imu.py` | `ProcImu`, `ImuSync`: sign/time offset by correlation, only when not fixed in `[imu]` (default: fixed, simulator: auto); `imu_frame`: pitch, roll, heading at frame time + offset, used by geometry, floor model, maps, tilt, overlay and web (`Snapshot.imu`); image pitch only as comparison (`Snapshot.nickrate`) |
 | `detector.py` | `DetectorWorker`: YOLO via NCNN (`YoloNcnn`) or onnxruntime (`YoloOnnx`), fallback model; disabled if none is usable |
 | `tracker.py` | Tracks, ego-motion compensation, latency compensation, Kalman distance/velocity |
 | `geometry.py` | Camera geometry, ground-plane distance |
 | `freespace.py` | FloorNet boundary rows → free fraction per column and sectors, rolled by the camera roll; `FreeSpaceWorker` runs the network in its own thread. No fallback: without the network the Rider is blind (`safety()` stops) |
-| `fastlib.py` | loads optional C++ core `native/libxgofast.so` (ctypes), ABI check per function group |
+| `fastlib.py` | loads optional C++ core `native/libxgofast.so` and camera library `native/libxgocam.so` (ctypes), ABI check per function group |
 | `navfast.py` | ctypes binding of `native/navfast.cpp`: A* + path shortening, wavefront, frontier group scoring, local map (move, enter, confirm, arc check), wall distance, path-follower target; used by `planner.py`, `frontier.py`, `localmap.py`, `gridmap.py`, `behaviors.py`, each keeps an equivalent Python path |
 | `floornet.py` | self-trained floor network in the C++ core (`native/floornet.cpp`), the only source of the floor boundary; `ZeilenGlaetter` smooths it over time ([floornet.md](floornet.md)). Simulator: `sim.SimFloorNet` (ground truth) |
 | `localmap.py` | Short-term obstacle memory in robot frame (`map.max_age_s` = 4 s); move, enter, confirm and arc check optionally in C++ (`native/navfast.cpp`) |

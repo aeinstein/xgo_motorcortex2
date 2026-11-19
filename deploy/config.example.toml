@@ -68,7 +68,6 @@ threaded = true          # Netz in eigenem Thread
 
 [grid]
 file = "/opt/xgonav/raumkarte.npz"   # Raumkarte speichern/laden; beim Laden muss der Rider am Startpunkt stehen
-yaw_source = "imu"       # 2026-11-06: Räder rutschen beim Drehen (75 cm nach 32 m), IMU ~6 cm; Kurs aus imu_log (2026-11-08)
 # free_range_m = 1.5 ist Standard (2026-11-14): offener Boden so weit wie Treffer
 # free_range_m = 1.1     # 2026-11-06: Stufe wurde aus > 1 m als Boden gesehen und bei 1,5 m als frei eingetragen
 # max_range_m = 1.5 und confirm_dr_m = 0 sind Standard (2026-11-14): Treffer bis 1,5 m, eine Sichtung genügt (FloorNet).
@@ -76,7 +75,6 @@ yaw_source = "imu"       # 2026-11-06: Räder rutschen beim Drehen (75 cm nach 3
 
 [map]
 confirm = 3              # Kartenpunkt blockiert die Bahn erst nach 3 Beobachtungen
-yaw_source = "imu"       # Merkkarte dreht mit dem Kurs aus imu_log: volle Drehungen IMU 0,997 / Räder 0,992 des wahren Winkels (2026-11-08)
 
 [behavior]
 mode = "idle"         # idle | follow | explore | approach | home

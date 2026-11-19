@@ -1541,11 +1541,11 @@ def test_sim_camera_ahead_of_axle():
     assert np.array_equal(imgs[0], imgs[1])
 
 
-def test_imu_yaw_unwrap_and_localmap_yaw_source():
-    """imu_log-Kurs: über ±180° stetig; [map] yaw_source "imu" dreht die Merkkarte mit dem Kurs zur Bildzeit
-    (App._imu_frame, wie im Bildschritt gesetzt), alte IMU -> Räder."""
+def test_imu_yaw_unwrap_and_heading_into_maps():
+    """imu_log-Kurs: über ±180° stetig; die Koppelnavigation dreht Merkkarte, Raumkarte und Verhalten mit dem
+    IMU-Kurs zur Bildzeit, ist der zu alt, mit den Rädern bzw. dem Bild."""
     from xgonav.app import App
-    from xgonav.imu import ImuSource, imu_frame
+    from xgonav.imu import ImuSource
     cfg = Config.neutral()
     imu = ImuSource(cfg.imu)
     assert imu.at(0.0) is None
@@ -1559,24 +1559,33 @@ def test_imu_yaw_unwrap_and_localmap_yaw_source():
     assert old.at(t0)[2] is None
     cfg.output.web_port = 0
     cfg.detector.enabled = False
-    cfg.map.yaw_source = "imu"
     robot = SimRobot(cfg.robot)
     world = SimWorld(cfg.camera, robot, None)
     app = App(cfg, robot, world, imu=imu, floor_net=SimFloorNet(world))
-    def bild(t):                                                           # wie App._pitch_dev je Bild
-        app._imu_frame = imu_frame(app.imu_sync, imu, t)
-    now = t0 + 0.07
-    bild(t0 + 0.06)
-    assert app._lmap_dyaw(0.5, now) == 0.5 and app.lmap_yaw_src == "imu"   # erster Wert: noch kein Bezug
+    st = app._odom_step(t0 + 0.06, imu.at(t0 + 0.06)[2], 0.5, 0.05)
+    assert st.dyaw == 0.5 and st.kurs_src == "kamera"                      # erster Wert: noch kein Bezug
     imu.add(10, t0 + 0.08, 0.0, 0.0, math.radians(-165.0))
-    bild(t0 + 0.08)
-    assert math.degrees(app._lmap_dyaw(0.5, t0 + 0.09)) == pytest.approx(5.0)
-    bild(t0 + 5.0)
-    assert app._lmap_dyaw(0.5, t0 + 5.0) == 0.5 and app.lmap_yaw_src == "odom"   # IMU zu alt
-    cfg.map.yaw_source = "odom"
-    imu.add(11, t0 + 5.0, 0.0, 0.0, math.radians(-160.0))
-    bild(t0 + 5.0)
-    assert app._lmap_dyaw(0.25, t0 + 5.0) == 0.25
+    st = app._odom_step(t0 + 0.08, imu.at(t0 + 0.08)[2], 0.5, 0.05)
+    assert math.degrees(st.dyaw) == pytest.approx(5.0) and app.yaw_src == "imu"
+    st = app._odom_step(t0 + 5.0, None, 0.25, 0.05)                         # IMU zu alt: Bild
+    assert st.dyaw == 0.25 and app.yaw_src == "kamera"
+    assert app.yaw == pytest.approx(0.75 + math.radians(5.0))
+
+
+def test_imu_yaw_jump_discarded():
+    """ESP-Neustart: Kurs beginnt bei 0, dazu ~1 s Lücke; zu schnelle Sprünge und Änderungen über Lücken
+    gelangen nicht in den Kurs, der läuft stetig weiter."""
+    from xgonav.imu import ImuSource
+    imu = ImuSource(Config.neutral().imu)
+    for k in range(5):
+        imu.add(k + 1, 10.0 + 0.01 * k, 0.0, 0.0, math.radians(90.0 + k))    # 100 °/s: echt
+    assert imu.yaw_jumps == 0 and math.degrees(imu.latest_yaw()) == pytest.approx(94.0)
+    imu.add(6, 10.05, 0.0, 0.0, math.radians(40.0))                       # 54° in 10 ms
+    assert imu.yaw_jumps == 1 and math.degrees(imu.latest_yaw()) == pytest.approx(94.0)
+    imu.add(7, 11.2, 0.0, 0.0, math.radians(0.0))                         # nach 1,15 s Lücke ab 0
+    assert imu.yaw_jumps == 2 and math.degrees(imu.latest_yaw()) == pytest.approx(94.0)
+    imu.add(8, 11.21, 0.0, 0.0, math.radians(1.0))
+    assert math.degrees(imu.latest_yaw()) == pytest.approx(95.0)
 
 
 def test_proc_imu_reads_only_new_lines(tmp_path):
@@ -2887,32 +2896,136 @@ def test_map_explore_contact_blocks_goal_at_once():
 
 
 def test_grid_heading_from_imu():
-    """[grid] yaw_source "imu": Kurs aus imu_log zur Bildzeit, ist der alt oder fehlt, Räder; keine zweite
-    Quelle (/proc yaw). Die Anzeige (kurs_deg) summiert über ±180° weiter."""
-    from xgonav.imu import ImuSource, imu_frame
+    """Raumkarte und Verhalten drehen mit dem Kurs der Koppelnavigation: IMU zur Bildzeit, fehlt die, Räder bzw.
+    Bild. Die Anzeige (kurs_deg) summiert über ±180° weiter."""
+    from xgonav.imu import ImuSource
     app = _app(freespace=True)
     now = time.monotonic()
-    assert app._grid_dyaw(0.5, now) == 0.5                             # Default: Räder
-    app.cfg.grid.yaw_source = "imu"
-    assert app._grid_dyaw(0.5, now) == 0.5 and app.grid_yaw_src == "odom"     # noch keine IMU
     app.imu = ImuSource(app.cfg.imu)
     assert app.kurs_deg() is None
     app.imu.add(1, now - 0.01, 0.0, 0.0, math.radians(179.0))
     app.imu.add(2, now, 0.0, 0.0, math.radians(179.0))
-
-    def bild(t):                                                       # wie App._pitch_dev je Bild
-        app._imu_frame = imu_frame(app.imu_sync, app.imu, t)
-    bild(now)
-    assert app._grid_dyaw(0.5, now) == 0.5 and app.grid_yaw_src == "imu"      # erster Wert: Räder, merken
+    assert app._odom_step(now, app.imu.at(now)[2], 0.5, 0.05).kurs_src == "kamera"   # erster Wert: Bezug
     app.imu.add(3, now + 0.01, 0.0, 0.0, math.radians(-179.0))         # über die Naht: +2° (mal yaw_scale_left)
-    bild(now + 0.01)
     d = 2.0 * app.cfg.imu.yaw_scale_left
-    assert abs(app._grid_dyaw(0.5, now + 0.01) - math.radians(d)) < 1e-9
+    st = app._odom_step(now + 0.01, app.imu.at(now + 0.01)[2], 0.5, 0.05)
+    assert abs(st.dyaw - math.radians(d)) < 1e-9 and st.kurs_src == "imu"
     assert app.kurs_deg() == round(179.0 + d, 1)                       # nicht gewickelt
-    bild(now + 5.0)
-    assert app._grid_dyaw(0.5, now + 5.0) == 0.5 and app.grid_yaw_src == "odom"   # imu_log zu alt
-    app.imu, app._imu_frame = None, None                               # keine IMU: Rückfall
-    assert app._grid_dyaw(0.5, now) == 0.5 and app.grid_yaw_src == "odom" and app.kurs_deg() is None
+    app.imu = None                                                     # keine IMU: Rückfall
+    assert app._odom_step(now + 0.05, None, 0.5, 0.05).kurs_src == "kamera" and app.kurs_deg() is None
+
+
+def _fusion(**kw):
+    from xgonav.odomfusion import OdomFusion
+    cfg = Config.neutral().odom
+    for k, v in kw.items():
+        setattr(cfg, k, v)
+    return OdomFusion(cfg)
+
+
+def _fahre(f, t, yaw, sl, sr, n, dyaw_imu, dl, dr, dt=0.04, vis=None, jumps=0):
+    """n Schritte: IMU dreht dyaw_imu je Schritt, Räder dl/dr je Schritt; vis = Bild-Drehung je Schritt."""
+    out = []
+    for _ in range(n):
+        t += dt; yaw += dyaw_imu; sl += dl; sr += dr
+        out.append(f.step(t, yaw, jumps, (sl, sr), vis, 0.0))
+    return t, yaw, sl, sr, out
+
+
+def test_odomfusion_imu_heading_wheel_distance():
+    """Ohne Widerspruch: Kurs aus der IMU, Strecke als Mittel beider Räder."""
+    f = _fusion()
+    f.step(0.0, 0.0, 0, (0.0, 0.0), None, 0.0)
+    th = math.radians(0.5)
+    tr = f.cfg.track_m
+    _, _, _, _, out = _fahre(f, 0.0, 0.0, 0.0, 0.0, 25, th, 0.004 - tr / 2 * th, 0.004 + tr / 2 * th)
+    assert all(s.kurs_src == "imu" and s.ds_src == "räder" for s in out)
+    assert sum(s.ds for s in out) == pytest.approx(0.1) and sum(s.dyaw for s in out) == pytest.approx(25 * th)
+    assert f.widersprueche == 0 and not f.schlupf
+
+
+def test_odomfusion_slip_keeps_imu_and_uses_matching_wheel():
+    """Drehen auf glattem Boden: das rechte Rad dreht durch (Räder sagen 3 x so viel Drehung wie die IMU).
+    Kurs bleibt IMU, Strecke kommt aus dem Rad, das zur IMU-Drehung passt (links)."""
+    f = _fusion()
+    f.step(0.0, 0.0, 0, (0.0, 0.0), None, 0.0)
+    tr = f.cfg.track_m
+    th = math.radians(2.0)                                             # IMU: 2° je Schritt links, Mitte steht
+    dl = -tr / 2 * th                                                  # links passt dazu
+    dr = 5 * tr / 2 * th                                               # rechts dreht durch
+    _, _, _, _, out = _fahre(f, 0.0, 0.0, 0.0, 0.0, 25, th, dl, dr)
+    assert f.schlupf and f.widersprueche == 1 and f.imu_zweifel == 0
+    assert out[-1].kurs_src == "imu" and out[-1].ds_src == "schlupf"
+    assert abs(out[-1].ds) < 1e-9                                     # Mitte steht: links + Spur/2 x Drehung
+    assert sum(s.dyaw for s in out) == pytest.approx(25 * th)
+
+
+def test_odomfusion_camera_overrules_imu_when_turning_in_place():
+    """Drehen im Stand, IMU sagt nichts (Kurs hängt), Räder und Bild sagen 2° je Schritt: Die IMU ist
+    zweifelhaft, der Kurs kommt imu_doubt_s lang aus den Rädern."""
+    f = _fusion()
+    f.step(0.0, 0.0, 0, (0.0, 0.0), 0.0, 0.0)
+    tr = f.cfg.track_m
+    th = math.radians(2.0)
+    t, yaw, sl, sr, out = _fahre(f, 0.0, 0.0, 0.0, 0.0, 25, 0.0, -tr / 2 * th, tr / 2 * th, vis=th)
+    assert f.imu_zweifel == 1 and out[-1].kurs_src == "räder"
+    assert sum(s.dyaw for s in out) == pytest.approx(25 * th)         # was die IMU im Fenster verpasste, nachgeholt
+    t, *_ , out = _fahre(f, t + f.cfg.imu_doubt_s, yaw, sl, sr, 2, 0.0, 0.0, 0.0)
+    assert out[-1].kurs_src == "imu"                                   # Zweifel abgelaufen
+
+
+def test_odomfusion_camera_witness_depends_on_its_error():
+    """Bei Fahrt ist der Bild-Kurs verfälscht (~5°/m): Ein kleiner Widerspruch (10° bei 1 m/s) bleibt Schlupf, ein
+    grober (IMU schlägt beim Kippen aus, Rohfahrt 20261117-110738) wird vom Bild entschieden, das Fenster nachgeholt."""
+    tr = Config.neutral().odom.track_m
+    f = _fusion()
+    f.step(0.0, 0.0, 0, (0.0, 0.0), 0.0, 0.0)
+    th = math.radians(0.4)
+    _, _, _, _, out = _fahre(f, 0.0, 0.0, 0.0, 0.0, 25, 0.0, 0.04 - tr / 2 * th, 0.04 + tr / 2 * th, vis=th)
+    assert f.imu_zweifel == 0 and f.schlupf and out[-1].kurs_src == "imu"
+    f = _fusion()
+    f.step(0.0, 0.0, 0, (0.0, 0.0), 0.0, 0.0)
+    th = math.radians(0.4)
+    _, _, _, _, out = _fahre(f, 0.0, 0.0, 0.0, 0.0, 25, math.radians(-6.0), 0.016 - tr / 2 * th,
+                             0.016 + tr / 2 * th, vis=th)
+    assert f.imu_zweifel == 1 and out[-1].kurs_src == "räder"
+    assert sum(s.dyaw for s in out) == pytest.approx(25 * th, abs=math.radians(1.0))
+
+
+def test_odomfusion_fallbacks():
+    """IMU fehlt: Kurs Räder; Räder fehlen: Strecke aus dem Fahrbefehl; beides fehlt: Bild; IMU-Sprung: in
+    dem Schritt Räder."""
+    f = _fusion()
+    assert f.step(0.0, 0.0, 0, (0.0, 0.0), None, 0.0).ds_src == "räder"
+    s = f.step(0.04, None, 0, (0.0, 0.01), 0.3, 0.0)
+    assert s.kurs_src == "räder" and s.dyaw == pytest.approx(0.01 / f.cfg.track_m)
+    s = f.step(0.08, 0.1, 0, None, 0.3, 0.02)
+    assert s.kurs_src == "kamera" and s.ds == 0.02 and s.ds_src == "befehl"
+    f.step(0.12, 0.2, 0, (0.0, 0.0), None, 0.0)
+    s = f.step(0.16, 0.2, 1, (0.0, 0.0), None, 0.0)                    # Zähler der IMU-Sprünge ändert sich
+    assert s.kurs_src == "räder" and s.dyaw == 0.0
+    assert f.step(0.20, 0.25, 1, (0.0, 0.0), None, 0.0).kurs_src == "imu"
+
+
+def test_odomfusion_calibration_suggestion():
+    """Vorschlag für Radfaktoren und Spur aus Abschnitten gegen den IMU-Kurs: falsche Spur (9,5 statt 9 cm)
+    und rechts 2 % zu kleines Rad werden wiedergefunden."""
+    f = _fusion(scale_left=1.0, scale_right=1.0, calib_seg_s=1.0)
+    tr_echt, kr_echt = 0.095, 1.02
+    t, yaw, sl, sr = 0.0, 0.0, 0.0, 0.0
+    f.step(t, yaw, 0, (sl, sr), None, 0.0)
+    for k in range(80):                                                # abwechselnd fahren und drehen, 2 s je Stück
+        v, w = (0.1, 0.0) if k % 2 == 0 else (0.0, (1.0 if k % 4 == 1 else -1.0))
+        for _ in range(50):
+            t += 0.04
+            yaw += w * 0.04
+            l_echt, r_echt = (v - w * tr_echt / 2) * 0.04, (v + w * tr_echt / 2) * 0.04
+            sl += l_echt; sr += r_echt / kr_echt                       # Rad rechts zählt 2 % zu wenig
+            f.step(t, yaw, 0, (sl, sr), None, 0.0)
+    v = f.vorschlag
+    assert v is not None and v["n"] > 50
+    assert v["track_m"] == pytest.approx(tr_echt * 2 / (1 + kr_echt), rel=0.01)
+    assert v["scale_right"] / v["scale_left"] == pytest.approx(kr_echt, rel=0.005)
 
 
 def test_home_stuck_near_goal_counts_as_arrived():
@@ -3289,10 +3402,10 @@ def test_imu_kurs_skalenfaktor():
     t0 = time.monotonic()
     grad = [30.0 + 10.0 * k for k in range(73)] + [750.0 - 10.0 * k for k in range(1, 73)]   # 720° links, 720° zurück
     for k, deg in enumerate(grad):
-        imu.add(k + 1, t0 + 0.01 * k, 0.0, 0.0, math.radians((deg + 180.0) % 360.0 - 180.0))
+        imu.add(k + 1, t0 + 0.05 * k, 0.0, 0.0, math.radians((deg + 180.0) % 360.0 - 180.0))   # 200 °/s
     assert math.degrees(imu.at(t0)[2]) == pytest.approx(30.0)
-    assert math.degrees(imu.at(t0 + 0.72)[2]) == pytest.approx(30.0 + 720.0 * 1.01)
-    assert math.degrees(imu.at(t0 + 1.44)[2]) == pytest.approx(30.0 + 720.0 * 1.01 - 720.0 * 1.02)
+    assert math.degrees(imu.at(t0 + 3.6)[2]) == pytest.approx(30.0 + 720.0 * 1.01)
+    assert math.degrees(imu.at(t0 + 7.2)[2]) == pytest.approx(30.0 + 720.0 * 1.01 - 720.0 * 1.02)
 
 
 def test_linse_entzerrt_gerade():
@@ -3381,6 +3494,25 @@ def test_linse_kern_gleich_cv2():
                               out.ctypes.data, cam.width, cam.height, out.strides[0]) == 0
         assert np.array_equal(out, cv2.remap(img, m1, m2, cv2.INTER_LINEAR))
     assert np.array_equal(lens_remap(cam)(img), cv2.remap(img, *lens_maps(cam), cv2.INTER_LINEAR))
+
+
+def test_kamera_direkt_schnittstelle(monkeypatch):
+    """libcamera direkt (native/camfast.cpp): CamMeta-Layout wie in C (64 Bytes, dropped bei 56); die
+    Selbstprüfung des Entzerrers lehnt einen abweichenden Kern ab; ohne libxgocam.so kein Handle (-> picamera2)."""
+    import ctypes
+    import cv2
+    from xgonav import camera, fastlib
+    assert ctypes.sizeof(camera._CamMeta) == 64 and camera._CamMeta.dropped.offset == 56
+    assert camera._CamMeta.crop.offset == 36
+    cam = Config().camera
+    m1, m2 = (np.ascontiguousarray(m) for m in camera.lens_maps(cam))
+
+    def mit_cv(img):
+        return cv2.remap(img, m1, m2, cv2.INTER_LINEAR)
+    assert camera._lens_kern_ok(cam, mit_cv, mit_cv)
+    assert not camera._lens_kern_ok(cam, lambda img: mit_cv(img) ^ 1, mit_cv)
+    monkeypatch.setattr(fastlib, "CAM_PATH", "/gibt/es/nicht/libxgocam.so")
+    assert camera._cam_lib() is None
 
 
 def test_floornet_wechseln(tmp_path, monkeypatch):

@@ -51,7 +51,7 @@ $R python3 /root/rider_nav.py zustand
      Aufruf ihn als Option und bricht ohne Bewegung ab. Optionen gehören vor das `--`
      (`dreh --w 0.25 -- -90`).
    - `dreh GRAD` – + = links, beliebig groß (auch `360`, `-360`, `720`): summiert die Kursänderung aus `yaw_deg`
-     in `/status` auf (Quelle `yaw_src`, Räder bevorzugt), Toleranz 3°, Zeitlimit 10 s + 1 s je 20°. Er dreht nach
+     in `/status` auf (Quelle `yaw_src`, Koppelnavigation: IMU, sonst Räder), Toleranz 3°, Zeitlimit 10 s + 1 s je 20°. Er dreht nach
      dem Stopp etwas nach (gemessen bis ~5°); für „wieder auf Startkurs“ danach mit kleinem `dreh` korrigieren.
    - `folge V,W,SEK [V,W,SEK …]` – Abschnitte nacheinander ohne Halt dazwischen (z. B. `0.13,0,3 0,0.25,1`:
      fahren und direkt aus der Fahrt drehen), am Ende Stillstand + idle.

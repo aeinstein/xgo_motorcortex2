@@ -11,6 +11,10 @@ Rider ist blind und fährt nicht selbst. Jede Funktionsgruppe hat eine eigene AB
 
 XGONAV_FASTLIB=<Datei> lädt eine andere Bibliothek (Tests am PC: navfast.cpp und gridfast.cpp brauchen kein
 OpenCV und lassen sich dort allein bauen, siehe docs/testing.md).
+
+Die Kamera direkt über libcamera (native/camfast.cpp + linsefast.cpp) ist eine eigene Bibliothek libxgocam.so
+(`make -C xgonav/native cam`, braucht libcamera-dev), damit libxgofast.so ohne libcamera baut; XGONAV_CAMLIB
+lädt eine andere. Fehlt sie, nimmt camera.py picamera2.
 """
 from __future__ import annotations
 
@@ -21,36 +25,45 @@ import os
 log = logging.getLogger(__name__)
 
 PATH = os.environ.get("XGONAV_FASTLIB") or os.path.join(os.path.dirname(__file__), "native", "libxgofast.so")
-_cache: list = []
+CAM_PATH = os.environ.get("XGONAV_CAMLIB") or os.path.join(os.path.dirname(__file__), "native", "libxgocam.so")
+_cache: dict = {}
 
 
-def load():
-    """Bibliothek laden (einmal je Prozess). None, wenn nicht gebaut oder nicht ladbar.
-    CDLL gibt das GIL während jedes Aufrufs frei."""
-    if _cache:
-        return _cache[0]
+def load(path: str | None = None):
+    """Bibliothek laden (einmal je Prozess und Pfad; ohne Pfad libxgofast.so). None, wenn nicht gebaut oder nicht
+    ladbar. CDLL gibt das GIL während jedes Aufrufs frei."""
+    path = path or PATH
+    if path in _cache:
+        return _cache[path]
     lib = None
-    if os.path.exists(PATH):
+    if os.path.exists(path):
         try:
-            lib = ctypes.CDLL(PATH)
+            lib = ctypes.CDLL(path)
         except OSError as e:
-            log.warning("%s nicht ladbar: %s", PATH, e)
-    _cache.append(lib)
+            log.warning("%s nicht ladbar: %s", path, e)
+    _cache[path] = lib
     return lib
 
 
-def check_abi(lib, func: str, want: int) -> bool:
+def load_cam():
+    """libxgocam.so (Kamera über libcamera) oder None."""
+    return load(CAM_PATH)
+
+
+def check_abi(lib, func: str, want: int, path: str | None = None) -> bool:
     """True, wenn lib die Funktion `func` hat und sie die ABI-Nummer `want` meldet."""
     if lib is None:
         return False
+    path = path or PATH
+    ziel = "cam" if path == CAM_PATH else ""
     try:
         f = getattr(lib, func)
     except AttributeError:
-        log.warning("%s: %s fehlt – neu bauen: make -C xgonav/native", PATH, func)
+        log.warning("%s: %s fehlt – neu bauen: make -C xgonav/native %s", path, func, ziel)
         return False
     f.restype = ctypes.c_int
     got = f()
     if got != want:
-        log.warning("%s: %s = %d statt %d – neu bauen: make -C xgonav/native", PATH, func, got, want)
+        log.warning("%s: %s = %d statt %d – neu bauen: make -C xgonav/native %s", path, func, got, want, ziel)
         return False
     return True

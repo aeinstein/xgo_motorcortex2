@@ -39,6 +39,8 @@ class ImuSource:
         self._buf = np.empty((4, 4096))
         self._a = self._b = 0
         self._y_last = None                             # letzter Rohwert (rad) zum Entfalten
+        self._t_last = None                             # Zeit der letzten Probe mit Kurs
+        self.yaw_jumps = 0                              # verworfene Kurssprünge (ESP-Neustart, Lesefehler)
         self._hist = history_s
         self._last_seq = 0
         self._stop = threading.Event()
@@ -77,7 +79,9 @@ class ImuSource:
 
     def add(self, seq: int, t: float, roll: float, pitch: float, yaw: float | None = None) -> None:
         """yaw: Firmware-Kurs (rad, links +) oder None. Sprünge über ±π werden entfaltet, Änderungen mal
-        cfg.yaw_scale_left bzw. yaw_scale_right gerechnet (Skalenfehler des Gyros je Drehrichtung)."""
+        cfg.yaw_scale_left bzw. yaw_scale_right gerechnet (Skalenfehler des Gyros je Drehrichtung). Eine Änderung
+        schneller als cfg.yaw_jump_dps ist kein Drehen (ESP-Neustart: Kurs beginnt bei 0) und wird verworfen; der
+        Kurs läuft vom alten Wert stetig weiter."""
         with self._lock:
             if seq <= self._last_seq:
                 return
@@ -90,9 +94,18 @@ class ImuSource:
                 y = yaw
             else:
                 d = (yaw - self._y_last + math.pi) % (2 * math.pi) - math.pi
+                lim = getattr(self.cfg, "yaw_jump_dps", 0.0)
+                gap = t - self._t_last
+                if lim > 0 and (gap > 0.5 or abs(d) > math.radians(lim) * max(gap, 0.02)):
+                    # Über eine Lücke (ESP-Neustart: ~1 s keine Probe, danach Kurs ab 0; Ruhemodus) ist die Drehung
+                    # unbekannt; ein zu schneller Sprung ist kein Drehen. Beides nicht übernehmen.
+                    self.yaw_jumps += 1
+                    log.info("IMU: Kursänderung %.1f° nach %.0f ms verworfen (Lücke oder Sprung)", math.degrees(d),
+                             gap * 1000)
+                    d = 0.0
                 y = (y_alt if y_alt is not None else yaw) + d * (self.cfg.yaw_scale_left if d > 0 else self.cfg.yaw_scale_right)
             if yaw is not None:
-                self._y_last = yaw
+                self._y_last, self._t_last = yaw, t
             if b == buf.shape[1]:
                 n = b - a
                 neu = np.empty((4, max(4096, 2 * n + 1024)))

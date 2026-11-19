@@ -228,6 +228,33 @@ def lens_maps(cfg: CameraCfg):
 
 
 _LENS_ABI = 1
+_CAM_ABI = 2
+
+
+def _lens_kern(lib, m1: np.ndarray, m2: np.ndarray):
+    """Entzerren mit lens_remap aus lib (libxgofast.so oder libxgocam.so); None-Rückgabe des Kerns -> Ausnahme."""
+    lib.lens_remap.restype = ctypes.c_int
+    lib.lens_remap.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_void_p,
+                               ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_int]
+    h, w = m2.shape
+
+    def kern(img):
+        out = np.empty((h, w, img.shape[2]), np.uint8)
+        if lib.lens_remap(img.ctypes.data, img.shape[1], img.shape[0], img.strides[0], img.shape[2], m1.ctypes.data,
+                          m2.ctypes.data, out.ctypes.data, w, h, out.strides[0]) != 0:
+            raise RuntimeError("lens_remap")
+        return out
+    return kern
+
+
+def _lens_kern_ok(cfg: CameraCfg, kern, mit_cv) -> bool:
+    """Selbstprüfung: Kern rechnet für Rauschbild und glattes Bild bitgleich zu cv2.remap."""
+    rng = np.random.default_rng(11)
+    probe = rng.integers(0, 256, (cfg.height, cfg.width, 3), dtype=np.uint8)
+    try:
+        return all(np.array_equal(kern(img), mit_cv(img)) for img in (probe, cv2.GaussianBlur(probe, (0, 0), 3)))
+    except RuntimeError:
+        return False
 
 
 def lens_remap(cfg: CameraCfg):
@@ -237,7 +264,6 @@ def lens_remap(cfg: CameraCfg):
     if maps is None:
         return None
     m1, m2 = np.ascontiguousarray(maps[0]), np.ascontiguousarray(maps[1])
-    h, w = m2.shape
 
     def mit_cv(img):
         return cv2.remap(img, m1, m2, cv2.INTER_LINEAR)
@@ -246,47 +272,157 @@ def lens_remap(cfg: CameraCfg):
     if not cfg.lens_native or not fastlib.check_abi(lib, "lens_abi", _LENS_ABI):
         log.info("Linsenverzeichnung wird entzerrt (cv2.remap)")
         return mit_cv
-    lib.lens_remap.restype = ctypes.c_int
-    lib.lens_remap.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_void_p,
-                               ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_int]
+    kern = _lens_kern(lib, m1, m2)
 
     def mit_kern(img):
         if img.ndim != 3 or img.dtype != np.uint8 or not img.flags.c_contiguous:
             return mit_cv(img)
-        out = np.empty((h, w, img.shape[2]), np.uint8)
-        if lib.lens_remap(img.ctypes.data, img.shape[1], img.shape[0], img.strides[0], img.shape[2], m1.ctypes.data,
-                          m2.ctypes.data, out.ctypes.data, w, h, out.strides[0]) != 0:
+        try:
+            return kern(img)
+        except RuntimeError:
             return mit_cv(img)
-        return out
 
-    rng = np.random.default_rng(11)
-    probe = rng.integers(0, 256, (cfg.height, cfg.width, 3), dtype=np.uint8)
-    for img in (probe, cv2.GaussianBlur(probe, (0, 0), 3)):
-        if not np.array_equal(mit_kern(img), mit_cv(img)):
-            log.info("lens_remap weicht von cv2.remap ab – Linsenverzeichnung wird mit OpenCV entzerrt")
-            return mit_cv
+    if not _lens_kern_ok(cfg, kern, mit_cv):
+        log.info("lens_remap weicht von cv2.remap ab – Linsenverzeichnung wird mit OpenCV entzerrt")
+        return mit_cv
     log.info("Linsenverzeichnung wird entzerrt (C++-Kern)")
     return mit_kern
 
 
+class _CamMeta(ctypes.Structure):
+    """Wie CamMeta in native/camfast.cpp."""
+    _fields_ = [("ts_ns", ctypes.c_int64), ("frame_us", ctypes.c_int64), ("exp_us", ctypes.c_int32),
+                ("gain", ctypes.c_float), ("awb", ctypes.c_float * 2), ("has_awb", ctypes.c_int32),
+                ("crop", ctypes.c_int32 * 4), ("has_crop", ctypes.c_int32), ("dropped", ctypes.c_int64)]
+
+
+def _cam_lib():
+    """libxgocam.so mit passender ABI und Signaturen, sonst None."""
+    lib = fastlib.load_cam()
+    if not fastlib.check_abi(lib, "cam_abi", _CAM_ABI, fastlib.CAM_PATH):
+        return None
+    vp, i, i64 = ctypes.c_void_p, ctypes.c_int, ctypes.c_int64
+    lib.cam_open.restype = vp
+    lib.cam_open.argtypes = [i, i, i, i, i64, vp, i, ctypes.c_char_p, i]
+    for name, args in (("cam_set_lens", [vp, vp, vp, i, i]), ("cam_start", [vp]), ("cam_stop", [vp]),
+                       ("cam_set_exposure", [vp, i]), ("cam_set_gain", [vp, ctypes.c_float]),
+                       ("cam_get", [vp, i, vp, i, ctypes.POINTER(_CamMeta)]), ("cam_info", [vp, vp]),
+                       ("cam_zeiten", [vp, vp])):
+        getattr(lib, name).restype = i
+        getattr(lib, name).argtypes = args
+    lib.cam_close.restype = None
+    lib.cam_close.argtypes = [vp]
+    return lib
+
+
 class PiCameraSource(FrameSource):
-    """OV5647 über libcamera/picamera2. Kurze feste Belichtung, AGC regelt nur Gain
-    (beides zur Laufzeit umstellbar, siehe set_exposure/set_gain)."""
+    """OV5647 über libcamera. Kurze feste Belichtung, AGC regelt nur Gain (beides zur Laufzeit umstellbar, siehe
+    set_exposure/set_gain). Mit libxgocam.so ([camera] capture_native) direkt aus C++: das Bild wird aus dem
+    DMA-Puffer heraus entzerrt und kommt fertig in Python an; sonst über picamera2."""
+
+    _nat = None      # Handle in libxgocam.so, None = picamera2
+    ZEITEN_S = 60.0  # Abstand der Zeitmessung im Log (libcamera direkt)
+    _nlib = None
+
+    def _sensor_size(self) -> tuple[int, int]:
+        if not self.cfg.sensor_mode:
+            return 0, 0
+        w, h = (int(v) for v in self.cfg.sensor_mode.lower().split("x"))
+        return w, h
 
     def _open(self) -> None:
+        frame_us = int(1e6 / self.cfg.fps * self.cfg.frame_clock_corr)
+        if self.cfg.capture_native and self._open_native(frame_us):
+            return
+        self._open_picam(frame_us)
+
+    # --- direkt über libcamera (native/camfast.cpp) ---
+
+    def _open_native(self, frame_us: int) -> bool:
+        lib = _cam_lib()
+        if lib is None:
+            log.info("libxgocam.so fehlt – Kamera über picamera2 (bauen: make -C xgonav/native cam)")
+            return False
+        maps = lens_maps(self.cfg)
+        if maps is not None:
+            if not self.cfg.lens_native:
+                log.info("lens_native = false – Kamera über picamera2")
+                return False
+            m1, m2 = np.ascontiguousarray(maps[0]), np.ascontiguousarray(maps[1])
+            if not fastlib.check_abi(lib, "lens_abi", _LENS_ABI, fastlib.CAM_PATH) or not _lens_kern_ok(
+                    self.cfg, _lens_kern(lib, m1, m2), lambda img: cv2.remap(img, m1, m2, cv2.INTER_LINEAR)):
+                log.info("lens_remap in libxgocam.so weicht von cv2.remap ab – Kamera über picamera2")
+                return False
+        rw, rh = self._sensor_size()
+        crop = (ctypes.c_int32 * 4)(*(int(v) for v in self.cfg.scaler_crop)) if self.cfg.scaler_crop else None
+        err = ctypes.create_string_buffer(256)
+        h = lib.cam_open(self.cfg.width, self.cfg.height, rw, rh, frame_us, crop, 4, err, len(err))
+        if not h:
+            log.warning("libcamera direkt: %s – Kamera über picamera2", err.value.decode("utf-8", "replace"))
+            return False
+        if maps is not None and lib.cam_set_lens(h, m1.ctypes.data, m2.ctypes.data, self.cfg.width,
+                                                 self.cfg.height) != 0:
+            lib.cam_close(h)
+            log.warning("libcamera direkt: Entzerrtabelle passt nicht – Kamera über picamera2")
+            return False
+        self._nlib, self._nat = lib, h
+        self._lens_id = lens_id(self.cfg) if maps is not None else None
+        self._meta = _CamMeta()
+        self._zeiten = (ctypes.c_double * 4)()
+        self._zeiten_t = time.monotonic()
+        self._apply_exposure(int(self.cfg.exposure_us))
+        self._apply_gain(float(self.cfg.analogue_gain))
+        if lib.cam_start(h) != 0:
+            lib.cam_close(h)
+            self._nlib = self._nat = None
+            log.warning("libcamera direkt: Start scheitert – Kamera über picamera2")
+            return False
+        info = (ctypes.c_int32 * 3)()
+        lib.cam_info(h, info)
+        log.info("Kamera gestartet (libcamera direkt, %s) %dx%d@%d (Sensor %dx%d, Zeile %d B), Belichtung %s µs, "
+                 "Verstärkung %s", "entzerrt im Kern" if maps is not None else "ohne Linsenmodell",
+                 self.cfg.width, self.cfg.height, self.cfg.fps, info[1], info[2], info[0],
+                 self.cfg.exposure_us or "auto/short", self.cfg.analogue_gain or "auto")
+        return True
+
+    def _grab_native(self) -> bool:
+        out = np.empty((self.cfg.height, self.cfg.width, 3), np.uint8)   # je Bild neu: Frame.bgr wird nie überschrieben
+        md = self._meta
+        rc = self._nlib.cam_get(self._nat, 1000, out.ctypes.data, out.strides[0], ctypes.byref(md))
+        if rc == 0:
+            return True          # kein Bild in 1 s; _run fragt _stop/_paused ab und versucht es wieder
+        if rc < 0:
+            raise RuntimeError("cam_get scheitert")
+        if time.monotonic() - self._zeiten_t >= self.ZEITEN_S:      # einmal je Minute, nicht je Bild
+            self._zeiten_t = time.monotonic()
+            n = self._nlib.cam_zeiten(self._nat, self._zeiten)
+            z = self._zeiten
+            log.info("Kamera je Bild (%d Bilder): Cache %.2f ms, Kopie %.2f ms, Entzerren %.2f ms, Metadaten %.2f ms, "
+                     "verworfen %d", n, z[0] / 1e3, z[1] / 1e3, z[2] / 1e3, z[3] / 1e3, md.dropped)
+        t = md.ts_ns / 1e9 if md.ts_ns else time.monotonic()
+        exp = int(md.exp_us) if md.exp_us >= 0 else None
+        self._publish(out, t, exp,
+                      {"awb": [round(float(v), 3) for v in md.awb] if md.has_awb else None,
+                       "gain": round(float(md.gain), 2),
+                       "exp_us": exp, "frame_us": int(md.frame_us) if md.frame_us >= 0 else None,
+                       "crop": tuple(int(v) for v in md.crop) if md.has_crop else None,
+                       "entzerrt": self._lens_id or False})
+        return True
+
+    # --- über picamera2 ---
+
+    def _open_picam(self, frame_us: int) -> None:
         from picamera2 import Picamera2  # nur auf dem Pi verfügbar
 
         self.cam = Picamera2()
         self._lens = lens_remap(self.cfg)
         self._lens_id = lens_id(self.cfg) if self._lens is not None else None
-        frame_us = int(1e6 / self.cfg.fps * self.cfg.frame_clock_corr)
         controls = {"FrameDurationLimits": (frame_us, frame_us)}
         if self.cfg.scaler_crop:
             controls["ScalerCrop"] = tuple(int(v) for v in self.cfg.scaler_crop)
         kw = {}
         if self.cfg.sensor_mode:
-            w, h = (int(v) for v in self.cfg.sensor_mode.lower().split("x"))
-            kw["raw"] = {"size": (w, h)}
+            kw["raw"] = {"size": self._sensor_size()}
         conf = self.cam.create_video_configuration(
             main={"size": (self.cfg.width, self.cfg.height), "format": "RGB888"},  # = BGR im Speicher
             buffer_count=4, controls=controls, **kw,
@@ -303,15 +439,23 @@ class PiCameraSource(FrameSource):
     def _apply_exposure(self, us: int) -> None:
         # Fixe Belichtungszeit, AnalogueGain bleibt automatisch. ExposureTime = 0 gibt die
         # Belichtung an die Automatik zurück (libcamera/rpi), dort im Modus "kurz".
+        if self._nat is not None:
+            self._nlib.cam_set_exposure(self._nat, int(us))
+            return
         from libcamera import controls as lc
         self.cam.set_controls({"ExposureTime": max(0, int(us)),
                                "AeExposureMode": lc.AeExposureModeEnum.Short})
 
     def _apply_gain(self, gain: float) -> None:
         # AnalogueGain = 0 gibt die Verstärkung an die Automatik zurück (libcamera/rpi).
+        if self._nat is not None:
+            self._nlib.cam_set_gain(self._nat, float(gain))
+            return
         self.cam.set_controls({"AnalogueGain": max(0.0, float(gain))})
 
     def _grab(self) -> bool:
+        if self._nat is not None:
+            return self._grab_native()
         req = self.cam.capture_request()
         try:
             arr = req.make_array("main")
@@ -331,14 +475,28 @@ class PiCameraSource(FrameSource):
         return True
 
     def _suspend(self) -> None:
-        self.cam.stop()
+        if self._nat is not None:
+            self._nlib.cam_stop(self._nat)
+        else:
+            self.cam.stop()
         log.info("PiCamera angehalten")
 
     def _resume_device(self) -> None:
-        self.cam.start()
+        if self._nat is not None:
+            if self._nlib.cam_start(self._nat) != 0:
+                raise RuntimeError("cam_start scheitert")
+        else:
+            self.cam.start()
         log.info("PiCamera läuft wieder")
 
     def _close(self) -> None:
+        if self._nat is not None:
+            if self._thread is not None and self._thread.is_alive():
+                log.warning("Kamera-Faden hängt noch in cam_get – Kamera bleibt bis Prozessende offen")
+                return
+            h, self._nat = self._nat, None
+            self._nlib.cam_close(h)
+            return
         try:
             self.cam.stop()
             self.cam.close()

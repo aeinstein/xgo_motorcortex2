@@ -114,6 +114,11 @@ class CameraCfg:
     # Entzerren im C++-Kern (native/linsefast.cpp, ein Kern, bitgleich zu cv2.remap; nur aktiv nach Selbstprüfung
     # beim Start). False oder Kern fehlt: cv2.remap (CM4: 6,4 ms je Bild auf vier Kernen).
     lens_native: bool = True
+    # Aufnahme direkt über libcamera (native/camfast.cpp, libxgocam.so): das Bild wird aus dem DMA-Puffer heraus
+    # entzerrt, die Pixel laufen nicht durch Python (eine Kopie von 0,9 MB je Bild entfällt, kein picamera2-Faden).
+    # Nur mit lens_native bzw. ohne Linsenmodell; entzerrt nur nach derselben Selbstprüfung gegen cv2.remap.
+    # False, Bibliothek fehlt oder Kamera lässt sich so nicht öffnen: picamera2.
+    capture_native: bool = True
     # Geometrie für Entfernung per Bodenebene (KALIBRIEREN, siehe README)
     mount_offset_mm: float = 43.0  # Kamerahöhe über Boden = Körperhöhe + Offset (nur ohne cam_h_u8)
     # Kamerahöhe (Linsenmitte über Boden, mm) = a + b * Höhen-Sollwert u8, [a, b]. RiderPi 2026-11-07 im Stand
@@ -162,6 +167,9 @@ class ImuCfg:
     # Proben sind schon korrigiert.
     yaw_scale_left: float = 1.0021
     yaw_scale_right: float = 1.0025
+    # Schneller dreht der Rider nie (°/s): Ein größerer Kurssprung zwischen zwei Proben ist kein Drehen, sondern ein
+    # ESP-Neustart (Kurs beginnt bei 0) oder ein Lesefehler; er wird nicht in den Kurs übernommen (ImuSource.yaw_jumps).
+    yaw_jump_dps: float = 500.0
     # Roll: Die Bodengrenze des Netzes wird je Bild um den IMU-Roll gedreht, bevor sie in Karten und Sicherheit
     # geht (freespace.roll_columns); der Einbau-Roll der Kamera ist schon aus dem Bild gedreht ([camera]
     # lens_roll_deg). Ohne das lag dieselbe Flurwand im Rundumblick je nach Bildrand bei 0,7 oder 1,2 m statt 1,0 m (Wand
@@ -267,10 +275,6 @@ class MapCfg:
     # 11,5 cm breit (halbe Breite 5,8 cm); 0,08 lässt ihn mittig durch eine 25 cm breite Lücke (Punkte bei
     # ±12,5 cm) mit 4,5 cm Spiel für Kurs und Rauschen.
     radius_tight_m: float = 0.08
-    # Drehung der Merkkarte: "odom" = wie [odom] yaw_source (Räder, sonst Kamera); "imu" = Firmware-Kurs aus imu_log
-    # (~50 Hz), bei fehlender/alter IMU wie "odom". RiderPi 2026-11-08, volle Drehungen gegen Bilder: IMU 0,997,
-    # Räder 0,992 des wahren Winkels; je Drehung weichen beide zufällig ~2° (p90 ~8°) voneinander ab.
-    yaw_source: str = "imu"
     # Mitdrehen, Eintragen (freiräumen, ausdünnen, vergessen), Bestätigen und Bahnprüfung im C++-Kern
     # (xgonav/native/navfast.cpp), wenn gebaut; gleiches Ergebnis wie numpy
     native: bool = True
@@ -349,7 +353,7 @@ class EmotionCfg:
 
 @dataclass
 class OdomCfg:
-    # Rad-Odometrie aus /proc/XGORider/wheels_log (Firmware R-1.1.6+Patch, Treiber mit 0x0d/0x0c).
+    # Rad-Odometrie aus /proc/XGORider/wheels_log: die Radhälfte des IMU-Stroms (Firmware 0014), ohne Strom aus 0x0d.
     # source: "auto" = Räder, wenn vorhanden und frisch, sonst Fahrbefehl x vx_limit;
     # "command" = immer Fahrbefehl (wie früher).
     enabled: bool = True
@@ -370,9 +374,26 @@ class OdomCfg:
     read_idle: bool = False
     max_age_s: float = 0.3             # älter -> Rückfall auf den Fahrbefehl
     max_jump_ticks: int = 2048         # größerer Sprung zwischen zwei Proben = Neustart/Fehler
-    # Kurs für Verhalten (explore) und Merkkarte: "räder" (wenn frisch, sonst Kamera) oder "kamera".
-    # Der Bild-Kurs verfälscht bei Vorwärtsfahrt (2026-11-04: −8,9° auf 2 m geradeaus).
-    yaw_source: str = "räder"
+    # Koppelnavigation (odomfusion.py): ein Kurs und eine Strecke für Verhalten, Merkkarte und Raumkarte.
+    # Kurs aus der IMU (RiderPi 2026-11-06, 32 m: IMU ~6 cm, Räder 75 cm Fehler durch Schlupf beim Drehen), sonst
+    # aus den Rädern, sonst aus dem Bild. Strecke aus den Rädern, sonst Fahrbefehl x vx_limit.
+    # Widerspruch: Weicht der Radkurs über contra_window_s um mehr als contra_deg + contra_frac x Drehung vom
+    # IMU-Kurs ab, ist das Schlupf (Strecke dann aus dem Rad, das zur IMU-Drehung passt und weniger zurücklegt) –
+    # außer das Bild gibt klar den Rädern recht: Dann gilt die IMU imu_doubt_s lang als zweifelhaft, der Kurs kommt
+    # aus den Rädern und das Fenster wird nachgeholt. Das Bild zählt nur, wenn sein möglicher Fehler cam_err_deg +
+    # cam_err_deg_m je gefahrenem Meter (2026-11-04: −8,9° auf 2 m geradeaus) unter einem Viertel des Widerspruchs
+    # liegt. 67 Rohfahrten 2026-11-10..19 (tools/odom_replay.py): Räder minus IMU je 1 s p95 ~2°, p99 ~3,5°.
+    contra_window_s: float = 1.0
+    contra_deg: float = 4.0
+    contra_frac: float = 0.10
+    cam_err_deg: float = 1.0
+    cam_err_deg_m: float = 5.0
+    imu_doubt_s: float = 5.0
+    # Vorschlag für scale_left/scale_right/track_m aus Rädern gegen IMU-Kurs (nur messen und anzeigen, /status
+    # odom.vorschlag): Abschnitte von calib_seg_s ohne Schlupf, die letzten calib_n davon. Die Gesamtskala bleibt
+    # beim Mittel der eingestellten Faktoren (sie kennt nur ein Maßband). 0 = aus.
+    calib_seg_s: float = 2.0
+    calib_n: int = 300
 
 
 @dataclass
@@ -423,9 +444,6 @@ class GridCfg:
     l_max: float = 3.5
     l_show: float = 0.7                # ab hier "belegt"/"frei" in Anzeige und Statistik
     view_m: float = 6.0                # Bildausschnitt für die Anzeige
-    # Drehung der Kartenpose: "räder" (Rad-Odometrie, sonst Kamera), "kamera" (Ego-Motion) oder "imu" (Firmware-Kurs
-    # aus imu_log, ist der zu alt die 5-Hz-Treppe aus /proc yaw, sonst wie "räder"). RiderPi 2026-11-06, 32 m: mit Rädern 75 cm Fehler (Schlupf beim Drehen), mit IMU ~6 cm.
-    yaw_source: str = "imu"
     # Eintragen in eigenem Thread (GridWorker, Kerne wie [cpu] freespace_cpus); False = im Regelschritt
     threaded: bool = True
     # Strahlen im C++-Kern eintragen (xgonav/native/gridfast.cpp), wenn gebaut; gleiches Ergebnis wie numpy
@@ -886,6 +904,8 @@ ENTFERNT = {f"freespace.{k}": _KANTEN for k in (
     "min_known_frac", "min_learn_v", "horizon_wall", "horizon_margin_rows", "horizon_band_rows", "horizon_floor_frac",
     "wall_edge_thr", "edge_fallback_free", "edge_thin", "edge_k", "edge_chroma_w", "edge_step_thr", "edge_seg_thr",
     "edge_log_s", "edge_glare", "glare_v", "glare_px", "glare_dl", "glare_spread", "native")}
+ENTFERNT.update({k: "ein Kurs für alles seit 2026-11-19 ([odom] contra_*, odomfusion.py)"
+                 for k in ("odom.yaw_source", "map.yaw_source", "grid.yaw_source")})
 UMBENANNT = {"freespace.shadow_net": "freespace.net"}
 
 # Die Defaults oben sind seit 2026-11-12 die Werte des RiderPi (/opt/xgonav/config.toml ohne Testbetrieb und
@@ -897,12 +917,12 @@ NEUTRAL = {"pet.call_m": 0.0, "pet.come_m": 0.0, "pet.drive_v": 0.08, "pet.look_
            "camera.mount_offset_mm": 45.0, "camera.cam_h_u8": [], "camera.cam_fwd_mm": 0.0,
            "camera.tilt_deg": 0.0, "imu.stream_hz": 0, "imu.pitch_sign": 0, "imu.yaw_scale_left": 1.0, "imu.yaw_scale_right": 1.0, "imu.time_offset_ms": None, "imu.pitch_ref_deg": 0.0, "imu.use_roll": False,
            "detector.max_hz": 0.0, "detector.classes": [], "freespace.threaded": False,
-           "freespace.net": "", "freespace.net_smooth_n": 0, "map.confirm": 1, "map.yaw_source": "odom",
+           "freespace.net": "", "freespace.net_smooth_n": 0, "map.confirm": 1,
            "behavior.follow_dist_m": 1.2, "behavior.dist_deadband": 0.15, "behavior.search_w": 0.12,
            "behavior.turn_w": 0.18, "behavior.search_timeout_s": 20.0, "behavior.height_search_mm": 115.0,
            "behavior.height_fast_mm": 70.0, "output.lcd_fifo": "/tmp/lcd0", "cpu.main_cpus": [],
            "cpu.detector_cpus": [], "cpu.render_cpus": [], "cpu.freespace_cpus": [], "odom.scale_left": 1.0,
-           "odom.scale_right": 1.0, "explore.turn_dps": 40.0, "explore.tight_max": 3, "explore.tight_penalty_s": -1.0, "grid.confirm_dr_m": 0.0, "grid.hit_band_quad": 0.0, "grid.max_range_m": 1.25, "grid.free_range_m": 1.5, "grid.size_m": 16.0, "home.turn_w_max": 1.0, "grid.yaw_source": "räder",
+           "odom.scale_right": 1.0, "explore.turn_dps": 40.0, "explore.tight_max": 3, "explore.tight_penalty_s": -1.0, "grid.confirm_dr_m": 0.0, "grid.hit_band_quad": 0.0, "grid.max_range_m": 1.25, "grid.free_range_m": 1.5, "grid.size_m": 16.0, "home.turn_w_max": 1.0,
            "reloc.enabled": False, "reloc.track": False,
            "control_hz": 20.0}
 
