@@ -1,6 +1,8 @@
 # C++-Kern für xgonav (ctypes). Auf dem Rider bauen:  make -C xgonav/native
 # Braucht g++, pkg-config und libopencv-dev in derselben Version wie python3-opencv.
 # Fehlt die .so, rechnet xgonav in Python (gleiches Ergebnis, langsamer).
+# Erst in $@.tmp bauen, dann umbenennen: Überschreiben einer geladenen .so lässt den laufenden xgonav abstürzen
+# (2026-11-19 20:05); nach dem Umbenennen behält er die alte Datei bis zum Neustart.
 CXX ?= g++
 CXXFLAGS ?= -O2 -mcpu=native
 # -ffp-contract=off: keine FMA-Zusammenfassung, Gleitkomma wie numpy
@@ -8,7 +10,7 @@ override CXXFLAGS += -std=c++17 -fPIC -Wall -Wextra -ffp-contract=off $(shell pk
 LIBS := -lopencv_video -lopencv_calib3d -lopencv_imgproc -lopencv_core
 
 libxgofast.so: egofast.cpp gridfast.cpp navfast.cpp ortfast.cpp stimmfast.cpp linsefast.cpp jpegfast.cpp floornet.o xgo.h
-	$(CXX) $(CXXFLAGS) -shared -o $@ $(filter-out %.h,$^) $(LIBS)
+	$(CXX) $(CXXFLAGS) -shared -o $@.tmp $(filter-out %.h,$^) $(LIBS) && mv -f $@.tmp $@
 
 # FloorNet: -O3 wie in der Messung (tools/floornet/bench_kern.cpp)
 floornet.o: floornet.cpp floornet_kern.h
@@ -20,9 +22,9 @@ floornet.o: floornet.cpp floornet_kern.h
 cam: libxgocam.so
 
 libxgocam.so: camfast.cpp linsefast.cpp
-	$(CXX) $(CXXFLAGS) -std=c++20 $(shell pkg-config --cflags libcamera) -shared -o $@ $^ $(shell pkg-config --libs libcamera)
+	$(CXX) $(CXXFLAGS) -std=c++20 $(shell pkg-config --cflags libcamera) -shared -o $@.tmp $^ $(shell pkg-config --libs libcamera) && mv -f $@.tmp $@
 
 clean:
-	rm -f libxgofast.so libxgocam.so floornet.o
+	rm -f libxgofast.so libxgocam.so floornet.o *.tmp
 
 .PHONY: clean cam
