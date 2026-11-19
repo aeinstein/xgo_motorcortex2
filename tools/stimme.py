@@ -4,6 +4,10 @@
   python tools/stimme.py sittich ein.wav aus.wav [--set speed=1.8,band_lo=1200]   Filter anhören
   python tools/stimme.py vergleich a.wav b.wav ...                                 DTW-Abstände als Tabelle
   python tools/stimme.py lernen ordner/*.wav                                       Ablauf wie am Rider, in einem tmp-Verzeichnis
+  python tools/stimme.py strom aufnahme.wav [--aus ordner] [--set vad_hang_s=0.6]  lange Stereo-Aufnahme (48 kHz) wie am
+                                                                                   Rider in Äußerungen schneiden, vergleichen
+Aufnahme am Rider (Modus manual, sonst hält die Ortung hw:0,0):
+  arecord -D hw:0,0 -f S16_LE -r 48000 -c 2 -d 120 /root/stimmen.wav
 
 Eingaben: mono oder stereo, 16 oder 48 kHz (z. B. scp root@<rider>:/opt/xgonav/stimmen/kandidaten/*.wav .).
 Treffer gelten bis [stimme] match_dist; die Tabelle zeigt, wo die Grenze für echte Stimmen liegen sollte.
@@ -15,6 +19,7 @@ import dataclasses
 import os
 import sys
 import tempfile
+import wave
 
 import numpy as np
 
@@ -42,14 +47,63 @@ def _stereo48(path: str) -> np.ndarray:
     return np.stack([x, x], 1).clip(-32768, 32767).astype(np.int16)
 
 
+def _strom(a, c, k) -> None:
+    from xgonav.ortung import Ortung
+    with wave.open(a.dateien[0], "rb") as w:
+        if w.getframerate() != stimme.RATE_IN or w.getnchannels() != 2:
+            raise SystemExit("strom: nur Stereo mit 48 kHz")
+        pcm = np.frombuffer(w.readframes(w.getnframes()), dtype="<i2").reshape(-1, 2)
+    ocfg = Config().ortung
+    o = Ortung(ocfg)
+    st = stimme.Stimmen(dataclasses.replace(c, dir=tempfile.mkdtemp()), ocfg.rate, ocfg.block)
+    segs, zeiten = [], []
+    t = [0.0]
+    st._submit = lambda seg: (segs.append(seg), zeiten.append(t[0]))
+    o.horcher = st
+    st.aufnahme = True
+    b = ocfg.block
+    for i in range(len(pcm) // b):
+        t[0] = (i + 1) * b / stimme.RATE_IN
+        o.feed(pcm[i * b:(i + 1) * b], t[0])
+    F, names = [], []
+    for i, (seg, t1) in enumerate(zip(segs, zeiten)):
+        x = k.mono16k(seg)
+        feat, voiced = k.mfcc(x)
+        ok = voiced >= c.voiced_min and len(feat) * stimme.HOP / stimme.RATE >= 0.5 * c.min_s
+        name = f"s{i:02d}@{t1 - len(seg) / stimme.RATE_IN:5.1f}s"
+        print(f"{name}  {len(seg) / stimme.RATE_IN:.2f} s, Merkmale {len(feat) / 100:.2f} s, stimmhaft {voiced:.2f}"
+              f"{'' if ok else '  verworfen'}")
+        if a.aus:
+            os.makedirs(a.aus, exist_ok=True)
+            stimme.write_wav(os.path.join(a.aus, f"s{i:02d}.wav"), x, stimme.RATE)
+        if ok:
+            F.append(feat)
+            names.append(f"s{i:02d}")
+    print(" " * 4 + "".join(f"{n:>6s}" for n in names))
+    for i, fi in enumerate(F):
+        row = []
+        for j, fj in enumerate(F):
+            q = len(fi) / max(1, len(fj))
+            if i == j:
+                row.append("-")
+            elif not 1 / c.len_ratio <= q <= c.len_ratio:
+                row.append("L")
+            else:
+                d = k.dtw(fi, fj, c.dtw_band)
+                row.append(f"{d:.1f}{'*' if d <= c.match_dist else ''}")
+        print(f"{names[i]:4s}" + "".join(f"{r:>6s}" for r in row))
+    print(f"* = Treffer (match_dist {c.match_dist}), L = Länge zu verschieden")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("was", choices=["sittich", "vergleich", "lernen"])
+    ap.add_argument("was", choices=["sittich", "vergleich", "lernen", "strom"])
+    ap.add_argument("--aus", help="strom: Äußerungen als WAV hierhin")
     ap.add_argument("dateien", nargs="+")
     ap.add_argument("--set", help="[stimme]-Werte, z. B. speed=1.8,match_dist=7")
     a = ap.parse_args()
     c = _cfg(a.set)
-    k = stimme.make_kern(c.flat_max)
+    k = stimme.make_kern(c.flat_max, per_min=c.per_min)
     print(f"Kern {k.name}")
     if a.was == "sittich":
         if len(a.dateien) != 2:
@@ -79,6 +133,8 @@ def main() -> None:
                     row.append(f"{d:.1f}{'*' if d <= c.match_dist else ''}")
             print(f"{names[i]:12s} " + " ".join(f"{r:>12s}" for r in row))
         print(f"* = Treffer (match_dist {c.match_dist})")
+    elif a.was == "strom":
+        _strom(a, c, k)
     else:
         with tempfile.TemporaryDirectory() as d:
             st = stimme.Stimmen(dataclasses.replace(c, dir=d))

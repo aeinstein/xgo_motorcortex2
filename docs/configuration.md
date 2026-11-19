@@ -243,9 +243,9 @@ All keys with comments: `PetCfg` in `xgonav/config.py`.
 |---|---|---|
 | `enabled`, `dir` | true, `/opt/xgonav/stimmen` | needs `[ortung]` and sounds (`aplay`) |
 | `max_confirmed`, `pool_n`, `kandidat_max_min` | 10, 30, 1 | confirmed samples (then no more learning, recognition continues), unconfirmed kept, minutes to get confirmed |
-| `vad_on_db`, `vad_off_db`, `vad_hang_s`, `vad_pre_s`, `min_s`, `max_s` | 9, 4, 0.3, 0.15, 0.6, 3 | utterance detection on the ortung level |
-| `voiced_min`, `flat_max`, `per_min` | 0.6, 0.3, 0.5 | share of voiced frames; voiced = flatness below and pitch strength above |
-| `match_dist`, `dtw_band`, `len_ratio` | 8, 0.25, 1.6 | DTW match (estimated from TTS, tune on the Rider) |
+| `vad_on_db`, `vad_off_db`, `vad_hang_s`, `vad_pre_s`, `min_s`, `max_s` | 9, 4, 0.6, 0.15, 0.6, 3 | utterance detection on the ortung level |
+| `voiced_min`, `flat_max`, `per_min` | 0.4, 0.3, 0.5 | share of voiced frames; voiced = flatness below and pitch strength above |
+| `match_dist`, `dtw_band`, `len_ratio` | 10, 0.25, 1.6 | DTW match (guessed; real repeats on the Rider 9–14; tune with `tools/stimme.py strom`) |
 | `speed`, `band_lo`, `band_hi`, `vibrato_hz`, `vibrato_ms`, `drive`, `peak_db` | 1.6, 1000, 5000, 25, 0.3, 2, −3 | budgie filter |
 
 ### `[odom]`

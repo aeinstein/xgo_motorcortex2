@@ -3313,8 +3313,8 @@
       {
        "key": "vad_hang_s",
        "typ": "float",
-       "default": 0.3,
-       "hilfe": ""
+       "default": 0.6,
+       "hilfe": "0,3 zerschnitt am Rider Sätze an Sprechpausen (2026-11-19)"
       },
       {
        "key": "vad_pre_s",
@@ -3337,8 +3337,8 @@
       {
        "key": "voiced_min",
        "typ": "float",
-       "default": 0.6,
-       "hilfe": "Anteil stimmhafter Rahmen unter den lauten, sonst kein Sprechen. Stimmhaft: spektrale Flachheit 300-3000 Hz unter flat_max und Grundton 70-400 Hz (Autokorrelation, fensterbereinigt) über per_min. Am Rider 2026-11-19: Sprache 0,65-0,96, Wasserrauschen 0,0-0,19 (vorher nur Flachheit und 0,3: Rauschen wurde gelernt)."
+       "default": 0.4,
+       "hilfe": "Anteil stimmhafter Rahmen unter den lauten, sonst kein Sprechen. Stimmhaft: spektrale Flachheit 300-3000 Hz unter flat_max und Grundton 70-400 Hz (Autokorrelation, fensterbereinigt) über per_min. Am Rider 2026-11-19: Sprachausgabe 0,74-0,96, Wasserrauschen 0,0-0,19 (vorher nur Flachheit und 0,3: Rauschen wurde gelernt), echte Stimme am Rider 0,60-0,98 und mit 0,6 rund 70 % verworfen: daher 0,4."
       },
       {
        "key": "flat_max",
@@ -3355,8 +3355,8 @@
       {
        "key": "match_dist",
        "typ": "float",
-       "default": 8.0,
-       "hilfe": "Vergleich: DTW über 13 MFCC (Mittelwert abgezogen), Kosten je Schritt; Längen höchstens len_ratio verschieden. match_dist aus Windows-Sprachausgabe mit Raumrauschen (2026-11-19): derselbe Satz, andere Sprechrate 2..4, andere Sätze ab 14, anderer Sprecher derselbe Satz 10..16. An echten Proben nachstellen (tools/stimme.py vergleich)."
+       "default": 10.0,
+       "hilfe": "Vergleich: DTW über 13 MFCC (Mittelwert abgezogen), Kosten je Schritt; Längen höchstens len_ratio verschieden. match_dist aus Windows-Sprachausgabe mit Raumrauschen (2026-11-19): derselbe Satz, andere Sprechrate 2..4, andere Sätze ab 14, anderer Sprecher derselbe Satz 10..16. Am Rider mit 8 kaum Treffer (Wiederholungen 9..14): 10 geraten, Nutzer 2026-11-19 „erst Schnellkorrektur“. Nachstellen mit tools/stimme.py strom (beschriftete Aufnahme)."
       },
       {
        "key": "dtw_band",

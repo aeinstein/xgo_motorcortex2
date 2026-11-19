@@ -903,20 +903,22 @@ class StimmeCfg:
     # unter vad_off_db; vad_pre_s Vorlauf. Kürzer als min_s verworfen, bei max_s abgeschnitten.
     vad_on_db: float = 9.0
     vad_off_db: float = 4.0
-    vad_hang_s: float = 0.3
+    vad_hang_s: float = 0.6            # 0,3 zerschnitt am Rider Sätze an Sprechpausen (2026-11-19)
     vad_pre_s: float = 0.15
     min_s: float = 0.6
     max_s: float = 3.0
     # Anteil stimmhafter Rahmen unter den lauten, sonst kein Sprechen. Stimmhaft: spektrale Flachheit 300-3000 Hz unter
     # flat_max und Grundton 70-400 Hz (Autokorrelation, fensterbereinigt) über per_min. Am Rider 2026-11-19:
-    # Sprache 0,65-0,96, Wasserrauschen 0,0-0,19 (vorher nur Flachheit und 0,3: Rauschen wurde gelernt).
-    voiced_min: float = 0.6
+    # Sprachausgabe 0,74-0,96, Wasserrauschen 0,0-0,19 (vorher nur Flachheit und 0,3: Rauschen wurde gelernt), echte
+    # Stimme am Rider 0,60-0,98 und mit 0,6 rund 70 % verworfen: daher 0,4.
+    voiced_min: float = 0.4
     flat_max: float = 0.3
     per_min: float = 0.5
     # Vergleich: DTW über 13 MFCC (Mittelwert abgezogen), Kosten je Schritt; Längen höchstens len_ratio verschieden.
     # match_dist aus Windows-Sprachausgabe mit Raumrauschen (2026-11-19): derselbe Satz, andere Sprechrate 2..4,
-    # andere Sätze ab 14, anderer Sprecher derselbe Satz 10..16. An echten Proben nachstellen (tools/stimme.py vergleich).
-    match_dist: float = 8.0
+    # andere Sätze ab 14, anderer Sprecher derselbe Satz 10..16. Am Rider mit 8 kaum Treffer (Wiederholungen 9..14):
+    # 10 geraten, Nutzer 2026-11-19 „erst Schnellkorrektur“. Nachstellen mit tools/stimme.py strom (beschriftete Aufnahme).
+    match_dist: float = 10.0
     dtw_band: float = 0.25
     len_ratio: float = 1.6
     # Sittich-Filter: speed-mal so schnell (höher und kürzer), Bandpass band_lo..band_hi Hz, Schnarren durch

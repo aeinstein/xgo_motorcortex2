@@ -50,16 +50,16 @@ The pet learns phrases it hears repeatedly and parrots them back, filtered to so
 | Item | Value |
 |---|---|
 | Capture | on the `[ortung]` stream (`Ortung.horcher`), only in `pet` (balancing or lying) while a person is in view or gone ≤ `[pet] parrot_listen_s` (3 s); never during own sounds (+ `nachhall_s`) |
-| VAD | ortung level vs. noise floor: opens `vad_on_db` 9, ends after `vad_hang_s` 0.3 s below `vad_off_db` 4; 0.15 s pre-roll; 0.6–3 s (cut at `max_s`) |
-| Features | 48 kHz stereo → 16 kHz mono (FIR 7 kHz), 13 MFCC per 10 ms, silent edges trimmed, mean removed; rejected if < `voiced_min` 0.6 of the loud frames are voiced: flatness 300–3000 Hz < `flat_max` 0.3 **and** pitch 70–400 Hz (autocorrelation from the power spectrum, window-corrected) > `per_min` 0.5. Rider 2026-11-19: speech 0.65–0.96, running water 0.0–0.19 (with flatness only and 0.3, water noise got learned) |
-| Match | DTW (Sakoe-Chiba 25 %, length ratio ≤ 1.6), cost per step ≤ `match_dist` 8. Windows TTS + room noise: same phrase other rate 2–4, other phrases ≥ 14, same phrase other voice 10–16. Tune on real samples |
+| VAD | ortung level vs. noise floor: opens `vad_on_db` 9, ends after `vad_hang_s` 0.6 s below `vad_off_db` 4 (0.3 s split phrases); 0.15 s pre-roll; 0.6–3 s (cut at `max_s`) |
+| Features | 48 kHz stereo → 16 kHz mono (FIR 7 kHz), 13 MFCC per 10 ms, silent edges trimmed, mean removed; rejected if < `voiced_min` 0.4 of the loud frames are voiced: flatness 300–3000 Hz < `flat_max` 0.3 **and** pitch 70–400 Hz (autocorrelation from the power spectrum, window-corrected) > `per_min` 0.5. Rider 2026-11-19: real voice 0.60–0.98 (0.6 dropped ~70 %), running water 0.0–0.19 (with flatness only and 0.3, water noise got learned) |
+| Match | DTW (Sakoe-Chiba 25 %, length ratio ≤ 1.6), cost per step ≤ `match_dist` 10 (guessed). Windows TTS + room noise: same phrase other rate 2–4, other phrases ≥ 14, same phrase other voice 10–16; real repeats on the Rider 9–14 (8 hardly ever matched). Tune with a labelled recording (`tools/stimme.py strom`) |
 | Learning | no match → candidate (≤ `pool_n` 30); a candidate not confirmed within `kandidat_max_min` 1 min is deleted (thread checks every 5 s); match with a candidate → confirmed (louder take kept), filtered, parroted after `parrot_delay_s` 0.8 s; match with a confirmed one → parroted again, every time. At `max_confirmed` 10 no more learning, recognition of the confirmed ones continues |
 | Budgie filter | ×`speed` 1.6 (higher, shorter), vibrato 25 Hz ±0.3 ms, high-pass 1 kHz + low-pass 5 kHz, tanh drive 2, peak −3 dB, 10 ms fades; once per confirmation |
 | Playback | when talking back (`brabbeln`) a learned sample instead with `parrot_p` 0.5, ≥ `parrot_repeat_s` 30 s apart, least played first (sound `stimme:NN`) |
 | Files | `[stimme] dir` (`/opt/xgonav/stimmen`): `kandidaten/<time>.wav` (16 kHz raw), `bestaetigt/NN_roh.wav`, `NN.wav` (48 kHz filtered); delete the directory to forget everything |
 | Status | `GET /status` → `ortung.stimme` (`aufnahme`, `bestaetigt`, `kandidaten`, `voll`, `segmente`, `verworfen`, `wieder`); pet info `nachgeplappert`, `proben` |
 | Cost | per 21 ms block only while capturing: a few comparisons and keeping the block; per utterance C++ core `native/stimmfast.cpp` in thread `stimme` (CM4: 3 s features ≈ 21 ms before the pitch check, DTW ≈ 2 ms per sample); filter once per confirmation (≈ 6 ms per s). numpy fallback equal to rounding (1e-13). Nothing in the frame loop |
-| Tools | `python tools/stimme.py sittich in.wav out.wav [--set speed=1.8]`, `vergleich a.wav b.wav …` (distance table), `lernen *.wav` (whole flow in a temp dir) |
+| Tools | `python tools/stimme.py sittich in.wav out.wav [--set speed=1.8]`, `vergleich a.wav b.wav …` (distance table), `lernen *.wav` (whole flow in a temp dir), `strom long.wav [--aus dir]` (cut a long 48 kHz stereo recording like on the Rider, distance table; record in mode `manual`: `arecord -D hw:0,0 -f S16_LE -r 48000 -c 2 -d 120 x.wav`) |
 
 ## Mixer state (as found, not changed)
 
