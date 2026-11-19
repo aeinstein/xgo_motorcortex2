@@ -3,7 +3,7 @@
  * xgonav – Status und Befehle an die lokale xgonav-Schnittstelle weiterreichen.
  *
  *   GET  api.php?a=status                     (einmalig, z. B. nach Befehlen; laufend kommen Status, CPU, WLAN
- *                                              und IMU per WebSocket /xgonav/live von tools/live.php)
+ *                                              und IMU per WebSocket /live von tools/live.php)
  *   POST api.php?a=mode&name=follow&target=person
  *   POST api.php?a=map_reset                  (Raumkarte leeren, Pose und Start auf 0)
  *   POST api.php?a=map_start                  (Startpunkt = aktuelle Pose)

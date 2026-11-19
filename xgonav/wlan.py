@@ -25,7 +25,7 @@ import numpy as np
 log = logging.getLogger(__name__)
 
 HOTSPOT_IP = "10.42.0.1"                      # NetworkManager-Hotspot (ipv4.method shared)
-WLAN_URL = f"{HOTSPOT_IP}/xgonav/wlan.php"
+WLAN_URL = f"{HOTSPOT_IP}/wlan.php"
 _PW_ZEICHEN = "abcdefghjkmnpqrstuvwxyz23456789"   # ohne l/1/i/o/0: vom Display abtippen
 
 

@@ -2,7 +2,7 @@
 Moduswechsel, Bildverarbeitung an/aus.
 
 Die Bedienoberfläche ist PHP (web/), ausgeliefert von nginx (deploy/nginx-xgonav.conf);
-nginx reicht /xgonav/ws und /xgonav/frame direkt hierher durch. Keine Authentifizierung: web_host
+nginx reicht /ws und /frame direkt hierher durch. Keine Authentifizierung: web_host
 auf 127.0.0.1 lassen und nur über nginx veröffentlichen.
 """
 from __future__ import annotations
@@ -131,7 +131,7 @@ def serve(app: App, host: str, port: int, fps: int, render_cpus=None) -> Threadi
         def do_GET(self):
             u = urlparse(self.path)
             if u.path == "/":
-                return self._send(200, json.dumps({"xgonav": "Schnittstelle, Oberfläche unter /xgonav/ (nginx)", "api": API}).encode())
+                return self._send(200, json.dumps({"xgonav": "Schnittstelle, Oberfläche unter / (nginx)", "api": API}).encode())
             if u.path == "/status":
                 s = app.snapshot
                 body = {"mode": app.mode, "pipeline": "läuft" if app.pipeline_on else "gestoppt", "ruhe": app.ruhe,

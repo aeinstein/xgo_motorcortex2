@@ -1,7 +1,7 @@
 <?php
 /*
  * WLAN eintragen: Netz wählen, Passwort, verbinden (api.php?a=wlan_connect -> sudo xgo-wlan connect).
- * Gedacht für den Hotspot der WLAN-Einrichtung (Tasten C+D halten, kein QR-Code: https://10.42.0.1/xgonav/wlan.php),
+ * Gedacht für den Hotspot der WLAN-Einrichtung (Tasten C+D halten, kein QR-Code: https://10.42.0.1/wlan.php),
  * geht aber auch im normalen Betrieb ("WLAN hinzufügen"). Bestehende Profile bleiben; das neue hat Vorrang.
  * Keine Rechenzeit am Rider außer beim Aufruf (nmcli).
  */

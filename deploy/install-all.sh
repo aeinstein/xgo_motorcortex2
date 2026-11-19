@@ -158,7 +158,7 @@ if [ "$DO_WEB" = 1 ]; then
     nginx -t
     systemctl restart php8.2-fpm nginx
 
-    # Laufzeitdaten per WebSocket (/xgonav/live): eigener PHP-CLI-Dienst statt Polling über php-fpm
+    # Laufzeitdaten per WebSocket (/live): eigener PHP-CLI-Dienst statt Polling über php-fpm
     installiere deploy/xgonav-live.service /etc/systemd/system/xgonav-live.service
     systemctl daemon-reload
     systemctl enable xgonav-live >/dev/null 2>&1
@@ -175,7 +175,7 @@ Nächste Schritte:
   2. Kontrolle:  cat /proc/XGORider/serial_stats; cat /proc/XGORider/imu
   3. Probelauf ohne Fahren:  cd /opt/xgonav && venv/bin/python -m xgonav --config config.toml --mode idle
   4. Dienst erst nach dem Probelauf:  sudo systemctl enable --now xgonav
-  Oberfläche: https://<rider>/xgonav/
+  Oberfläche: https://<rider>/
 EOF
 if [ ${#WARN[@]} -gt 0 ]; then
     echo

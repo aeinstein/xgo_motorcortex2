@@ -2,7 +2,7 @@
 /*
  * xgonav-live – Laufzeitdaten für die Weboberfläche per WebSocket statt Polling.
  *
- * nginx reicht /xgonav/live hierher durch (127.0.0.1:8089, systemd deploy/xgonav-live.service).
+ * nginx reicht /live hierher durch (127.0.0.1:8089, systemd deploy/xgonav-live.service).
  * Ohne verbundenen Browser schläft der Dienst in stream_select: keine /proc-Zugriffe, 0 % CPU.
  * Bewusst nicht unter web/: dort wäre jede .php-Datei per php-fpm aufrufbar.
  *

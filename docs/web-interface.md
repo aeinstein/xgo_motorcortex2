@@ -4,7 +4,7 @@
 
 | Item | Value |
 |---|---|
-| URL | `https://<rider>/xgonav/` (`/` and port 80 redirect here) |
+| URL | `https://<rider>/` (port 80 redirects here; old `/xgonav/…` paths are rewritten internally) |
 | Stack | nginx (TLS on 443) → php-fpm pool `xgonav` → `web/index.php`, `web/api.php` |
 | Backend | xgonav local API `127.0.0.1:8088` (`output.web_host`, `web_port`) |
 | Auth | **none** — LAN only |
@@ -24,7 +24,7 @@
 
 Language: German is in the HTML, English in the dictionaries `EN`/`EN_HTML` of `index.php` (keyed by the German text; long help blocks via `data-i18n-html`). Switched in the browser only, choice in `localStorage` `xgonav.lang`; free text from xgonav/`api.php` (status, errors) stays German. `?i18n=debug` logs missing translations to the console. No cost on the Pi.
 
-Live data: one WebSocket `/xgonav/live` (see below) instead of polling; HTTP `a=status` only at load and after
+Live data: one WebSocket `/live` (see below) instead of polling; HTTP `a=status` only at load and after
 commands. Map every 1 s (next request after previous finished).
 
 ## Einstellungen (settings modal)
@@ -70,7 +70,7 @@ GET only for `status`, `route`, `detector`; all commands POST. Parameters are va
 
 | Request | Target | Range |
 |---|---|---|
-| `GET ?a=status` | xgonav `/status` (once; live via `/xgonav/live`) | |
+| `GET ?a=status` | xgonav `/status` (once; live via `/live`) | |
 | `GET ?a=detector` | xgonav `/detector` | JSON `on`, `geladen`, `backend`, `classes`, `modes`, `default` |
 | `POST ?a=mode&name=..&target=..` | xgonav `/mode` | name ∈ idle, manual, follow, explore, approach, home, patrol, pet; target `[a-z ]{1,30}` |
 | `POST ?a=stop` | xgonav `/stop` | |
@@ -136,7 +136,7 @@ Mode rules: `explore`/`approach`/`home` need `freespace.enabled` (else 409); `fo
 
 | Item | Value |
 |---|---|
-| Path | `/xgonav/ws` (nginx → xgonav `/ws`, TLS terminates in nginx) |
+| Path | `/ws` (nginx → xgonav `/ws`, TLS terminates in nginx) |
 | Message | binary: 4-byte frame index + JPEG; with `?nick=2` (used by `index.php`, header from `web.ws_kopf`): index, then 10 × float32 BE: `row_stand`, `row_imu` (`horizon_row(0)` / `horizon_row(pure IMU pitch)`; NaN = no IMU), roll (deg, + = right side low, as the cyan line), `cx`, IMU pitch (deg), IMU heading (deg), age of the IMU sample (ms), pitch rate from image and from IMU (°/s), state (1 = IMU valid, 0 = pitch from the image only, NaN = no IMU); then the JPEG. All from the snapshot, nothing computed anew |
 | Flow control | client sends `ok` per image; xgonav sends the next (newest) image only after ack |
 | Ack timeout | 10 s → connection closed |
@@ -154,7 +154,7 @@ Daemon `tools/live.php` (PHP CLI, unit `xgonav-live.service`, user `www-data`, `
 
 | Item | Value |
 |---|---|
-| Path | `/xgonav/live` (nginx → `127.0.0.1:8089`) |
+| Path | `/live` (nginx → `127.0.0.1:8089`) |
 | Idle | no client: blocks in `stream_select`, no `/proc` reads, 0 % CPU |
 | `sys` + `status`, 1 s (sleep mode 5 s) | `sys`: `t`, `cpu` `[[total, idle+iowait], …]` per core (jiffies), `temp_c`, `load`, `battery`, `height`, `roll`, `state`, `wlan` `"rx_bytes tx_bytes dBm quality"` (`-` = unknown); `status`: xgonav `/status` verbatim (timeout 0.5 s) or `null` + `status_fehler` |
 | `imu`, 0.3 s if `state` = 1 (balancing), else 1 s; none in sleep mode | `seq`, `imu` `[[seq, t_ms, roll, pitch, yaw], …]` (°), `wseq`, `wheels` `[[seq, t_ms, ticks_left, ticks_right], …]`, `state`; only samples newer than the last sent per connection |

@@ -35,7 +35,7 @@ cd /opt/xgonav && venv/bin/python -m xgonav --config config.toml --mode idle
 sudo systemctl enable --now xgonav      # as a service
 ```
 
-Web UI: `https://<rider>/xgonav/`. No authentication; LAN only.
+Web UI: `https://<rider>/`. No authentication; LAN only.
 
 ```
 python -m xgonav --mode follow                    # follow a person

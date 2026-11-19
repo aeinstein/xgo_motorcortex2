@@ -106,10 +106,10 @@ sudo systemctl enable --now xgonav
 | Location | Target |
 |---|---|
 | `:80` | redirect to https |
-| `/` | redirect to `/xgonav/` |
-| `/xgonav/` | `/opt/xgonav/web/` (PHP via php-fpm) |
-| `/xgonav/ws`, `/xgonav/frame`, `/xgonav/map.png` | proxied to xgonav `127.0.0.1:8088` |
-| `/xgonav/live` | WebSocket, proxied to `xgonav-live` `127.0.0.1:8089` |
+| `/` | `/opt/xgonav/web/` (PHP via php-fpm, `tagebuch/` static) |
+| `/xgonav/…` | rewritten internally to `/…` (old links) |
+| `/ws`, `/frame`, `/map.png` | proxied to xgonav `127.0.0.1:8088` |
+| `/live` | WebSocket, proxied to `xgonav-live` `127.0.0.1:8089` |
 
 ## YOLO model (PC/GPU server only, not on the Pi)
 
