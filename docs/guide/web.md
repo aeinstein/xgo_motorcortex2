@@ -62,7 +62,7 @@
 
 ![Sound radar](../screenshots/web-radar.png)
 
-Direction of sound from the two microphones (modes `idle`, `pet`): ray = sound, length = loudness, fades in 12 s. Front and back cannot be told apart. Reference: [Audio](../audio.md).
+Direction of sound from the two microphones (modes `idle`, `pet`): ray = sound, length = loudness, fades in 12 s. Rays turn with the Rider (IMU yaw), so they keep pointing at the source. Front and back cannot be told apart. Reference: [Audio](../audio.md).
 
 ## Extras
 

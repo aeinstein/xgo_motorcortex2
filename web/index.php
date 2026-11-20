@@ -522,7 +522,8 @@ details.extras[open]>summary{margin-bottom:8px}
     <canvas class="radar" id="d-radar" role="img" aria-label="Richtung der letzten Geräusche"></canvas>
     <div class="legende" id="l-radar"></div>
     <details class="hilfe" data-i18n-html="hilfe-radar"><summary>Strahl = Geräusch · Länge = Lautstärke · verblasst in 12 s</summary>
-      <p>Richtung aus dem Laufzeitunterschied der zwei Mikrofone (<code>[ortung]</code>). Oben ist vorn. Zwei
+      <p>Richtung aus dem Laufzeitunterschied der zwei Mikrofone (<code>[ortung]</code>). Oben ist vorn; dreht
+        sich der Rider, drehen Peilungen und Speichen mit (IMU-Gier), alte Strahlen zeigen weiter zur Quelle. Zwei
         Mikrofone trennen nur links und rechts: jeder Strahl hat deshalb einen gestrichelten Zwilling nach hinten,
         die Quelle liegt auf einem von beiden. Länge = Pegel über dem Ruhepegel, Deckkraft = Güte und Alter.
         Lauscht nur in den Modi aus <code>[ortung] modes</code>, nie im Ruhemodus; eigene Töne werden ausgeblendet.</p>
@@ -800,7 +801,8 @@ const EN = {
 };
 const EN_HTML = {
   'hilfe-radar': `<summary>Ray = sound · length = loudness · fades in 12 s</summary>
-      <p>Direction from the time difference between the two microphones (<code>[ortung]</code>). Up is forward.
+      <p>Direction from the time difference between the two microphones (<code>[ortung]</code>). Up is forward;
+        when the Rider turns, rays and spokes turn with it (IMU yaw), older rays keep pointing at the source.
         Two microphones only separate left and right: every ray therefore has a dashed twin to the rear, the
         source is on one of them. Length = level above the noise floor, opacity = quality and age. Listens only
         in the modes of <code>[ortung] modes</code>, never in rest mode; own sounds are ignored.</p>`,
@@ -2386,19 +2388,41 @@ function extrasUmschalten() {
 }
 // Schallradar: Strahlen aus status.ortung.verlauf ([Alter s, Winkel °, Güte, Pegel dB]); gezeichnet wird nur im
 // Browser und nur, solange die Karte offen ist. Zeiten werden beim Eintreffen auf die Browseruhr umgerechnet.
+// Mitdrehen: je Peilung die IMU-Gier beim ersten Sehen merken (der Lage-Puffer hält nur LAGE_MS), beim Zeichnen
+// um die Drehung seitdem ausgleichen; ohne IMU-Proben bleibt alles relativ zum Rider wie gemessen.
 const RADAR_MS = 12000;
-let radarStrahlen = [], radarAktiv = false, radarLaeuft = false;
+let radarStrahlen = [], radarAktiv = false, radarLaeuft = false, radarGierZuletzt = null;
+function radarGier(t) {                                  // Gier ° (+ = links, fortlaufend) zur Browserzeit t
+  if (lageOff == null || !lage.length) return null;
+  const w = lageBei(t - lageOff);
+  return w ? w[2] : null;
+}
+function radarWinkel(s, gJetzt) {                        // Peilung relativ zum Rider jetzt, ° (+ = links)
+  return s.gier != null && gJetzt != null ? s.w + s.gier - gJetzt : s.w;
+}
 function radarStatus(o) {
   radarAktiv = !!(o && o.aktiv);
   const jetzt = performance.now();
-  if (o && o.verlauf) radarStrahlen = o.verlauf.map(v => ({t: jetzt - v[0] * 1000, w: v[1], g: v[2], db: v[3]}));
+  if (o && o.verlauf) {
+    const alt = radarStrahlen;
+    radarStrahlen = o.verlauf.map(v => {
+      const s = {t: jetzt - v[0] * 1000, w: v[1], g: v[2], db: v[3]};
+      const vor = alt.find(a => Math.abs(a.t - s.t) < 300 && a.w === s.w);
+      s.gier = vor ? vor.gier : radarGier(s.t);
+      return s;
+    });
+  }
   $('radar-zustand').textContent = !o ? '-' : o.fehler ? o.fehler : tr(o.aktiv ? 'lauscht' : 'aus');
+  radarLegende(jetzt);
+  radarStarten();
+}
+function radarLegende(jetzt) {
   const l = radarStrahlen.length ? radarStrahlen[radarStrahlen.length - 1] : null;
+  const w = l ? ((radarWinkel(l, radarGier(jetzt)) + 180) % 360 + 360) % 360 - 180 : 0;
   $('l-radar').textContent = !l ? tr('noch kein Geräusch') :
-    (Math.abs(l.w) < 3 ? tr('Mitte') : Math.abs(l.w).toFixed(0) + '° ' + tr(l.w > 0 ? 'links' : 'rechts')) +
+    (Math.abs(w) < 3 ? tr('Mitte') : Math.abs(w).toFixed(0) + '° ' + tr(w > 0 ? 'links' : 'rechts')) +
     ' · ' + tr('Güte') + ' ' + l.g.toFixed(2) + ' · +' + l.db.toFixed(0) + ' dB · ' +
     tr('vor {s} s', {s: Math.max(0, (jetzt - l.t) / 1000).toFixed(0)});
-  radarStarten();
 }
 function radarZeichnen(jetzt) {
   const cv = $('d-radar'), dpr = window.devicePixelRatio || 1, B = cv.clientWidth;
@@ -2415,8 +2439,10 @@ function radarZeichnen(jetzt) {
   g.beginPath(); g.arc(cx, cy, R, 0, 2 * Math.PI); g.fill();
   g.strokeStyle = rand; g.lineWidth = 1;
   for (const f of [1 / 3, 2 / 3, 1]) { g.beginPath(); g.arc(cx, cy, R * f, 0, 2 * Math.PI); g.stroke(); }
-  for (let k = 0; k < 12; k++) {                         // Speichen alle 30°, Achsen kräftiger
-    const a = k * Math.PI / 6;
+  const gJetzt = radarGier(jetzt), dreh = gJetzt != null ? gJetzt * Math.PI / 180 : 0;
+  radarGierZuletzt = gJetzt;
+  for (let k = 0; k < 12; k++) {                         // Speichen alle 30°, fest in der Welt; Achsen kräftiger
+    const a = k * Math.PI / 6 + dreh;
     g.globalAlpha = k % 3 ? 0.35 : 1;
     g.beginPath(); g.moveTo(cx, cy); g.lineTo(cx + R * Math.sin(a), cy - R * Math.cos(a)); g.stroke();
   }
@@ -2426,7 +2452,7 @@ function radarZeichnen(jetzt) {
     const alter = jetzt - s.t;
     if (alter > RADAR_MS) continue;
     const blass = (1 - alter / RADAR_MS) * Math.min(1, Math.max(0.35, s.g));
-    const len = R * Math.min(1, Math.max(0.35, (s.db - 3) / 22)), w = s.w * Math.PI / 180;
+    const len = R * Math.min(1, Math.max(0.35, (s.db - 3) / 22)), w = radarWinkel(s, gJetzt) * Math.PI / 180;
     for (const hinten of [false, true]) {
       const a = hinten ? Math.PI + w : -w, x = cx + len * Math.sin(a), y = cy - len * Math.cos(a);
       const v = g.createLinearGradient(cx, cy, x, y);
@@ -2452,12 +2478,15 @@ function radarZeichnen(jetzt) {
   g.fillText(tr('vorn'), cx, cy - R - 8); g.fillText(tr('hinten'), cx, cy + R + 8);
   g.fillText('L', cx - R - 8, cy); g.fillText('R', cx + R + 8, cy);
 }
-// Schleife nur bei offener Karte und nur, solange ein Strahl verblasst
+// Schleife nur bei offener Karte und nur, solange ein Strahl verblasst oder der Rider sich dreht
 function radarSchleife(jetzt) {
   radarLaeuft = false;
   if (!$('radarkarte').open || document.hidden) return;
+  const vorher = radarGierZuletzt;
   radarZeichnen(jetzt);
-  if (radarStrahlen.some(s => jetzt - s.t < RADAR_MS)) radarStarten();
+  const dreht = radarGierZuletzt != null && (vorher == null || Math.abs(radarGierZuletzt - vorher) > 0.2);
+  if (dreht) radarLegende(jetzt);
+  if (dreht || radarStrahlen.some(s => jetzt - s.t < RADAR_MS)) radarStarten();
 }
 function radarStarten() {
   if (radarLaeuft || !$('radarkarte').open) return;
@@ -2516,6 +2545,7 @@ function imuVerarbeiten(s) {
     lageOff = lageOff == null || off < lageOff || Math.abs(off - lageOff) > 2000 ? off : lageOff + (off - lageOff) * 0.02;
   }
   if (s.state != null) beinSoll.abgesetzt = s.state === 254;
+  radarStarten();                                        // Drehung: Radar dreht mit
 }
 // CPU, Temperatur, Akku, WLAN, Beine: 1×/s aus dem Live-Paket (auch im Hintergrund, Verlauf bleibt lückenlos)
 function sysVerarbeiten(s) {
