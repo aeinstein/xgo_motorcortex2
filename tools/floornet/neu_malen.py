@@ -6,8 +6,8 @@
 Die alte Bearbeitung in Stage1 wird ÜBERSCHRIEBEN (Nutzer 2026-11-12: so lange neu würfeln, bis kein Gegenstand mehr
 übermalt ist), ebenso die Masken in Stage2 und Stage3. Eingangskette wie comfy_batch.py --eingang auto. Jeder Lauf
 steht in <stage1>/neu.jsonl ({"id", "seed", "prompt", "eingang", "zeit"}); Seed (1) und Prompt des Stapellaufs gelten
-für diese Bilder nicht mehr. --prompt wählt eine Variante für die Situation im Bild (11 = Standard der Ansicht,
-t1 = Teppichsatz, t2 = Teppich und Dinge einzeln genannt): Name x -> <dir>/comfy/prompte/x.txt (im Netz-Betrachter
+für diese Bilder nicht mehr. --prompt wählt eine Variante für die Situation im Bild (t1 = Teppichsatz, Standard der Ansicht seit
+2026-11-20, 11 = nur blanker Boden, t2 = Teppich und Dinge einzeln genannt): Name x -> <dir>/comfy/prompte/x.txt (im Netz-Betrachter
 bearbeitbar, betrachter_server.py legt sie beim Start aus den Dateien hier an), sonst comfy_promptx.txt oder
 comfy_prompt_x.txt neben diesem Skript; eine neue Variante ist eine neue Datei plus ein Eintrag in der Auswahl von
 netz_betrachter.html. Letzte Zeile der Ausgabe: JSON {"id", "seed", "rows"} (Labelzeile je 8-px-Spalte wie stage3_npz.py).
@@ -26,7 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 # Ansicht -> Verzeichnisse unter --dir, Prompt-Datei neben diesem Skript, Grünschwelle von stage2.py --gruen
 ANSICHT = {"p11": {"stage1": "stage1_p11", "stage2": "stage2_p11", "stage3": "stage3_p11",
-                   "prompt": "11", "gruen": 30}}
+                   "prompt": "t1", "gruen": 30}}      # Standard Teppichsatz (Nutzer 2026-11-20)
 LOG = "neu.jsonl"
 
 
