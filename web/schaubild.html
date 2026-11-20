@@ -85,7 +85,7 @@ ul.k li { margin:3px 0; }
 <body>
 <main>
 <h1>Datenweg xgonav</h1>
-<p class="sub">Stand 2026-11-19, aus dem Code (Firmware-Build, <code>kernel_module/</code>, <code>xgonav/</code>) und der <code>config.toml</code> am Rider. Oben der Weg der Messwerte von Servos und IMU über die ESP32-Firmware und die serielle Leitung in den Treiber und nach <code>/proc</code>, darunter die Pipeline je Bild mit ihren Korrekturen und die Abnehmer; orange Pfeile zeigen den Rückweg der Befehle. Der Treiberstand vom 2026-11-17 ist am Rider noch nicht eingespielt. Die Seite ist statisch und kostet am Pi keine Rechenzeit. <a href="./">← Oberfläche</a></p>
+<p class="sub">Stand 2026-11-19, aus dem Code (Firmware-Build, <code>kernel_module/</code>, <code>xgonav/</code>) und der <code>config.toml</code> am Rider. Oben der Weg der Messwerte von Servos und IMU über die ESP32-Firmware und die serielle Leitung in den Treiber und nach <code>/proc</code>, darunter die Pipeline je Bild mit ihren Korrekturen und die Abnehmer; orange Pfeile zeigen den Rückweg der Befehle. Der Treiberstand vom 2026-11-17 ist am Rider noch nicht eingespielt. Der BLE-Weg (Firmware 0025, <code>/proc/XGORider/ble</code>, <code>xgo-ble</code>; Tabelle unten) ist seit 2026-11-20 ~19:00 geflasht und eingespielt. Die Seite ist statisch und kostet am Pi keine Rechenzeit. <a href="./">← Oberfläche</a></p>
 
 <div class="scroll">
 <svg viewBox="0 0 1800 2940" role="img" aria-labelledby="t1" xmlns="http://www.w3.org/2000/svg">
@@ -297,7 +297,7 @@ ul.k li { margin:3px 0; }
 <text x="719" y="586.0" class="bl" xml:space="preserve">Ring mit 16 Proben aus sensor()</text>
 <text x="719" y="601.5" class="bl" xml:space="preserve">sendet ≤ 8 Strompakete je Durchlauf</text>
 <text x="719" y="617.0" class="bl" xml:space="preserve">UART-Puffer voll → verworfen (Lücke in seq)</text>
-<text x="719" y="632.5" class="bl" xml:space="preserve">Befehle von USB, Aux-UART, BLE</text>
+<text x="719" y="632.5" class="bl" xml:space="preserve">Befehle von USB, Aux-UART, BLE; BLE-Tunnel</text>
 <text x="719" y="648.0" class="bl" xml:space="preserve">Reg 0x11 = Stromrate 0..250 Hz</text>
 <text x="719" y="663.5" class="bl" xml:space="preserve">Strom aus nach 5 s ohne Byte vom Pi</text>
 </g>
@@ -311,7 +311,7 @@ ul.k li { margin:3px 0; }
 <text x="349" y="873.0" class="bl" xml:space="preserve">LEN = Nutzdaten + 8</text>
 <text x="349" y="888.5" class="bl" xml:space="preserve">CHK = ~(LEN + TYPE + REG + Σ DATA)</text>
 <text x="349" y="904.0" class="bl" xml:space="preserve">Typ 0x01 schreiben, 0x02 lesen,</text>
-<text x="349" y="919.5" class="bl" xml:space="preserve">0x12 Antwort, 0x14 Strom</text>
+<text x="349" y="919.5" class="bl" xml:space="preserve">0x12 Antwort, 0x14 Strom, 0x15 BLE-Tunnel</text>
 </g>
 <g class="box k-in" id="l_strom">
 <rect x="710" y="775" width="370" height="160.5" rx="7"/>
@@ -759,6 +759,8 @@ ul.k li { margin:3px 0; }
 <tr><td>IMU-Leser</td><td>xgonav ProcImu</td><td>je Bild aus der Bildschleife (refresh, direkt vor imu_frame); Faden alle 50 ms nur, wenn sonst niemand liest</td><td>imu_log</td><td><code>xgonav/imu.py</code></td></tr>
 <tr><td>Rad-Leser</td><td>xgonav ProcWheels</td><td>25 Hz (abgesetzt 5 Hz)</td><td>wheels_log</td><td><code>xgonav/wheels.py</code></td></tr>
 <tr><td>Fahrbefehle, Zustand</td><td>xgonav ProcRobot</td><td>schreibt 50 Hz, liest 0,2 s</td><td>speed_x/z u8, 128 = Stand</td><td><code>xgonav/robot.py</code></td></tr>
+<tr><td>BLE-Tunnel (0025)</td><td>Telefon ↔ ESP32 loop() ↔ Kernel ↔ xgo-ble</td><td>nur bei Anfragen; zum Pi je Durchlauf ein Rahmen, vom Pi ein Rahmen je 4 ms (≈ 4,6 kB/s)</td><td>Typ 0x15 / Reg 0x17, Kennung + ≤ 23 B; Ring 4 KB im Treiber, 2 KB im ESP32</td><td><code>pi_tunnel.h, xgo-serial.c tunnel_frame, deploy/xgo-ble/</code></td></tr>
+<tr><td>IP des Pi für BLE (0025)</td><td>Kernel, xgo_main → ESP32</td><td>bei Änderung und alle 3 s</td><td>Reg 0x18, 4 B; ESP32 zeigt nach 10 s ohne Meldung 0.0.0.0</td><td><code>xgo-drv.c pi_ip_tick</code></td></tr>
 <tr><td>Live-Anzeige</td><td>live.php</td><td>0,3 s balancierend, sonst 1 s</td><td>imu_log, wheels_log</td><td><code>tools/live.php</code></td></tr>
 </tbody></table></div>
 

@@ -70,8 +70,9 @@ cat /proc/XGORider/serial_stats; cat /proc/XGORider/imu
 | `imu_log` | r | last 128 samples, oldest first | |
 | `wheels` | r | `seq t_ns ticks_left ticks_right fw_ms` (fw_ms only with 0x0d) | |
 | `wheels_log` | r | last 64 samples | |
-| `serial_stats` | r | `frames bad timeouts unsolicited imu_seq imu_hz imu_block wheels wheel_seq stream stream_gaps stream_hz stream_active stream_offset_us` (one per line) | |
+| `serial_stats` | r | `frames bad timeouts unsolicited imu_seq imu_hz imu_block wheels wheel_seq stream stream_gaps stream_hz stream_active stream_offset_us tunnel_rx tunnel_drop tunnel_tx pi_ip` (one per line) | |
 | `raw_reg` | rw, root | write `"0x0b 16"` (addr, len), read `"0x0b 16: 00 11 .."`; read-only diagnostics | any |
+| `ble` | rw, root | BLE tunnel of firmware patch 0025 ([ble.md](ble.md)). Blocking read (or `poll`) = one record: byte 0 kind (0 data, 1 BLE connected, 2 disconnected) + ≤ 23 bytes, buffer ≥ 24 bytes; returns 0 when the module unloads. Write = bytes to the BLE client, sent in 23-byte chunks every 4 ms. Reader: `xgo-ble` | 0x17, frames type 0x15 |
 
 ### `/proc/XGORider/settings`
 
@@ -81,6 +82,7 @@ cat /proc/XGORider/serial_stats; cat /proc/XGORider/imu
 | `imu_hz` | 50 | 0..200, 0 = off; polling rate of 0x0d, used only without stream |
 | `imu_stream_hz` | 0 | 0..250; > 0 = firmware stream (0014), polling only as fallback |
 | `led_brightness` | −1 (never written) | 0..255: global LED multiplier n/256 of firmware patch 0016 (reg 0x12; firmware default 32, former fixed value 64). Sent once on write; the firmware forgets it on an ESP restart, the file then still shows the last written value. Older firmware ignores it |
+| `ip_dev` | `wlan0` | network interface (name ≤ 8 characters) whose first IPv4 the driver reports to the ESP32 for BLE (firmware patch 0025, reg 0x18): on change and every 3 s from the main loop; `0.0.0.0` without address. Older firmware ignores it |
 | `low_batt_level` | 8 | 0..100 % |
 | `shutdown_on_low_batt` | 1 | battery < level → `orderly_poweroff` |
 | `sleep_ms_on_loop` | 200 | main loop sleep (battery, state; yaw polling only without stream) |
@@ -108,8 +110,9 @@ stty -F /dev/ttyAMA0 115200 cs8 -cstopb -parenb -brkint -imaxbel -opost -onlcr -
 ## Userspace test
 
 ```
-driver-test/run.sh kernel_module [seconds=6] [imu_hz=50] [--wheels --combo] [--stream[=HZ] | --stream-off] [--faults]
+driver-test/run.sh kernel_module [seconds=6] [imu_hz=50] [--wheels --combo] [--stream[=HZ] | --stream-off] [--tunnel] [--faults]
 ```
+`--tunnel` (firmware 0025): the emulator sends data through the BLE tunnel (frames type 0x15), the harness echoes it via register 0x17; checked complete and in order next to polling and stream (2026-11-20 with `--stream --faults`: 892 bytes in 45 records, none dropped).
 Compiles the real `xgo-serial.c` and IMU code against `kshim.h`, runs it against `esp32_emu.py`. Without `--wheels --combo` the emulator has no 0x0d and the driver does not poll IMU/wheels (stream only).
 Result (polling 0x0d): 49 Hz at target 50, pitch error 0.06° median, parser recovers from drops, noise bytes, bad checksums.
 Stream (emulator with its own ESP clock, 40 ppm, 0–8 ms send delay): 100 Hz without gaps, timestamp error −0.25 ms median (polling 0x0d: −1.3 ms), 0 unsolicited; with `--faults` gaps counted, polling only for the other registers; `--stream-off` falls back to polling.

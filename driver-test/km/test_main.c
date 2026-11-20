@@ -15,6 +15,7 @@ static void *main_like(void *a) {   /* wie loop(): Batterie/State/Yaw alle 200 m
 		if (read_addr_sync(XGO_BATTERY, 1, b, 50) >= 1) n_main_ok++; else n_main_fail++;
 		if (read_addr_sync(XGO_STATE, 1, b, 50) >= 1) n_main_ok++; else n_main_fail++;
 		if (read_addr_sync(XGO_YAW_INT, 2, b, 50) >= 2) n_main_ok++; else n_main_fail++;
+		{ char ip[4] = {192, 168, 53, 110}; write_serial_data(XGO_PI_IP, ip, 4); }   /* wie pi_ip_tick() */
 		msleep(200);
 	}
 	return NULL;
@@ -28,6 +29,20 @@ static void *writer(void *a) {      /* xgonav schreibt speed_x/speed_z mit 20 Hz
 		write_serial_data(XGO_VYAW, (char *)&v, 1);
 		n_writes += 2;
 		msleep(50);
+	}
+	return NULL;
+}
+
+/* BLE-Tunnel (Firmware 0025): wie xgo-ble jeden Datensatz holen und die Daten zurückschicken */
+static int n_tun_data, n_tun_conn, n_tun_bytes;
+static void *tunnel_echo(void *a) {
+	(void)a;
+	while (!atomic_load(&g_stop_aux)) {
+		uint8_t rec[XGO_TUNNEL_MAX];
+		int n = ble_rx_pop(rec);
+		if (!n) { msleep(2); continue; }
+		if (rec[0] == 0) { n_tun_data++; n_tun_bytes += n - 1; ble_tx(rec + 1, n - 1); }
+		else n_tun_conn++;
 	}
 	return NULL;
 }
@@ -63,9 +78,10 @@ int main(int argc, char **argv) {
 	printf("WHEELS %d\n", combo_supported);
 
 	imu_thread = kthread_run(imu_loop, NULL, "imu");
-	pthread_t tm, tw;
+	pthread_t tm, tw, tt;
 	pthread_create(&tm, NULL, main_like, NULL);
 	pthread_create(&tw, NULL, writer, NULL);
+	pthread_create(&tt, NULL, tunnel_echo, NULL);
 
 	/* wie Userspace: imu_log periodisch lesen, neue Proben ausgeben */
 	u32 last = 0, wlast = 0;
@@ -99,7 +115,7 @@ int main(int argc, char **argv) {
 	u64 t1 = ktime_get_ns();
 	kthread_stop(imu_thread);
 	atomic_store(&g_stop_aux, 1);
-	pthread_join(tm, NULL); pthread_join(tw, NULL);
+	pthread_join(tm, NULL); pthread_join(tw, NULL); pthread_join(tt, NULL);
 	u64 t2 = ktime_get_ns();
 	printf("EXIT reader %.1f ms, rest %.1f ms\n", (t1 - t0) / 1e6, (t2 - t1) / 1e6);
 	printf("STATS frames %d bad %d timeouts %d unsolicited %d main_ok %d main_fail %d writes %d\n",
@@ -107,6 +123,8 @@ int main(int argc, char **argv) {
 	       atomic_read(&stat_unsolicited), n_main_ok, n_main_fail, n_writes);
 	printf("STREAM pakete %d luecken %d versatz_us %lld\n", atomic_read(&stat_stream),
 	       atomic_read(&stat_stream_gaps), stream_off_ok ? (long long)(stream_off_ns / 1000) : 0LL);
+	printf("TUNNEL saetze %d bytes %d meldungen %d verworfen %d gesendet %d\n", n_tun_data, n_tun_bytes, n_tun_conn,
+	       atomic_read(&stat_tunnel_drop), atomic_read(&stat_tunnel_tx));
 	filp_close(serial_file, NULL);
 	return 0;
 }

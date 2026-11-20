@@ -14,7 +14,7 @@
         <link rel="prev" href="audio.html">
       
       
-        <link rel="next" href="LED.html">
+        <link rel="next" href="ble.html">
       
       
         
@@ -1115,6 +1115,34 @@
   
   
     <li class="md-nav__item">
+      <a href="ble.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Bluetooth
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="LED.html" class="md-nav__link">
         
   
@@ -1441,7 +1469,7 @@
 <tbody>
 <tr>
 <td>ESP32 firmware (<code>xgorider2_rl</code>)</td>
-<td>BLE is only a UART channel (fff0/fff1/fff2) for the remote app; no Wi-Fi provisioning, nothing forwarded to the Pi</td>
+<td>BLE is only a UART channel (fff0/fff1/fff2) for the remote app; no Wi-Fi provisioning, nothing forwarded to the Pi. Replaced by firmware patch 0025: own BLE service with a tunnel to the Pi, <code>wlan status/scan/rescan/connect</code> over Bluetooth with the same <code>xgo-wlan</code> (<a href="ble.html">ble.md</a>; built 2026-11-20, not flashed)</td>
 </tr>
 <tr>
 <td>Vendor Pi image (<code>RaspberryPi-CM4-XGO-Rider</code>)</td>
@@ -1501,13 +1529,13 @@
         
         
           
-          <a href="LED.html" class="md-footer__link md-footer__link--next" aria-label="Next: LEDs">
+          <a href="ble.html" class="md-footer__link md-footer__link--next" aria-label="Next: Bluetooth">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                LEDs
+                Bluetooth
               </div>
             </div>
             <div class="md-footer__button md-icon">

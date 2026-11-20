@@ -14,7 +14,13 @@
 #define XGO_FIRMWARE_VERSION 0x07
 #define XGO_PITCH_CALIBRATION 0x09 // Nick-Trimm: Byte 1 = im Stand ausbalancieren und speichern
 #define XGO_RING_SWITCH 0x0a
-#define XGO_BT_NAME 0x13
+// 0x13 (BLE-Namenssuffix) gibt es seit Firmware-Patch 0025 nicht mehr: fester Name "RiderKerk"
+#define XGO_TUNNEL 0x17         // Firmware-Patch 0025: BLE-Tunnel. Vom ESP32 Rahmen Typ 0x15, zum ESP32 Schreibbefehl;
+                                // Nutzlast = Kennung (0 Daten, 1 BLE verbunden, 2 getrennt) + höchstens 23 Byte
+#define XGO_TUNNEL_TYPE 0x15
+#define XGO_TUNNEL_MAX 24
+#define XGO_PI_IP 0x18          // Firmware-Patch 0025: schreiben = IPv4 des Pi (4 Byte), der ESP32 zeigt sie über BLE;
+                                // ohne neue Meldung gilt sie dort nach 10 s als 0.0.0.0
 #define XGO_VX 0x30
 #define XGO_VYAW 0x32
 #define XGO_BODYHEIGHT 0x35

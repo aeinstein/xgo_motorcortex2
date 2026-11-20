@@ -18,6 +18,7 @@
 #include <linux/slab.h>
 #include <linux/list.h>
 #include <linux/kthread.h>
+#include <linux/wait.h>
 
 #include "../constants.h"
 
@@ -112,8 +113,30 @@ static inline bool stream_active(u64 now) {
 static s64 stream_off_ns;                       // CLOCK_MONOTONIC - ESP-Zeit (ns), Minimum über ~2-s-Fenster
 static bool stream_off_ok;
 
+// ---- BLE-Tunnel (Firmware-Patch 0025) ----------------------------------------
+// Die Firmware reicht die BLE-Characteristic "PI" durch: Rahmen Typ 0x15, Register 0x17, Nutzlast = Kennung
+// (0 Daten, 1 BLE verbunden, 2 getrennt) + höchstens 23 Byte. Der Reader-Thread legt jede Nutzlast als
+// Datensatz (Längenbyte + Nutzlast) in den Ring und weckt den Leser von /proc/XGORider/ble. Gegenrichtung:
+// ble_tx() stückelt in Schreibbefehle auf 0x17 (Kennung 0) mit Abstand, damit der IMU-Strom Platz behält
+// und der ESP32 mit dem Weitergeben über BLE nachkommt.
+#define BLE_RX_SIZE 4096
+#define BLE_CHUNK (XGO_TUNNEL_MAX - 1)
+#define BLE_TX_GAP_US 4000
+static uint8_t ble_rx[BLE_RX_SIZE];
+static unsigned int ble_rx_head, ble_rx_used;
+static bool ble_closing;                        // Modul wird entladen: wartende Leser kehren zurück
+static DEFINE_SPINLOCK(ble_lock);
+static DEFINE_MUTEX(ble_tx_lock);
+static DECLARE_WAIT_QUEUE_HEAD(ble_wq);
+static atomic_t stat_tunnel_rx = ATOMIC_INIT(0);
+static atomic_t stat_tunnel_drop = ATOMIC_INIT(0);
+static atomic_t stat_tunnel_tx = ATOMIC_INIT(0);
+
 static struct task_struct *reader_thread;
 static struct file *serial_file;
+
+static int ble_rx_pop(uint8_t *out);
+static int ble_tx(const uint8_t *data, size_t len);
 
 static int write_serial_data(size_t addr, char *buffer, size_t len);
 static int read_addr_sync(uint8_t addr, uint8_t len, uint8_t *out, unsigned int timeout_ms);

@@ -16,6 +16,10 @@
 #include <linux/version.h>
 #include <linux/reboot.h>
 #include <linux/workqueue.h>
+#include <linux/poll.h>
+#include <linux/netdevice.h>
+#include <linux/inetdevice.h>
+#include <linux/rcupdate.h>
 
 // Enable with: echo 1 > /proc/XGORider/settings/verbose
 static int verbose = 0x00;
@@ -38,6 +42,12 @@ static int XGO_MS_SLEEP_ON_LOOP = 200;
 static unsigned int XGO_MOTION_TIMEOUT_MS = 0;
 static void motion_watchdog_fn(struct work_struct *work);
 static DECLARE_DELAYED_WORK(motion_wd, motion_watchdog_fn);
+
+// IPv4 des Pi an den ESP32 melden (Firmware-Patch 0025, Register 0x18): Adresse dieser Schnittstelle, alle
+// XGO_PI_IP_MS neu (der ESP32 vergisst sie nach 10 s ohne Meldung) und sofort bei Änderung.
+#define XGO_PI_IP_MS 3000
+static char XGO_IP_DEV[IFNAMSIZ] = "wlan0";
+static u32 XGO_PI_IP_SENT;                      // zuletzt gemeldete Adresse (Netz-Byte-Reihenfolge), 0 = keine
 
 static struct task_struct *thread;
 

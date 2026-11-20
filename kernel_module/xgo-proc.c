@@ -117,6 +117,10 @@ static int serial_stats_show(struct seq_file *m, void *v) {
 		atomic_read(&stat_stream), atomic_read(&stat_stream_gaps), XGO_IMU_STREAM_HZ,
 		stream_active(ktime_get_ns()),
 		stream_off_ok ? (long long)div_s64(stream_off_ns, 1000) : 0LL);
+	// BLE-Tunnel (Firmware 0025): Datensätze vom ESP32, verworfene (Ring voll), gesendete Rahmen; gemeldete IP
+	seq_printf(m, "tunnel_rx %d\ntunnel_drop %d\ntunnel_tx %d\npi_ip %pI4\n",
+		atomic_read(&stat_tunnel_rx), atomic_read(&stat_tunnel_drop), atomic_read(&stat_tunnel_tx),
+		&XGO_PI_IP_SENT);
 	return 0;
 }
 
@@ -186,6 +190,52 @@ static const struct proc_ops raw_reg_ops = {
 	.proc_write = raw_reg_write,
 };
 
+/*
+ * ble (nur root, Firmware-Patch 0025): Tunnel zum BLE-Client, den die Firmware über die Characteristic "PI"
+ * durchreicht. Hier läuft das WLAN-Passwort durch, deshalb 0600.
+ *   read:  blockiert, bis etwas da ist (poll geht auch), und liefert genau einen Datensatz:
+ *          Byte 0 = Kennung (0 Daten, 1 BLE verbunden, 2 BLE getrennt), danach bis zu 23 Byte Daten.
+ *          Der Puffer muss XGO_TUNNEL_MAX Byte fassen. 0 = Modul wird entladen.
+ *   write: Bytes an den Client; kehrt zurück, wenn alles an den ESP32 gesendet ist (~5 kB/s).
+ */
+static ssize_t ble_read(struct file *file, char __user *user_buf, size_t count, loff_t *ppos) {
+	uint8_t rec[XGO_TUNNEL_MAX];
+	int n;
+
+	if (count < XGO_TUNNEL_MAX) return -EINVAL;
+	for (;;) {
+		n = ble_rx_pop(rec);
+		if (n) break;
+		if (READ_ONCE(ble_closing)) return 0;
+		if (file->f_flags & O_NONBLOCK) return -EAGAIN;
+		if (wait_event_interruptible(ble_wq, READ_ONCE(ble_rx_used) || READ_ONCE(ble_closing))) return -ERESTARTSYS;
+	}
+	if (copy_to_user(user_buf, rec, n)) return -EFAULT;
+	return n;
+}
+
+static ssize_t ble_write(struct file *file, const char __user *user_buf, size_t count, loff_t *ppos) {
+	uint8_t *k;
+	int r;
+
+	if (count == 0) return 0;
+	if (count > 4096) count = 4096;
+	k = memdup_user(user_buf, count);
+	if (IS_ERR(k)) return PTR_ERR(k);
+	r = ble_tx(k, count);
+	kfree(k);
+	return r < 0 ? r : count;
+}
+
+static __poll_t ble_poll(struct file *file, poll_table *wait) {
+	poll_wait(file, &ble_wq, wait);
+	return EPOLLOUT | EPOLLWRNORM | (READ_ONCE(ble_rx_used) || READ_ONCE(ble_closing) ? EPOLLIN | EPOLLRDNORM : 0);
+}
+
+static const struct proc_ops ble_ops = {
+	.proc_read = ble_read, .proc_write = ble_write, .proc_poll = ble_poll,
+};
+
 static ssize_t buttons_read(struct file *file, char __user *user_buf, size_t count, loff_t *ppos) {
 	char decimal_buffer[3];
 	snprintf(decimal_buffer, sizeof(decimal_buffer), "%d", XGO_Buttons);
@@ -242,6 +292,9 @@ static ssize_t settings_read(struct file *file, char __user *user_buf, size_t co
 
     } else if (strcmp(setting_name, "led_brightness") == 0) {
     	len = snprintf(buffer, sizeof(buffer), "%d\n", XGO_LED_BRIGHTNESS_SET);
+
+    } else if (strcmp(setting_name, "ip_dev") == 0) {
+    	len = scnprintf(buffer, sizeof(buffer), "%s\n", XGO_IP_DEV);
 
     } else {
         return -EINVAL; // Ungültiger Zugriff
@@ -410,6 +463,12 @@ static ssize_t settings_write(struct file *file, const char __user *user_buf, si
     	XGO_LED_BRIGHTNESS_SET = v;
     	pr_info("XGORider: LED-Helligkeit %u/256\n", v);
 
+    } else if (strcmp(setting_name, "ip_dev") == 0) {
+    	// Schnittstelle, deren IPv4 der ESP32 über BLE zeigt (Firmware-Patch 0025); Name höchstens 8 Zeichen
+    	char *name = strim(buffer);
+    	if (!*name) return -EINVAL;
+    	strscpy(XGO_IP_DEV, name, sizeof(XGO_IP_DEV));
+    	pr_info("XGORider: IP von %s\n", XGO_IP_DEV);
 
     } else {
         return -EINVAL; // Ungültiger Zugriff
@@ -543,6 +602,7 @@ static int createFilesystem(){
 	proc_create("imu_hz", 0666, proc_settings, &settings_ops);
 	proc_create("imu_stream_hz", 0666, proc_settings, &settings_ops);
 	proc_create("led_brightness", 0666, proc_settings, &settings_ops);
+	proc_create("ip_dev", 0666, proc_settings, &settings_ops);
 
 
 	proc_yaw = proc_create("yaw", 0444, proc_imu, &yaw_ops);
@@ -559,6 +619,7 @@ static int createFilesystem(){
 	proc_create("imu_log", 0444, proc_imu, &imu_log_ops);
 	proc_create("serial_stats", 0444, proc_imu, &serial_stats_ops);
 	proc_create("raw_reg", 0600, proc_imu, &raw_reg_ops);
+	proc_create("ble", 0600, proc_imu, &ble_ops);
 	proc_create("wheels", 0444, proc_imu, &wheels_ops);
 	proc_create("wheels_log", 0444, proc_imu, &wheels_log_ops);
 
@@ -591,6 +652,7 @@ static void destroyFilesystem(){
 	remove_proc_entry("imu_log", proc_imu);
 	remove_proc_entry("serial_stats", proc_imu);
 	remove_proc_entry("raw_reg", proc_imu);
+	remove_proc_entry("ble", proc_imu);
 	remove_proc_entry("wheels", proc_imu);
 	remove_proc_entry("wheels_log", proc_imu);
 
@@ -610,6 +672,7 @@ static void destroyFilesystem(){
     remove_proc_entry("imu_hz", proc_settings);
     remove_proc_entry("imu_stream_hz", proc_settings);
     remove_proc_entry("led_brightness", proc_settings);
+    remove_proc_entry("ip_dev", proc_settings);
     remove_proc_entry("settings", proc_imu);
 
 	remove_proc_entry(PROC_DIR, NULL);

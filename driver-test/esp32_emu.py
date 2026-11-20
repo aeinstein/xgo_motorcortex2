@@ -8,6 +8,10 @@ python3 esp32_emu.py <harness> <sekunden> <imu_hz> [--faults] [--wheels --combo]
 Typ 0x14 (seq, t_us der Messung nach eigener, driftender ESP-Uhr, Winkel, Ticks) mit zufälligem Sendeverzug
 (Firmware-loop); aus nach 5 s ohne Byte vom Host. Das Testprogramm bekommt HZ (Standard 100) als Strom-Rate.
 --stream-off: wie --stream, aber die Firmware kennt 0x11 nicht (Rückfall auf Abfrage prüfen).
+--tunnel: Firmware 0025. Der Emulator schickt wie ein BLE-Client Daten durch den Tunnel (Rahmen Typ 0x15, Register
+0x17, Kennung + höchstens 23 Byte, davor die Meldung "verbunden"); das Testprogramm schickt sie zurück (Schreiben auf
+0x17). Geprüft wird, dass alles vollständig und in der Reihenfolge zurückkommt, neben Abfragen und Strom. Dazu wird
+die auf 0x18 geschriebene IP des Pi ausgegeben.
 Ohne diese Schalter antwortet der Emulator auf 0x65/0x0c/0x0d gar nicht (wie R-1.1.3); der Treiber nutzt seit
 2026-11-17 nur noch 0x0d und den Strom, --block und --imu65 prüfen nur noch, dass er sie nicht fälschlich annimmt.
 """
@@ -29,6 +33,7 @@ FAULTS = "--faults" in args
 IMU65 = "--imu65" in args
 WHEELS = "--wheels" in args
 COMBO = "--combo" in args
+TUNNEL = "--tunnel" in args
 _st = [a for a in args if a.startswith("--stream")]
 STREAM = bool(_st) and "--stream-off" not in args
 STREAM_HZ = int(_st[0].split("=")[1]) if _st and "=" in _st[0] else 100
@@ -106,6 +111,36 @@ def stream_frame(seq, t):
     return bytes([0x55, 0x00, ln, 0x14, 0x11]) + data + bytes([chk, 0x00, 0xAA])
 
 
+tunnel_sent = bytearray()
+tunnel_back = bytearray()
+pi_ip = None
+
+
+def tunnel_frame(kind, data=b""):
+    data = bytes([kind]) + bytes(data)
+    ln = len(data) + 8
+    chk = 255 - ((ln + 0x15 + 0x17 + sum(data)) % 256)
+    return bytes([0x55, 0x00, ln, 0x15, 0x17]) + data + bytes([chk, 0x00, 0xAA])
+
+
+def tunneler():
+    """Wie die Firmware: Meldung verbunden, dann alle 0,4 s eine Anfrage in Stücken zu höchstens 23 Byte."""
+    trng = random.Random(7)
+    time.sleep(1.0)
+    send(tunnel_frame(1))
+    n = 0
+    while not stop and time.monotonic() - T0 < float(secs) - 1.5:
+        n += 1
+        msg = ("%d wlan connect WPA 0 %s %s\n" % (n, "netz%%20" * trng.randrange(1, 5), "x" * trng.randrange(8, 64))).encode()
+        tunnel_sent.extend(msg)
+        for i in range(0, len(msg), 23):
+            out = tunnel_frame(0, msg[i:i + 23])
+            time.sleep(len(out) * BYTE_S)
+            send(out)
+        time.sleep(0.4)
+    send(tunnel_frame(2))
+
+
 def streamer():
     seq, nxt = 0, time.monotonic()
     while not stop:
@@ -152,6 +187,11 @@ def serve():
                     if fr[5] and not stream_rate:
                         stats["stream_on"] += 1
                     stream_rate = fr[5]
+                if addr == 0x17 and len(fr) >= 9 and fr[5] == 0:
+                    tunnel_back.extend(fr[6:ln - 3])
+                if addr == 0x18 and ln == 12:
+                    global pi_ip
+                    pi_ip = "%d.%d.%d.%d" % tuple(fr[5:9])
                 continue
             if mode != 0x02:
                 continue
@@ -185,6 +225,8 @@ def serve():
 th = threading.Thread(target=serve, daemon=True)
 th.start()
 threading.Thread(target=streamer, daemon=True).start()
+if TUNNEL:
+    threading.Thread(target=tunneler, daemon=True).start()
 hargs = [harness, name, secs, hz] + ([str(STREAM_HZ)] if _st else [])
 p = subprocess.run(hargs, capture_output=True, text=True, timeout=float(secs) + 30)
 stop = True
@@ -204,6 +246,9 @@ if wheels:
     print("WHEELRATE %.1f Hz (%d Proben, %d Lücken), Abweichung median %d p95 %d max %d Ticks"
           % ((len(wheels) - 1) / wd if wd > 0 else 0, len(wheels), wgaps, e[len(e) // 2], e[int(len(e) * .95)], e[-1]))
 print("EMU", stats)
+if TUNNEL:
+    print("TUNNELTEST %s: %d Byte gesendet, %d zurück; IP des Pi %s"
+          % ("ok" if tunnel_sent and bytes(tunnel_back) == bytes(tunnel_sent) else "FEHLER", len(tunnel_sent), len(tunnel_back), pi_ip))
 if samples:
     ts = [s[1] for s in samples]
     dur = (ts[-1] - ts[0]) / 1e9

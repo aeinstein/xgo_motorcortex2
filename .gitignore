@@ -34,3 +34,6 @@ xgonav/native/*.so
 docs/Rider-Pi.STEP
 # macOS
 .DS_Store
+# xgo-ble (BLE-Tunnel am Pi)
+deploy/xgo-ble/xgo-ble
+deploy/xgo-ble/xgo-ble.tmp

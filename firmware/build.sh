@@ -35,6 +35,7 @@
 #   0022 LEDs: heller Punkt läuft im Kreis (Nutzerfarbe, 0,4 s je Umlauf), solange der Kreisel beim Start kalibriert
 #   0023 LEDs: keine Farbverläufe der Roll-/Höhenwelle mehr (Sache des Clients), Pink beim Armen, Nutzerfarben auch im Liegen
 #   0024 Gespeicherte Aktionen als Tabelle (nur motorische Abläufe, 1..6 unverändert, neue = ein Eintrag)
+#   0025 Bluetooth neu: eigener BLE-Dienst "RiderKerk" (Binärrahmen, Konsole, Tunnel zum Pi, IP des Pi), Hersteller-BLE entfernt (docs/ble.md)
 # Braucht: git, python3 (venv), Internet beim ersten Lauf (PlatformIO lädt Toolchain ~1 GB).
 set -euo pipefail
 

@@ -82,6 +82,7 @@ nav:
       - Display and emotions: display-emotions.md
       - Audio: audio.md
       - Wi-Fi setup: wifi-setup.md
+      - Bluetooth: ble.md
       - LEDs: LED.md
       - Testing: testing.md
       - Limitations: limitations.md

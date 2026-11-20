@@ -11,6 +11,7 @@
 #   xgo-wlan hotspot-off  Hotspot löschen, vorige Verbindung zurück
 #   xgo-wlan status       con=, ssid=, ip= von wlan0; im Hotspot auch clients= (iw station dump)
 #   xgo-wlan scan         sichtbare Netze: SIGNAL:SECURITY:SSID je Zeile (aus dem Cache, ohne neu zu suchen)
+#   xgo-wlan rescan       wie scan, sucht vorher neu (dauert einige Sekunden; nur xgo-ble, läuft als root)
 # Ausgabe key=wert je Zeile, Fehler als letzte Zeile, Exit != 0.
 set -u
 IF=wlan0
@@ -173,8 +174,11 @@ case "${1:-}" in
     scan)
         nmcli -t -f SIGNAL,SECURITY,SSID dev wifi list --rescan no 2>/dev/null
         ;;
+    rescan)
+        nmcli -t -f SIGNAL,SECURITY,SSID dev wifi list --rescan yes 2>/dev/null
+        ;;
     *)
-        echo "Aufruf: xgo-wlan connect|hotspot|hotspot-off|status|scan" >&2
+        echo "Aufruf: xgo-wlan connect|hotspot|hotspot-off|status|scan|rescan" >&2
         exit 2
         ;;
 esac

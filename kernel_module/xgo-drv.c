@@ -11,6 +11,38 @@ static void arm_motion_watchdog(void);
 
 union B2I16 conv;
 
+// Erste IPv4 der Schnittstelle XGO_IP_DEV, 0 wenn sie fehlt, nicht läuft oder keine Adresse hat.
+static u32 pi_ip_read(void) {
+	struct net_device *dev;
+	struct in_device *in_dev;
+	const struct in_ifaddr *ifa;
+	u32 addr = 0;
+
+	rcu_read_lock();
+	dev = dev_get_by_name_rcu(&init_net, XGO_IP_DEV);
+	if (dev && (dev->flags & IFF_UP)) {
+		in_dev = __in_dev_get_rcu(dev);
+		if (in_dev) {
+			ifa = rcu_dereference(in_dev->ifa_list);
+			if (ifa) addr = (__force u32)ifa->ifa_local;
+		}
+	}
+	rcu_read_unlock();
+	return addr;
+}
+
+// Aus loop(): Adresse bei Änderung und alle XGO_PI_IP_MS an den ESP32 (Register 0x18, 4 Byte a.b.c.d).
+static void pi_ip_tick(void) {
+	static u64 sent_ns;
+	u64 now = ktime_get_ns();
+	u32 addr = pi_ip_read();
+
+	if (addr == XGO_PI_IP_SENT && sent_ns && now - sent_ns < (u64)XGO_PI_IP_MS * NSEC_PER_MSEC) return;
+	write_serial_data(XGO_PI_IP, (char *)&addr, 4);
+	XGO_PI_IP_SENT = addr;
+	sent_ns = now;
+}
+
 static int loop(void *data) {
 	unsigned int n = 0;
 	pr_info("XGORider: loop start");
@@ -20,6 +52,7 @@ static int loop(void *data) {
 	    // Batterie ändert sich langsam: ~alle 2 s statt jede Runde
 	    if (n++ % 10 == 0) batteryCheck();
         checkState();
+        pi_ip_tick();
 
         // Kurs (0x68) nur ohne Strom abfragen: mit Strom setzt ihn stream_frame aus jedem Paket
         if(operational == 0x01 && !stream_active(ktime_get_ns())) readYaw();
@@ -307,6 +340,10 @@ static void __exit imu_proc_exit(void) {
 
     if (imu_thread) kthread_stop(imu_thread);
   	if (thread) kthread_stop(thread);
+
+    // Leser von /proc/XGORider/ble wecken, sonst wartet remove_proc_entry auf ihn
+    WRITE_ONCE(ble_closing, true);
+    wake_up_interruptible_all(&ble_wq);
 
     filp_close(serial_file, NULL);
     destroyFilesystem();

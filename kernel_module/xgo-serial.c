@@ -211,11 +211,72 @@ static void stream_frame(const uint8_t *b, u64 t_rx) {
     spin_unlock_irqrestore(&imu_lock, flags);
 }
 
+// ---- BLE-Tunnel (Firmware-Patch 0025) ----------------------------------------
+// Reader-Thread: eine Nutzlast (Kennung + Daten) als Datensatz ablegen. Ist der Ring voll (niemand liest
+// /proc/XGORider/ble), wird sie verworfen und gezählt.
+static void tunnel_frame(const uint8_t *b, uint8_t n) {
+    unsigned int i;
+
+    spin_lock(&ble_lock);
+    if (ble_rx_used + n + 1 > BLE_RX_SIZE) {
+        atomic_inc(&stat_tunnel_drop);
+    } else {
+        ble_rx[(ble_rx_head + ble_rx_used) % BLE_RX_SIZE] = n;
+        for (i = 0; i < n; i++) ble_rx[(ble_rx_head + ble_rx_used + 1 + i) % BLE_RX_SIZE] = b[i];
+        WRITE_ONCE(ble_rx_used, ble_rx_used + n + 1);
+        atomic_inc(&stat_tunnel_rx);
+    }
+    spin_unlock(&ble_lock);
+    wake_up_interruptible(&ble_wq);
+}
+
+// Ältesten Datensatz holen: Rückgabe Länge (1..XGO_TUNNEL_MAX), 0 = leer. out fasst XGO_TUNNEL_MAX Byte.
+static int ble_rx_pop(uint8_t *out) {
+    unsigned int i, n = 0;
+
+    spin_lock(&ble_lock);
+    if (ble_rx_used) {
+        n = ble_rx[ble_rx_head];
+        for (i = 0; i < n; i++) out[i] = ble_rx[(ble_rx_head + 1 + i) % BLE_RX_SIZE];
+        ble_rx_head = (ble_rx_head + n + 1) % BLE_RX_SIZE;
+        WRITE_ONCE(ble_rx_used, ble_rx_used - n - 1);
+    }
+    spin_unlock(&ble_lock);
+    return n;
+}
+
+// Bytes an den BLE-Client: in Stücken zu BLE_CHUNK mit Kennung 0 auf Register 0x17, BLE_TX_GAP_US Abstand.
+static int ble_tx(const uint8_t *data, size_t len) {
+    char cmd[XGO_TUNNEL_MAX];
+    size_t off = 0;
+
+    if (IS_ERR_OR_NULL(serial_file)) return -ENODEV;
+    if (mutex_lock_interruptible(&ble_tx_lock)) return -EINTR;
+    while (off < len) {
+        size_t n = len - off < BLE_CHUNK ? len - off : BLE_CHUNK;
+
+        cmd[0] = 0;
+        memcpy(cmd + 1, data + off, n);
+        write_serial_data(XGO_TUNNEL, cmd, n + 1);
+        atomic_inc(&stat_tunnel_tx);
+        off += n;
+        usleep_range(BLE_TX_GAP_US, BLE_TX_GAP_US + 1000);
+    }
+    mutex_unlock(&ble_tx_lock);
+    return 0;
+}
+
 // Vollständiger, prüfsummenkorrekter Frame im rx_buf.
 static void handle_frame(void) {
     uint8_t dlen = rx_LEN - 8;
 
     atomic_inc(&stat_frames);
+
+    // vor dem Vergleich mit pending_addr: ein Tunnelrahmen ist nie die Antwort auf eine Leseanfrage
+    if (rx_TYPE == XGO_TUNNEL_TYPE) {
+        if (rx_ADDR == XGO_TUNNEL && dlen >= 1 && dlen <= XGO_TUNNEL_MAX) tunnel_frame(rx_buf, dlen);
+        return;
+    }
 
     if (rx_TYPE == XGO_STREAM_TYPE && rx_ADDR == XGO_STREAM && dlen == XGO_STREAM_LEN) {
         stream_frame(rx_buf, ktime_get_ns());

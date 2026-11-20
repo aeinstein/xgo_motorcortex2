@@ -69,6 +69,11 @@ static inline long wait_for_completion_timeout(struct completion *x, unsigned lo
 	return r;
 }
 
+/* Warteschlange: der Test fragt den Ring ab, geweckt wird nur der Form halber */
+typedef struct { pthread_mutex_t m; pthread_cond_t c; } wait_queue_head_t;
+#define DECLARE_WAIT_QUEUE_HEAD(n) wait_queue_head_t n = { PTHREAD_MUTEX_INITIALIZER, PTHREAD_COND_INITIALIZER }
+static inline void wake_up_interruptible(wait_queue_head_t *q) { pthread_mutex_lock(&q->m); pthread_cond_broadcast(&q->c); pthread_mutex_unlock(&q->m); }
+
 /* Speicher */
 #define GFP_KERNEL 0
 #define kmalloc(n, f) malloc(n)

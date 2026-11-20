@@ -1013,6 +1013,34 @@
   
   
     <li class="md-nav__item">
+      <a href="ble.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Bluetooth
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="LED.html" class="md-nav__link">
         
   
@@ -1280,6 +1308,11 @@
 <td><code>python -m pytest -q tests/test_units.py -k imu_sync</code></td>
 <td>single test</td>
 <td></td>
+</tr>
+<tr>
+<td><code>python -m pytest -q tests/test_xgo_ble.py</code></td>
+<td><code>deploy/xgo-ble/xgo-ble.c</code> (BLE tunnel on the Pi, <code>docs/ble.md</code>) against a fake <code>xgo-wlan</code> and a fake xgonav: Wi-Fi requests, percent decoding, <code>nav</code> pass-through and limits, disconnect; needs Linux and gcc, skipped on the Windows PC</td>
+<td>&lt;1 s</td>
 </tr>
 <tr>
 <td><code>python -m pytest -q tests/test_live_ws.py</code></td>

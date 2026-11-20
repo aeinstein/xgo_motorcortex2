@@ -1,6 +1,6 @@
 #!/bin/bash
 # Treibercode im Userspace gegen einen ESP32-Emulator testen (kein Modul-Laden nötig).
-#   driver-test/run.sh kernel_module [sekunden] [imu_hz] [--wheels --combo] [--stream[=HZ]|--stream-off] [--faults]
+#   driver-test/run.sh kernel_module [sekunden] [imu_hz] [--wheels --combo] [--stream[=HZ]|--stream-off] [--tunnel] [--faults]
 # Ohne --wheels --combo kennt der Emulator 0x0d nicht: der Treiber fragt dann IMU und Räder nicht ab (nur Strom).
 set -euo pipefail
 KM=$(realpath "$1"); shift

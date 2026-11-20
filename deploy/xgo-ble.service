@@ -1,0 +1,16 @@
+[Unit]
+Description=xgo-ble - BLE-Tunnel am Pi (WLAN einrichten, Befehle an xgonav), docs/ble.md
+# rc.local lädt den Treiber (/proc/XGORider/ble). Bewusst ohne Netz und ohne xgonav: das WLAN muss sich
+# auch setzen lassen, wenn beides fehlt.
+After=rc-local.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/sbin/xgo-ble
+Restart=always
+RestartSec=2
+Nice=10
+MemoryMax=16M
+
+[Install]
+WantedBy=multi-user.target

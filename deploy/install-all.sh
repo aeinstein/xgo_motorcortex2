@@ -1,7 +1,7 @@
 #!/bin/bash
 # Gesamtinstallation auf dem Rider (Raspberry Pi OS Bookworm 64-bit, CM4).
 # Fasst README „Gesamtinstallation auf dem Rider“ zusammen: Treiber, Display-Daemon,
-# rc.local, xgonav (deploy/install.sh), Weboberfläche (nginx mit TLS, php-fpm, sudoers).
+# rc.local, BLE-Tunnel (xgo-ble), xgonav (deploy/install.sh), Weboberfläche (nginx mit TLS, php-fpm, sudoers).
 #
 # Aufruf im Repo-Root:  sudo ./deploy/install-all.sh [--no-driver] [--no-display] [--no-web]
 #
@@ -80,6 +80,21 @@ installiere deploy/rc.local /etc/rc.local 0755
 installiere deploy/rc-local.service /etc/systemd/system/rc-local.service
 systemctl daemon-reload
 # Kein "systemctl start": rc.local lädt den Treiber und startet den Daemon beim Booten.
+
+# ---------------------------------------------------------------- BLE-Tunnel
+# Gegenstelle des BLE-Dienstes der Firmware (Patch 0025, docs/ble.md): WLAN einrichten und Befehle an xgonav
+# über /proc/XGORider/ble. Schläft, solange niemand über BLE spricht; ohne passenden Treiber versucht er es
+# alle 2 s neu.
+schritt "xgo-ble (BLE-Tunnel: WLAN, Befehle an xgonav)"
+als_nutzer make -C deploy/xgo-ble
+installiere deploy/xgo-wlan /usr/local/sbin/xgo-wlan 0755
+install -m 0755 deploy/xgo-ble/xgo-ble /usr/local/sbin/xgo-ble.neu
+mv /usr/local/sbin/xgo-ble.neu /usr/local/sbin/xgo-ble      # laufendes Programm nicht überschreiben
+echo "  /usr/local/sbin/xgo-ble"
+installiere deploy/xgo-ble.service /etc/systemd/system/xgo-ble.service
+systemctl daemon-reload
+systemctl enable xgo-ble >/dev/null 2>&1
+systemctl restart xgo-ble
 
 # ---------------------------------------------------------------- xgonav
 schritt "xgonav nach /opt/xgonav (deploy/install.sh)"
