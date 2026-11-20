@@ -68,12 +68,18 @@ footer { color: var(--muted); font-size: .9rem; border-top: 1px solid var(--line
     <li><a href="#2026-11-10"><b>Di, 10. Nov.</b><small>Das Netz am Steuer</small></a></li>
     <li><a href="#2026-11-11"><b>Mi, 11. Nov.</b><small>Sichten und Quetschen</small></a></li>
     <li><a href="#2026-11-12"><b>Do, 12. Nov.</b><small>Das Netz hatte recht</small></a></li>
+    <li><a href="#2026-11-13"><b>Fr, 13. Nov.</b><small>Er hört zu</small></a></li>
+    <li><a href="#2026-11-14"><b>Sa, 14. Nov.</b><small>Keine Berührung</small></a></li>
+    <li><a href="#2026-11-15"><b>So, 15. Nov.</b><small>Hochgenommen</small></a></li>
+    <li><a href="#2026-11-17"><b>Di, 17. Nov.</b><small>Flur und cyan Linie</small></a></li>
+    <li><a href="#2026-11-18"><b>Mi, 18. Nov.</b><small>Winkelmesser</small></a></li>
+    <li><a href="#2026-11-19"><b>Do, 19. Nov.</b><small>Ein Zentimeter</small></a></li>
   </ol>
 </nav>
 <main>
 <h1>Mein Rider-Tagebuch</h1>
 <div class="vorwort">
-  <p>Was ich mit dem XGO Rider und Claude gemacht habe, Tag für Tag, auch das, was danebenging. Heute steht noch nicht drin, das kommt später.</p>
+  <p>Was ich mit dem XGO Rider und Claude gemacht habe, Tag für Tag, auch das, was danebenging.</p>
   <p>Mit „Claude“ sind viele Sitzungen gemeint, die einander nur über Notizen kannten. An manchen Tagen liefen mehrere gleichzeitig, ein Firmware-Claude und ein xgonav-Claude, und ich habe die Nachrichten zwischen ihnen getragen. Claude hat das aus Commits, Notizen und Sitzungsverläufen für mich aufgeschrieben. Was ich getippt habe, steht wörtlich da, mit Tippfehlern.</p>
 </div>
 
@@ -660,11 +666,203 @@ footer { color: var(--muted); font-size: .9rem; border-top: 1px solid var(--line
   <div class="bilanz"><p>Bilanz: Fast fünf Stunden am Betrachter, mein längster Sichtungstag. Am Ende hatte das Netz recht und die Labels nicht. Gefunden habe ich das mit den Augen, nicht mit 22 Trainings.</p></div>
 </article>
 
+<article id="2026-11-13">
+  <h2>Freitag, 13. November 2026</h2>
+  <p class="meta">28 Commits · YOLO wieder an · WLAN über Tasten · Dunkelangst · Schallortung · pet hört</p>
+  <div class="e"><time>08:03</time><div>
+    <p><q>ok, lass uns mit den follow und aproach weitermachen. aktivere yolo und check nochmal die logik. PS bei aproach die möglichen klassen (aktivierte klassen in yolo) bitte per dropdown ins frontend</q>. YOLO rechnet wieder, aber nur in <code>follow</code>, <code>approach</code> und <code>pet</code>, und Erkennungen sind nur Ziele, nie Hindernisse. Das Ziel wähle ich jetzt im Web aus einer Liste. Nicht gefahren.</p>
+  </div></div>
+  <div class="e"><time>10:11</time><div>
+    <p><q>es fehlt noch ein Schrei, dieser soll bein einem sturz gespielt werden, und ein aufrappeln geräusch, wenn er nach einen sturz selbstständig aufsteht oder wenn er aus dem schreck erwacht</q>. Dazu gibt es jetzt eine Übersichtsseite mit allen Geräuschen und Emotionen und wann sie kommen.</p>
+  </div></div>
+  <div class="e"><time>11:08</time><div>
+    <p><q>check TODO.md</q>. Daraus wurde ein Umbau der Weboberfläche: Einstellungen und Herunterfahren in der Kopfleiste, eine Kameraleiste am Bild, die Raumkarte gruppiert, Deutsch und Englisch. Auf meinem Screenshot überlappte die Kameraleiste, danach wurde sie ein Raster.</p>
+  </div></div>
+  <div class="e"><time>12:11</time><div>
+    <p><q>Im pet Modus, soll er die Gegend absuchen wenn er nichts zu tun hat. Verlässt eine Person den sichtbereich, soll er zur letzten bekannten Position fahren und sich dann umschauen</q>. Claude wollte die Strecke begrenzen. <q>mach keine grenze, es gibt hier keine treppe und das bodenmodell macht es ganz wunderbar</q>. Die Ohnmacht ist am Rider an, mit 0,8. Und: <q>desweiteren ist er beim erschrecken nicht umgefallen, besser er hat sich nicht erschreckt</q>.</p>
+  </div></div>
+  <div class="e"><time>15:02</time><div>
+    <p>Tagebuch und Geschichte. <q>in der Geschichte auch bitte meine pythen abneigung einfliessen lassen und das ich immer für C** kämpfen muss bei dir</q>. Und: <q>ich vermisse das Firmware debuggen und reverse engineering, das fand hier unter c:\rider statt.</q></p>
+  </div></div>
+  <div class="e"><time>16:57</time><div>
+    <p><q>Ich brauche eine Möglichkeit das WLAN zu verbinden,  ohne eine Verbindung.</q> Über das Bluetooth des ESP32 ging das nie. Jetzt: C und D drei Sekunden halten, dann sucht die Kamera einen WLAN-QR-Code, ohne Code kommt für 60 s ein Hotspot. Auf dem Display schauen sich Augen mit QR-Pupillen um, beim Hotspot wachsen sie zu einem Auge zusammen, und der QR-Code ist die Pupille. Am Display nicht gesehen.</p>
+  </div></div>
+  <div class="e"><time>17:53</time><div>
+    <p><q>Beim kartieren oder suchen von Objekten etc,  soll er ein vergnügliches Geräusch machen, sowas wie dumdidumdidum</q>. Vier Minuten später: <q>Wenn das Bild zu dunkel wird, soll er ängstlich werden und umdrehen. Findet er kein Licht, soll er sich setzen und in Ruhe Modus gehen</q>. Beides eingebaut, beides nicht gehört oder gefahren.</p>
+  </div></div>
+  <div class="e"><time>18:13</time><div>
+    <p>Hat er ein Mikrofon? <q>PS es ist sehr still, rauschen wäre Erfolg</q>. Er hat zwei, in Stereo.</p>
+  </div></div>
+  <div class="e"><time>18:18</time><div>
+    <p><q>Baue eine stereo Richtungs Ortung über phasenverschiebungs Erkennung. Wichtig wenig CPU</q>. In Stille kostet das etwa 0,2 % eines Kerns. <q>Fernseh läuft. Orte ihn</q>, und fürs Web: <q>Lieber optisch ein Radar mit strahlen</q>. Dann stand der Fernseher links und das Radar zeigte nach rechts. Gemessen haben wir mit meinem Handy als Schallquelle, der Rider drehte sich selbst einmal im Kreis: Die Mikrofone liegen akustisch 3,8 mm auseinander, Claude hatte 4 cm geschätzt. Im Liegen erkennt er nur rechts.</p>
+  </div></div>
+  <div class="e"><time>19:35</time><div>
+    <p>Was er in <code>pet</code> mit den Ohren macht: <q>Mach alles. fahrgeräusche sind vernachlässigbar</q>. Hindrehen, Rufen, Schreck, Wecken, Mitreden. Um 21:02 <q>mach einfach keine treppe da</q>. Zuerst stand er nur, Claudes Werkzeug zum Aufstehen hatte ihn in den Leerlauf geschaltet. Danach lebte er. <q>er hört nicht richtig</q>, und er kam nicht näher.</p>
+  </div></div>
+  <div class="e"><time>21:34</time><div>
+    <p><q>Wo liegen die Grenzen in der Firmware für vorwärts und drehen?</q> xgonav nutzte nur 15 % fürs Fahren und 30 % fürs Drehen. <q>Heben die max Werte auf 50% an</q>. Danach habe ich ihn schlafen geschickt.</p>
+  </div></div>
+  <div class="bilanz"><p>Bilanz: 28 Commits. Er kann jetzt hören, im Dunkeln Angst haben und über Tasten ins WLAN. Gefahren ist davon fast nichts.</p></div>
+</article>
+
+<article id="2026-11-14">
+  <h2>Samstag, 14. November 2026</h2>
+  <p class="meta">Raumkarte bis 1,5 m · Kartenabgleich verschiebt · keine Berührungen</p>
+  <div class="e"><time>22:11</time><div>
+    <p><q>bitte auch hindernisse in 1,5m entfernung in die bodenkarte eintragen, nicht erst bei 0.5m</q>. Dann: <q>mit dem boden modell, können wir es bei einer sichtung belassen. ist die karten nachführung aktiviert?</q> Und um 22:37: <q>bitte offenen boden auch bis 1,5 sehen</q>. Claude erinnerte an die Treppe vom 6. November und riet, nicht in ihrer Nähe zu erkunden.</p>
+  </div></div>
+  <div class="e"><time>22:22</time><div>
+    <p>Zu <code>pet</code>: <q>wenn das geräusch ganz klar von links oder rechts kommt ohne sperre</q>.</p>
+  </div></div>
+  <div class="e"><time>22:28</time><div>
+    <p><q>ok er steht 50cm zu weit rechts</q>. Dazu <q>desweiteren gibt es freie stellen in der karte die gar nicht abgesucht wurden</q>. Schuld war der Kartenabgleich vom 11. November: Schon nach 24 Sekunden drehte er die Pose um 3,1°. In der zweiten Fahrt machte er Doppelwände und verschob das Ende um 52 cm. Er ist aus.</p>
+  </div></div>
+  <div class="e"><time>23:00</time><div>
+    <p>In Claudes Auswertung standen sieben Berührungen. <q>ps er gab keine berührungen, nicht eine</q>. Sie kamen aus dem Simulator. Ein „befreie mich“ hielt Claude für einen Fehlalarm: <q>nee das war unter stühlen und er hat sehr gut heraus gefunden</q>.</p>
+  </div></div>
+  <div class="bilanz"><p>Bilanz: Hindernisse und freier Boden kommen jetzt bis 1,5 m in die Karte. Der Abgleich gegen die Drift war selbst die Drift.</p></div>
+</article>
+
+<article id="2026-11-15">
+  <h2>Sonntag, 15. November 2026</h2>
+  <p class="meta">1 Commit · Sichten · Netz p11e · hochgenommen, nicht gestürzt · Umkehren</p>
+  <div class="e"><time>11:55</time><div>
+    <p><q>bitte betrachter link mit den neuen Fahrten</q>. <q>bei allen links bekomme ich nur ssl protocol error, nachdem er mich auf https schickt</q>. Um 12:46 <q>alles gesichtet</q>, danach noch eine Fahrt zum Kopieren und Auswerten.</p>
+  </div></div>
+  <div class="e"><time>16:07</time><div>
+    <p><q>bitte das neuste netz einspielen, ich möchte eine probefahrt machen</q>. <q>nimm p11fe</q>, gleich danach <q>nimm p11e</q>. Claude schrieb dazu, dass es unter einem Meter fast doppelt so oft fälschlich frei meldet wie <code>p11a</code>, 8,0 % gegen 4,5 %.</p>
+  </div></div>
+  <div class="e"><time>16:40</time><div>
+    <p>Claudes Auswertung: mit 37 cm/s zwischen die Beine einer Trittleiter, nach vorn gekippt bis über 60°. <q>bei der ersten fahrt habe ich ihn hochgenommen</q>. Den zweiten Sturz hatte die Dunkelangst ausgelöst, sie setzt ihn ab.</p>
+  </div></div>
+  <div class="e"><time>16:53</time><div>
+    <p>Echt war das Umkehren alle 10 bis 20 Sekunden. Ziele in Engstellen zählten gar nicht, sobald es irgendwo ein normales gab. <q>einbauen</q>: Eine Engstelle kostet jetzt nur 3 Sekunden Zuschlag. Erklärt hat das 3 von 13 Umkehrstellen. Um 17:12 <q>reih ein</q>, die Fahrten gehen in ComfyUI.</p>
+  </div></div>
+  <div class="bilanz"><p>Bilanz: Er ist nicht gestürzt, ich habe ihn hochgenommen. Zehn Umkehrstellen sind weiter unerklärt.</p></div>
+</article>
+
+<article id="2026-11-17">
+  <h2>Dienstag, 17. November 2026</h2>
+  <p class="meta">7 Commits · Rille im Teppich · Flur · cyan Linie · IMU je Bild · Firmware 0017–0019 · Aufräumen</p>
+  <div class="e"><time>13:02</time><div>
+    <p><q>hi, rider ist heute unter 10.10.0.110 errreichbar.  läuft das p11e netz, welches mit den Büro bildern trainiert wurde?</q> Danach eine Fahrt, <q>besonderes augenmerk auf das letzte drittel.</q> Dort hing er 15 Sekunden fest. <q>das hindernis ist eine rille im teppich. kann man bei sowas nicht eine kurzen starken impuls geben?</q> Jetzt gibt es einen Anschub, höchstens zweimal.</p>
+  </div></div>
+  <div class="e"><time>13:42</time><div>
+    <p><q>Entweder wurde der Bereich erkundet, dann gibt es keine Weg darum oder er ist noch offen dann hätte er ihn nicht verlassen dürfen</q>. Die Raumkarte maß nur 16 Meter, sie wuchs auf 24. Die besten Ziele lagen nur 0,5 bis 1,5 Punkte auseinander, und es gewann das nächste, egal in welchem Bereich.</p>
+  </div></div>
+  <div class="e"><time>14:38</time><div>
+    <p>Flur. <q>Er soll die Wände eintragen ohne das er jedesmal bis zur Wand fährt. Floornet gibt die korrekte Grenze.</q> Dann <q>sorry habe nicht aufgezeichnet, ich wiederhole es</q>. Er wendete nach 10,7 Metern am Rand der Karte, die Karte wuchs auf 48 Meter. Um 15:32: <q>hole dir fahrt, es ist nicht mehr möglich eine erkundungs fahrt zu machen, er dreht ständig</q>. Claude nahm drei Änderungen auf einmal zurück.</p>
+  </div></div>
+  <div class="e"><time>15:41</time><div>
+    <p><q>ok, eine neue fahrt, wir stoppen und versuchen erstmal nach der Startdrehung 2 parallele Wände in der Karte zu haben, das geht ja schon nicht</q>. Die Kamera ist um 1,25° gerollt, und Roll kam im Code nicht vor. Damit wurden die Wände 10 bis 14 cm dick statt 33 bis 48. <q>ps flurbreite befahrbar ist exakt 204 cm</q>. Und: <q>lösche alte aufzeichnungen, die bereits kopiert sind, ich habe kein platz mehr</q>. 37 Fahrten, 12 GB.</p>
+  </div></div>
+  <div class="e"><time>15:55</time><div>
+    <p>In einer zweiten Sitzung: <q>die linie stimmt nicht</q>, <q>desweiteren ist die linie zu hoch !</q> Für die Messung im Stand: <q>du hast einen zollstock im bild schau hin</q>. Dann <q>fahr du die höhen und ich lese ab.</q> Sechs Körperhöhen, ab u8 100 traf die Linie auf etwa einen Millimeter.</p>
+  </div></div>
+  <div class="e"><time>17:25</time><div>
+    <p>Die Linie sprang. <q>ich denke das bilder ohne IMU kommen und er auf 0 springt</q>. So war es, im Liegen lief die IMU mit 5 Hz. Dann meine Frage: <q>Wie werden in xgonav Bild und IMU Wert synchronisert? Und warum wird das dann nicht für alles weitere verwendet?</q> Jetzt gibt es je Bild genau einen IMU-Wert für alles, Versatz 10,5 ms. <q>das fühlt sich richtig an.</q></p>
+  </div></div>
+  <div class="e"><time>17:59</time><div>
+    <p>Die IMU meldete beim Nicken etwa 6 % zu wenig. <q>ok, die RiderPI-Firmware Session ist online</q>. Um 18:12: <q>0017 ist drin und funktioniert</q>. Am Abend kamen 0018 (ESP-Neustart als Knopf, wegen des linken Beins) und 0019 (Startkalibrierung nur im Stillstand) dazu. Um 19:41 <q>bitte p11a installieren am rider</q>.</p>
+  </div></div>
+  <div class="e"><time>20:50</time><div>
+    <p>Überholten Code suchen. Gefunden: Die Regelung lief am Rider nur bei jedem zweiten Bild, mit rund 12 statt 20 Hz. Jetzt regelt er bei jedem Bild, Horizont-Standweg und <code>force_yaw</code> sind raus.</p>
+  </div></div>
+  <div class="e"><time>21:54</time><div>
+    <p><q>rider liegt bereit, fahr selber</q>. <q>ok fährt gut, karte hat die gleichen fehler. fahrt ist aufgezeichnet</q>. <q>alle linien sind korrekt und der rider ist noch nie über den teppich gefahren</q>. Um 22:28 <q>wir müssen hier stoppen ich muss ins bett</q>. Claude meldete trotzdem noch, er stehe am Start. <q>kurs und endpositionen passen nicht, weder karte noch in echt</q>.</p>
+  </div></div>
+  <div class="bilanz"><p>Bilanz: Sechs Sitzungen an einem Roboter. Er regelt jetzt bei jedem Bild, die Kamera hat einen Roll, und jedes Bild hat seinen IMU-Wert. Am Start stand er nicht.</p></div>
+</article>
+
+<article id="2026-11-18">
+  <h2>Mittwoch, 18. November 2026</h2>
+  <p class="meta">19 Commits · Drehen mit Winkelmesser · Bild entzerrt · kanten raus · Lagefusion 0021 · Moss und MoGe</p>
+  <div class="e"><time>09:31</time><div>
+    <p><q>moin, so da bin ich wieder. zur info, das drehen findet doch meistens auf der stelle statt, ich denke wir messen erstmal den versatz von IMU und räder nochmal sauber.</q> Claude drehte, ich maß. <q>radachse steht 8cm vor und er zeigt 30 grad nach links</q>. <q>die winkel habe ich mit einem winkelmesser gemessen. desweiteren denke ich das es verschiedene faktoren für links und rechts gibt.</q> Nach je zehn Umdrehungen: links 0,21 %, rechts 0,25 % zu wenig.</p>
+  </div></div>
+  <div class="e"><time>10:56</time><div>
+    <p><q>zum thema fugen, du denkst daran das die linse verzeichnet? und zwar ganz jämmerlich oben und unten am rand</q>. Um 11:34: <q>es geht hier nur um die verzeichnung, ich will gerade linien sehen im frontend. das bild soll direkt nach dem es aus der cam kommt entzerrt werden, für alles weitere !</q> Um 11:43: <q>entzerrung passt, bitte in den c++ kern.</q> Dort braucht es 3,9 ms statt 6,4 ms mit OpenCV.</p>
+  </div></div>
+  <div class="e"><time>12:03</time><div>
+    <p><q>bitte ein Schaubild der bildpipeline, alle stufen inkl. korrekturen  und welches prozesse daran anknüpfen und welche daten zur pipeline senden. als html auf dem rider</q>. Am Nachmittag wurde es größer, mit dem Weg von den Servos über den ESP32 bis zum Treiber.</p>
+  </div></div>
+  <div class="e"><time>12:17</time><div>
+    <p>Auf kimmy alles entzerrt, 310 065 Bilder samt Grünbildern und Masken, und aufgeräumt: <q>auch die prüfsätze, alles was wir nicht mehr brauchen und alte falsche labels sollten nie existieren</q>. Um 12:37 in den Einstellungen: <q>So warum sehe ich da noch fallback auf kanten??? weg damit aus dem Code für immer</q>. Weg.</p>
+  </div></div>
+  <div class="e"><time>12:50</time><div>
+    <p><q>sollen wir den festen roll winkel mit in die linsenverzeichnung packen und auch den mittelpunkt ausrichten, dann haben wir alles cam spezifische an einem Ort ?</q> Gemacht. Dann fünf Trainings mit verschiedenen Startwerten, am Rider ab 13:39 <code>p11a_e2_s4</code>.</p>
+  </div></div>
+  <div class="e"><time>14:20</time><div>
+    <p>Claude fand 13 Pixel Versatz, die mein Zollstock nicht zeigte. <q>welche 13 pixel, der zollstock läuft exakt auf der mittellinie im browser. ignoriere was du siehst. es ist so !</q> <q>du sollst den roll nicht anfassen nur den gier</q>. <q>nein das haben wir schon zig mal gemacht, deswegen sind wir jetzt genau hier !</q> Am Ende habe ich ihn selbst gedreht. <q>2,4 sieht gut aus</q>, wie vorher.</p>
+  </div></div>
+  <div class="e"><time>14:45</time><div>
+    <p>Die Wand unter den Stühlen kam nicht in die Karte. <q>er hatte die wand schon bei ca 1300 gesehen, er hat sich wegen der stuhbeien gedreht und jedes stück bereits gesehen</q>. Treffer zählen jetzt als Band entlang des Strahls. <q>bauen und einspielen ich teste</q>.</p>
+  </div></div>
+  <div class="e"><time>15:48</time><div>
+    <p><q>das es einen nick fehler beim drehen gibt ist lange bekannt.</q> <q>Doch natürlich untersuchen wir den nickfehler, er ist die ursache der kurzfristig falschen punkte</q>. Firmware 0020 liefert Rohwerte, Messfahrt um 16:38, dann habe ich ihn liegend von Hand gekippt. Mit 0021 rechnet die Firmware die Lage neu. Nach Bremsdrehungen bleibt der Roll unter 0,45° statt bis zu 5°.</p>
+  </div></div>
+  <div class="e"><time>16:34</time><div>
+    <p><q>kannst du rausfinden warum das wlan so schlecht ist am rider?</q> Stromsparen, Ping 535 ms. <q>bitte wifi powersave mit dem ruhemodus verbinden.</q> Jetzt 20 ms. Dazwischen ein Skill, um die Geschichte fortzuschreiben, <q>in einem sarkarstisch lustigen ton</q>.</p>
+  </div></div>
+  <div class="e"><time>17:37</time><div>
+    <p>Den neuen Nullpunkt für xgonav habe ich im Browser abgelesen. <q>mach erstmal 2 grad weniger dann schau ich bild im browser</q>, <q>nicht+2 sondern minus</q>, <q>offset passt.</q> Um 18:02 <q>-6,23 überall eintragen und committen</q>.</p>
+  </div></div>
+  <div class="e"><time>20:13</time><div>
+    <p>Vier Modelle von Hugging Face, <q>Schau mal ob eins dieser Modelle besser sein könnte für die trainingsdaten Aufbereitung</q>. Claude setzte Moss und Zero-DCE auf kimmy auf. Um 23:10 kam der Auftrag aus einer anderen Sitzung, Labels aus Geometrie mit MoGe-2. <q>Verhindere das der PC wieder einschläft</q>.</p>
+  </div></div>
+  <div class="bilanz"><p>Bilanz: Das Bild ist entzerrt, <code>kanten</code> ist weg, die Firmware rechnet die Lage neu. Die Kamerawerte waren richtig, bevor Claude sie suchte.</p></div>
+</article>
+
+<article id="2026-11-19">
+  <h2>Donnerstag, 19. November 2026</h2>
+  <p class="meta">33 Commits · Tasten und WLAN · Teppich-Regel · Kamera in C++ · ein Kurs · Heimkehr auf 1 cm · Sittich</p>
+  <div class="e"><time>09:04</time><div>
+    <p><q>skala_hi 3,0 setzen, Ersatzbilder verwerfen und committen</q>. Um 10:00 über Moss und Aufhellung: <q>also och sehe kein Ergebniss was besser als das grün bild ist</q>.</p>
+  </div></div>
+  <div class="e"><time>10:36</time><div>
+    <p><q>hi, schaumal welche der 4 Tasten am Display belegt sind und womit. Ich glaube ich habe ihn gerade runtergefahren#</q> A und B zusammen fahren sofort herunter. C und D zeigten keine QR-Augen, der Display-Faden lief nicht. Um 10:57: <q>ok, rider erkennt den QR Code meines Samsung Galaxy nicht. Habe mich mit dem dann entstehenden Hotsport verbunden, habe über wlan.php die neue wlan config gesetzt. LCD blieb bei Hotspot, und hat sich nie wieder mit dem Silence Netz verbunden. Komme jetzt nicht mehr an den Rider</q>. Nach dem Hotspot bekam er keine IPv4-Adresse. Um 11:21 verlor Claude ihn beim Nachstellen noch einmal. <q>ich habe am router dhcp loggin eingeschaltet</q>.</p>
+  </div></div>
+  <div class="e"><time>11:48</time><div>
+    <p><q>bitte den nginx so ändern, das / alias auf xgonav ist</q>. Dann das Netz: <q>bitte das p11e netz einspielen, das läuft im Büro besser</q>, und die Netze im Web wählbar machen, ohne Neustart. <q>netz läuft super im Office. einziges problem: der grüne teppich, wird nicht immer als hinderniss gesehen</q>. Die Regel dazu: <q>ich kann dir nur eine regel sagen, grüner und gelber Teppich hinderniss, alles andere nicht</q>.</p>
+  </div></div>
+  <div class="e"><time>12:27</time><div>
+    <p><q>neue Fahrt, der erwartete Flur</q>. <q>der Flur ist 204cm breit</q>. In der Karte waren es 1,53 m. Mit −5,0° statt −6,23° für den Nick 1,95 m.</p>
+  </div></div>
+  <div class="e"><time>12:36</time><div>
+    <p><q>bitte die alberne drehende Radarlinie entfernen, die blips bleiben.</q> Dazu die Raumkarte in voller Breite, Fahren klappbar, Steuerkreuz im Kamerabild, Tempo-Regler, der jetzt für alle Modi gilt.</p>
+  </div></div>
+  <div class="e"><time>13:08</time><div>
+    <p><q>Frage: Gier zeitg +44 der Kurs 709. wie passt das zusammen?</q> Zwei Quellen. <q>Keine 2 Qellen mehr.</q> Dann <q>Ziel ist es Odometry und IMU möglichst gebau zu haben, sodas jeweils das andere als fallback dienen kann wenn widersprüchliche infos kommen</q>. Daraus wurde die Koppelnavigation.</p>
+  </div></div>
+  <div class="e"><time>13:25</time><div>
+    <p><q>Frage zu picamera2: Was wäre nötig den Teil von Python zum C++Kern zu packen?</q> Um 13:56: <q>stop !!!</q> <q>die Zeit wird von Python gefressen</q>. Es war das neue C++, es las aus dem ungecachten Kamerapuffer, 45 ms je Bild. Nach dem Fix: <q>sieht gut aus C++ geht.</q> Gesamt etwa 65 % CPU statt 78 %. Danach noch das Anzeigebild im Hardware-Kodierer und Kameraregler an der Quelle, mit meiner Theorie, dass FloorNet von überdrehten Bildern etwas hat.</p>
+  </div></div>
+  <div class="e"><time>15:15</time><div>
+    <p><q>die letzte fahrt hat bis auf 11cm links und 5cm vorne, nach zig metern den startpunkt gefunden. Ein Erfolg, aber nur ein kleiner. weil 11cm können viel ausmachen</q>. Jetzt vergleicht er am Ende das Bild mit dem vom Start. <q>die Cam höhe ist 124mm , gemessen und Fakt</q>. Um 18:43: <q>er stand zum schluss am startpunkt ca. 1cm weiter vorne aber die pose stimmte nicht, leicht nach rechts gedrekt, glaube ich. aber es war ein voller erfolg</q>. Jetzt richtet er sich auf 2° aus, nicht gefahren.</p>
+  </div></div>
+  <div class="e"><time>18:41</time><div>
+    <p>Firmware 0022 bis 0024 geflasht: ein Lauflicht, solange der Kreisel kalibriert, Pink beim Armen, gespeicherte Aktionen als Tabelle. Dazu im Web vor dem Aufzeichnen der freie Platz und die Restminuten.</p>
+  </div></div>
+  <div class="e"><time>18:50</time><div>
+    <p><q>er war im pet mode, hat uns gehört, aber hat uns nicht gesucht. die letzte fahrt anschauen</q>. Jetzt sucht er in der gehörten Richtung, und <q>wenn alles abgefahren, soll er zum start, so wie bei erkunden.</q> Nicht gefahren.</p>
+  </div></div>
+  <div class="e"><time>19:28</time><div>
+    <p>Neue Idee: Äußerungen mitschneiden, wenn er jemanden sieht, und was er zweimal hört, <q>etwas gefiltert(soll ein wenig wie ein wellensittich klingen) beim brabbeln abspielen</q>. Um 19:58: <q>ok er hat wasserrauschen gelernt....</q> Kurz danach stürzte xgonav mitten in meinem Test ab, Claude hatte die Bibliothek im laufenden Betrieb neu gebaut.</p>
+  </div></div>
+  <div class="e"><time>20:12</time><div>
+    <p><q>ich kann 10 mal das gleiche sagen, wenn ich glück habe erkennt er einmal</q>. Also eine beschriftete Aufnahme, <q>nimm auf, im hintergrund ist ein wasserkocher</q>. Danach <q>erkennnung geht. klingt aber als wenn wasser gluckert im hintergrund</q>. <q>kannst du die tonhöhe, aber nicht die geschwindigkeit ändern? pitch + 1 oktave</q>. Zuletzt war er zu langsam, jetzt plappert er nach 0,2 statt 0,8 Sekunden nach.</p>
+  </div></div>
+  <div class="e"><time>21:04</time><div>
+    <p><q>für heute ist schluss.</q></p>
+  </div></div>
+  <div class="bilanz"><p>Bilanz: 33 Commits. Nach 37 Metern stand er einen Zentimeter vor seiner Marke, nur leicht verdreht. Die Kamera läuft in C++, und das, was die CPU fraß, war diesmal nicht Python. Gelernt hat er zuerst Wasserrauschen.</p></div>
+</article>
+
 <section class="vorwort" style="border-bottom:0;border-top:1px solid var(--line);padding-top:2rem">
   <p><b>Was das Labeln gekostet hat</b> (Stand 12. November). Am 6. und 8. November habe ich 517 Bilder von Hand beschriftet und 4 342 Punkte geklickt. Vom 9. bis 12. November kamen laut Protokoll des Betrachters rund <b>9 Stunden</b> reines Sichten dazu: 1,6 h am Montag, 0,5 h am Dienstag, 2,2 h am Mittwoch und 4,9 h am Donnerstag. Pausen über fünf Minuten sind nicht mitgezählt, die tatsächliche Zeit war also länger. Allein mit Prompt 11 habe ich <b>21 866 Bilder</b> gesichtet und 1 141 als untauglich aussortiert. Dazu kommen 229 und 213 aus den früheren Läufen, rund 200 Bilder aus den drei Probe-Prompts, die korrigierte Fahrt <code>explore10</code> und über 1 100 Aufträge, ein Bild neu malen zu lassen. Ins Training kommt nur, was ich gesehen habe.</p>
 </section>
 
-<footer>Fortsetzung folgt. Der 13. November wird später geschrieben.</footer>
+<footer>Fortsetzung folgt. Am 16. November war Pause.</footer>
 </main>
 </div>
 <script>
