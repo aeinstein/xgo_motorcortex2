@@ -53,6 +53,9 @@ install -d -m 2775 -g video /var/lib/xgonav
 # Einstellungen im Web: www-data (Gruppe video) schreibt config.toml, Sicherungen nach /var/lib/xgonav/config-backup
 chgrp video "$DEST/config.toml" && chmod 664 "$DEST/config.toml"
 install -d -m 2775 -g video /var/lib/xgonav/config-backup
+# MCP-Server (web/mcp.php): Freigabestufe, ohne Datei nur schauen. Bleibt beim Einspielen erhalten.
+install -d /etc/xgonav
+[ -f /etc/xgonav/mcp.json ] || install -m 644 deploy/mcp.example.json /etc/xgonav/mcp.json
 
 sed "s/__USER__/$USER_NAME/" deploy/xgonav.service > /etc/systemd/system/xgonav.service
 systemctl daemon-reload

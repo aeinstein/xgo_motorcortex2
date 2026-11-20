@@ -70,6 +70,7 @@ HTML manual (install, quick start, web UI, behaviours, FloorNet training): `tool
 | [calibration.md](docs/calibration.md) | FOV, turn rate, camera height/tilt, odometry, reverse gain |
 | [driver.md](docs/driver.md) | `xgo-drv`, patches, `/proc/XGORider` reference, UART, driver test |
 | [web-interface.md](docs/web-interface.md) | Web UI, `api.php`, xgonav local API, WebSocket protocol |
+| [mcp.md](docs/mcp.md) | MCP server `mcp.php`: camera, map, status and movement as tools for a multimodal LLM |
 | [mapping.md](docs/mapping.md) | Odometry, short-term local map, room map (occupancy grid) |
 | [floornet.md](docs/floornet.md) | Self-trained floor network: labels, hand lines, training, results; shadow mode only |
 | [display-emotions.md](docs/display-emotions.md) | LCD daemon, overlay, emotion player and triggers |

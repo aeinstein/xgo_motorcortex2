@@ -789,6 +789,42 @@ def test_manual_drive_and_deadman():
     app.stop(); th.join(timeout=5)
 
 
+def test_manual_checked_uses_safety():
+    """Geprüfte Handsteuerung (/drive?sicher=1, MCP): safety() gilt wie in den anderen Modi. Ohne Bodengrenze
+    (blind) steht er; derselbe Sollwert ungeprüft fährt. Ohne Bildverarbeitung dreht geprüft nur."""
+    import threading
+    from xgonav.app import App
+    cfg = Config.neutral(); cfg.output.web_port = 0; cfg.detector.enabled = False
+    robot = SimRobot(cfg.robot)
+    world = SimWorld(cfg.camera, robot, None, start=(1.0, 1.5, 0.0))
+    app = App(cfg, robot, world, imu=None, floor_net=None)        # kein Netz: blind
+    app.imu = None
+    th = threading.Thread(target=app.run, kwargs={"duration": 8.0}, daemon=True)
+    th.start()
+    time.sleep(1.0)
+    app.set_mode("manual")
+    time.sleep(0.3)
+
+    def halten(v, w, checked, sek=0.8):
+        t_end = time.monotonic() + sek
+        while time.monotonic() < t_end:
+            app.set_manual(v, w, checked=checked)
+            time.sleep(0.1)
+
+    halten(1.0, 0.5, True)
+    assert robot.command == (0.0, 0.0) and "BLIND" in app._cmd.status
+    halten(1.0, 0.0, False)
+    assert robot.command[0] == pytest.approx(cfg.robot.max_v, abs=1e-6)
+    app.set_pipeline(False)                                       # schaltet auf idle
+    time.sleep(0.3)
+    app.set_mode("manual")
+    time.sleep(0.3)
+    halten(1.0, 1.0, True)
+    assert robot.command[0] == 0.0 and robot.command[1] == pytest.approx(cfg.robot.max_w, abs=1e-6)
+    assert "keine Bildverarbeitung" in app._cmd.status
+    app.stop(); th.join(timeout=5)
+
+
 def test_manual_without_pipeline():
     """Handsteuerung bei gestoppter Bildverarbeitung: regelt ohne Kamera, Totmann greift,
     kamerabasierte Modi bleiben gesperrt."""

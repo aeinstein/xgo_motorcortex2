@@ -9,6 +9,7 @@
 | Backend | xgonav local API `127.0.0.1:8088` (`output.web_host`, `web_port`) |
 | Auth | **none** — LAN only |
 | Installed to | `/opt/xgonav/web/` |
+| LLM access | `https://<rider>/mcp.php` → [MCP server](mcp.md) (`web/mcp.php`), level in `/etc/xgonav/mcp.json` |
 | Static pages | `https://<rider>/tagebuch/` → `web/tagebuch/index.html` (dev diary, nginx only); `https://<rider>/anleitung/` → `web/anleitung/` (this manual, built on the PC by `tools/build_manual.sh` from `docs/` with MkDocs Material, committed, nginx only) |
 
 ## Layout (`web/index.php`)
@@ -123,7 +124,7 @@ xgonav unreachable → HTTP 502 `xgonav nicht erreichbar`. Exposure/gain changes
 | POST | `/wlan?on=0\|1` | start/cancel Wi-Fi setup ([wifi-setup.md](wifi-setup.md)); `/status` field `wlan` (`state`, `text`, `detail`, `ssid`, `ip`, `hotspot`) or null. `/status` field `ortung` (sound direction, [audio.md](audio.md#sound-direction-xgonavortungpy)): `aktiv`, `kern`, `fehler`, `n`, `schwach`, `letzter` or null, `verlauf` (≤ 12 sounds of the last 15 s as `[age s, angle °, quality, level dB]`). Card **Schallradar** draws them as rays (up = front, dashed twin to the rear because front/back cannot be told apart, length = level, fading over 12 s; rays and spokes are counter-rotated by the IMU yaw since each sound, so they keep pointing at the source while the Rider turns); drawn in the browser only while the card is open, no extra request (data from the 1 s live packet) |
 | POST | `/record?on=0\|1` | switch raw recording; `/status` field `aufzeichnung`: `an`, `laeuft`, `ordner`, `bilder`, `fehler`, `frei_mb` (free down to `record_min_free_mb`, statvfs at most every 2 s), `rate_mb_s` (measured in the last recording, else estimate 2.2), `rate_gemessen`; the web view shows free space and remaining minutes left of the button |
 | POST | `/level` | leveling pulse (roll 0, 3 s `roll_balance`); 409 if not balancing |
-| POST | `/drive?v=..&w=..` | 409 if not mode `manual` |
+| POST | `/drive?v=..&w=..[&sicher=1]` | 409 if not mode `manual`; `sicher=1` (used by the [MCP server](mcp.md)): this setpoint passes `safety()` and the arc check like the autonomous modes, without `manual_forward_gain`; with the pipeline stopped it only turns |
 | POST | `/exposure?us=..`, `/gain?g=..` | 400 if out of range |
 | POST | `/bild?k=0.5..4&s=0.5..4&b=-0.5..0.5` | contrast/saturation/brightness in the camera ISP (`b` optional; also reaches FloorNet and recordings; `meta.jsonl` `cam.contrast`/`saturation`/`brightness`), until restart; `/status` `exposure.contrast`/`saturation`/`brightness`; the web view can compensate with an SVG filter (checkbox, stored in the browser). Camera sliders (exposure, gain, brightness, contrast, saturation, hue) sit in a collapsible „Kamera“ panel below the image (open state stored in the browser); hue is display-only (SVG filter) |
 | POST | `/tempo?f=0.05..1` | speed slider: factor for all drive/turn commands of all modes (after `max_v`/`max_w`), until restart; `GET /status` → `tempo` |
@@ -180,7 +181,7 @@ With full processing, the charging dock current is insufficient to charge.
 
 ## Sleep mode (Ruhe)
 
-Header button **Ruhe** (with confirmation). Only the web UI wakes it (**Wecken**).
+Header button **Ruhe** (with confirmation). Woken by **Wecken** in the web UI or by the [MCP server](mcp.md) (`ruhemodus`).
 
 | Part | On | Wake |
 |---|---|---|

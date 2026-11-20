@@ -12,6 +12,7 @@ Weboberfläche des RiderPi in PHP (`web/index.php`, `web/api.php`) hinter nginx 
 - Bilder per WebSocket `/ws` direkt von xgonav, mit Bestätigung je Bild.
 - Laufzeitdaten (CPU, WLAN, IMU, xgonav-Status) ohne Polling per WebSocket `/live` vom PHP-CLI-Dienst `tools/live.php` (`xgonav-live.service`, Port 8089; 1 s, IMU 0,3 s balancierend); schläft ohne Browser.
 - Emotionen erzeugt `tools/eyes.py` nach `/opt/xgonav/emotions`.
+- MCP-Server `mcp.php` (`docs/mcp.md`, `tests/test_mcp.py` braucht php): Werkzeuge für ein multimodales LLM (Bild, Karte, Status, drehen, fahren), zustandslos per POST, Freigabestufe `schauen|drehen|fahren` in `/etc/xgonav/mcp.json` (Standard schauen). Fährt nur geprüft (`/drive?sicher=1`: `safety()` + Bahnprüfung, ohne `manual_forward_gain`); jede Bewegung endet mit `/stop`. Neue Werkzeuge: Eintrag in `werkzeuge()` + Funktion `w_<name>`. Am Rider eingespielt 2026-11-20 (Stufe fahren; lesende Werkzeuge und Wecken geprüft), über MCP nie gefahren.
 - Einstellungen (Modal im Kasten „System“): `api.php?a=config|config_save|config_restore|restart`, Zeilen-Editor `konfig.inc.php`, Schema `config-schema.json` (nach Änderungen an `xgonav/config.py`: `python tools/config_schema.py`, sonst schlägt `test_config_schema_aktuell` fehl). Sicherungen in `/var/lib/xgonav/config-backup`, `config.toml` Gruppe video 0664, sudoers `deploy/sudoers-xgonav-restart`.
 
 ## Schnittstelle zu xgonav

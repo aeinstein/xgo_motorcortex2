@@ -25,7 +25,6 @@ $R python3 /root/rider_nav.py zustand
 - `zustand` lesen: Akku ≥ 20 % (sonst nicht fahren), `xgonav.service` active (sonst Nutzer fragen, nicht selbst
   neu starten).
 - Benutzt der Nutzer ihn gerade (Modus ≠ idle, z. B. manual/follow im Web): nicht eingreifen, fragen.
-- Autonome Modi (`explore`, `home`, `patrol`, `approach`) nur nach Frage nach Treppen/Kanten (kein Absturzschutz).
   Dieser Skill fährt nur Handsteuerung (`fahr`, `dreh`).
 
 ## Ablauf

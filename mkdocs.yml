@@ -77,6 +77,7 @@ nav:
       - Calibration: calibration.md
       - Driver: driver.md
       - Web interface: web-interface.md
+      - MCP server: mcp.md
       - Odometry and maps: mapping.md
       - FloorNet: floornet.md
       - Display and emotions: display-emotions.md

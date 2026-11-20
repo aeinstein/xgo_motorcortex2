@@ -563,13 +563,15 @@ class App:
         self._free = None
         self.fs_worker.reset()
 
-    def set_manual(self, v: float, w: float) -> None:
+    def set_manual(self, v: float, w: float, checked: bool = False) -> None:
         """Sollwert der Handsteuerung (normiert, v > 0 vor, w > 0 links). Nur im Modus manual;
-        geht auch bei gestoppter Bildverarbeitung (braucht keine Kamera)."""
+        geht auch bei gestoppter Bildverarbeitung (braucht keine Kamera).
+        checked: dieser Sollwert läuft wie in den anderen Modi durch safety() und die Bahnprüfung
+        (/drive?sicher=1, vom MCP-Server genutzt); ohne Bildverarbeitung dreht er dann nur."""
         b = self.behavior
         if b.name != "manual":
             raise ModeNotAllowed("Handsteuerung nur im Modus manual")
-        b.set(v, w, time.monotonic())
+        b.set(v, w, time.monotonic(), checked)
 
     # Aktionen der Firmware, die vorwärts/rückwärts fahren (5 dreht nur auf der Stelle)
     FW_ACTION_DRIVES = {3, 4}
@@ -838,17 +840,27 @@ class App:
                 log.info("Modus -> %s %s", name, target or "")
 
     def _drive(self, cmd: Command) -> None:
-        """Fahrbefehl an den Roboter; der Vorwärtsfaktor gilt nur in der Handsteuerung."""
-        self.robot.forward_gain = self.cfg.robot.manual_forward_gain if self.behavior.name == "manual" else 1.0
+        """Fahrbefehl an den Roboter; der Vorwärtsfaktor gilt nur in der Handsteuerung, dort nicht für geprüfte
+        Sollwerte (Manual.checked): safety() und Bahnprüfung rechnen wie in den anderen Modi mit Faktor 1."""
+        manual = self.behavior.name == "manual" and not getattr(self.behavior, "checked", False)
+        self.robot.forward_gain = self.cfg.robot.manual_forward_gain if manual else 1.0
         # explore fährt mit explore.v, auch wenn robot.max_v darunter liegt (dort für follow und Handsteuerung)
         self.robot.max_v_fwd = max(self.cfg.robot.max_v, self.cfg.explore.v) if self.behavior.name == "explore" else None
         self.robot.drive(cmd.v, cmd.w)
 
-    def _manual_cmd(self) -> Command:
-        """Handsteuerung: nur Sturz-Erkennung, kein Bodenmodell/keine Bahnprüfung."""
+    def _manual_cmd(self, w: World | None = None) -> Command:
+        """Handsteuerung: nur Sturz-Erkennung, kein Bodenmodell/keine Bahnprüfung. Geprüfter Sollwert
+        (Manual.checked): safety() und Bahnprüfung wie in den anderen Modi; ohne Weltdaten (Bildverarbeitung
+        aus) fährt er dann nicht, Drehen bleibt."""
         cmd = self.behavior.step(None)
         if not self.robot.state.balancing:
-            cmd = Command(0.0, 0.0, None, "GEFALLEN – Stopp")
+            return Command(0.0, 0.0, None, "GEFALLEN – Stopp")
+        if getattr(self.behavior, "checked", False) and (cmd.v or cmd.w):
+            if w is None:
+                if cmd.v:
+                    cmd = Command(0.0, cmd.w, None, cmd.status + " | geprüft: keine Bildverarbeitung")
+            else:
+                cmd = self._arc_check(safety(cmd, w, self.cfg.behavior))
         return cmd
 
     def _paused_tick(self) -> None:
@@ -1023,7 +1035,7 @@ class App:
                 log.warning("Modus %s: setze ab", self.behavior.name)
                 self.robot.set_down()
             if self.behavior.name == "manual":
-                cmd = self._manual_cmd()
+                cmd = self._manual_cmd(w)
             else:
                 cmd = safety(self.behavior.step(w), w, self.cfg.behavior)
                 if getattr(self.behavior, "want_messung", False):

@@ -14,7 +14,7 @@
         <link rel="prev" href="driver.html">
       
       
-        <link rel="next" href="mapping.html">
+        <link rel="next" href="mcp.html">
       
       
         
@@ -1063,6 +1063,34 @@
   
   
     <li class="md-nav__item">
+      <a href="mcp.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP server
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="mapping.html" class="md-nav__link">
         
   
@@ -1532,6 +1560,10 @@
 <td><code>/opt/xgonav/web/</code></td>
 </tr>
 <tr>
+<td>LLM access</td>
+<td><code>https://&lt;rider&gt;/mcp.php</code> → <a href="mcp.html">MCP server</a> (<code>web/mcp.php</code>), level in <code>/etc/xgonav/mcp.json</code></td>
+</tr>
+<tr>
 <td>Static pages</td>
 <td><code>https://&lt;rider&gt;/tagebuch/</code> → <code>web/tagebuch/index.html</code> (dev diary, nginx only); <code>https://&lt;rider&gt;/anleitung/</code> → <code>web/anleitung/</code> (this manual, built on the PC by <code>tools/build_manual.sh</code> from <code>docs/</code> with MkDocs Material, committed, nginx only)</td>
 </tr>
@@ -1921,8 +1953,8 @@ works without xgonav.</p>
 </tr>
 <tr>
 <td>POST</td>
-<td><code>/drive?v=..&amp;w=..</code></td>
-<td>409 if not mode <code>manual</code></td>
+<td><code>/drive?v=..&amp;w=..[&amp;sicher=1]</code></td>
+<td>409 if not mode <code>manual</code>; <code>sicher=1</code> (used by the <a href="mcp.html">MCP server</a>): this setpoint passes <code>safety()</code> and the arc check like the autonomous modes, without <code>manual_forward_gain</code>; with the pipeline stopped it only turns</td>
 </tr>
 <tr>
 <td>POST</td>
@@ -2080,7 +2112,7 @@ works without xgonav.</p>
 service ~340 % → ~4 %. Web stays reachable. After start: drives only once a mode is chosen.
 With full processing, the charging dock current is insufficient to charge.</p>
 <h2 id="sleep-mode-ruhe">Sleep mode (Ruhe)<a class="headerlink" href="#sleep-mode-ruhe" title="Permanent link">&para;</a></h2>
-<p>Header button <strong>Ruhe</strong> (with confirmation). Only the web UI wakes it (<strong>Wecken</strong>).</p>
+<p>Header button <strong>Ruhe</strong> (with confirmation). Woken by <strong>Wecken</strong> in the web UI or by the <a href="mcp.html">MCP server</a> (<code>ruhemodus</code>).</p>
 <table>
 <thead>
 <tr>
@@ -2292,13 +2324,13 @@ With full processing, the charging dock current is insufficient to charge.</p>
         
         
           
-          <a href="mapping.html" class="md-footer__link md-footer__link--next" aria-label="Next: Odometry and maps">
+          <a href="mcp.html" class="md-footer__link md-footer__link--next" aria-label="Next: MCP server">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                Odometry and maps
+                MCP server
               </div>
             </div>
             <div class="md-footer__button md-icon">

@@ -119,9 +119,11 @@ class Manual(Behavior):
         super().__init__(cfg, rcfg)
         self._v = self._w = 0.0
         self._t = -1e9
+        self.checked = False      # letzter Sollwert verlangt Bodengrenze + Bahnprüfung (/drive?sicher=1, MCP)
 
-    def set(self, v: float, w: float, now: float) -> None:
+    def set(self, v: float, w: float, now: float, checked: bool = False) -> None:
         self._v, self._w, self._t = clamp(v, -1.0, 1.0), clamp(w, -1.0, 1.0), now
+        self.checked = checked
 
     def step(self, wd: World | None) -> Command:      # braucht keine Weltdaten (auch ohne Kamera)
         import time as _time
