@@ -1,0 +1,1825 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="XGO RiderPi – driver, camera navigation (xgonav), web UI">
+      
+      
+      
+      
+        <link rel="prev" href="calibration.html">
+      
+      
+        <link rel="next" href="web-interface.html">
+      
+      
+        
+      
+      
+      <link rel="icon" href="assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.2">
+    
+    
+      
+        <title>Driver - xgo_motorcortex2 manual</title>
+      
+    
+    
+      <link rel="stylesheet" href="assets/stylesheets/main.57a0d79d.min.css">
+      
+        
+        <link rel="stylesheet" href="assets/stylesheets/palette.fb2fffe2.min.css">
+      
+      
+
+
+    
+    
+      
+        <script src="https://unpkg.com/iframe-worker/shim"></script>
+      
+    
+    
+      
+    
+    
+    <script>__md_scope=new URL(".",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="blue-grey" data-md-color-accent="teal">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#kernel-driver-xgo-drv" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="index.html" title="xgo_motorcortex2 manual" class="md-header__button md-logo" aria-label="xgo_motorcortex2 manual" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            xgo_motorcortex2 manual
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Driver
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="blue-grey" data-md-color-accent="teal"  aria-label="Dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="blue-grey" data-md-color-accent="teal"  aria-label="Light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/aeinstein/xgo_motorcortex2" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="index.html" title="xgo_motorcortex2 manual" class="md-nav__button md-logo" aria-label="xgo_motorcortex2 manual" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    xgo_motorcortex2 manual
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/aeinstein/xgo_motorcortex2" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="index.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="guide/install.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Install
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="guide/quickstart.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="guide/web.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Web UI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="guide/behaviours.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Behaviours
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Advanced
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Advanced
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="guide/advanced/floornet-training.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    FloorNet training
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="guide/advanced/simulator.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Simulator and tests
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="guide/advanced/calibration.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Calibration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="guide/advanced/firmware-driver.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Firmware and driver
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="guide/advanced/native.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C++ core
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="architecture.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="installation.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="configuration.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="calibration.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Calibration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Driver
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="driver.html" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Driver
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#patches" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Patches
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#imu-wheel-read-path-auto-detected-at-load" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        IMU / wheel read path (auto-detected at load)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#imuwheel-stream-firmware-patch-0014" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        IMU/wheel stream (firmware patch 0014)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#procxgorider" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        /proc/XGORider
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="/proc/XGORider">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#procxgoridersettings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        /proc/XGORider/settings
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#uart-raw-mode-required" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        UART raw mode (required)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#esp32-protocol-assumptions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ESP32 protocol assumptions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#userspace-test" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Userspace test
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="web-interface.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Web interface
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="mapping.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Odometry and maps
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="floornet.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    FloorNet
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="display-emotions.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Display and emotions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="audio.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Audio
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="wifi-setup.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Wi-Fi setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="LED.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LEDs
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="testing.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="limitations.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Limitations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#patches" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Patches
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#imu-wheel-read-path-auto-detected-at-load" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        IMU / wheel read path (auto-detected at load)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#imuwheel-stream-firmware-patch-0014" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        IMU/wheel stream (firmware patch 0014)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#procxgorider" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        /proc/XGORider
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="/proc/XGORider">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#procxgoridersettings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        /proc/XGORider/settings
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#uart-raw-mode-required" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        UART raw mode (required)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#esp32-protocol-assumptions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ESP32 protocol assumptions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#userspace-test" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Userspace test
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+
+<h1 id="kernel-driver-xgo-drv">Kernel driver <code>xgo-drv</code><a class="headerlink" href="#kernel-driver-xgo-drv" title="Permanent link">&para;</a></h1>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Source</td>
+<td><code>kernel_module/</code>, <code>constants.h</code></td>
+</tr>
+<tr>
+<td>Base</td>
+<td><a href="https://github.com/aeinstein/xgo_motorcortex">aeinstein/xgo_motorcortex</a> <code>c3c888c</code> + patches 0001, 0002, 0004 + wheel/raw_reg extensions + stream</td>
+</tr>
+<tr>
+<td>UART</td>
+<td><code>/dev/ttyAMA0</code>, 115200 8N1, to ESP32</td>
+</tr>
+<tr>
+<td>Tested on</td>
+<td>RiderPi CM4, kernel 6.6.74+rpt-rpi-v8, firmware R-1.1.3 and R-1.1.6</td>
+</tr>
+</tbody>
+</table>
+<div class="highlight"><pre><span></span><code>make -C kernel_module &amp;&amp; sudo make -C kernel_module install
+sudo rmmod xgo-drv; sudo modprobe xgo-drv
+cat /proc/XGORider/serial_stats; cat /proc/XGORider/imu
+</code></pre></div>
+<h2 id="patches">Patches<a class="headerlink" href="#patches" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Patch</th>
+<th>Change</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0001</td>
+<td>memory bugs in proc handlers fixed; <code>settings/motion_timeout_ms</code> (kernel watchdog, default 0 = off)</td>
+</tr>
+<tr>
+<td>0002</td>
+<td>synchronous reads (<code>completion</code> instead of <code>msleep(200)</code>); IMU thread → <code>imu</code>, <code>imu_log</code>, <code>serial_stats</code>; UART raw mode in <code>rc.local</code></td>
+</tr>
+<tr>
+<td>0003</td>
+<td><code>settings/force_yaw</code> (pulsed heading hold): <strong>removed 2026-11-17</strong>, was never tested on the Rider. xgonav writes <code>force_yaw = 0</code> only if an old driver still has the entry</td>
+</tr>
+<tr>
+<td>0004</td>
+<td><code>roll</code> = roll angle in degrees (reg 0x36); old function (roll balance, 0x61) → <code>roll_balance</code></td>
+</tr>
+<tr>
+<td>later</td>
+<td>wheel encoders (combined register 0x0d) → <code>wheels</code>, <code>wheels_log</code>; <code>raw_reg</code> diagnostics; <code>calibration</code> sends bytes 0/1 (was ASCII, inverted); <code>pitch_calibration</code></td>
+</tr>
+<tr>
+<td>stream</td>
+<td>IMU/wheel stream of firmware patch 0014 (2026-11-08): <code>settings/imu_stream_hz</code>, frames type 0x14 → <code>imu_log</code>/<code>wheels_log</code> with the firmware's sample time; polling only as fallback</td>
+</tr>
+<tr>
+<td>2026-11-17</td>
+<td>read paths for firmware without firmware patch 0001 removed (IMU modes 0/1/2, wheel register 0x0c, <code>settings/wheel_hz</code>); <code>yaw</code> from the stream; <code>force_yaw</code> removed; dead code removed (<code>xgo-lcd.c</code>, <code>xgo-lcd.h</code>). <strong>Not installed on the Rider</strong></td>
+</tr>
+</tbody>
+</table>
+<h2 id="imu-wheel-read-path-auto-detected-at-load">IMU / wheel read path (auto-detected at load)<a class="headerlink" href="#imu-wheel-read-path-auto-detected-at-load" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Path</th>
+<th>Register</th>
+<th>Content</th>
+<th>Firmware</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Stream</td>
+<td>type 0x14 (see below)</td>
+<td>roll, pitch, yaw + wheel ticks with the firmware's sample time</td>
+<td>R-1.1.6 + firmware patch 0014</td>
+</tr>
+<tr>
+<td>Polling (only without stream)</td>
+<td>0x0d</td>
+<td>roll, pitch, yaw (float) + left/right ticks (int32) + t_ms (uint32), 24 B, at <code>imu_hz</code></td>
+<td>R-1.1.6 + firmware patch 0001</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li>Detection of 0x0d at load compares against fresh single-register reads (roll/pitch within 2°, yaw within 10°).</li>
+<li>Firmware without 0x0d: IMU and wheels only via the stream, warning in the kernel log. The older read paths (single registers 0x62–0x64, 12-byte block from 0x62, 0x65, wheels via 0x0c) were removed 2026-11-17.</li>
+<li><code>serial_stats</code>: <code>imu_block</code> = 3 (0x0d can be polled) or 0; <code>wheels</code> = wheel ticks available (0x0d or stream seen).</li>
+<li>Timestamp: CLOCK_MONOTONIC, end of reply minus transfer time ((n + 8) × 10 bits at 115200). Firmware 0014: a 0x0d reply comes from a snapshot renewed every 10 ms, so the value can be up to 10 ms older than this.</li>
+</ul>
+<h2 id="imuwheel-stream-firmware-patch-0014">IMU/wheel stream (firmware patch 0014)<a class="headerlink" href="#imuwheel-stream-firmware-patch-0014" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Enable</td>
+<td><code>settings/imu_stream_hz</code> &gt; 0: the IMU thread writes register 0x11 = rate every second (firmware stops after 5 s without a byte from the Pi and after an ESP restart); 0 writes 0 once</td>
+</tr>
+<tr>
+<td>Frame</td>
+<td><code>55 00 22 14 11</code> + 26 B + checksum <code>00 AA</code>: seq u16, t_us u32 (<code>micros()</code> right after the IMU read), roll/pitch/yaw float, ticks wheel 11/21 s32 (little endian)</td>
+</tr>
+<tr>
+<td>Rates</td>
+<td>firmware: 0..250 Hz, divider of its IMU read (~333 Hz on the RiderPi), intervals at 100 Hz 9–12 ms</td>
+</tr>
+<tr>
+<td>Time</td>
+<td>offset = receive time − 34 B transfer (2.95 ms) − t_us; minimum taken immediately when lower, window minimum every ~2 s (follows ESP clock drift); t_us unwrapped (71 min overflow), ESP restart resets the offset</td>
+</tr>
+<tr>
+<td>Logs</td>
+<td>each frame → one <code>imu_log</code> and one <code>wheels_log</code> sample (<code>fw_ms</code> = t_us / 1000)</td>
+</tr>
+<tr>
+<td>Polling</td>
+<td>skipped while the stream is active: last frame younger than max(200 ms, 2.5 send intervals) (fixed 200 ms until 2026-11-17); otherwise 0x0d (firmware without stream, stream lost). Emulator, <code>--wheels --combo --stream=5</code>, 20 s: 11 polled samples between 100 stream frames (start-up before the first frame only), 17–18 before</td>
+</tr>
+<tr>
+<td>Heading</td>
+<td><code>/proc/XGORider/yaw</code> is set from every frame (whole degrees, truncated like register 0x68, only while balancing); register 0x68 is polled only without stream (saves ~5 requests/s)</td>
+</tr>
+<tr>
+<td>Stats</td>
+<td><code>serial_stats</code>: <code>stream</code>, <code>stream_gaps</code> (seq gaps = frames dropped by the firmware), <code>stream_hz</code>, <code>stream_active</code>, <code>stream_offset_us</code></td>
+</tr>
+<tr>
+<td>Userspace</td>
+<td>xgonav <code>[imu] stream_hz</code> writes the setting at start; <code>imu_log</code> format unchanged</td>
+</tr>
+</tbody>
+</table>
+<h2 id="procxgorider"><code>/proc/XGORider</code><a class="headerlink" href="#procxgorider" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Mode</th>
+<th>Format / range</th>
+<th>Register</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>speed_x</code></td>
+<td>w</td>
+<td>u8 0..255, 128 = stop; arms motion watchdog</td>
+<td>0x30</td>
+</tr>
+<tr>
+<td><code>speed_z</code></td>
+<td>w</td>
+<td>u8 0..255, 128 = stop; arms watchdog</td>
+<td>0x32</td>
+</tr>
+<tr>
+<td><code>height</code></td>
+<td>rw</td>
+<td>u8 0..255 (web UI min 43); read: last written value, empty until first write; not reset when the firmware stands up at 128</td>
+<td>0x35</td>
+</tr>
+<tr>
+<td><code>roll</code></td>
+<td>rw</td>
+<td>int −20..20 °, mapped linearly to 0..255; read: last written value, empty until first write</td>
+<td>0x36</td>
+</tr>
+<tr>
+<td><code>roll_balance</code></td>
+<td>w</td>
+<td>0/1</td>
+<td>0x61</td>
+</tr>
+<tr>
+<td><code>action</code></td>
+<td>w</td>
+<td>u8; R-1.1.6+patch: 1..6 actions, 237 restart the ESP32 (firmware patch 0018, refused while balancing), 253 stand up from lying, 254 disarm/emergency stop, 255 arm, 0 = no action</td>
+<td>0x3e</td>
+</tr>
+<tr>
+<td><code>leds/0</code>..<code>leds/3</code></td>
+<td>w</td>
+<td><code>#RRGGBB</code></td>
+<td>0x69..0x6c</td>
+</tr>
+<tr>
+<td><code>battery</code></td>
+<td>r</td>
+<td>%</td>
+<td>0x01</td>
+</tr>
+<tr>
+<td><code>state</code></td>
+<td>r</td>
+<td>firmware state, 0 = fallen, 1 = balancing</td>
+<td></td>
+</tr>
+<tr>
+<td><code>yaw</code></td>
+<td>r</td>
+<td>integer degrees, only updated while balancing; from the stream, without stream from register 0x68 every <code>sleep_ms_on_loop</code></td>
+<td></td>
+</tr>
+<tr>
+<td><code>buttons</code></td>
+<td>r</td>
+<td>bit mask, 1 = pressed: A = 1 (GPIO 17), B = 2 (22), C = 4 (23), D = 8 (24); polled every <code>sleep_ms_on_loop</code>. <strong>A+B together = <code>orderly_poweroff</code></strong> (driver). C+D held 3 s = Wi-Fi setup (<a href="wifi-setup.html">wifi-setup.md</a>)</td>
+<td></td>
+</tr>
+<tr>
+<td><code>imu</code></td>
+<td>r</td>
+<td><code>seq t_ns roll pitch yaw</code> (millidegrees), newest sample</td>
+<td></td>
+</tr>
+<tr>
+<td><code>imu_log</code></td>
+<td>r</td>
+<td>last 128 samples, oldest first</td>
+<td></td>
+</tr>
+<tr>
+<td><code>wheels</code></td>
+<td>r</td>
+<td><code>seq t_ns ticks_left ticks_right fw_ms</code> (fw_ms only with 0x0d)</td>
+<td></td>
+</tr>
+<tr>
+<td><code>wheels_log</code></td>
+<td>r</td>
+<td>last 64 samples</td>
+<td></td>
+</tr>
+<tr>
+<td><code>serial_stats</code></td>
+<td>r</td>
+<td><code>frames bad timeouts unsolicited imu_seq imu_hz imu_block wheels wheel_seq stream stream_gaps stream_hz stream_active stream_offset_us</code> (one per line)</td>
+<td></td>
+</tr>
+<tr>
+<td><code>raw_reg</code></td>
+<td>rw, root</td>
+<td>write <code>"0x0b 16"</code> (addr, len), read <code>"0x0b 16: 00 11 .."</code>; read-only diagnostics</td>
+<td>any</td>
+</tr>
+</tbody>
+</table>
+<h3 id="procxgoridersettings"><code>/proc/XGORider/settings</code><a class="headerlink" href="#procxgoridersettings" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Default</th>
+<th>Range / effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>motion_timeout_ms</code></td>
+<td>0 (off)</td>
+<td>0..60000; no <code>speed_x</code>/<code>speed_z</code> write for this long → stop</td>
+</tr>
+<tr>
+<td><code>imu_hz</code></td>
+<td>50</td>
+<td>0..200, 0 = off; polling rate of 0x0d, used only without stream</td>
+</tr>
+<tr>
+<td><code>imu_stream_hz</code></td>
+<td>0</td>
+<td>0..250; &gt; 0 = firmware stream (0014), polling only as fallback</td>
+</tr>
+<tr>
+<td><code>led_brightness</code></td>
+<td>−1 (never written)</td>
+<td>0..255: global LED multiplier n/256 of firmware patch 0016 (reg 0x12; firmware default 32, former fixed value 64). Sent once on write; the firmware forgets it on an ESP restart, the file then still shows the last written value. Older firmware ignores it</td>
+</tr>
+<tr>
+<td><code>low_batt_level</code></td>
+<td>8</td>
+<td>0..100 %</td>
+</tr>
+<tr>
+<td><code>shutdown_on_low_batt</code></td>
+<td>1</td>
+<td>battery &lt; level → <code>orderly_poweroff</code></td>
+</tr>
+<tr>
+<td><code>sleep_ms_on_loop</code></td>
+<td>200</td>
+<td>main loop sleep (battery, state; yaw polling only without stream)</td>
+</tr>
+<tr>
+<td><code>verbose</code></td>
+<td>0</td>
+<td>bitmask: 1 serial, 2 gpio, 4 proc, 8 main</td>
+</tr>
+<tr>
+<td><code>calibration</code></td>
+<td>—</td>
+<td>write 1 = start leg calibration (motors limp), 0 = <strong>save</strong> zero points to flash</td>
+</tr>
+<tr>
+<td><code>pitch_calibration</code></td>
+<td>—</td>
+<td>write 1: firmware balances in place, stores pitch trim (reg 0x09); Rider must balance</td>
+</tr>
+</tbody>
+</table>
+<h2 id="uart-raw-mode-required">UART raw mode (required)<a class="headerlink" href="#uart-raw-mode-required" title="Permanent link">&para;</a></h2>
+<p><code>deploy/rc.local</code>:
+<div class="highlight"><pre><span></span><code>stty -F /dev/ttyAMA0 115200 cs8 -cstopb -parenb -brkint -imaxbel -opost -onlcr -isig -icanon -iexten \
+  -echo -echoe -echok -echoctl -echoke -ixon -ixoff -icrnl -inlcr -igncr -istrip min 0 time 1
+</code></pre></div>
+- Without <code>-ixon -icrnl</code>: a random 0x13 (XOFF) byte in an ESP32 reply stops the transmitter; all serial traffic hangs (fast IMU polling: after ~1 s).
+- Live fix without reload: <code>termios.tcflow(fd, TCOON)</code> + <code>tcsetattr(..., TCSANOW, ...)</code> from Python; <code>stty</code> itself hangs (waits for output drain).</p>
+<h2 id="esp32-protocol-assumptions">ESP32 protocol assumptions<a class="headerlink" href="#esp32-protocol-assumptions" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Replies carry the requested address.</li>
+<li>Writes are not acknowledged.</li>
+<li>Internal update rate of firmware attitude values unknown.</li>
+<li><code>serial_stats</code> counts timeouts and unsolicited frames.</li>
+</ul>
+<h2 id="userspace-test">Userspace test<a class="headerlink" href="#userspace-test" title="Permanent link">&para;</a></h2>
+<p><div class="highlight"><pre><span></span><code>driver-test/run.sh kernel_module [seconds=6] [imu_hz=50] [--wheels --combo] [--stream[=HZ] | --stream-off] [--faults]
+</code></pre></div>
+Compiles the real <code>xgo-serial.c</code> and IMU code against <code>kshim.h</code>, runs it against <code>esp32_emu.py</code>. Without <code>--wheels --combo</code> the emulator has no 0x0d and the driver does not poll IMU/wheels (stream only).
+Result (polling 0x0d): 49 Hz at target 50, pitch error 0.06° median, parser recovers from drops, noise bytes, bad checksums.
+Stream (emulator with its own ESP clock, 40 ppm, 0–8 ms send delay): 100 Hz without gaps, timestamp error −0.25 ms median (polling 0x0d: −1.3 ms), 0 unsolicited; with <code>--faults</code> gaps counted, polling only for the other registers; <code>--stream-off</code> falls back to polling.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="calibration.html" class="md-footer__link md-footer__link--prev" aria-label="Previous: Calibration">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Calibration
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="web-interface.html" class="md-footer__link md-footer__link--next" aria-label="Next: Web interface">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Web interface
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": ".", "features": ["navigation.sections", "navigation.top", "navigation.footer", "toc.follow", "search.highlight", "content.code.copy"], "search": "assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="assets/javascripts/bundle.a5f9d56c.min.js"></script>
+      
+    
+  </body>
+</html>

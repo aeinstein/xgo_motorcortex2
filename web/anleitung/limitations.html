@@ -1,0 +1,1856 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="XGO RiderPi – driver, camera navigation (xgonav), web UI">
+      
+      
+      
+      
+        <link rel="prev" href="testing.html">
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.2">
+    
+    
+      
+        <title>Limitations - xgo_motorcortex2 manual</title>
+      
+    
+    
+      <link rel="stylesheet" href="assets/stylesheets/main.57a0d79d.min.css">
+      
+        
+        <link rel="stylesheet" href="assets/stylesheets/palette.fb2fffe2.min.css">
+      
+      
+
+
+    
+    
+      
+        <script src="https://unpkg.com/iframe-worker/shim"></script>
+      
+    
+    
+      
+    
+    
+    <script>__md_scope=new URL(".",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="blue-grey" data-md-color-accent="teal">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#limitations-and-measured-facts" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="index.html" title="xgo_motorcortex2 manual" class="md-header__button md-logo" aria-label="xgo_motorcortex2 manual" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            xgo_motorcortex2 manual
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Limitations
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="blue-grey" data-md-color-accent="teal"  aria-label="Dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="blue-grey" data-md-color-accent="teal"  aria-label="Light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/aeinstein/xgo_motorcortex2" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="index.html" title="xgo_motorcortex2 manual" class="md-nav__button md-logo" aria-label="xgo_motorcortex2 manual" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    xgo_motorcortex2 manual
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/aeinstein/xgo_motorcortex2" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="index.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="guide/install.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Install
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="guide/quickstart.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="guide/web.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Web UI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="guide/behaviours.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Behaviours
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Advanced
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Advanced
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="guide/advanced/floornet-training.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    FloorNet training
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="guide/advanced/simulator.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Simulator and tests
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="guide/advanced/calibration.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Calibration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="guide/advanced/firmware-driver.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Firmware and driver
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="guide/advanced/native.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C++ core
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="architecture.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="installation.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="configuration.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="calibration.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Calibration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="driver.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Driver
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="web-interface.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Web interface
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="mapping.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Odometry and maps
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="floornet.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    FloorNet
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="display-emotions.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Display and emotions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="audio.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Audio
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="wifi-setup.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Wi-Fi setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="LED.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LEDs
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="testing.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Limitations
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="limitations.html" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Limitations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#hardware-test-status" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Hardware test status
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#system-software" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        System software
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#camera" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Camera
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cpu-cm4-640480" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CPU (CM4, 640×480)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#firmware-behaviour" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Firmware behaviour
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#perception" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Perception
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#other" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Other
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#explore-on-the-riderpi-2026-11-06" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        explore on the RiderPi (2026-11-06)
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#hardware-test-status" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Hardware test status
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#system-software" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        System software
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#camera" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Camera
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cpu-cm4-640480" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CPU (CM4, 640×480)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#firmware-behaviour" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Firmware behaviour
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#perception" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Perception
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#other" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Other
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#explore-on-the-riderpi-2026-11-06" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        explore on the RiderPi (2026-11-06)
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+
+<h1 id="limitations-and-measured-facts">Limitations and measured facts<a class="headerlink" href="#limitations-and-measured-facts" title="Permanent link">&para;</a></h1>
+<p>Single device: RiderPi, CM4 2 GB, kernel 6.6.74+rpt-rpi-v8, OV5647 wide-angle, firmware R-1.1.3 → R-1.1.6 (+ patches 0001–0013 since 2026-11-07).</p>
+<h2 id="hardware-test-status">Hardware test status<a class="headerlink" href="#hardware-test-status" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Driver patches 0001/0002, IMU ~49 Hz, kernel watchdog</td>
+<td>tested</td>
+</tr>
+<tr>
+<td>Wheel encoders (0x0d), odometry scale</td>
+<td>tested (tape measure, 215 cm)</td>
+</tr>
+<tr>
+<td>Wheel heading vs IMU</td>
+<td>2026-11-05, 184 s / 15 m / 25 turns: slope 1.000, 3° apart at the end (track 0.090 m fits)</td>
+</tr>
+<tr>
+<td>Camera geometry, lens shading</td>
+<td>measured</td>
+</tr>
+<tr>
+<td>Manual driving (web UI)</td>
+<td>tested</td>
+</tr>
+<tr>
+<td><code>follow</code></td>
+<td>tested 2026-11-02 (runs 3–8, <code>max_v</code> 0.10–0.15); works, path check blocked in some runs</td>
+</tr>
+<tr>
+<td><code>explore</code></td>
+<td>frontier mapping, three recorded RiderPi runs 2026-11-06, see below. Map not yet usable: ends too early</td>
+</tr>
+<tr>
+<td><code>home</code></td>
+<td>2026-11-05, 3 tries: did not reach the start. Stop/turn/start cycles and changing plans (45 s without progress), then stuck 1.3 m before the start at a gap the path check considers too narrow; afterwards changed (path keeping, <code>LocalMap</code> obstacles in planning, curve driving), <strong>not retested</strong></td>
+</tr>
+<tr>
+<td><code>approach</code></td>
+<td><strong>not tested on the Rider</strong>. Sim (2026-11-13, standing chair, also <code>--rider --dyn --wheels --kanten</code>): stops ~0.55 m in front, 0 collisions. Ends when the distance estimate is ≤ <code>approach_dist_m</code> + <code>dist_deadband</code> and aligned for 1 s, or when safety/arc check hold it &lt; 0.3 m beyond that for 3 s. Explores reactively until the target is seen; no fall protection (stairs)</td>
+</tr>
+<tr>
+<td><code>pet</code></td>
+<td>simulator and unit tests only, <strong>not run on the Rider</strong>. Approach thresholds not tuned on real footage; cats and dogs from 12.8 cm camera height untested. A person standing &lt; 1.9 m has no head in the image, so "kneeling" is inferred from the box top. Reverse is blind. Auto stand-up relies on IMU, wheels, <code>/proc/XGORider/state</code> and an empty image; the lying camera view is limited, floor or steps in front are not checked. A direct <code>echo 254 &gt; action</code> without <code>POST /stop</code> is not noticed. Search/roam (<code>seek_m</code>, <code>roam_m</code>) (RiderPi: no distance limit) drive straight toward a point without path planning and only stop at obstacles; the last position comes from the noisy foot point; steps are not detected</td>
+</tr>
+<tr>
+<td>Fear of the dark (<code>dunkel.py</code>)</td>
+<td>simulator and unit tests only, <strong>not run on the Rider</strong>. Thresholds from raw-run brightness, not from a drive into darkness; turning in the dark relies on IMU/wheel heading, the floor model sees little there</td>
+</tr>
+<tr>
+<td>Sound direction (<code>ortung.py</code>)</td>
+<td>microphones only ≈ 4 mm apart acoustically: needs ≈ 1 s of sound (speech, steady sources), a clap is too short; front/back cannot be told apart. Calibrated once while balancing with a test tone at 1 m (medians within ≈ 12°); <strong>set down, with a TV 2–3 m away, only "right" stands out</strong>. Not checked while driving (motor noise) or with speech; <code>pet</code> reacts to it (hearing: turn, calling, startle, talking back), <strong>that part unit tests only</strong>; hearing ran once on the Rider (2026-11-13, ~4 min balancing: startled by a sound, turned to it and found the person, talked back 11 times, searched three times and drove 0.8 m, stopped twice on a blocked arc; calling not triggered); calling drives toward a voice (<code>call_m</code>, RiderPi no limit), never near stairs</td>
+</tr>
+<tr>
+<td>Firmware actions 3–5 via xgonav (<code>POST /action</code>)</td>
+<td>unit tests only, <strong>not run on the Rider</strong> (2026-11-19). The check uses the commanded values of the action table, not what the firmware drives after filtering; tick length known to ~20 %; kernel watchdog is off while the action runs; reverse segments are checked against the local map only; no fall protection (stairs)</td>
+</tr>
+<tr>
+<td>FloorNet</td>
+<td>the only floor boundary since 2026-11-18 (classic <code>kanten</code>/<code>farbe</code> model removed): decides alone on the Rider since 2026-11-10 and drives with it; preset goal against hand lines missed (<a href="floornet.html">floornet.md</a>). No fallback: network failure = blind, nothing drives by itself</td>
+</tr>
+<tr>
+<td>Simulator floor boundary</td>
+<td>ground truth (<code>sim.SimFloorNet</code>), so FloorNet errors are not simulated; only <code>--phantoms</code> adds false alarms. Explore 240 s <code>--wheels --fs-thread --dyn --rider</code> 2026-11-18: map done after 149 s, 0 collisions (with <code>kanten</code> before: 182 s)</td>
+</tr>
+<tr>
+<td>IMU sync while balancing</td>
+<td>not verified</td>
+</tr>
+<tr>
+<td>Driver patch 0003 (<code>force_yaw</code>)</td>
+<td>removed 2026-11-17, was never tested</td>
+</tr>
+<tr>
+<td>Changes of 2026-11-17</td>
+<td><strong>not installed on the Rider, not driven</strong>: control step at every frame (24 Hz instead of ~12 Hz; the controllers were tuned at ~12 Hz), fixed IMU sync as default, standing horizon removed, driver without the old read paths and <code>force_yaw</code>, <code>yaw</code> from the stream</td>
+</tr>
+<tr>
+<td>Room map</td>
+<td>used by <code>home</code> and <code>explore</code>; drifts (no markers); glossy floors mirror window sills and furniture edges as obstacles at d = D·h_cam/(h_edge + h_cam), <code>confirm_dr_m</code> suppressed them until 2026-11-14 (now 0: one sighting is entered, relying on FloorNet); rug edges stay obstacles; loading assumes the Rider stands at the start point. The boundary row is entered as reported (no row correction since 2026-11-11); its error at a wall base is not measured</td>
+</tr>
+</tbody>
+</table>
+<h2 id="system-software">System software<a class="headerlink" href="#system-software" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Kernel</td>
+<td>6.6.74, pinned (<code>deploy/apt-pin-kernel</code>). <code>apt upgrade</code> 2026-11-05 aborted at 6.12.115 (<code>wm8960-soundcard</code> does not build); rolled back, reboot verified</td>
+</tr>
+<tr>
+<td>Python packages of the service</td>
+<td>user <code>aeinstein</code>: OpenCV 4.10, numpy 1.26 from <code>~/.local</code>; root sees system 4.6, 1.24. The C++ core links system OpenCV 4.6</td>
+</tr>
+<tr>
+<td>libcamera</td>
+<td>0.5.2 since 2026-11-05: via xgonav 24.0 fps, loop 8.9 / p95 19.3 ms (lying, evening). Image quality not compared with 0.4</td>
+</tr>
+<tr>
+<td><code>pykms</code></td>
+<td>pip package <code>rpi-kms</code> in <code>~/.local</code> broke with the new <code>libkms++</code> (undefined symbol, service crash loop); moved aside, system <code>python3-kms++</code> is used</td>
+</tr>
+</tbody>
+</table>
+<h2 id="camera">Camera<a class="headerlink" href="#camera" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>HFOV</td>
+<td>91.8° (f ≈ 310 px @ 640 px, from turns vs IMU heading 2026-11-07; the earlier 88.5° made image angles ~5 % too small); default and simulator use it. Camera height re-measured while balancing (<code>cam_h_u8</code>); the tape check at 0.48 / 0.98 m (2026-11-07) showed f·h 7.9 % too large and was corrected by height × 0.921 until 2026-11-10; the floor grid then confirmed the measured height, factor dropped, floor distances with it not driven yet</td>
+</tr>
+<tr>
+<td>Distortion</td>
+<td>corrected since 2026-11-18 (<code>[camera] lens_*</code>); before: ≤ 2 px up to r 340 px, up to 18 px in the corners. Model from straight edges, not from a calibration target; FloorNet was trained on uncorrected frames</td>
+</tr>
+<tr>
+<td>Height</td>
+<td>128 mm at body height 85 mm (<code>mount_offset_mm = 43</code>)</td>
+</tr>
+<tr>
+<td>Tilt</td>
+<td>1.39° at IMU pitch −2.7° (R-1.1.3)</td>
+</tr>
+<tr>
+<td>Lens shading</td>
+<td>edge: blue/green to ~20 %, red to 1–9 % (from ~250 px off centre)</td>
+</tr>
+<tr>
+<td>Measurable floor</td>
+<td>middle ~6/8 of width from 18–25 cm; outer eighths and lower corners blind</td>
+</tr>
+<tr>
+<td>Low light</td>
+<td>4 ms at 15–50 lux: gain 8 maxed, mean brightness 3/255 (auto 33 ms: 20–30/255); RiderPi config: 20 ms, gain 16</td>
+</tr>
+<tr>
+<td>Analogue gain range</td>
+<td>driver register 16..1023 = 1..63.94×; libcamera <code>camera_controls</code> shows 1..16 before start, 1..63.94 after</td>
+</tr>
+<tr>
+<td>Gain above 8× (measured 2026-11-06, 5 ms, one scene, 16 frames, green raw)</td>
+<td>signal and temporal noise both scale with gain up to 63.9×; SNR stays ~4–5 from 8× on, so only brighter, and saturates sooner (20 ms, daylight: 16 % of pixels at 16×, 45 % at 63.9×)</td>
+</tr>
+<tr>
+<td>Missing raw codes</td>
+<td>exactly 16× every 2nd code, exactly 32× every 4th; 15×, 17×, 24×, 31×, 33×, 48× none; cause unknown</td>
+</tr>
+<tr>
+<td>640x480 sensor mode</td>
+<td>runs 26.5 instead of 25 fps (driver pixel rate ~6 % low); use 1296x972 + crop</td>
+</tr>
+</tbody>
+</table>
+<h2 id="cpu-cm4-640480">CPU (CM4, 640×480)<a class="headerlink" href="#cpu-cm4-640480" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Configuration</th>
+<th>Main loop</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>no detector, 30 fps</td>
+<td>~12 ms/frame</td>
+</tr>
+<tr>
+<td>YOLO11n@256, 2 threads (~145 ms/inference, ~7 Hz)</td>
+<td>~24 ms</td>
+</tr>
+<tr>
+<td>3 threads or 320 px</td>
+<td>exceeds 33 ms budget</td>
+</tr>
+<tr>
+<td>floor model threaded, pinning (2026-11-02)</td>
+<td>mean 12.6 ms, p95 17.1 ms, CPU 232–243 %</td>
+</tr>
+<tr>
+<td><code>kanten</code> + NCNN detector + ego/floor optimisations (2026-11-05, idle, Rider lying)</td>
+<td>mean ~12 ms, p95 ~20 ms; ego 9.9 ms/frame (was 12.0); detector ~133 ms (onnxruntime ~170); floor model ~17 ms; CPU ~182 %</td>
+</tr>
+<tr>
+<td>+ ego-motion C++ core (2026-11-05)</td>
+<td>mean ~9.4 ms, p95 ~15 ms; ego 6.6 ms/frame; CPU ~167 %</td>
+</tr>
+<tr>
+<td>+ floor model C++ core: edge scan, NEON 4:1 downscale (2026-11-05)</td>
+<td>floor model 11.4 → 5.2 ms/call offline (same result), live in its thread ~12 → ~10 ms; main loop unaffected (own thread). Daylight ~8.5 / p95 14 ms, CPU ~158 %; evening, gain 16: ~13 / p95 24 ms, ego 9–10 ms, CPU ~180 %</td>
+</tr>
+<tr>
+<td>+ ego-motion shortcuts (gray, sharpness, <code>goodFeaturesToTrack</code>) + room map C++ (2026-11-05)</td>
+<td>ego offline 5.5 → 4.2 ms/frame, p95 7–11 → 6.1 ms (feature refill 7.8 → 2.9 ms); room map 2.0 → 0.7 ms/observation; both bit-identical. Live (evening, lying): mean 6.5 ms, p95 11.4 ms, ego 5.2 ms, CPU ~158 %</td>
+</tr>
+<tr>
+<td>pipeline stopped</td>
+<td>service CPU ~4 %</td>
+</tr>
+<tr>
+<td>+ planner, frontier search, local map C++ (<code>navfast.cpp</code>), IMU history as numpy buffer (2026-11-12)</td>
+<td>CM4 offline on the saved room map (2026-11-12, median, same results): <code>plan()</code> 113 → 7.2 ms (max 527 → 13), <code>next_goal()</code> 137 → 14 ms (max 272 → 17); arc check after a new observation 1.2 → 0.3 ms at 600 points, 5.8 → 0.4 ms at 2000; confirmed points for the planner 9.5 → 0.3 ms at 600, 94 → 0.6 ms at 2000. Build 26 s. Second step the same day (local map move / enter / clear / forget, wall distance, path-follower target): entering one observation 1.48 → 0.35 ms at ~1570 points (the rest is the numpy geometry), move 0.16 → 0.04 ms, arc check after it 49 → 0.6 ms, wall distance 0.044 → 0.025 ms, four target calls 0.15 → 0.07 ms. Live (lying, idle, FloorNet, detector off): loop 9.7 → 8.2 ms, p95 13.2 → 11.3, control step 1.7 → 0.8 (p95 4.3 → 1.9), ego 7.3, CPU 83 → 80 %; not driven. Third step (ground geometry in the core, <code>native/xgo.h</code>; one call per observation for each map, room-map hits with confirmation included): room map 1.19 → 0.18 ms per observation (pure numpy 1.64), local map 0.39 → 0.22 ms (pure numpy 1.37), rays alone for map matching 0.31 → 0.11 ms; live control step 0.8 → 0.5 ms (p95 1.9 → 1.3). PC simulator, 150 s explore (<code>--wheels --kanten --fs-thread --dyn --rider</code>), CPU time per thread: planner 8.2 → 1.1 s (<code>next_goal</code> 46.6 → 6.1 ms/call, <code>plan_ms</code> 45 → 2.4); main loop: local-map confirm 3.7 → 0.2 s, path follower 1.12 → 0.24 ms/step, IMU history copy 0.13 ms/frame → 0; map-matching thinning (<code>reloc._duenn</code>, only with <code>reloc.track</code>) 1.6 → 0.2 ms at up to 6000 points, same output</td>
+</tr>
+</tbody>
+</table>
+<p>Largest cost: optical flow (<code>ego.lk_*</code>). The Python binding does not accept prebuilt LK pyramids (also OpenCV 5); the C++ core (<code>xgonav/native</code>) builds one pyramid per frame and reuses it.</p>
+<h2 id="firmware-behaviour">Firmware behaviour<a class="headerlink" href="#firmware-behaviour" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Camera heading</td>
+<td><code>vis_yaw</code> drifts during forward drive: depth differences leak into the rotation model (2 m straight: −8.9° / +3°; left vs right image half −0.1° / −7.9°). Analysis: <code>tools/ego_debug.py</code></td>
+</tr>
+<tr>
+<td>IMU heading</td>
+<td>firmware integrates yaw only at |rate| &gt; 2°/s; 60 s balancing idle: IMU +2.5°, image −2.6°. Firmware heading hold (reg 0x0A) cannot see this drift. Gyro-z bias is measured once at boot: 2026-11-05 45 min after boot 0.48 °/s off (slope against wheels 0.998); 75 s turn test ended IMU −3.5°, wheels +27.7°, seen ~35° left. Patch 0009 (flashed 2026-11-05) tracks the bias and lowers the dead band to 0.3 °/s: 60 s drive test IMU +13.4°, wheels +15.4°. One stop from ~50 cm/s reverse twisted the Rider ~9° right within 0.5 s; the next run stopped within 2° in both directions (not reproduced, cause unknown). xgonav takes the IMU heading, checked against the wheels (<code>odomfusion.py</code>, 2026-11-19, not driven)</td>
+</tr>
+<tr>
+<td>Turn overshoot</td>
+<td>after stop command 10–17° further; commands within u8 128 ± 6 ignored. <code>tools/nudge.py</code> turns in two stages</td>
+</tr>
+<tr>
+<td>Reverse</td>
+<td>2026-11-02 much weaker than forward (u8 109: 4 cm vs u8 147: 86 cm in 2 s). 2026-11-05 with patches up to 0010: symmetric (sent 0.12 forward 0.70 m in 3 s, sent 0.24 reverse 1.30 m in 3 s). <code>reverse_gain = 2.0</code> always, <code>manual_forward_gain = 2.0</code> manual only. Sent 0.24, 3 s (2026-11-05 21:50): forward 1.09 m, peak 0.49 m/s, reverse 1.39 m, peak 0.53 m/s; same top speed, forward needs ~1 s longer to reach it (cause not examined); heading within 1° forward, 3° reverse; stops in ~0.6 s, pitch ±8°. Sent 0.30 (full stick) not driven yet. Autonomous modes stay at factor 1 forward: simulator (<code>--dyn</code>, ~54 cm/s, 8 runs each) 1 collision and home arrived 1 of 4, factor 1: 0 collisions, 4 of 4; free-space thresholds would need retuning</td>
+</tr>
+<tr>
+<td>Balancing drift</td>
+<td>slow drift in position and heading</td>
+</tr>
+<tr>
+<td>Roll while standing</td>
+<td>+2.1 to +3.2° (+ = right side down), stays with the Rider when it turns (floor share ~0.6° over 173° heading, 8 rest phases); lying +0.4 to +1.0° (once −0.1°). Height test 2026-11-05: 75 mm 2.22 / 2.55°, 115 mm 2.21 / 2.24°, standard 2.73 / 2.31°; 8 ticks of leg-zero error would give 0.77° between the heights, so it explains ~0.5° at most. Rest: the body is really tilted (user: straight at roll −2°, IMU then +0.49°, close to the lying value, so ~0.5° is sensor share). Leveling test 2026-11-05: leveling on reached −0.04° in 1.1 s without oscillation; after one turn and with leveling off, same leg command, roll stayed +0.13° (before +2.46°), so it is a state, not a fixed length difference. Hysteresis test 2026-11-05: with roll command 0 the body stays at +2.10° after stand-up, +0.72° after −3°, +3.35° after +3°: dead zone or play in the leg servos, ~2.6° wide (servo dead zone vs mechanical play not separated). A 3 s leveling pulse left +0.51°; afterwards +0.54° after a left turn, +0.60° after a right turn, +0.82° after 2 s forward, +1.16° after 2 s reverse (creeps with driving, long-term not tested). <code>robot.level_after_standup</code> runs one such pulse after each stand-up, the web button „Neu ausrichten“ (<code>POST /level</code>) another. Firmware leveling (0x61) is off by default</td>
+</tr>
+<tr>
+<td>Firmware units</td>
+<td>1 unit ≈ 1.8 m/s at command 0.12–0.24 (<code>vx_limit</code>, 2026-11-05), on smooth floor. Slower on carpet (user, 2026-11-12; not measured): firmware speed loop is P only. <code>robot.speed_ctrl</code> corrects on the wheels; simulator only, not driven</td>
+</tr>
+<tr>
+<td>Stand-up</td>
+<td>Rider rolls ~20 cm forward</td>
+</tr>
+<tr>
+<td>Rolling while turning</td>
+<td>R-1.1.6 integrates the tilt gyros only; balancing with ~2° roll / ~1° pitch, turning leaks into them → pitch estimate +2–3° (left) / −5–9° (right) → rolled back on left turns, forward on right turns (up to 0.3 m/s, 20–40 cm per 3 s turn). Firmware patch 0005 (flashed 2026-11-05) removes the rotation about the vertical from pitch and roll rate. Turn test (3 s on the spot, centre displacement): 0.15 (~37 °/s) −4 / +9 cm; 0.30 (~85 °/s) +6 cm left, +26 cm right (first pitch-only version +16 / +40 cm). Remaining at fast turns: pitch estimate sinks 1–3° in both directions, consistent with centripetal acceleration on the accelerometer (IMU ~11 cm from the turning axis) plus ~0.3 % gyro cross-coupling. Patch 0006 (flashed 2026-11-05 19:28, holds the accelerometer angles while</td>
+</tr>
+</tbody>
+</table>
+<h2 id="perception">Perception<a class="headerlink" href="#perception" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Floor model</td>
+<td>needs fairly uniform floor; patterned carpet / hard tile joints → phantom obstacles. Laminate OK with <code>edge_weight 0.4</code>, <code>min_obst_rows 6</code> (0 false blocks in 40 raw images). Fails on some floors / at desk (open)</td>
+</tr>
+<tr>
+<td>Follow false alarms</td>
+<td>replay <code>raw_follow8</code>: path blocked in ~49 % of control steps without real obstacle</td>
+</tr>
+<tr>
+<td><code>kanten</code> remaining errors (2026-11-05, 36 frames reviewed)</td>
+<td>reflections of furniture in glossy floor put the boundary 10–20 cm too close; diffuse light pool edge in a dark room (follow9 304) seen as obstacle; thin chair/table legs invisible</td>
+</tr>
+<tr>
+<td>Carpet</td>
+<td>the carpet edge is a real obstacle (Rider cannot climb it); <code>kanten</code> detects it</td>
+</tr>
+<tr>
+<td>Path check radius</td>
+<td><code>LocalMap</code> radius 0.18 m: a wall 0.16 m beside the path blocks driving along it (follow11 kitchen), although the Rider passed there without contact. Points already inside the radius only block when the path gets closer (escape rule). In a tight spot of <code>home</code>/<code>explore</code>/<code>patrol</code> the radius is <code>map.radius_tight_m</code> 0.08 m: 2.2 cm beyond the Rider's half width, <strong>not driven</strong></td>
+</tr>
+<tr>
+<td>Narrow gaps</td>
+<td>planner and <code>explore</code> take gaps from 25 cm when there is no other way (<code>home.squeeze_m</code> 0.09, tight-spot steering). Simulator only (scene <code>spalt</code>, collision radius 7 cm instead of 12 cm); the 5 cm map sometimes draws such a gap too narrow and it is skipped. The Rider rolls back on every start and overshoots turns by ~15°: turning in place in front of a gap is untested. More goals at the end of <code>explore</code> (holes in mapped walls look like gaps)</td>
+</tr>
+<tr>
+<td>Monocular depth (YOLO26n-depth, offline test)</td>
+<td>~0.7 s/frame on CM4 at 320 px (estimated), sees carpet as flat, fooled by glossy floor, no wall/floor separation beyond ~0.7 m at 12.8 cm camera height</td>
+</tr>
+<tr>
+<td>Without IMU / sync</td>
+<td>slow pitch unobservable: 1° ≈ 40 % distance error at 2 m; size fusion compensates. Status <code>pitch_src</code> shows source</td>
+</tr>
+<tr>
+<td>Follow distance (sim)</td>
+<td>~1.5 m without / ~1.4 m with IMU at target 1.2 m (deadband + lag)</td>
+</tr>
+<tr>
+<td>Explore (sim)</td>
+<td>frontier version: 0 collisions in 10 runs to the end; an earlier version once hit a box corner and wheel slip then ruined the pose (1.7 m). Contact is not detected</td>
+</tr>
+<tr>
+<td>Ego-motion</td>
+<td>spikes up to ~80 ms per frame</td>
+</tr>
+<tr>
+<td>Without free space (<code>freespace.enabled = false</code>)</td>
+<td>only <code>idle</code>, <code>manual</code>, <code>follow</code>; <code>explore</code>/<code>approach</code> → HTTP 409</td>
+</tr>
+<tr>
+<td>Detector</td>
+<td>runs only in <code>follow</code>, <code>approach</code>, <code>pet</code> (other modes: no frames, thread idle, ~1 core saved). Detections never enter free space, safety or arc check (floor model only); persons/animals are masked only in the room map. <code>follow</code>/<code>approach</code> need a running detector and a target in its classes (else HTTP 409)</td>
+</tr>
+<tr>
+<td>Follow (sim, <code>--rider</code>)</td>
+<td>same as before 2026-11-13: loses the walking person (0.3 m/s) and waits; the followed person is in the local map, arc check brakes at ~2.3 m in some steps</td>
+</tr>
+</tbody>
+</table>
+<h2 id="other">Other<a class="headerlink" href="#other" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Web UI has no authentication.</li>
+<li>Room map drifts (no markers).</li>
+<li>Web attitude model: legs show the last written <code>height</code>/<code>roll</code> setpoints, not measured positions (firmware does not report them). State 254 (Absetzen) shows legs at the firmware minimum (45 mm extension) as an assumption. Other firmware moves (limp legs, leveling, stand-up, falls) are not shown; unknown after driver load (assumes 128).</li>
+<li>Body height and camera geometry: xgonav reads <code>/proc/XGORider/height</code> every 0.2 s and follows new writes, also from the web (before 2026-11-07 it ignored them: drive <code>unten3</code> ran at camera height 151 mm while the geometry assumed 128 mm, distances ~18 % too far). While the Rider is down the firmware zeroes its height every tick and stands up at its centre 128 (≈ 90 mm); <code>/proc</code> still shows the old value, so xgonav assumes 90 mm after each stand-up until the next write (behaviors send their height again). It is the setpoint, not the leg position (legs need ~1 s). A web write of the same value as before the stand-up is not detected.</li>
+<li>Body height limited to u8 205 (web UI, API, xgonav; provisional). The firmware drives only 55..200 (<code>main.cpp</code>, range seen in training), so 201..205 act as 200 (≈ 107 mm). Setpoint 235 on 2026-11-06: firmware stop, state 252 (not tilt, fall, low battery or servo loss; IMU, control gap &gt; 30 ms or invalid control output; cause open, single event). 205 held ~2 s, 225 ~1 s. Firmware itself accepts 0..255; direct writes to <code>/proc/XGORider/height</code> are not limited.</li>
+<li>Leg calibration buttons removed (saving with slack legs overwrote flash zero points, 2026-11-02).</li>
+<li>Battery: driver powers off below 8 % (<code>low_batt_level</code>); full image processing draws more than the charging dock supplies.</li>
+</ul>
+<h2 id="explore-on-the-riderpi-2026-11-06"><code>explore</code> on the RiderPi (2026-11-06)<a class="headerlink" href="#explore-on-the-riderpi-2026-11-06" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Finding</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>No cliff protection</strong></td>
+<td>Run 1 nearly drove down a step, stopped by hand about 50 cm before it. The frontier goal lay ~20 cm behind the step, the map had it as free. The floor model saw the step only from about 1 m. Block stairs physically; do not run unattended</td>
+</tr>
+<tr>
+<td>Flat objects</td>
+<td>A yellow tape patch and the edge of a chair mat on the floor count as obstacles</td>
+</tr>
+<tr>
+<td>Stand-up roll</td>
+<td>The Rider rolled ~24 cm forward (one run); the start point is set after that, so it is not where the Rider lay</td>
+</tr>
+<tr>
+<td>Early end</td>
+<td>Runs 2 and 3 reported "Karte fertig" with open areas left: occupied specks plus <code>inflate_m</code> cut the map even on driven ground (run 2), last open spot 0.49 m from an old goal inside the 0.5 m avoid radius (run 3). Changed afterwards (driven ground, <code>avoid_r_m</code> 0.3), <strong>not driven since</strong></td>
+</tr>
+<tr>
+<td>Timing</td>
+<td>Control step grew during the run (8 → 46 ms mean, 27 ms CPU), raw recording running; <code>LocalMap.confirmed_points</code> compares every point with every point (up to 2900 points). Result now cached between floor updates, the planner's copy runs in its thread. Run 4, same recording: control step 8–12 ms mean, main loop median 19 ms, p95 49 ms (before 33 and 97 ms). Planner median 215 ms, peak 761 ms</td>
+</tr>
+<tr>
+<td>Heading</td>
+<td>Run 6, 32 m, photo with A4 scale: pose 75 cm wrong with wheel heading (slip while turning, wheels and IMU differ by up to 37°). Same run re-integrated with IMU heading: about 6 cm, walls single and straight. One run, strip taken as start. <code>grid.yaw_source = "imu"</code> since then, not driven yet</td>
+</tr>
+<tr>
+<td>Start image check (<code>startbild.py</code>)</td>
+<td>since 2026-11-19, <strong>one run on the Rider</strong> (161006: end ~1 cm from the start, heading −9.5°; tighter final turn <code>end_deg</code> not driven). Measurement takes 11 s on the CM4. Offline on one return run with a tape measurement (~3 cm left of 12 cm), short pairs and the simulator only. Needs a straight final run and texture at the start; in the dark, with moved furniture or in a long featureless corridor it does not correct. Only <code>home</code>, not the way back of <code>patrol</code></td>
+</tr>
+<tr>
+<td>Dead reckoning (<code>odomfusion.py</code>)</td>
+<td>since 2026-11-19 one heading for behaviors and both maps (behaviors used wheel heading before). Not driven. Replayed offline on 66 raw runs 2026-11-10..19 (<code>tools/odom_replay.py</code>): wheels minus IMU per 1 s p95 ~2°, p99 ~3.5°; ~2 contradictions per run (mostly 4–6° at 0.6 m/s, slip rule then moves the pose by a few mm); 2 camera verdicts, one clearly right (IMU −143° while tipping over, wheels +12°, image +3°), one unclear (wheels spun 200°, IMU 140°, image without ego-motion). The slip rule (smaller wheel) is not checked against ground truth; calibration suggestion display only</td>
+</tr>
+<tr>
+<td><code>patrol</code></td>
+<td>since 2026-11-06, simulator only, <strong>not driven</strong>. No alarm yet</td>
+</tr>
+<tr>
+<td>Drift with IMU heading</td>
+<td>Run 9, 11.9 m, measured at the end: 195 mm to the left, heading looked right (pose said 4 cm, 7°). Larger than the 6 cm the re-integration of run 6 suggested</td>
+</tr>
+<tr>
+<td>Way back</td>
+<td>Run 4 ended 1.7 m from the start: the direct way led along a chair and a chair mat. Abort now only after <code>give_up_s</code> 20 s without approach. Run 5 ended 0.89 m from the start with "kein Weg" while driving freely: the room map alone had a straight way, so the local map closed it. <code>plan()</code> now falls back without it, not driven since</td>
+</tr>
+<tr>
+<td>Contact</td>
+<td>Only inferred from stationary wheels under command, see <code>docs/mapping.md</code>; no sensor</td>
+</tr>
+</tbody>
+</table>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="testing.html" class="md-footer__link md-footer__link--prev" aria-label="Previous: Testing">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Testing
+              </div>
+            </div>
+          </a>
+        
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": ".", "features": ["navigation.sections", "navigation.top", "navigation.footer", "toc.follow", "search.highlight", "content.code.copy"], "search": "assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="assets/javascripts/bundle.a5f9d56c.min.js"></script>
+      
+    
+  </body>
+</html>

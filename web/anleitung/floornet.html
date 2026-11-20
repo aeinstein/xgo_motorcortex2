@@ -1,0 +1,2436 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="XGO RiderPi – driver, camera navigation (xgonav), web UI">
+      
+      
+      
+      
+        <link rel="prev" href="mapping.html">
+      
+      
+        <link rel="next" href="display-emotions.html">
+      
+      
+        
+      
+      
+      <link rel="icon" href="assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.2">
+    
+    
+      
+        <title>FloorNet - xgo_motorcortex2 manual</title>
+      
+    
+    
+      <link rel="stylesheet" href="assets/stylesheets/main.57a0d79d.min.css">
+      
+        
+        <link rel="stylesheet" href="assets/stylesheets/palette.fb2fffe2.min.css">
+      
+      
+
+
+    
+    
+      
+        <script src="https://unpkg.com/iframe-worker/shim"></script>
+      
+    
+    
+      
+    
+    
+    <script>__md_scope=new URL(".",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="blue-grey" data-md-color-accent="teal">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#floornet" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="index.html" title="xgo_motorcortex2 manual" class="md-header__button md-logo" aria-label="xgo_motorcortex2 manual" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            xgo_motorcortex2 manual
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              FloorNet
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="blue-grey" data-md-color-accent="teal"  aria-label="Dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="blue-grey" data-md-color-accent="teal"  aria-label="Light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/aeinstein/xgo_motorcortex2" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="index.html" title="xgo_motorcortex2 manual" class="md-nav__button md-logo" aria-label="xgo_motorcortex2 manual" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    xgo_motorcortex2 manual
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/aeinstein/xgo_motorcortex2" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="index.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="guide/install.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Install
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="guide/quickstart.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="guide/web.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Web UI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="guide/behaviours.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Behaviours
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Advanced
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Advanced
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="guide/advanced/floornet-training.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    FloorNet training
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="guide/advanced/simulator.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Simulator and tests
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="guide/advanced/calibration.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Calibration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="guide/advanced/firmware-driver.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Firmware and driver
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="guide/advanced/native.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C++ core
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="architecture.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="installation.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="configuration.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="calibration.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Calibration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="driver.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Driver
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="web-interface.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Web interface
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="mapping.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Odometry and maps
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    FloorNet
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="floornet.html" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    FloorNet
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#network" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Network
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Files
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#workflow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Workflow
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#labels" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Labels
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#results" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Results
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#results-with-comfyui-labels-2026-11-09" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Results with ComfyUI labels (2026-11-09)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#shadow-mode-on-the-rider" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Shadow mode on the Rider
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#smoothing-over-time-2026-11-11" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Smoothing over time (2026-11-11)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#labels-from-comfyui-2026-11-08" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Labels from ComfyUI (2026-11-08)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#clean-test-set-2026-11-07" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Clean test set (2026-11-07)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#labels-from-geometry-2026-11-18" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Labels from geometry (2026-11-18)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Labels from geometry (2026-11-18)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#depth-anything-3-instead-of-moge-probe-2026-11-20" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Depth Anything 3 instead of MoGe (probe 2026-11-20)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="display-emotions.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Display and emotions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="audio.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Audio
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="wifi-setup.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Wi-Fi setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="LED.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LEDs
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="testing.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="limitations.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Limitations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#network" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Network
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Files
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#workflow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Workflow
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#labels" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Labels
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#results" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Results
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#results-with-comfyui-labels-2026-11-09" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Results with ComfyUI labels (2026-11-09)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#shadow-mode-on-the-rider" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Shadow mode on the Rider
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#smoothing-over-time-2026-11-11" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Smoothing over time (2026-11-11)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#labels-from-comfyui-2026-11-08" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Labels from ComfyUI (2026-11-08)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#clean-test-set-2026-11-07" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Clean test set (2026-11-07)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#labels-from-geometry-2026-11-18" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Labels from geometry (2026-11-18)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Labels from geometry (2026-11-18)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#depth-anything-3-instead-of-moge-probe-2026-11-20" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Depth Anything 3 instead of MoGe (probe 2026-11-20)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+
+<h1 id="floornet">FloorNet<a class="headerlink" href="#floornet" title="Permanent link">&para;</a></h1>
+<p>Self-trained network for the floor boundary, one row per image column. <strong>Status: the only floor boundary since 2026-11-18; the classic model (<code>kanten</code>, <code>farbe</code>, lens shading) was removed from the code. Decides alone on the RiderPi since 2026-11-10 and drives with it.</strong> Without the network (file or C++ core missing, self-test or runtime failure) the Rider is blind and does not drive by itself (<code>docs/configuration.md</code>). <code>kanten</code> figures below are history: it was the reference the network was measured against.</p>
+<h2 id="network">Network<a class="headerlink" href="#network" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Input</td>
+<td>640×480 BGR, rows 137–478, 2:1 average → 320×171</td>
+</tr>
+<tr>
+<td>Structure</td>
+<td>3×3 stem, 6 depthwise-separable blocks, rows collapsed, column head (1×1, 1×3, 1×1)</td>
+</tr>
+<tr>
+<td>Output</td>
+<td>80 columns (8 px each), 64 row bins each: 1.5 px at the top, about 10 px at the bottom; best bin refined with a parabola</td>
+</tr>
+<tr>
+<td>Size</td>
+<td>30 k parameters, 17.8 MMACs (<code>f2_s</code> in <code>bench_kern.cpp</code>)</td>
+</tr>
+<tr>
+<td>Time, untrained, CM4 next to YOLO at 12 Hz</td>
+<td>13.6 ms mean, 17.3 ms p95; YOLO 119 → 136 ms</td>
+</tr>
+<tr>
+<td>Inference</td>
+<td>C++ with NEON (<code>xgonav/native/floornet.cpp</code>, <code>floornet_kern.h</code>), float32, no framework, self-test at load</td>
+</tr>
+</tbody>
+</table>
+<p>Constraints from the kernel: no ReLU and no bias after the depthwise convolution, residual before the ReLU of the 1×1 layer, 1×1 output channels divisible by 8. BatchNorm exists only in training; <code>net.fold</code> folds it into the weights.</p>
+<h2 id="files">Files<a class="headerlink" href="#files" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>tools/floornet/label.py</code></td>
+<td>helpers only (load run, trajectory, raycast <code>cast_labels</code>, camera geometry); the labels from a <code>kanten</code> room map it produced are gone with <code>kanten</code> (existing label files stay usable)</td>
+</tr>
+<tr>
+<td><code>tools/floornet/handmap.py</code></td>
+<td>labels from hand lines: same raycast, map built only from hand lines</td>
+</tr>
+<tr>
+<td><code>tools/floornet/beschriften.html</code>, <code>make_testset.py</code></td>
+<td>click tool for hand lines, runs from the file system, stores in the browser, exports JSON</td>
+</tr>
+<tr>
+<td><code>tools/floornet/schnitt.py</code></td>
+<td>time window of a recording as its own run: <code>label.py</code> uses only the longest stretch without a pose jump (&gt; 12 cm between frames)</td>
+</tr>
+<tr>
+<td><code>tools/floornet/eval_hand.py</code></td>
+<td>metric against hand lines, in metres per distance band, bootstrap over frames</td>
+</tr>
+<tr>
+<td><code>tools/floornet/comfy_label.py</code>, <code>comfy_batch.py</code>, <code>comfy_prompt8.txt</code></td>
+<td>labels from ComfyUI (Qwen-Image-Edit paints the floor green) against hand lines / for many frames, see below</td>
+</tr>
+<tr>
+<td><code>tools/floornet/stage2.py</code>, <code>inseln.py</code></td>
+<td>green edits → masks (stage 1 → 2, <code>floor_mask</code>, <code>--gruen</code> for the green lead); count and show islands and holes in masks, changes nothing</td>
+</tr>
+<tr>
+<td><code>tools/floornet/stage3.py</code></td>
+<td>stage 2 → 3: per pixel column only what is unbroken from the bottom edge; no islands or holes remain</td>
+</tr>
+<tr>
+<td><code>tools/floornet/stage3_npz.py</code></td>
+<td>stage 3 → label files for <code>train.py</code>: one row per 8 px strip (majority), filters as <code>comfy_npz.py</code>. Needs no <code>label.py</code> files since 2026-11-11: frames from <code>--data/&lt;run&gt;</code>, camera geometry (only for metres in evaluation and distance weights) from <code>--config</code> (Rider TOML), camera height from <code>height_mm</code> in <code>meta.jsonl</code></td>
+</tr>
+<tr>
+<td>sorting out (from stage 2 on)</td>
+<td>nothing is deleted. Standing frames: pose in <code>meta.jsonl</code> less than 3 cm and 3° from the last kept frame (<code>stage2.py --steht_m --steht_grad</code>, 0 = off; 2026-11-11: 9 208 of 21 906 frames stay). Unusable frames: <code>&lt;stage1&gt;/aus_hand.txt</code>, one id per line, <code>-id</code> restores, written by the viewer. Hand list first, then standing frames among the rest. Rules travel in <code>info.json</code> of stage 2 and 3; <code>index.js</code> (<code>BILDER</code>, <code>AUS</code>), <code>stage3.py</code> and <code>stage3_npz.py</code> apply them</td>
+</tr>
+<tr>
+<td><code>tools/floornet/betrachter.html</code>, <code>betrachter_server.py</code></td>
+<td>original, stage 1–3 side by side, arrow keys step through frames; list from <code>&lt;stage&gt;/index.js</code>. <code>X</code>/button marks the frame unusable (or restores it), <code>A</code> shows sorted-out frames too. Every frame shown is appended to <code>&lt;stage1&gt;/gesichtet.txt</code> (<code>POST /gesichtet</code>) and hidden after the next reload; <code>G</code> shows them again. Space starts/stops a run that advances as fast as frames are completely loaded (no frame or mask skipped; a held arrow key waits the same way). Served from <code>~/floornet</code> by <code>betrachter_server.py</code> (static files + <code>POST /aus</code>, port 8765, home network only, no auth)</td>
+</tr>
+<tr>
+<td><code>tools/floornet/netz_betrachter.html</code></td>
+<td>net result per frame (<code>netz_js.py</code>, <code>fahrt_js.py</code>). Lists with <code>label</code> and <code>ansicht</code> (check lists label vs. net, new drives) also show the label line (green) and the ComfyUI edit; <code>X</code>/<code>U</code> write the same hand list as <code>betrachter.html</code>, every frame shown counts as seen, lists with <code>sichten</code> hide seen frames after reload (<code>G</code> shows them). <code>N</code> repaints the frame (<code>POST /neu</code>), <code>1</code>–<code>3</code> pick the prompt variant</td>
+</tr>
+<tr>
+<td><code>tools/floornet/neu_malen.py</code>, <code>comfy_prompt_t1.txt</code>, <code>comfy_prompt_t2.txt</code></td>
+<td>one frame through ComfyUI again with a random seed and a prompt variant (<code>--prompt 11\|t1\|t2</code>, a new variant = a new <code>comfy_prompt*.txt</code>); <strong>overwrites</strong> the stage 1 edit and its stage 2/3 masks, logs seed, prompt and label row to <code>&lt;stage1&gt;/neu.jsonl</code>. Called by <code>betrachter_server.py --python &lt;venv python&gt;</code> on <code>POST /neu</code>, one at a time</td>
+</tr>
+<tr>
+<td><code>tools/floornet/ids_fahrt.py</code></td>
+<td>frame list of raw recordings for <code>comfy_batch.py --ids</code>: every n-th frame, standing frames dropped</td>
+</tr>
+<tr>
+<td><code>tools/floornet/nick_bezug.py</code></td>
+<td><code>pitch_dev</code> of firmware-0021 runs re-referenced to <code>pitch_ref_deg</code> −5.0 (runs driven with −4.23 / −6.23, reference read from <code>pitch_dev</code> + IMU pitch); used by <code>comfy_npz.py</code>, <code>geo_label.py</code>, <code>abstimmen.py</code>, <code>fahrt_js.py</code>, <code>tools/map_replay.py</code>. Affects metres only (evaluation, near-frame selection), not the learned rows</td>
+</tr>
+<tr>
+<td><code>tools/floornet/geo_label.py</code></td>
+<td>labels from geometry instead of ComfyUI: MoGe-2 point map, floor plane fitted to the known camera height, hand-line rule as arithmetic per strip; <code>pruef</code> against hand lines (with <code>--vergleich</code> the same table for another teacher on the same frames), <code>fahrten</code> → <code>rows.jsonl</code> and label files via <code>comfy_npz.build_run</code>. See below</td>
+</tr>
+<tr>
+<td><code>tools/floornet/comfy_npz.py</code></td>
+<td><code>rows.jsonl</code> of <code>comfy_batch.py</code> → label files for <code>train.py</code>; drops frames lying down, tilting (&gt; 10 % of columns above row 205), torn masks (&gt; 6 jumps &gt; 40 px), dark (mean grey &lt; 12)</td>
+</tr>
+<tr>
+<td><code>tools/floornet/hand_npz.py</code></td>
+<td>hand lines → label files holding only frames with their own line, no map; for <code>train.py --hand_only 1</code></td>
+</tr>
+<tr>
+<td><code>tools/floornet/net.py</code>, <code>train.py</code></td>
+<td>network, folding, training (GPU)</td>
+</tr>
+<tr>
+<td><code>tools/floornet/export.py</code></td>
+<td>weights and test vector for the C++ core (<code>models/floornet.bin</code>; the repo holds <code>lauf_p11a</code>, the network on the RiderPi since 2026-11-11)</td>
+</tr>
+<tr>
+<td><code>tools/floornet/bench_kern.cpp</code></td>
+<td>timing of untrained variants on the CM4</td>
+</tr>
+<tr>
+<td><code>xgonav/floornet.py</code></td>
+<td>ctypes wrapper; off if the core is missing or the self-test fails</td>
+</tr>
+<tr>
+<td><code>tests/neon_shim/arm_neon.h</code></td>
+<td>the NEON intrinsics as plain C++, so <code>tests/test_floornet_native.py</code> runs without ARM (result only, not speed)</td>
+</tr>
+</tbody>
+</table>
+<h2 id="workflow">Workflow<a class="headerlink" href="#workflow" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code># labels/: existing label files (the label.py CLI that made them from `kanten` is gone), new runs via stage3_npz.py
+python tools/floornet/make_testset.py labels/ --out pruefsatz/ --runs explore9:80,streife1:80,unten1:130,unten2:30
+python tools/floornet/handmap.py hand.json --labels labels/ --config rider.toml --out labels_hand/
+python tools/floornet/train.py --labels labels/ --out run/ --train explore2,explore3 --val "" --dist 0.005 --yaw 0.5 --epochs 100 \
+    --hand_labels labels_hand/ --hand_train explore9,unten1 --far_atleast 1.25 --cap_atleast 0.6
+python tools/floornet/eval_hand.py hand.json --labels labels/ --lauf run/:streife1,unten2
+python tools/floornet/export.py run/floornet.pt --out models/floornet.bin
+</code></pre></div>
+<p>Then <code>[freespace] net = "models/floornet.bin"</code> (default). Training takes about a minute on the GPU.</p>
+<p>On the Rider <code>models/floornet.bin</code> is a symlink into <code>models/floornet/</code> (<code>[freespace] net_dir</code>); copy further nets there as <code>&lt;name&gt;.bin</code> and pick one in the web (<em>Bodenmodell</em>, idle/manual only, no restart; cost on the Pi: one load + self-test on demand, nothing per frame except an uncontended lock around the inference).</p>
+<p>Spike removal in the decoder (<code>[freespace] net_outlier_px</code>, default 25, 0 = off; <code>net.decode(logits, outlier_px, outlier_ratio)</code> in PyTorch, <code>decode</code> in <code>native/floornet.cpp</code>, both tested against each other): the raw output has 1–3 column wide jumps at vertical high-contrast edges, the output there is bimodal. A column further than <code>net_outlier_px</code> rows from the median of the 7 columns around it takes the best bin within ±2 bins of that median, if the probability mass there (5 bins) is at least <code>net_outlier_ratio</code> (0.3) of the mass at its own peak. Columns without a second peak keep their value (narrow obstacles). Cost on the Rider: a 7-value median per column, <code>exp</code> only in outlier columns.</p>
+<table>
+<thead>
+<tr>
+<th>explore10–12 (never trained), 4551 frames</th>
+<th>&lt; 1 m falsely free / blocked</th>
+<th>frames with spike down / up</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>plain decode</td>
+<td>5.4 / 6.2 %</td>
+<td>6.1 / 2.1 %</td>
+</tr>
+<tr>
+<td>spike removal</td>
+<td>5.4 / 5.8 %</td>
+<td>1.0 / 0.6 %</td>
+</tr>
+</tbody>
+</table>
+<p>Spike = column more than 25 rows from the 7-column median; the count includes real narrow obstacles. Measured 2026-11-10 with the deployed net against Stage3 labels; on the Rider not yet run.</p>
+<p>With ComfyUI labels (<code>comfy_batch.py</code>, see below), replacing <code>label.py</code> and <code>handmap.py</code>:</p>
+<div class="highlight"><pre><span></span><code>python tools/floornet/comfy_npz.py labels_comfy8/rows.jsonl --labels labels/ --out labels_npz/
+python tools/floornet/hand_npz.py hand.json --labels labels/ --runs unten3,unten3b --out labels_hand_mix/
+python tools/floornet/train.py --labels labels_npz/ --out run/ --train explore2,unten1 --val "" --dist 0.005 --yaw 0.5 --epochs 100 \
+    --far_w 2 --hand_labels labels_hand_mix/ --hand_train unten3,unten3b --hand_only 1 --hand_repeat 8
+python tools/floornet/eval_hand.py hand.json --labels labels/ --lauf run/:unten4 --hoehe pruefsatz3/hoehe.json
+</code></pre></div>
+<p>All <code>kanten</code> figures on this page were measured with the <code>kanten</code> row shifted up by the former <code>[grid] row_bias</code> (1.5 rows = 6 px unless stated, Rider −1 = −4 px). <code>row_bias</code> was removed on 2026-11-11; the tools now compare the raw <code>kanten</code> row, so new figures are not comparable.</p>
+<h2 id="labels">Labels<a class="headerlink" href="#labels" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Source</th>
+<th>Finding</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Room map from <code>kanten</code> (<code>label.py</code>)</td>
+<td>Against hand lines under 1 m only 25–30 % of columns fit, 43–55 % are too far: free rays pass through dark furniture <code>kanten</code> does not see</td>
+</tr>
+<tr>
+<td>Hand lines through the map (<code>handmap.py</code>)</td>
+<td>Leave-one-out on 49 frames, under 1 m: 71 % fit, 20 % too far (room map: 33 %, 56 %)</td>
+</tr>
+</tbody>
+</table>
+<p>An obstacle in the room map needs hits from two standpoints at least 10 cm apart: a lamp reflection burned in during 72 s standing still. Fixed false alarms of <code>kanten</code> (shadows, sun patches) stay in those labels. Only hand lines remove them.</p>
+<p>A run with hand lines in training must not be used to test that network. Frames used to select a variant do not count for the final test.</p>
+<h2 id="results">Results<a class="headerlink" href="#results" title="Permanent link">&para;</a></h2>
+<p>302 hand-labelled frames from four runs that <code>label.py</code> labels were never trained on; 287 usable. Share of columns under 1 m more than 15 cm off the hand line: <em>false free</em> behind it, <em>false blocked</em> in front of it. Ratio = network / <code>kanten</code>. Preset goal: false free ≤ 0.5 and false blocked ≤ 1.0.</p>
+<p><strong>Final test, 2026-11-06:</strong> 194 frames not seen before, networks frozen with 93 hand lines, mean of 3 training runs.</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Network free / blocked</th>
+<th><code>kanten</code> free / blocked</th>
+<th>Ratio</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Other runs, same rooms</td>
+<td>19.2 % / 12.0 %</td>
+<td>30.7 % / 12.4 %</td>
+<td>0.62 / 0.96</td>
+</tr>
+<tr>
+<td>Room not in hand lines (trained upstairs, tested downstairs)</td>
+<td>22.9 % / 18.8 %</td>
+<td>42.1 % / 17.6 %</td>
+<td>0.55 / 1.07</td>
+</tr>
+</tbody>
+</table>
+<p>Goal missed. Fewer false free is significant in all six measurements, false blocked is not distinguishable from <code>kanten</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Further measurements, not a clean test</th>
+<th>Other runs</th>
+<th>Unknown room</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Cross-validation with all 287 lines (some frames selected the variant)</td>
+<td>0.54 / 0.85</td>
+<td>0.42 / 1.06</td>
+</tr>
+<tr>
+<td>Minimum of network and <code>kanten</code>, 93 lines, exploratory</td>
+<td>0.37 / 1.57</td>
+<td>0.41 / 1.41</td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th>Known weakness</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Dark or glossy cupboards from close up</td>
+<td>downstairs 0–0.5 m: 46 % false free (<code>kanten</code> 66 %)</td>
+</tr>
+<tr>
+<td>False blocks from 1 m</td>
+<td>1–1.5 m: 48 % (<code>kanten</code> 39 %)</td>
+</tr>
+<tr>
+<td>Variation between training runs</td>
+<td>about ±0.05 to 0.1 in the ratio; never decide on one run</td>
+</tr>
+<tr>
+<td>No effect</td>
+<td>smoothing over 3 columns, brightness normalisation</td>
+</tr>
+</tbody>
+</table>
+<p>The network of 2026-11-06 was trained on all hand lines, so it has no clean test of its own. The same recipe, <code>lauf_end</code>, on test set 3 is in the next section: 0.59 / 1.56.</p>
+<h2 id="results-with-comfyui-labels-2026-11-09">Results with ComfyUI labels (2026-11-09)<a class="headerlink" href="#results-with-comfyui-labels-2026-11-09" title="Permanent link">&para;</a></h2>
+<p>Same network size. Labels: Prompt 8 on every 8th frame of all runs (9763 labelled, 9196 after filters, 0 failures). Selection only on the hand lines of <code>unten4*</code>, final test once on <code>unten3*</code>, each network trained without the run it is tested on. Selected from <code>far_w</code> 1, 2, 4 × hand lines test set only / plus development set, 3 training runs each: <code>far_w</code> 2 with both sets (selection 0.25 / 0.35).</p>
+<p><strong>Final test on <code>unten3*</code>, 131 frames, under 1 m, range over 3 training runs:</strong></p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>False free</th>
+<th>False blocked</th>
+<th>Ratio free [95 %]</th>
+<th>Ratio blocked [95 %]</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Network</td>
+<td>21.1–22.0 %</td>
+<td>3.0–3.8 %</td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><code>kanten</code>, shifted +6 px (former <code>row_bias</code> 1.5)</td>
+<td>49.4 %</td>
+<td>7.3 %</td>
+<td>0.43–0.45 [0.28–0.62]</td>
+<td>0.41–0.53 [0.25–0.93]</td>
+</tr>
+<tr>
+<td><code>kanten</code>, shifted −4 px (former Rider <code>row_bias</code> −1)</td>
+<td>47.4 %</td>
+<td>19.4 %</td>
+<td>0.45–0.46 [0.28–0.67]</td>
+<td>0.15–0.20 [0.09–0.32]</td>
+</tr>
+<tr>
+<td>Older network <code>lauf_end</code>, vs. <code>kanten</code> shifted +6 px</td>
+<td>29.4 %</td>
+<td>11.3 %</td>
+<td>0.59 [0.44–0.77]</td>
+<td>1.56 [1.08–2.39]</td>
+</tr>
+</tbody>
+</table>
+<p>Goal reached by the point estimate. False blocked is clearly under 1.0; for false free the interval still reaches above 0.5.</p>
+<table>
+<thead>
+<tr>
+<th>Band</th>
+<th>Network free / blocked / median</th>
+<th><code>kanten</code> free / blocked / median</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0–0.5 m</td>
+<td>28.8–30.7 / 0.7–0.9 % / 2 cm</td>
+<td>63.3 / 0.3 % / 67 cm</td>
+</tr>
+<tr>
+<td>0.5–1 m</td>
+<td>16.6–17.5 / 4.2–5.7 % / 4 cm</td>
+<td>41.2 / 11.4 % / 16 cm</td>
+</tr>
+<tr>
+<td>1–1.5 m</td>
+<td>12.6–14.4 / 8.1–8.5 % / 6–7 cm</td>
+<td>28.4 / 39.7 % / 23 cm</td>
+</tr>
+<tr>
+<td>1.5–2.5 m</td>
+<td>16.5–17.6 / 28.7–34.9 % / 13–16 cm</td>
+<td>25.0 / 62.7 % / 45 cm</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Room not seen (exploratory, after the final test, same variant, 3 training runs):</strong></p>
+<table>
+<thead>
+<tr>
+<th>Trained on</th>
+<th>Tested on</th>
+<th>Network free / blocked</th>
+<th><code>kanten</code> free / blocked</th>
+<th>Ratio</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>upstairs only, 2 hand-line runs</td>
+<td>test set 3, 200 frames</td>
+<td>39.3–42.9 / 4.7–5.3 %</td>
+<td>52.4 / 6.0 %</td>
+<td>0.75–0.82 / 0.77–0.87</td>
+</tr>
+<tr>
+<td>same, <code>kanten</code> shifted −4 px (former Rider <code>row_bias</code> −1), 1 training run</td>
+<td>same</td>
+<td>41.4 / 4.8 %</td>
+<td>50.0 / 18.5 %</td>
+<td>0.83 / 0.26</td>
+</tr>
+<tr>
+<td>downstairs only</td>
+<td><code>explore9</code>, <code>streife1</code>, 138 frames, older hand-line rule</td>
+<td>16.5–22.2 / 9.3–14.2 %</td>
+<td>22.3 / 6.0 %</td>
+<td>0.74–1.00 / 1.54–2.37</td>
+</tr>
+</tbody>
+</table>
+<p>Goal missed in both directions. Both floors are still one home; a foreign home is not measured.</p>
+<p><strong>False free up to 0.5 m, <code>unten3*</code>:</strong> 24 of 37 frames have any, 5 frames hold 73 %. Where a column is wrong it is far off: median 114 cm too far, p90 689 cm.</p>
+<table>
+<thead>
+<tr>
+<th>Rank</th>
+<th>Frame</th>
+<th>Network wrong (of columns)</th>
+<th>Teacher wrong</th>
+<th>Cause</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><code>unten3b/010218</code></td>
+<td>65 / 70</td>
+<td>70</td>
+<td>tile-clad step painted as floor by the teacher</td>
+</tr>
+<tr>
+<td>2</td>
+<td><code>unten3/004838</code></td>
+<td>61 / 65</td>
+<td>54</td>
+<td>same step</td>
+</tr>
+<tr>
+<td>3</td>
+<td><code>unten3b/009758</code></td>
+<td>57 / 64</td>
+<td>41</td>
+<td>floor under an overhanging sofa</td>
+</tr>
+<tr>
+<td>4</td>
+<td><code>unten3/005280</code></td>
+<td>51 / 58</td>
+<td>0</td>
+<td>tile-clad step from close by: network jumps to a tile joint</td>
+</tr>
+<tr>
+<td>5</td>
+<td><code>unten3c/012531</code></td>
+<td>25 / 54</td>
+<td>0</td>
+<td>plain wall from close by, columns jump</td>
+</tr>
+<tr>
+<td>6</td>
+<td><code>unten3b/009538</code></td>
+<td>21 / 32</td>
+<td>0</td>
+<td>step from close by</td>
+</tr>
+<tr>
+<td>7</td>
+<td><code>unten3/003751</code></td>
+<td>14 / 73</td>
+<td>0</td>
+<td>plain wall filling the frame, columns jump</td>
+</tr>
+</tbody>
+</table>
+<p>Ranks 1–3 (52 %) are teacher errors the network learned. Ranks 4–9 (37 %) are network errors where the teacher is right; the four viewed (ranks 4–7) show a plain surface from close by, with floor only in part of the frame. So the network is no fall or step protection, and it is weakest directly in front of plain walls. These frames have now been looked at, so <code>unten3*</code> is no longer a clean test for a further variant.</p>
+<p>Stage 3 network (2026-11-10): prompt 10, input G0h, mask green lead ≥ 30, stage 3; labels <code>stage3_labels</code> (13 331 of 13 530 frames, 19 runs), trained on all runs without hand lines (<code>--far_w 2</code>, 8 489 frames after thinning), <code>floornet_s3.bin</code>, on the Rider as <code>models/floornet.bin</code> since 2026-11-10 09:38 (backup of <code>floornet_d.bin</code> in <code>/root/floornet.bin.vor-stage3-*</code>). C++ against PyTorch: x86, 240 frames, at most 0.0007 rows. Hand lines below 1 m, net vs <code>kanten</code> (false free / false blocked): development set 16.9 / 1.8 % vs 34.5 / 11.5 % (ratio 0.49 / 0.15); test set 3 15.0 / 1.7 % vs 42.0 / 9.2 % (0.36 / 0.18). Not clean: all runs were in training (labels from ComfyUI, not from the hand lines). <code>lauf_end</code> (2026-11-06, trained on the 287 development lines) on the same sets: 6.6 / 1.2 % and 20.1 / 4.9 %; on the unseen-for-it runs at 85 mm 38.4 / 9.4 % against 11.6 / 1.7 % for the stage 3 network.</p>
+<p>Previous final network on all runs and all 488 hand lines: <code>floornet_d.bin</code>, 139652 bytes, on the Rider as <code>models/floornet.bin</code> 2026-11-09 to 2026-11-10. C++ against PyTorch: x86, 240 frames, at most 0.0005 rows apart; CM4, 30 frames with raw pixels, at most 0.0001 rows; self-test 4.1e-06. Cost on the Pi against the previous network, lying down, 24 fps: <code>net_ms</code> 11.1–11.4 before, 10.9–11.3 after, with one reading of 16.3. Not yet measured while driving. Geometry of these labels is the old one (f 328.49), so the metre bands compare methods but are not exact distances.</p>
+<h2 id="shadow-mode-on-the-rider">Shadow mode on the Rider<a class="headerlink" href="#shadow-mode-on-the-rider" title="Permanent link">&para;</a></h2>
+<p>The table below is the network of 2026-11-06; the current one has the same structure. CM4 against PyTorch on 30 real frames: at most 0.0003 rows apart; self-test 4.8e-06.</p>
+<table>
+<thead>
+<tr>
+<th>Measurement</th>
+<th>Without network</th>
+<th>With network</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Idle, 24 fps: main loop mean / p95</td>
+<td>8.1 / 14.1 ms</td>
+<td>9.8 / 15.8 ms</td>
+</tr>
+<tr>
+<td>Idle: YOLO, CPU of xgonav</td>
+<td>120 ms, 154 %</td>
+<td>136 ms, 178 %</td>
+</tr>
+<tr>
+<td>Idle: network</td>
+<td></td>
+<td>14.9 ms (moving average)</td>
+</tr>
+<tr>
+<td><code>explore</code> with raw recording, median / p90</td>
+<td>loop 16.6 / 31.8 ms, YOLO 133 ms (<code>unten1</code>)</td>
+<td>loop 23.1 / 52.6 ms, YOLO 171 ms, network 20.4 / 29.4 ms (<code>unten3</code>)</td>
+</tr>
+</tbody>
+</table>
+<p>The drive rows come from different scenes and light; they are not a clean comparison. The plan goal p95 &lt; 15 ms is missed while driving.</p>
+<h2 id="smoothing-over-time-2026-11-11">Smoothing over time (2026-11-11)<a class="headerlink" href="#smoothing-over-time-2026-11-11" title="Permanent link">&para;</a></h2>
+<p><code>[freespace] net_smooth_n</code> (<code>xgonav/floornet.py</code>, <code>ZeilenGlaetter</code>; default 0 = off, not on the Rider yet): the last n network outputs are mapped onto the current frame through the floor plane (map pose, pitch), the median per column counts. No retraining, numpy on n × 80 values. Measured with <code>tools/floornet/glaetten_eval.py</code> on explore10–12 (4 551 frames, every second camera frame, network <code>lauf_stage3</code>, stage 3 labels of prompt 10):</p>
+<table>
+<thead>
+<tr>
+<th>Variant</th>
+<th>Jumps &gt; 20 rows to the previous frame</th>
+<th>Median jump</th>
+<th>&lt; 1 m falsely free</th>
+<th>&lt; 1 m falsely blocked</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>raw</td>
+<td>1.12 %</td>
+<td>0.6 rows</td>
+<td>6.20 %</td>
+<td>4.85 %</td>
+</tr>
+<tr>
+<td>n = 3</td>
+<td>0.61 %</td>
+<td>0.2 rows</td>
+<td>6.40 %</td>
+<td>4.63 %</td>
+</tr>
+<tr>
+<td>n = 5</td>
+<td>0.51 %</td>
+<td>0.2 rows</td>
+<td>6.68 %</td>
+<td>4.48 %</td>
+</tr>
+</tbody>
+</table>
+<p>The rise of "falsely free" comes almost only from explore10 (0.5–1 m: 13.1 → 14.7 → 16.1 %). Persistent errors stay; it only removes outliers in time.</p>
+<h2 id="labels-from-comfyui-2026-11-08">Labels from ComfyUI (2026-11-08)<a class="headerlink" href="#labels-from-comfyui-2026-11-08" title="Permanent link">&para;</a></h2>
+<p>ComfyUI on kimmy (service <code>comfyui</code>, ~29 GB VRAM next to LM Studio) has only image generation and editing models, no segmentation or depth. Qwen-Image-Edit 2511 with the 4-step Lightning LoRA recolours the floor green; the green mask gives the boundary per column (lowest run of floor from the bottom, gaps up to 6 rows bridged). 3.6 s per frame, first load 2.5 min.</p>
+<div class="highlight"><pre><span></span><code>FN_PROMPT="$(cat comfy_prompt8.txt)" python comfy_label.py --hand teil3.json --labels labels5/ --n 1000 --out lauf8
+python comfy_label.py --hand pruefsatz.json --labels labels_u3/ --ids ids.txt --hoehe pruefsatz3/hoehe.json --out p3
+python comfy_batch.py --prompt comfy_prompt8.txt --runs explore2,...,unten2 --step 8 --out labels_comfy8
+python comfy_batch.py --prompt comfy_prompt8.txt --ids ids_alle.txt --edits edits_p8 --nur_edits --out edits_p8   # missing edits only
+</code></pre></div>
+<p><code>comfy_batch.py</code> keeps every edit (<code>&lt;edits&gt;/&lt;run&gt;/&lt;frame&gt;.png</code>), so masks can be recomputed without the model. Seed fixed (<code>SEED</code> = 1, as for all Prompt 8 masks).</p>
+<p>Brightening (2026-11-19, <code>aufhellen.py</code>): <code>--aufhellen S</code> runs Zero-DCE (DCE-Net from keras-io/low-light-image-enhancement, ported to torch, weights <code>~/floornet/comfy/zerodce.npz</code> on kimmy, not in the repo) on dark frames (brightness &lt; <code>--hell_ab</code>) before the chain; curve step scaled by <code>S</code> (1 = Keras example, which lifted mean grey ~63 → 188 and was judged too strong; 0.5 → ~128, 0.25 → ~94). <code>--dunkel farbe|g0h</code> picks the chain for dark frames. With <code>--aufhellen</code>, <code>--dunkel_aus</code> is not linked. Moss-Image-Edit instead of Qwen: no frame better than the Qwen green image (user, 40 probe frames).</p>
+<p>Chosen 2026-11-09 by inspecting edits: Prompt 10 (<code>comfy_prompt10.txt</code>; Prompt 9 without its rug sentence, which made the model invent dark mats in dark frames, while the real rugs in 4 test frames stayed unpainted without it) with <code>--eingang g0h</code> (green channel 0, larger of R and B set to the grey value; colour kept for rugs, dark green-tinted frames not black), mask with hue and saturation as before and green lead G − max(R, B) ≥ 30 (<code>stage2.py --gruen 30</code>), then <code>stage3.py</code>. The green channel alone (G &gt; 0) fails: the image decoder leaves small green values on unpainted pixels. Low thresholds count the faint green shimmer the model adds to walls next to the floor (<code>unten2/002400</code>: walls up to 48, floor from 170). Every input variant invents something somewhere; no hand-line numbers for this input yet.</p>
+<p>Prompt 11 (2026-11-11, <code>comfy_prompt11.txt</code>): Prompt 10 painted rugs and things lying on the floor green. Added: "Only the bare floor surface itself is recolored. Everything that lies or stands on it, including rugs, stays unchanged." Chosen by the user on 73 test frames against two variants with the old rug sentence (both invented mats in dark frames and cut out the flat chair mat, which counts as floor). Same prompt for bright (colour) and dark (G0h) frames; run <code>stage1_p11</code> over all frames that are not standing frames (9 731).</p>
+<table>
+<thead>
+<tr>
+<th>Prompt rule</th>
+<th>Finding (287 hand frames of the development set)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>"recolour the floor, add nothing"</td>
+<td>under 1 m false free 10–27 %, <code>kanten</code> 40–32 %; reflections and lamp glare become floor</td>
+</tr>
+<tr>
+<td>naming rugs or "a small robot"</td>
+<td>the model paints them into the frame (robot in ~50 % of frames): never name what should not appear</td>
+</tr>
+<tr>
+<td>floor under furniture only where the gap is higher than 18 cm</td>
+<td>under sofas, chair bases, low shelves median 83–123 cm → 4–32 cm</td>
+</tr>
+<tr>
+<td>baseboards and skirting tiles are wall</td>
+<td>tile skirting of the same material is no longer painted</td>
+</tr>
+<tr>
+<td>rugs are not floor (yellow rug not drivable)</td>
+<td>kept in 9 frames, an invented mat at the frame edge in 3</td>
+</tr>
+<tr>
+<td>floor ends at the front edge of sofa / chair base</td>
+<td>no gain on 60 frames, worse on random ones: dropped</td>
+</tr>
+</tbody>
+</table>
+<p>Prompt 8 (<code>comfy_prompt8.txt</code>) against hand lines, false free / false blocked / median:</p>
+<table>
+<thead>
+<tr>
+<th>Band</th>
+<th>Development set, 287 frames</th>
+<th><code>kanten</code></th>
+<th>Clean test set 3, 200 frames</th>
+<th><code>kanten</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0–0.5 m</td>
+<td>10.0 / 0.3 % / 1 cm</td>
+<td>40.2 / 1.3 % / 6 cm</td>
+<td>14.6 / 0.0 % / 1 cm</td>
+<td>66.8 / 0.2 % / 46 cm</td>
+</tr>
+<tr>
+<td>0.5–1 m</td>
+<td>23.0 / 3.4 % / 4 cm</td>
+<td>31.5 / 14.7 % / 13 cm</td>
+<td>14.9 / 1.5 % / 2 cm</td>
+<td>42.5 / 10.1 % / 16 cm</td>
+</tr>
+<tr>
+<td>1–1.5 m</td>
+<td>30.0 / 6.4 % / 9 cm</td>
+<td>34.3 / 35.2 % / 28 cm</td>
+<td>22.5 / 1.0 % / 5 cm</td>
+<td>35.2 / 32.2 % / 23 cm</td>
+</tr>
+<tr>
+<td>1.5–2.5 m</td>
+<td>41.0 / 8.8 % / 15 cm</td>
+<td>29.3 / 56.4 % / 47 cm</td>
+<td>28.1 / 5.4 % / 10 cm</td>
+<td>29.4 / 58.5 % / 48 cm</td>
+</tr>
+</tbody>
+</table>
+<p>The development set excludes columns under low furniture (hand lines there had no fixed rule). The prompts were tuned on the development set, so only test set 3 counts. Test set 3: 217 of 220 frames labelled, 16 unusable, 1 without known height.</p>
+<p>95 % bootstrap over frames for false free, Prompt 8 / <code>kanten</code>: 5.5–25.1 / 57.1–75.3, 9.9–20.2 / 36.4–49.0, 17.6–27.6 / 30.0–40.5, 23.7–32.8 / 25.1–33.9. The bands separate up to 1.5 m, not beyond.</p>
+<p>False free means more than 15 cm too far, which is only ~2.5 rows at 1.5 m and ~1.5 rows at 2 m. Counting only columns also more than 4 rows off gives 14.6 / 14.9 / 20.7 / 14.3 % (<code>kanten</code> 66.8 / 42.5 / 34.3 / 25.3 %).</p>
+<p>Up to 0.5 m the false free columns are concentrated: 16 of 77 frames have any, 5 frames hold 81 %:</p>
+<table>
+<thead>
+<tr>
+<th>Frame</th>
+<th>Share of false free up to 0.5 m</th>
+<th>Cause</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>unten4c/004368</code></td>
+<td>21 %</td>
+<td>grey band in front of a white wall: hand line treats it as obstacle, model and <code>kanten</code> as floor; unclear which is right</td>
+</tr>
+<tr>
+<td><code>unten3b/010218</code></td>
+<td>19 %</td>
+<td>tile-clad step seen from close by, painted as floor</td>
+</tr>
+<tr>
+<td><code>unten3/004838</code></td>
+<td>15 %</td>
+<td>same step</td>
+</tr>
+<tr>
+<td><code>unten4e/006587</code></td>
+<td>14 %</td>
+<td>yellow rug in glare painted as floor (hand line at its edge, <code>kanten</code> close to it)</td>
+</tr>
+<tr>
+<td><code>unten3b/009758</code></td>
+<td>11 %</td>
+<td>floor visible under an overhanging sofa from close by</td>
+</tr>
+</tbody>
+</table>
+<p>So the model can paint a step riser as floor; these labels are not a substitute for fall or step protection.</p>
+<p>Further on: visible floor under overhanging sofas and chair bases. <code>floor_mask</code> requires V ≥ 30 since 2026-11-09. It was V ≥ 90 for all numbers on this page: floor painted dark green in shadow counted as blocked, and <code>mask_rows</code> stops at the first gap, so <code>explore2/000000</code> lost up to 82 rows. An earlier summed comparison on 136 frames showed no net gain for V ≥ 50 and hid this; below V 30 the hue is noise.</p>
+<p>Hand-line rule since then: line where an 18 cm Rider would touch first; floor under tables counts; sofa, bed, cabinet, chair base: front edge; skirting is wall; rugs are obstacles; reflections, glare and seams are floor.</p>
+<h2 id="clean-test-set-2026-11-07">Clean test set (2026-11-07)<a class="headerlink" href="#clean-test-set-2026-11-07" title="Permanent link">&para;</a></h2>
+<p>Two daylight drives downstairs (<code>unten3</code>, <code>unten4</code>), never used in training. 220 frames for hand lines, ordered by body height:</p>
+<table>
+<thead>
+<tr>
+<th>Group</th>
+<th>Frames</th>
+<th>Runs</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Body height 85 mm (camera 128 mm)</td>
+<td>111</td>
+<td><code>unten3</code> before 170 s, <code>unten4</code> (+ <code>unten4b</code>..<code>e</code>)</td>
+</tr>
+<tr>
+<td>Body height 107 mm (web change during <code>unten3</code>, u8 203, firmware drives 200; camera ~150 mm)</td>
+<td>107</td>
+<td><code>unten3</code> from 178 s, <code>unten3b</code>, <code>unten3c</code></td>
+</tr>
+<tr>
+<td>Height unclear (first seconds of <code>explore</code>)</td>
+<td>2</td>
+<td><code>unten3</code></td>
+</tr>
+</tbody>
+</table>
+<p>Runs split with <code>schnitt.py</code> at pose jumps (seconds from the first meta line): <code>unten3b</code> 396.4–end, <code>unten3c</code> 511–end, <code>unten4b</code> 117–174, <code>unten4c</code> 174–212.7, <code>unten4d</code> 212.7–255, <code>unten4e</code> 255–end. <code>eval_hand.py --hoehe pruefsatz3/hoehe.json</code> reports each group and converts rows to metres with the camera height of that group.</p>
+<h2 id="labels-from-geometry-2026-11-18">Labels from geometry (2026-11-18)<a class="headerlink" href="#labels-from-geometry-2026-11-18" title="Permanent link">&para;</a></h2>
+<p><code>tools/floornet/geo_label.py</code>, model <code>Ruicheng/moge-2-vitl-normal</code> (MIT, 331 M parameters; <code>pip install git+https://github.com/microsoft/MoGe.git</code>). Aimed at the teacher errors above: tile-clad step painted as floor, floor under overhanging sofas, plain walls from close by.</p>
+<table>
+<thead>
+<tr>
+<th>Step</th>
+<th>Rule</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Points</td>
+<td>MoGe-2 with <code>fov_x = hfov_deg</code>, principal point at the image centre (matches <code>CamGeometry</code>)</td>
+</tr>
+<tr>
+<td>Plane</td>
+<td>RANSAC (256 planes from 3 points) on points below the IMU horizon + 15 rows; only planes within 8° of the IMU pitch and with distance 0.6–3.0 × <code>cam_h</code> in model units (MoGe puts the Rider camera 1.2–1.7× too high; 1.6 rejected 22 % of planes on explore10–12); refined 3× by smallest eigenvector of inliers (tolerance 10 % of <code>cam_h</code>)</td>
+</tr>
+<tr>
+<td>Scale</td>
+<td>everything scaled so the plane lies exactly <code>cam_h</code> below the camera; fewer than 2000 inliers → median scale of the run so far, IMU pitch (<code>art</code> <code>ersatz</code>), shown in the images only: dropped from the label file and from the <code>pruef</code> tables (this path put the line at the bottom)</td>
+</tr>
+<tr>
+<td>Pixel class</td>
+<td>floor h ≤ 2.5 cm, including everything below the plane (no drop class since 2026-11-20, user decision); obstacle 2.5 cm &lt; h &lt; 18 cm; above 18 cm ignored (table, high sofa)</td>
+</tr>
+<tr>
+<td>Row per strip</td>
+<td>free floor from the bottom (majority per 8 px strip, gaps ≤ 6 rows, same as <code>mask_rows</code>); if the 16th-nearest obstacle pixel of the strip is nearer, the row where the floor has that forward distance (foot point under a low sofa edge)</td>
+</tr>
+</tbody>
+</table>
+<p>Per frame on kimmy: model 80 ms at batch 8 (9.9 GB VRAM), CPU 12 ms in threads (<code>--jobs</code>) next to the GPU; ~13 frames/s overall.</p>
+<table>
+<thead>
+<tr>
+<th>explore10–12 vs. Stage3 p11 (1384 frames, <code>skala_hi</code> 3.0, 2.4 % <code>ersatz</code>)</th>
+<th>median abs. diff</th>
+<th>geometry &gt; 15 cm freer</th>
+<th>&gt; 15 cm tighter</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0–0.5 m</td>
+<td>2 cm</td>
+<td>7 %</td>
+<td>9 %</td>
+</tr>
+<tr>
+<td>0.5–1.0 m</td>
+<td>6 cm</td>
+<td>7 %</td>
+<td>16 %</td>
+</tr>
+<tr>
+<td>1.0–1.5 m</td>
+<td>13 cm</td>
+<td>12 %</td>
+<td>32 %</td>
+</tr>
+<tr>
+<td>1.5–2.5 m</td>
+<td>31 cm</td>
+<td>20 %</td>
+<td>55 %</td>
+</tr>
+</tbody>
+</table>
+<p>Test drives, so thresholds were not tuned on them beyond the scale window. Hand lines were deleted on 2026-11-18, so <code>pruef</code> has no current test set.</p>
+<div class="highlight"><pre><span></span><code>python tools/floornet/geo_label.py pruef --hand pruefsatz.json --labels labels_u3/ --hoehe pruefsatz3/hoehe.json \
+    --vergleich stage3_p11_labels/ --out geo_p3
+python tools/floornet/geo_label.py fahrten --runs explore10,explore11,explore12 --jedes 2 --config rider.toml --out geo_lab
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Known gap</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Rugs</td>
+<td>geometrically floor, by the hand rule an obstacle: false free on rugs</td>
+</tr>
+<tr>
+<td>Step down</td>
+<td>counted as floor (no drop class): geometry labels never block a downward step</td>
+</tr>
+<tr>
+<td>Scale</td>
+<td>camera height 128–150 mm is unusual for MoGe; only the plane fit sets the scale</td>
+</tr>
+</tbody>
+</table>
+<p>Tests: <code>tests/test_floornet_geo.py</code> (rendered point maps: wall, box, low sofa edge, table, step down, pitch error, scale error, holes; both commands with a fake model; depth maps via <code>--tiefe</code>).</p>
+<h3 id="depth-anything-3-instead-of-moge-probe-2026-11-20">Depth Anything 3 instead of MoGe (probe 2026-11-20)<a class="headerlink" href="#depth-anything-3-instead-of-moge-probe-2026-11-20" title="Permanent link">&para;</a></h3>
+<p><code>tools/floornet/da3_tiefe.py</code> (own venv <code>~/floornet/da3/.venv</code> on kimmy, DA3 needs numpy &lt; 2) writes depth + conf per frame; <code>geo_label.py --tiefe DIR</code> builds the point map from it with the Rider <code>f</code> and image centre. DA3 depth is relative, so <code>--skala_lo 0.2 --skala_hi 5</code>. Comparison page: <code>tools/floornet/da3_seite.py</code> → <code>~/floornet/da3/index.html</code> (port 8765, <code>/da3/</code>).</p>
+<table>
+<thead>
+<tr>
+<th>Variant</th>
+<th>Licence</th>
+<th>GPU per frame</th>
+<th>Own plane (of 1384)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>MoGe-2 (for reference)</td>
+<td>MIT</td>
+<td>80 ms</td>
+<td>1351</td>
+</tr>
+<tr>
+<td><code>DA3METRIC-LARGE</code>, single</td>
+<td>Apache 2.0</td>
+<td>50 ms</td>
+<td>1165</td>
+</tr>
+<tr>
+<td><code>DA3-LARGE-1.1</code>, single</td>
+<td>CC BY-NC 4.0</td>
+<td>58 ms</td>
+<td>1322</td>
+</tr>
+<tr>
+<td><code>DA3-LARGE-1.1</code>, windows of 8 consecutive frames</td>
+<td>CC BY-NC 4.0</td>
+<td>37 ms</td>
+<td>1098</td>
+</tr>
+</tbody>
+</table>
+<p>vs. Stage3 p11 on the 940 frames where all have an own plane (&gt; 15 cm freer / tighter than p11), all with <code>--entzerrt 1</code>:</p>
+<table>
+<thead>
+<tr>
+<th>Band</th>
+<th>MoGe-2</th>
+<th>metric</th>
+<th>L-1.1 single</th>
+<th>L-1.1 window 8</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0–0.5 m</td>
+<td>3.3 / 4.7 %</td>
+<td>2.4 / 2.5 %</td>
+<td>3.3 / 0.6 %</td>
+<td>2.5 / 0.0 %</td>
+</tr>
+<tr>
+<td>0.5–1.0 m</td>
+<td>6.7 / 11.3 %</td>
+<td>8.9 / 9.9 %</td>
+<td>5.0 / 6.4 %</td>
+<td>8.3 / 7.6 %</td>
+</tr>
+<tr>
+<td>1.0–1.5 m</td>
+<td>12.0 / 27.9 %</td>
+<td>31.0 / 17.5 %</td>
+<td>5.6 / 28.8 %</td>
+<td>12.4 / 27.4 %</td>
+</tr>
+<tr>
+<td>1.5–2.5 m</td>
+<td>19.9 / 52.1 %</td>
+<td>47.9 / 33.1 %</td>
+<td>9.1 / 57.7 %</td>
+<td>17.1 / 55.8 %</td>
+</tr>
+</tbody>
+</table>
+<p>Filled border of the lens table (<code>--entzerrt</code>, default 1): pixels whose source lies outside the camera image (<code>camera.lens_source</code>; right edge 24–26 px at floor-line height, 13 px at the bottom, plus the bottom ~10 rows of the right half) are left out of the plane fit; strips whose centre below the horizon is mostly filled take the row of the nearest real strip (line continues flat), widened by one strip inwards (MoGe kinks ~8 px before the filled border, explore10/008606). MoGe tighter than p11: 0–0.5 m 10.3 → 4.7 → 0.8 %, 0.5–1.0 m 11.3 → 7.4 %; DA3 unchanged.</p>
+<p>Bent-up near floor (<code>rand_rampe</code>, <code>--rand</code>, default 1): DA3 sometimes lifts the floor near the bottom edge (explore11/010011: h 0 → 9 cm over the bottom 100 rows), the band turns obstacle and the line drops to row 480. Per strip, an obstacle band touching the bottom counts as floor if at least <code>min_px</code> rows of floor follow directly above it and the band rises towards the bottom (bottom quarter &gt; top quarter + 1 mm). A flat box top at the edge stays obstacle. 010011: row 480 → 303–324; totals unchanged (DA3-L-1.1 below 1 m 5.0 % freer / 5.7 % tighter).</p>
+<p>Windows of 8 do not make the line steadier from frame to frame (median change 4.6 vs. 5.0 cm single, p11 5.1 cm) and lose planes. explore10 stays ~29 % freer than p11 below 1 m for every geometry teacher (rugs).</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="mapping.html" class="md-footer__link md-footer__link--prev" aria-label="Previous: Odometry and maps">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Odometry and maps
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="display-emotions.html" class="md-footer__link md-footer__link--next" aria-label="Next: Display and emotions">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Display and emotions
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": ".", "features": ["navigation.sections", "navigation.top", "navigation.footer", "toc.follow", "search.highlight", "content.code.copy"], "search": "assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="assets/javascripts/bundle.a5f9d56c.min.js"></script>
+      
+    
+  </body>
+</html>

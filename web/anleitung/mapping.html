@@ -1,0 +1,2225 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="XGO RiderPi – driver, camera navigation (xgonav), web UI">
+      
+      
+      
+      
+        <link rel="prev" href="web-interface.html">
+      
+      
+        <link rel="next" href="floornet.html">
+      
+      
+        
+      
+      
+      <link rel="icon" href="assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.2">
+    
+    
+      
+        <title>Odometry and maps - xgo_motorcortex2 manual</title>
+      
+    
+    
+      <link rel="stylesheet" href="assets/stylesheets/main.57a0d79d.min.css">
+      
+        
+        <link rel="stylesheet" href="assets/stylesheets/palette.fb2fffe2.min.css">
+      
+      
+
+
+    
+    
+      
+        <script src="https://unpkg.com/iframe-worker/shim"></script>
+      
+    
+    
+      
+    
+    
+    <script>__md_scope=new URL(".",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="blue-grey" data-md-color-accent="teal">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#odometry-and-maps" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="index.html" title="xgo_motorcortex2 manual" class="md-header__button md-logo" aria-label="xgo_motorcortex2 manual" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            xgo_motorcortex2 manual
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Odometry and maps
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="blue-grey" data-md-color-accent="teal"  aria-label="Dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="blue-grey" data-md-color-accent="teal"  aria-label="Light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/aeinstein/xgo_motorcortex2" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="index.html" title="xgo_motorcortex2 manual" class="md-nav__button md-logo" aria-label="xgo_motorcortex2 manual" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    xgo_motorcortex2 manual
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/aeinstein/xgo_motorcortex2" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="index.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="guide/install.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Install
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="guide/quickstart.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="guide/web.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Web UI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="guide/behaviours.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Behaviours
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Advanced
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Advanced
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="guide/advanced/floornet-training.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    FloorNet training
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="guide/advanced/simulator.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Simulator and tests
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="guide/advanced/calibration.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Calibration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="guide/advanced/firmware-driver.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Firmware and driver
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="guide/advanced/native.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C++ core
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="architecture.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="installation.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="configuration.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="calibration.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Calibration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="driver.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Driver
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="web-interface.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Web interface
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Odometry and maps
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="mapping.html" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Odometry and maps
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#odometry-xgonavwheelspy-app_odom_ds" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Odometry (xgonav/wheels.py, App._odom_ds)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#short-term-local-map-xgonavlocalmappy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Short-term local map (xgonav/localmap.py)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#room-map-xgonavgridmappy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Room map (xgonav/gridmap.py)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Room map (xgonav/gridmap.py)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#rendering-mappng" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rendering (/map.png)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#start-point" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Start point
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#persistence" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Persistence
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#return-to-start-mode-home-xgonavplannerpy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Return to start (--mode home, xgonav/planner.py)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#start-image-check-xgonavstartbildpy-startbild" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Start image check (xgonav/startbild.py, [startbild])
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#route-and-patrol-xgonavroutepy-mode-patrol" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Route and patrol (xgonav/route.py, mode patrol)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mapping-a-room-mode-explore-xgonavfrontierpy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Mapping a room (--mode explore, xgonav/frontier.py)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#simulator-quality-testssim_runpy-explore" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Simulator quality (tests/sim_run.py explore)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pose-state-reloc-enabled-default-off" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pose state ([reloc] enabled, default off)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#map-matching-xgonavrelocpy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Map matching (xgonav/reloc.py)
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="floornet.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    FloorNet
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="display-emotions.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Display and emotions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="audio.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Audio
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="wifi-setup.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Wi-Fi setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="LED.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LEDs
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="testing.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="limitations.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Limitations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#odometry-xgonavwheelspy-app_odom_ds" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Odometry (xgonav/wheels.py, App._odom_ds)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#short-term-local-map-xgonavlocalmappy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Short-term local map (xgonav/localmap.py)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#room-map-xgonavgridmappy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Room map (xgonav/gridmap.py)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Room map (xgonav/gridmap.py)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#rendering-mappng" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rendering (/map.png)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#start-point" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Start point
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#persistence" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Persistence
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#return-to-start-mode-home-xgonavplannerpy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Return to start (--mode home, xgonav/planner.py)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#start-image-check-xgonavstartbildpy-startbild" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Start image check (xgonav/startbild.py, [startbild])
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#route-and-patrol-xgonavroutepy-mode-patrol" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Route and patrol (xgonav/route.py, mode patrol)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mapping-a-room-mode-explore-xgonavfrontierpy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Mapping a room (--mode explore, xgonav/frontier.py)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#simulator-quality-testssim_runpy-explore" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Simulator quality (tests/sim_run.py explore)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pose-state-reloc-enabled-default-off" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pose state ([reloc] enabled, default off)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#map-matching-xgonavrelocpy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Map matching (xgonav/reloc.py)
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+
+<h1 id="odometry-and-maps">Odometry and maps<a class="headerlink" href="#odometry-and-maps" title="Permanent link">&para;</a></h1>
+<h2 id="odometry-xgonavwheelspy-app_odom_ds">Odometry (<code>xgonav/wheels.py</code>, <code>App._odom_ds</code>)<a class="headerlink" href="#odometry-xgonavwheelspy-app_odom_ds" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Quantity</th>
+<th>Source</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Distance</td>
+<td>wheel encoders (<code>/proc/XGORider/wheels_log</code>) if fresh (<code>odom.max_age_s</code> 0.3 s), else command × <code>robot.vx_limit</code> × dt</td>
+</tr>
+<tr>
+<td>Heading (behaviors, local map, room map)</td>
+<td>one dead-reckoning step (<code>xgonav/odomfusion.py</code>, since 2026-11-19): IMU heading at frame time, else wheels, else ego-motion; wheels checked against IMU (<code>[odom] contra_*</code>), contradiction = slip unless the camera, when its possible error is small against the contradiction, sides with the wheels (then wheels for <code>imu_doubt_s</code>, window made up); camera heading is biased during forward drive, never a witness there. Status <code>odom</code> (<code>kurs</code>, <code>strecke</code>, <code>abw_deg</code>, <code>schlupf</code>, <code>widersprueche</code>, <code>imu_zweifel</code>, <code>vorschlag</code>)</td>
+</tr>
+</tbody>
+</table>
+<p>Encoders: 1024 ticks/rev, 60 mm wheel, track 90 mm, left = 11, right = 21, both positive forward.
+int32 overflow and ESP32 restarts handled (<code>max_jump_ticks</code> 2048). Firmware R-1.1.3 has no encoders → command fallback.
+Status JSON: <code>odom.src</code> = <code>räder</code> | <code>befehl</code>, <code>odom.m</code> = total distance.</p>
+<h2 id="short-term-local-map-xgonavlocalmappy">Short-term local map (<code>xgonav/localmap.py</code>)<a class="headerlink" href="#short-term-local-map-xgonavlocalmappy" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Frame</td>
+<td>robot (x forward, y left, m), origin = wheel axle; floor points shifted forward by <code>camera.cam_fwd_mm</code></td>
+</tr>
+<tr>
+<td>Input</td>
+<td>floor-boundary points from the free-space estimator</td>
+</tr>
+<tr>
+<td>Motion</td>
+<td>distance from wheel odometry; heading from the dead-reckoning step (same as the room map); during slip the distance comes from the wheel matching the IMU turn</td>
+</tr>
+<tr>
+<td>Lifetime</td>
+<td><code>map.max_age_s</code> = 4 s</td>
+</tr>
+<tr>
+<td>Range</td>
+<td>2.5 m</td>
+</tr>
+<tr>
+<td>Confirmation</td>
+<td>point blocks only with ≥ <code>map.confirm</code> observations within <code>confirm_radius_m</code> (RiderPi: 3 within 0.08 m)</td>
+</tr>
+<tr>
+<td>Use</td>
+<td><code>App._arc_check()</code>: each command checked as an arc, forward and reverse</td>
+</tr>
+<tr>
+<td>Purpose</td>
+<td>obstacles that left the ±31° (sim) / ±45° (RiderPi) field of view</td>
+</tr>
+</tbody>
+</table>
+<h2 id="room-map-xgonavgridmappy">Room map (<code>xgonav/gridmap.py</code>)<a class="headerlink" href="#room-map-xgonavgridmappy" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Type</td>
+<td>occupancy grid, log-odds</td>
+</tr>
+<tr>
+<td>Frame</td>
+<td>world, origin = start pose (wheel axle), x forward, y left at start; rays start <code>camera.cam_fwd_mm</code> ahead of the pose</td>
+</tr>
+<tr>
+<td>Size</td>
+<td>16 m × 16 m, 0.05 m cells, start in the centre</td>
+</tr>
+<tr>
+<td>Rays</td>
+<td>every 2nd of 160 floor-model columns</td>
+</tr>
+<tr>
+<td>Free</td>
+<td>up to boundary − (0.10 m + 0.05 × d²); <code>l_free</code> −0.4; occupied cells reduced only ×0.5</td>
+</tr>
+<tr>
+<td>Occupied</td>
+<td>at boundary ± <code>hit_band_quad</code> × d² along the ray (0.05; sim 0 = one cell), <code>l_occ</code> +0.5: two hits until shown as occupied</td>
+</tr>
+<tr>
+<td>Clamp</td>
+<td>−3.0 .. +3.5; shown as free/occupied beyond ±0.7</td>
+</tr>
+<tr>
+<td>Range</td>
+<td>hits 0.15–<code>max_range_m</code> 1.5 m (1.25 until 2026-11-14 and in the simulator), free rays to <code>free_range_m</code> 1.5 m (RiderPi 1.1 m from 2026-11-06 to 2026-11-14) (one image row at 2 m is ~40 cm; a step was seen as floor from &gt; 1 m on 2026-11-06, simulator with 1.1: floor known 0.43–0.83, occupied precision 0.84–0.92); "free to horizon" columns mark free up to 1.5 m only</td>
+</tr>
+<tr>
+<td>Confirmation</td>
+<td>off since 2026-11-14 (<code>confirm_dr_m</code> 0: with FloorNet one sighting is enough; not driven). Before: <code>confirm_dr_m</code> (RiderPi 0.2 m, ± <code>confirm_cells</code> 2): occupied only after hits on the same spot from two ranges ≥ 0.2 m apart. RiderPi 2026-11-08: the window sill mirrored in the tiles was entered at 0.56 m from the start and 0.82 m from 0.72 m further on (d = D·h_cam/(h_edge + h_cam)), i.e. a second wall. Simulator explore 120 s: walls 82 % → 73 %, precision 0.90 → 0.93, 0 collisions. Tried and dropped the same day: hits only up to 0.7 m (walls 25 %, explore ended early) and a half-resolution edge band (the 4 cm test compares a mean over the segment, so resolution hardly matters; tape at 0.98 m unchanged)</td>
+</tr>
+<tr>
+<td>Braking</td>
+<td>points the path check brakes for count as confirmed and occupied at once (<code>grid.mark_blocking</code>). RiderPi 2026-11-11: the Rider braked for obstacles the map never showed (1382 unconfirmed cells, 1192 occupied)</td>
+</tr>
+<tr>
+<td>Pitch, pose</td>
+<td>pitch of the captured image (<code>FreeSpace.pitch_dev</code>); pose (<code>.pose</code>) as of the last control step before that image was processed, not of the later frame the result arrives in. Not interpolated to the capture time: while turning the pose is older than the image by an unmeasured amount (40 °/s × 50 ms = 2°)</td>
+</tr>
+<tr>
+<td>Filter</td>
+<td>only while balancing, below <code>max_turn_dps</code> 40 °/s (the pause after a fast turn, <code>turn_settle_s</code>, was removed 2026-11-17; offline still <code>tools/map_replay.py</code> variant <code>ruhe=S</code>); the rate is the dead-reckoning heading at the control step in which the result arrives, not at capture</td>
+</tr>
+<tr>
+<td>Driven path</td>
+<td><code>driven_free_r_m</code> 0.10 m around the path counts as free</td>
+</tr>
+<tr>
+<td>Unknown</td>
+<td>columns without measurable floor (<code>known_from</code>; FloorNet reports none) stay unknown</td>
+</tr>
+<tr>
+<td>Thread</td>
+<td><code>GridWorker</code> (cores = <code>cpu.freespace_cpus</code>), the pose handed to the floor model is passed along</td>
+</tr>
+<tr>
+<td>Use</td>
+<td>display; path planning for modes <code>home</code> and <code>explore</code></td>
+</tr>
+<tr>
+<td>Drift</td>
+<td>no correction (no markers); drifts over time</td>
+</tr>
+</tbody>
+</table>
+<h3 id="rendering-mappng">Rendering (<code>/map.png</code>)<a class="headerlink" href="#rendering-mappng" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Colour</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>grey</td>
+<td>unknown</td>
+</tr>
+<tr>
+<td>light</td>
+<td>free</td>
+</tr>
+<tr>
+<td>dark</td>
+<td>occupied</td>
+</tr>
+<tr>
+<td>green line</td>
+<td>path</td>
+</tr>
+<tr>
+<td>cyan line</td>
+<td>planned path (<code>home</code>)</td>
+</tr>
+<tr>
+<td>blue circle + line</td>
+<td>start point and start heading</td>
+</tr>
+<tr>
+<td>red triangle</td>
+<td>Rider pose</td>
+</tr>
+<tr>
+<td>yellow dots</td>
+<td>short-term map (<code>localmap.py</code>) points, drawn only, never entered; gone once that map forgets them (<code>map.max_age_s</code>) or the pipeline stops</td>
+</tr>
+<tr>
+<td>orange-red dots</td>
+<td>of those, the confirmed ones (<code>map.confirm</code>): the arc check brakes for them</td>
+</tr>
+<tr>
+<td>blue bar</td>
+<td>1 m scale</td>
+</tr>
+</tbody>
+</table>
+<p>Parameters: <code>px</code> 120..960 (default 480), <code>view</code> 1..16 m (default <code>grid.view_m</code> 6), <code>cx</code>, <code>cy</code> centre in map metres (default Rider pose).
+Reset: web „Zurücksetzen“ or <code>POST /map/reset</code> (empty map, pose 0, start 0).
+Status JSON <code>grid</code>: <code>pose [x m, y m, yaw °]</code>, <code>start [x m, y m, yaw °]</code>, <code>zum_start_m</code>, <code>belegt_m2</code>, <code>frei_m2</code>, <code>updates</code>, <code>ms</code>, <code>verworfen</code>; top level <code>plan_ms</code>.</p>
+<h3 id="start-point">Start point<a class="headerlink" href="#start-point" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Default</td>
+<td>map origin (pose at xgonav start)</td>
+</tr>
+<tr>
+<td>Set</td>
+<td>web „Start hier“ or <code>POST /map/start</code> → start = current pose (x, y, heading)</td>
+</tr>
+<tr>
+<td>Reset</td>
+<td><code>/map/reset</code> → 0</td>
+</tr>
+</tbody>
+</table>
+<h3 id="persistence">Persistence<a class="headerlink" href="#persistence" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>File</td>
+<td><code>grid.file</code> (npz: log-odds float16, resolution, size, start, driven path); empty = off</td>
+</tr>
+<tr>
+<td>Save</td>
+<td>every <code>grid.save_every_s</code> (60 s) if changed, in the <code>GridWorker</code> thread; on exit; web „Speichern“ / <code>POST /map/save</code></td>
+</tr>
+<tr>
+<td>Write</td>
+<td><code>&lt;file&gt;.tmp</code> + rename (atomic)</td>
+</tr>
+<tr>
+<td>Load</td>
+<td>at xgonav start if the file exists; resolution/size mismatch → ignored with warning</td>
+</tr>
+<tr>
+<td>Pose after load</td>
+<td><strong>= start point</strong>. No relocalisation: place the Rider on the start point (same heading) before starting xgonav. With <code>[reloc] enabled</code>: pose = pose at the last save, state "unknown" until confirmed</td>
+</tr>
+</tbody>
+</table>
+<h3 id="return-to-start-mode-home-xgonavplannerpy">Return to start (<code>--mode home</code>, <code>xgonav/planner.py</code>)<a class="headerlink" href="#return-to-start-mode-home-xgonavplannerpy" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Planner</td>
+<td>A* (8-neighbour) on map cells, search area = pose, start, driven path + <code>home.margin_m</code></td>
+</tr>
+<tr>
+<td>Blocked</td>
+<td>occupied cells (<code>&gt; l_show</code>) inflated by <code>home.squeeze_m</code> 0.09 m (direct neighbours); cells within <code>home.inflate_m</code> 0.23 m cost <code>squeeze_cost</code> 20 more (not on the driven path), so the path squeezes through only if there is no other way. Cleared within <code>inflate_m</code> around pose and goal (drift)</td>
+</tr>
+<tr>
+<td>Narrowest gap</td>
+<td>25 cm clear width (Rider 11.5 cm wide per CAD): planner needs ≥ 3 free cells in the middle, path check in a tight spot <code>map.radius_tight_m</code> 0.08 m needs ≥ 16 cm between confirmed points. Simulator scene <code>spalt</code> 2026-11-11: passed without contact, ≤ 2 cm off centre, when the map showed the gap open; in 1 of 6 runs the map drew it 10 cm wide and it was skipped. <strong>Not driven on the Rider</strong></td>
+</tr>
+<tr>
+<td>Cost</td>
+<td>1 + <code>clear_cost</code> near obstacles + <code>unknown_cost</code> for unknown cells; line-of-sight shortcut only if not more expensive (maximum and sum)</td>
+</tr>
+<tr>
+<td>Thread</td>
+<td><code>PlannerWorker</code> (cores = <code>cpu.freespace_cpus</code>); replan every <code>replan_s</code> 2 s and after 3 s without 5 cm progress</td>
+</tr>
+<tr>
+<td>Path keeping</td>
+<td>current path kept while free and ≤ <code>keep_factor</code> × new + 0.3 m; dropped after getting stuck</td>
+</tr>
+<tr>
+<td>Local obstacles</td>
+<td>confirmed <code>LocalMap</code> points within 1.5 m (what <code>_arc_check</code> brakes for) are blocked for planning (<code>use_localmap</code>)</td>
+</tr>
+<tr>
+<td>Following</td>
+<td>pure pursuit, lookahead 0.5 m, <code>home.kp_turn</code> 1.5/s; turn in place only above 75° error until below 25°, otherwise drive the curve at ≥ 30 % speed</td>
+</tr>
+<tr>
+<td>Tight spot</td>
+<td>occupied map cell within <code>tight_m</code> 0.21 m of the pose or of the path up to 0.45 m ahead (normal paths keep 0.23 m): lookahead 0.2 m, speed × 0.6, turn in place above 30° until below 10°, path check with <code>map.radius_tight_m</code> 0.08 m instead of 0.18 m, and aim at the middle between the nearest confirmed <code>LocalMap</code> points left and right ahead (the room map places a narrow gap centimetres off). Cost on the Pi: four 11 × 11 cell windows per control step while following a path</td>
+</tr>
+<tr>
+<td>Goal</td>
+<td>within <code>arrive_m</code> 0.15 m, then turn to start heading (<code>align_heading</code>), status „am Start angekommen“, stands</td>
+</tr>
+<tr>
+<td>Failure</td>
+<td><code>max_fail</code> 3 consecutive plans without path → stop, „kein Weg zum Start“</td>
+</tr>
+<tr>
+<td>Safety</td>
+<td><code>safety()</code> and <code>_arc_check()</code> apply as in <code>explore</code></td>
+</tr>
+<tr>
+<td>Requires</td>
+<td><code>freespace.enabled</code>, <code>grid.enabled</code>, running pipeline</td>
+</tr>
+<tr>
+<td>Accuracy</td>
+<td>limited by map drift: arrives at the <em>map</em> start; real error = pose error. With <code>[startbild]</code> the pose is measured against the start image at the end (below)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="start-image-check-xgonavstartbildpy-startbild">Start image check (<code>xgonav/startbild.py</code>, <code>[startbild]</code>)<a class="headerlink" href="#start-image-check-xgonavstartbildpy-startbild" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Anchor</td>
+<td>grey image + SIFT features while the Rider stands at the start point (≤ 3 cm, ≤ 5°, not turning); once per start point, dropped when the start is set anew ("Start hier")</td>
+</tr>
+<tr>
+<td>Ending of <code>home</code></td>
+<td>path to a pre-point 0.40 m before the start → turn to start heading → straight onto the start (grey image every 4 cm) → stand 0.5 s → measure → if &gt; 4 cm left: turn to the start, drive (once) → turn to the start heading within <code>end_deg</code> 2° (stop on overshoot or after 8 s)</td>
+</tr>
+<tr>
+<td>Measurement</td>
+<td>own thread on <code>cpu.render_cpus</code>: end image vs. images 0.1–0.3 m earlier, triangulated with the odometry of the straight run (mm-exact over decimetres); anchor matched to these 3D points; anchor pose solved for x, y, heading plus small pitch/roll residuals, camera height fixed (124 mm measured); cross-check free 6-DOF PnP</td>
+</tr>
+<tr>
+<td>Camera model</td>
+<td>undistorted image, f from hfov, principal point image centre, tilt + <code>pitch_dev</code>, IMU roll (without it the 3D points were rotated by the end roll, +2.3° in run 20261119-144940), lens <code>cam_fwd</code> ahead of the axle</td>
+</tr>
+<tr>
+<td>Gate</td>
+<td>≥ <code>min_inl</code> 30 consistent matches, correction ≤ 0.5 m / 15°, pitch/roll residual ≤ 1°, 6-DOF within 5 cm; otherwise no correction, status says why</td>
+</tr>
+<tr>
+<td>Correction</td>
+<td><code>GridMap.shift_pose(k)</code> with k ∘ measured anchor pose = anchor pose at the start; behaviour heading shifted by the same angle</td>
+</tr>
+<tr>
+<td>Offline</td>
+<td><code>tools/start_abgleich.py</code> (same code on recordings). Run 20261119-144940 (37 m): end measured 8.0 cm forward / 10.2 cm left / −4.8°, user with folding rule 5 / 11 cm, odometry −3 / +2 cm. Short pairs of the same run (odometry nearly exact): accepted ones within 1.8 cm</td>
+</tr>
+<tr>
+<td>Simulator</td>
+<td><code>tests/sim_run.py home 120 --wheels --rider --yaw-scale 1.01 --set startbild.enabled=True</code>: true distance to the start at the end 6.5 cm (without: 22 cm), map heading error 0.9° (3.5°)</td>
+</tr>
+<tr>
+<td>Rider</td>
+<td>run 2026-11-19 161006: measured 19 cm / −5.1°, 131 matches, 11.4 s on the CM4; end ~1 cm ahead of the start (user), but turned −9.5° (old 10° tolerance) → <code>end_deg</code></td>
+</tr>
+<tr>
+<td>Cost on the Pi</td>
+<td>nothing while driving; ~1 ms grey image for the anchor and every 4 cm of the straight run; measurement SIFT on 1 + 5 images while standing (0.25 s on the PC, CM4 not measured)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="route-and-patrol-xgonavroutepy-mode-patrol">Route and patrol (<code>xgonav/route.py</code>, mode <code>patrol</code>)<a class="headerlink" href="#route-and-patrol-xgonavroutepy-mode-patrol" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Map lock</td>
+<td>set when <code>explore</code> ends or <code>patrol</code> starts, <code>POST /map/lock</code>; locked: observations and the driven path do not change the map, the pose still moves. <code>explore</code> refuses a locked map</td>
+</tr>
+<tr>
+<td>Map id</td>
+<td><code>map_id</code> in the npz; a route file with another id is ignored</td>
+</tr>
+<tr>
+<td>Route file</td>
+<td><code>&lt;grid.file&gt;.route.json</code>: points, <code>loop</code>, zones, written atomically together with the map</td>
+</tr>
+<tr>
+<td>Point check</td>
+<td>on known floor, outside <code>inflate_m</code>, reachable from the start, outside zones; otherwise the route is rejected with a message</td>
+</tr>
+<tr>
+<td>No-go zones</td>
+<td>polygons in map coordinates. Planner and frontier never enter them plus <code>inflate_m</code>, <code>_arc_check</code> stops an arc that would come within <code>map.radius_m</code> 0.18 m (moving away stays allowed). All modes except manual. They drift with the pose: <strong>no replacement for a physical barrier</strong></td>
+</tr>
+<tr>
+<td>Patrol</td>
+<td>points in order, <code>pause_s</code> 1.5 s each; stuck: replan, then back up and skip the point; contact, <code>max_fail</code> plans without a way or <code>point_timeout_s</code> 90 s: skip. No point reached in a lap, or end of a non-loop route: to the start</td>
+</tr>
+<tr>
+<td>Near enough</td>
+<td>stuck within <code>home.near_m</code> 0.5 m of a target counts as arrived: the path check clearance can make a free target unreachable</td>
+</tr>
+<tr>
+<td>Start</td>
+<td>only standing and with user confirmation that the Rider is at the start point: the pose jumps to the start, which removes drift. Battery ≥ 40 %. Back at 30 %, set down at 15 % (action 254)</td>
+</tr>
+<tr>
+<td>Status JSON</td>
+<td><code>patrol</code>: <code>zustand</code>, <code>punkt</code>, <code>von</code>, <code>runde</code>, <code>erreicht</code>, <code>ausgelassen</code>, <code>ende</code>; <code>grid</code>: <code>gesperrt</code>, <code>map_id</code>, <code>route</code>, <code>zonen</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="mapping-a-room-mode-explore-xgonavfrontierpy">Mapping a room (<code>--mode explore</code>, <code>xgonav/frontier.py</code>)<a class="headerlink" href="#mapping-a-room-mode-explore-xgonavfrontierpy" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Start</td>
+<td>one full turn at <code>explore.scan_w</code></td>
+</tr>
+<tr>
+<td>Speed</td>
+<td><code>explore.v</code> 0.20 (≈ 36 cm/s at <code>vx_limit</code> 1.8) to goals and back to the start (<code>home.v</code> 0.15); exceeds <code>robot.max_v</code> in mode <code>explore</code> only. Tight spots × <code>home.tight_v</code>, wander at <code>behavior.cruise_v</code>. Slows down towards the path end unless the next goal is already planned. RiderPi 2026-11-11: two runs at 0.30, no contact</td>
+</tr>
+<tr>
+<td>Frontier</td>
+<td>reachable free cell next to unknown; groups ≥ <code>min_cluster_m</code> 0.4 m. Only when none of those is left: groups close to obstacles (within <code>home.inflate_m</code>, e.g. the mouth of a 25 cm gap, 3–5 cells) ≥ <code>squeeze_cluster_m</code> 0.15 m with ≥ <code>min_unknown_m2</code> 0.05 m² of connected unknown behind. Reachability from the room map only, the local map only shapes the path</td>
+</tr>
+<tr>
+<td>Choice</td>
+<td>nearest first: smallest drive time + turn time (bearing to the spot / <code>turn_dps</code>; 15 since 2026-11-14 so that straight ahead wins: 90° weigh like 2.1 m of driving, 40 before and in the simulator); unknown area within <code>gain_radius_m</code> counts as at most <code>gain_bonus_s</code> 3 s less (full from <code>gain_ref_m2</code> 2 m²). The goal stays until reached or gone and moves with its group, no switching by score. Until 2026-11-11 area / time: on the RiderPi four trips of 3.5–9.6 m across known floor</td>
+</tr>
+<tr>
+<td>Near the goal</td>
+<td>within <code>roll_m</code> 1.0 m: replan every <code>roll_every_s</code> 0.4 s, alternating between following the receding frontier and planning the goal after this one (from the goal, without its frontier). On arrival with the frontier in view (± <code>pass_view_deg</code> 40°) and that plan ≤ <code>pass_age_s</code> 3 s old: drives on without stopping. Every goal change is logged (<code>Erkunden: ...</code>)</td>
+</tr>
+<tr>
+<td>Tight-only goals</td>
+<td>compete with the others at <code>tight_penalty_s</code> 3 s extra (since 2026-11-15; before and in the simulator, -1: only when no goal with clearance is left, which made him turn around for a goal behind him while a tight spot lay straight ahead); at most <code>tight_max</code> 10 per run (3 until 2026-11-15 and in the simulator: holes in drawn walls look like gaps; RiderPi 2026-11-15 left 10 spots behind tight places with 3)</td>
+</tr>
+<tr>
+<td>Arrival</td>
+<td>stops <code>standoff_m</code> before the frontier, turns towards it, <code>settle_s</code>; no new goal within <code>avoid_r_m</code> 0.3 m of the spot</td>
+</tr>
+<tr>
+<td>Driven ground</td>
+<td>cells within <code>driven_free_r_m</code> of the driven path stay passable for the planner despite occupied specks and <code>inflate_m</code>; obstacles the local map sees now still block</td>
+</tr>
+<tr>
+<td>Contact</td>
+<td>command &gt; 0.08 but &lt; 2 cm movement in 2.5 s (normal start-up takes up to 1.8 s): treated as contact, back up and block the goal at once. Wheel slip hides it</td>
+</tr>
+<tr>
+<td>Stuck</td>
+<td>no 5 cm progress or 10° turn in 3 s: replan without the old path; again, or <code>goal_timeout_s</code>: back up 0.8 s, block the goal. No goal left: <code>wander_s</code> reactive driving, at most <code>max_wander</code> times, then stop</td>
+</tr>
+<tr>
+<td>End</td>
+<td>nothing reachable, &lt; <code>min_growth_m2</code> new floor in <code>no_growth_s</code>, <code>max_s</code>, or <code>min_battery</code>. Then save and drive to the start (<code>return_home</code>). Arrived there after a way home of at least <code>recheck_min_m</code> 1 m, it searches once more (new floor was seen on the way; at most <code>recheck_max</code> 3 times per run, 0 = off) and only then reports the map as done</td>
+</tr>
+<tr>
+<td>Status JSON</td>
+<td><code>explore</code>: <code>zustand</code>, <code>stellen</code>, <code>gesperrt</code>, <code>befreit</code>, <code>ziel</code>, <code>ende</code></td>
+</tr>
+<tr>
+<td>Without room map</td>
+<td><code>explore</code> drives reactively (<code>Explore</code>), as <code>approach</code> does while searching</td>
+</tr>
+</tbody>
+</table>
+<p>Measuring: <code>tools/map_eval.py record</code> stores simulator observations, <code>eval</code> replays them through <code>GridMap</code> in seconds, with <code>--set grid.x=a,b</code> sweeps and <code>--rays</code> (boundary error per distance).</p>
+<h3 id="simulator-quality-testssim_runpy-explore">Simulator quality (<code>tests/sim_run.py explore</code>)<a class="headerlink" href="#simulator-quality-testssim_runpy-explore" title="Permanent link">&para;</a></h3>
+<p>Reported per run: <code>praezision_15cm</code> (occupied cells within 15 cm of a true wall/box), <code>abdeckung_10cm</code> (wall/box points ≤ 2 m from the driven path with an occupied cell within 10 cm), <code>pose_fehler_m</code>, <code>kurs_fehler_deg</code>.
+Also <code>waende_10cm</code> (all walls), <code>boden_bekannt</code> (true floor known as free), <code>frei_aussen_m2</code> (free cells outside the room).</p>
+<table>
+<thead>
+<tr>
+<th>2026-11-05 (<code>--wheels --kanten --fs-thread --dyn --rider</code>)</th>
+<th>Reactive, 90 s, before</th>
+<th>Frontier, to „Karte fertig“</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Occupied cells ≤ 15 cm from truth</td>
+<td>0.46</td>
+<td>0.95–0.97</td>
+</tr>
+<tr>
+<td>Walls ≤ 10 cm</td>
+<td>0.36</td>
+<td>0.87–0.94</td>
+</tr>
+<tr>
+<td>Floor known</td>
+<td>0.67 (after fixes)</td>
+<td>0.89–0.92</td>
+</tr>
+<tr>
+<td>Free outside the room</td>
+<td>~9 m²</td>
+<td>0.13–0.37 m²</td>
+</tr>
+<tr>
+<td>Duration, distance</td>
+<td>never finished</td>
+<td>150–250 s, 27–44 m</td>
+</tr>
+<tr>
+<td>Collisions</td>
+<td>0 of 8</td>
+<td>0 of 6 (one room, two rooms)</td>
+</tr>
+</tbody>
+</table>
+<p>Largest single cause: distances were computed from the pitch of a later frame (threaded floor model). Boundary error at 0.5–0.75 m, p10/p90: −0.19/+0.17 m before, −0.11/−0.02 m after.
+With 8 phantom spots (<code>--phantoms 8</code>, two rooms): 0 collisions in 4 runs, 3 complete, 1 ended early and reported an unreached spot.</p>
+<p>2026-11-06, <code>free_range_m</code> 1.1, driven ground passable, <code>avoid_r_m</code> 0.3 (one room, two rooms, with and without 8 phantoms): 12 of 12 to „Karte fertig“, 0 collisions, 142–204 s, 24–36 m, floor known 0.78–0.88, walls 0.77–0.94, occupied precision 0.86–0.94, free outside 0.01–0.07 m².</p>
+<p>Tried and dropped 2026-11-06: weak hits beyond <code>max_range_m</code> (up to 1.75–2.25 m, +0.1–0.2 per image). RiderPi recordings: obstacles in the map 3–13 s earlier (median), little added. Simulator (18 runs): occupied precision 0.64–0.84, and in the two-room scene 7 of 9 runs saw at most 0.69 of the floor, 5 of them about 0.40; 0 collisions.</p>
+<h2 id="pose-state-reloc-enabled-default-off">Pose state (<code>[reloc] enabled</code>, default off)<a class="headerlink" href="#pose-state-reloc-enabled-default-off" title="Permanent link">&para;</a></h2>
+<p>Built 2026-11-11, simulator and unit tests only; not installed on the Rider.</p>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Behaviour</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Pose becomes unknown</td>
+<td>xgonav start with a loaded map; balancing -&gt; not balancing (set down, fall, rest mode); balancing &gt; <code>blind_s</code> (2 s) without fresh wheel data; web "Pose verwerfen". Never on an empty map</td>
+</tr>
+<tr>
+<td>While unknown</td>
+<td>nothing is entered into the map, driven path not recorded, driven ground not cleared; pose keeps integrating (display, hollow triangle). <code>home</code>, <code>patrol</code>, <code>explore</code> refuse to start and end if running. <code>manual</code>, <code>follow</code>, <code>approach</code>, <code>pet</code>, <code>idle</code> stay allowed</td>
+</tr>
+<tr>
+<td>Valid again</td>
+<td>web "Steht am Startpunkt" (pose jumps to the start point), "Pose stimmt" (shown pose kept), patrol start with confirmation, <code>/map/reset</code>. Only while balancing: standing up rolls ~24 cm</td>
+</tr>
+<tr>
+<td>Not done</td>
+<td>keep-out zones are checked at the wrong place while the pose is unknown (web shows a note); buttons are not greyed out, xgonav answers 409</td>
+</tr>
+<tr>
+<td>Cost on the Pi</td>
+<td>two comparisons per control step</td>
+</tr>
+</tbody>
+</table>
+<h2 id="map-matching-xgonavrelocpy">Map matching (<code>xgonav/reloc.py</code>)<a class="headerlink" href="#map-matching-xgonavrelocpy" title="Permanent link">&para;</a></h2>
+<p>Running matching is wired into the app with <code>[reloc] track = true</code> (default on since 2026-11-12; RiderPi: off since 2026-11-14): <code>reloc.Nachfuehrung</code> runs in the <code>GridWorker</code> thread for every observation entered into the room map, never in the image loop. A correction shifts the map pose rigidly (<code>GridMap.shift_pose</code>, at most <code>max_step_m</code> 0.08 m / <code>max_step_deg</code> 3° per match) and the poses of queued observations. Locked map: the map itself is the reference; while mapping: a map state ≥ <code>ref_age_s</code> old. Status: <code>grid.abgleich</code> (<code>abgleiche</code>, <code>angenommen</code>, <code>korrektur_m</code>, <code>korrektur_deg</code>, <code>haelt</code>, <code>zuletzt</code>, <code>unsicher</code>, <code>ms_max</code>). The global search (start pose) is still offline only. <strong>Not driven.</strong> Tools (same class): <code>tools/map_replay.py</code> (variant <code>abgleich=1</code>), <code>tools/reloc_eval.py</code>, <code>tools/map_eval.py reloc</code> (<code>docs/testing.md</code>).</p>
+<table>
+<thead>
+<tr>
+<th>Part</th>
+<th>What</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Scan</td>
+<td>floor boundary points of the last seconds in the robot frame (<code>ScanPuffer</code>), same rays as <code>GridMap.add_freespace</code>; hits weighted 1 / (1 + (d / 0.8 m)²), samples on the free rays</td>
+</tr>
+<tr>
+<td>Field</td>
+<td>from a map state: closeness to the nearest wall (sigma 0.10 m); hits on known free floor and free samples through walls cost</td>
+</tr>
+<tr>
+<td><code>abgleich_lokal</code></td>
+<td>window ±0.30 m, ±8° around the odometry pose, one <code>cv2.matchTemplate</code> per heading. Corridor (pose slides along one direction): corrects across and heading only</td>
+</tr>
+<tr>
+<td><code>suche_global</code></td>
+<td>whole map, 3° / 0.10 m, best 8 refined; accepted only if unique</td>
+</tr>
+<tr>
+<td>"unsure"</td>
+<td>too little wall, too little known area, does not fit, slides, ambiguous, peak at the window border</td>
+</tr>
+<tr>
+<td>While mapping</td>
+<td>reference = map state at least 12 s old; nothing is entered while the remaining correction exceeds 0.10 m / 3°</td>
+</tr>
+</tbody>
+</table>
+<p>Measured 2026-11-11 (PC; boundary from FloorNet <code>floornet_s3.bin</code>, 8 raw recordings, simulator with drift 3 % distance, 2 % turn, 0.1 °/s):</p>
+<table>
+<thead>
+<tr>
+<th>Case</th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Simulator, second drive against the finished map of the first</td>
+<td>mean pose error 0.56 -&gt; 0.25 m (<code>raum</code>), 0.78 -&gt; 0.13 m (<code>zwei</code>)</td>
+</tr>
+<tr>
+<td>Simulator, global search, 15 s pieces of the second drive</td>
+<td>4 right, 0 wrong, 18 unsure of 22 (square rooms: corners look alike); 30 s pieces in <code>raum</code>: 7 right, 0 wrong, 5 unsure</td>
+</tr>
+<tr>
+<td>Real recordings, matching while mapping</td>
+<td>cells between double walls 1949 -&gt; 1532 over 8 drives (explore6: 472 -&gt; 286, end pose moved 0.76 m; measured drift of that drive 0.75 m); part of the drop is observations not entered</td>
+</tr>
+<tr>
+<td>Real recordings, global search, piece cut out</td>
+<td>5 right, 9 wrong, 98 unsure of 112: explore sees most places once, the rest of the map does not know the piece</td>
+</tr>
+<tr>
+<td>Real recordings, global search, piece kept in the map (upper bound)</td>
+<td>32 right, 4 wrong (all explore6, wheel heading), 76 unsure</td>
+</tr>
+<tr>
+<td>Time on the PC</td>
+<td>field 2 ms, local match 3 ms, global search 42-75 ms; not measured on the Pi</td>
+</tr>
+</tbody>
+</table>
+<p>Known weakness: in front of a single wall the position along the wall is not observable; in a synthetic test the match was accepted there (not flagged as sliding) and pulled the pose up to 0.18 m along the wall until a corner came into view.</p>
+<p>Open: two drives through the same room in one map frame (real test of the global search), timing on the Pi, a RiderPi drive with <code>track</code>.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="web-interface.html" class="md-footer__link md-footer__link--prev" aria-label="Previous: Web interface">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Web interface
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="floornet.html" class="md-footer__link md-footer__link--next" aria-label="Next: FloorNet">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                FloorNet
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": ".", "features": ["navigation.sections", "navigation.top", "navigation.footer", "toc.follow", "search.highlight", "content.code.copy"], "search": "assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="assets/javascripts/bundle.a5f9d56c.min.js"></script>
+      
+    
+  </body>
+</html>

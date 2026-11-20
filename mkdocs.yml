@@ -1,0 +1,87 @@
+# Anleitung (HTML) aus docs/: am PC bauen mit tools/build_manual.sh, Ergebnis web/anleitung/ (statisch, nginx, kostet am Pi nichts)
+site_name: xgo_motorcortex2 manual
+site_description: XGO RiderPi – driver, camera navigation (xgonav), web UI
+docs_dir: docs
+site_dir: web/anleitung
+use_directory_urls: false
+repo_url: https://github.com/aeinstein/xgo_motorcortex2
+edit_uri: ""
+
+theme:
+  name: material
+  font: false            # keine Google-Fonts: Rider steht im LAN, oft ohne Internet
+  language: en
+  features:
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - toc.follow
+    - search.highlight
+    - content.code.copy
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: blue grey
+      accent: teal
+      toggle: {icon: material/weather-night, name: Dark mode}
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: blue grey
+      accent: teal
+      toggle: {icon: material/weather-sunny, name: Light mode}
+
+plugins:
+  - search
+  - offline              # Suche und Navigation auch als file:// und ohne Server-Rewrites
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc: {permalink: true}
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight: {anchor_linenums: false}
+  - pymdownx.inlinehilite
+
+# Nicht in die Anleitung: CAD-Datei (groß), Demo-Seite
+exclude_docs: |
+  *.STEP
+  rider-stimme-demo.html
+
+# Links aus docs/ auf Code im Repo (../xgonav/...) gibt es absichtlich; nur melden, nicht abbrechen
+validation:
+  links:
+    not_found: info
+    unrecognized_links: info
+    anchors: info
+
+nav:
+  - Home: index.md
+  - Guide:
+      - Install: guide/install.md
+      - Quick start: guide/quickstart.md
+      - Web UI: guide/web.md
+      - Behaviours: guide/behaviours.md
+  - Advanced:
+      - FloorNet training: guide/advanced/floornet-training.md
+      - Simulator and tests: guide/advanced/simulator.md
+      - Calibration: guide/advanced/calibration.md
+      - Firmware and driver: guide/advanced/firmware-driver.md
+      - C++ core: guide/advanced/native.md
+  - Reference:
+      - Architecture: architecture.md
+      - Installation: installation.md
+      - Configuration: configuration.md
+      - Calibration: calibration.md
+      - Driver: driver.md
+      - Web interface: web-interface.md
+      - Odometry and maps: mapping.md
+      - FloorNet: floornet.md
+      - Display and emotions: display-emotions.md
+      - Audio: audio.md
+      - Wi-Fi setup: wifi-setup.md
+      - LEDs: LED.md
+      - Testing: testing.md
+      - Limitations: limitations.md

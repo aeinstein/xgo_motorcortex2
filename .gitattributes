@@ -8,3 +8,5 @@ Makefile    text eol=lf
 *.service   text eol=lf
 *.caffemodel binary
 *.prototxt  text eol=lf
+# Gebaute Anleitung (tools/build_manual.sh): erzeugt, im Diff nicht anzeigen
+web/anleitung/** linguist-generated=true -diff

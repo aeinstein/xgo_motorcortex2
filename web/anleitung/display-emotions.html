@@ -1,0 +1,2116 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="XGO RiderPi – driver, camera navigation (xgonav), web UI">
+      
+      
+      
+      
+        <link rel="prev" href="floornet.html">
+      
+      
+        <link rel="next" href="audio.html">
+      
+      
+        
+      
+      
+      <link rel="icon" href="assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.2">
+    
+    
+      
+        <title>Display and emotions - xgo_motorcortex2 manual</title>
+      
+    
+    
+      <link rel="stylesheet" href="assets/stylesheets/main.57a0d79d.min.css">
+      
+        
+        <link rel="stylesheet" href="assets/stylesheets/palette.fb2fffe2.min.css">
+      
+      
+
+
+    
+    
+      
+        <script src="https://unpkg.com/iframe-worker/shim"></script>
+      
+    
+    
+      
+    
+    
+    <script>__md_scope=new URL(".",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="blue-grey" data-md-color-accent="teal">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#display-and-emotions" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="index.html" title="xgo_motorcortex2 manual" class="md-header__button md-logo" aria-label="xgo_motorcortex2 manual" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            xgo_motorcortex2 manual
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Display and emotions
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="blue-grey" data-md-color-accent="teal"  aria-label="Dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="blue-grey" data-md-color-accent="teal"  aria-label="Light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/aeinstein/xgo_motorcortex2" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="index.html" title="xgo_motorcortex2 manual" class="md-nav__button md-logo" aria-label="xgo_motorcortex2 manual" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    xgo_motorcortex2 manual
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/aeinstein/xgo_motorcortex2" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="index.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="guide/install.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Install
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="guide/quickstart.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="guide/web.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Web UI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="guide/behaviours.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Behaviours
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Advanced
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Advanced
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="guide/advanced/floornet-training.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    FloorNet training
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="guide/advanced/simulator.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Simulator and tests
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="guide/advanced/calibration.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Calibration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="guide/advanced/firmware-driver.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Firmware and driver
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="guide/advanced/native.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C++ core
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="architecture.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="installation.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="configuration.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="calibration.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Calibration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="driver.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Driver
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="web-interface.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Web interface
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="mapping.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Odometry and maps
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="floornet.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    FloorNet
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Display and emotions
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="display-emotions.html" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Display and emotions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#display-daemon-st7789_server" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Display daemon st7789_server
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#xgonav-overlay-on-the-lcd-xgonavlcdpy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        xgonav overlay on the LCD (xgonav/lcd.py)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#emotion-player-toolsemotionsh" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Emotion player (tools/emotion.sh)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#eye-animations-toolseyespy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Eye animations (tools/eyes.py)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#automatic-emotions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Automatic emotions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sounds" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sounds
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#fear-of-the-dark-xgonavdunkelpy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fear of the dark (xgonav/dunkel.py)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#mode-pet-xgonavpetpy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Mode pet (xgonav/pet.py)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Mode pet (xgonav/pet.py)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#search-and-roam" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Search and roam
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#hearing-sound-direction-audiomd" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Hearing (sound direction, audio.md)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#faint" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Faint
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="audio.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Audio
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="wifi-setup.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Wi-Fi setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="LED.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    LEDs
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="testing.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="limitations.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Limitations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#display-daemon-st7789_server" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Display daemon st7789_server
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#xgonav-overlay-on-the-lcd-xgonavlcdpy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        xgonav overlay on the LCD (xgonav/lcd.py)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#emotion-player-toolsemotionsh" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Emotion player (tools/emotion.sh)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#eye-animations-toolseyespy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Eye animations (tools/eyes.py)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#automatic-emotions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Automatic emotions
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sounds" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sounds
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#fear-of-the-dark-xgonavdunkelpy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fear of the dark (xgonav/dunkel.py)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#mode-pet-xgonavpetpy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Mode pet (xgonav/pet.py)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Mode pet (xgonav/pet.py)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#search-and-roam" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Search and roam
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#hearing-sound-direction-audiomd" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Hearing (sound direction, audio.md)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#faint" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Faint
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+
+<h1 id="display-and-emotions">Display and emotions<a class="headerlink" href="#display-and-emotions" title="Permanent link">&para;</a></h1>
+<h2 id="display-daemon-st7789_server">Display daemon <code>st7789_server</code><a class="headerlink" href="#display-daemon-st7789_server" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Source</td>
+<td><code>st7789/</code> (libdriver/st7789), build in <code>st7789/project/riderpi</code></td>
+</tr>
+<tr>
+<td>Panel</td>
+<td>2", ST7789, 320×240</td>
+</tr>
+<tr>
+<td>Input</td>
+<td>FIFO <code>/tmp/lcd0</code>, raw RGB565, 153 600 bytes per frame</td>
+</tr>
+<tr>
+<td>Start</td>
+<td><code>deploy/rc.local</code> (or <code>st7789_display.service</code> via <code>make install</code> — not both)</td>
+</tr>
+<tr>
+<td>Permissions</td>
+<td><code>/tmp/lcd0</code> group <code>video</code>, g+w</td>
+</tr>
+<tr>
+<td>Throughput</td>
+<td>&gt; 40 fps (measured)</td>
+</tr>
+</tbody>
+</table>
+<div class="highlight"><pre><span></span><code>make -C st7789/project/riderpi &amp;&amp; sudo cp st7789/project/riderpi/st7789_server /usr/bin/
+</code></pre></div>
+<h2 id="xgonav-overlay-on-the-lcd-xgonavlcdpy">xgonav overlay on the LCD (<code>xgonav/lcd.py</code>)<a class="headerlink" href="#xgonav-overlay-on-the-lcd-xgonavlcdpy" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Camera overlay</td>
+<td><code>--robot proc</code> and <code>output.lcd_fifo</code> ≠ <code>""</code> (<code>--no-lcd</code> disables)</td>
+</tr>
+<tr>
+<td>Always (<code>--robot proc</code>)</td>
+<td>WiFi setup (QR eyes, hotspot QR) and <code>pet</code> eyes, via <code>emotion.fifo</code> if <code>lcd_fifo</code> = <code>""</code>; FIFO closed otherwise; WiFi setup end → emotion <code>cute</code></td>
+</tr>
+<tr>
+<td>Rate</td>
+<td><code>output.lcd_fps</code> = 15 (no measurable main-loop cost on CM4)</td>
+</tr>
+<tr>
+<td>Pauses</td>
+<td>while an emotion is playing (<code>/tmp/lcd0.owner</code> non-empty, &lt; 10 s old)</td>
+</tr>
+</tbody>
+</table>
+<h2 id="emotion-player-toolsemotionsh">Emotion player (<code>tools/emotion.sh</code>)<a class="headerlink" href="#emotion-player-toolsemotionsh" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code>tools/emotion.sh build SRC DST      # SRC/&lt;Name&gt;/&lt;Name&gt;&lt;n&gt;.png -&gt; DST/&lt;Name&gt;/0001.raw ... (numeric order)
+tools/emotion.sh play DIR [FPS]     # plays DIR/*.raw once, default 25 fps
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Frames</td>
+<td><code>/opt/xgonav/emotions</code>, generated by <code>tools/eyes.py</code> in <code>deploy/install.sh</code></td>
+</tr>
+<tr>
+<td>Fallback</td>
+<td>no <code>.raw</code> files → decodes PNGs with ffmpeg</td>
+</tr>
+<tr>
+<td>CPU (RiderPi)</td>
+<td>55 frames ~0.18 s (old ffmpeg path: 1.04 s for 24 frames)</td>
+</tr>
+<tr>
+<td>Ownership</td>
+<td>newest player writes its PID to <code>/tmp/lcd0.owner</code>; older players exit before next frame (works across users)</td>
+</tr>
+<tr>
+<td><code>/tmp/lcd0.owner</code></td>
+<td>created by <code>rc.local</code>: root, group <code>video</code>, 0664 (<code>fs.protected_regular</code>)</td>
+</tr>
+</tbody>
+</table>
+<h2 id="eye-animations-toolseyespy">Eye animations (<code>tools/eyes.py</code>)<a class="headerlink" href="#eye-animations-toolseyespy" title="Permanent link">&para;</a></h2>
+<p>Stylized eyes only, one color on black (antialiased), same output format as <code>emotion.sh build</code>.</p>
+<div class="highlight"><pre><span></span><code>python tools/eyes.py OUTDIR [--color R,G,B] [--only NAME]... [--png] [--preview DIR]
+python tools/eyes.py --list
+python tools/eyes.py --gaze DIR      # eye atlas for mode pet: 11 gaze positions (10 steps) x 5 lid positions, 55 frames, 8.4 MB
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Output</td>
+<td><code>OUTDIR/&lt;Name&gt;/0001.raw ...</code>, 320×240 RGB565 LE, 153 600 bytes (same as <code>emotion.sh build</code>)</td>
+</tr>
+<tr>
+<td>Length</td>
+<td>55–100 frames at 25 fps (2.2–4.0 s), 915 frames / 139 MB in total</td>
+</tr>
+<tr>
+<td>Loop</td>
+<td>first and last frame = neutral eyes (except <code>sleep</code>: ends closed)</td>
+</tr>
+<tr>
+<td>Color</td>
+<td>default turquoise <code>0,225,210</code></td>
+</tr>
+<tr>
+<td><code>--png</code></td>
+<td>also writes <code>&lt;Name&gt;&lt;n&gt;.png</code></td>
+</tr>
+<tr>
+<td><code>--preview DIR</code></td>
+<td>contact sheet <code>&lt;Name&gt;.png</code> and <code>&lt;Name&gt;.mp4</code> per emotion</td>
+</tr>
+<tr>
+<td>Runtime</td>
+<td>~7 s on a PC for all 14; needs only numpy + OpenCV</td>
+</tr>
+<tr>
+<td>Install</td>
+<td><code>deploy/install.sh</code> → <code>/opt/xgonav/emotions</code>; the web UI lists this directory</td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th>Emotion</th>
+<th>Eyes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Angry</code></td>
+<td>lids slanted down toward the center, trembling, two pulses</td>
+</tr>
+<tr>
+<td><code>angst</code></td>
+<td>wide eyes, small pupils darting left/right, worried lids (inner corners up), trembling (fear of the dark)</td>
+</tr>
+<tr>
+<td><code>cute</code></td>
+<td>large round eyes without pupils, smiling lower edge, gentle bob, head tilt, short <code>^ ^</code> squint</td>
+</tr>
+<tr>
+<td><code>doubt</code></td>
+<td>one eye raised, other squinted, glance right then left</td>
+</tr>
+<tr>
+<td><code>embarrassed</code></td>
+<td>darting glances left/right, then trembling <code>&gt; &lt;</code></td>
+</tr>
+<tr>
+<td><code>grievance</code></td>
+<td>round pleading eyes looking up, sad lids, quivering lower lid, tear</td>
+</tr>
+<tr>
+<td><code>hate</code></td>
+<td>eye roll upward, then narrowed frowning slits, side glance</td>
+</tr>
+<tr>
+<td><code>laugh</code></td>
+<td><code>^ ^</code> arcs bouncing</td>
+</tr>
+<tr>
+<td><code>like</code></td>
+<td>heart eyes beating</td>
+</tr>
+<tr>
+<td><code>sad</code></td>
+<td>lids drooping outward, eyes sink, slow blink</td>
+</tr>
+<tr>
+<td><code>shy</code></td>
+<td>smaller half-closed eyes looking down/aside, one glance back</td>
+</tr>
+<tr>
+<td><code>sleep</code></td>
+<td>lids get heavy, two jerks awake, closed <code>‿ ‿</code>, breathing</td>
+</tr>
+<tr>
+<td><code>surprised</code></td>
+<td>eyes pop to large circles (overshoot), double blink</td>
+</tr>
+<tr>
+<td><code>vertigo</code></td>
+<td>rotating spirals circling in opposite phase</td>
+</tr>
+</tbody>
+</table>
+<h2 id="automatic-emotions">Automatic emotions<a class="headerlink" href="#automatic-emotions" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Emotion</th>
+<th>Trigger</th>
+<th>Source</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>cute</code></td>
+<td>boot</td>
+<td><code>rc.local</code></td>
+</tr>
+<tr>
+<td><code>sleep</code></td>
+<td>shutdown from web UI (before <code>poweroff</code>, timeout 10 s)</td>
+<td><code>api.php</code></td>
+</tr>
+<tr>
+<td><code>sleep</code></td>
+<td>sleep mode (web <strong>Ruhe</strong>); closed eyes stay on the display, xgonav writes nothing and plays no emotions meanwhile</td>
+<td><code>api.php</code></td>
+</tr>
+<tr>
+<td><code>surprised</code></td>
+<td>person appears after ≥ <code>gap_s</code> (5 s) without person</td>
+<td><code>xgonav/emotion.py</code></td>
+</tr>
+<tr>
+<td><code>doubt</code></td>
+<td>mode <code>follow</code>, no person for <code>lost_s</code> (2 s); once per loss</td>
+<td><code>xgonav/emotion.py</code></td>
+</tr>
+<tr>
+<td><code>embarrassed</code></td>
+<td>other modes, no person for <code>lost_s</code>; once per loss</td>
+<td><code>xgonav/emotion.py</code></td>
+</tr>
+<tr>
+<td><code>shy</code></td>
+<td>battery ≤ <code>battery_low</code> (20 %), repeated every 300 s</td>
+<td><code>xgonav/emotion.py</code></td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li>xgonav emotions only with <code>--robot proc</code> and <code>emotion.enabled</code>.</li>
+</ul>
+<h2 id="sounds">Sounds<a class="headerlink" href="#sounds" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Found</td>
+<td><code>freude.wav</code> (3 rising chirps, 0.5 s) when a person appears</td>
+</tr>
+<tr>
+<td>Lost</td>
+<td><code>trauer.wav</code> (2 falling "wah", 1.1 s) after <code>lost_s</code> (2 s) without person</td>
+</tr>
+<tr>
+<td>Fall</td>
+<td><code>pet_schrei_&lt;n&gt;.wav</code> (scream, 0.9 s) when firmware state goes 1 → 0 (tilt/fall fault); all modes, also with pipeline stopped</td>
+</tr>
+<tr>
+<td>Back up</td>
+<td><code>pet_aufrappeln_&lt;n&gt;.wav</code> (effortful rise + 2 chirps, 0.8 s) on the next balancing (1) after a fall, whoever triggered the stand-up; in <code>pet</code> also after a faint</td>
+</tr>
+<tr>
+<td>Mapping / searching</td>
+<td><code>pet_dudeln_&lt;n&gt;.wav</code> (cheerful "dum-di-dum-di-dum", 3 melodies, ~0.9 s) in <code>[emotion] dudeln_modes</code> (explore, patrol, home) and in <code>pet</code> while searching or roaming; first after <code>dudeln_start_s</code> 1.5 s, then every <code>dudeln_s</code> 25 s ±30 %; skipped while another sound plays (<code>emotion.Dudler</code>)</td>
+</tr>
+<tr>
+<td>Independent of</td>
+<td>display (plays even while an emotion runs), mode</td>
+</tr>
+<tr>
+<td>Set down (254)</td>
+<td>no scream</td>
+</tr>
+<tr>
+<td>Files</td>
+<td><code>tools/sounds.py DIR</code> (numpy only); <code>deploy/install.sh</code> → <code>/opt/xgonav/sounds</code></td>
+</tr>
+<tr>
+<td>Playback</td>
+<td><code>aplay</code> (ALSA default, <code>emotion.sound_device</code>), WM8960 speaker; volume <code>amixer -c 0 sset Speaker 82%</code></td>
+</tr>
+<tr>
+<td>Off</td>
+<td><code>[emotion] sound = false</code></td>
+</tr>
+<tr>
+<td>- Pipeline stopped → person unknown → battery trigger only.</td>
+<td></td>
+</tr>
+<tr>
+<td>- Emotion already playing → trigger waits (not interrupted).</td>
+<td></td>
+</tr>
+<tr>
+<td>- Manual: web UI → Extras → Emotionen (<code>POST api.php?a=emotion&amp;name=..</code>).</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h2 id="fear-of-the-dark-xgonavdunkelpy">Fear of the dark (<code>xgonav/dunkel.py</code>)<a class="headerlink" href="#fear-of-the-dark-xgonavdunkelpy" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Active</td>
+<td><code>[dunkel] modes</code> (explore, patrol, home, follow, approach, pet), balancing only; overrides the mode after <code>safety()</code>, before the arc check</td>
+</tr>
+<tr>
+<td>Brightness</td>
+<td>mean of every 8th pixel (80×60), <code>check_hz</code> 4; RiderPi raw runs 2026-11-13: evening room light 11–28, under furniture / lights off 2–5</td>
+</tr>
+<tr>
+<td>Dark</td>
+<td>&lt; <code>dark_level</code> 7 for <code>dark_s</code> 2 s → stand, emotion <code>angst</code> + sound <code>pet_angst_&lt;n&gt;.wav</code> (3 shaky "ee", long wavering fall), <code>fright_s</code> 1.5 s</td>
+</tr>
+<tr>
+<td>Search light</td>
+<td>turn on the spot 180° (back), then +90° (right), then +180° (left); after each turn wait <code>settle_s</code> 1.5 s (auto exposure), light = ≥ <code>light_level</code> 11</td>
+</tr>
+<tr>
+<td>Light found</td>
+<td>sound <code>kichern</code>, the mode continues</td>
+</tr>
+<tr>
+<td>No light</td>
+<td>stop, emotion <code>sleep</code>, set down (254), sleep mode (<code>set_ruhe</code>), CPU governor via <code>sudo xgo-ruhe on</code> (rule <code>deploy/sudoers-xgonav-ruhe</code>, also for <code>aeinstein</code>)</td>
+</tr>
+<tr>
+<td>Repeated</td>
+<td><code>max_events</code> 3 frights within <code>events_window_s</code> 300 s → gives up at once (explore would drive back into the dark area)</td>
+</tr>
+<tr>
+<td>Simulator</td>
+<td><code>tests/sim_run.py explore 120 --wheels --dunkel 3.5,3,6,6[,rest]</code>: dark zone, light from camera position and 1.5 m ahead</td>
+</tr>
+</tbody>
+</table>
+<h2 id="mode-pet-xgonavpetpy">Mode <code>pet</code> (<code>xgonav/pet.py</code>)<a class="headerlink" href="#mode-pet-xgonavpetpy" title="Permanent link">&para;</a></h2>
+<p>Started by hand (web UI „Haustier“, <code>--mode pet</code>). Not run on the Rider yet, see <a href="limitations.html">limitations.md</a>.</p>
+<table>
+<thead>
+<tr>
+<th>Trigger</th>
+<th>Reaction</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>person &gt; 3 m</td>
+<td>notices, chirp</td>
+</tr>
+<tr>
+<td>person 1.5–3 m</td>
+<td>turns toward, tilts head (roll), <code>doubt</code></td>
+</tr>
+<tr>
+<td>person &lt; 1.5 m</td>
+<td><code>cute</code>, trill, wiggle</td>
+</tr>
+<tr>
+<td>person &lt; ~0.5 m</td>
+<td><code>shy</code>, ducks</td>
+</tr>
+<tr>
+<td>box top free and &lt; 1.9 m (kneeling, sitting, child)</td>
+<td><code>like</code></td>
+</tr>
+<tr>
+<td>person approaching &gt; ~1 m/s within 1.6 m</td>
+<td><code>surprised</code>, squeak, duck, optional jerk back</td>
+</tr>
+<tr>
+<td>person gone &lt; 3 s and back</td>
+<td><code>laugh</code>, giggle</td>
+</tr>
+<tr>
+<td>person gone &gt; 3 s</td>
+<td>looks after them, <code>doubt</code>, searches (below), <code>sad</code> if not found</td>
+</tr>
+<tr>
+<td>wheels move without a drive command</td>
+<td><code>embarrassed</code>, „hey“</td>
+</tr>
+<tr>
+<td>nobody for 30 s (<code>roam_after_s</code>, again every 45 s)</td>
+<td>roams (below)</td>
+</tr>
+<tr>
+<td>nobody for 60 s / 180 s / 600 s</td>
+<td>sighs / dozes, detector 1 Hz, roaming ends / sets down, <code>idle</code></td>
+</tr>
+<tr>
+<td>cat</td>
+<td>turns toward, <code>like</code>, coo; optional creep up to 0.8 m</td>
+</tr>
+<tr>
+<td>dog within 2 m (priority over all)</td>
+<td>keeps looking, <code>grievance</code>, whimper, duck, optional jerk back</td>
+</tr>
+<tr>
+<td>dog &lt; 0.5 m or hard scare (with <code>faint</code>)</td>
+<td>faint, see below</td>
+</tr>
+</tbody>
+</table>
+<p>Eyes follow the bearing of the target, gliding one position per control step, and blink through all lid positions in 0.4 s (atlas, neutral eye style without pupils, replaces the overlay on the LCD; written only when changed, checked at ~33 Hz). Priority: dog, cat, person. Trust (0..1) shifts thresholds; repeated scares weaken (habituation).</p>
+<h3 id="search-and-roam">Search and roam<a class="headerlink" href="#search-and-roam" title="Permanent link">&para;</a></h3>
+<p>Tasks inside state <code>wach</code>; any person/cat/dog in view ends them (search: <code>like</code> + found sound; roam: <code>surprised</code>). Position from wheels and heading (<code>World.yaw</code>), independent of the room map; reset on stand-up.</p>
+<table>
+<thead>
+<tr>
+<th>Task</th>
+<th>Sequence</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>search (person gone &gt; <code>gone_s</code>)</td>
+<td>drive to <code>seek_stop_m</code> (0.4 m) short of the last foot-point position, at most <code>seek_m</code> → look around → <code>sad</code>, lost sound</td>
+</tr>
+<tr>
+<td>roam (nobody for <code>roam_after_s</code>)</td>
+<td>look around, note free space per view → leg of <code>roam_leg_m</code> (0.4 m) toward the freest view within <code>roam_radius_m</code> (1.0 m) of the stand-up spot (none: back toward it) → look around → … until <code>roam_m</code> is used up; new budget after each encounter</td>
+</tr>
+<tr>
+<td>look around</td>
+<td><code>look_steps</code> (4) views, <code>look_step_deg</code> (90°) apart, <code>look_pause_s</code> (1.5 s) standing still each (detector, floor model); eyes sweep. Turning only, on by default (<code>look</code>, needs <code>gestures</code>)</td>
+</tr>
+</tbody>
+</table>
+<p>Driving (<code>seek_m</code>, <code>roam_m</code>, <code>roam_radius_m</code>: 0 = off, −1 = no limit; RiderPi default −1 since 2026-11-13, simulator 0 / 0 / 1.0 m) only forward at <code>drive_v</code> (0.08), with wheels, valid floor model + local map, battery ≥ <code>roam_battery</code> (40 %). Stops on: remaining distance within coast (~0.9 s × speed), budget, arc check of the local map blocked (<code>path_blocked</code>, computed only while driving), centre free space &lt; half <code>roam_free_min</code>, no progress for 2.5 s, time-out. Three failed legs end roaming. Foot points &gt; 5 m (occluded) are ignored, distances capped at 3.5 m. Steps are seen too late by the floor model: never near stairs. Pi cost: arithmetic per control step, plus one arc check per control step while driving.</p>
+<h3 id="hearing-sound-direction-audiomd">Hearing (sound direction, <a href="audio.html#sound-direction-xgonavortungpy">audio.md</a>)<a class="headerlink" href="#hearing-sound-direction-audiomd" title="Permanent link">&para;</a></h3>
+<p>Input: reports of <code>xgonav/ortung.py</code> (≈ 1 per second of sound, direction folded to the front). Direction counts only while balancing and only if the 1 s window began after his own last movement. <code>[pet] hear = false</code> turns all of it off. <strong>Unit tests only, not run on the Rider</strong> (2026-11-13).</p>
+<table>
+<thead>
+<tr>
+<th>Situation</th>
+<th>Reaction</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>sound from the side, nobody in view</td>
+<td>eyes move there, sound <code>horch</code>, turns to it at once (<code>look_w</code>; a sound near the front needs two reports, with <code>hear_seek</code> one), listens <code>hear_listen_s</code> (3.5 s). After a listen he turns again only after <code>hear_repeat_s</code> (6 s), unless the sound comes from ≥ <code>hear_side_deg</code> (45°) to the left or right (2026-11-14). Again from the side → the source was behind: turns by the remainder (180° − reading); at most <code>hear_turns</code> (3). From the front → done. Silence → <code>doubt</code>, then searches (<code>hear_seek</code>, below)</td>
+</tr>
+<tr>
+<td>sound while roaming (he turns and drives almost all the time, no direction then)</td>
+<td>stops roaming, stands and listens; the next report gives the direction</td>
+</tr>
+<tr>
+<td>target appears while turning</td>
+<td><code>surprised</code>, found sound; then talks back (below)</td>
+</tr>
+<tr>
+<td>come here: a person in view farther than <code>come_stop_m</code> + 0.3 m speaks (<code>come_events</code> = 1 report, a short call is enough)</td>
+<td>happy sound, drives toward the person and stops <code>come_stop_m</code> (0.8 m) short, following while they move; at most <code>come_m</code> per time (RiderPi −1 = no limit, simulator 0), again after <code>come_repeat_s</code> (8 s). Ends when the person is lost for 1 s (then the normal search) or the arc is blocked</td>
+</tr>
+<tr>
+<td>calling: voice keeps coming from the front (<code>call_events</code> = 3 reports), nobody in view</td>
+<td>searches there like "search": drives at most <code>call_m</code> (RiderPi −1 = no limit, then one 3 m leg per call; never more than <code>seek_m</code>; simulator 0) with the same conditions as every pet drive, then looks around (finds someone standing exactly behind). Again after <code>call_repeat_s</code> (45 s) at the earliest</td>
+</tr>
+<tr>
+<td>heard, then silence, nobody in view (<code>hear_seek</code>, 2026-11-19)</td>
+<td>direction known (turned to it, or voice from the front, one report is enough): searches there like calling. Unknown (stopped while roaming, then silence): looks around once, listening <code>hear_listen_s</code> per view; a report during a view → turns there, listens, drives there. Silence all round → search ends (<code>sad</code>). Lockout <code>call_repeat_s</code></td>
+</tr>
+<tr>
+<td>driving in pet with the room map (search, calling, back to start)</td>
+<td>the planner gives the path (like home); the Bahnprüfung still brakes. Calling goal: if the room map shows a wall within 1 m ahead and more room behind, he searches behind (front and back sound the same); the goal ends before the wall. No path, or a detour over 1.5× the straight line → the other direction</td>
+</tr>
+<tr>
+<td>search over, nobody found (<code>seek_home</code>, 2026-11-19)</td>
+<td>drives back to where he stood up, like explore at the end; on a halt looks around and replans, gives up after 3 halts</td>
+</tr>
+<tr>
+<td>suddenly loud (<code>hear_startle_db</code> = 20 dB) after <code>hear_quiet_s</code> (8 s) of silence, nobody in view</td>
+<td><code>surprised</code>, squeak, ducks 0.6 s, turns fast (<code>turn_w</code>). No retreat, no faint</td>
+</tr>
+<tr>
+<td>dozing, two reports in a row</td>
+<td>wakes: <code>surprised</code>, <code>horch</code>, detector back to <code>active_hz</code></td>
+</tr>
+<tr>
+<td>lying after a faint</td>
+<td>air is not clear while someone speaks (last report &lt; <code>clear_s</code>): eyes stay shut, no stand-up</td>
+</tr>
+<tr>
+<td>lying (set down from outside), two reports</td>
+<td><code>doubt</code>, <code>horch</code> (direction is useless lying down)</td>
+</tr>
+<tr>
+<td>talking back: person in view (or just found by listening) speaks ≥ <code>talk_min_events</code> (2) reports, then pauses <code>talk_pause_s</code> (1.6 s)</td>
+<td>sound <code>brabbeln</code>, head tilt; at most every <code>talk_repeat_s</code> (7 s); with <code>parrot_p</code> (0.5) a learned voice sample instead, ≥ <code>parrot_repeat_s</code> (30 s) apart (<a href="audio.html#voice-samples-xgonavstimmepy-mode-pet">audio.md</a>)</td>
+</tr>
+<tr>
+<td>a voice sample gets confirmed (same phrase twice within 1 min while a person is in view, balancing or lying) or a confirmed one is recognized</td>
+<td>parrots it after <code>parrot_delay_s</code> (0.2 s), budgie-filtered, every time</td>
+</tr>
+</tbody>
+</table>
+<p>Pi cost: a few comparisons per control step; the sound direction itself as in <a href="audio.html">audio.md</a>.</p>
+<h3 id="faint">Faint<a class="headerlink" href="#faint" title="Permanent link">&para;</a></h3>
+<p><code>vertigo</code>, set down, eyes shut <code>nap_s</code> (10 s) → eyes open slowly over <code>eyes_open_s</code> (3 s) while looking left and right → anyone in view: eyes shut again, wait → nobody in view for <code>clear_s</code> (2.5 s): wake-up sound <code>standup_warn_s</code> (1.5 s) → stand up (253), <code>cute</code> + get-up sound → <code>settle_s</code> (6 s) without gestures. A fall (state 0) in <code>pet</code> shows <code>vertigo</code>; the scream comes from <code>xgonav/emotion.py</code>.</p>
+<p>It stands up by itself only if all hold:</p>
+<table>
+<thead>
+<tr>
+<th>Condition</th>
+<th>Otherwise</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>set down by itself (external set-down, fall, started lying)</td>
+<td>stays down</td>
+</tr>
+<tr>
+<td>still in mode <code>pet</code> (<code>POST /stop</code>, any mode change, web action 254)</td>
+<td>stand-up cancelled</td>
+</tr>
+<tr>
+<td>IMU within <code>nap_tilt_deg</code> (5°) and wheels within <code>nap_moved_m</code> (1 cm) of the resting pose; <code>state</code> unchanged and not 0/250/251/252; all three known</td>
+<td>stays down</td>
+</tr>
+<tr>
+<td>no detection in the image, any class among person/cat/dog, any confidence</td>
+<td>waits; gives up after <code>nap_max_s</code> (60 s)</td>
+</tr>
+<tr>
+<td>battery known and &gt; <code>battery_low</code></td>
+<td>as above</td>
+</tr>
+<tr>
+<td>fewer than <code>faint_max</code> (3) faints in 10 min</td>
+<td>scare instead of faint</td>
+</tr>
+</tbody>
+</table>
+<p>One attempt only.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="floornet.html" class="md-footer__link md-footer__link--prev" aria-label="Previous: FloorNet">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                FloorNet
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="audio.html" class="md-footer__link md-footer__link--next" aria-label="Next: Audio">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Audio
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": ".", "features": ["navigation.sections", "navigation.top", "navigation.footer", "toc.follow", "search.highlight", "content.code.copy"], "search": "assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="assets/javascripts/bundle.a5f9d56c.min.js"></script>
+      
+    
+  </body>
+</html>

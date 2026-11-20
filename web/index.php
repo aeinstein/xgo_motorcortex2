@@ -340,6 +340,7 @@ details.extras[open]>summary{margin-bottom:8px}
   </div>
   <!-- Kalibrier-Knöpfe gesperrt (2026-11-02): Speichern bei schlaffen Beinen hat die
        Beinnullpunkte im ESP32-Flash überschrieben. Erst mit geführtem Ablauf wieder freigeben. -->
+  <button class="symbol" onclick="window.open('anleitung/index.html', '_blank')" aria-label="Anleitung" title="Anleitung: Installation, erste Schritte, Oberfläche, Verhalten, FloorNet-Training (englisch, statisch, kostet am Pi nichts)"><span class="ic" aria-hidden="true">?</span><span class="txt">Anleitung</span></button>
   <button class="symbol" onclick="window.open('schaubild.html', '_blank')" aria-label="Schaubild" title="Schaubild der Bildpipeline: Stufen, Korrekturen, Threads, Eingänge und Abnehmer (statisch, kostet am Pi nichts)"><span class="ic" aria-hidden="true">⇄</span><span class="txt">Schaubild</span></button>
   <button class="symbol" onclick="einstOeffnen()" aria-label="Einstellungen" title="Alle Einstellungen aus config.toml ändern (mit Sicherung), xgonav neu starten"><span class="ic" aria-hidden="true">⚙</span><span class="txt">Einstellungen</span></button>
   <button id="aus" class="gefahr symbol" onclick="herunterfahren()" aria-label="Herunterfahren" title="Rider herunterfahren"><svg class="ic" aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" style="vertical-align:-2px"><path d="M12 3v9"/><path d="M6.3 6.8a8 8 0 1 0 11.4 0"/></svg><span class="txt">Herunterfahren</span></button>
@@ -656,7 +657,7 @@ const EN = {
   'WLAN-Empfang (Pegel) und Durchsatz des Riders: ↓ empfangen, ↑ gesendet': 'Wi-Fi signal (level) and throughput of the Rider: ↓ received, ↑ sent',
   'Sprache': 'Language',
   'Alle Einstellungen aus config.toml ändern (mit Sicherung), xgonav neu starten': 'Edit all settings in config.toml (with backup), restart xgonav',
-  'Einstellungen': 'Settings', 'Schaubild': 'Diagram', 'Schaubild der Bildpipeline: Stufen, Korrekturen, Threads, Eingänge und Abnehmer (statisch, kostet am Pi nichts)': 'Image pipeline diagram: stages, corrections, threads, inputs and consumers (static, no cost on the Pi)', 'Rider herunterfahren': 'Shut down the Rider', 'Herunterfahren': 'Shut down',
+  'Einstellungen': 'Settings', 'Schaubild': 'Diagram', 'Anleitung': 'Manual', 'Anleitung: Installation, erste Schritte, Oberfläche, Verhalten, FloorNet-Training (englisch, statisch, kostet am Pi nichts)': 'Manual: install, quick start, UI, behaviours, FloorNet training (static, no cost on the Pi)', 'Schaubild der Bildpipeline: Stufen, Korrekturen, Threads, Eingänge und Abnehmer (statisch, kostet am Pi nichts)': 'Image pipeline diagram: stages, corrections, threads, inputs and consumers (static, no cost on the Pi)', 'Rider herunterfahren': 'Shut down the Rider', 'Herunterfahren': 'Shut down',
   'Ruhemodus: absetzen, Bildverarbeitung aus, Abfragen aus, CPU-Takt runter, Schlafaugen am Display':
     'Rest mode: sit down, vision off, polling off, CPU clock down, sleepy eyes on the display',
   'Ruhe': 'Rest', 'Stillstand, Modus idle': 'Stand still, mode idle', 'STOPP': 'STOP', 'Ruhemodus': 'Rest mode',

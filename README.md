@@ -7,7 +7,7 @@ Kernel driver, display daemon, camera navigation (xgonav) and web UI for the XGO
 CPU time, camera geometry, manual driving (web UI), `follow` (runs 2026-11-02, `max_v` 0.15 ≈ 23 cm/s).
 **Not tested on hardware:** `explore`, `approach`, `home`. Details: [docs/limitations.md](docs/limitations.md).
 
-![Web UI](docs/screenshots/frontend.PNG)
+![Web UI](docs/screenshots/web-overview.png)
 
 ## Repository
 
@@ -58,6 +58,9 @@ python3 -m venv .venv && .venv/bin/pip install "opencv-python-headless>=4.6" "nu
 ```
 
 ## Documentation
+
+HTML manual (install, quick start, web UI, behaviours, FloorNet training): `tools/build_manual.sh` builds `web/anleitung/` from `docs/` (MkDocs Material, PC only); on the Rider at `https://<rider>/anleitung/` or via **Anleitung** in the web header.
+
 
 | File | Topic |
 |---|---|
