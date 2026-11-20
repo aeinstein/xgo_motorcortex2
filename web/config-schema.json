@@ -3095,6 +3095,39 @@
        "typ": "str",
        "default": "kichern",
        "hilfe": ""
+      },
+      {
+       "key": "zone_modes",
+       "typ": "liste",
+       "elem": "zahl",
+       "default": [
+        "explore"
+       ],
+       "hilfe": "Dunkelzone: Bei jeder Angst wird ein Rechteck voraus gesperrt (Zielsuche, Planer, Bahnprüfung, wie eine Sperrzone), sonst schickt der Planer ihn nach dem Umdrehen zurück ins Dunkle. Nur im Speicher, verfällt nach zone_s; nur in zone_modes angelegt, beachtet in allen Modi. zone_s 0 = keine Zone."
+      },
+      {
+       "key": "zone_s",
+       "typ": "float",
+       "default": 600.0,
+       "hilfe": ""
+      },
+      {
+       "key": "zone_w_m",
+       "typ": "float",
+       "default": 2.0,
+       "hilfe": "Breite quer zur Blickrichtung"
+      },
+      {
+       "key": "zone_d_m",
+       "typ": "float",
+       "default": 3.0,
+       "hilfe": "Tiefe voraus"
+      },
+      {
+       "key": "zone_ahead_m",
+       "typ": "float",
+       "default": 0.1,
+       "hilfe": "Beginn vor dem Rider: er steht nicht in der Zone und kann wegplanen"
       }
      ]
     },

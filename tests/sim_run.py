@@ -184,7 +184,7 @@ def run(mode="follow", secs=25.0, video=None, shake=1.0, quiet=True, imu=False, 
                 "kurs_fehler_deg": round(math.degrees((th0 + gm.th - world.th + math.pi) % (2 * math.pi) - math.pi), 1)}
     out = {"imu_sync": (app.imu_sync.reliable, app.imu_sync.sign, round(app.imu_sync.offset * 1000), round(app.imu_sync.corr, 2)) if imu else None,
            "collisions": world.collisions, "coll_frames": world.coll_frames,
-           "dunkel": {"angst": app.dunkel.n_angst, "licht": app.dunkel.n_licht, "aufgeben": app.dunkel.n_aufgeben,
+           "dunkel": {"angst": app.dunkel.n_angst, "licht": app.dunkel.n_licht, "aufgeben": app.dunkel.n_aufgeben, "zonen": app.dunkel.n_zonen,
                       "ruhe": app.ruhe} if dunkel else None, "dist_m": round(world.dist_travelled, 2), "frames": len(L),
            "loop_ms": round(app._loop_ms, 1), "odom": app.odom_src, "odom_m": round(app.odom_m, 2),
            # mittleres Tempo in Fahrt (m/s): mit robot.speed_ctrl unabhängig davon, wie schwer er rollt (--vx-true)

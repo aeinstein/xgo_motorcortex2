@@ -1942,6 +1942,10 @@ Status JSON <code>grid</code>: <code>pose [x m, y m, yaw °]</code>, <code>start
 <td>polygons in map coordinates. Planner and frontier never enter them plus <code>inflate_m</code>, <code>_arc_check</code> stops an arc that would come within <code>map.radius_m</code> 0.18 m (moving away stays allowed). All modes except manual. They drift with the pose: <strong>no replacement for a physical barrier</strong></td>
 </tr>
 <tr>
+<td>Dark zones</td>
+<td><code>GridMap.dark_zones</code>: rectangles set by fear of the dark during explore (<code>docs/display-emotions.md</code>), same effect as no-go zones via <code>GridMap.all_zones()</code>, expire after <code>[dunkel] zone_s</code>, never saved, not editable; violet in the map image, <code>dunkelzonen</code> in the map stats</td>
+</tr>
+<tr>
 <td>Patrol</td>
 <td>points in order, <code>pause_s</code> 1.5 s each; stuck: replan, then back up and skip the point; contact, <code>max_fail</code> plans without a way or <code>point_timeout_s</code> 90 s: skip. No point reached in a lap, or end of a non-loop route: to the start</td>
 </tr>

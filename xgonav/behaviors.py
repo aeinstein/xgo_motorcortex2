@@ -943,6 +943,15 @@ class MapExplore(Behavior):
         self.frontier, self.goal = res.frontier, res.goal
         self.f.set_path(res.path)
 
+    def neu_planen(self) -> None:
+        """Die Karte hat eine neue Sperre (Dunkelzone): Ziel und Weg verwerfen, sofort neu suchen."""
+        self.f.clear()
+        self.frontier = self.goal = None
+        self._next = None
+        self.stucks = 0
+        self.keep_ok = False
+        self.t_plan = -1e9
+
     # --- Abschluss ---
     def _end(self, why: str, w: World) -> None:
         """Erkunden beendet: Karte speichern, zum Start, falls gewünscht und möglich."""

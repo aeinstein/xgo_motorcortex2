@@ -34,7 +34,7 @@ from .route import arc_hits_zone, check as route_check, load as route_load, save
 from .robot import FW_ACTIONS, Robot, SpeedCtrl, action_cmds
 from .tracker import Tracker
 from .wlan import Helfer, HoldDetector, PressDetector, WlanSetup
-from .dunkel import Dunkelangst, helligkeit
+from .dunkel import Dunkelangst, helligkeit, sperr_rechteck
 
 log = logging.getLogger(__name__)
 
@@ -225,6 +225,7 @@ class App:
         # Dunkelangst (dunkel.py): Helligkeit je check_hz, im Regelschritt ausgewertet
         self.dunkel = Dunkelangst(cfg.dunkel, cfg.robot.vyaw_limit_dps)
         self._luma: float | None = None
+        self._dunkel_zonen: list[tuple[float, list]] = []      # (Ablaufzeit, Rechteck): Dunkelzonen der Raumkarte
         self._luma_t = 0.0
         self.ortung = None             # ortung.Ortung (Schallrichtung), von __main__ gesetzt (nur am Rider)
         self.stimmen = None            # stimme.Stimmen (Nachplappern in pet), hängt an der Ortung
@@ -452,6 +453,11 @@ class App:
     def _dunkel_tick(self, now: float, cmd: Command) -> Command:
         """Im Regelschritt nach safety(): Ist es zu dunkel, übernimmt die Dunkelangst (auf der Stelle drehen)."""
         d = self.dunkel
+        if self._dunkel_zonen:
+            if self.gridmap is None or not self.gridmap.dark_zones:     # Karte neu oder geladen: Zonen sind weg
+                self._dunkel_zonen = []
+            elif now >= self._dunkel_zonen[0][0]:                       # älteste zuerst: ein Vergleich je Schritt
+                self._dunkel_zonen_setzen([z for z in self._dunkel_zonen if now < z[0]], "abgelaufen")
         if (not self.cfg.dunkel.enabled or self.behavior.name not in self.cfg.dunkel.modes
                 or not self.robot.state.balancing):
             d.reset()
@@ -460,6 +466,8 @@ class App:
         for art, name in d.drain():
             if art == "ruhe":
                 self._dunkel_ruhe()
+            elif art == "zone":
+                self._dunkel_zone(now)
             elif self.emotions is not None:
                 try:
                     self.emotions.express(art, name, urgent=True)
@@ -468,6 +476,27 @@ class App:
         if dc is None:
             return cmd
         return Command(0.0, dc.w, None, dc.status)
+
+    def _dunkel_zone(self, now: float) -> None:
+        """Angst: Rechteck voraus zone_s lang sperren und das Verhalten neu planen lassen, sonst führe der Planer
+        nach dem Umdrehen wieder ins Dunkle. Kurs aus der Raumkarte (nicht IMU): Die Zone liegt im Karten-KS."""
+        c, gm = self.cfg.dunkel, self.gridmap
+        if c.zone_s <= 0 or gm is None or self.behavior.name not in c.zone_modes:
+            return
+        zone = sperr_rechteck(*gm.pose(), c)
+        self.dunkel.n_zonen += 1
+        self._dunkel_zonen_setzen(self._dunkel_zonen + [(now + c.zone_s, zone)],
+                                  "neu für %.0f s: %s" % (c.zone_s, " ".join("(%.2f, %.2f)" % p for p in zone)))
+        neu = getattr(self.behavior, "neu_planen", None)
+        if neu is not None:
+            neu()
+
+    def _dunkel_zonen_setzen(self, zonen: list, grund: str) -> None:
+        """Liste ersetzen (nie ändern): Der Planer-Thread liest gm.dark_zones ohne Sperre."""
+        self._dunkel_zonen = zonen
+        if self.gridmap is not None:
+            self.gridmap.dark_zones = [z for _, z in zonen]
+        log.warning("Dunkelzone %s, jetzt %d", grund, len(zonen))
 
     def _dunkel_ruhe(self) -> None:
         """Kein Licht gefunden: absetzen und Ruhemodus wie der Web-Knopf (Schlafaugen, CPU-Takt per xgo-ruhe)."""
@@ -480,6 +509,8 @@ class App:
                 log.warning("Dunkelangst: Schlafaugen: %s", e)
         self.set_ruhe(True)
         self.dunkel.reset()
+        if self._dunkel_zonen:
+            self._dunkel_zonen_setzen([], "gelöscht (Ruhemodus)")
         self._ruhe_system(True)
 
     def _ruhe_system(self, on: bool) -> None:
@@ -1416,7 +1447,8 @@ class App:
         v = cmd.v * self.cfg.robot.vx_limit
         wr = math.radians(cmd.w * self.cfg.robot.vyaw_limit_dps)
         gm = self.gridmap
-        if gm is not None and gm.zones and arc_hits_zone(gm.pose(), v, wr, gm.zones, self.lmap.radius):
+        zonen = gm.all_zones() if gm is not None else None
+        if zonen and arc_hits_zone(gm.pose(), v, wr, zonen, self.lmap.radius):
             cmd.v = 0.0
             cmd.status += " | Sperrzone"
             return cmd

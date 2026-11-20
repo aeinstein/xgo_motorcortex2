@@ -122,9 +122,10 @@ def next_goal(grid: GridMap, pose: tuple, hcfg: HomeCfg, ecfg: ExploreCfg, obsta
     if blocked_x is not None:
         blocked_x[disk.astype(bool)] = False
     forbid = None
-    if grid.zones:                                     # Sperrzonen bleiben zu, auch als Ziel
-        forbid = grid.zones_mask(grid.zones, r0, c0, lo.shape, hcfg.inflate_m)
-        core = grid.zones_mask(grid.zones, r0, c0, lo.shape, 0.0)
+    zones = grid.all_zones()                           # Sperr- und Dunkelzonen
+    if zones:                                          # Sperrzonen bleiben zu, auch als Ziel
+        forbid = grid.zones_mask(zones, r0, c0, lo.shape, hcfg.inflate_m)
+        core = grid.zones_mask(zones, r0, c0, lo.shape, 0.0)
         for b_ in (blocked, blocked_x):
             if b_ is not None:
                 b_[forbid & ~(disk.astype(bool) & ~core)] = True

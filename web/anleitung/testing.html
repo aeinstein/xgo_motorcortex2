@@ -1379,8 +1379,8 @@
 </tr>
 <tr>
 <td><code>python tests/sim_run.py explore 120 --wheels --dunkel 3.5,3,6,6</code></td>
-<td>dark zone (x0,y0,x1,y1[,rest light 0.04]): fear of the dark, prints <code>dunkel</code> (<code>angst</code>, <code>licht</code>, <code>aufgeben</code>, <code>ruhe</code>)</td>
-<td>2026-11-13: 1 fright, light found, 0 collisions; whole room dark: gives up, sleep mode</td>
+<td>dark zone (x0,y0,x1,y1[,rest light 0.04]): fear of the dark, prints <code>dunkel</code> (<code>angst</code>, <code>licht</code>, <code>aufgeben</code>, <code>zonen</code>, <code>ruhe</code>)</td>
+<td>2026-11-13: 1 fright, light found, 0 collisions; whole room dark: gives up, sleep mode. 2026-11-20, 240 s: without dark zone (<code>--set dunkel.zone_s=0</code>) 3 frights, gives up; with it 1 fright, 1 zone, map finished after 179 s, 0 collisions</td>
 </tr>
 <tr>
 <td><code>python tests/sim_run.py home 60 [--wheels]</code></td>

@@ -8,7 +8,7 @@ import numpy as np
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from xgonav.config import Config
-from xgonav.dunkel import Dunkelangst, helligkeit
+from xgonav.dunkel import Dunkelangst, helligkeit, sperr_rechteck
 
 
 def _lauf(d, luma_fn, t_end, dt=0.05, yaw=0.0):
@@ -43,7 +43,7 @@ def test_angst_umdrehen_licht_hinten():
     d = Dunkelangst(cfg, 360.0)
     licht = lambda yaw: 3.0 if abs(yaw) < math.radians(90) else 120.0
     t, yaw, cmds = _lauf(d, licht, 3.0)
-    assert d.state == "angst" and d.ausgaben == [("emotion", "angst"), ("sound", "angst")]
+    assert d.state == "angst" and d.ausgaben == [("emotion", "angst"), ("sound", "angst"), ("zone", "")]
     d.drain()
     t2, yaw, cmds = _lauf(d, licht, 20.0, yaw=yaw)
     assert d.n_licht == 1 and d.state == "ok"
@@ -85,3 +85,18 @@ def test_wiederholt_ins_dunkle_gibt_auf():
 
 def test_helligkeit():
     assert helligkeit(np.full((480, 640, 3), 77, np.uint8)) == 77.0
+
+
+def test_sperr_rechteck_liegt_voraus():
+    """Dunkelzone: zone_w_m breit, zone_d_m tief, beginnt zone_ahead_m vor dem Rider; er selbst steht draußen."""
+    from xgonav.route import zone_dist
+    cfg = Config.neutral().dunkel
+    for th in (0.0, math.pi / 2, -2.3):
+        z = sperr_rechteck(1.0, -0.5, th, cfg)
+        c, s = math.cos(th), math.sin(th)
+        assert len(z) == 4
+        assert abs(math.dist(z[0], z[3]) - cfg.zone_w_m) < 1e-9 and abs(math.dist(z[0], z[1]) - cfg.zone_d_m) < 1e-9
+        assert abs(zone_dist(z, 1.0, -0.5) - cfg.zone_ahead_m) < 1e-3                    # Rider davor
+        assert zone_dist(z, 1.0 + c * 1.5, -0.5 + s * 1.5) < 0                           # voraus: drin
+        assert zone_dist(z, 1.0 - c * 0.5, -0.5 - s * 0.5) > 0.5                         # hinter ihm: frei
+        assert zone_dist(z, 1.0 + c * 1.5 - s * (cfg.zone_w_m / 2 + 0.3), -0.5 + s * 1.5 + c * (cfg.zone_w_m / 2 + 0.3)) > 0

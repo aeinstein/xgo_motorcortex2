@@ -19,7 +19,7 @@ python3 -m venv .venv && .venv/bin/pip install "opencv-python-headless>=4.6" "nu
 | `python tests/sim_run.py pet 35 --wheels --imu [--animal person\|cat\|dog] [--speed 2.5] [--set pet.faint=True]` | mode `pet`: target walks straight at the Rider | |
 | `python tests/sim_run.py follow 40 [out.mp4]` | scenario, optional overlay video | |
 | `python tests/sim_run.py explore 40` | explore scenario, prints collisions and map quality | |
-| `python tests/sim_run.py explore 120 --wheels --dunkel 3.5,3,6,6` | dark zone (x0,y0,x1,y1[,rest light 0.04]): fear of the dark, prints `dunkel` (`angst`, `licht`, `aufgeben`, `ruhe`) | 2026-11-13: 1 fright, light found, 0 collisions; whole room dark: gives up, sleep mode |
+| `python tests/sim_run.py explore 120 --wheels --dunkel 3.5,3,6,6` | dark zone (x0,y0,x1,y1[,rest light 0.04]): fear of the dark, prints `dunkel` (`angst`, `licht`, `aufgeben`, `zonen`, `ruhe`) | 2026-11-13: 1 fright, light found, 0 collisions; whole room dark: gives up, sleep mode. 2026-11-20, 240 s: without dark zone (`--set dunkel.zone_s=0`) 3 frights, gives up; with it 1 fright, 1 zone, map finished after 179 s, 0 collisions |
 | `python tests/sim_run.py home 60 [--wheels]` | 30 s explore, then `home`; prints true distance to start (`home_end_m`) | |
 | `python tests/sim_run.py follow 40 --imu` | simulated IMU, sign −1 and −8 ms offset (deliberately wrong) | |
 | `python tests/sim_run.py home 60 --wheels --dyn` | any scenario with Rider-like inertia (turn lag, dead band, short roll-back on start) | |

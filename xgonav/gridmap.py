@@ -101,6 +101,8 @@ class GridMap:
             self.route: list[tuple[float, float]] = []            # Wegpunkte der Streife (xgonav/route.py)
             self.route_loop = False
             self.zones: list[list[tuple[float, float]]] = []      # Sperrzonen: Eckpunkte, gelten für alle Modi
+            # Dunkelzonen (dunkel.py): sperren wie zones, aber nur im Speicher und auf Zeit; App ersetzt die Liste
+            self.dark_zones: list[list[tuple[float, float]]] = []
             self._saved_key = None                                # (updates, start) beim letzten Speichern
             self._saved_t = time.monotonic()
 
@@ -118,6 +120,10 @@ class GridMap:
         with self._lock:
             self.locked = on
         log.info("Raumkarte %s", "gesperrt" if on else "entsperrt")
+
+    def all_zones(self) -> list:
+        """Sperrzonen des Nutzers und Dunkelzonen: was Zielsuche, Planer und Bahnprüfung meiden."""
+        return self.zones + self.dark_zones if self.dark_zones else self.zones
 
     def zones_mask(self, zones, r0: int, c0: int, shape: tuple, margin_m: float) -> np.ndarray:
         """Zellen in den Zonen samt Rand (bool, Ausschnitt ab r0, c0)."""
@@ -246,6 +252,7 @@ class GridMap:
             self.map_id, self.locked = map_id, locked
             self.saved_pose = saved_pose
             self.route, self.route_loop, self.zones = [], False, []
+            self.dark_zones = []
             self._stats = None
             self._saved_key = (self.updates, self.start)
         log.info("Raumkarte geladen (%s) – Rider muss am Startpunkt stehen", path)
@@ -545,7 +552,7 @@ class GridMap:
             free = int(np.count_nonzero(lo < -self.cfg.l_show))
             return {"belegt_m2": round(occ * self.res ** 2, 2), "frei_m2": round(free * self.res ** 2, 2),
                     "updates": self.updates, "gesperrt": self.locked, "map_id": self.map_id,
-                    "route": len(self.route), "zonen": len(self.zones)}
+                    "route": len(self.route), "zonen": len(self.zones), "dunkelzonen": len(self.dark_zones)}
 
     def image(self, px: int = 480, view_m: float | None = None) -> np.ndarray:
         return self.render(px, view_m)[0]
@@ -568,6 +575,7 @@ class GridMap:
             plan = list(self.plan)
             sx, sy, sth = self.start
             route, loop, zones = list(self.route), self.route_loop, list(self.zones)
+            dark = list(self.dark_zones)
             pose_ok = self.pose_ok
         n_px = max(1, int(round(view_m / self.res)))                   # Zellen je Bildkante
         k = px / n_px
@@ -599,6 +607,8 @@ class GridMap:
             cv2.polylines(img, [np.array([to_px(a, b) for a, b in plan], np.int32)], False, (230, 210, 0), 2)
         for z in zones:                                                  # Sperrzonen rot, Route magenta
             cv2.polylines(img, [np.array([to_px(a, b) for a, b in z], np.int32)], True, (40, 40, 220), 2)
+        for z in dark:                                                   # Dunkelzonen violett
+            cv2.polylines(img, [np.array([to_px(a, b) for a, b in z], np.int32)], True, (160, 40, 110), 2)
         if route:
             cv2.polylines(img, [np.array([to_px(a, b) for a, b in route], np.int32)], loop, (200, 60, 200), 1)
             for i, (a, b) in enumerate(route, 1):

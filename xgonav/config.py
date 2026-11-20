@@ -845,6 +845,14 @@ class DunkelCfg:
     emotion: str = "angst"
     sound: str = "angst"
     sound_relief: str = "kichern"
+    # Dunkelzone: Bei jeder Angst wird ein Rechteck voraus gesperrt (Zielsuche, Planer, Bahnprüfung, wie eine
+    # Sperrzone), sonst schickt der Planer ihn nach dem Umdrehen zurück ins Dunkle. Nur im Speicher, verfällt
+    # nach zone_s; nur in zone_modes angelegt, beachtet in allen Modi. zone_s 0 = keine Zone.
+    zone_modes: list = field(default_factory=lambda: ["explore"])
+    zone_s: float = 600.0
+    zone_w_m: float = 2.0              # Breite quer zur Blickrichtung
+    zone_d_m: float = 3.0              # Tiefe voraus
+    zone_ahead_m: float = 0.10         # Beginn vor dem Rider: er steht nicht in der Zone und kann wegplanen
 
 
 @dataclass

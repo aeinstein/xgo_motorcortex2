@@ -1853,12 +1853,16 @@ python tools/eyes.py --gaze DIR      # eye atlas for mode pet: 11 gaze positions
 <td>sound <code>kichern</code>, the mode continues</td>
 </tr>
 <tr>
+<td>Dark zone</td>
+<td>at each fright in <code>zone_modes</code> (explore): rectangle ahead of the map pose, <code>zone_w_m</code> 2.0 wide, <code>zone_d_m</code> 3.0 deep, starting <code>zone_ahead_m</code> 0.10 in front; blocked like a no-go zone (frontier, planner, arc check, all modes) for <code>zone_s</code> 600 s, <code>MapExplore.neu_planen()</code> drops goal and path. Memory only (<code>GridMap.dark_zones</code>), gone after map reset/load, sleep mode or restart; violet in the map image. <code>zone_s = 0</code>: off</td>
+</tr>
+<tr>
 <td>No light</td>
 <td>stop, emotion <code>sleep</code>, set down (254), sleep mode (<code>set_ruhe</code>), CPU governor via <code>sudo xgo-ruhe on</code> (rule <code>deploy/sudoers-xgonav-ruhe</code>, also for <code>aeinstein</code>)</td>
 </tr>
 <tr>
 <td>Repeated</td>
-<td><code>max_events</code> 3 frights within <code>events_window_s</code> 300 s → gives up at once (explore would drive back into the dark area)</td>
+<td><code>max_events</code> 3 frights within <code>events_window_s</code> 300 s → gives up at once (without dark zone, explore drives back into the dark area)</td>
 </tr>
 <tr>
 <td>Simulator</td>

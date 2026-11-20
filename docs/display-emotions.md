@@ -118,8 +118,9 @@ python tools/eyes.py --gaze DIR      # eye atlas for mode pet: 11 gaze positions
 | Dark | < `dark_level` 7 for `dark_s` 2 s → stand, emotion `angst` + sound `pet_angst_<n>.wav` (3 shaky "ee", long wavering fall), `fright_s` 1.5 s |
 | Search light | turn on the spot 180° (back), then +90° (right), then +180° (left); after each turn wait `settle_s` 1.5 s (auto exposure), light = ≥ `light_level` 11 |
 | Light found | sound `kichern`, the mode continues |
+| Dark zone | at each fright in `zone_modes` (explore): rectangle ahead of the map pose, `zone_w_m` 2.0 wide, `zone_d_m` 3.0 deep, starting `zone_ahead_m` 0.10 in front; blocked like a no-go zone (frontier, planner, arc check, all modes) for `zone_s` 600 s, `MapExplore.neu_planen()` drops goal and path. Memory only (`GridMap.dark_zones`), gone after map reset/load, sleep mode or restart; violet in the map image. `zone_s = 0`: off |
 | No light | stop, emotion `sleep`, set down (254), sleep mode (`set_ruhe`), CPU governor via `sudo xgo-ruhe on` (rule `deploy/sudoers-xgonav-ruhe`, also for `aeinstein`) |
-| Repeated | `max_events` 3 frights within `events_window_s` 300 s → gives up at once (explore would drive back into the dark area) |
+| Repeated | `max_events` 3 frights within `events_window_s` 300 s → gives up at once (without dark zone, explore drives back into the dark area) |
 | Simulator | `tests/sim_run.py explore 120 --wheels --dunkel 3.5,3,6,6[,rest]`: dark zone, light from camera position and 1.5 m ahead |
 
 ## Mode `pet` (`xgonav/pet.py`)

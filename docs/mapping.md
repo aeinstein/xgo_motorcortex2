@@ -126,6 +126,7 @@ Status JSON `grid`: `pose [x m, y m, yaw °]`, `start [x m, y m, yaw °]`, `zum_
 | Route file | `<grid.file>.route.json`: points, `loop`, zones, written atomically together with the map |
 | Point check | on known floor, outside `inflate_m`, reachable from the start, outside zones; otherwise the route is rejected with a message |
 | No-go zones | polygons in map coordinates. Planner and frontier never enter them plus `inflate_m`, `_arc_check` stops an arc that would come within `map.radius_m` 0.18 m (moving away stays allowed). All modes except manual. They drift with the pose: **no replacement for a physical barrier** |
+| Dark zones | `GridMap.dark_zones`: rectangles set by fear of the dark during explore (`docs/display-emotions.md`), same effect as no-go zones via `GridMap.all_zones()`, expire after `[dunkel] zone_s`, never saved, not editable; violet in the map image, `dunkelzonen` in the map stats |
 | Patrol | points in order, `pause_s` 1.5 s each; stuck: replan, then back up and skip the point; contact, `max_fail` plans without a way or `point_timeout_s` 90 s: skip. No point reached in a lap, or end of a non-loop route: to the start |
 | Near enough | stuck within `home.near_m` 0.5 m of a target counts as arrived: the path check clearance can make a free target unreachable |
 | Start | only standing and with user confirmation that the Rider is at the start point: the pose jumps to the start, which removes drift. Battery ≥ 40 %. Back at 30 %, set down at 15 % (action 254) |

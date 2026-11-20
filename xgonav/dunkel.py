@@ -7,6 +7,8 @@ Ablauf (nur in [dunkel] modes, nur balancierend):
          hell (> light_level): ok, der Modus fährt weiter
          dunkel: nächste Richtung (+90°, dann +180°: hinten, rechts, links), nach allen -> aufgeben
   aufgeben: App setzt ab und schaltet den Ruhemodus ein.
+Bei jeder Angst meldet er der App eine Dunkelzone ("zone"): Rechteck voraus (sperr_rechteck), das Zielsuche,
+Planer und Bahnprüfung zone_s lang meiden; sonst schickte der Planer ihn nach dem Umdrehen zurück ins Dunkle.
 Wiederholt sich die Angst max_events-mal in events_window_s (er fährt immer wieder ins Dunkle), gibt er sofort auf.
 
 Kosten am Pi: Helligkeit = Mittelwert jedes 8. Pixels (80x60), höchstens check_hz je Sekunde; sonst nichts.
@@ -25,6 +27,13 @@ SCHRITTE_DEG = (180.0, 90.0, 180.0)      # relative Drehungen: nach hinten, dann
 
 def _wrap(a: float) -> float:
     return (a + math.pi) % (2 * math.pi) - math.pi
+
+
+def sperr_rechteck(x: float, y: float, th: float, cfg) -> list[tuple[float, float]]:
+    """Dunkelzone: Rechteck voraus (Karten-KS, m), zone_w_m breit, zone_d_m tief, ab zone_ahead_m vor (x, y)."""
+    c, s = math.cos(th), math.sin(th)
+    a, b, h = cfg.zone_ahead_m, cfg.zone_ahead_m + cfg.zone_d_m, cfg.zone_w_m / 2
+    return [(x + c * d - s * q, y + s * d + c * q) for d, q in ((a, -h), (b, -h), (b, h), (a, h))]
 
 
 def helligkeit(bgr) -> float:
@@ -50,7 +59,7 @@ class Dunkelangst:
         self._events: list[float] = []
         self.ausgaben: list[tuple[str, str]] = []   # (emotion|sound|ruhe, Name), App holt sie ab
         self.luma: float | None = None
-        self.n_angst = self.n_licht = self.n_aufgeben = 0      # Zähler (Simulator, Status)
+        self.n_angst = self.n_licht = self.n_aufgeben = self.n_zonen = 0      # Zähler (Simulator, Status)
 
     @property
     def aktiv(self) -> bool:
@@ -85,7 +94,7 @@ class Dunkelangst:
                 return None
             self._events = [t for t in self._events if now - t < c.events_window_s] + [now]
             log.warning("Dunkelangst: Bild zu dunkel (%.0f < %.0f), Angst #%d", luma, c.dark_level, len(self._events))
-            self.ausgaben += [("emotion", c.emotion), ("sound", c.sound)]
+            self.ausgaben += [("emotion", c.emotion), ("sound", c.sound), ("zone", "")]
             self.n_angst += 1
             self._set("angst", now)
             self._schritt = 0

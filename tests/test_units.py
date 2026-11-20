@@ -3454,6 +3454,64 @@ def test_arc_check_stops_at_zone():
     assert "Sperrzone" not in c.status
 
 
+def test_dunkelzone_sperrt_wie_sperrzone_ohne_speichern(tmp_path):
+    """Dunkelzonen (gridmap.dark_zones) wirken auf Planer und Zielsuche wie Sperrzonen, stehen aber nicht in
+    der Route-Datei und sind nach dem Leeren wieder weg."""
+    import json
+    from xgonav.frontier import next_goal
+    from xgonav.planner import plan
+    from xgonav.route import save
+    cfg, m = _route_map()
+    zone = [(1.0, -4.0), (1.5, -4.0), (1.5, 4.0), (1.0, 4.0)]
+    _, c0 = (int(k) for k in m.cell(2.0, -3.0))
+    m.lo[:, c0:] = 0.0                                                  # ab x = 2 m unbekannt
+    frei = next_goal(m, (0.0, 0.0, 0.0), cfg.home, cfg.explore)
+    assert frei.path is not None and frei.path[-1][0] > 1.0
+    m.dark_zones = [zone]
+    assert m.all_zones() == [zone] and m.zones == []
+    assert plan(m, (0.0, 0.0), (2.5, 0.0), cfg.home) is None
+    r = next_goal(m, (0.0, 0.0, 0.0), cfg.home, cfg.explore)
+    assert r.path is None or all(p[0] < 1.0 for p in r.path)
+    datei = str(tmp_path / "karte.npz")
+    assert save(datei, m)
+    gespeichert = [json.loads(p.read_text()) for p in tmp_path.iterdir()]
+    assert len(gespeichert) == 1 and gespeichert[0]["zones"] == []
+    m.dark_zones = []
+    assert plan(m, (0.0, 0.0), (2.5, 0.0), cfg.home) is not None
+
+
+def test_app_dunkelzone_nur_explore_und_auf_zeit():
+    """Angst im Erkunden: Rechteck voraus gesperrt, Verhalten plant neu, Bahnprüfung hält; nach zone_s weg.
+    In anderen Modi und mit zone_s = 0 entsteht keine Zone."""
+    from types import SimpleNamespace
+    from xgonav.behaviors import Command
+    app = _app(freespace=True)
+    gm, c = app.gridmap, app.cfg.dunkel
+    neu = []
+    app.behavior = SimpleNamespace(name="follow", neu_planen=lambda: neu.append(1))
+    app._dunkel_zone(10.0)
+    assert gm.dark_zones == [] and not neu                              # nur in zone_modes
+    app.behavior.name = "explore"
+    c.zone_s = 0.0
+    app._dunkel_zone(10.0)
+    assert gm.dark_zones == []
+    c.zone_s = 600.0
+    app._dunkel_zone(10.0)
+    assert len(gm.dark_zones) == 1 and neu == [1] and gm.zones == []
+    assert gm.stats(0.0)["dunkelzonen"] == 1
+    k = app._arc_check(Command(0.15, 0.0, 100.0, "x"))
+    assert k.v == 0 and "Sperrzone" in k.status                         # voraus zu
+    assert "Sperrzone" not in app._arc_check(Command(-0.1, 0.0, 100.0, "x")).status
+    app._dunkel_tick(10.0 + c.zone_s - 1.0, Command(0.0, 0.0, 100.0, "x"))
+    assert len(gm.dark_zones) == 1
+    app._dunkel_tick(10.0 + c.zone_s + 1.0, Command(0.0, 0.0, 100.0, "x"))
+    assert gm.dark_zones == [] and app._dunkel_zonen == []
+    app._dunkel_zone(700.0)
+    gm.reset()                                                          # neue Karte: Zonen weg, kommen nicht wieder
+    app._dunkel_tick(701.0, Command(0.0, 0.0, 100.0, "x"))
+    assert gm.dark_zones == [] and app._dunkel_zonen == []
+
+
 def test_ruhe_mode():
     """Ruhemodus: absetzen, Bildverarbeitung aus, Treiber-Abfragen aus, keine Fahrbefehle; Wecken stellt nur
     die Abfragen wieder her (bleibt liegen, Bildverarbeitung aus)."""
