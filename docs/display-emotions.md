@@ -103,7 +103,7 @@ python tools/eyes.py --gaze DIR      # eye atlas for mode pet: 11 gaze positions
 | Independent of | display (plays even while an emotion runs), mode |
 | Set down (254) | no scream |
 | Files | `tools/sounds.py DIR` (numpy only); `deploy/install.sh` → `/opt/xgonav/sounds` |
-| Playback | `aplay` (ALSA default, `emotion.sound_device`), WM8960 speaker; volume `amixer -c 0 sset Speaker 82%` |
+| Playback | `aplay` (ALSA default, `emotion.sound_device`), WM8960 speaker; volume `Speaker Playback Volume` 112 with class-D boost 0 (`docs/audio.md`, mixer) |
 | Off | `[emotion] sound = false` |
 - Pipeline stopped → person unknown → battery trigger only.
 - Emotion already playing → trigger waits (not interrupted).

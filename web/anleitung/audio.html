@@ -1579,6 +1579,32 @@ Intercom with the browser (mode manual, 8 kHz mono both ways, <code>plughw:0,0</
 </tbody>
 </table>
 <p>Read with <code>amixer -c wm8960soundcard sget &lt;control&gt;</code>; note the values before changing any of them.</p>
+<p>Speaker (changed 2026-11-21, user listening test):</p>
+<table>
+<thead>
+<tr>
+<th>Control</th>
+<th>Was</th>
+<th>Now</th>
+<th>Why</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Speaker AC Volume</code> / <code>Speaker DC Volume</code> (class-D boost, 0–5)</td>
+<td>4 / 4</td>
+<td>0 / 0</td>
+<td>boost 4 distorted speech badly at any level (also quiet); tones/emotions hid it. Boost 1 better, only boost 0 was really intelligible</td>
+</tr>
+<tr>
+<td><code>Speaker Playback Volume</code></td>
+<td>104 at runtime (109 in the state file)</td>
+<td>112</td>
+<td>108 compensated the −4.4 dB of the lower boost, voice was still too quiet: +4 dB (emotions too)</td>
+</tr>
+</tbody>
+</table>
+<p>Boot: <code>/usr/bin/wm8960-soundcard</code> links <code>/var/lib/alsa/asound.state</code> → <code>/etc/wm8960-soundcard/wm8960_asound.state</code> and runs <code>alsactl restore</code>, so the values live in that file (backup <code>….bak-boost-20261121-2303</code>). <code>alsactl store</code> would replace the link with a plain file, which the next boot deletes. <code>alsactl restore</code> also sets <code>Capture</code> to the file's 39; at runtime it is 63 (set at boot outside this repo, probably wireplumber) — set it back with <code>amixer -c 0 cset name='Capture Volume' 63,63</code>.</p>
 
 
 

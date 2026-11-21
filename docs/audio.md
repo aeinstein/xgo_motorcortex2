@@ -73,3 +73,12 @@ The pet learns phrases it hears repeatedly and parrots them back, filtered to so
 | `ADC PCM` | 195/255 (0 dB) |
 
 Read with `amixer -c wm8960soundcard sget <control>`; note the values before changing any of them.
+
+Speaker (changed 2026-11-21, user listening test):
+
+| Control | Was | Now | Why |
+|---|---|---|---|
+| `Speaker AC Volume` / `Speaker DC Volume` (class-D boost, 0–5) | 4 / 4 | 0 / 0 | boost 4 distorted speech badly at any level (also quiet); tones/emotions hid it. Boost 1 better, only boost 0 was really intelligible |
+| `Speaker Playback Volume` | 104 at runtime (109 in the state file) | 112 | 108 compensated the −4.4 dB of the lower boost, voice was still too quiet: +4 dB (emotions too) |
+
+Boot: `/usr/bin/wm8960-soundcard` links `/var/lib/alsa/asound.state` → `/etc/wm8960-soundcard/wm8960_asound.state` and runs `alsactl restore`, so the values live in that file (backup `….bak-boost-20261121-2303`). `alsactl store` would replace the link with a plain file, which the next boot deletes. `alsactl restore` also sets `Capture` to the file's 39; at runtime it is 63 (set at boot outside this repo, probably wireplumber) — set it back with `amixer -c 0 cset name='Capture Volume' 63,63`.

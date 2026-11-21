@@ -436,7 +436,8 @@ details.extras[open]>summary{margin-bottom:8px}
       <button id="sprech-taste" hidden title="Gedrückt halten (oder Leertaste)">Sprechtaste</button>
       <span class="leise">Rider</span><meter id="sprech-rider" min="0" max="1" value="0"></meter>
       <span class="leise">ich</span><meter id="sprech-ich" min="0" max="1" value="0"></meter>
-      <input type="range" id="sprech-laut" min="0" max="400" value="200" title="Lautstärke des Riders hier im Browser" aria-label="Lautstärke">
+      <label class="leise" title="Lautstärke des Riders hier im Browser">hier <input type="range" id="sprech-laut" min="0" max="400" value="200" aria-label="Lautstärke hier"></label>
+      <label class="leise" title="Verstärkung der eigenen Stimme zum Rider (mit weichem Begrenzer, kein Übersteuern)">Rider <input type="range" id="sprech-hin" min="100" max="1600" step="50" value="300" aria-label="Lautstärke am Rider"></label>
       <span class="leise" id="sprech-text"></span>
       <label title="Eigenes Kamerabild aufs Display des Riders (320×240, im Browser umgerechnet; 0,75 MB/s bei 5 Bildern/s, am Rider ~9 % eines Kerns, bei 10/s doppelt). Nur während eines Gesprächs."><input type="checkbox" id="sprech-bild" onchange="bildUmschalten(this.checked)" disabled> Kamera senden</label>
       <select id="sprech-fps" title="Bilder je Sekunde aufs Display (WLAN: je Bild 150 kB)" aria-label="Bilder je Sekunde"><option value="5" selected>5/s</option><option value="10">10/s</option><option value="15">15/s</option></select>
@@ -833,7 +834,8 @@ const EN = {
   'Mikrofon belegt oder arecord beendet': 'microphone busy or arecord ended', 'aplay beendet (Lautsprecher belegt?)': 'aplay ended (speaker busy?)',
   'arecord/aplay starten nicht': 'arecord/aplay do not start',
   'xgonav nicht erreichbar (läuft der Dienst?)': 'xgonav not reachable (is the service running?)',
-  'Kamera senden': 'Send camera', 'Telefon': 'Phone', 'bereit': 'ready', 'Bilder je Sekunde': 'Frames per second',
+  'Kamera senden': 'Send camera', 'hier': 'here', 'Lautstärke hier': 'Volume here', 'Lautstärke am Rider': 'Volume on the Rider',
+  'Verstärkung der eigenen Stimme zum Rider (mit weichem Begrenzer, kein Übersteuern)': 'Gain of your voice to the Rider (soft limiter, no clipping)', 'Telefon': 'Phone', 'bereit': 'ready', 'Bilder je Sekunde': 'Frames per second',
   'Eigenes Kamerabild aufs Display des Riders (320×240, im Browser umgerechnet; 0,75 MB/s bei 5 Bildern/s, am Rider ~9 % eines Kerns, bei 10/s doppelt). Nur während eines Gesprächs.':
     'Own camera image on the Rider display (320×240, converted in the browser; 0.75 MB/s at 5 frames/s, ~9 % of a core on the Rider, double at 10/s). Only during a call.',
   'Bilder je Sekunde aufs Display (WLAN: je Bild 150 kB)': 'Frames per second to the display (Wi-Fi: 150 kB per frame)',
@@ -1420,17 +1422,44 @@ window.addEventListener('blur', () => [...gedrueckt].forEach(fahrtEnde));
 const SPRECH_HZ = 8000;
 const SPRECH_WORKLET = `
 class Auf extends AudioWorkletProcessor {
-  constructor() { super(); this.schritt = sampleRate / ${SPRECH_HZ}; this.pos = 0; this.sum = 0; this.n = 0;
-    this.buf = new Int16Array(320); this.i = 0; this.q = 0; }
+  // Tiefpass 3,5 kHz (gefenstertes Sinc, Blackman, 127 Taps bei der Eingangsrate) vor dem Abtasten auf 8 kHz;
+  // bis 2026-11-21 nur ein Kastenfilter, der ließ 4–24 kHz ins Sprachband falten (klang unklar). Danach
+  // Hochpass 400 Hz (Butterworth 4. Ordnung, zwei Biquads bei 8 kHz): unter ~300 Hz macht der Rider-Lautsprecher
+  // fast nur Oberwellen (gemessen 2026-11-21: 150 Hz +16 dB, 250 Hz +7 dB Klirren über dem Grundton), die Stimme
+  // klang dadurch falsch; Verständlichkeit tragen die Oberwellen. Dann Verstärkung (Regler "Rider") und weicher
+  // Begrenzer bis 0,9. (Gemessen mit Class-D-Boost 4, der selbst verzerrte; seit 2026-11-21 Boost 0, docs/audio.md.)
+  constructor() {
+    super(); this.schritt = sampleRate / ${SPRECH_HZ}; this.pos = 0;
+    const N = 127, fc = 3500 / sampleRate; this.h = new Float32Array(N); let sum = 0;
+    for (let i = 0; i < N; i++) {
+      const m = i - (N - 1) / 2, w = 0.42 - 0.5 * Math.cos(2 * Math.PI * i / (N - 1)) + 0.08 * Math.cos(4 * Math.PI * i / (N - 1));
+      this.h[i] = w * (m === 0 ? 2 * fc : Math.sin(2 * Math.PI * fc * m) / (Math.PI * m)); sum += this.h[i];
+    }
+    for (let i = 0; i < N; i++) this.h[i] /= sum;
+    this.ring = new Float32Array(N); this.w = 0; this.gain = 3;
+    this.hp = [0.5412, 1.3066].map(Q => {            // Güten der beiden Butterworth-Stufen (4. Ordnung)
+      const w0 = 2 * Math.PI * 400 / ${SPRECH_HZ}, c = Math.cos(w0), al = Math.sin(w0) / (2 * Q), a0 = 1 + al;
+      return {b0: (1 + c) / 2 / a0, b1: -(1 + c) / a0, b2: (1 + c) / 2 / a0, a1: -2 * c / a0, a2: (1 - al) / a0, x1: 0, x2: 0, y1: 0, y2: 0};
+    });
+    this.port.onmessage = e => { if (e.data && e.data.gain) this.gain = e.data.gain; };
+    this.buf = new Int16Array(320); this.i = 0; this.q = 0;
+  }
   process(ein) {
     const x = ein[0] && ein[0][0];
     if (!x) return true;
-    for (let k = 0; k < x.length; k++) {           // Kastenfilter über je ein Ausgabe-Intervall, dann abtasten
-      this.sum += x[k]; this.n++; this.pos += 1;
-      if (this.pos >= this.schritt) {
+    const h = this.h, r = this.ring, N = h.length;
+    for (let k = 0; k < x.length; k++) {
+      r[this.w] = x[k]; this.w = (this.w + 1) % N; this.pos += 1;
+      if (this.pos >= this.schritt) {                // nur an den Abtastpunkten falten: 8000 × 127 Mult./s
         this.pos -= this.schritt;
-        const v = Math.max(-1, Math.min(1, this.sum / this.n));
-        this.sum = 0; this.n = 0; this.q += v * v;
+        let y = 0;
+        for (let j = 0, idx = this.w; j < N; j++, idx = idx + 1 === N ? 0 : idx + 1) y += h[j] * r[idx];
+        for (const f of this.hp) {
+          const o = f.b0 * y + f.b1 * f.x1 + f.b2 * f.x2 - f.a1 * f.y1 - f.a2 * f.y2;
+          f.x2 = f.x1; f.x1 = y; f.y2 = f.y1; f.y1 = o; y = o;
+        }
+        const v = Math.tanh(y * this.gain * 1.1) / 1.1;   // bis ~0,5 fast linear, höchstens 0,9
+        this.q += v * v;
         this.buf[this.i++] = v * 32767;
         if (this.i === this.buf.length) {
           this.port.postMessage({pcm: this.buf.buffer, rms: Math.sqrt(this.q / this.buf.length)}, [this.buf.buffer]);
@@ -1473,11 +1502,84 @@ registerProcessor('sprech-auf', Auf);
 registerProcessor('sprech-ab', Ab);
 `;
 let sprech = null;                // {ws, ctx, strom, ab, gain, an}
-let sprechPttAn = false, sprechTaste = false, sprechDuckBis = 0, sprechRiderPegel = 0;
+let sprechPttAn = false, sprechTaste = false, sprechRiderPegel = 0;
+
+// Echo-Sperre: Das Rider-Mikrofon hört seinen Lautsprecher (gemessen −17 dBFS), unsere Stimme kommt also nach
+// der Rundlaufzeit (WLAN, aplay-/arecord-Puffer, Jitterpuffer: ~0,5–1,5 s, schwankt) zurück; die alte Dämpfung
+// (nur 300 ms nach dem eigenen Sprechen) kam dafür zu früh. Pegelverläufe in 40-ms-Fächern: gesendet (je
+// Mikrofonrahmen) und empfangen (je Rider-Rahmen nach Ankunftszeit). Alle 1 s die beste Korrelation der
+// Log-Pegel über 0–1,6 s Verzögerung, als Stimme in ein abklingendes Histogramm; dazu die Kopplung (Median
+// empfangen/gesendet). Gedämpft auf ECHO_REST wird ein Rahmen, wenn ECHO_FENSTER Fächer um die
+// Verzögerung herum laut gesprochen wurde und er nicht deutlich lauter ist als das erwartete Echo (sonst
+// spricht drüben jemand: durchlassen). Ohne Schätzung: das ganze Fenster 0–1,7 s. Alles im Browser.
+const ECHO_FACH = 40, ECHO_N = 128, ECHO_MAXLAG = 40, ECHO_FENSTER = 6, ECHO_REST = 0.05;
+const echo = {
+  gesendet: new Float32Array(ECHO_N), gFach: new Float64Array(ECHO_N).fill(-1),
+  empfangen: new Float32Array(ECHO_N), eFach: new Float64Array(ECHO_N).fill(-1),
+  stimmen: new Float32Array(ECHO_MAXLAG + 1), lag: -1, k: 0, naechste: 0, faktor: 1,
+};
+function echoReset() {
+  echo.gFach.fill(-1); echo.eFach.fill(-1); echo.stimmen.fill(0); echo.lag = -1; echo.k = 0; echo.faktor = 1;
+}
+function echoEintragen(werte, faecher, fach, rms) {
+  const i = fach % ECHO_N;
+  if (faecher[i] !== fach) { faecher[i] = fach; werte[i] = 0; }
+  werte[i] = Math.max(werte[i], rms);
+}
+function echoWert(werte, faecher, fach) { const i = ((fach % ECHO_N) + ECHO_N) % ECHO_N; return faecher[i] === fach ? werte[i] : 0; }
+function echoMax(fach, b) {                            // lautestes Gesendetes in fach-b .. fach+b
+  let m = 0; for (let d = -b; d <= b; d++) m = Math.max(m, echoWert(echo.gesendet, echo.gFach, fach + d)); return m;
+}
+function echoSchaetzen(jetzt) {
+  const ende = jetzt - 1, n = 80;                        // letzte 3,2 s Empfang gegen Gesendetes davor
+  const e = [], g = [];
+  let eM = 0;
+  for (let j = 0; j < n; j++) { const v = Math.log(1e-4 + echoWert(echo.empfangen, echo.eFach, ende - j)); e.push(v); eM += v / n; }
+  let eV = 0; for (const v of e) eV += (v - eM) ** 2;
+  let best = -1, bestR = 0;
+  for (let L = 1; L <= ECHO_MAXLAG; L++) {
+    let gM = 0; g.length = 0;
+    for (let j = 0; j < n; j++) { const v = Math.log(1e-4 + echoWert(echo.gesendet, echo.gFach, ende - j - L)); g.push(v); gM += v / n; }
+    let gV = 0, c = 0;
+    for (let j = 0; j < n; j++) { gV += (g[j] - gM) ** 2; c += (g[j] - gM) * (e[j] - eM); }
+    if (gV < n * 0.5) return;                            // zu wenig eigenes Sprechen im Fenster: Schätzung behalten
+    const r = c / Math.sqrt(gV * eV + 1e-12);
+    if (r > bestR) { bestR = r; best = L; }
+  }
+  for (let L = 0; L <= ECHO_MAXLAG; L++) echo.stimmen[L] *= 0.85;
+  if (best >= 0 && bestR > 0.3) echo.stimmen[best] += bestR;
+  let lag = -1, s = 0.6;                                 // erst nach ~2 übereinstimmenden Schätzungen
+  for (let L = 0; L <= ECHO_MAXLAG; L++) {
+    let v = 0; for (let d = -2; d <= 2; d++) v += echo.stimmen[L + d] || 0;
+    if (v > s) { s = v; lag = L; }
+  }
+  echo.lag = lag;
+  if (lag < 0) return;
+  const q = [];                                          // Kopplung: Median empfangen/gesendet bei lautem Sprechen
+  for (let j = 0; j < n; j++) {
+    const gw = echoWert(echo.gesendet, echo.gFach, ende - j - lag);
+    if (gw > 0.03) q.push(echoWert(echo.empfangen, echo.eFach, ende - j) / gw);
+  }
+  if (q.length >= 5) { q.sort((a, b) => a - b); echo.k = q[q.length >> 1]; }
+}
+// Faktor für einen eben angekommenen Rider-Rahmen (Pegel rms)
+function echoFaktor(jetzt, rms) {
+  if (echo.lag >= 0 && echo.k > 0) {
+    const g = echoMax(jetzt - echo.lag, ECHO_FENSTER);
+    return g > 0.02 && rms < 3 * echo.k * g + 0.02 ? ECHO_REST : 1;
+  }
+  for (let d = 0; d <= ECHO_MAXLAG + 2; d++) if (echoWert(echo.gesendet, echo.gFach, jetzt - d) > 0.02) return ECHO_REST;
+  return 1;
+}
 try { sprechPttAn = localStorage.getItem('xgonav.sprechptt') === '1'; } catch (e) {}
 $('sprech-ptt').checked = sprechPttAn;
 $('sprech-taste').hidden = !sprechPttAn;
 try { $('sprech-laut').value = localStorage.getItem('xgonav.sprechlaut') || 200; } catch (e) {}
+try { $('sprech-hin').value = localStorage.getItem('xgonav.sprechhin2') || 300; } catch (e) {}   // neuer Schlüssel: Standard 300 %
+function sprechHin() {
+  if (sprech && sprech.auf) sprech.auf.port.postMessage({gain: Number($('sprech-hin').value) / 100});
+}
+$('sprech-hin').oninput = () => { sprechHin(); try { localStorage.setItem('xgonav.sprechhin2', $('sprech-hin').value); } catch (e) {} };
 function telefonUmschalten() {
   try { localStorage.setItem('xgonav.telefon', $('telefonkarte').open ? '1' : '0'); } catch (e) {}
 }
@@ -1487,7 +1589,7 @@ function sprechSendet() { return !sprechPttAn || sprechTaste; }
 function sprechGain() {
   if (!sprech || !sprech.gain) return;
   const v = Number($('sprech-laut').value) / 100;
-  const duck = !sprechPttAn ? performance.now() < sprechDuckBis : sprechTaste;   // eigenes Sprechen: Rider leiser (Echo)
+  const duck = sprechPttAn && sprechTaste;   // Sprechtaste gedrückt: Rider leiser; sonst dämpft die Echo-Sperre je Rahmen
   sprech.gain.gain.setTargetAtTime(duck ? v * 0.1 : v, sprech.ctx.currentTime, 0.03);
 }
 $('sprech-laut').oninput = () => { sprechGain(); try { localStorage.setItem('xgonav.sprechlaut', $('sprech-laut').value); } catch (e) {} };
@@ -1530,6 +1632,7 @@ async function sprechUmschalten() {
   if (aktModus !== 'manual') { sprechText('Nur im Modus Hand'); return; }
   if (!navigator.mediaDevices || !window.AudioWorkletNode) { sprechText('Browser kann kein Mikrofon (HTTPS nötig)'); return; }
   const s = sprech = {an: false};
+  echoReset();
   sprechZeigen();
   sprechText('verbinde …');
   try {
@@ -1543,7 +1646,8 @@ async function sprechUmschalten() {
     if (sprech === s) sprechEnde(); sprechText('Mikrofon nicht freigegeben'); return;
   }
   if (sprech !== s) { sprechAufraeumen(s); return; }
-  const auf = new AudioWorkletNode(s.ctx, 'sprech-auf');
+  const auf = s.auf = new AudioWorkletNode(s.ctx, 'sprech-auf');
+  sprechHin();
   s.ctx.createMediaStreamSource(s.strom).connect(auf);
   s.ab = new AudioWorkletNode(s.ctx, 'sprech-ab', {numberOfInputs: 0, outputChannelCount: [1]});
   s.gain = s.ctx.createGain();
@@ -1553,9 +1657,8 @@ async function sprechUmschalten() {
   ws.binaryType = 'arraybuffer';
   auf.port.onmessage = e => {
     const {pcm, rms} = e.data;
-    if (!sprechPttAn && rms > 0.02) { sprechDuckBis = performance.now() + 300; }
-    sprechGain();
     const senden = sprechSendet();
+    echoEintragen(echo.gesendet, echo.gFach, Math.floor(performance.now() / ECHO_FACH), senden && s.an ? rms : 0);
     $('sprech-ich').value = senden ? Math.min(1, rms * 5) : 0;
     $('sprech-rider').value = sprechRiderPegel;
     sprechRiderPegel *= 0.7;
@@ -1572,8 +1675,16 @@ async function sprechUmschalten() {
       return;
     }
     const d = new Int16Array(e.data); let q = 0;                     // Pegel vor dem Weiterreichen (danach ist der Puffer weg)
-    for (let k = 0; k < d.length; k += 4) q += d[k] * d[k];
-    sprechRiderPegel = Math.max(sprechRiderPegel, Math.min(1, 5 * Math.sqrt(q / (d.length / 4)) / 32768));
+    for (let k = 0; k < d.length; k++) q += d[k] * d[k];
+    const rms = d.length ? Math.sqrt(q / d.length) / 32768 : 0;
+    const fach = Math.floor(performance.now() / ECHO_FACH);
+    echoEintragen(echo.empfangen, echo.eFach, fach, rms);
+    if (fach >= echo.naechste) { echo.naechste = fach + 1000 / ECHO_FACH; echoSchaetzen(fach); }
+    const f = echoFaktor(fach, rms), f0 = echo.faktor;             // über den Rahmen überblenden (kein Knacken)
+    if (f !== 1 || f0 !== 1)
+      for (let k = 0; k < d.length; k++) d[k] = Math.round(d[k] * (f0 + (f - f0) * (k + 1) / d.length));
+    echo.faktor = f;
+    sprechRiderPegel = Math.max(sprechRiderPegel, Math.min(1, 5 * rms * f));
     s.ab.port.postMessage(e.data, [e.data]);
   };
   ws.onclose = () => {

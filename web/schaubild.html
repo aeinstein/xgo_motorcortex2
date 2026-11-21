@@ -763,7 +763,7 @@ ul.k li { margin:3px 0; }
 <tr><td>BLE-Tunnel (0025)</td><td>Telefon ↔ ESP32 loop() ↔ Kernel ↔ xgo-ble</td><td>nur bei Anfragen; zum Pi je Durchlauf ein Rahmen, vom Pi ein Rahmen je 4 ms (≈ 4,6 kB/s)</td><td>Typ 0x15 / Reg 0x17, Kennung + ≤ 23 B; Ring 4 KB im Treiber, 2 KB im ESP32</td><td><code>pi_tunnel.h, xgo-serial.c tunnel_frame, deploy/xgo-ble/</code></td></tr>
 <tr><td>IP des Pi für BLE (0025)</td><td>Kernel, xgo_main → ESP32</td><td>bei Änderung und alle 3 s</td><td>Reg 0x18, 4 B; ESP32 zeigt nach 10 s ohne Meldung 0.0.0.0</td><td><code>xgo-drv.c pi_ip_tick</code></td></tr>
 <tr><td>Live-Anzeige</td><td>live.php</td><td>0,3 s balancierend, sonst 1 s</td><td>imu_log, wheels_log</td><td><code>tools/live.php</code></td></tr>
-<tr><td>Gegensprechen</td><td>sprech.php, arecord/aplay</td><td>nur im Modus Hand während eines Gesprächs; 40-ms-Rahmen, /status je Sekunde</td><td>8 kHz mono S16 je Richtung (16 kB/s); ≲ 1 % eines Kerns. Bild: RGB565 320×240 vom Browser ins FIFO /tmp/lcd0, 5/s ≈ 9 % eines Kerns (nginx-TLS 4,9, PHP 3,3, Display 1,0), 10/s ≈ 17 %</td><td><code>tools/sprech.php</code></td></tr>
+<tr><td>Gegensprechen</td><td>sprech.php, arecord/aplay</td><td>nur im Modus Hand während eines Gesprächs; 40-ms-Rahmen, /status je Sekunde; Echo-Sperre (Verzögerung aus Pegel-Korrelation) nur im Browser</td><td>8 kHz mono S16 je Richtung (16 kB/s); ≲ 1 % eines Kerns. Bild: RGB565 320×240 vom Browser ins FIFO /tmp/lcd0, 5/s ≈ 9 % eines Kerns (nginx-TLS 4,9, PHP 3,3, Display 1,0), 10/s ≈ 17 %</td><td><code>tools/sprech.php</code></td></tr>
 </tbody></table></div>
 
 <h2>Korrekturen auf einen Blick</h2>
