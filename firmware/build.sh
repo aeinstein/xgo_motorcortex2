@@ -36,6 +36,7 @@
 #   0023 LEDs: keine Farbverläufe der Roll-/Höhenwelle mehr (Sache des Clients), Pink beim Armen, Nutzerfarben auch im Liegen
 #   0024 Gespeicherte Aktionen als Tabelle (nur motorische Abläufe, 1..6 unverändert, neue = ein Eintrag)
 #   0025 Bluetooth neu: eigener BLE-Dienst "RiderKerk" (Binärrahmen, Konsole, Tunnel zum Pi, IP des Pi), Hersteller-BLE entfernt (docs/ble.md)
+#   0026 Akku-Warnung hebt sich nach 5 s über 15 % wieder auf (dann 250 -> 253), Neustart 237 auch bei Akku-Warnung
 # Braucht: git, python3 (venv), Internet beim ersten Lauf (PlatformIO lädt Toolchain ~1 GB).
 set -euo pipefail
 

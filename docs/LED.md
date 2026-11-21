@@ -40,7 +40,7 @@ Fault colour depends on `last_stop_reason` (`ledFaultFor(driving,last_stop)`), n
 
 | Colour | Pattern | Meaning |
 |---|---|---|
-| **Red, blinking** (battery timing) | on/off with `low_blink` | **Battery empty / shutdown imminent** (`mode 250`, `stop_required`). Own blink timing, not the fault patterns above. |
+| **Red, blinking** (battery timing) | on/off with `low_blink` | **Battery empty / shutdown imminent** (`mode 250`, `stop_required`). Own blink timing, not the fault patterns above. Stock: latched until power-off, all commands rejected. Patch 0026: clears after 5 s at ≥ 15 % (then mode 253), action 237 (ESP restart) accepted meanwhile. |
 
 ## Normal operation (balancing, `mode 1`)
 
