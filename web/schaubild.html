@@ -664,7 +664,7 @@ ul.k li { margin:3px 0; }
 <rect x="1520" y="1840" width="260" height="98.5" rx="7"/>
 <text x="1529" y="1858" class="bt">nginx :443 + php-fpm</text>
 <text x="1529" y="1876.0" class="bl" xml:space="preserve">/ → index.php, api.php, mcp.php (LLM)</text>
-<text x="1529" y="1891.5" class="bl" xml:space="preserve">/ws → web.py, /live → live.php</text>
+<text x="1529" y="1891.5" class="bl" xml:space="preserve">/ws → web.py, /live+/sprech → PHP-CLI</text>
 <text x="1529" y="1907.0" class="bl" xml:space="preserve">api.php schreibt Aktion, LEDs,</text>
 <text x="1529" y="1922.5" class="bl" xml:space="preserve">Höhe, Roll direkt nach /proc</text>
 </g>
@@ -675,11 +675,12 @@ ul.k li { margin:3px 0; }
 <text x="1529" y="2041.5" class="bl" xml:space="preserve">Anzeige rechnet hier, nicht am Pi</text>
 </g>
 <g class="box k-out" id="o_live">
-<rect x="1520" y="2110" width="260" height="83.0" rx="7"/>
+<rect x="1520" y="2110" width="260" height="98.5" rx="7"/>
 <text x="1529" y="2128" class="bt">live.php :8089 (WebSocket)</text>
 <text x="1529" y="2146.0" class="bl" xml:space="preserve">PHP-CLI, /status 1× je Sekunde</text>
 <text x="1529" y="2161.5" class="bl" xml:space="preserve">imu_log, wheels_log direkt aus</text>
 <text x="1529" y="2177.0" class="bl" xml:space="preserve">/proc (0,3 s / 1 s)</text>
+<text x="1529" y="2192.5" class="bl" xml:space="preserve">sprech.php :8090: Hand, 8 kHz, Bild→LCD</text>
 </g>
 <g class="box k-off" id="o_lcd">
 <rect x="1520" y="2270" width="260" height="67.5" rx="7"/>
@@ -762,6 +763,7 @@ ul.k li { margin:3px 0; }
 <tr><td>BLE-Tunnel (0025)</td><td>Telefon ↔ ESP32 loop() ↔ Kernel ↔ xgo-ble</td><td>nur bei Anfragen; zum Pi je Durchlauf ein Rahmen, vom Pi ein Rahmen je 4 ms (≈ 4,6 kB/s)</td><td>Typ 0x15 / Reg 0x17, Kennung + ≤ 23 B; Ring 4 KB im Treiber, 2 KB im ESP32</td><td><code>pi_tunnel.h, xgo-serial.c tunnel_frame, deploy/xgo-ble/</code></td></tr>
 <tr><td>IP des Pi für BLE (0025)</td><td>Kernel, xgo_main → ESP32</td><td>bei Änderung und alle 3 s</td><td>Reg 0x18, 4 B; ESP32 zeigt nach 10 s ohne Meldung 0.0.0.0</td><td><code>xgo-drv.c pi_ip_tick</code></td></tr>
 <tr><td>Live-Anzeige</td><td>live.php</td><td>0,3 s balancierend, sonst 1 s</td><td>imu_log, wheels_log</td><td><code>tools/live.php</code></td></tr>
+<tr><td>Gegensprechen</td><td>sprech.php, arecord/aplay</td><td>nur im Modus Hand während eines Gesprächs; 40-ms-Rahmen, /status je Sekunde</td><td>8 kHz mono S16 je Richtung (16 kB/s); ≲ 1 % eines Kerns. Bild: RGB565 320×240 vom Browser ins FIFO /tmp/lcd0, 5/s ≈ 9 % eines Kerns (nginx-TLS 4,9, PHP 3,3, Display 1,0), 10/s ≈ 17 %</td><td><code>tools/sprech.php</code></td></tr>
 </tbody></table></div>
 
 <h2>Korrekturen auf einen Blick</h2>

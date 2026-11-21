@@ -1472,7 +1472,7 @@
 </tr>
 <tr>
 <td>Web</td>
-<td><code>apt-get install nginx php8.2-fpm php8.2-cli</code>, php-fpm pool, nginx site, <code>www-data</code> → group <code>video</code>, sudoers rule, restarts php-fpm and nginx, installs and starts <code>xgonav-live.service</code> (<code>tools/live.php</code>)</td>
+<td><code>apt-get install nginx php8.2-fpm php8.2-cli</code>, php-fpm pool, nginx site, <code>www-data</code> → group <code>video</code>, sudoers rule, restarts php-fpm and nginx, installs and starts <code>xgonav-live.service</code> (<code>tools/live.php</code>) and <code>xgonav-sprech.service</code> (<code>tools/sprech.php</code>)</td>
 </tr>
 </tbody>
 </table>
@@ -1526,6 +1526,7 @@ sudo install -m 0755 deploy/xgo-wlan /usr/local/sbin/xgo-wlan
 sudo install -m 0440 deploy/sudoers-xgonav-wlan /etc/sudoers.d/xgonav-wlan &amp;&amp; sudo visudo -c
 sudo nginx -t &amp;&amp; sudo systemctl restart php8.2-fpm nginx
 sudo cp deploy/xgonav-live.service /etc/systemd/system/ &amp;&amp; sudo systemctl daemon-reload &amp;&amp; sudo systemctl enable --now xgonav-live
+sudo cp deploy/xgonav-sprech.service /etc/systemd/system/ &amp;&amp; sudo systemctl daemon-reload &amp;&amp; sudo systemctl enable --now xgonav-sprech
 </code></pre></div>
 <p>Reload driver without reboot (set UART flags first, see <a href="driver.html">driver.md</a>):
 <div class="highlight"><pre><span></span><code>sudo rmmod xgo-drv; sudo modprobe xgo-drv
@@ -1683,6 +1684,10 @@ cat /proc/XGORider/serial_stats
 <tr>
 <td><code>/live</code></td>
 <td>WebSocket, proxied to <code>xgonav-live</code> <code>127.0.0.1:8089</code></td>
+</tr>
+<tr>
+<td><code>/sprech</code></td>
+<td>WebSocket, proxied to <code>xgonav-sprech</code> <code>127.0.0.1:8090</code> (intercom, mode manual)</td>
 </tr>
 </tbody>
 </table>

@@ -26,7 +26,7 @@ sudo reboot                             # driver and rc.local take effect after 
 |---|---|
 | `--no-driver` | kernel module |
 | `--no-display` | LCD daemon |
-| `--no-web` | nginx, php-fpm, sudoers, `xgonav-live` |
+| `--no-web` | nginx, php-fpm, sudoers, `xgonav-live`, `xgonav-sprech` |
 
 `install-all.sh` backs up every changed file in `/etc` as `*.bak-<timestamp>` and does **not** start xgonav.
 

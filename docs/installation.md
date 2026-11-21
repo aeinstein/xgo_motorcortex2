@@ -14,7 +14,7 @@ sudo ./deploy/install-all.sh [--no-driver] [--no-display] [--no-web]
 | Display | builds `st7789/project/riderpi`, installs `/usr/bin/st7789_server`; warns if `st7789_display.service` is enabled |
 | rc.local | installs `/etc/rc.local` and `rc-local.service` |
 | xgonav | runs `deploy/install.sh` |
-| Web | `apt-get install nginx php8.2-fpm php8.2-cli`, php-fpm pool, nginx site, `www-data` → group `video`, sudoers rule, restarts php-fpm and nginx, installs and starts `xgonav-live.service` (`tools/live.php`) |
+| Web | `apt-get install nginx php8.2-fpm php8.2-cli`, php-fpm pool, nginx site, `www-data` → group `video`, sudoers rule, restarts php-fpm and nginx, installs and starts `xgonav-live.service` (`tools/live.php`) and `xgonav-sprech.service` (`tools/sprech.php`) |
 
 Behaviour:
 - Files in `/etc` that differ are backed up as `*.bak-<timestamp>`.
@@ -51,6 +51,7 @@ sudo install -m 0755 deploy/xgo-wlan /usr/local/sbin/xgo-wlan
 sudo install -m 0440 deploy/sudoers-xgonav-wlan /etc/sudoers.d/xgonav-wlan && sudo visudo -c
 sudo nginx -t && sudo systemctl restart php8.2-fpm nginx
 sudo cp deploy/xgonav-live.service /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable --now xgonav-live
+sudo cp deploy/xgonav-sprech.service /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable --now xgonav-sprech
 ```
 
 Reload driver without reboot (set UART flags first, see [driver.md](driver.md)):
@@ -111,6 +112,7 @@ sudo systemctl enable --now xgonav
 | `/xgonav/…` | rewritten internally to `/…` (old links) |
 | `/ws`, `/frame`, `/map.png` | proxied to xgonav `127.0.0.1:8088` |
 | `/live` | WebSocket, proxied to `xgonav-live` `127.0.0.1:8089` |
+| `/sprech` | WebSocket, proxied to `xgonav-sprech` `127.0.0.1:8090` (intercom, mode manual) |
 
 ## YOLO model (PC/GPU server only, not on the Pi)
 

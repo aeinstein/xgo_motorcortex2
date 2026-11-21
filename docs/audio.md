@@ -1,6 +1,7 @@
 # Audio (speaker and microphones)
 
 Sound card `wm8960soundcard` (WM8960 codec, I²S), ALSA card 0, device `hw:0,0`, playback and capture. Sounds played by xgonav: [display-emotions.md](display-emotions.md#sounds).
+Intercom with the browser (mode manual, 8 kHz mono both ways, `plughw:0,0`): [web-interface.md](web-interface.md#intercom-websocket).
 
 ## Microphones
 

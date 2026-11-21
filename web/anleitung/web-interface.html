@@ -993,6 +993,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#intercom-websocket" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Intercom (WebSocket)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#pipeline-stop" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1451,6 +1462,17 @@
     <span class="md-ellipsis">
       
         Live data (WebSocket)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#intercom-websocket" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Intercom (WebSocket)
       
     </span>
   </a>
@@ -2104,6 +2126,100 @@ works without xgonav.</p>
 <tr>
 <td>Env (tests)</td>
 <td><code>XGO_PROC</code>, <code>XGO_LIVE_PORT</code>, <code>XGO_STATUS_URL</code></td>
+</tr>
+</tbody>
+</table>
+<h2 id="intercom-websocket">Intercom (WebSocket)<a class="headerlink" href="#intercom-websocket" title="Permanent link">&para;</a></h2>
+<p>Talk to the Rider from the browser, mode <strong>manual</strong> only. Button <em>Sprechen</em> in the image bar below <em>Tempo</em>.
+Daemon <code>tools/sprech.php</code> (PHP CLI, unit <code>xgonav-sprech.service</code>, user <code>www-data</code> + group <code>audio</code>, <code>Nice=10</code>);
+WebSocket helpers shared with <code>live.php</code> in <code>tools/ws.inc.php</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Path</td>
+<td><code>/sprech</code> (nginx → <code>127.0.0.1:8090</code>)</td>
+</tr>
+<tr>
+<td>Rider → browser</td>
+<td><code>arecord -D plughw:0,0 -f S16_LE -r 8000 -c 1</code>, binary frames of 640 B (40 ms); dropped while &gt; 0.5 s unsent</td>
+</tr>
+<tr>
+<td>Browser → Rider</td>
+<td>binary frames S16_LE 8 kHz mono → <code>aplay -D plughw:0,0</code>; backlog &gt; 0.5 s cut to the newest 0.2 s</td>
+</tr>
+<tr>
+<td>Server → client (text)</td>
+<td><code>{"sprech": "an"\|"aus", "grund": …}</code>, then close</td>
+</tr>
+<tr>
+<td>Client → server (text)</td>
+<td><code>mic 0\|1</code> (send Rider microphone), <code>laut 0\|1</code> (speaker)</td>
+</tr>
+<tr>
+<td>Admission</td>
+<td>xgonav <code>/status</code> <code>mode == "manual"</code> and not sleep mode; one call at a time (second browser: busy)</td>
+</tr>
+<tr>
+<td>End</td>
+<td>browser closes, mode leaves manual or xgonav unreachable (checked every 1 s), <code>arecord</code>/<code>aplay</code> ends; then both processes are killed, <code>hw:0,0</code> free for sound direction (retry ≤ <code>[ortung] retry_s</code> 10 s)</td>
+</tr>
+<tr>
+<td>Idle</td>
+<td>no call: no <code>arecord</code>/<code>aplay</code>, blocks in <code>stream_select</code>, 0 % CPU</td>
+</tr>
+<tr>
+<td>Browser</td>
+<td><code>getUserMedia</code> (echo cancellation, noise suppression, AGC; needs HTTPS), AudioWorklet: box filter + decimation to 8 kHz, playback with 120 ms jitter buffer (&gt; 0.4 s → cut to 0.12 s), linear upsampling, volume 0–400 % (<code>localStorage</code> <code>xgonav.sprechlaut</code>)</td>
+</tr>
+<tr>
+<td>Echo</td>
+<td>the Rider's speaker reaches its own microphones: browser dims the Rider to 10 % while the own microphone is above 0.02 RMS + 300 ms; option <em>Drücken zum Sprechen</em> (talk button or space bar; Rider dimmed while held; <code>localStorage</code> <code>xgonav.sprechptt</code>)</td>
+</tr>
+<tr>
+<td>Cost on the Pi</td>
+<td><code>arecord</code> + <code>aplay</code> (8 kHz mono, ALSA plug resampling) + PHP loop ≈ 25 wake-ups/s: ≲ 1 % of a core, only during a call; Wi-Fi 2 × 16 kB/s; nothing in xgonav</td>
+</tr>
+<tr>
+<td>Limits</td>
+<td>during a call other <code>aplay</code> sounds (web, <code>rc.local</code>) fail (device busy)</td>
+</tr>
+<tr>
+<td>Camera → display</td>
+<td>checkbox <em>Kamera senden</em> (only during a call), 5 (default)/10/15 frames/s (<code>localStorage</code> <code>xgonav.sprechfps</code>), mirrored preview; second WebSocket <code>/sprech?bild</code> (own TCP connection, audio not held up)</td>
+</tr>
+<tr>
+<td>Display frame</td>
+<td>browser crops to 320×240 (centre, unmirrored), converts to RGB565 LE, one binary frame of 153 600 B; sends only with <code>bufferedAmount</code> 0; other lengths dropped</td>
+</tr>
+<tr>
+<td>Display write</td>
+<td>PID into <code>/tmp/lcd0.owner</code>, wait 0.3 s (emotion player / <code>lcd.py</code> release the FIFO), open FIFO <code>r+</code> non-blocking, partial writes kept so frames stay whole; one frame in flight + newest waiting; owner <code>touch</code>ed per frame</td>
+</tr>
+<tr>
+<td>Emotion meanwhile</td>
+<td>foreign PID in owner: current frame finished, FIFO closed, frames dropped until owner empty, then taken over again</td>
+</tr>
+<tr>
+<td>Display end</td>
+<td>image socket closes or call ends: rest written (≤ 1 s), FIFO closed, owner cleared, emotion <code>cute</code> played</td>
+</tr>
+<tr>
+<td>Server → client (image)</td>
+<td><code>{"bild": "an"\|"aus", "grund": …}</code>; refused without call, second image busy, no FIFO</td>
+</tr>
+<tr>
+<td>Cost on the Pi (image)</td>
+<td>raw frames, no decoding. Measured 2026-11-21 (% of a core): 5/s nginx 4.9, PHP 3.3, <code>st7789_server</code> 1.0 (≈ 9 %, Wi-Fi 0.75 MB/s); 10/s nginx 9.0, PHP 5.7, <code>st7789_server</code> 2.2 (≈ 17 %, 1.5 MB/s); nothing in xgonav</td>
+</tr>
+<tr>
+<td>Env (tests)</td>
+<td><code>XGO_SPRECH_PORT</code>, <code>XGO_STATUS_URL</code>, <code>XGO_ARECORD</code>, <code>XGO_APLAY</code> (full command lines), <code>XGO_LCD_FIFO</code>, <code>XGO_LCD_ENDE</code></td>
 </tr>
 </tbody>
 </table>

@@ -18,7 +18,8 @@
  */
 declare(strict_types=1);
 
-const WS_GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
+require __DIR__ . '/ws.inc.php';                    // ws_frame, ws_lesen, ws_handshake, xgonav_status
+
 const SYS_S = 1.0;          // CPU, WLAN, Akku, Beine, xgonav-Status
 const RUHE_S = 5.0;         // dasselbe im Ruhemodus
 const IMU_BAL_S = 0.3;      // IMU + Räder, wenn der Rider balanciert (imu_log hält 128 Proben)
@@ -130,67 +131,8 @@ function wlan(): string
 // xgonav /status: [JSON-Text oder null, Fehlertext oder null, Ruhemodus]. Der Text wird unverändert weitergereicht.
 function status_holen(): array
 {
-    $body = @file_get_contents(STATUS_URL, false, stream_context_create(['http' => [
-        'timeout' => 0.5, 'ignore_errors' => true,
-    ]]));
-    if ($body === false) {
-        return [null, 'xgonav nicht erreichbar (läuft der Dienst?)', false];
-    }
-    $code = 0;
-    if (isset($http_response_header[0]) && preg_match('#^HTTP/\S+\s+(\d{3})#', $http_response_header[0], $m)) {
-        $code = (int)$m[1];
-    }
-    $j = json_decode($body, true);
-    if ($code !== 200 || !is_array($j)) {
-        return [null, is_array($j) && isset($j['error']) ? (string)$j['error'] : 'xgonav: Fehler ' . $code, false];
-    }
-    return [$body, null, ($j['ruhe'] ?? false) === true];
-}
-
-function ws_frame(int $op, string $d): string
-{
-    $n = strlen($d);
-    if ($n < 126) {
-        return chr(0x80 | $op) . chr($n) . $d;
-    }
-    if ($n < 65536) {
-        return chr(0x80 | $op) . chr(126) . pack('n', $n) . $d;
-    }
-    return chr(0x80 | $op) . chr(127) . pack('J', $n) . $d;
-}
-
-// Vollständige Client-Frames aus dem Puffer: [[opcode, daten], ...]; false = Protokollfehler.
-function ws_lesen(string &$buf): array|false
-{
-    $aus = [];
-    while (($n = strlen($buf)) >= 2) {
-        $b1 = ord($buf[1]);
-        $len = $b1 & 0x7f;
-        $o = 2;
-        if ($len === 126) {
-            if ($n < 4) {
-                break;
-            }
-            $len = unpack('n', substr($buf, 2, 2))[1];
-            $o = 4;
-        } elseif ($len === 127) {
-            return false;
-        }
-        if ($len > IN_MAX) {
-            return false;
-        }
-        $maske = ($b1 & 0x80) !== 0;
-        if ($n < $o + ($maske ? 4 : 0) + $len) {
-            break;
-        }
-        $d = substr($buf, $o + ($maske ? 4 : 0), $len);
-        if ($maske && $len) {
-            $d ^= substr(str_repeat(substr($buf, $o, 4), intdiv($len, 4) + 1), 0, $len);
-        }
-        $aus[] = [ord($buf[0]) & 0x0f, $d];
-        $buf = (string)substr($buf, $o + ($maske ? 4 : 0) + $len);
-    }
-    return $aus;
+    [$body, $fehler, $j] = xgonav_status(STATUS_URL);
+    return [$body, $fehler, ($j['ruhe'] ?? false) === true];
 }
 
 $srv = @stream_socket_server('tcp://127.0.0.1:' . PORT, $errno, $errstr);
@@ -282,9 +224,8 @@ while (true) {
                 }
                 continue;
             }
-            $kopf = substr($c['in'], 0, $p);
-            $c['in'] = (string)substr($c['in'], $p + 4);
-            if (!preg_match('/^Sec-WebSocket-Key:\s*(\S+)/mi', $kopf, $m)) {
+            $antwort = ws_handshake($c['in']);
+            if ($antwort === '') {
                 @fwrite($s, "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
                 unset($c);
                 trennen($clients, $id);
@@ -296,14 +237,13 @@ while (true) {
             }
             $ws[$id] = $c;
             unset($c);
-            senden($clients, $id, "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
-                . 'Sec-WebSocket-Accept: ' . base64_encode(sha1($m[1] . WS_GUID, true)) . "\r\n\r\n");
+            senden($clients, $id, $antwort);
             if (!isset($clients[$id])) {
                 continue;
             }
             $c = &$clients[$id];
         }
-        $frames = ws_lesen($c['in']);
+        $frames = ws_lesen($c['in'], IN_MAX);
         unset($c);
         if ($frames === false) {
             trennen($clients, $id);

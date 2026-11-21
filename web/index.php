@@ -148,6 +148,11 @@ details.hilfe p{margin:4px 0 0}
 .tempo-zeile input{flex:1;max-width:320px}
 .tempo-zeile .w{font-variant-numeric:tabular-nums;text-align:right;font-size:13px}
 .bild-leiste .imu-bild.schlecht{color:#ff8a8d}
+.bild-leiste .sprech-zeile{grid-column:1/-1;display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px}
+.sprech-zeile label{color:var(--leise)}
+.sprech-zeile meter{width:60px}
+.sprech-zeile input[type=range]{width:90px}
+.sprech-zeile video{width:64px;height:48px;object-fit:cover;transform:scaleX(-1);border-radius:4px;background:#000}
 @container (max-width:560px){
   .kamera-raster{grid-template-columns:auto minmax(50px,1fr) auto auto}
   .kamera-raster .regler:nth-child(even) label{margin-left:0}
@@ -419,6 +424,19 @@ details.extras[open]>summary{margin-bottom:8px}
         <input type="range" id="tempo" min="5" max="100" value="60">
         <span class="w" id="tempo-w"></span>
         <span class="info" tabindex="0" title="Steuerkreuz im Bild gedrückt halten, oder Pfeiltasten/WASD. Fahren schaltet auf „Hand“ und ist auf max_v/max_w der Konfiguration begrenzt. Ohne Bodenmodell und Bahnprüfung; Sturz-Erkennung und Watchdogs bleiben aktiv.">i</span>
+      </div>
+      <div class="sprech-zeile">
+        <button id="sprech" onclick="sprechUmschalten()" disabled title="Nur im Modus Hand">Sprechen</button>
+        <label title="Mikrofon nur senden, solange die Sprechtaste oder die Leertaste gedrückt ist; der Rider ist dann still"><input type="checkbox" id="sprech-ptt" onchange="sprechPtt(this.checked)"> Drücken zum Sprechen</label>
+        <button id="sprech-taste" hidden title="Gedrückt halten (oder Leertaste)">Sprechtaste</button>
+        <span class="leise">Rider</span><meter id="sprech-rider" min="0" max="1" value="0"></meter>
+        <span class="leise">ich</span><meter id="sprech-ich" min="0" max="1" value="0"></meter>
+        <input type="range" id="sprech-laut" min="0" max="400" value="200" title="Lautstärke des Riders hier im Browser" aria-label="Lautstärke">
+        <span class="leise" id="sprech-text"></span>
+        <label title="Eigenes Kamerabild aufs Display des Riders (320×240, im Browser umgerechnet; 0,75 MB/s bei 5 Bildern/s, am Rider ~9 % eines Kerns, bei 10/s doppelt). Nur während eines Gesprächs."><input type="checkbox" id="sprech-bild" onchange="bildUmschalten(this.checked)" disabled> Kamera senden</label>
+        <select id="sprech-fps" title="Bilder je Sekunde aufs Display (WLAN: je Bild 150 kB)" aria-label="Bilder je Sekunde"><option value="5" selected>5/s</option><option value="10">10/s</option><option value="15">15/s</option></select>
+        <video id="sprech-vorschau" muted playsinline hidden></video>
+        <span class="leise" id="bild-text"></span>
       </div>
       <div class="imu-bild leise" id="imu-bild" title="IMU-Wert dieses Bildes (Bildzeit + [imu] time_offset_ms), mit dem xgonav Boden, Karten und die cyan Linie rechnet. Nickrate: aus dem Bild (Ego-Motion) gegen die IMU; weichen sie dauerhaft ab, stimmen Zeitversatz oder Brennweite nicht">-</div>
     </div>
@@ -798,6 +816,26 @@ const EN = {
     'Restart xgonav? It re-reads config.toml; image and status are gone for a few seconds.',
   'Trotzdem neu starten? Laufende Fahrt, Aufzeichnung und Modus enden.': 'Restart anyway? Running drive, recording and mode will end.',
   'xgonav startet neu …': 'xgonav is restarting …',
+  'Sprechen': 'Talk', 'Auflegen': 'Hang up', 'Drücken zum Sprechen': 'Push to talk', 'Sprechtaste': 'Talk button', 'ich': 'me',
+  'Nur im Modus Hand': 'Manual mode only', 'Gedrückt halten (oder Leertaste)': 'Hold (or space bar)',
+  'Mikrofon nur senden, solange die Sprechtaste oder die Leertaste gedrückt ist; der Rider ist dann still':
+    'Send the microphone only while the talk button or space bar is held; the Rider is muted meanwhile',
+  'Lautstärke des Riders hier im Browser': 'Rider volume here in the browser', 'Lautstärke': 'Volume',
+  'Gegensprechen mit dem Rider: sein Mikrofon hier hören, ins eigene Mikrofon sprechen (8 kHz). Nur im Modus Hand.':
+    'Intercom with the Rider: hear its microphone here, talk into your own (8 kHz). Manual mode only.',
+  'verbinde …': 'connecting …', 'Gespräch läuft': 'talking', 'Gespräch beendet': 'call ended',
+  'Mikrofon nicht freigegeben': 'microphone not allowed', 'Browser kann kein Mikrofon (HTTPS nötig)': 'browser has no microphone access (HTTPS needed)',
+  'keine Verbindung zum Gegensprech-Dienst': 'no connection to the intercom service',
+  'nur im Handmodus': 'manual mode only', 'besetzt (anderer Browser spricht)': 'busy (another browser is talking)',
+  'Mikrofon belegt oder arecord beendet': 'microphone busy or arecord ended', 'aplay beendet (Lautsprecher belegt?)': 'aplay ended (speaker busy?)',
+  'arecord/aplay starten nicht': 'arecord/aplay do not start',
+  'xgonav nicht erreichbar (läuft der Dienst?)': 'xgonav not reachable (is the service running?)',
+  'Kamera senden': 'Send camera', 'Bilder je Sekunde': 'Frames per second',
+  'Eigenes Kamerabild aufs Display des Riders (320×240, im Browser umgerechnet; 0,75 MB/s bei 5 Bildern/s, am Rider ~9 % eines Kerns, bei 10/s doppelt). Nur während eines Gesprächs.':
+    'Own camera image on the Rider display (320×240, converted in the browser; 0.75 MB/s at 5 frames/s, ~9 % of a core on the Rider, double at 10/s). Only during a call.',
+  'Bilder je Sekunde aufs Display (WLAN: je Bild 150 kB)': 'Frames per second to the display (Wi-Fi: 150 kB per frame)',
+  'Bild am Display': 'image on display', 'Kamera nicht freigegeben': 'camera not allowed', 'kein Gespräch': 'no call',
+  'besetzt (anderes Bild läuft)': 'busy (another image is running)', 'Display-Daemon läuft nicht': 'display daemon not running',
 };
 const EN_HTML = {
   'hilfe-radar': `<summary>Ray = sound · length = loudness · fades in 12 s</summary>
@@ -1275,6 +1313,7 @@ function statusZeigen(s, fehler) {
       '<div class="kachel' + (breit ? ' breit' : '') + '"><div class="k">' + tr(k) + '</div><div class="w">' + esc(f(s)) + '</div></div>').join('');
     $('roh').textContent = JSON.stringify(s, null, 1);
     document.querySelectorAll('[data-modus]').forEach(b => b.classList.toggle('aktiv', b.dataset.modus === s.mode));
+    sprechZeigen();
     pille('p-modus', tr(MODI[s.mode] || s.mode || '-'), s.mode && s.mode !== 'idle' ? 'warn' : '');
     pille('p-zustand', s.balancing == null ? '-' : tr(s.balancing ? 'balanciert' : 'liegt'),
           s.balancing == null ? '' : (s.balancing ? 'gut' : 'warn'));
@@ -1372,6 +1411,257 @@ const eigeneTasten = e => ['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagN
 document.addEventListener('keydown', e => { const r = tasten[e.key]; if (r && !eigeneTasten(e)) { e.preventDefault(); fahrtStart(r); } });
 document.addEventListener('keyup', e => { const r = tasten[e.key]; if (r) fahrtEnde(r); });
 window.addEventListener('blur', () => [...gedrueckt].forEach(fahrtEnde));
+
+// --- Gegensprechen (nur Modus Hand): WebSocket /sprech zu tools/sprech.php, 8 kHz mono S16 in beide Richtungen.
+// Abtastrate wandeln, Echo dämpfen und Pegel rechnet der Browser; am Rider laufen nur arecord und aplay.
+const SPRECH_HZ = 8000;
+const SPRECH_WORKLET = `
+class Auf extends AudioWorkletProcessor {
+  constructor() { super(); this.schritt = sampleRate / ${SPRECH_HZ}; this.pos = 0; this.sum = 0; this.n = 0;
+    this.buf = new Int16Array(320); this.i = 0; this.q = 0; }
+  process(ein) {
+    const x = ein[0] && ein[0][0];
+    if (!x) return true;
+    for (let k = 0; k < x.length; k++) {           // Kastenfilter über je ein Ausgabe-Intervall, dann abtasten
+      this.sum += x[k]; this.n++; this.pos += 1;
+      if (this.pos >= this.schritt) {
+        this.pos -= this.schritt;
+        const v = Math.max(-1, Math.min(1, this.sum / this.n));
+        this.sum = 0; this.n = 0; this.q += v * v;
+        this.buf[this.i++] = v * 32767;
+        if (this.i === this.buf.length) {
+          this.port.postMessage({pcm: this.buf.buffer, rms: Math.sqrt(this.q / this.buf.length)}, [this.buf.buffer]);
+          this.buf = new Int16Array(320); this.i = 0; this.q = 0;
+        }
+      }
+    }
+    return true;
+  }
+}
+class Ab extends AudioWorkletProcessor {
+  constructor() {
+    super(); this.ring = new Float32Array(${SPRECH_HZ}); this.r = 0; this.w = 0; this.n = 0; this.pos = 0;
+    this.laeuft = false; this.schritt = ${SPRECH_HZ} / sampleRate;
+    this.port.onmessage = e => {
+      const d = new Int16Array(e.data);
+      for (let k = 0; k < d.length; k++) {
+        if (this.n === this.ring.length) { this.r = (this.r + 1) % this.ring.length; this.n--; }
+        this.ring[this.w] = d[k] / 32768; this.w = (this.w + 1) % this.ring.length; this.n++;
+      }
+      if (this.n > ${SPRECH_HZ * 0.4}) {             // mehr als 0,4 s gepuffert: auf 0,12 s kürzen (nur das Neueste)
+        const weg = this.n - ${SPRECH_HZ * 0.12}; this.r = (this.r + weg) % this.ring.length; this.n -= weg;
+      }
+    };
+  }
+  process(ein, aus) {
+    const y = aus[0][0], L = this.ring.length;
+    if (!this.laeuft && this.n >= ${SPRECH_HZ * 0.12}) this.laeuft = true;   // Jitterpuffer 120 ms
+    for (let k = 0; k < y.length; k++) {
+      if (!this.laeuft || this.n < 2) { y[k] = 0; this.laeuft = false; continue; }
+      const a = this.ring[this.r], b = this.ring[(this.r + 1) % L];
+      y[k] = a + (b - a) * this.pos;                 // linear hochwandeln
+      this.pos += this.schritt;
+      while (this.pos >= 1) { this.pos -= 1; this.r = (this.r + 1) % L; this.n--; }
+    }
+    return true;
+  }
+}
+registerProcessor('sprech-auf', Auf);
+registerProcessor('sprech-ab', Ab);
+`;
+let sprech = null;                // {ws, ctx, strom, ab, gain, an}
+let sprechPttAn = false, sprechTaste = false, sprechDuckBis = 0, sprechRiderPegel = 0;
+try { sprechPttAn = localStorage.getItem('xgonav.sprechptt') === '1'; } catch (e) {}
+$('sprech-ptt').checked = sprechPttAn;
+$('sprech-taste').hidden = !sprechPttAn;
+try { $('sprech-laut').value = localStorage.getItem('xgonav.sprechlaut') || 200; } catch (e) {}
+function sprechText(t) { $('sprech-text').textContent = t ? tr(t) : ''; }
+function sprechSendet() { return !sprechPttAn || sprechTaste; }
+function sprechGain() {
+  if (!sprech || !sprech.gain) return;
+  const v = Number($('sprech-laut').value) / 100;
+  const duck = !sprechPttAn ? performance.now() < sprechDuckBis : sprechTaste;   // eigenes Sprechen: Rider leiser (Echo)
+  sprech.gain.gain.setTargetAtTime(duck ? v * 0.1 : v, sprech.ctx.currentTime, 0.03);
+}
+$('sprech-laut').oninput = () => { sprechGain(); try { localStorage.setItem('xgonav.sprechlaut', $('sprech-laut').value); } catch (e) {} };
+function sprechPtt(an) {
+  sprechPttAn = an; sprechTaste = false;
+  $('sprech-taste').hidden = !an;
+  try { localStorage.setItem('xgonav.sprechptt', an ? '1' : '0'); } catch (e) {}
+  sprechGain();
+}
+function sprechTasteSetzen(an) {
+  if (sprechTaste === an) return;
+  sprechTaste = an;
+  $('sprech-taste').classList.toggle('aktiv', an);
+  sprechGain();
+}
+const tasteSp = $('sprech-taste');
+tasteSp.addEventListener('pointerdown', e => { e.preventDefault(); tasteSp.setPointerCapture(e.pointerId); sprechTasteSetzen(true); });
+tasteSp.addEventListener('pointerup', () => sprechTasteSetzen(false));
+tasteSp.addEventListener('pointercancel', () => sprechTasteSetzen(false));
+// Leertaste = Sprechtaste, nur bei laufendem Gespräch mit „Drücken zum Sprechen“ und nicht in Eingabefeldern
+document.addEventListener('keydown', e => {
+  if (e.code === 'Space' && sprech && sprechPttAn && !eigeneTasten(e)) { e.preventDefault(); sprechTasteSetzen(true); }
+});
+document.addEventListener('keyup', e => { if (e.code === 'Space') sprechTasteSetzen(false); });
+window.addEventListener('blur', () => sprechTasteSetzen(false));
+function sprechZeigen() {
+  const an = !!(sprech && sprech.an), hand = aktModus === 'manual';
+  const b = $('sprech');
+  b.classList.toggle('aktiv', an);
+  b.textContent = tr(sprech ? 'Auflegen' : 'Sprechen');
+  b.disabled = !sprech && !hand;
+  $('sprech-bild').disabled = !an;
+  if (!an && bild) bildEnde();
+  b.title = tr(hand || sprech ? 'Gegensprechen mit dem Rider: sein Mikrofon hier hören, ins eigene Mikrofon sprechen (8 kHz). Nur im Modus Hand.'
+                              : 'Nur im Modus Hand');
+}
+async function sprechUmschalten() {
+  if (sprech) { sprechEnde(); return; }
+  if (aktModus !== 'manual') { sprechText('Nur im Modus Hand'); return; }
+  if (!navigator.mediaDevices || !window.AudioWorkletNode) { sprechText('Browser kann kein Mikrofon (HTTPS nötig)'); return; }
+  const s = sprech = {an: false};
+  sprechZeigen();
+  sprechText('verbinde …');
+  try {
+    s.strom = await navigator.mediaDevices.getUserMedia({audio: {echoCancellation: true, noiseSuppression: true,
+                                                                autoGainControl: true, channelCount: 1}});
+    s.ctx = new AudioContext();
+    const url = URL.createObjectURL(new Blob([SPRECH_WORKLET], {type: 'application/javascript'}));
+    await s.ctx.audioWorklet.addModule(url);
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    if (sprech === s) sprechEnde(); sprechText('Mikrofon nicht freigegeben'); return;
+  }
+  if (sprech !== s) { sprechAufraeumen(s); return; }
+  const auf = new AudioWorkletNode(s.ctx, 'sprech-auf');
+  s.ctx.createMediaStreamSource(s.strom).connect(auf);
+  s.ab = new AudioWorkletNode(s.ctx, 'sprech-ab', {numberOfInputs: 0, outputChannelCount: [1]});
+  s.gain = s.ctx.createGain();
+  s.ab.connect(s.gain).connect(s.ctx.destination);
+  sprechGain();
+  const ws = s.ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/sprech');
+  ws.binaryType = 'arraybuffer';
+  auf.port.onmessage = e => {
+    const {pcm, rms} = e.data;
+    if (!sprechPttAn && rms > 0.02) { sprechDuckBis = performance.now() + 300; }
+    sprechGain();
+    const senden = sprechSendet();
+    $('sprech-ich').value = senden ? Math.min(1, rms * 5) : 0;
+    $('sprech-rider').value = sprechRiderPegel;
+    sprechRiderPegel *= 0.7;
+    if (senden && s.an && ws.readyState === 1 && ws.bufferedAmount < 16000) ws.send(pcm);
+  };
+  ws.onmessage = e => {
+    if (typeof e.data === 'string') {
+      let m = null; try { m = JSON.parse(e.data); } catch (e2) {}
+      if (!m) return;
+      s.an = m.sprech === 'an';
+      sprechText(s.an ? 'Gespräch läuft' : (m.grund || 'aus'));
+      if (s.an) s.ctx.resume();
+      sprechZeigen();
+      return;
+    }
+    s.ab.port.postMessage(e.data, [e.data]);
+    const d = new Int16Array(e.data); let q = 0;
+    for (let k = 0; k < d.length; k += 4) q += d[k] * d[k];
+    sprechRiderPegel = Math.max(sprechRiderPegel, Math.min(1, 5 * Math.sqrt(q / (d.length / 4)) / 32768));
+  };
+  ws.onclose = () => {
+    if (sprech !== s) return;
+    const grund = $('sprech-text').textContent;          // Grund vom Dienst stehen lassen
+    sprechEnde();
+    if (grund === tr('verbinde …')) sprechText('keine Verbindung zum Gegensprech-Dienst');
+    else if (grund === tr('Gespräch läuft')) sprechText('Gespräch beendet');
+    else $('sprech-text').textContent = grund;
+  };
+}
+function sprechAufraeumen(s) {
+  try { s.ws && s.ws.close(); } catch (e) {}
+  try { s.strom && s.strom.getTracks().forEach(t => t.stop()); } catch (e) {}
+  try { s.ctx && s.ctx.close(); } catch (e) {}
+}
+function sprechEnde() {
+  const s = sprech;
+  sprech = null;
+  if (bild) bildEnde();
+  if (s) sprechAufraeumen(s);
+  sprechTasteSetzen(false);
+  $('sprech-ich').value = 0; $('sprech-rider').value = 0;
+  sprechText('');
+  sprechZeigen();
+}
+
+// --- Bild aufs Rider-Display (nur während eines Gesprächs): eigene WebSocket /sprech?bild, je Rahmen ein
+// fertiges Bild RGB565 LE 320×240 (153 600 B). Zuschneiden und Umrechnen hier, der Rider reicht nur durch.
+const BILD_B = 320, BILD_H = 240;
+let bild = null;                  // {ws, strom, timer, ctx, an}
+try { $('sprech-fps').value = localStorage.getItem('xgonav.sprechfps') || '5'; } catch (e) {}
+$('sprech-fps').onchange = () => {
+  try { localStorage.setItem('xgonav.sprechfps', $('sprech-fps').value); } catch (e) {}
+  if (bild && bild.an) bildTakt();
+};
+function bildText(t) { $('bild-text').textContent = t ? tr(t) : ''; }
+function bildTakt() {
+  clearInterval(bild.timer);
+  bild.timer = setInterval(bildSenden, 1000 / Number($('sprech-fps').value || 5));
+}
+function bildSenden() {
+  const b = bild, v = $('sprech-vorschau');
+  if (!b || !b.an || b.ws.readyState !== 1 || b.ws.bufferedAmount > 0 || !v.videoWidth) return;   // höchstens ein Bild unterwegs
+  const s = Math.max(BILD_B / v.videoWidth, BILD_H / v.videoHeight);          // mittig zuschneiden, ungespiegelt
+  const sw = BILD_B / s, sh = BILD_H / s;
+  b.ctx.drawImage(v, (v.videoWidth - sw) / 2, (v.videoHeight - sh) / 2, sw, sh, 0, 0, BILD_B, BILD_H);
+  const d = b.ctx.getImageData(0, 0, BILD_B, BILD_H).data;
+  const px = new Uint16Array(BILD_B * BILD_H);                                // Browser sind little-endian
+  for (let i = 0, j = 0; i < px.length; i++, j += 4) px[i] = ((d[j] & 0xF8) << 8) | ((d[j + 1] & 0xFC) << 3) | (d[j + 2] >> 3);
+  b.ws.send(px.buffer);
+}
+async function bildUmschalten(an) {
+  if (!an) { bildEnde(); return; }
+  if (bild || !sprech || !sprech.an) { $('sprech-bild').checked = !!bild; return; }
+  const b = bild = {an: false};
+  bildText('verbinde …');
+  try {
+    b.strom = await navigator.mediaDevices.getUserMedia({video: {width: {ideal: 320}, height: {ideal: 240}, facingMode: 'user'}});
+  } catch (e) {
+    if (bild === b) bildEnde(); bildText('Kamera nicht freigegeben'); return;
+  }
+  if (bild !== b) { b.strom.getTracks().forEach(t => t.stop()); return; }
+  const v = $('sprech-vorschau');
+  v.srcObject = b.strom; v.hidden = false;
+  v.play().catch(() => {});
+  const cv = document.createElement('canvas'); cv.width = BILD_B; cv.height = BILD_H;
+  b.ctx = cv.getContext('2d', {willReadFrequently: true});
+  const ws = b.ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/sprech?bild');
+  ws.onmessage = e => {
+    if (typeof e.data !== 'string') return;
+    let m = null; try { m = JSON.parse(e.data); } catch (e2) {}
+    if (!m) return;
+    b.an = m.bild === 'an';
+    bildText(b.an ? 'Bild am Display' : (m.grund || 'aus'));
+    if (b.an) bildTakt();
+  };
+  ws.onclose = () => {
+    if (bild !== b) return;
+    const g = $('bild-text').textContent;
+    bildEnde();
+    $('bild-text').textContent = g === tr('Bild am Display') || g === tr('verbinde …') ? '' : g;
+  };
+}
+function bildEnde() {
+  const b = bild;
+  bild = null;
+  if (b) {
+    clearInterval(b.timer);
+    try { b.ws && b.ws.close(); } catch (e) {}
+    try { b.strom && b.strom.getTracks().forEach(t => t.stop()); } catch (e) {}
+  }
+  const v = $('sprech-vorschau'); v.srcObject = null; v.hidden = true;
+  $('sprech-bild').checked = false;
+  bildText('');
+}
 
 // --- Belichtung: Regler in ms, xgonav rechnet in µs (0 = Automatik)
 let belichtBewegt = false;      // Regler nicht überschreiben, solange er bedient wird

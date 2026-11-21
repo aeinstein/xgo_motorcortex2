@@ -187,6 +187,12 @@ if [ "$DO_WEB" = 1 ]; then
     systemctl daemon-reload
     systemctl enable xgonav-live >/dev/null 2>&1
     systemctl restart xgonav-live
+
+    # Gegensprechen per WebSocket (/sprech): arecord/aplay nur während eines Gesprächs im Modus manual
+    installiere deploy/xgonav-sprech.service /etc/systemd/system/xgonav-sprech.service
+    systemctl daemon-reload
+    systemctl enable xgonav-sprech >/dev/null 2>&1
+    systemctl restart xgonav-sprech
 fi
 
 # ---------------------------------------------------------------- Ende
