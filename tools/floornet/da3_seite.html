@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DA3 gegen MoGe</title>
+<style>
+:root { --bg:#f4f5f7; --panel:#fff; --ink:#1c2230; --muted:#5b6475; --line:#dde1e8; --p11:#0bbf3a; --moge:#e0119d; --da3:#16a7e8; }
+@media (prefers-color-scheme: dark) { :root { --bg:#12151c; --panel:#1a1e27; --ink:#e6e9ef; --muted:#9aa3b4; --line:#2c323e; } }
+body { margin:0; background:var(--bg); color:var(--ink); font:14px/1.45 system-ui, sans-serif; }
+header { position:sticky; top:0; z-index:2; background:var(--panel); border-bottom:1px solid var(--line); padding:10px 16px;
+         display:flex; flex-wrap:wrap; gap:12px; align-items:center; }
+h1 { font-size:17px; margin:0 12px 0 0; }
+.leg label { margin-right:8px; }
+select, button { font:inherit; padding:4px 8px; }
+main { padding:12px 16px; display:grid; gap:14px; }
+.bild { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:10px; display:grid; gap:6px; }
+.kopf { display:flex; flex-wrap:wrap; gap:14px; font-family:ui-monospace, monospace; font-size:13px; color:var(--muted); }
+.kopf b { color:var(--ink); }
+.reihe { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:8px; }
+@media (max-width: 700px) { .reihe { grid-template-columns:1fr; } }
+.zelle { position:relative; aspect-ratio:4/3; background:#000; overflow:hidden; border-radius:4px; }
+.zelle img { width:100%; height:100%; display:block; object-fit:cover; }
+.zelle img.rechts { width:200%; max-width:none; object-fit:fill; transform:translateX(-50%); }
+.zelle svg { position:absolute; inset:0; width:100%; height:100%; }
+.zelle span { position:absolute; left:4px; top:4px; background:rgba(0,0,0,.6); color:#fff; font-size:12px; padding:1px 5px; border-radius:3px; }
+#mehr { justify-self:start; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Depth Anything 3 gegen MoGe-2 gegen p11</h1>
+  <span class="leg">
+    <label style="color:var(--p11)"><input type="checkbox" id="z_p11" checked> p11</label>
+    <label style="color:var(--moge)"><input type="checkbox" id="z_moge" checked> MoGe</label>
+    <label style="color:var(--da3)"><input type="checkbox" id="z_da3" checked> DA3</label>
+  </span>
+  <label>DA3 <select id="var"></select></label>
+  <label>Fahrt <select id="fahrt"><option value="">alle</option><option>explore10</option><option>explore11</option><option>explore12</option></select></label>
+  <label>Sortierung <select id="sort">
+    <option value="da3">DA3: größte Abweichung von p11 unter 1,5 m</option>
+    <option value="moge">MoGe: größte Abweichung von p11 unter 1,5 m</option>
+    <option value="besser">DA3 näher an p11 als MoGe</option>
+    <option value="schlechter">DA3 weiter weg von p11 als MoGe</option>
+    <option value="k">Reihenfolge der Fahrt</option>
+  </select></label>
+  <span id="zahl"></span>
+</header>
+<main id="liste"></main>
+<script>
+const D = /*DATEN*/[];
+const VAR = /*VAR*/[];
+const MOGE = /*MOGE*/"../geo_pruef_v2/";
+const W = 640, H = 480, N = 80;
+const xs = Array.from({length: N}, (_, i) => (i + 0.5) * W / N);
+const $ = id => document.getElementById(id);
+const liste = $("liste");
+VAR.forEach(v => $("var").insertAdjacentHTML("beforeend", `<option>${v}</option>`));
+$("var").value = VAR[VAR.length - 1];
+let sicht = [], gezeigt = 0;
+function linie(rows, farbe) {
+  const p = rows.map((y, i) => xs[i].toFixed(0) + "," + Math.min(y, H - 1).toFixed(1)).join(" ");
+  return `<polyline points="${p}" fill="none" stroke="${farbe}" stroke-width="3" stroke-linejoin="round"/>`;
+}
+function karte(d) {
+  const v = $("var").value, stamm = d.f.replace(/\.jpg$/, "");
+  const l = ($("z_p11").checked ? linie(d.r.p11, "#0bbf3a") : "") + ($("z_moge").checked ? linie(d.r.moge, "#e0119d") : "")
+          + ($("z_da3").checked ? linie(d.r[v], "#16a7e8") : "");
+  const svg = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${l}</svg>`;
+  return `<div class="bild">
+    <div class="kopf"><b>${d.k}</b><span>med |Δ| zu p11 unter 1,5 m: MoGe ${d.sc.moge} cm, DA3 ${v} ${d.sc[v]} cm</span></div>
+    <div class="reihe">
+      <div class="zelle"><img loading="lazy" src="../data/rider/fahrt/${d.run}/${d.f}"><span>Bild</span>${svg}</div>
+      <div class="zelle"><img loading="lazy" src="../stage1_p11/${d.run}/${stamm}.png"><span>ComfyUI p11 (Grünbild)</span>${svg}</div>
+      <div class="zelle"><img class="rechts" loading="lazy" src="geo_${v}/bilder/${d.run}__${d.f}"><span>DA3 ${v}: grün Boden, rot Hindernis, hellgrau egal</span></div>
+      <div class="zelle"><img class="rechts" loading="lazy" src="${MOGE}bilder/${d.run}__${d.f}"><span>MoGe-2: Klassen</span></div>
+    </div></div>`;
+}
+function mehr() {
+  const teil = sicht.slice(gezeigt, gezeigt + 30);
+  liste.querySelector("#mehr")?.remove();
+  liste.insertAdjacentHTML("beforeend", teil.map(karte).join(""));
+  gezeigt += teil.length;
+  if (gezeigt < sicht.length) {
+    liste.insertAdjacentHTML("beforeend", `<button id="mehr">weitere 30 (${sicht.length - gezeigt} übrig)</button>`);
+    liste.querySelector("#mehr").onclick = mehr;
+  }
+}
+function neu() {
+  const f = $("fahrt").value, s = $("sort").value, v = $("var").value;
+  const wert = {da3: d => d.sc[v], moge: d => d.sc.moge, besser: d => d.sc.moge - d.sc[v], schlechter: d => d.sc[v] - d.sc.moge};
+  sicht = D.filter(d => !f || d.run === f);
+  sicht.sort(s === "k" ? (x, y) => x.k.localeCompare(y.k) : (x, y) => wert[s](y) - wert[s](x));
+  $("zahl").textContent = sicht.length + " Bilder";
+  liste.innerHTML = ""; gezeigt = 0; mehr();
+}
+["var", "fahrt", "sort", "z_p11", "z_moge", "z_da3"].forEach(id => $(id).onchange = neu);
+neu();
+</script>
+</body>
+</html>

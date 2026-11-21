@@ -1482,7 +1482,7 @@
 </tr>
 <tr>
 <td>FloorNet</td>
-<td>the only floor boundary since 2026-11-18 (classic <code>kanten</code>/<code>farbe</code> model removed): decides alone on the Rider since 2026-11-10 and drives with it; preset goal against hand lines missed (<a href="floornet.html">floornet.md</a>). No fallback: network failure = blind, nothing drives by itself</td>
+<td>the only floor boundary: decides alone on the Rider since 2026-11-10 and drives with it, only while balancing; under 1 m still ~6–10 % of columns falsely free on the test runs (<a href="floornet.html">floornet.md</a>); no step or fall protection. No fallback: network failure = blind, nothing drives by itself</td>
 </tr>
 <tr>
 <td>Simulator floor boundary</td>

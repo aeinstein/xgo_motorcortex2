@@ -58,6 +58,29 @@ def label(P, a=A, cam_h=CAM_H):
     return G.label_bild(P, a, cam_h, F, G.Regeln(), None)
 
 
+def hochbiegen(P: np.ndarray, ab: int = 380, oben_m: float = 0.09) -> np.ndarray:
+    """Wie DA3 in explore11: der nahe Boden biegt sich unter Zeile ab nach oben, am Bildrand um oben_m."""
+    P = P.copy()
+    w = np.clip((np.arange(H) - ab) / (H - 1 - ab), 0, None)[:, None, None]
+    return P - w * oben_m * G.unten(A)
+
+
+def test_bent_up_floor_at_bottom_edge_counts_as_floor():
+    P = hochbiegen(render([BODEN, WAND15]))
+    rows, _, k = G.label_bild(P, A, CAM_H, F, G.Regeln(), None)
+    assert np.abs(rows - soll_zeile(1.5)).max() < 1.5
+    assert (k["klasse"][470:] == 1).all()
+    rows0, _, _ = G.label_bild(P, A, CAM_H, F, G.Regeln(rand=0), None)
+    assert (rows0 == H).all()                                  # ohne die Regel: rot unten, Linie am Bildrand
+
+
+def test_flat_box_top_at_bottom_edge_stays_obstacle():
+    kiste = (-BIG, BIG, 0.0, 0.08, 0.0, 0.30)                 # 8 cm hoch, vom Rider bis 30 cm, unten im Bild nur Decke
+    rows, _, k = G.label_bild(render([BODEN, kiste, WAND15]), A, CAM_H, F, G.Regeln(), None)
+    assert (rows == H).all()
+    assert (k["klasse"][470:] == 2).all()
+
+
 def test_frei_oben_matches_mask_rows():
     rng = np.random.default_rng(4)
     for _ in range(20):
@@ -100,17 +123,15 @@ def test_box_low_sofa_edge_and_table():
     assert links.sum() > 5 and np.abs(rows[links] - soll_zeile(1.5)).max() < 1.5
 
 
-def test_step_down_ends_floor_at_edge():
+def test_below_plane_counts_as_floor_no_drop():
+    """Kein Absturz (Nutzer 2026-11-20): eine Stufe nach unten bei 1 m ist Boden, die Grenze liegt an der Wand."""
     oben = (-BIG, BIG, -1.0, 0.0, -1.0, 1.0)
     unten = (-BIG, BIG, -1.0, -0.18, 1.0, BIG)
     wand = (-BIG, BIG, -1.0, 3.0, 2.5, 3.0)
-    rows, eb, _ = label(render([oben, unten, wand]))
+    rows, eb, karten = label(render([oben, unten, wand]))
     assert eb["art"] == "ebene"
-    assert np.abs(rows - soll_zeile(1.0)).max() < 2.0
-    # ohne Absturzprüfung läuft der Boden bis zur Wand weiter (untere Ebene liegt 18 cm tiefer, das ist kein Boden),
-    # die Grenze endet aber spätestens dort, wo der freie Lauf abreißt
-    rows0, _, _ = G.label_bild(render([oben, unten, wand]), A, CAM_H, F, G.Regeln(stufe_m=0.0), None)
-    assert (rows0 <= rows + 0.5).all()
+    assert (rows < soll_zeile(1.0) - 5).all()
+    assert not np.isin(karten["klasse"], [3]).any()
 
 
 def test_pitch_from_imu_is_used_and_plane_refits_small_error():
@@ -143,7 +164,7 @@ class FakeMoge:
     def __init__(self, *a, **k):
         pass
 
-    def punkte(self, bilder, fov_deg):
+    def punkte(self, bilder, fov_deg, ids=None):
         assert abs(fov_deg - 91.8) < 1e-6
         return np.stack([render([BODEN, WAND15], skala=1.2) for _ in bilder])
 
@@ -151,7 +172,7 @@ class FakeMoge:
 class FakeMogeWand(FakeMoge):
     """Wie FakeMoge, aber das zweite Bild jedes Pakets zeigt eine Wand 12 cm vor der Linse (keine eigene Ebene)."""
 
-    def punkte(self, bilder, fov_deg):
+    def punkte(self, bilder, fov_deg, ids=None):
         P = super().punkte(bilder, fov_deg)
         if len(P) > 1:
             P[1] = render([BODEN, (-BIG, BIG, -1.0, 3.0, 0.12, 0.2)], skala=1.2)
@@ -205,28 +226,48 @@ def test_fahrten_drops_frames_without_own_plane(tmp_path, monkeypatch, capsys):
         assert list(d["files"]) == ["000000.jpg", "000004.jpg", "000006.jpg"]
 
 
-def test_pruef_compares_with_hand_lines_and_other_teacher(tmp_path, monkeypatch, capsys):
-    import json
-    src = _fahrt(tmp_path, n=2)
-    files = np.array(["000000.jpg", "000002.jpg"])
-    geom = json.dumps({"W": W, "H": H, "f": F, "cam_h": CAM_H, "tilt_deg": 5.18, "hfov_deg": 91.8})
-    (tmp_path / "lab").mkdir()
-    np.savez(tmp_path / "lab" / "fahrt1.npz", files=files, geom=np.array(geom), source_dir=np.array(str(src)),
-             pitch=np.zeros(2, np.float32))
-    (tmp_path / "vgl").mkdir()
-    np.savez(tmp_path / "vgl" / "fahrt1.npz", files=files[:1], row=np.full((1, 80), 320.0, np.float32))
-    zeile = soll_zeile(1.5)
-    hand = {"bilder": {"fahrt1/" + f: {"fertig": True, "pts": [[0, zeile], [W, zeile]]} for f in files}}
-    (tmp_path / "hand.json").write_text(json.dumps(hand))
-    monkeypatch.setattr(G, "Moge", FakeMoge)
-    monkeypatch.setattr(sys, "argv", ["geo_label.py", "pruef", "--hand", str(tmp_path / "hand.json"), "--labels",
-                                      str(tmp_path / "lab"), "--vergleich", str(tmp_path / "vgl"),
-                                      "--out", str(tmp_path / "p")])
-    assert G.main() == 0
-    txt = capsys.readouterr().out
-    assert "Bilder mit beiden Labels: 1 von 2" in txt
-    geo_teil, vgl_teil = txt.split("== Geometrie")[1].split("== Vergleich")
-    band = [z for z in geo_teil.splitlines() if z.startswith("1.0-1.5")][0]
-    assert "n   80 frei   0.0% block   0.0%" in band          # nur das Bild, das beide Lehrer haben
-    band = [z for z in vgl_teil.splitlines() if z.startswith("1.0-1.5")][0]
-    assert "n   80 frei   0.0% block 100.0%" in band             # Zeile 320 liegt weit vor der Wand bei 1,5 m
+def test_depth_maps_from_da3_give_same_line(tmp_path):
+    """--tiefe: Tiefenkarte (z, Modellmaß 0,7) + conf aus da3_tiefe.py ergibt dieselbe Grenze wie die Punktwolke;
+    Pixel unter conf_min sind ungültig (Wand reicht bis über den Bildrand)."""
+    P = render([BODEN, WAND15], skala=0.7)
+    t = np.where(np.isfinite(P[..., 2]), P[..., 2], 0.0)
+    conf = np.ones((H, W), np.float32)
+    conf[:, :W // 8] = 0.1
+    os.makedirs(tmp_path / "fahrt1")
+    np.savez_compressed(tmp_path / "fahrt1" / "000001.npz", tiefe=t.astype(np.float16), conf=conf.astype(np.float16))
+    fov = math.degrees(2 * math.atan(W / 2 / F))
+    Q = G.Tiefe(str(tmp_path), conf_min=0.5).punkte([np.zeros((H, W, 3), np.uint8)], fov, ["fahrt1/000001.jpg"])[0]
+    assert np.isinf(Q[:, :W // 8]).all() and np.isfinite(Q[:, W // 8:]).all()
+    rows, eb, _ = label(Q)
+    assert eb["art"] == "ebene" and abs(eb["s"] - 1 / 0.7) < 0.01
+    rechts = np.arange(G.NCOLS) >= G.NCOLS // 8 + 1
+    assert np.abs(rows[rechts] - soll_zeile(1.5)).max() < 1.5
+
+
+def test_filled_border_of_lens_table_continues_line_flat():
+    """Rechts aufgefüllte Pixel der Entzerrung (Spalten ab 616, unten erst ab 627): keine Punkte daraus, die Streifen
+    dort übernehmen waagrecht die Zeile des letzten echten Streifens."""
+    erg = np.zeros((H, W), bool)
+    erg[:, 616:] = True
+    erg[400:, 616:627] = False
+    P = render([BODEN, WAND15])
+    P[erg] = (0.0, -0.05, 0.2)                    # Unsinn wie ein wiederholter Bildrand: nah und über dem Boden
+    rows, eb, _ = G.label_bild(P, A, CAM_H, F, G.Regeln(), None, erg)
+    assert eb["art"] == "ebene"
+    assert np.all(rows[76:] == rows[75]) and abs(rows[75] - soll_zeile(1.5)) < 1.5     # ein Streifen Sicherheit
+
+
+def test_filled_mask_from_rider_lens_table():
+    from xgonav.config import Config
+    erg = G.ergaenzt_maske(Config())
+    assert erg is not None and not erg[:, :300].any()
+    assert 10 <= erg[440].sum() <= 16 and 20 <= erg[280].sum() <= 30          # rechter Rand: unten 13, Bodenlinie ~25
+
+
+def test_rider_lens_table_marks_only_right_edge_strips():
+    from xgonav.config import Config
+    erg = G.ergaenzt_maske(Config())
+    rows = np.arange(G.NCOLS, dtype=np.float32)
+    out = G.waagrecht(rows, erg, H / 2 + F * math.tan(A))
+    geaendert = np.flatnonzero(out != rows)
+    assert 3 <= len(geaendert) <= 5 and geaendert.min() >= 75 and np.all(out[geaendert] == out[geaendert.min() - 1])

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""FloorNet: Netz gegen die Stage3-Labels von Prüffahrten. Seit 2026-11-10 der Maßstab:
-Die Labels aus ComfyUI gelten als Wahrheit, die Handlinien (eval_hand.py) sind gröber.
+"""FloorNet: Netz gegen die Stage3-Labels von Prüffahrten. Seit 2026-11-10 der Maßstab: Die Labels aus ComfyUI
+gelten als Wahrheit.
 
   python tools/floornet/eval_labels.py lauf/ --labels stage3_pruef/ \\
       --fahrten explore10,explore11,explore12 [--bilder aus/]

@@ -1,13 +1,13 @@
 """FloorNet: Hilfsfunktionen für Label-Dateien und Rohaufnahmen (xgonav --record-raw).
 
 Früher entstanden hier Labels aus einer Raumkarte des klassischen Bodenmodells; das ist mit diesem entfernt.
-Labels kommen heute aus ComfyUI (stage3_npz.py, comfy_npz.py) oder aus Handlinien (handmap.py, hand_npz.py).
+Labels kommen heute aus ComfyUI (stage3_npz.py, comfy_npz.py).
 Geblieben sind, was andere Werkzeuge nutzen:
   ground_row, row_dist         Bodengeometrie Zeile <-> Abstand
   load_run, select_segment     Metazeilen einer Aufnahme, brauchbares Stück daraus
   trajectory                   Bahn mit dem Firmware-Kurs neu gerechnet
   movable_columns              Spalten mit beweglichen Objekten (Detektor)
-  cast_labels                  Raumkarte in die Bilder projizieren (handmap.py, fahrt_js.py)
+  cast_labels                  Raumkarte in die Bilder projizieren (fahrt_js.py)
   load_cfg, make_geo           Konfiguration und Kamerageometrie
 
 Eine Spalte ist eines von:

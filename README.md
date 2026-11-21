@@ -72,7 +72,7 @@ HTML manual (install, quick start, web UI, behaviours, FloorNet training): `tool
 | [web-interface.md](docs/web-interface.md) | Web UI, `api.php`, xgonav local API, WebSocket protocol |
 | [mcp.md](docs/mcp.md) | MCP server `mcp.php`: camera, map, status and movement as tools for a multimodal LLM |
 | [mapping.md](docs/mapping.md) | Odometry, short-term local map, room map (occupancy grid) |
-| [floornet.md](docs/floornet.md) | Self-trained floor network: labels, hand lines, training, results; shadow mode only |
+| [floornet.md](docs/floornet.md) | Self-trained floor network, the only floor boundary: field of view, labels from ComfyUI, training, results |
 | [display-emotions.md](docs/display-emotions.md) | LCD daemon, overlay, emotion player and triggers |
 | [wifi-setup.md](docs/wifi-setup.md) | Wi-Fi without a network: open hotspot `RiderKerk` after 60 s without Wi-Fi + `wlan.php`; buttons C+D, QR code |
 | [audio.md](docs/audio.md) | Sound card, speaker, two microphones (stereo): measurements, mixer state, sound direction |

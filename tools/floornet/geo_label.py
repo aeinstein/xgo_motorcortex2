@@ -1,19 +1,16 @@
 #!/usr/bin/env python3
 """FloorNet-Labels aus Geometrie statt aus einem Bildbearbeitungsmodell: MoGe-2 (Ruicheng/moge-2-vitl-normal) schätzt
 je Pixel einen 3D-Punkt, die Bodenebene wird mit der bekannten Kamerahöhe eingepasst, und je 8-px-Streifen gilt die
-Handlinien-Regel als Rechnung: Grenze = erster Punkt, an dem ein 18 cm hoher Rider anstößt.
-
-  # Prüfen gegen die Handlinien (Prüfsatz 3), daneben dieselbe Tabelle für vorhandene Labels (z. B. Prompt 11):
-  python geo_label.py pruef --hand pruefsatz.json --labels labels_u3/ --hoehe pruefsatz3/hoehe.json \\
-      --vergleich stage3_p11_labels/ --out geo_p3
+Regel als Rechnung: Grenze = erster Punkt, an dem ein 18 cm hoher Rider anstößt. Probe, nicht fürs Training
+(Nutzer 2026-11-20: die Stage3-Labels sind besser).
 
   # Viele Fahrbilder -> rows.jsonl und Label-Dateien für train.py (Filter wie comfy_npz.py):
   python geo_label.py fahrten --runs explore10,explore11 --jedes 2 --config rider.toml --out geo_lab
 
 Je Pixel, Höhe h über der eingepassten Ebene:
-  Boden       -stufe_m <= h <= boden_m      (Fugen, Spiegelungen ohne Tiefe, flache Teppiche)
+  Boden       h <= boden_m                  (Fugen, flache Teppiche, auch alles unter der Ebene: Spiegelungen,
+                                            gekrümmter Nahbereich; kein Absturz, Nutzer 2026-11-20)
   Hindernis   boden_m < h < dach_m          (Sockelleiste, Stufe nach oben, Sofakante unter 18 cm)
-  Absturz     h < -stufe_m                  (Stufe nach unten; --stufe_m 0 schaltet das ab)
   egal        h >= dach_m                   (Tischplatte, Sofa mit genug Luft darunter)
 Je Streifen: freier Boden von unten (Lücken bis --luecke Zeilen überbrückt, wie comfy_label.mask_rows), dazu das
 nächste Hindernis nach vorn (das --min_px-nächste Pixel des Streifens). Liegt das Hindernis näher als das Ende des
@@ -23,13 +20,15 @@ genau diese Entfernung hat.
 Maßstab: MoGe liefert Meter, bei 13-15 cm Kamerahöhe aber nicht verlässlich. Deshalb wird die Ebene im Modellmaß
 eingepasst und alles so skaliert, dass sie genau cam_h unter der Kamera liegt. Ohne eigene Ebene (Wand direkt davor)
 rechnet das Bild mit IMU-Nick und dem Median der Skala der übrigen Bilder dieser Fahrt (art "ersatz"), nur für die
-Anzeige: Solche Bilder kommen nicht in die Label-Datei und nicht in die Prüftabelle (explore10-12 gegen p11 am
-2026-11-18: der Ersatzweg hält sichtbaren Boden für Absturz, Linie ganz unten).
+Anzeige: Solche Bilder kommen nicht in die Label-Datei (explore10-12 gegen p11 am
+2026-11-18: der Ersatzweg legte die Linie ganz nach unten).
 
-Nicht abgedeckt: Teppiche sind nach der Handregel Hindernis, geometrisch aber Boden. Spiegelnder Boden kann
-Spiegelbilder unter die Ebene legen (dann Absturz = fälschlich blockiert).
+Nicht abgedeckt: Teppiche sind für den Rider Hindernis, geometrisch aber Boden. Stufen nach unten sind hier
+Boden (kein Absturz, Nutzer 2026-11-20).
 
 Braucht auf kimmy: pip install git+https://github.com/microsoft/MoGe.git (torch mit CUDA ist schon da).
+Statt MoGe: --tiefe DIR liest vorab gerechnete Tiefenkarten (da3_tiefe.py, Depth Anything 3, eigenes venv) und
+macht daraus mit f und Bildmitte der Rider-Kamera die Punktwolke.
 """
 from __future__ import annotations
 
@@ -58,9 +57,9 @@ MODELL = "Ruicheng/moge-2-vitl-normal"
 class Regeln:
     boden_m: float = 0.025      # |h| bis hier: Boden
     dach_m: float = 0.18        # ab hier passt der Rider darunter
-    stufe_m: float = 0.03       # tiefer als die Ebene: Absturz (0 = aus)
     luecke: int = 6             # Zeilen ohne Boden, die der freie Lauf überbrückt
     min_px: int = 16            # Pixel, die ein Hindernis im Streifen haben muss (2 Zeilen à 8 px)
+    rand: int = 1               # Hindernis-Rampe am unteren Bildrand mit Boden darüber zählt als Boden (rand_rampe)
     min_inl: int = 2000         # Bodenpunkte für eine eigene Ebene, sonst Ersatzskala der Fahrt und IMU-Nick
     max_winkel: float = 8.0     # Ebenen weiter weg vom IMU-Nick gelten nicht als Boden
     toleranz: float = 0.10      # Bodenpunkt: Abstand zur Ebene unter 10 % der Kamerahöhe (1,3 cm)
@@ -132,6 +131,31 @@ def frei_oben(frei: np.ndarray, luecke: int) -> np.ndarray:
     return np.where(j >= 0, H - 1 - j, H)
 
 
+def rand_rampe(h: np.ndarray, frei: np.ndarray, hind: np.ndarray, min_zeilen: int) -> np.ndarray:
+    """Hindernis-Band am unteren Bildrand, das als Boden zählt: je Streifen (Pixel-Mehrheit) die Zeilen von unten,
+    solange Hindernis, wenn direkt darüber mindestens min_zeilen Zeilen Boden folgen und das Band nach unten höher wird
+    (Mittel des untersten Viertels über dem obersten). So biegt DA3 den nahen Boden hoch (explore11: bis 9 cm am Rand,
+    darüber 100 Zeilen Boden); eine echte Kante am Bildrand ist oben höher oder hat keinen Boden direkt darüber."""
+    H, W = h.shape
+    sw = W // NCOLS
+    rot = (hind.reshape(H, NCOLS, sw).mean(2) >= 0.5)[::-1]                  # Index 0 = unterste Zeile
+    gr = (frei.reshape(H, NCOLS, sw).mean(2) >= 0.5)[::-1]
+    n = np.where((~rot).any(0), (~rot).argmax(0), H)                         # Länge des Bandes von unten
+    hs = np.where(hind, h, np.nan).reshape(H, NCOLS, sw)[::-1]
+    out = np.zeros((H, W), bool)
+    for c in np.flatnonzero((n > 0) & (n < H)):
+        k = int(n[c])
+        g = gr[k:k + min_zeilen, c]
+        if len(g) < min_zeilen or not g.all():
+            continue
+        q = max(1, k // 4)
+        with np.errstate(all="ignore"):
+            if not np.nanmean(hs[:q, c]) > np.nanmean(hs[k - q:k, c]) + 0.001:    # 1 mm: flache Kistendecke bleibt
+                continue
+        out[H - k:, c * sw:(c + 1) * sw] = hind[H - k:, c * sw:(c + 1) * sw]
+    return out
+
+
 def grenze(P: np.ndarray, ok: np.ndarray, eb: dict, f: float, cx: float, cy: float, R: Regeln) -> tuple[np.ndarray, dict]:
     """Zeile der Bodengrenze je Streifen (NCOLS) und die Karten h (Höhe, m) und Klasse für die Anzeige."""
     H, W = ok.shape
@@ -142,9 +166,12 @@ def grenze(P: np.ndarray, ok: np.ndarray, eb: dict, f: float, cx: float, cy: flo
     fw = np.array([0.0, 0.0, 1.0]) - n[2] * n
     fw /= np.linalg.norm(fw)
     D = s * (Pz @ fw)                                                      # Abstand nach vorn (m)
-    stufe = R.stufe_m if R.stufe_m > 0 else np.inf
-    frei = ok & (h >= -stufe) & (h <= R.boden_m)
-    hind = ok & (((h > R.boden_m) & (h < R.dach_m)) | (h < -stufe))
+    frei = ok & (h <= R.boden_m)
+    hind = ok & (h > R.boden_m) & (h < R.dach_m)
+    if R.rand:
+        rampe = rand_rampe(h, frei, hind, R.min_px)
+        frei |= rampe
+        hind &= ~rampe
     top = frei_oben(frei, R.luecke)
     Dh = np.where(hind, D, np.inf).reshape(H, NCOLS, sw).transpose(1, 0, 2).reshape(NCOLS, -1)
     dob = np.partition(Dh, R.min_px - 1, axis=1)[:, R.min_px - 1]
@@ -171,22 +198,57 @@ def grenze(P: np.ndarray, ok: np.ndarray, eb: dict, f: float, cx: float, cy: flo
         else:
             rows[c] = np.interp(dob[c], df[g, c][::-1], v[g][::-1])
         fuss[c] = True
-    klasse = np.zeros((H, W), np.uint8)                                    # 0 ungültig, 1 Boden, 2 Hindernis, 3 Absturz, 4 egal
+    klasse = np.zeros((H, W), np.uint8)                                    # 0 ungültig, 1 Boden, 2 Hindernis, 4 egal
     klasse[ok] = 4
     klasse[frei] = 1
-    klasse[hind & (h > 0)] = 2
-    klasse[hind & (h < 0)] = 3
+    klasse[hind] = 2
     return rows, {"h": h, "klasse": klasse, "fuss": fuss}
 
 
-def label_bild(P: np.ndarray, a: float, cam_h: float, f: float, R: Regeln, s_ersatz: float | None) -> tuple[np.ndarray, dict, dict]:
-    """Ein Bild: Punktwolke (H, W, 3, ungültig = inf) -> Zeilen, Ebene, Karten."""
+def ergaenzt_maske(cfg) -> np.ndarray | None:
+    """Pixel, die die Entzerrung nur aufgefüllt hat (Quelle außerhalb des Kamerabilds, camera.lens_maps wiederholt dort
+    den Rand), oder None ohne Linsenmodell. Am RiderPi rechts: unten 13 px, auf Höhe der Bodenlinie 24-26 px."""
+    from xgonav.camera import has_lens, lens_source
+    c = cfg.camera
+    if not has_lens(c):
+        return None
+    gx, gy = np.meshgrid(np.arange(c.width, dtype=np.float64), np.arange(c.height, dtype=np.float64))
+    p = lens_source(c, np.stack([gx, gy], -1))
+    return (p[..., 0] < 0) | (p[..., 0] > c.width - 1) | (p[..., 1] < 0) | (p[..., 1] > c.height - 1)
+
+
+def waagrecht(rows: np.ndarray, erg: np.ndarray, horizont: float) -> np.ndarray:
+    """Streifen, deren Mitte unterhalb des Horizonts überwiegend aus aufgefüllten Pixeln besteht, haben kein eigenes
+    Bild: Dort läuft die Linie waagrecht weiter, mit der Zeile des nächsten echten Streifens (rechts von links her,
+    links von rechts), dazu je ein Streifen nach innen (explore10/008606: MoGe knickt bei x≈607). Überwiegend, weil der Einbau-Roll auch die untersten ~10 Zeilen der rechten Hälfte auffüllt."""
+    H, W = erg.shape
+    u = ((np.arange(NCOLS) + 0.5) * W / NCOLS).astype(int)
+    leer = erg[min(H - 1, max(0, int(horizont))):, u].mean(0) > 0.5
+    if leer.any():                                  # einen Streifen breiter: MoGe knickt schon ~8 px vor dem Rand
+        leer = leer | np.r_[leer[1:], False] | np.r_[False, leer[:-1]]
+    if leer.all() or not leer.any():
+        return rows
+    echt = np.flatnonzero(~leer)
+    rows = rows.copy()
+    for c in np.flatnonzero(leer):
+        rows[c] = rows[echt[np.argmin(np.abs(echt - c))]]
+    return rows
+
+
+def label_bild(P: np.ndarray, a: float, cam_h: float, f: float, R: Regeln, s_ersatz: float | None,
+               erg: np.ndarray | None = None) -> tuple[np.ndarray, dict, dict]:
+    """Ein Bild: Punktwolke (H, W, 3, ungültig = inf) -> Zeilen, Ebene, Karten. erg: aufgefüllte Pixel der
+    Entzerrung (ergaenzt_maske); sie zählen nicht für die Ebene, und am Seitenrand läuft die Linie waagrecht weiter.
+    In der Grenze bleiben sie: Die aufgefüllte Unterkante (~10 Zeilen) würde sonst den freien Boden von unten
+    unterbrechen."""
     H, W = P.shape[:2]
     ok = np.isfinite(P).all(-1) & (P[..., 2] > 0)
     cx, cy = W / 2, H / 2
     horizont = cy + f * math.tan(a)
-    eb = ebene(P, ok, unten(a), cam_h, horizont + 15, R, s_ersatz)
+    eb = ebene(P, ok if erg is None else ok & ~erg, unten(a), cam_h, horizont + 15, R, s_ersatz)
     rows, karten = grenze(P, ok, eb, f, cx, cy, R)
+    if erg is not None:
+        rows = waagrecht(rows, erg, horizont)
     return rows, eb, karten
 
 
@@ -201,7 +263,7 @@ class Moge:
         self.m = MoGeModel.from_pretrained(name).to(self.dev).eval()
         self.tokens = tokens
 
-    def punkte(self, bilder: list, fov_deg: float) -> np.ndarray:
+    def punkte(self, bilder: list, fov_deg: float, ids: list | None = None) -> np.ndarray:
         t = self.torch
         x = t.from_numpy(np.stack([b[..., ::-1] for b in bilder])).to(self.dev).permute(0, 3, 1, 2).float() / 255.0
         with t.inference_mode():
@@ -209,12 +271,39 @@ class Moge:
         return out["points"].float().cpu().numpy()
 
 
-FARBE = {0: (80, 80, 80), 1: (60, 200, 60), 2: (40, 40, 230), 3: (230, 120, 30), 4: (200, 200, 200)}
+class Tiefe:
+    """Punktwolken aus Tiefenkarten von da3_tiefe.py (<dir>/<fahrt>/<datei>.npz, Tiefe entlang der Blickachse im
+    Modellmaß). Strahlen mit f aus dem Öffnungswinkel und Bildmitte W/2, H/2 wie grenze(); Pixel mit conf unter
+    conf_min oder ohne Tiefe gelten als ungültig (inf)."""
+
+    def __init__(self, ordner: str, conf_min: float = 0.0):
+        self.ordner, self.conf_min = ordner, conf_min
+
+    def punkte(self, bilder: list, fov_deg: float, ids: list) -> np.ndarray:
+        H, W = bilder[0].shape[:2]
+        f = W / 2 / math.tan(math.radians(fov_deg) / 2)
+        u, v = np.meshgrid((np.arange(W) - W / 2) / f, (np.arange(H) - H / 2) / f)
+        ray = np.stack([u, v, np.ones_like(u)], -1)
+        out = np.empty((len(ids), H, W, 3), np.float32)
+        for j, k in enumerate(ids):
+            z = np.load(os.path.join(self.ordner, k.rsplit(".", 1)[0] + ".npz"))
+            t = z["tiefe"].astype(np.float32)
+            schlecht = ~(np.isfinite(t) & (t > 0)) | (z["conf"].astype(np.float32) < self.conf_min)
+            out[j] = ray * t[..., None]
+            out[j][schlecht] = np.inf
+        return out
+
+
+def quelle(a):
+    return Tiefe(a.tiefe, a.conf_min) if a.tiefe else Moge(a.modell, a.tokens)
+
+
+FARBE = {0: (80, 80, 80), 1: (60, 200, 60), 2: (40, 40, 230), 4: (200, 200, 200)}
 
 
 def bild(img: np.ndarray, rows: np.ndarray, karten: dict, linien: tuple = ()) -> np.ndarray:
     """Links das Bild mit Linien (magenta Geometrie, dazu linien = ((Zeilen, BGR), ...)), rechts die Klassen
-    (grün Boden, rot Hindernis, blau Absturz, hellgrau egal, dunkelgrau ungültig)."""
+    (grün Boden, rot Hindernis, hellgrau egal, dunkelgrau ungültig)."""
     H, W = img.shape[:2]
     xs = ((np.arange(NCOLS) + 0.5) * W / NCOLS).astype(int)
     links = img.copy()
@@ -236,154 +325,19 @@ def lade_bilder(pfade: list) -> list:
         return list(ex.map(cv2.imread, pfade))
 
 
-def tabelle(eintraege: list, titel: str, far: float = 0.15) -> None:
-    """Wie comfy_label.py / eval_hand.py: Fehler in Metern je Spalte, Bänder nach der Entfernung der Handlinie.
-    eintraege: (Zeilen, Handzeilen, gültig, Nick (1,), geom)."""
-    import comfy_label as C
-    print("\n== %s, %d Bilder" % (titel, len(eintraege)))
-    tot = np.zeros(3)
-    for lo, hi in ((0.0, 0.5), (0.5, 1.0), (1.0, 1.5), (1.5, 2.5)):
-        n = fr = bl = 0
-        meds = []
-        for pr, hr, ok, pitch, geo in eintraege:
-            dh = C.row_dist(geo, hr[None], pitch)[0]
-            dp = C.row_dist(geo, pr[None], pitch)[0]
-            m = ok & (dh >= lo) & (dh < hi) & np.isfinite(pr)
-            e = dp - dh
-            n += int(m.sum())
-            fr += int(((e > far) & m).sum())
-            bl += int(((e < -far) & m).sum())
-            meds.append(np.abs(np.nan_to_num(e[m], posinf=9.0)))
-        if hi <= 1.0:
-            tot += (n, fr, bl)
-        med = float(np.median(np.concatenate(meds)) * 100) if n else float("nan")
-        print("%3.1f-%3.1f m | n%5d frei %5.1f%% block %5.1f%% med %4.0f cm" % (
-            lo, hi, n, 100 * fr / max(n, 1), 100 * bl / max(n, 1), med))
-    print("unter 1.0 m: fälschlich frei %.1f%%, fälschlich blockiert %.1f%%" % (
-        100 * tot[1] / max(tot[0], 1), 100 * tot[2] / max(tot[0], 1)))
-
-
 def regeln_args(ap: argparse.ArgumentParser) -> None:
     for k, v in Regeln().__dict__.items():
         ap.add_argument("--" + k, type=type(v), default=v)
     ap.add_argument("--modell", default=MODELL)
     ap.add_argument("--tokens", type=int, default=None, help="ViT-Tokens (MoGe: 1200-2500); ohne: Höchstwert")
+    ap.add_argument("--tiefe", default="", help="Tiefenkarten von da3_tiefe.py statt MoGe")
+    ap.add_argument("--conf_min", type=float, default=0.0, help="mit --tiefe: Pixel mit kleinerer conf ungültig")
     ap.add_argument("--batch", type=int, default=8)
     ap.add_argument("--jobs", type=int, default=8, help="Threads für die Rechnung nach dem Modell")
 
 
 def regeln_aus(a) -> Regeln:
     return Regeln(**{k: getattr(a, k) for k in Regeln().__dict__})
-
-
-def pruef(a) -> int:
-    """Geometrie-Labels für die Handbilder rechnen (ergebnis.json, setzt fort) und gegen die Handlinien messen."""
-    import comfy_label as C
-    R = regeln_aus(a)
-    os.makedirs(a.out, exist_ok=True)
-    hd = json.load(open(a.hand, encoding="utf-8"))["bilder"]
-    ids = sorted(k for k, e in hd.items() if e.get("fertig") and not e.get("unbrauchbar"))
-    if a.ids:
-        ids = [x.strip() for x in open(a.ids, encoding="utf-8") if x.strip()]
-    elif a.n:
-        random.Random(a.seed).shuffle(ids)
-        ids = sorted(ids[:a.n])
-    body = {}
-    if a.hoehe:
-        for g, lst in json.load(open(a.hoehe, encoding="utf-8")).items():
-            try:
-                body.update({i: float(g) for i in lst})
-            except ValueError:
-                pass
-        n0 = len(ids)
-        ids = [k for k in ids if k in body]
-        print("Höhe unklar, ausgelassen:", n0 - len(ids))
-    lab: dict = {}
-
-    def npz(run):
-        if run not in lab:
-            d = np.load(os.path.join(a.labels, run + ".npz"), allow_pickle=False)
-            lab[run] = (d, {str(x): i for i, x in enumerate(d["files"])})
-        return lab[run]
-
-    def info(k):
-        run, f = k.split("/", 1)
-        d, pos = npz(run)
-        geo = json.loads(str(d["geom"]))
-        if k in body:                                   # Labels rechnen mit 85 mm Körperhöhe (eval_hand.py)
-            geo["cam_h"] = geo["cam_h"] + (body[k] - 85.0) / 1000.0
-        return os.path.join(str(d["source_dir"]), f), geo, np.array([d["pitch"][pos[f]]], np.float64)
-
-    res_path = os.path.join(a.out, "ergebnis.json")
-    res = json.load(open(res_path, encoding="utf-8")) if os.path.exists(res_path) else {}
-    todo = [k for k in ids if k not in res]
-    if todo:
-        model = Moge(a.modell, a.tokens)
-        skala: dict = {}
-        bdir = os.path.join(a.out, "bilder")
-        os.makedirs(bdir, exist_ok=True)
-        t0, fertig = time.time(), 0
-        pool = ThreadPoolExecutor(a.jobs)                  # numpy gibt die GIL in den großen Rechnungen frei
-        for i in range(0, len(todo), a.batch):
-            teil = todo[i:i + a.batch]
-            inf = [info(k) for k in teil]
-            imgs = lade_bilder([p for p, _, _ in inf])
-            ts = time.time()
-            P = model.punkte(imgs, inf[0][1]["hfov_deg"])       # alle Fahrten einer Wohnung: gleiche Kamera
-            tm = (time.time() - ts) / len(teil)
-            def eins(j):
-                run, (_, geo, pitch) = teil[j].split("/")[0], inf[j]
-                s_e = float(np.median(skala[run])) if skala.get(run) else None
-                return label_bild(P[j], math.radians(geo["tilt_deg"]) + float(pitch[0]), geo["cam_h"], geo["f"], R, s_e)
-
-            for k, img, (rows, eb, karten) in zip(teil, imgs, pool.map(eins, range(len(teil)))):
-                run = k.split("/")[0]
-                if eb["art"] == "ebene":
-                    skala.setdefault(run, []).append(eb["s"])
-                res[k] = {"rows": [round(float(x), 2) for x in rows], "s": round(eb["s"], 4), "inl": eb["inl"],
-                          "winkel": eb["winkel"], "art": eb["art"], "ms": round(1000 * tm, 1)}
-                if fertig < a.bilder:
-                    hr, _ = C.polyline_rows(hd[k]["pts"])
-                    cv2.imwrite(os.path.join(bdir, k.replace("/", "__").rsplit(".", 1)[0] + ".jpg"),
-                                bild(img, rows, karten, ((hr, (0, 220, 0)),)))
-                fertig += 1
-            json.dump(res, open(res_path, "w", encoding="utf-8"))
-            print("%5d/%d  %.0f ms/Bild Modell, gesamt %.1f Bilder/s" % (
-                fertig, len(todo), 1000 * tm, fertig / (time.time() - t0)), flush=True)
-    arten: dict = {}
-    for k in ids:
-        arten[res[k]["art"]] = arten.get(res[k]["art"], 0) + 1
-    print("\nEbene je Bild:", arten, " Skala Median %.3f" % float(np.median([res[k]["s"] for k in ids])))
-
-    vgl: dict = {}
-    if a.vergleich:
-        for k in ids:
-            run, f = k.split("/", 1)
-            p = os.path.join(a.vergleich, run + ".npz")
-            if run not in vgl:
-                vgl[run] = None
-                if os.path.exists(p):
-                    z = np.load(p, allow_pickle=False)
-                    vgl[run] = {str(x): r for x, r in zip(z["files"], z["row"])}
-    gemeinsam = [k for k in ids if res[k]["art"] == "ebene" and
-                 (not vgl or (vgl.get(k.split("/")[0]) or {}).get(k.split("/", 1)[1]) is not None)]
-    print("ohne eigene Ebene, verworfen: %d" % sum(res[k]["art"] != "ebene" for k in ids))
-    if vgl:
-        print("Bilder mit beiden Labels: %d von %d" % (len(gemeinsam), len(ids)))
-
-    def eintraege(quelle):
-        out = []
-        for k in gemeinsam:
-            _, geo, pitch = info(k)
-            hr, ok = C.polyline_rows(hd[k]["pts"])
-            out.append((quelle(k), hr, ok, pitch, geo))
-        return out
-
-    tabelle(eintraege(lambda k: np.array(res[k]["rows"], np.float32)), "Geometrie (%s)" % a.modell)
-    if vgl:
-        tabelle(eintraege(lambda k: np.asarray(vgl[k.split("/")[0]][k.split("/", 1)[1]], np.float32)),
-                "Vergleich %s" % a.vergleich)
-    return 0
 
 
 def fahrten(a) -> int:
@@ -418,6 +372,9 @@ def fahrten(a) -> int:
     for k in todo:
         je_fahrt.setdefault(k.split("/")[0], []).append(k)
     model = None
+    erg = ergaenzt_maske(cfg) if a.entzerrt else None
+    if erg is not None:
+        print("aufgefüllte Pixel der Entzerrung: %d, Linie dort waagrecht" % int(erg.sum()))
     pool = ThreadPoolExecutor(a.jobs)
     bdir = os.path.join(a.out, "bilder")
     gezeigt = 0
@@ -432,10 +389,10 @@ def fahrten(a) -> int:
             for i in range(0, len(offen), a.batch):
                 teil = offen[i:i + a.batch]
                 if model is None:
-                    model = Moge(a.modell, a.tokens)
+                    model = quelle(a)
                 imgs = lade_bilder([os.path.join(a.data, k) for k in teil])
                 geo0 = CamGeometry.from_cfg(cfg, hoehe)
-                P = model.punkte(imgs, geo0.hfov_deg)
+                P = model.punkte(imgs, geo0.hfov_deg, teil)
                 s_e = float(np.median(skala)) if skala else None
 
                 def eins(j):
@@ -443,7 +400,7 @@ def fahrten(a) -> int:
                     hb = m.get("height_mm") if isinstance(m.get("height_mm"), (int, float)) else hoehe
                     geo = CamGeometry.from_cfg(cfg, hb)
                     a_ = math.radians(geo.tilt_deg) + NB.pitch_dev(run, m)
-                    return label_bild(P[j], a_, geo.cam_h, geo.f, R, s_e)
+                    return label_bild(P[j], a_, geo.cam_h, geo.f, R, s_e, erg)
 
                 for k, img, (rows, eb, karten) in zip(teil, imgs, pool.map(eins, range(len(teil)))):
                     if eb["art"] == "ebene":
@@ -478,18 +435,6 @@ def fahrten(a) -> int:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
-    p = sub.add_parser("pruef", help="gegen Handlinien messen")
-    p.add_argument("--hand", required=True)
-    p.add_argument("--labels", required=True, help="Label-Dateien der Fahrten (Quelle, Geometrie, Nick je Bild)")
-    p.add_argument("--hoehe", default="", help="hoehe.json (Gruppe = Körperhöhe mm -> IDs), wie comfy_label.py")
-    p.add_argument("--vergleich", default="", help="Label-Dateien eines anderen Lehrers (z. B. Stage3 Prompt 11), "
-                                                    "gleiche Tabelle auf denselben Bildern")
-    p.add_argument("--ids", default="")
-    p.add_argument("--n", type=int, default=0, help="nur so viele zufällige Handbilder (0 = alle)")
-    p.add_argument("--seed", type=int, default=3)
-    p.add_argument("--bilder", type=int, default=60, help="so viele Vergleichsbilder schreiben")
-    p.add_argument("--out", required=True)
-    regeln_args(p)
     q = sub.add_parser("fahrten", help="Fahrbilder labeln, Label-Dateien für train.py")
     q.add_argument("--runs", default="")
     q.add_argument("--ids", default="", help="Datei mit fahrt/datei.jpg je Zeile (z. B. aus ids_fahrt.py)")
@@ -499,11 +444,13 @@ def main() -> int:
     q.add_argument("--steht_grad", type=float, default=3.0)
     q.add_argument("--config", default=None, help="TOML des Riders für die Kamerageometrie")
     q.add_argument("--wohnung", default="a")
+    q.add_argument("--entzerrt", type=int, default=1, help="Bilder sind entzerrt: aufgefüllten Rand der Linsentabelle "
+                                                           "auslassen, Linie dort waagrecht (0 = aus)")
     q.add_argument("--bilder", type=int, default=40)
     q.add_argument("--out", required=True)
     regeln_args(q)
     a = ap.parse_args()
-    return pruef(a) if a.cmd == "pruef" else fahrten(a)
+    return fahrten(a)
 
 
 if __name__ == "__main__":

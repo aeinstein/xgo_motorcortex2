@@ -12,7 +12,6 @@ sys.path.insert(0, os.path.join(ROOT, "tools", "floornet"))
 
 import comfy_batch as B  # noqa: E402
 import comfy_npz as Z  # noqa: E402
-import hand_npz as HN  # noqa: E402
 import inseln as I  # noqa: E402
 import stage2 as S2  # noqa: E402
 import stage3 as S3  # noqa: E402
@@ -340,18 +339,6 @@ def test_edit_archive_moves_comfy_file_and_finds_missing(tmp_path):
     assert B.missing_edits(["r/000004.jpg", "r/000001.jpg", "r/000003.jpg", "r/000002.jpg"], edits) == ["r/000004.jpg", "r/000003.jpg"]
 
 
-def test_hand_npz_keeps_only_lined_frames():
-    n = 4
-    z = {"files": np.array(["a.jpg", "b.jpg", "c.jpg", "d.jpg"]), "t": np.arange(n, dtype=float), "x": np.zeros(n), "y": np.zeros(n),
-         "th": np.zeros(n), "rate": np.zeros(n), "pitch": np.zeros(n, np.float32), "kanten_row": np.zeros((n, 160), np.float32),
-         "row": np.zeros((n, 80), np.float32), "kind": np.zeros((n, 80), np.uint8), "lo": np.zeros((2, 2)), "run": np.array("r"),
-         "geom": np.array("{}"), "source_dir": np.array("s"), "wohnung": np.array("a")}
-    ok = np.ones(80, bool)
-    ok[:5] = False
-    d = HN.build_run(z, {"c.jpg": (GUT, ok), "fehlt.jpg": (GUT, ok)})
-    assert list(d["files"]) == ["c.jpg"] and d["hand"].all() and "lo" not in d
-    assert d["row"][0, 0] == 280.0 and d["kind"][0, 0] == HN.IGNORE and d["kind"][0, 5] == HN.EXACT
-    assert "kanten_row" not in d                # Feld alter Dateien, wird nicht mehr übernommen
 
 
 def test_frame_reason_filters():

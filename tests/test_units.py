@@ -3889,3 +3889,56 @@ def test_kamera_kontrast_saettigung():
         with pytest.raises(ValueError):
             q.set_bild(k, s, b)
     assert q.bild == (2.0, 1.5, 0.2) and len(gesetzt) == 2
+
+
+def test_floornet_nur_balancierend():
+    """FloorNet läuft nur balancierend: liegend keine Bodengrenze und kein Netzaufruf, nach dem Aufstehen wieder."""
+    import threading
+    from xgonav.app import App
+    cfg = Config.neutral(); cfg.output.web_port = 0; cfg.detector.enabled = False
+    cfg.freespace.restart_hold_s = 0.2
+    robot = SimRobot(cfg.robot)
+    world = SimWorld(cfg.camera, robot, None, start=(1.0, 1.5, 0.0))
+    net = SimFloorNet(world)
+    aufrufe = []
+    lauf = net.run
+    net.run = lambda bgr: (aufrufe.append(1), lauf(bgr))[1]
+    app = App(cfg, robot, world, imu=None, floor_net=net)
+    app.imu = None
+    th = threading.Thread(target=app.run, kwargs={"duration": 6.0}, daemon=True)
+    th.start()
+    try:
+        time.sleep(1.0)
+        assert app._free is not None and aufrufe
+        robot.state.balancing = False                   # abgesetzt
+        time.sleep(0.5)
+        n = len(aufrufe)
+        time.sleep(1.0)
+        assert app._free is None and len(aufrufe) <= n + 1      # höchstens ein Auftrag war schon unterwegs
+        robot.state.balancing = True                    # aufgestanden
+        time.sleep(1.2)
+        assert app._free is not None and len(aufrufe) > n + 1
+    finally:
+        app.stop(); th.join(timeout=5)
+
+
+def test_sichtfeld_lage_korrektur_bringt_horizont_auf_nick_null():
+    """tools/floornet/sichtfeld.py: Nick und Roll eines Bildes herausrechnen; der Horizont landet bei Nick 0."""
+    import math
+    import cv2
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools" / "floornet"))
+    import sichtfeld as SF
+    from xgonav.geometry import CamGeometry
+    geo = CamGeometry.from_cfg(Config())
+    nick, roll = math.radians(-3.0), 2.0
+    img = np.zeros((480, 640), np.uint8)
+    hz = SF.horizont_zeile(geo, nick)
+    # Horizont bei Roll + (rechts tief) erscheint rechts höher
+    for x in range(640):
+        y = hz - (x - 320) * math.tan(math.radians(roll))
+        img[int(round(y)):, x] = 255
+    out = SF.lage_korrigieren(img, geo, nick, roll)
+    soll = SF.horizont_zeile(geo, 0.0)
+    for x in (100, 320, 540):
+        zeile = int(np.argmax(out[:, x] > 127))
+        assert abs(zeile - soll) <= 1.5, (x, zeile, soll)
