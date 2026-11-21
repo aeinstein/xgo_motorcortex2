@@ -966,6 +966,10 @@ class App:
         self._was_balancing = bal
         if time.monotonic() < self._fs_hold_until or self.fs_worker is None:
             pass                          # nach Kamerastart/Aufstehen: Belichtung und Lage abwarten
+        elif not bal:
+            # FloorNet nur balancierend (Nutzer 2026-11-21): liegend/abgesetzt fährt er nicht selbst, und so schräg
+            # hat das Netz den Boden nie gesehen. Keine Bodengrenze, spart die Netzzeit.
+            self._free = None
         elif f.idx % 2 == 0 or self._free is None:
             # FloorNet jedes 2. Bild: im eigenen Thread (neuestes Ergebnis übernehmen) oder im Takt
             roll = self._imu_frame.roll_deg if self._imu_frame is not None else 0.0
@@ -978,7 +982,7 @@ class App:
                 if r is not None:
                     self._free = r
                     tm.fs_ran = True
-        if self.fs_worker is not None and self.cfg.freespace.threaded and time.monotonic() >= self._fs_hold_until:
+        if self.fs_worker is not None and self.cfg.freespace.threaded and time.monotonic() >= self._fs_hold_until and bal:
             r = self.fs_worker.poll()
             if r is not None:
                 self._free = r
