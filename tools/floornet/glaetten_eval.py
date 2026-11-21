@@ -102,7 +102,7 @@ def main() -> int:
             teile = []
             for i in range(0, len(r["imgs"]), 256):
                 x = torch.as_tensor(r["imgs"][i:i + 256][:, T.MARGIN:], device=dev).permute(0, 3, 1, 2).float() / 255.0
-                teile.append(decode(net(prep(x, bool(a.norm))), a.zacken).cpu().numpy())
+                teile.append(decode(net(prep(x, bool(a.norm))), a.zacken, row_top=net.row_top).cpu().numpy())
         zeilen = {"roh": np.concatenate(teile)}
         for n in ns:
             zeilen["glatt%d" % n] = glatt(zeilen["roh"], posen, r["pitch"], t, geo, n)

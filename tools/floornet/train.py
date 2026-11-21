@@ -4,8 +4,7 @@
   python tools/floornet/train.py --labels labels/ --out lauf1/ \\
       --train explore2,explore3,explore4,explore5,explore6,explore7,explore8 --val explore9,streife1,unten1
 
-Mit --hand_labels und --hand_train kommen Fahrten mit Labels aus Handlinien dazu (handmap.py). Labels aus der
-Raumkarte (ältere Dateien) lassen sich abschwächen: --far_atleast macht ferne Grenzen zu "mindestens",
+Labels aus der Raumkarte (ältere Dateien) lassen sich abschwächen: --far_atleast macht ferne Grenzen zu "mindestens",
 --cap_atleast begrenzt, wie weit "mindestens" gilt.
 
 Bericht je Prüffahrt: Abstand der Vorhersage zu den Labels in Metern je Entfernungsband.
@@ -34,6 +33,7 @@ from pick import pick  # noqa: E402
 
 IGNORE, EXACT, ATLEAST = 0, 1, 2
 MARGIN = 12                 # Eingabezeilen Vorrat oberhalb des Ausschnitts, für den simulierten Nick
+MARGIN_GEOM = 40            # mit --nick_korr/--nick_zufall/--roll: 10° Nick + Ecken bei 3° Roll (train.main setzt MARGIN)
 BANDS = ((0.0, 0.5), (0.5, 1.0), (1.0, 1.5), (1.5, 2.5))
 FAR_M = 0.15                # Abweichung, ab der eine Grenze als falsch zählt (Plan, Schritt 3)
 
@@ -46,16 +46,14 @@ def _decode_one(args):
     return cv2.resize(img[top:CROP_Y + CROP_H], (IN_W, IN_H + MARGIN), interpolation=cv2.INTER_AREA)
 
 
-def load_run(npz: str, cache: str, dist: float, yaw: float, pool, min_labeled: float = 0.6, only_hand: bool = False) -> dict:
-    """Gewählte Bilder einer Fahrt: Fächer (uint8, N x H x W x 3) und Labels. Bilder liegen im Zwischenspeicher.
-    only_hand: nur Bilder mit eigener Handlinie, ohne die über die Karte übertragenen."""
+def load_run(npz: str, cache: str, dist: float, yaw: float, pool, min_labeled: float = 0.6) -> dict:
+    """Gewählte Bilder einer Fahrt: Fächer (uint8, N x H x W x 3) und Labels. Bilder liegen im Zwischenspeicher."""
     d = np.load(npz, allow_pickle=False)
     run = str(d["run"])
-    hand = d["hand"] if "hand" in d.files else np.zeros(len(d["x"]), bool)
-    idx = np.nonzero(hand)[0] if only_hand else np.union1d(
-        pick(d["x"], d["y"], d["th"], d["rate"], d["kind"], dist, yaw, min_labeled), np.nonzero(hand)[0]).astype(int)
+    idx = np.asarray(pick(d["x"], d["y"], d["th"], d["rate"], d["kind"], dist, yaw, min_labeled)).astype(int)
     # Schlüssel aus den Dateinamen: Label-Dateien derselben Fahrt können verschiedene Bilder an gleicher Stelle haben
-    path = os.path.join(cache, "%s_%s.npy" % (run, hashlib.md5(d["files"][idx].tobytes()).hexdigest()[:10]))
+    path = os.path.join(cache, "%s_%s%s.npy" % (run, hashlib.md5(d["files"][idx].tobytes()).hexdigest()[:10],
+                                                "" if MARGIN == 12 else "_m%d" % MARGIN))
     top = CROP_Y - MARGIN * DOWN
     if os.path.exists(path):
         imgs = np.load(path)
@@ -66,12 +64,12 @@ def load_run(npz: str, cache: str, dist: float, yaw: float, pool, min_labeled: f
         np.save(path, imgs)
     if len(imgs) != len(idx):
         raise RuntimeError("Zwischenspeicher passt nicht zu den Labels: " + path)
-    return {"run": run, "imgs": imgs, "row": d["row"][idx], "kind": d["kind"][idx], "hand": hand[idx],
+    return {"run": run, "imgs": imgs, "row": d["row"][idx], "kind": d["kind"][idx],
             "pitch": d["pitch"][idx], "files": d["files"][idx], "source": str(d["source_dir"]), "geom": json.loads(str(d["geom"]))}
 
 
 def soften(run: dict, far_atleast: float = 0.0, cap_atleast: float = 0.0) -> None:
-    """Labels aus der Raumkarte (ältere Dateien) abschwächen, wo sie nachweislich schief liegen (Vergleich mit Handlinien):
+    """Labels aus der Raumkarte (ältere Dateien) abschwächen, wo sie nachweislich schief liegen:
     Ferne Grenzen liegen oft zu nah (erste Zelle einer verschmierten Wand), also nur noch "mindestens".
     "Mindestens" läuft oft durch dunkle Hindernisse (Freistrahl), also nur noch bis cap_atleast Meter behaupten."""
     geo, pitch = run["geom"], run["pitch"]
@@ -88,16 +86,75 @@ def soften(run: dict, far_atleast: float = 0.0, cap_atleast: float = 0.0) -> Non
     run["row"], run["kind"] = row, kind
 
 
-def augment(x: torch.Tensor, row: torch.Tensor, kind: torch.Tensor, norm: bool = False):
-    """x: Bilder (N, 3, H + MARGIN, W), uint8. Rückgabe: Eingabe fürs Netz und passende Labels."""
+def _label_interp(row: torch.Tensor, kind: torch.Tensor, xq: torch.Tensor):
+    """Label-Zeile und -Art an beliebigen Vollbildspalten xq (N, NCOLS): linear zwischen den Spaltenmitten; Art nur,
+    wenn beide Nachbarn gleich sind, sonst IGNORE; außerhalb des Bildes IGNORE."""
+    sp = 640.0 / NCOLS
+    u = xq / sp - 0.5
+    lo = u.floor().clamp(0, NCOLS - 1).long()
+    hi = (lo + 1).clamp(0, NCOLS - 1)
+    t = (u - lo.float()).clamp(0.0, 1.0)
+    r = torch.nan_to_num(row)
+    out = r.gather(1, lo) * (1 - t) + r.gather(1, hi) * t
+    kl, kh = kind.gather(1, lo), kind.gather(1, hi)
+    k = torch.where(kl == kh, kl, torch.full_like(kl, IGNORE))
+    k = torch.where((xq < 0) | (xq > 640.0), torch.full_like(k, IGNORE), k)
+    return out, k
+
+
+def geom_shift(x: torch.Tensor, row: torch.Tensor, kind: torch.Tensor, shift: torch.Tensor, theta: torch.Tensor):
+    """Nick und Roll nachstellen: x (N, 3, IN_H + MARGIN, IN_W) uint8 ab Vollbildzeile CROP_Y - MARGIN * DOWN.
+    shift: Vollbildzeilen je Bild (> 0: Inhalt wandert nach oben, wie Nick nach unten), theta: Roll (rad) um die
+    Bildmitte (320, 240). Rückgabe: Ausschnitt (N, 3, IN_H, IN_W) float 0..1 und die Labels dazu. Außerhalb des
+    Vorrats wird der Rand wiederholt."""
+    n, dev = len(x), x.device
+    shift, theta = shift.float().to(dev), theta.float().to(dev)
+    top = CROP_Y - MARGIN * DOWN
+    hb = x.shape[2]
+    cx, cy = 320.0, 240.0
+    c, s = torch.cos(theta)[:, None, None], torch.sin(theta)[:, None, None]
+    # Ausgabepixel (Vollbild-Koordinaten, Pixelmitte) -> Quellpunkt: q = c + R(-theta)(p - c), dann um shift versetzt
+    X = (torch.arange(IN_W, device=dev).float() + 0.5) * DOWN
+    Y = CROP_Y + (torch.arange(IN_H, device=dev).float() + 0.5) * DOWN
+    px, py = X[None, None, :] - cx, Y[None, :, None] - cy
+    qx = cx + c * px + s * py
+    qy = cy - s * px + c * py + shift[:, None, None]
+    grid = torch.stack([qx / 640.0 * 2 - 1, (qy - top) / (hb * DOWN) * 2 - 1], dim=-1)
+    out = F.grid_sample(x.float() / 255.0, grid, mode="bilinear", padding_mode="border", align_corners=False)
+    # Labels: Grenzpunkt (x, r - shift) um theta drehen; je neuer Spaltenmitte den Punkt der Kurve suchen
+    xs = ((torch.arange(NCOLS, device=dev).float() + 0.5) * (640.0 / NCOLS))[None, :].expand(n, -1)
+    c1, s1 = c[:, :, 0], s[:, :, 0]
+    rs = torch.nan_to_num(row) - shift[:, None]
+    rn = rs.clone()
+    for _ in range(3):
+        xq = cx + c1 * (xs - cx) + s1 * (rn - cy)               # Spalte im unverdrehten Bild
+        rq, kq = _label_interp(rs, kind, xq)
+        rn = cy + s1 * (xq - cx) + c1 * (rq - cy)                # zurück ins gedrehte Bild (Zeile)
+    return out, rn, kq
+
+
+def augment(x: torch.Tensor, row: torch.Tensor, kind: torch.Tensor, norm: bool = False, korr: torch.Tensor | None = None,
+            nick_zufall: float = 0.0, roll: float = 0.0):
+    """x: Bilder (N, 3, H + MARGIN, W), uint8. Rückgabe: Eingabe fürs Netz und passende Labels.
+    korr: Vollbildzeilen je Bild, die den gemessenen Nick herausnehmen (--nick_korr), nick_zufall: zufälliger Nick
+    bis ± so viele Vollbildzeilen (--nick_zufall), roll: zufälliger Roll bis ± so viele Grad. Alle drei aus:
+    der bisherige Weg (± 6 Eingabezeilen, ganzzahlig)."""
     n = len(x)
     dev = x.device
-    # Nick simulieren: Ausschnitt verschieben (je Eingabezeile 2 Vollbildzeilen); unten wird der Rand wiederholt
-    dy = torch.randint(-6, 7, (n,), device=dev)
-    ys = (MARGIN + dy)[:, None] + torch.arange(IN_H, device=dev)[None, :]
-    ys = ys.clamp(0, x.shape[2] - 1)
-    x = x.gather(2, ys[:, None, :, None].expand(-1, 3, -1, IN_W))
-    row = row - (dy * DOWN).float()[:, None]
+    if korr is None and not nick_zufall and not roll:
+        # Nick simulieren: Ausschnitt verschieben (je Eingabezeile 2 Vollbildzeilen); unten wird der Rand wiederholt
+        dy = torch.randint(-6, 7, (n,), device=dev)
+        ys = (MARGIN + dy)[:, None] + torch.arange(IN_H, device=dev)[None, :]
+        ys = ys.clamp(0, x.shape[2] - 1)
+        x = x.gather(2, ys[:, None, :, None].expand(-1, 3, -1, IN_W))
+        row = row - (dy * DOWN).float()[:, None]
+    else:
+        shift = (torch.rand(n, device=dev) * 2 - 1) * nick_zufall
+        if korr is not None:
+            shift = shift + korr
+        theta = (torch.rand(n, device=dev) * 2 - 1) * math.radians(roll)
+        x, row, kind = geom_shift(x, row, kind, shift, theta)
+        x = (x * 255.0).round().to(torch.uint8)     # weiter wie im bisherigen Weg
     # Spiegeln
     flip = torch.rand(n, device=dev) < 0.5
     x = torch.where(flip[:, None, None, None], x.flip(-1), x)
@@ -185,7 +242,7 @@ def predict(net, run: dict, dev, norm: bool = False, bs: int = 256) -> np.ndarra
     out = []
     for i in range(0, len(run["imgs"]), bs):
         x = torch.as_tensor(run["imgs"][i:i + bs][:, MARGIN:], device=dev).permute(0, 3, 1, 2).float() / 255.0
-        out.append(decode(net(prep(x, norm))).cpu().numpy())
+        out.append(decode(net(prep(x, norm)), row_top=net.row_top).cpu().numpy())
     return np.concatenate(out)
 
 
@@ -247,11 +304,6 @@ def main() -> int:
     ap.add_argument("--lr", type=float, default=3e-3)
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--norm", type=int, default=0, help="1: Helligkeit über den Boden normieren")
-    ap.add_argument("--hand_labels", default="", help="Verzeichnis von handmap.py")
-    ap.add_argument("--hand_train", default="", help="Fahrten aus --hand_labels, mit Komma getrennt")
-    ap.add_argument("--hand_repeat", type=int, default=8, help="so oft zählt ein Bild mit eigener Handlinie")
-    ap.add_argument("--hand_min_labeled", type=float, default=0.3)
-    ap.add_argument("--hand_only", type=int, default=0, help="1: nur Bilder mit eigener Handlinie, nichts über die Karte Übertragenes")
     ap.add_argument("--far_atleast", type=float, default=0.0)
     ap.add_argument("--cap_atleast", type=float, default=0.0)
     ap.add_argument("--far_w", type=float, default=0.5)
@@ -262,7 +314,15 @@ def main() -> int:
     ap.add_argument("--smooth_w", type=float, default=0.0, help="Gewicht der Strafe für Sprünge zwischen Nachbarspalten")
     ap.add_argument("--dil", default="1,1", help="waagerechte Dilatation in Block 5 und 6 (net.py, Varianten)")
     ap.add_argument("--extra", type=int, default=0, help="weitere Residualblöcke auf 80 x 11")
+    ap.add_argument("--nick_korr", type=float, default=0.0,
+                    help="Grad: gemessenen Nick je Bild herausnehmen, höchstens so viel (0 = aus)")
+    ap.add_argument("--nick_zufall", type=float, default=0.0,
+                    help="Grad: zufälliger Nick bis ± so viel (0 = bisheriger Weg, ± 6 Eingabezeilen ≈ ± 2,2°)")
+    ap.add_argument("--roll", type=float, default=0.0, help="Grad: zufälliger Roll bis ± so viel (0 = aus)")
     a = ap.parse_args()
+    global MARGIN
+    if a.nick_korr or a.nick_zufall or a.roll:
+        MARGIN = MARGIN_GEOM
     torch.manual_seed(a.seed)
     os.makedirs(a.out, exist_ok=True)
     dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -270,21 +330,31 @@ def main() -> int:
         train = [load_run(os.path.join(a.labels, r + ".npz"), a.cache, a.dist, a.yaw, pool) for r in a.train.split(",") if r]
         for r in train:
             soften(r, a.far_atleast, a.cap_atleast)
-        train += [load_run(os.path.join(a.hand_labels, r + ".npz"), a.cache, a.dist, a.yaw, pool, a.hand_min_labeled, bool(a.hand_only))
-                  for r in a.hand_train.split(",") if r]
         val = [load_run(os.path.join(a.labels, r + ".npz"), a.cache, a.dist, a.yaw, pool) for r in a.val.split(",") if r]
     print("Training:", {r["run"]: len(r["imgs"]) for r in train}, "Prüfung:", {r["run"]: len(r["imgs"]) for r in val}, flush=True)
     x = torch.as_tensor(np.concatenate([r["imgs"] for r in train]), device=dev).permute(0, 3, 1, 2)
     row = torch.as_tensor(np.concatenate([r["row"] for r in train]), device=dev)
     kind = torch.as_tensor(np.concatenate([r["kind"] for r in train]), device=dev)
-    # Bilder mit eigener Handlinie mehrfach: Sie sind die einzige Quelle der Wahrheit
-    hand = np.concatenate([r["hand"] for r in train])
     near = np.concatenate([near_frames(r, a.near_m, a.near_share) for r in train])
-    order = torch.as_tensor(np.repeat(np.arange(len(hand)), np.maximum(np.where(hand, a.hand_repeat, 1), np.where(near, a.near_repeat, 1))), device=dev)
-    print("Bilder %d, davon mit Handlinie %d, nah %d, je Epoche %d" % (len(hand), hand.sum(), near.sum(), len(order)), flush=True)
-    centers = torch.as_tensor(bin_centers(), dtype=torch.float32, device=dev)
-
+    order = torch.as_tensor(np.repeat(np.arange(len(near)), np.where(near, a.near_repeat, 1)), device=dev)
+    print("Bilder %d, nah %d, je Epoche %d" % (len(near), near.sum(), len(order)), flush=True)
+    korr, nick_zufall_px = None, 0.0
+    if a.nick_korr or a.nick_zufall or a.roll:
+        g = train[0]["geom"]
+        nick_zufall_px = g["f"] * math.tan(math.radians(a.nick_zufall))
+        if a.nick_korr:
+            # Zeilen, um die der Horizont wegen des gemessenen Nicks verschoben ist (Vorzeichen wie soften/row_dist)
+            k = []
+            for r in train:
+                t, p = math.radians(r["geom"]["tilt_deg"]), np.clip(np.nan_to_num(r["pitch"]), -math.radians(a.nick_korr),
+                                                                     math.radians(a.nick_korr))
+                k.append(r["geom"]["f"] * (np.tan(t + p) - math.tan(t)))
+            korr = torch.as_tensor(np.concatenate(k), dtype=torch.float32, device=dev)
+            print("Nick herausgenommen: |Zeilen| Mittel %.1f, max %.1f" % (korr.abs().mean().item(), korr.abs().max().item()),
+                  flush=True)
+        print("Nick zufällig ± %.1f Zeilen, Roll ± %.1f°, Vorrat %d Eingabezeilen" % (nick_zufall_px, a.roll, MARGIN), flush=True)
     net = FloorNet(tuple(int(d) for d in a.dil.split(",")), a.extra).to(dev)
+    centers = torch.as_tensor(bin_centers(net.row_top), dtype=torch.float32, device=dev)
     with open(os.path.join(a.out, "netz.json"), "w", encoding="utf-8") as f:
         json.dump(net.variant, f)
     print("Parameter:", sum(p.numel() for p in net.parameters()), flush=True)
@@ -298,7 +368,8 @@ def main() -> int:
         total = 0.0
         for i in range(len(order) // a.bs):
             b = perm[i * a.bs:(i + 1) * a.bs]
-            xb, rb, kb = augment(x[b], row[b], kind[b], bool(a.norm))
+            xb, rb, kb = augment(x[b], row[b], kind[b], bool(a.norm), None if korr is None else korr[b], nick_zufall_px,
+                                 a.roll)
             lg = net(xb)
             loss = column_loss(lg, rb, kb, centers, far_w=a.far_w, atleast_w=a.atleast_w)
             if a.smooth_w:

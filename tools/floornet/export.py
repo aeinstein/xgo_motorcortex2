@@ -10,6 +10,8 @@ Testbilds; "ENDE". Passt dazu: xgonav/native/floornet.cpp.
 from __future__ import annotations
 
 import argparse
+import json
+import os
 import struct
 import sys
 from pathlib import Path
@@ -19,7 +21,8 @@ import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from net import CROP_H, CROP_Y, DOWN, IN_H, IN_W, NBINS, NCOLS, FloorNet, bin_centers, fold, run_ops  # noqa: E402
+from net import (CROP_H, CROP_Y, DOWN, IN_H, IN_W, NBINS, NCOLS, ROW_TOP_ALT, FloorNet, bin_centers, fold,  # noqa: E402
+                 run_ops)
 
 VERSION = 1
 
@@ -51,7 +54,7 @@ def layer_arrays(ops: list[dict]) -> list[np.ndarray]:
 
 def write(net: FloorNet, path: str) -> np.ndarray:
     """Datei schreiben, Rückgabe: erwartete Logits des Testbilds."""
-    if net.variant != {"dil": [1, 1], "extra": 0}:
+    if {k: v for k, v in net.variant.items() if k != "row_top"} != {"dil": [1, 1], "extra": 0}:
         raise ValueError("Der C++-Kern kennt nur das Standardnetz, nicht die Variante %s" % net.variant)
     net = net.cpu().eval()
     ops = fold(net)
@@ -59,7 +62,7 @@ def write(net: FloorNet, path: str) -> np.ndarray:
     with open(path, "wb") as f:
         f.write(b"FNET")
         f.write(struct.pack("<3I", VERSION, NCOLS, NBINS))
-        f.write(bin_centers().astype("<f4").tobytes())
+        f.write(bin_centers(net.row_top).astype("<f4").tobytes())    # Fächer des Netzes, nicht die aktuellen
         for a in layer_arrays(ops):
             f.write(a.astype("<f4").tobytes())
         f.write(logits.astype("<f4").tobytes())
@@ -72,7 +75,13 @@ def main() -> int:
     ap.add_argument("model")
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
-    net = FloorNet()
+    # Fächer aus netz.json neben dem .pt (fehlt row_top: alter Lauf, ROW_TOP_ALT)
+    v = {}
+    p = os.path.join(os.path.dirname(os.path.abspath(a.model)), "netz.json")
+    if os.path.exists(p):
+        with open(p, encoding="utf-8") as f:
+            v = json.load(f)
+    net = FloorNet(row_top=float(v.get("row_top", ROW_TOP_ALT)))
     net.load_state_dict(torch.load(a.model, map_location="cpu"))
     write(net, a.out)
     print("%s: %d Byte" % (a.out, Path(a.out).stat().st_size))

@@ -30,7 +30,7 @@ import nick_bezug as NB  # noqa: E402
 
 EXACT, IGNORE = 1, 0
 NCOLS = 80
-ROW_MIN = 205.0             # net.ROW_TOP: Zeilen darüber kann das Netz nicht ausgeben
+ROW_MIN = 215.0             # = net.ROW_TOP (Test): Zeilen darüber kann das Netz nicht ausgeben (bis p11h 205)
 MAX_ABOVE = 0.10
 JUMP_PX, MAX_JUMPS = 40.0, 6
 MIN_GRAY = 12.0             # mittlere Helligkeit 0..255, darunter nur Rauschen

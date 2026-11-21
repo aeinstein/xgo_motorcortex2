@@ -20,7 +20,9 @@ import torch.nn.functional as F
 CROP_Y, CROP_H, DOWN = 137, 342, 2      # Ausschnitt in Vollbildzeilen, Verkleinerung
 IN_W, IN_H = 320, 171
 NCOLS, NBINS = 80, 64
-ROW_TOP, ROW_BOTTOM = 205.0, 480.0      # Zeilenfächer (Vollbild); darunter zählt als letztes Fach
+ROW_TOP, ROW_BOTTOM = 215.0, 480.0      # Zeilenfächer (Vollbild); darunter zählt als letztes Fach
+ROW_TOP_ALT = 205.0                     # bis p11h (2026-11-21): Läufe ohne row_top in netz.json; die .bin trägt die
+                                        # Fachmitten selbst, am Rider gilt also immer die des Netzes
 BIN_RATIO = 1.03                        # jedes Fach so viel breiter als das darüber: 1,5 px oben, ~10 px unten
 NORM_LEVEL, NORM_MIN, NORM_MAX = 0.3, 0.5, 8.0      # Helligkeitsnormierung: Zielwert, Grenzen des Faktors
 
@@ -34,32 +36,35 @@ def prep(x: torch.Tensor, norm: bool) -> torch.Tensor:
     return x - 0.5
 
 
-def bin_edges() -> np.ndarray:
-    """Grenzen der Fächer (NBINS + 1 Werte, aufsteigend, Vollbildzeilen)."""
+def bin_edges(row_top: float = ROW_TOP) -> np.ndarray:
+    """Grenzen der Fächer (NBINS + 1 Werte, aufsteigend, Vollbildzeilen). row_top: oberste Zeile des Netzes
+    (FloorNet.row_top; alte Läufe ROW_TOP_ALT)."""
     w = BIN_RATIO ** np.arange(NBINS)
-    return ROW_TOP + np.concatenate([[0.0], np.cumsum(w)]) * (ROW_BOTTOM - ROW_TOP) / w.sum()
+    return row_top + np.concatenate([[0.0], np.cumsum(w)]) * (ROW_BOTTOM - row_top) / w.sum()
 
 
-def bin_centers() -> np.ndarray:
-    e = bin_edges()
+def bin_centers(row_top: float = ROW_TOP) -> np.ndarray:
+    e = bin_edges(row_top)
     return (e[:-1] + e[1:]) / 2
 
 
 OUTLIER_PX, OUTLIER_RATIO, OUTLIER_COLS, OUTLIER_BINS = 25.0, 0.3, 7, 2     # wie xgonav/config.py und floornet.cpp
 
 
-def decode(logits: torch.Tensor, outlier_px: float = 0.0, outlier_ratio: float = OUTLIER_RATIO) -> torch.Tensor:
+def decode(logits: torch.Tensor, outlier_px: float = 0.0, outlier_ratio: float = OUTLIER_RATIO,
+           row_top: float = ROW_TOP) -> torch.Tensor:
     """Logits (N, NBINS, NCOLS) -> Vollbildzeile (N, NCOLS): bestes Fach mit Parabel, wie im C++-Kern.
+    row_top: Fächer des Netzes (net.row_top), sonst stimmen die Zeilen alter Läufe nicht.
 
     outlier_px > 0 nimmt einzelne Zacken heraus (am Rider [freespace] net_outlier_px): Weicht eine Spalte um mehr
     als outlier_px vom Median der OUTLIER_COLS Spalten um sie ab und liegt beim Medianwert mindestens outlier_ratio
     der Masse ihres eigenen Gipfels (je 2 * OUTLIER_BINS + 1 Fächer), gilt das beste Fach beim Medianwert."""
-    row = _peak(logits)
+    row = _peak(logits, row_top)
     if outlier_px <= 0:
         return row
     h = OUTLIER_COLS // 2
     med = F.pad(row[:, None, :], (h, h), mode="replicate")[:, 0].unfold(1, OUTLIER_COLS, 1).median(dim=2).values
-    centers = torch.as_tensor(bin_centers(), dtype=logits.dtype, device=logits.device)
+    centers = torch.as_tensor(bin_centers(row_top), dtype=logits.dtype, device=logits.device)
     best = logits.argmax(dim=1)
     nb = (centers[None, :, None] - med[:, None, :]).abs().argmin(dim=1)
     p = torch.softmax(logits, dim=1).permute(0, 2, 1)                       # N, NCOLS, NBINS
@@ -67,11 +72,11 @@ def decode(logits: torch.Tensor, outlier_px: float = 0.0, outlier_ratio: float =
     swap = ((row - med).abs() > outlier_px) & \
            (win.gather(1, nb[:, None]).squeeze(1) >= outlier_ratio * win.gather(1, best[:, None]).squeeze(1))
     bins = torch.arange(NBINS, device=logits.device)[None, :, None]
-    near = _peak(logits.masked_fill((bins - nb[:, None, :]).abs() > OUTLIER_BINS, -1e9))
+    near = _peak(logits.masked_fill((bins - nb[:, None, :]).abs() > OUTLIER_BINS, -1e9), row_top)
     return torch.where(swap, near, row)
 
 
-def _peak(logits: torch.Tensor) -> torch.Tensor:
+def _peak(logits: torch.Tensor, row_top: float = ROW_TOP) -> torch.Tensor:
     best = logits.argmax(dim=1)
     i = best.clamp(1, NBINS - 2).unsqueeze(1)
     c, l, r = logits.gather(1, i).squeeze(1), logits.gather(1, i - 1).squeeze(1), logits.gather(1, i + 1).squeeze(1)
@@ -79,7 +84,7 @@ def _peak(logits: torch.Tensor) -> torch.Tensor:
     frac = torch.where(den < -1e-6, 0.5 * (l - r) / den, torch.zeros_like(den)).clamp(-0.5, 0.5)
     frac = torch.where((best == i.squeeze(1)), frac, torch.zeros_like(frac))
     pos = best.float() + frac
-    centers = torch.as_tensor(bin_centers(), dtype=logits.dtype, device=logits.device)
+    centers = torch.as_tensor(bin_centers(row_top), dtype=logits.dtype, device=logits.device)
     lo = pos.floor().long().clamp(0, NBINS - 1)
     hi = (lo + 1).clamp(0, NBINS - 1)
     t = pos - lo.float()
@@ -105,9 +110,10 @@ class DS(nn.Module):
 
 
 class FloorNet(nn.Module):
-    def __init__(self, dil=(1, 1), extra: int = 0):
+    def __init__(self, dil=(1, 1), extra: int = 0, row_top: float = ROW_TOP):
         super().__init__()
-        self.variant = {"dil": [int(d) for d in dil], "extra": int(extra)}
+        self.row_top = float(row_top)       # oberste Fachgrenze (Vollbildzeile), steht in netz.json und der .bin
+        self.variant = {"dil": [int(d) for d in dil], "extra": int(extra), "row_top": self.row_top}
         self.stem = nn.Conv2d(3, 12, 3, stride=2, padding=1)
         self.bn_stem = nn.BatchNorm2d(12)
         self.blocks = nn.ModuleList([
@@ -133,7 +139,8 @@ class FloorNet(nn.Module):
 
 
 def load_net(lauf: str, dev=None) -> "FloorNet":
-    """Netz eines Laufs laden: floornet.pt, Variante aus netz.json (fehlt sie: Standardnetz)."""
+    """Netz eines Laufs laden: floornet.pt, Variante aus netz.json (fehlt sie: Standardnetz; fehlt row_top:
+    ROW_TOP_ALT, so wurde bis p11h trainiert)."""
     import json
     import os
     v = {}
@@ -141,7 +148,7 @@ def load_net(lauf: str, dev=None) -> "FloorNet":
     if os.path.exists(p):
         with open(p, encoding="utf-8") as f:
             v = json.load(f)
-    net = FloorNet(tuple(v.get("dil", (1, 1))), int(v.get("extra", 0)))
+    net = FloorNet(tuple(v.get("dil", (1, 1))), int(v.get("extra", 0)), float(v.get("row_top", ROW_TOP_ALT)))
     net.load_state_dict(torch.load(os.path.join(lauf, "floornet.pt"), map_location=dev or "cpu"))
     return net.to(dev) if dev is not None else net
 

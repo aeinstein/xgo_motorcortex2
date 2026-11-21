@@ -100,7 +100,7 @@ def test_fold_rechnet_dasselbe():
 
 def test_variante_mit_dilatation_und_zusatzblock():
     """Standardnetz bleibt, wie es ist; fold() rechnet auch die Variante richtig."""
-    assert N.FloorNet().variant == {"dil": [1, 1], "extra": 0}
+    assert N.FloorNet().variant == {"dil": [1, 1], "extra": 0, "row_top": N.ROW_TOP}
     std = sum(p.numel() for p in N.FloorNet().parameters())
     torch.manual_seed(0)
     m = N.FloorNet(dil=(2, 3), extra=1)
@@ -266,3 +266,52 @@ def test_smooth_loss_ignores_jumps_the_label_has():
     kind2 = kind.clone()
     kind2[0, 20:25] = T.IGNORE
     assert float(T.smooth_loss(logits_for(spitze), glatt, kind2, centers)) < 1e-3
+
+
+def test_alte_laeufe_behalten_ihre_faecher(tmp_path):
+    """Läufe bis p11h haben kein row_top in netz.json: sie dekodieren mit ROW_TOP_ALT, neue mit ROW_TOP."""
+    import json
+    import comfy_npz as Z
+    assert Z.ROW_MIN == N.ROW_TOP
+    m = _trained()
+    torch.save(m.state_dict(), tmp_path / "floornet.pt")
+    (tmp_path / "netz.json").write_text(json.dumps({"dil": [1, 1], "extra": 0}), encoding="utf-8")
+    alt = N.load_net(str(tmp_path))
+    assert alt.row_top == N.ROW_TOP_ALT != N.ROW_TOP
+    (tmp_path / "netz.json").write_text(json.dumps(m.variant), encoding="utf-8")
+    assert N.load_net(str(tmp_path)).row_top == N.ROW_TOP
+    lo = torch.full((1, N.NBINS, N.NCOLS), -10.0)
+    lo[0, 0, :] = 5.0
+    assert N.decode(lo, row_top=alt.row_top)[0, 0].item() == pytest.approx(N.bin_centers(N.ROW_TOP_ALT)[0], abs=1e-4)
+    assert N.decode(lo)[0, 0].item() == pytest.approx(N.bin_centers()[0], abs=1e-4)
+
+
+@pytest.mark.parametrize("shift,roll_deg", [(0.0, 0.0), (30.0, 0.0), (-40.0, 0.0), (0.0, 3.0), (-20.0, -3.0)])
+def test_geom_shift_bild_und_label_passen(shift, roll_deg):
+    """Nick und Roll im Training: Die Grenze im verschobenen/gedrehten Bild liegt dort, wo das Label hinwandert."""
+    import cv2
+    old = T.MARGIN
+    T.MARGIN = T.MARGIN_GEOM
+    try:
+        xs = (np.arange(N.NCOLS) + 0.5) * (640 / N.NCOLS)
+        grenze = 300 + 40 * np.sin(np.arange(640) / 90.0)                     # Boden (weiß) unter einer Wellenlinie
+        img = np.zeros((480, 640, 3), np.uint8)
+        img[np.arange(480)[:, None] >= grenze[None, :]] = 255
+        top = N.CROP_Y - T.MARGIN * N.DOWN
+        buf = cv2.resize(img[top:N.CROP_Y + N.CROP_H], (N.IN_W, N.IN_H + T.MARGIN), interpolation=cv2.INTER_AREA)
+        x = torch.as_tensor(buf[None]).permute(0, 3, 1, 2)
+        row = torch.as_tensor(np.interp(xs, np.arange(640) + 0.5, grenze)[None], dtype=torch.float32)
+        kind = torch.full((1, N.NCOLS), T.EXACT, dtype=torch.uint8)
+        out, rn, kn = T.geom_shift(x, row, kind, torch.tensor([shift]), torch.tensor([np.radians(roll_deg)]))
+        g = out[0].mean(0).numpy()                                             # IN_H x IN_W, 0..1
+        gefunden = []
+        for k in range(N.NCOLS):
+            sp = g[:, 4 * k:4 * k + 4].mean(1)
+            j = int(np.argmax(sp > 0.5)) if (sp > 0.5).any() else N.IN_H
+            gefunden.append(N.CROP_Y + j * N.DOWN)
+        gefunden = np.array(gefunden, float)
+        ok = (kn[0].numpy() == T.EXACT) & (rn[0].numpy() > N.CROP_Y + 4) & (rn[0].numpy() < 470)
+        assert ok.sum() > 50
+        assert np.abs(gefunden[ok] - rn[0].numpy()[ok]).max() < 4.0           # ~2 Vollbildzeilen Raster + Glättung
+    finally:
+        T.MARGIN = old

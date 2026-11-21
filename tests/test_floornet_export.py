@@ -72,3 +72,15 @@ def test_testbild_und_eingabe():
     # Eingabepixel (0, 0): Mittel der vier Vollbildpixel ab Zeile CROP_Y
     want = f[N.CROP_Y:N.CROP_Y + 2, 0:2, 0].astype(float).mean() / 255.0 - 0.5
     assert t[0, 0, 0, 0].item() == pytest.approx(want, abs=1e-6)
+
+
+def test_alter_lauf_schreibt_seine_faecher(tmp_path):
+    """Export eines Laufs ohne row_top (bis p11h): Kopf trägt die alten Fachmitten (ROW_TOP_ALT)."""
+    import json
+    m = _net()
+    torch.save(m.state_dict(), tmp_path / "floornet.pt")
+    (tmp_path / "netz.json").write_text(json.dumps({"dil": [1, 1], "extra": 0}), encoding="utf-8")
+    sys.argv = ["export.py", str(tmp_path / "floornet.pt"), "--out", str(tmp_path / "n.bin")]
+    assert X.main() == 0
+    d = (tmp_path / "n.bin").read_bytes()
+    assert np.frombuffer(d[16:16 + 4 * N.NBINS], "<f4") == pytest.approx(N.bin_centers(N.ROW_TOP_ALT).astype(np.float32))

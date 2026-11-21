@@ -104,7 +104,7 @@ def main() -> int:
     with torch.no_grad():
         for i in range(0, len(ms), 64):
             xs = torch.cat([X.to_input(cv2.imread(os.path.join(a.fahrt, m["file"]))) for m in ms[i:i + 64]]).to(dev)
-            rows.append(N.decode(net(xs), *cfg_px).cpu().numpy())
+            rows.append(N.decode(net(xs), *cfg_px, row_top=net.row_top).cpu().numpy())
     rows = np.concatenate(rows)
 
     ziel = os.path.join(a.out, a.name)
