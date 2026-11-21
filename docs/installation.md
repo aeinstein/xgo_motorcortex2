@@ -99,7 +99,7 @@ sudo systemctl enable --now xgonav
 | Emotions → `/tmp/lcd0` | group `video` |
 | Shutdown | `/etc/sudoers.d/xgonav-poweroff`: `www-data ALL=(root) NOPASSWD: /usr/bin/systemctl poweroff` |
 | Sleep mode | `/usr/local/sbin/xgo-ruhe` (governor, Wi-Fi power save), `/etc/sudoers.d/xgonav-ruhe`: `www-data` may run only `xgo-ruhe on` / `xgo-ruhe off` |
-| Wi-Fi setup | `/usr/local/sbin/xgo-wlan` (NetworkManager), `/etc/sudoers.d/xgonav-wlan`: `www-data` may run `connect`/`status`/`scan`, `aeinstein` (xgonav) also `hotspot`/`hotspot-off` ([wifi-setup.md](wifi-setup.md)) |
+| Wi-Fi setup | `/usr/local/sbin/xgo-wlan` (NetworkManager), `/etc/sudoers.d/xgonav-wlan`: `www-data` and `aeinstein` (xgonav) may run `connect`/`status`/`scan`; the hotspot is opened only by `xgo-wlan-auto.service` (root) ([wifi-setup.md](wifi-setup.md)) |
 | LEDs, actions, height, roll | `/proc/XGORider/*` is mode 0666 |
 
 ## nginx (`deploy/nginx-xgonav.conf`)

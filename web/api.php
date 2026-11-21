@@ -45,7 +45,8 @@
  *   GET  api.php?a=wlan_scan                  (sichtbare Netze aus dem Cache; sudo xgo-wlan scan)
  *   POST api.php?a=wlan_connect               (Body JSON {"ssid", "pw"}: Profil anlegen und verbinden, web/wlan.php;
  *                                            im Hotspot sofort antworten, das Verbinden schließt ihn)
- *   POST api.php?a=wlan&on=0|1                (WLAN-Einrichtung in xgonav wie Tasten C+D: QR-Code, sonst Hotspot)
+ *   POST api.php?a=wlan&on=0|1                (WLAN-Einrichtung in xgonav wie Tasten C+D: QR-Code; den Hotspot
+ *                                            öffnet xgo-wlan-auto.service von selbst)
  *   (sudo-Regel deploy/sudoers-xgonav-wlan: www-data -> /usr/local/sbin/xgo-wlan connect|status|scan)
  *   (sudo-Regel deploy/sudoers-xgonav-ruhe: www-data -> /usr/local/sbin/xgo-ruhe on|off)
  *   GET  api.php?a=config                     (Einstellungen: Schema, Werte aus config.toml, Sicherungen)

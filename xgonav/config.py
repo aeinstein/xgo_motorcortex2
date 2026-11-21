@@ -954,7 +954,8 @@ class StimmeCfg:
 
 @dataclass
 class WlanCfg:
-    # WLAN-Einrichtung über die Tasten (xgonav/wlan.py): Tasten halten -> WLAN-QR vor die Kamera, sonst Hotspot.
+    # WLAN-Einrichtung über die Tasten (xgonav/wlan.py): Tasten halten -> WLAN-QR vor die Kamera. Den Hotspot
+    # (offen, RiderKerk) öffnet xgo-wlan-auto.service von selbst, wenn wlan0 60 s nicht verbunden ist.
     # Kostet ohne Einrichtung nichts (der Tastenwert wird ohnehin gelesen); währenddessen ruht die Bildverarbeitung.
     enabled: bool = True
     buttons: int = 12                  # Bitmaske aus /proc/XGORider/buttons (A=1 B=2 C=4 D=8); A+B fährt herunter
@@ -962,9 +963,7 @@ class WlanCfg:
     cancel_buttons: int = 2            # kurz drücken bricht ab (B)
     qr_hz: float = 5.0                 # QR-Suche höchstens so oft
     qr_model_dir: str = "models/wechat_qr"   # WeChat-QR (opencv-contrib) für gestaltete Codes; "" = einfacher Detektor
-    qr_timeout_s: float = 60.0         # ohne Code danach Hotspot (Countdown am Display)
-    hotspot_ssid: str = "xgo-rider"
-    hotspot_timeout_s: float = 60.0    # Hotspot so lange (Countdown am Display), dann alte Verbindung zurück
+    qr_timeout_s: float = 60.0         # ohne Code danach Ende (Countdown am Display)
     helper: str = "/usr/local/sbin/xgo-wlan"   # root-Teil (deploy/xgo-wlan, sudo-Regel deploy/sudoers-xgonav-wlan)
 
 
@@ -1046,6 +1045,8 @@ ENTFERNT = {f"freespace.{k}": _KANTEN for k in (
     "edge_log_s", "edge_glare", "glare_v", "glare_px", "glare_dl", "glare_spread", "native")}
 ENTFERNT.update({k: "ein Kurs für alles seit 2026-11-19 ([odom] contra_*, odomfusion.py)"
                  for k in ("odom.yaw_source", "map.yaw_source", "grid.yaw_source")})
+ENTFERNT.update({k: "Hotspot öffnet seit 2026-11-21 xgo-wlan-auto.service von selbst (offen, RiderKerk)"
+                 for k in ("wlan.hotspot_ssid", "wlan.hotspot_timeout_s")})
 UMBENANNT = {"freespace.shadow_net": "freespace.net"}
 
 # Die Defaults oben sind seit 2026-11-12 die Werte des RiderPi (/opt/xgonav/config.toml ohne Testbetrieb und

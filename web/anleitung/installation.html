@@ -1647,7 +1647,7 @@ cat /proc/XGORider/serial_stats
 </tr>
 <tr>
 <td>Wi-Fi setup</td>
-<td><code>/usr/local/sbin/xgo-wlan</code> (NetworkManager), <code>/etc/sudoers.d/xgonav-wlan</code>: <code>www-data</code> may run <code>connect</code>/<code>status</code>/<code>scan</code>, <code>aeinstein</code> (xgonav) also <code>hotspot</code>/<code>hotspot-off</code> (<a href="wifi-setup.html">wifi-setup.md</a>)</td>
+<td><code>/usr/local/sbin/xgo-wlan</code> (NetworkManager), <code>/etc/sudoers.d/xgonav-wlan</code>: <code>www-data</code> and <code>aeinstein</code> (xgonav) may run <code>connect</code>/<code>status</code>/<code>scan</code>; the hotspot is opened only by <code>xgo-wlan-auto.service</code> (root) (<a href="wifi-setup.html">wifi-setup.md</a>)</td>
 </tr>
 <tr>
 <td>LEDs, actions, height, roll</td>

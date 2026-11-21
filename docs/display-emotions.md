@@ -20,7 +20,7 @@ make -C st7789/project/riderpi && sudo cp st7789/project/riderpi/st7789_server /
 | Item | Value |
 |---|---|
 | Camera overlay | `--robot proc` and `output.lcd_fifo` ≠ `""` (`--no-lcd` disables) |
-| Always (`--robot proc`) | WiFi setup (QR eyes, hotspot QR) and `pet` eyes, via `emotion.fifo` if `lcd_fifo` = `""`; FIFO closed otherwise; WiFi setup end → emotion `cute` |
+| Always (`--robot proc`) | WiFi setup (QR eyes) and `pet` eyes, via `emotion.fifo` if `lcd_fifo` = `""`; FIFO closed otherwise; WiFi setup end → emotion `cute` |
 | Rate | `output.lcd_fps` = 15 (no measurable main-loop cost on CM4) |
 | Pauses | while an emotion is playing (`/tmp/lcd0.owner` non-empty, < 10 s old) |
 

@@ -96,6 +96,15 @@ systemctl daemon-reload
 systemctl enable xgo-ble >/dev/null 2>&1
 systemctl restart xgo-ble
 
+# ---------------------------------------------------------------- Hotspot
+# Offener Hotspot RiderKerk, wenn wlan0 60 s nicht verbunden ist (auch ohne eingerichtetes WLAN); im Hotspot
+# alle 5 min bekannte Netze, wenn kein Gerät verbunden ist (docs/wifi-setup.md). Normal: alle 10 s ein read.
+schritt "xgo-wlan-auto (Hotspot ohne WLAN)"
+installiere deploy/xgo-wlan-auto.service /etc/systemd/system/xgo-wlan-auto.service
+systemctl daemon-reload
+systemctl enable xgo-wlan-auto >/dev/null 2>&1
+systemctl restart xgo-wlan-auto
+
 # ---------------------------------------------------------------- xgonav
 schritt "xgonav nach /opt/xgonav (deploy/install.sh)"
 ./deploy/install.sh
@@ -153,7 +162,7 @@ if [ "$DO_WEB" = 1 ]; then
     # "systemctl --no-block restart xgonav" (Einstellungen) und "xgo-wlan connect|status|scan" (auch aeinstein).
     usermod -aG video www-data
     installiere deploy/xgo-ruhe /usr/local/sbin/xgo-ruhe 0755
-    installiere deploy/xgo-wlan /usr/local/sbin/xgo-wlan 0755     # WLAN-Einrichtung (Tasten C+D, wlan.php)
+    installiere deploy/xgo-wlan /usr/local/sbin/xgo-wlan 0755     # WLAN-Einrichtung (Tasten C+D, wlan.php, Hotspot)
     # WLAN-Stromsparen aus (Ping bis 1,5 s); im Ruhemodus schaltet xgo-ruhe es an. Gilt ab der nächsten
     # Verbindung, deshalb jetzt zusätzlich per iw (Verbindung bleibt stehen).
     if [ -d /etc/NetworkManager/conf.d ]; then

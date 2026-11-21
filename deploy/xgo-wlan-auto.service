@@ -1,0 +1,15 @@
+[Unit]
+Description=xgo-wlan auto - offener Hotspot RiderKerk, wenn wlan0 60 s nicht verbunden ist (docs/wifi-setup.md)
+# Unabhängig von xgonav: der Rider muss auch ohne laufende Bildverarbeitung erreichbar werden.
+After=NetworkManager.service
+Wants=NetworkManager.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/sbin/xgo-wlan auto
+Restart=always
+RestartSec=5
+Nice=10
+
+[Install]
+WantedBy=multi-user.target

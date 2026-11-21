@@ -1841,7 +1841,7 @@ works without xgonav.</p>
 <tr>
 <td><code>GET ?a=wlan_status</code></td>
 <td><code>sudo -n xgo-wlan status</code></td>
-<td>JSON <code>con</code>, <code>ssid</code>, <code>ip</code> of wlan0</td>
+<td>JSON <code>con</code>, <code>ssid</code>, <code>ip</code> of wlan0; in the hotspot also <code>clients</code>, <code>letzt</code></td>
 </tr>
 <tr>
 <td><code>GET ?a=wlan_scan</code></td>
@@ -1851,12 +1851,12 @@ works without xgonav.</p>
 <tr>
 <td><code>POST ?a=wlan_connect</code></td>
 <td><code>sudo -n xgo-wlan connect</code> (password via stdin)</td>
-<td>body JSON <code>{ssid, pw}</code>; pw 8..63 or empty (open); over the hotspot: answers at once (<code>hotspot: true</code>), result on the display</td>
+<td>body JSON <code>{ssid, pw}</code>; pw 8..63 or empty (open); over the hotspot: answers at once (<code>hotspot: true</code>); on failure the hotspot comes back, <code>letzt</code> holds the error</td>
 </tr>
 <tr>
 <td><code>POST ?a=wlan&amp;on=0\|1</code></td>
 <td>xgonav <code>/wlan</code></td>
-<td>Wi-Fi setup like buttons C+D</td>
+<td>Wi-Fi setup like buttons C+D (QR code only)</td>
 </tr>
 <tr>
 <td><code>GET ?a=config</code></td>

@@ -1,25 +1,48 @@
 #!/bin/sh
-# WLAN-Einrichtung, Teil mit root-Rechten (NetworkManager). Aufruf nur über sudo-Regel
-# deploy/sudoers-xgonav-wlan: xgonav (Tasten C+D, xgonav/wlan.py) und web/wlan.php (api.php).
+# WLAN am Rider, Teil mit root-Rechten (NetworkManager). Aufrufer: xgo-wlan-auto.service (auto), xgo-ble (BLE,
+# root), sudo-Regel deploy/sudoers-xgonav-wlan für xgonav (Tasten C+D, xgonav/wlan.py) und web/wlan.php (api.php).
 # Installiert nach /usr/local/sbin/xgo-wlan (deploy/install-all.sh).
 #
 #   xgo-wlan connect      stdin: SSID, Passwort, Typ (WPA|NOPASS), versteckt (0|1), je eine Zeile
 #                         -> Profil "xgo-<SSID>" (Keyfile 0600, Passwort nie in der Kommandozeile), verbinden.
 #                         Misslingt es, wird das neue Profil gelöscht und die vorige Verbindung (oder der
 #                         Hotspot) wieder hochgefahren. Andere Profile werden nie gelöscht.
-#   xgo-wlan hotspot      stdin: SSID, Passwort -> Hotspot "xgo-hotspot" auf wlan0 (10.42.0.1)
+#   xgo-wlan hotspot      offener Hotspot "RiderKerk" (Profil xgo-hotspot) auf wlan0 (10.42.0.1)
 #   xgo-wlan hotspot-off  Hotspot löschen, vorige Verbindung zurück
-#   xgo-wlan status       con=, ssid=, ip= von wlan0; im Hotspot auch clients= (iw station dump)
+#   xgo-wlan status       con=, ssid=, ip= von wlan0; im Hotspot auch clients= (iw station dump) und letzt=
+#                         (Ergebnis des letzten Verbindens aus dem Hotspot heraus, für wlan.php nach dem Wiederbeitreten)
 #   xgo-wlan scan         sichtbare Netze: SIGNAL:SECURITY:SSID je Zeile (aus dem Cache, ohne neu zu suchen)
 #   xgo-wlan rescan       wie scan, sucht vorher neu (dauert einige Sekunden; nur xgo-ble, läuft als root)
+#   xgo-wlan auto         Dauerschleife (xgo-wlan-auto.service): ist wlan0 60 s nicht verbunden (auch nach dem
+#                         Booten, auch ohne eingerichtetes WLAN), Hotspot auf. Im Hotspot alle 5 min, wenn ein
+#                         WLAN-Profil da ist und kein Gerät im Hotspot hängt: Hotspot zu, bekannte Netze
+#                         probieren (bis 45 s), sonst Hotspot wieder auf.
+#                         Kosten: alle 10 s ein read aus /sys und ein sleep; nmcli/iw nur im Hotspot alle 5 min.
 # Ausgabe key=wert je Zeile, Fehler als letzte Zeile, Exit != 0.
 set -u
 IF=wlan0
 HOTSPOT=xgo-hotspot
-PREV=/run/xgo-wlan.prev
+HS_SSID=RiderKerk
+RUN=${XGO_WLAN_RUN:-/run}                          # Umgebungsvariablen nur für tests/test_xgo_wlan_auto.py
+SYSNET=${XGO_WLAN_SYS:-/sys/class/net}
+PREV=$RUN/xgo-wlan.prev
+HS_MERK=$RUN/xgo-wlan.hotspot                      # da = Hotspot läuft (von hier gestartet)
+LETZT=$RUN/xgo-wlan.letzt                          # letztes Verbinden aus dem Hotspot: Fehlertext
+LOCK=$RUN/xgo-wlan.lock
 DIR=/etc/NetworkManager/system-connections
+TAKT=${XGO_WLAN_TAKT:-10}                          # auto: so oft nachsehen (s)
+FRIST=${XGO_WLAN_FRIST:-60}                        # auto: so lange ohne Verbindung, dann Hotspot (s)
+RUECK=${XGO_WLAN_RUECK:-300}                       # auto: im Hotspot so oft bekannte Netze probieren (s)
 
 fehler() { echo "$*"; exit 1; }
+
+# Nur ein Auftrag zugleich (connect gegen auto). Ohne flock (Test am PC) ungesperrt.
+sperren() {
+    command -v flock >/dev/null 2>&1 || return 0
+    exec 9>"$LOCK"
+    flock "$@" 9
+}
+entsperren() { exec 9>&-; }
 
 aktiv() { nmcli -g GENERAL.CONNECTION dev show "$IF" 2>/dev/null | head -n1; }
 
@@ -47,9 +70,23 @@ chip_reset() {
 }
 
 hotspot_weg() {   # Hotspot schließen und Chip zurücksetzen
+    rm -f "$HS_MERK"
     nmcli con down id "$HOTSPOT" >/dev/null 2>&1
     nmcli con delete id "$HOTSPOT" >/dev/null 2>&1
     chip_reset
+}
+
+# Offener Hotspot RiderKerk (Nutzerentscheidung 2026-11-21: ohne Passwort). Profil ohne autoconnect: nach dem
+# Booten versucht NetworkManager zuerst die bekannten Netze, den Hotspot öffnet erst "auto".
+hotspot_an() {
+    vorige_merken
+    nmcli con delete id "$HOTSPOT" >/dev/null 2>&1
+    out=$(nmcli con add type wifi ifname "$IF" con-name "$HOTSPOT" autoconnect no ssid "$HS_SSID" \
+          802-11-wireless.mode ap 802-11-wireless.band bg ipv4.method shared ipv6.method ignore 2>&1) \
+        || { printf '%s\n' "$out" | tail -n1; return 1; }
+    out=$(nmcli --wait 30 con up id "$HOTSPOT" 2>&1) || { printf '%s\n' "$out" | tail -n1; return 1; }
+    : > "$HS_MERK"
+    return 0
 }
 
 vorige_zurueck() {
@@ -61,20 +98,88 @@ vorige_zurueck() {
     nmcli dev connect "$IF" >/dev/null 2>&1
 }
 
+ip4() { nmcli -g IP4.ADDRESS dev show "$IF" 2>/dev/null | head -n1 | cut -d/ -f1; }
+
+gaeste() { iw dev "$IF" station dump 2>/dev/null | grep -c '^Station'; }
+
 status() {
     c=$(aktiv)
     echo "con=$c"
     if [ -n "$c" ]; then
         echo "ssid=$(nmcli -g 802-11-wireless.ssid con show id "$c" 2>/dev/null)"
     fi
-    echo "ip=$(nmcli -g IP4.ADDRESS dev show "$IF" 2>/dev/null | head -n1 | cut -d/ -f1)"
+    echo "ip=$(ip4)"
     if [ "$c" = "$HOTSPOT" ]; then   # verbundene Geräte im Hotspot
-        echo "clients=$(iw dev "$IF" station dump 2>/dev/null | grep -c '^Station')"
+        echo "clients=$(gaeste)"
+        [ -s "$LETZT" ] && echo "letzt=$(head -n1 "$LETZT")"
     fi
 }
 
 # Keyfile-Wert (GKeyFile): \ -> \\, Leerzeichen -> \s, Tab -> \t
 kf_esc() { printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/ /\\s/g' -e 's/	/\\t/g'; }
+
+# ---------------------------------------------------------------- auto
+WEG_S=${XGO_WLAN_WEG_S:-0}           # so lange schon ohne Verbindung
+HS_S=${XGO_WLAN_HS_S:-0}             # so lange schon im Hotspot seit dem letzten Versuch
+OHNE_IF=0
+
+profile_da() {   # WLAN-Profil außer dem Hotspot vorhanden?
+    nmcli -t -f TYPE,NAME con show 2>/dev/null | grep '^802-11-wireless:' | grep -qv ":$HOTSPOT\$"
+}
+
+auto_schritt() {
+    if [ ! -r "$SYSNET/$IF/operstate" ]; then    # kein wlan0 (Treiber weg, rfkill): nichts zu tun
+        [ "$OHNE_IF" = 1 ] || echo "auto: kein $IF"
+        OHNE_IF=1
+        return
+    fi
+    OHNE_IF=0
+    read -r s < "$SYSNET/$IF/operstate"
+    if [ -e "$HS_MERK" ]; then
+        if [ "$s" != up ]; then                  # Hotspot weg (nicht über hotspot_weg): neu aufmachen
+            echo "auto: Hotspot $HS_SSID ist weg, neu"
+            rm -f "$HS_MERK"
+            hotspot_an >/dev/null || { echo "auto: Hotspot fehlgeschlagen"; WEG_S=0; }
+            HS_S=0
+            return
+        fi
+        HS_S=$((HS_S + TAKT))
+        [ "$HS_S" -ge "$RUECK" ] || return
+        HS_S=0
+        profile_da || return                     # nichts eingerichtet: Hotspot bleibt
+        n=$(gaeste)
+        if [ "${n:-0}" -gt 0 ]; then
+            echo "auto: $n Gerät(e) im Hotspot, bleibt"
+            return
+        fi
+        echo "auto: Hotspot zu, bekannte Netze probieren"
+        hotspot_weg
+        nmcli --wait 45 dev connect "$IF" >/dev/null 2>&1
+        c=$(aktiv)
+        if [ -n "$c" ] && [ "$c" != "$HOTSPOT" ] && [ -n "$(ip4)" ]; then
+            echo "auto: verbunden mit $c"
+            WEG_S=0
+            return
+        fi
+        echo "auto: kein bekanntes Netz, Hotspot $HS_SSID wieder auf"
+        hotspot_an >/dev/null || echo "auto: Hotspot fehlgeschlagen"
+        return
+    fi
+    if [ "$s" = up ]; then
+        WEG_S=0
+        return
+    fi
+    WEG_S=$((WEG_S + TAKT))
+    [ "$WEG_S" -ge "$FRIST" ] || return
+    WEG_S=0                                      # misslingt es, erst nach FRIST erneut (Chip-Reset kostet)
+    echo "auto: $FRIST s ohne WLAN, Hotspot $HS_SSID auf"
+    if ! hotspot_an >/dev/null; then
+        echo "auto: Hotspot fehlgeschlagen"
+        hotspot_weg
+        nmcli dev connect "$IF" >/dev/null 2>&1
+    fi
+    HS_S=0
+}
 
 case "${1:-}" in
     connect)
@@ -93,6 +198,7 @@ case "${1:-}" in
             NOPASS) pw="" ;;
             *) fehler "Verschlüsselung $typ nicht unterstützt (nur WPA oder offen)" ;;
         esac
+        sperren -w 90 || fehler "WLAN beschäftigt"
         name="xgo-$ssid"
         vorher=$(aktiv)
         vorige_merken
@@ -131,39 +237,34 @@ case "${1:-}" in
         mv "$datei" "$ziel"
         nmcli con load "$ziel" >/dev/null 2>&1 || { rm -f "$ziel"; fehler "Profil nicht lesbar"; }
         if [ "$vorher" = "$HOTSPOT" ]; then
-            hs_ssid=$(nmcli -g 802-11-wireless.ssid con show id "$HOTSPOT" 2>/dev/null)
-            hs_pw=$(nmcli -s -g 802-11-wireless-security.psk con show id "$HOTSPOT" 2>/dev/null)
             hotspot_weg
         fi
         if out=$(nmcli --wait 45 con up id "$name" 2>&1); then
-            rm -f "$PREV"
+            rm -f "$PREV" "$LETZT"
             sleep 1
             status
             exit 0
         fi
         nmcli con delete id "$name" >/dev/null 2>&1
         if [ "$vorher" = "$HOTSPOT" ]; then
-            # Hotspot wieder auf (hotspot_weg hat ihn gelöscht); Zugangsdaten stehen am Display
-            printf '%s\n%s\n' "$hs_ssid" "$hs_pw" | "$0" hotspot >/dev/null 2>&1
+            printf '%s: %s\n' "$ssid" "$(printf '%s' "$out" | tail -n1 | tr -d '\r')" > "$LETZT"
+            hotspot_an >/dev/null 2>&1        # Hotspot wieder auf (hotspot_weg hat ihn gelöscht)
         else
             vorige_zurueck
         fi
         fehler "Verbinden fehlgeschlagen: $(printf '%s' "$out" | tail -n1)"
         ;;
     hotspot)
-        IFS= read -r ssid || true
-        IFS= read -r pw || true
-        [ -n "$ssid" ] || fehler "SSID fehlt"
-        m=$(printf '%s' "$pw" | wc -c)
-        [ "$m" -ge 8 ] && [ "$m" -le 63 ] || fehler "Passwort muss 8 bis 63 Zeichen haben"
-        vorige_merken
-        nmcli con delete id "$HOTSPOT" >/dev/null 2>&1
-        out=$(nmcli dev wifi hotspot ifname "$IF" con-name "$HOTSPOT" ssid "$ssid" password "$pw" 2>&1) \
-            || { hotspot_weg; vorige_zurueck; fehler "Hotspot fehlgeschlagen: $(printf '%s' "$out" | tail -n1)"; }
-        nmcli con modify id "$HOTSPOT" connection.autoconnect no >/dev/null 2>&1
+        sperren -w 90 || fehler "WLAN beschäftigt"
+        if ! err=$(hotspot_an); then
+            hotspot_weg
+            vorige_zurueck
+            fehler "Hotspot fehlgeschlagen: $err"
+        fi
         status
         ;;
     hotspot-off)
+        sperren -w 90 || fehler "WLAN beschäftigt"
         hotspot_weg
         vorige_zurueck
         status
@@ -177,8 +278,20 @@ case "${1:-}" in
     rescan)
         nmcli -t -f SIGNAL,SECURITY,SSID dev wifi list --rescan yes 2>/dev/null
         ;;
+    auto)
+        [ "$(aktiv)" = "$HOTSPOT" ] && : > "$HS_MERK"    # Dienst neu gestartet, Hotspot läuft schon
+        echo "auto: Hotspot $HS_SSID nach $FRIST s ohne WLAN"
+        while :; do
+            if sperren -n; then
+                auto_schritt
+            fi
+            entsperren
+            [ -n "${XGO_WLAN_EINMAL:-}" ] && break
+            sleep "$TAKT"
+        done
+        ;;
     *)
-        echo "Aufruf: xgo-wlan connect|hotspot|hotspot-off|status|scan|rescan" >&2
+        echo "Aufruf: xgo-wlan connect|hotspot|hotspot-off|status|scan|rescan|auto" >&2
         exit 2
         ;;
 esac

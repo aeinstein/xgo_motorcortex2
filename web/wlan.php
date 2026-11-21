@@ -1,8 +1,9 @@
 <?php
 /*
  * WLAN eintragen: Netz wählen, Passwort, verbinden (api.php?a=wlan_connect -> sudo xgo-wlan connect).
- * Gedacht für den Hotspot der WLAN-Einrichtung (Tasten C+D halten, kein QR-Code: https://10.42.0.1/wlan.php),
- * geht aber auch im normalen Betrieb ("WLAN hinzufügen"). Bestehende Profile bleiben; das neue hat Vorrang.
+ * Gedacht für den offenen Hotspot RiderKerk (öffnet von selbst, wenn der Rider 60 s ohne WLAN ist:
+ * https://10.42.0.1/wlan.php), geht aber auch im normalen Betrieb ("WLAN hinzufügen"). Bestehende Profile
+ * bleiben; das neue hat Vorrang.
  * Keine Rechenzeit am Rider außer beim Aufruf (nmcli).
  */
 declare(strict_types=1);
@@ -37,8 +38,8 @@ header('Cache-Control: no-store');
 <body>
 <main>
   <h1>Rider ins WLAN</h1>
-  <p class="leise">Das Netz wird zusätzlich gespeichert und bevorzugt. Über den Hotspot verbunden: Nach „Verbinden“ geht
-     der Hotspot zu, das Ergebnis steht am Display des Riders.</p>
+  <p class="leise">Das Netz wird zusätzlich gespeichert und bevorzugt. Über den Hotspot RiderKerk verbunden: Nach „Verbinden“
+     geht der Hotspot zu. Misslingt es, ist er nach etwa einer Minute wieder da; erneut beitreten, dann steht hier der Fehler.</p>
   <div id="jetzt">Verbunden: …</div>
   <label for="netze">Netze in der Nähe</label>
   <select id="netze"><option value="">(wird geladen …)</option></select>
@@ -59,6 +60,7 @@ async function status() {
     const r = await (await fetch('api.php?a=wlan_status')).json();
     $('jetzt').textContent = r.con ? `Verbunden: ${r.con === 'xgo-hotspot' ? 'Hotspot des Riders' : (r.ssid || r.con)}${r.ip ? ' · ' + r.ip : ''}`
                                    : 'Verbunden: –';
+    if (r.letzt) melde(`Letzter Versuch gescheitert: ${r.letzt}`, 'fehler');
   } catch (e) { $('jetzt').textContent = ''; }
 }
 
@@ -89,11 +91,11 @@ $('los').onclick = async () => {
     const resp = await fetch('api.php?a=wlan_connect', { method: 'POST', headers: { 'Content-Type': 'application/json' },
                                                          body: JSON.stringify({ ssid, pw }) });
     const r = await resp.json();
-    if (r.hotspot) melde(`Der Rider wechselt jetzt in „${ssid}“, der Hotspot geht zu. Ergebnis und Adresse stehen am Display.`, 'ok');
+    if (r.hotspot) melde(`Der Rider wechselt jetzt in „${ssid}“, der Hotspot geht zu. Misslingt es, ist der Hotspot RiderKerk nach etwa einer Minute wieder da.`, 'ok');
     else if (resp.ok) melde(`Verbunden mit „${r.ssid || ssid}“${r.ip ? ', Adresse ' + r.ip : ''}.`, 'ok');
     else melde(r.error || 'Fehlgeschlagen.', 'fehler');
   } catch (e) {
-    melde('Verbindung zum Rider getrennt. Läuft das Verbinden über den Hotspot, steht das Ergebnis am Display.', 'fehler');
+    melde('Verbindung zum Rider getrennt. Lief das Verbinden über den Hotspot: Misslingt es, ist RiderKerk nach etwa einer Minute wieder da.', 'fehler');
   }
   $('los').disabled = false;
   status();

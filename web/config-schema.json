@@ -691,7 +691,7 @@
        "key": "enabled",
        "typ": "bool",
        "default": true,
-       "hilfe": "WLAN-Einrichtung über die Tasten (xgonav/wlan.py): Tasten halten -> WLAN-QR vor die Kamera, sonst Hotspot. Kostet ohne Einrichtung nichts (der Tastenwert wird ohnehin gelesen); währenddessen ruht die Bildverarbeitung."
+       "hilfe": "WLAN-Einrichtung über die Tasten (xgonav/wlan.py): Tasten halten -> WLAN-QR vor die Kamera. Den Hotspot (offen, RiderKerk) öffnet xgo-wlan-auto.service von selbst, wenn wlan0 60 s nicht verbunden ist. Kostet ohne Einrichtung nichts (der Tastenwert wird ohnehin gelesen); währenddessen ruht die Bildverarbeitung."
       },
       {
        "key": "buttons",
@@ -727,19 +727,7 @@
        "key": "qr_timeout_s",
        "typ": "float",
        "default": 60.0,
-       "hilfe": "ohne Code danach Hotspot (Countdown am Display)"
-      },
-      {
-       "key": "hotspot_ssid",
-       "typ": "str",
-       "default": "xgo-rider",
-       "hilfe": ""
-      },
-      {
-       "key": "hotspot_timeout_s",
-       "typ": "float",
-       "default": 60.0,
-       "hilfe": "Hotspot so lange (Countdown am Display), dann alte Verbindung zurück"
+       "hilfe": "ohne Code danach Ende (Countdown am Display)"
       },
       {
        "key": "helper",

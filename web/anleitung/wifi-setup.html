@@ -1073,10 +1073,21 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#use" class="md-nav__link">
+  <a href="#automatic-hotspot" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Use
+        Automatic hotspot
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#buttons-cd" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Buttons C+D
       
     </span>
   </a>
@@ -1282,10 +1293,21 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#use" class="md-nav__link">
+  <a href="#automatic-hotspot" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Use
+        Automatic hotspot
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#buttons-cd" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Buttons C+D
       
     </span>
   </a>
@@ -1354,8 +1376,55 @@
 
 
 <h1 id="wi-fi-setup-without-a-network">Wi-Fi setup without a network<a class="headerlink" href="#wi-fi-setup-without-a-network" title="Permanent link">&para;</a></h1>
-<p>Buttons on the Rider start it; no existing connection needed. Code: <code>xgonav/wlan.py</code>, root part <code>deploy/xgo-wlan</code> (NetworkManager), web form <code>web/wlan.php</code>. Not yet tested on the Rider.</p>
-<h2 id="use">Use<a class="headerlink" href="#use" title="Permanent link">&para;</a></h2>
+<p>Two ways in, no existing connection needed: the <strong>automatic hotspot</strong> <code>RiderKerk</code> and the <strong>buttons C+D</strong> (Wi-Fi QR code to the camera). Bluetooth: <a href="ble.html">ble.md</a>. Code: root part <code>deploy/xgo-wlan</code> (NetworkManager), service <code>deploy/xgo-wlan-auto.service</code>, buttons <code>xgonav/wlan.py</code>, web form <code>web/wlan.php</code>. Automatic hotspot since 2026-11-21, not yet tested on the Rider.</p>
+<h2 id="automatic-hotspot">Automatic hotspot<a class="headerlink" href="#automatic-hotspot" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Trigger</td>
+<td><code>wlan0</code> not connected for 60 s (<code>/sys/class/net/wlan0/operstate</code> ≠ <code>up</code>): after boot without a reachable or configured network, or after a lost connection</td>
+</tr>
+<tr>
+<td>Network</td>
+<td>SSID <code>RiderKerk</code>, <strong>open (no password)</strong>, 2.4 GHz, NetworkManager profile <code>xgo-hotspot</code> (autoconnect off), Rider at <code>10.42.0.1</code></td>
+</tr>
+<tr>
+<td>Join</td>
+<td>phone into <code>RiderKerk</code>, open <code>https://10.42.0.1/wlan.php</code> (self-signed TLS warning), pick network, enter password</td>
+</tr>
+<tr>
+<td>Connect fails</td>
+<td>hotspot back after about a minute; join again, <code>wlan.php</code> shows the error (<code>status</code> field <code>letzt</code>)</td>
+</tr>
+<tr>
+<td>Back to known networks</td>
+<td>every 5 min, only if a Wi-Fi profile exists and no device is joined: hotspot closed, <code>brcmfmac</code> reloaded, NetworkManager tries known networks (≤ 45 s), else hotspot again</td>
+</tr>
+<tr>
+<td>No profile at all</td>
+<td>hotspot stays</td>
+</tr>
+<tr>
+<td>Independent of</td>
+<td>xgonav (service runs as root, <code>After=NetworkManager.service</code>)</td>
+</tr>
+<tr>
+<td>Security</td>
+<td>open network: anyone in range reaches the web interface, MCP and driving while the hotspot is up</td>
+</tr>
+<tr>
+<td>Display</td>
+<td>xgonav shows <code>Hotspot RiderKerk: 10.42.0.1/wlan.php</code> only in the C+D screen; otherwise nothing</td>
+</tr>
+</tbody>
+</table>
+<h2 id="buttons-cd">Buttons C+D<a class="headerlink" href="#buttons-cd" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
 <tr>
@@ -1368,7 +1437,7 @@
 <tr>
 <td>1</td>
 <td>Hold <strong>C+D</strong> for 3 s (in sleep mode up to ~5 s)</td>
-<td>eyes looking around with QR finder patterns as pupils (<code>QrEyes</code>, CM4 ~4.7 ms per frame at 20 fps ≈ 9 % of one core, only while searching), small camera image top left, Wi-Fi symbol with 60 s countdown ring (red for the last 10 s), "WLAN-QR vor die Kamera halten"</td>
+<td>eyes looking around with QR finder patterns as pupils (<code>QrEyes</code>, CM4 ~4.7 ms per frame at 20 fps ≈ 9 % of one core, only while searching), small camera image top left, Wi-Fi symbol with 60 s countdown ring (red for the last 10 s), "WLAN-QR vor die Kamera halten"; hotspot address if the automatic hotspot is up</td>
 </tr>
 <tr>
 <td>2</td>
@@ -1377,22 +1446,17 @@
 </tr>
 <tr>
 <td>3</td>
-<td>No code within 60 s → hotspot <code>xgo-rider</code>, random 8-char password</td>
-<td>the two eyes grow and merge (1.2 s) into one large eye whose pupil is the QR to join (dark modules on eye colour); then SSID, password, <code>10.42.0.1/wlan.php</code>, Wi-Fi symbol with 60 s countdown</td>
-</tr>
-<tr>
-<td>4</td>
-<td>Join the hotspot, open the URL (self-signed TLS warning), pick network, enter password</td>
-<td>hotspot closes when switching; result on the display</td>
+<td>No code within 60 s</td>
+<td>"Kein WLAN-Code", setup ends (no hotspot from here since 2026-11-21)</td>
 </tr>
 <tr>
 <td>Cancel</td>
 <td>press <strong>B</strong>, hold C+D again, or <code>POST /wlan?on=0</code></td>
-<td>hotspot removed, previous connection restored</td>
+<td>setup ends</td>
 </tr>
 </tbody>
 </table>
-<p>Hotspot closes by itself after 60 s (countdown); each newly joined device restarts the countdown (<code>iw station dump</code>, polled every 3 s). Also reachable from the web: <code>api.php?a=wlan&amp;on=1</code>; <code>wlan.php</code> works in normal operation as "add Wi-Fi".</p>
+<p>Also reachable from the web: <code>api.php?a=wlan&amp;on=1</code>; <code>wlan.php</code> works in normal operation as "add Wi-Fi".</p>
 <h2 id="behaviour">Behaviour<a class="headerlink" href="#behaviour" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
@@ -1416,7 +1480,7 @@
 </tr>
 <tr>
 <td>QR</td>
-<td><code>cv2.QRCodeDetector</code> on full frame, else 2× centre crop; ≤ <code>qr_hz = 5</code>; format <code>WIFI:T:..;S:..;P:..;H:..;;</code> with escapes, any order; WPA or open (WEP rejected)</td>
+<td>WeChat QR (opencv-contrib) if <code>qr_model_dir</code> exists, else <code>cv2.QRCodeDetector</code> on full frame, else 2× centre crop; ≤ <code>qr_hz = 5</code>; format <code>WIFI:T:..;S:..;P:..;H:..;;</code> with escapes, any order; WPA or open (WEP rejected)</td>
 </tr>
 <tr>
 <td>Profile</td>
@@ -1424,15 +1488,19 @@
 </tr>
 <tr>
 <td>Failure</td>
-<td>new profile deleted, previous connection (or hotspot, same SSID/password) brought back</td>
+<td>new profile deleted, previous connection (or the hotspot) brought back</td>
 </tr>
 <tr>
-<td>Hotspot</td>
-<td><code>nmcli dev wifi hotspot</code>, profile <code>xgo-hotspot</code> (autoconnect off), previous connection stored in <code>/run/xgo-wlan.prev</code></td>
+<td>Locking</td>
+<td><code>flock /run/xgo-wlan.lock</code>: <code>connect</code>/<code>hotspot</code>/<code>hotspot-off</code> wait (≤ 90 s), an automatic step is skipped while one runs</td>
 </tr>
 <tr>
 <td>Leaving the hotspot</td>
 <td><code>brcmfmac</code> reloaded (<code>chip_reset</code>, ~5 s) before reconnecting. Without it (measured 2026-11-19): frames to the Rider with WMM priority Voice are lost until reboot; NetworkManager's DHCPv4 uses TOS 0xc0, the router offers, nothing arrives → IPv6 only, unreachable via IPv4</td>
+</tr>
+<tr>
+<td>Files</td>
+<td><code>/run/xgo-wlan.hotspot</code> (hotspot up), <code>/run/xgo-wlan.prev</code> (previous connection), <code>/run/xgo-wlan.letzt</code> (last failed connect from the hotspot)</td>
 </tr>
 </tbody>
 </table>
@@ -1446,12 +1514,16 @@
 </thead>
 <tbody>
 <tr>
-<td>Idle</td>
-<td>one integer compare per main-loop iteration; no thread, no process</td>
+<td>Connected</td>
+<td><code>xgo-wlan auto</code>: one shell <code>read</code> from <code>/sys</code> and one <code>sleep</code> every 10 s; no nmcli, no D-Bus</td>
 </tr>
 <tr>
-<td>Setup</td>
-<td>pipeline paused; QR decode ≤ 5 Hz; LCD image only on change; <code>nmcli</code> status every 5 s in hotspot mode</td>
+<td>Hotspot</td>
+<td>additionally <code>nmcli con show</code> + <code>iw station dump</code> every 5 min; a return attempt costs ~5 s chip reset and up to 45 s without hotspot</td>
+</tr>
+<tr>
+<td>C+D setup</td>
+<td>pipeline paused; QR decode ≤ 5 Hz; LCD image only on change; one <code>xgo-wlan status</code> at start</td>
 </tr>
 </tbody>
 </table>
@@ -1477,8 +1549,8 @@
 <td>5.0, 60.0</td>
 </tr>
 <tr>
-<td><code>hotspot_ssid</code>, <code>hotspot_timeout_s</code></td>
-<td><code>xgo-rider</code>, 60.0</td>
+<td><code>qr_model_dir</code></td>
+<td><code>models/wechat_qr</code></td>
 </tr>
 <tr>
 <td><code>helper</code></td>
@@ -1486,6 +1558,7 @@
 </tr>
 </tbody>
 </table>
+<p><code>hotspot_ssid</code> and <code>hotspot_timeout_s</code> are gone (warning when still in <code>config.toml</code>). Hotspot timings are constants in <code>deploy/xgo-wlan</code> (<code>TAKT</code> 10 s, <code>FRIST</code> 60 s, <code>RUECK</code> 300 s).</p>
 <h2 id="vendor-background">Vendor background<a class="headerlink" href="#vendor-background" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
@@ -1497,7 +1570,7 @@
 <tbody>
 <tr>
 <td>ESP32 firmware (<code>xgorider2_rl</code>)</td>
-<td>BLE is only a UART channel (fff0/fff1/fff2) for the remote app; no Wi-Fi provisioning, nothing forwarded to the Pi. Replaced by firmware patch 0025: own BLE service with a tunnel to the Pi, <code>wlan status/scan/rescan/connect</code> over Bluetooth with the same <code>xgo-wlan</code> (<a href="ble.html">ble.md</a>; built 2026-11-20, not flashed)</td>
+<td>BLE is only a UART channel (fff0/fff1/fff2) for the remote app; no Wi-Fi provisioning, nothing forwarded to the Pi. Replaced by firmware patch 0025: own BLE service with a tunnel to the Pi, <code>wlan status/scan/rescan/connect</code> over Bluetooth with the same <code>xgo-wlan</code> (<a href="ble.html">ble.md</a>)</td>
 </tr>
 <tr>
 <td>Vendor Pi image (<code>RaspberryPi-CM4-XGO-Rider</code>)</td>

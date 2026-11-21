@@ -87,7 +87,7 @@ Reply: header line, then exactly `n` bytes of body.
 
 | Request | `code` | Body |
 |---|---|---|
-| `wlan status` | exit code of `xgo-wlan` (0 = ok) | `con=`, `ssid=`, `ip=`, in hotspot mode `clients=`; one `key=value` per line |
+| `wlan status` | exit code of `xgo-wlan` (0 = ok) | `con=`, `ssid=`, `ip=`, in hotspot mode (`RiderKerk`) `clients=` and `letzt=` (last failed connect); one `key=value` per line |
 | `wlan scan` | 〃 | visible networks from the NetworkManager cache, `SIGNAL:SECURITY:SSID` per line (`:` inside an SSID is escaped as `\:`) |
 | `wlan rescan` | 〃 | same after a fresh scan (several seconds) |
 | `wlan connect` | 0 = connected, 1 = failed | on success as `status`; on failure the reason as last line. Replies after the attempt (up to ~60 s; client timeout ≥ 90 s). On failure the Pi returns to the previous connection |

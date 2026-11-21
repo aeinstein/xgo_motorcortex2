@@ -33,7 +33,7 @@ def test_parse_wifi_qr_ungueltig(text):
 
 
 def test_wifi_qr_text_rundweg():
-    for ssid, pw in [("xgo-rider", "abcd2345"), ('a;b:c,"d\\', "p;w:x,y\\z")]:
+    for ssid, pw in [("RiderKerk", "abcd2345"), ('a;b:c,"d\\', "p;w:x,y\\z")]:
         assert parse_wifi_qr(wifi_qr_text(ssid, pw))[:2] == (ssid, pw)
 
 
@@ -105,7 +105,7 @@ def test_qr_verbindet():
     frame = _qr_frame(wifi_qr_text("Heim", "geheim123"))
     w.step(frame, 1.0)
     assert w.state == "verbinde"
-    assert h.calls == [("connect", "Heim\ngeheim123\nWPA\n0\n")]
+    assert h.calls == [("status", ""), ("connect", "Heim\ngeheim123\nWPA\n0\n")]
     w.step(None, 1.2)
     assert w.state == "ok" and w.ip == "192.168.1.50"
     w.step(None, 1.2 + WlanSetup.OK_S)
@@ -114,7 +114,8 @@ def test_qr_verbindet():
     assert img.shape == (240, 320, 3)
 
 
-def test_qr_fehler_dann_hotspot_und_abbruch():
+def test_qr_fehler_dann_zeit_um():
+    """Ohne Code endet die Einrichtung; einen Hotspot öffnet sie nicht mehr (macht xgo-wlan auto)."""
     cfg = Config.neutral().wlan
     h = FakeHelfer({"connect": (1, "Verbinden fehlgeschlagen: Secrets were required")})
     w = WlanSetup(cfg, h, 0.0)
@@ -126,58 +127,30 @@ def test_qr_fehler_dann_hotspot_und_abbruch():
     t0 = w.t_state
     leer = np.full((480, 640, 3), 120, np.uint8)
     w.step(leer, t0 + cfg.qr_timeout_s + 0.01)
-    assert w.state == "hotspot_start"
-    cmd, stdin = h.calls[-1]
-    assert cmd == "hotspot" and stdin.startswith(cfg.hotspot_ssid + "\n") and len(w.hotspot_pw) == 8
-    w.step(None, t0 + cfg.qr_timeout_s + 1)
-    assert w.state == "hotspot"
-    w.lcd_frame()                           # erstes Bild: Augen wachsen erst zusammen
-    w._hot_t0 -= 5.0                        # Animation vorbei
-    v, img = w.lcd_frame()                  # Hotspot-Bild: großes Auge, Pupille = QR zum Beitreten
-    txt, _, _ = cv2.QRCodeDetector().detectAndDecode(cv2.resize(img[0:170, 0:160], None, fx=2, fy=2,
-                                                                 interpolation=cv2.INTER_NEAREST))
-    assert parse_wifi_qr(txt)[:2] == (cfg.hotspot_ssid, w.hotspot_pw)
-    w.cancel(t0 + 70)
-    assert not w.done                       # Hotspot schließen steht noch aus
-    w.step(None, t0 + 70.1)
-    assert h.calls[-1][0] == "hotspot-off"
+    assert w.state == "ende" and w.done
+    assert [c for c, _ in h.calls] == ["status", "connect"]
+
+
+def test_hinweis_wenn_hotspot_laeuft():
+    cfg = Config.neutral().wlan
+    h = FakeHelfer({"status": (0, "con=xgo-hotspot\nssid=RiderKerk\nip=10.42.0.1\nclients=1")})
+    w = WlanSetup(cfg, h, 0.0)
+    assert h.calls[0][0] == "status"
+    w.step(None, 0.1)
+    assert w.state == "qr" and w.hotspot == "Hotspot RiderKerk: 10.42.0.1/wlan.php"
+    assert w.status()["hotspot"] == w.hotspot
+    v, img = w.lcd_frame()
+    assert img.shape == (240, 320, 3)
+    w.cancel(1.0)
     assert w.done
 
 
-def test_hotspot_erkennt_verbindung_ueber_web():
+def test_kein_hinweis_im_wlan():
     cfg = Config.neutral().wlan
     h = FakeHelfer({"status": (0, "con=xgo-Heim\nssid=Heim\nip=192.168.1.7")})
     w = WlanSetup(cfg, h, 0.0)
-    w.state, w.t_state = "hotspot", 0.0
-    w.step(None, WlanSetup.STATUS_S)
-    assert h.calls[-1][0] == "status"
-    w.step(None, WlanSetup.STATUS_S + 0.1)
-    assert w.state == "ok" and w.ssid == "Heim"
-
-
-def test_hotspot_neues_geraet_startet_countdown_neu():
-    cfg = Config.neutral().wlan
-    h = FakeHelfer({"status": (0, "con=xgo-hotspot\nip=10.42.0.1\nclients=1")})
-    w = WlanSetup(cfg, h, 0.0)
-    w.state, w.t_state = "hotspot", 0.0
-    w.step(None, 50.0)
-    w.step(None, 50.1)
-    assert w.t_state == 50.1 and w.clients == 1 and w.state == "hotspot"
-    w.step(None, 54.0)
-    w.step(None, 54.1)                      # dasselbe Gerät: kein neuer Start
-    assert w.t_state == 50.1
-    w.step(None, 50.1 + cfg.hotspot_timeout_s + 0.01)
-    assert w.state == "ende"
-
-
-def test_hotspot_zeit_um():
-    cfg = Config.neutral().wlan
-    h = FakeHelfer({"status": (0, "con=xgo-hotspot\nip=10.42.0.1")})
-    w = WlanSetup(cfg, h, 0.0)
-    w.state, w.t_state = "hotspot", 0.0
-    w.step(None, cfg.hotspot_timeout_s)
-    w.step(None, cfg.hotspot_timeout_s + 0.1)
-    assert h.calls[-1][0] == "hotspot-off" and w.done
+    w.step(None, 0.1)
+    assert w.hotspot == "" and w.status()["hotspot"] is None
 
 
 # ---------------------------------------------------------------- QR-Leser

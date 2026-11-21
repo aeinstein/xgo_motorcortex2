@@ -2,8 +2,9 @@
 
 Ablauf (wie beim Hersteller, aber ohne pyzbar und ohne wpa_supplicant.conf zu überschreiben):
   C+D halten -> Kamera sucht einen WLAN-QR-Code (Handy: WLAN teilen) -> NetworkManager-Profil anlegen.
-  Ohne Code nach [wlan] qr_timeout_s -> Hotspot mit Zufallspasswort; am Display SSID, Passwort, QR zum
-  Beitreten und die Adresse von web/wlan.php, wo man das WLAN einträgt.
+  Ohne Code nach [wlan] qr_timeout_s Ende. Den Hotspot öffnet seit 2026-11-21 nicht mehr diese Einrichtung,
+  sondern xgo-wlan-auto.service von selbst (offen, RiderKerk, wenn wlan0 60 s nicht verbunden ist); läuft er,
+  steht am Display die Adresse von web/wlan.php.
 Den root-Teil macht deploy/xgo-wlan (sudo-Regel deploy/sudoers-xgonav-wlan); Passwörter gehen über stdin,
 nie über die Kommandozeile oder ins Log.
 
@@ -15,7 +16,6 @@ from __future__ import annotations
 import logging
 import math
 import os
-import secrets
 import subprocess
 import threading
 import time
@@ -27,7 +27,7 @@ log = logging.getLogger(__name__)
 
 HOTSPOT_IP = "10.42.0.1"                      # NetworkManager-Hotspot (ipv4.method shared)
 WLAN_URL = f"{HOTSPOT_IP}/wlan.php"
-_PW_ZEICHEN = "abcdefghjkmnpqrstuvwxyz23456789"   # ohne l/1/i/o/0: vom Display abtippen
+HOTSPOT_CON = "xgo-hotspot"                   # Profil des Hotspots (deploy/xgo-wlan, SSID RiderKerk)
 
 
 # ---------------------------------------------------------------- QR-Inhalt
@@ -68,7 +68,7 @@ def parse_wifi_qr(text: str) -> tuple[str, str, str, bool] | None:
 
 
 def wifi_qr_text(ssid: str, pw: str) -> str:
-    """Gegenstück zu parse_wifi_qr (Hotspot zum Beitreten)."""
+    """Gegenstück zu parse_wifi_qr (Tests, Prüfbilder)."""
     def esc(s: str) -> str:
         return "".join("\\" + c if c in '\\;,:"' else c for c in s)
     return f"WIFI:T:WPA;S:{esc(ssid)};P:{esc(pw)};;"
@@ -220,12 +220,11 @@ def _ascii(s: str) -> str:
 
 # ---------------------------------------------------------------- Ablauf
 class WlanSetup:
-    """Zustände: qr -> verbinde -> ok | fehler(-> qr);  qr -> hotspot_start -> hotspot -> ok;  -> ende.
+    """Zustände: qr -> verbinde -> ok | fehler(-> qr);  qr (Zeit um) -> ende;  -> ende.
     step() läuft in der Hauptschleife (statt App._step), lcd_frame() im LCD-Thread."""
 
     OK_S = 20.0           # Erfolg so lange anzeigen
     FEHLER_S = 8.0
-    STATUS_S = 3.0        # im Hotspot so oft nachsehen: über wlan.php verbunden? neues Handy im Hotspot?
 
     def __init__(self, cfg, helfer, now: float):
         self.cfg, self.helfer = cfg, helfer
@@ -234,37 +233,32 @@ class WlanSetup:
         self.detail = ""
         self.ssid = ""
         self.ip = ""
-        self.hotspot_pw = ""
+        self.hotspot = ""                   # Hinweis, wenn der automatische Hotspot gerade läuft
         self._t_qr = 0.0
-        self._t_status = 0.0
         self._qr = qr_leser(cfg.qr_model_dir)
         self._job = ""                      # laufender Helfer-Auftrag
-        self._off_pending = False           # Hotspot schließen, sobald der Helfer frei ist
-        self.rest_s: int | None = None      # Countdown (QR-Suche, Hotspot) in ganzen Sekunden
-        self.clients = 0                    # Geräte im Hotspot (letzte Abfrage)
+        self.rest_s: int | None = None      # Countdown der QR-Suche in ganzen Sekunden
         self._bgr: np.ndarray | None = None
         self.version = 0                    # erhöht sich bei jeder Änderung der Anzeige
         self._lcd_cache: tuple[tuple[int, int], np.ndarray] | None = None
         self._anim = 0                      # Zähler der LCD-Bilder in der QR-Suche
-        self._hot_t0: float | None = None
-        self._hot_qr: tuple[str, np.ndarray | None] | None = None
         self._eyes = QrEyes()
-        log.warning("WLAN-Einrichtung: QR-Code suchen (%.0f s, danach Hotspot)", cfg.qr_timeout_s)
+        log.warning("WLAN-Einrichtung: QR-Code suchen (%.0f s)", cfg.qr_timeout_s)
+        self._run("status", timeout=10.0)   # einmal: läuft der Hotspot? Dann die Adresse von wlan.php zeigen
 
     # -------------------------------------------------------------- Zustand
     @property
     def done(self) -> bool:
-        return self.state == "ende" and not self.helfer.busy and not self._off_pending
+        return self.state == "ende" and not self.helfer.busy
 
     def _set(self, state: str, now: float, text: str, detail: str = "") -> None:
         self.state, self.t_state, self.text, self.detail = state, now, text, detail
-        self._hot_t0 = None                 # Hotspot-Animation beginnt beim ersten Bild dieses Zustands
         self.version += 1
         log.warning("WLAN-Einrichtung: %s %s", text, detail)
 
     def status(self) -> dict:
         return {"state": self.state, "text": self.text, "detail": self.detail, "ssid": self.ssid, "ip": self.ip,
-                "hotspot": self.cfg.hotspot_ssid if self.state == "hotspot" else None, "rest_s": self.rest_s}
+                "hotspot": self.hotspot or None, "rest_s": self.rest_s}
 
     def _run(self, cmd: str, stdin: str = "", timeout: float = 60.0) -> None:
         self._job = cmd
@@ -273,7 +267,6 @@ class WlanSetup:
     def cancel(self, now: float) -> None:
         if self.state == "ende":
             return
-        self._off_pending = self.state in ("hotspot", "hotspot_start")
         self._set("ende", now, "Abgebrochen")
 
     # -------------------------------------------------------------- Schritt
@@ -286,31 +279,19 @@ class WlanSetup:
         if res is not None:
             job, self._job = self._job, ""
             self._job_done(job, res, now)
-        if self._off_pending and not self.helfer.busy:
-            self._off_pending = False
-            self._run("hotspot-off")
         st, dt = self.state, now - self.t_state
         if st == "qr":
-            if bgr is not None and now - self._t_qr >= 1.0 / max(0.1, self.cfg.qr_hz):
+            if (bgr is not None and not self.helfer.busy
+                    and now - self._t_qr >= 1.0 / max(0.1, self.cfg.qr_hz)):
                 self._t_qr = now
                 self._scan(bgr, now)
             if self.state == "qr" and dt >= self.cfg.qr_timeout_s:
-                self.hotspot_pw = "".join(secrets.choice(_PW_ZEICHEN) for _ in range(8))
-                self._set("hotspot_start", now, "Hotspot startet ...")
-                self._run("hotspot", f"{self.cfg.hotspot_ssid}\n{self.hotspot_pw}\n")
-        elif st == "hotspot":
-            if dt >= self.cfg.hotspot_timeout_s:
-                self._off_pending = True
-                self._set("ende", now, "Hotspot beendet (Zeit um)")
-            elif not self.helfer.busy and now - self._t_status >= self.STATUS_S:
-                self._t_status = now
-                self._run("status", timeout=10.0)
+                self._set("ende", now, "Kein WLAN-Code", self.hotspot)
         elif st == "ok" and dt >= self.OK_S:
             self._set("ende", now, "Fertig", self.detail)
         elif st == "fehler" and dt >= self.FEHLER_S:
             self._set("qr", now, "WLAN-QR vor die Kamera halten")
-        frist = {"qr": self.cfg.qr_timeout_s, "hotspot": self.cfg.hotspot_timeout_s}.get(self.state)
-        rest = None if frist is None else max(0, math.ceil(frist - (now - self.t_state)))
+        rest = max(0, math.ceil(self.cfg.qr_timeout_s - (now - self.t_state))) if self.state == "qr" else None
         if rest != self.rest_s:
             self.rest_s = rest
             self.version += 1
@@ -322,32 +303,14 @@ class WlanSetup:
         if job == "connect" and self.state == "verbinde":
             if rc == 0:
                 self.ip = kv.get("ip", "")
+                self.hotspot = ""
                 self._set("ok", now, f"Verbunden: {self.ssid}", self.ip)
             else:
                 self._set("fehler", now, f"Fehler: {self.ssid}", last)
-        elif job == "hotspot" and self.state == "hotspot_start":
-            if rc == 0:
-                self._t_status = now
-                self._set("hotspot", now, f"Hotspot {self.cfg.hotspot_ssid}", WLAN_URL)
-            else:
-                self._set("ende", now, "Hotspot fehlgeschlagen", last)
-        elif job == "status" and self.state == "hotspot" and rc == 0:
-            con = kv.get("con", "")
-            if con and con != "xgo-hotspot" and kv.get("ip"):
-                self.ssid, self.ip = kv.get("ssid", con), kv["ip"]
-                self._set("ok", now, f"Verbunden: {self.ssid}", self.ip)
-                return
-            try:
-                n = int(kv.get("clients", "0") or 0)
-            except ValueError:
-                n = 0
-            if n > self.clients:
-                # neues Gerät im Hotspot: Countdown beginnt neu, Zeit zum Eintippen in wlan.php
-                self.t_state = now
-                self.detail = "Handy verbunden"
-                self.version += 1
-                log.warning("WLAN-Einrichtung: Gerät im Hotspot (%d), Countdown neu", n)
-            self.clients = n
+        elif job == "status" and rc == 0:
+            self.hotspot = f"Hotspot {kv.get('ssid') or 'RiderKerk'}: {WLAN_URL}" \
+                if kv.get("con") == HOTSPOT_CON else ""
+            self.version += 1
         elif rc != 0:
             log.warning("WLAN-Einrichtung: %s: %s", job, last)
 
@@ -369,8 +332,7 @@ class WlanSetup:
     # -------------------------------------------------------------- Display (LCD-Thread)
     def lcd_frame(self) -> tuple[tuple[int, int], np.ndarray]:
         """(Schlüssel, BGR 320x240); neu gezeichnet nur bei Änderung, in der QR-Suche jedes Mal (Augen)."""
-        animiert = self.state == "qr" or (self.state == "hotspot" and
-                                          (self._hot_t0 is None or time.monotonic() - self._hot_t0 < HOT_ANIM_S + 0.1))
+        animiert = self.state == "qr"
         if animiert:
             self._anim += 1
         key = (self.version, self._anim if animiert else 0)
@@ -382,27 +344,6 @@ class WlanSetup:
 
     def _draw(self) -> np.ndarray:
         font = cv2.FONT_HERSHEY_SIMPLEX
-        if self.state == "hotspot":
-            now = time.monotonic()
-            if self._hot_t0 is None:
-                self._hot_t0 = now
-            text = wifi_qr_text(self.cfg.hotspot_ssid, self.hotspot_pw)
-            if self._hot_qr is None or self._hot_qr[0] != text:
-                q = _qr_image(text, HOT_QR_PX)
-                self._hot_qr = (text, None if q is None else q[..., 0])
-            x = min(1.0, (now - self._hot_t0) / HOT_ANIM_S)
-            img = hotspot_eyes(x * x * (3 - 2 * x), self._hot_qr[1])
-            if x >= 1.0:
-                _countdown(img, (282, 160), 28, self.rest_s, self.cfg.hotspot_timeout_s)
-                weiss, tuerkis = (255, 255, 255), QrEyes.FARBE
-                zeilen = [("WLAN:", 0.45, 30, (170, 170, 170)), (_ascii(self.cfg.hotspot_ssid), 0.55, 52, weiss),
-                          ("Passwort:", 0.45, 82, (170, 170, 170)), (self.hotspot_pw, 0.7, 108, weiss)]
-                for t, sc, y, c in zeilen:
-                    cv2.putText(img, t, (166, y), font, sc, c, 2 if sc > 0.5 else 1, cv2.LINE_AA)
-                cv2.putText(img, "Dann im Browser:", (8, 182), font, 0.5, weiss, 1, cv2.LINE_AA)
-                cv2.putText(img, WLAN_URL, (8, 208), font, 0.5, tuerkis, 1, cv2.LINE_AA)
-                cv2.putText(img, "B = Abbruch", (8, 232), font, 0.4, (150, 150, 150), 1, cv2.LINE_AA)
-            return img
         if self.state == "qr":
             img = self._eyes.draw(time.monotonic())
             if self._bgr is not None:                                       # kleines Kamerabild zum Zielen
@@ -416,11 +357,15 @@ class WlanSetup:
             _countdown(img, (280, 40), 32, self.rest_s, self.cfg.qr_timeout_s)
         farbe = {"ok": (0, 200, 0), "fehler": (0, 0, 255)}.get(self.state, (255, 255, 255))
         cv2.rectangle(img, (0, 180), (320, 240), (0, 0, 0), -1)
-        cv2.putText(img, _ascii(self.text)[:34], (6, 202), font, 0.5, farbe, 1, cv2.LINE_AA)
+        hinweis = self.state == "qr" and bool(self.hotspot)    # automatischer Hotspot läuft: Adresse zeigen
+        y = (197, 233) if hinweis else (202, 228)
+        cv2.putText(img, _ascii(self.text)[:34], (6, y[0]), font, 0.5, farbe, 1, cv2.LINE_AA)
+        if hinweis:
+            cv2.putText(img, _ascii(self.hotspot)[:44], (6, 215), font, 0.42, QrEyes.FARBE, 1, cv2.LINE_AA)
         unten = _ascii(self.detail)[:40]
         if self.state == "qr":
-            unten = (unten + "  " if unten else "") + "danach Hotspot, B = Abbruch"
-        cv2.putText(img, unten, (6, 228), font, 0.42, (200, 200, 200), 1, cv2.LINE_AA)
+            unten = (unten + "  " if unten else "") + "B = Abbruch"
+        cv2.putText(img, unten, (6, y[1]), font, 0.42, (200, 200, 200), 1, cv2.LINE_AA)
         return img
 
 
@@ -502,45 +447,6 @@ _LUT = [np.round(np.arange(256) * c / 255).astype(np.uint8) for c in (210, 225, 
 def _faerben(alpha: np.ndarray) -> np.ndarray:
     """Alpha 0..255 -> BGR in Augenfarbe, per Tabelle (am CM4 statt Fließkomma)."""
     return cv2.merge([cv2.LUT(alpha, t) for t in _LUT])
-
-
-HOT_ANIM_S = 1.2                    # Augen wachsen zum großen Auge mit dem Hotspot-QR als Pupille
-HOT_QR_PX = 116
-HOT_EYE = (80.0, 82.0, 156.0)       # Mitte x, y und Kantenlänge des großen Auges
-
-
-def hotspot_eyes(x: float, qr: np.ndarray | None) -> np.ndarray:
-    """Hotspot: Die beiden Standardaugen (Pupille QR-Suchmuster) wachsen und wandern zusammen, bis ein großes
-    Auge übrig ist; x 0..1 (geglättet). Bei x = 1 ist seine Pupille der QR-Code zum Beitreten (dunkle Module auf
-    Augenfarbe, der Rand des Auges ist die Ruhezone)."""
-    S = 4
-    f = 1 << S
-    ex, ey, es = HOT_EYE
-    alpha = np.zeros((240, 320), np.uint8)
-    mitten = []
-    for cx0 in QrEyes.CX:                               # beide Augen: Körper vereinigen
-        cx, cy = cx0 + (ex - cx0) * x, QrEyes.CY + (ey - QrEyes.CY) * x
-        w, h = QrEyes.W + (es - QrEyes.W) * x, QrEyes.H + (es - QrEyes.H) * x
-        pts = rrect(w, h, 0.36 * min(w, h) / 2 * (1 - 0.5 * x)) + (cx, cy)
-        cv2.fillPoly(alpha, [np.round(pts * f).astype(np.int32)], 255, cv2.LINE_AA, S)
-        mitten.append((cx, cy))
-    if x < 1.0 or qr is None:
-        # Pupillen schichtweise (erst beide Außenquadrate, dann beide hellen, dann beide Kerne): überlappend
-        # verschmelzen sie zu einem Suchmuster, das wächst, bis der Code es ablöst
-        modul = QrEyes.MODUL * (1 + 1.6 * x)
-        koerper = alpha.copy()
-        for n, val in ((7, 0), (5, 255), (3, 0)):
-            r = n * modul / 2
-            for cx, cy in mitten:
-                a = (int(round((cx - r) * f)), int(round((cy - r) * f)))
-                b = (int(round((cx + r) * f)), int(round((cy + r) * f)))
-                cv2.rectangle(alpha, a, b, val, -1, cv2.LINE_AA, S)
-        np.minimum(alpha, koerper, out=alpha)
-    if x >= 1.0 and qr is not None:
-        n = qr.shape[0]
-        y0, x0 = int(round(ey - n / 2)), int(round(ex - n / 2))
-        alpha[y0:y0 + n, x0:x0 + n] = np.where(qr > 127, 255, 0).astype(np.uint8)
-    return _faerben(alpha)
 
 
 def rrect(w: float, h: float, r: float, n: int = 10) -> np.ndarray:
