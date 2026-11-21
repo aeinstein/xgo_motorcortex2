@@ -148,7 +148,7 @@ details.hilfe p{margin:4px 0 0}
 .tempo-zeile input{flex:1;max-width:320px}
 .tempo-zeile .w{font-variant-numeric:tabular-nums;text-align:right;font-size:13px}
 .bild-leiste .imu-bild.schlecht{color:#ff8a8d}
-.bild-leiste .sprech-zeile{grid-column:1/-1;display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px}
+.sprech-zeile{margin-top:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px}
 .sprech-zeile label{color:var(--leise)}
 .sprech-zeile meter{width:60px}
 .sprech-zeile input[type=range]{width:90px}
@@ -425,22 +425,25 @@ details.extras[open]>summary{margin-bottom:8px}
         <span class="w" id="tempo-w"></span>
         <span class="info" tabindex="0" title="Steuerkreuz im Bild gedrückt halten, oder Pfeiltasten/WASD. Fahren schaltet auf „Hand“ und ist auf max_v/max_w der Konfiguration begrenzt. Ohne Bodenmodell und Bahnprüfung; Sturz-Erkennung und Watchdogs bleiben aktiv.">i</span>
       </div>
-      <div class="sprech-zeile">
-        <button id="sprech" onclick="sprechUmschalten()" disabled title="Nur im Modus Hand">Sprechen</button>
-        <label title="Mikrofon nur senden, solange die Sprechtaste oder die Leertaste gedrückt ist; der Rider ist dann still"><input type="checkbox" id="sprech-ptt" onchange="sprechPtt(this.checked)"> Drücken zum Sprechen</label>
-        <button id="sprech-taste" hidden title="Gedrückt halten (oder Leertaste)">Sprechtaste</button>
-        <span class="leise">Rider</span><meter id="sprech-rider" min="0" max="1" value="0"></meter>
-        <span class="leise">ich</span><meter id="sprech-ich" min="0" max="1" value="0"></meter>
-        <input type="range" id="sprech-laut" min="0" max="400" value="200" title="Lautstärke des Riders hier im Browser" aria-label="Lautstärke">
-        <span class="leise" id="sprech-text"></span>
-        <label title="Eigenes Kamerabild aufs Display des Riders (320×240, im Browser umgerechnet; 0,75 MB/s bei 5 Bildern/s, am Rider ~9 % eines Kerns, bei 10/s doppelt). Nur während eines Gesprächs."><input type="checkbox" id="sprech-bild" onchange="bildUmschalten(this.checked)" disabled> Kamera senden</label>
-        <select id="sprech-fps" title="Bilder je Sekunde aufs Display (WLAN: je Bild 150 kB)" aria-label="Bilder je Sekunde"><option value="5" selected>5/s</option><option value="10">10/s</option><option value="15">15/s</option></select>
-        <video id="sprech-vorschau" muted playsinline hidden></video>
-        <span class="leise" id="bild-text"></span>
-      </div>
       <div class="imu-bild leise" id="imu-bild" title="IMU-Wert dieses Bildes (Bildzeit + [imu] time_offset_ms), mit dem xgonav Boden, Karten und die cyan Linie rechnet. Nickrate: aus dem Bild (Ego-Motion) gegen die IMU; weichen sie dauerhaft ab, stimmen Zeitversatz oder Brennweite nicht">-</div>
     </div>
   </div>
+  <details class="karte extras" id="telefonkarte" ontoggle="telefonUmschalten()">
+    <summary><h2>Telefon</h2><span class="leise" id="telefon-zustand">Nur im Modus Hand</span></summary>
+    <div class="sprech-zeile">
+      <button id="sprech" onclick="sprechUmschalten()" disabled title="Nur im Modus Hand">Sprechen</button>
+      <label title="Mikrofon nur senden, solange die Sprechtaste oder die Leertaste gedrückt ist; der Rider ist dann still"><input type="checkbox" id="sprech-ptt" onchange="sprechPtt(this.checked)"> Drücken zum Sprechen</label>
+      <button id="sprech-taste" hidden title="Gedrückt halten (oder Leertaste)">Sprechtaste</button>
+      <span class="leise">Rider</span><meter id="sprech-rider" min="0" max="1" value="0"></meter>
+      <span class="leise">ich</span><meter id="sprech-ich" min="0" max="1" value="0"></meter>
+      <input type="range" id="sprech-laut" min="0" max="400" value="200" title="Lautstärke des Riders hier im Browser" aria-label="Lautstärke">
+      <span class="leise" id="sprech-text"></span>
+      <label title="Eigenes Kamerabild aufs Display des Riders (320×240, im Browser umgerechnet; 0,75 MB/s bei 5 Bildern/s, am Rider ~9 % eines Kerns, bei 10/s doppelt). Nur während eines Gesprächs."><input type="checkbox" id="sprech-bild" onchange="bildUmschalten(this.checked)" disabled> Kamera senden</label>
+      <select id="sprech-fps" title="Bilder je Sekunde aufs Display (WLAN: je Bild 150 kB)" aria-label="Bilder je Sekunde"><option value="5" selected>5/s</option><option value="10">10/s</option><option value="15">15/s</option></select>
+      <video id="sprech-vorschau" muted playsinline hidden></video>
+      <span class="leise" id="bild-text"></span>
+    </div>
+  </details>
   <div class="karte">
     <div class="modus">
       <div class="segment">
@@ -830,7 +833,7 @@ const EN = {
   'Mikrofon belegt oder arecord beendet': 'microphone busy or arecord ended', 'aplay beendet (Lautsprecher belegt?)': 'aplay ended (speaker busy?)',
   'arecord/aplay starten nicht': 'arecord/aplay do not start',
   'xgonav nicht erreichbar (läuft der Dienst?)': 'xgonav not reachable (is the service running?)',
-  'Kamera senden': 'Send camera', 'Bilder je Sekunde': 'Frames per second',
+  'Kamera senden': 'Send camera', 'Telefon': 'Phone', 'bereit': 'ready', 'Bilder je Sekunde': 'Frames per second',
   'Eigenes Kamerabild aufs Display des Riders (320×240, im Browser umgerechnet; 0,75 MB/s bei 5 Bildern/s, am Rider ~9 % eines Kerns, bei 10/s doppelt). Nur während eines Gesprächs.':
     'Own camera image on the Rider display (320×240, converted in the browser; 0.75 MB/s at 5 frames/s, ~9 % of a core on the Rider, double at 10/s). Only during a call.',
   'Bilder je Sekunde aufs Display (WLAN: je Bild 150 kB)': 'Frames per second to the display (Wi-Fi: 150 kB per frame)',
@@ -1475,6 +1478,10 @@ try { sprechPttAn = localStorage.getItem('xgonav.sprechptt') === '1'; } catch (e
 $('sprech-ptt').checked = sprechPttAn;
 $('sprech-taste').hidden = !sprechPttAn;
 try { $('sprech-laut').value = localStorage.getItem('xgonav.sprechlaut') || 200; } catch (e) {}
+function telefonUmschalten() {
+  try { localStorage.setItem('xgonav.telefon', $('telefonkarte').open ? '1' : '0'); } catch (e) {}
+}
+try { $('telefonkarte').open = localStorage.getItem('xgonav.telefon') === '1'; } catch (e) {}   // Standard: zu
 function sprechText(t) { $('sprech-text').textContent = t ? tr(t) : ''; }
 function sprechSendet() { return !sprechPttAn || sprechTaste; }
 function sprechGain() {
@@ -1513,6 +1520,7 @@ function sprechZeigen() {
   b.textContent = tr(sprech ? 'Auflegen' : 'Sprechen');
   b.disabled = !sprech && !hand;
   $('sprech-bild').disabled = !an;
+  $('telefon-zustand').textContent = tr(an ? 'Gespräch läuft' : sprech ? 'verbinde …' : hand ? 'bereit' : 'Nur im Modus Hand');
   if (!an && bild) bildEnde();
   b.title = tr(hand || sprech ? 'Gegensprechen mit dem Rider: sein Mikrofon hier hören, ins eigene Mikrofon sprechen (8 kHz). Nur im Modus Hand.'
                               : 'Nur im Modus Hand');
@@ -1563,10 +1571,10 @@ async function sprechUmschalten() {
       sprechZeigen();
       return;
     }
-    s.ab.port.postMessage(e.data, [e.data]);
-    const d = new Int16Array(e.data); let q = 0;
+    const d = new Int16Array(e.data); let q = 0;                     // Pegel vor dem Weiterreichen (danach ist der Puffer weg)
     for (let k = 0; k < d.length; k += 4) q += d[k] * d[k];
     sprechRiderPegel = Math.max(sprechRiderPegel, Math.min(1, 5 * Math.sqrt(q / (d.length / 4)) / 32768));
+    s.ab.port.postMessage(e.data, [e.data]);
   };
   ws.onclose = () => {
     if (sprech !== s) return;

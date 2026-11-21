@@ -358,7 +358,8 @@ while (true) {
             $neu = @stream_socket_accept($srv, 0);
             if ($neu) {
                 stream_set_blocking($neu, false);
-                $clients[(int)$neu] = ['sock' => $neu, 'in' => '', 'out' => '', 'ws' => false, 'bild' => false];
+                $clients[(int)$neu] = ['sock' => $neu, 'in' => '', 'out' => '', 'ws' => false, 'bild' => false,
+                                       'teil' => null];
             }
             continue;
         }
@@ -440,7 +441,7 @@ while (true) {
                 continue;
             }
         }
-        $frames = ws_lesen($clients[$id]['in'], $clients[$id]['bild'] ? BILD : IN_MAX);
+        $frames = ws_lesen($clients[$id]['in'], $clients[$id]['bild'] ? BILD : IN_MAX, $clients[$id]['teil']);
         if ($frames === false) {
             trennen($id);
             continue;

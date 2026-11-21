@@ -20,8 +20,10 @@ function ws_frame(int $op, string $d): string
     return chr(0x80 | $op) . chr(127) . pack('J', $n) . $d;
 }
 
-// Vollständige Client-Frames aus dem Puffer: [[opcode, daten], ...]; false = Protokollfehler oder > $max.
-function ws_lesen(string &$buf, int $max): array|false
+// Vollständige Client-Nachrichten aus dem Puffer: [[opcode, daten], ...]; false = Protokollfehler oder > $max.
+// Fragmentierte Nachrichten (FIN = 0, dann Opcode 0) setzt $teil über mehrere Aufrufe zusammen: Chromium
+// teilt große Binärnachrichten (Display-Bilder) so auf. Steuerrahmen dürfen dazwischen kommen.
+function ws_lesen(string &$buf, int $max, ?array &$teil = null): array|false
 {
     $aus = [];
     while (($n = strlen($buf)) >= 2) {
@@ -48,12 +50,35 @@ function ws_lesen(string &$buf, int $max): array|false
         if ($n < $o + ($maske ? 4 : 0) + $len) {
             break;
         }
+        $b0 = ord($buf[0]);
         $d = substr($buf, $o + ($maske ? 4 : 0), $len);
         if ($maske && $len) {
             $d ^= substr(str_repeat(substr($buf, $o, 4), intdiv($len, 4) + 1), 0, $len);
         }
-        $aus[] = [ord($buf[0]) & 0x0f, $d];
         $buf = (string)substr($buf, $o + ($maske ? 4 : 0) + $len);
+        $op = $b0 & 0x0f;
+        $fin = ($b0 & 0x80) !== 0;
+        if ($op >= 0x8) {                                   // Steuerrahmen: nie fragmentiert, auch mittendrin
+            $aus[] = [$op, $d];
+        } elseif ($op !== 0x0) {                            // Beginn einer Nachricht
+            if ($teil !== null) {
+                return false;                               // neue Nachricht, bevor die alte fertig war
+            }
+            if ($fin) {
+                $aus[] = [$op, $d];
+            } else {
+                $teil = [$op, $d];
+            }
+        } else {                                            // Fortsetzung
+            if ($teil === null || strlen($teil[1]) + strlen($d) > $max) {
+                return false;
+            }
+            $teil[1] .= $d;
+            if ($fin) {
+                $aus[] = $teil;
+                $teil = null;
+            }
+        }
     }
     return $aus;
 }

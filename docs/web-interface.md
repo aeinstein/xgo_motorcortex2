@@ -175,7 +175,7 @@ Daemon `tools/live.php` (PHP CLI, unit `xgonav-live.service`, user `www-data`, `
 
 ## Intercom (WebSocket)
 
-Talk to the Rider from the browser, mode **manual** only. Button *Sprechen* in the image bar below *Tempo*.
+Talk to the Rider from the browser, mode **manual** only. Collapsible card *Telefon* right below the camera image (closed by default, `localStorage` `xgonav.telefon`), button *Sprechen*; the heading shows the state.
 Daemon `tools/sprech.php` (PHP CLI, unit `xgonav-sprech.service`, user `www-data` + group `audio`, `Nice=10`);
 WebSocket helpers shared with `live.php` in `tools/ws.inc.php`.
 

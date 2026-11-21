@@ -239,3 +239,35 @@ def test_bild_aufs_display_und_besitz(sprech):
     assert _warte(lambda: (tmp / "ende").exists())
     assert owner.read_text() == ""
     assert b.text() == {"bild": "aus", "grund": "Gespräch beendet"}
+
+
+def _rahmen(d: bytes, op: int, fin: bool) -> bytes:
+    """Ein maskierter Client-Rahmen; fin=False = weitere Fragmente folgen (wie Chromium bei großen Nachrichten)."""
+    m, n = os.urandom(4), len(d)
+    if n < 126:
+        laenge = bytes([0x80 | n])
+    elif n < 65536:
+        laenge = bytes([0x80 | 126]) + struct.pack("!H", n)
+    else:
+        laenge = bytes([0x80 | 127]) + struct.pack("!Q", n)
+    maske = (m * (n // 4 + 1))[:n]
+    roh = (int.from_bytes(d, "big") ^ int.from_bytes(maske, "big")).to_bytes(n, "big") if n else b""
+    return bytes([(0x80 if fin else 0) | op]) + laenge + m + roh
+
+
+def test_bild_fragmentiert(sprech):
+    port, _, _ = sprech
+    lcd = LAUF["lcd"]
+    c = Client(port)
+    assert c.text()["sprech"] == "an"
+    b = Client(port, "/?bild")
+    assert b.text()["bild"] == "an"
+    bild = bytes([5]) * BILD
+    teile = [bild[:65536], bild[65536:131072], bild[131072:]]
+    b.s.sendall(_rahmen(teile[0], 2, False) + _rahmen(b"x", 9, True)       # Ping mitten in der Nachricht
+                + _rahmen(teile[1], 0, False) + _rahmen(teile[2], 0, True))
+    assert _warte(lambda: len(lcd) >= BILD)
+    time.sleep(0.2)
+    assert len(lcd) == BILD and lcd.count(5) == BILD
+    op, d = b.recv()
+    assert (op, d) == (0xA, b"x")                            # Pong
