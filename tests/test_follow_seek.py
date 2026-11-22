@@ -198,3 +198,53 @@ def test_startpunkt_erst_nach_roll_kalibrierung():
         app._start_tick(t)
         t += 0.1
     assert gm.start == (0.5, 0.0, 0.0)
+
+
+def test_startbild_im_browser_weg_beim_absetzen():
+    """Nutzer 2026-11-22: Startbild im Browser (/startbild.jpg, status startbild.bild); abgesetzt = getragen: weg."""
+    import numpy as np
+    from xgonav import startbild as sbm
+    app, robot = _app()
+    app.cfg.startbild.enabled = True
+    app.startbild = sb = sbm.StartAbgleich(app.cfg.startbild)
+    gm = app.gridmap
+    robot.state.balancing = True
+    app._start_tick(0.0)
+    bgr = np.full((480, 640, 3), 128, np.uint8)
+    a = sbm.Ansicht(np.zeros((480, 640), np.uint8), (0.0, 0.0, 0.0), 0.0, 0.0, 310.0, 320.0, 240.0, 5.0, 0.12, 0.036)
+    sb.anker_setzen(a, gm.start, bgr)
+    bgr[:] = 0                                                 # Kopie: späteres Bild ändert den Anker nicht
+    assert sb.info()["bild"] == 0                              # Merkmale noch nicht fertig
+    sb.anker_bereit = True
+    assert sb.info()["bild"] == 1 and int(sb.anker_bgr.mean()) == 128
+
+    class Enc:
+        n = 0
+
+        def encode(self, img, q):
+            Enc.n += 1
+            return b"jpeg"
+    assert sb.anker_jpeg(Enc()) == b"jpeg" and sb.anker_jpeg(Enc()) == b"jpeg" and Enc.n == 1   # einmal je Anker
+    robot.state.balancing = False                              # absetzen
+    app._start_tick(0.1)
+    assert sb.anker is None and sb.info()["bild"] == 0 and sb.anker_jpeg(Enc()) is None
+
+
+def test_pet_fahrbefehl_roll_zurueck():
+    """Nutzer 2026-11-22: in pet bei einem Fahrbefehl (nicht Drehen) Roll auf 0 und neu ausrichten."""
+    from xgonav.behaviors import Command
+    app, robot = _app()
+    robot.state.balancing = True
+    app.set_mode("pet")
+    app._apply_pending_mode()
+    br = app.behavior.brain
+    br.roll_deg, br.rolled, br._gesture = 8.0, True, ("kopf", 0.0, 9.0)
+    rolls, levels = [], []
+    robot.set_roll = rolls.append
+    robot.request_level = lambda: levels.append(1) or True
+    app._cmd = Command(0.0, 0.3, None, "dreht")                # Drehen: Kopf bleibt schief
+    app._pet_tick()
+    assert br.rolled and rolls == [8.0] and not levels
+    app._cmd = Command(0.1, 0.0, None, "fährt")
+    app._pet_tick()
+    assert br.roll_deg == 0.0 and not br.rolled and br._gesture is None and rolls[-1] == 0.0 and levels == [1]

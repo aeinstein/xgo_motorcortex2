@@ -1429,6 +1429,16 @@ class PetBrain:
             self.trust = clamp(self.trust - 0.02, 0.0, 1.0)
             self._react(t, "embarrassed", "hey")
 
+    def roll_zurueck(self) -> bool:
+        """App beim Fahrbefehl: Kopfneigen beenden, Roll 0. True, wenn er schräg gestellt war (dann neu ausrichten)."""
+        if not self.rolled:
+            return False
+        if self._gesture is not None and self._gesture[0] == "kopf":
+            self._gesture = None
+        self.roll_deg = 0.0
+        self.rolled = False
+        return True
+
     def _apply_gesture(self, s: Sense, act: Act, tg: Seen | None) -> None:
         c, t = self.cfg, s.t
         g = self._gesture

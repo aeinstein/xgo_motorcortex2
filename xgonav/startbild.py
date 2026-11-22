@@ -246,6 +246,10 @@ class StartAbgleich:
         self.anker: Ansicht | None = None
         self.anker_bereit = False                 # Merkmale des Ankers berechnet
         self.anker_start: tuple | None = None     # Startpunkt der Karte, zu dem der Anker gehört
+        self.anker_bgr: np.ndarray | None = None  # Farbbild des Ankers, nur für die Anzeige im Browser
+        self.anker_n = 0                          # Nummer des Ankers (Browser lädt das Bild nur bei neuer Nummer)
+        self._jpeg: tuple | None = None           # (anker_n, JPEG), erst auf Anfrage kodiert
+        self._jpeg_lock = threading.Lock()
         self.letztes: Ergebnis | None = None
         self.n_ok = self.n_verworfen = 0
         self._cpus = cpus
@@ -277,8 +281,11 @@ class StartAbgleich:
             finally:
                 self._busy = False
 
-    def anker_setzen(self, a: Ansicht, start: tuple) -> None:
+    def anker_setzen(self, a: Ansicht, start: tuple, bgr: np.ndarray | None = None) -> None:
+        """bgr: Kamerabild dazu, für den Browser einmal kopiert (~0,9 MB, < 1 ms je Anker)."""
         self.anker, self.anker_bereit, self.anker_start = a, False, tuple(start)
+        self.anker_bgr = None if bgr is None else bgr.copy()
+        self.anker_n += 1
         self._faden()
         self._busy = True
         self._q.put(("anker", a))
@@ -287,6 +294,25 @@ class StartAbgleich:
         if self.anker is not None:
             log.info("Startbild: Anker verworfen (%s)", grund)
         self.anker, self.anker_bereit, self.anker_start = None, False, None
+        self.anker_bgr = None
+
+    def bild_n(self) -> int:
+        """Nummer des angezeigten Ankerbilds, 0 = keins (kein Anker, Merkmale noch nicht fertig oder ohne Bild)."""
+        return self.anker_n if self.anker is not None and self.anker_bereit and self.anker_bgr is not None else 0
+
+    def anker_jpeg(self, enc) -> bytes | None:
+        """JPEG des Ankerbilds für den Browser (enc: jpeg.Jpeg), einmal je Anker kodiert; None ohne Bild.
+        Läuft im Web-Faden, nie in der Bildschleife."""
+        n, bgr = self.bild_n(), self.anker_bgr
+        if not n or bgr is None:
+            return None
+        with self._jpeg_lock:
+            if self._jpeg is None or self._jpeg[0] != n:
+                body = enc.encode(bgr, 80)
+                if body is None:
+                    return None
+                self._jpeg = (n, body)
+            return self._jpeg[1]
 
     def messen(self, ende: Ansicht, tiefen: list[Ansicht]) -> bool:
         if self.anker is None or self._busy:
@@ -311,6 +337,6 @@ class StartAbgleich:
 
     def info(self) -> dict:
         e = self.letztes
-        return {"anker": self.anker_bereit, "ok": self.n_ok, "verworfen": self.n_verworfen,
+        return {"anker": self.anker_bereit, "bild": self.bild_n(), "ok": self.n_ok, "verworfen": self.n_verworfen,
                 "letztes": None if e is None else {"ok": e.ok, "grund": e.grund, "inl": e.inl, "ms": round(e.ms),
                                                     "n3d": e.n3d, **e.info}}

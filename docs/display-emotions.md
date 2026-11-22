@@ -130,7 +130,7 @@ Started by hand (web UI „Haustier“, `--mode pet`). Not run on the Rider yet,
 | Trigger | Reaction |
 |---|---|
 | person > 3 m | notices, chirp |
-| person 1.5–3 m | turns toward, tilts head (roll), `doubt` |
+| person 1.5–3 m | turns toward, tilts head (roll), `doubt`; a drive command (v ≠ 0, not turning) sets roll back to 0 and levels once (`Robot.request_level`, 2026-11-22) |
 | person < 1.5 m | `cute`, trill, wiggle |
 | person < ~0.5 m | `shy`, ducks |
 | box top free and < 1.9 m (kneeling, sitting, child) | `like` |

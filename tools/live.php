@@ -11,7 +11,7 @@
  *   {"imu": {"seq", "imu": [[seq, t_ms, roll, pitch, gier], ...], "wseq",
  *            "wheels": [[seq, t_ms, ticks links, ticks rechts], ...], "state"}}  0,3 s balancierend, sonst 1 s
  * Browser → Server:
- *   "imu 0|1 [since wsince]"   IMU an/aus für diese Verbindung (Lage-Karte zu, Tab verdeckt), ab welcher seq
+ *   "imu 0|1 [since wsince]"   IMU an/aus für diese Verbindung (Lage-Karte und Schallradar zu, Tab verdeckt), ab welcher seq
  *
  * Umgebung (für Tests am PC): XGO_PROC (Default /proc/XGORider), XGO_LIVE_PORT (8089),
  * XGO_STATUS_URL (http://127.0.0.1:8088/status).

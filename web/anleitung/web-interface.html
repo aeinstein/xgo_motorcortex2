@@ -1618,7 +1618,7 @@
 </tr>
 <tr>
 <td>Raumkarte</td>
-<td>room map PNG, view 3/6/10/16/24 m; mouse: drag to pan, wheel to zoom about the pointer (1 m..<code>grid.size_m</code>), double-click recentres on the Rider and follows again (touch: page scrolls, no pan). Buttons in three fixed groups: <em>Karte</em> (Speichern, sperren/entsperren, Zurücksetzen with confirm), <em>Start · Pose</em> (Start hier, Pose verwerfen: only with <code>reloc</code>, disabled while the pose is unknown), <em>Route · Zonen</em> (Route setzen, Sperrzone, Zonen löschen). Editing bar and pose warning are overlays on the map (top/bottom), groups are disabled while editing; nothing shifts the layout. Status: pose line with distance to start, one reserved line for explore/patrol</td>
+<td>room map PNG, view 3/6/10/16/24 m; mouse: drag to pan, wheel to zoom about the pointer (1 m..<code>grid.size_m</code>), double-click recentres on the Rider and follows again (touch: page scrolls, no pan). Buttons in three fixed groups: <em>Karte</em> (Speichern, sperren/entsperren, Zurücksetzen with confirm), <em>Start · Pose</em> (Start hier, Pose verwerfen: only with <code>reloc</code>, disabled while the pose is unknown), <em>Route · Zonen</em> (Route setzen, Sperrzone, Zonen löschen). Editing bar and pose warning are overlays on the map (top/bottom), groups are disabled while editing; nothing shifts the layout. Status: pose line with distance to start, one reserved line for explore/patrol. Below: start image (anchor of the start image check, <code>/startbild.jpg</code>, reloaded only for a new anchor; hidden after set-down or with unknown pose)</td>
 </tr>
 <tr>
 <td>Verlauf (collapsed)</td>
@@ -1930,6 +1930,11 @@ works without xgonav.</p>
 </tr>
 <tr>
 <td>GET</td>
+<td><code>/startbild.jpg</code></td>
+<td>start image (anchor) as JPEG, encoded once per anchor; 404 without anchor</td>
+</tr>
+<tr>
+<td>GET</td>
 <td><code>/map.png?px=480&amp;view=6[&amp;cx=&amp;cy=]</code></td>
 <td>room map; px 120..960, view 1..<code>grid.size_m</code>; centre <code>cx</code>,<code>cy</code> in map metres (both or neither; default Rider pose; clamped to ±<code>grid.size_m</code>); header <code>X-Map-View: cx,cy,view,size</code>; 404 if no map</td>
 </tr>
@@ -1961,7 +1966,7 @@ works without xgonav.</p>
 <tr>
 <td>POST</td>
 <td><code>/wlan?on=0\|1</code></td>
-<td>start/cancel Wi-Fi setup (<a href="wifi-setup.html">wifi-setup.md</a>); <code>/status</code> field <code>wlan</code> (<code>state</code>, <code>text</code>, <code>detail</code>, <code>ssid</code>, <code>ip</code>, <code>hotspot</code>) or null. <code>/status</code> field <code>ortung</code> (sound direction, <a href="audio.html#sound-direction-xgonavortungpy">audio.md</a>): <code>aktiv</code>, <code>kern</code>, <code>fehler</code>, <code>n</code>, <code>schwach</code>, <code>letzter</code> or null, <code>verlauf</code> (≤ 12 sounds of the last 15 s as <code>[age s, angle °, quality, level dB]</code>). Card <strong>Schallradar</strong> draws them as rays (up = front, dashed twin to the rear because front/back cannot be told apart, length = level, fading over 12 s; rays and spokes are counter-rotated by the IMU yaw since each sound, so they keep pointing at the source while the Rider turns); drawn in the browser only while the card is open, no extra request (data from the 1 s live packet)</td>
+<td>start/cancel Wi-Fi setup (<a href="wifi-setup.html">wifi-setup.md</a>); <code>/status</code> field <code>wlan</code> (<code>state</code>, <code>text</code>, <code>detail</code>, <code>ssid</code>, <code>ip</code>, <code>hotspot</code>) or null. <code>/status</code> field <code>ortung</code> (sound direction, <a href="audio.html#sound-direction-xgonavortungpy">audio.md</a>): <code>aktiv</code>, <code>kern</code>, <code>fehler</code>, <code>n</code>, <code>schwach</code>, <code>letzter</code> or null, <code>verlauf</code> (≤ 12 sounds of the last 15 s as <code>[age s, angle °, quality, level dB]</code>). Card <strong>Schallradar</strong> draws them as rays (up = front, dashed twin to the rear because front/back cannot be told apart, length = level, fading over 12 s; rays and spokes are counter-rotated by the IMU yaw since each sound, so they keep pointing at the source while the Rider turns; the card requests the IMU samples of the live packet itself, also with Lage closed); drawn in the browser only while the card is open, no extra request (data from the 1 s live packet)</td>
 </tr>
 <tr>
 <td>POST</td>

@@ -260,6 +260,8 @@ class App:
             return
         gm.set_pose_ok(False)
         self.pose_grund = grund
+        if getattr(self, "startbild", None) is not None:     # ohne Pose kein Startpunkt: Startbild weg (auch im Web)
+            self.startbild.anker_weg(grund)
         log.warning("Pose in der Raumkarte unbekannt (%s): Karte wird nicht mehr beschrieben", grund)
         b = getattr(self, "behavior", None)
         if b is not None and b.name in self.NEEDS_POSE:
@@ -1185,7 +1187,7 @@ class App:
                     and abs((pose[2] - sth + math.pi) % (2 * math.pi) - math.pi) < math.radians(c.anker_deg)
                     and rate < math.radians(2.0) and abs(self.robot.command[0]) < 0.01
                     and getattr(self.robot, "levelled", True)):           # Startbild erst nach der Roll-Kalibrierung
-                sb.anker_setzen(self._sb_ansicht(f, pose, pitch_dev), gm.start)
+                sb.anker_setzen(self._sb_ansicht(f, pose, pitch_dev), gm.start, f.bgr)
         w.anker = sb.anker is not None and sb.anker_bereit
         # Schlussfahrt: Graubilder je tiefe_schritt_m (neu bei jedem Beginn der Phase); pet fährt heim mit Home
         b = b if b.name == "home" else getattr(b, "home_drive", None)
@@ -1332,12 +1334,17 @@ class App:
         gap = now - self._start_t > 1.0
         self._start_t = now
         if self._start_bal is None or gap:
+            if not bal and getattr(self, "startbild", None) is not None:
+                self.startbild.anker_weg("liegt")           # dazwischen abgesetzt: ebenso kein Startbild
             self._start_bal, self._start_due = bal, None
             return
         if bal != self._start_bal:
             self._start_bal = bal
             self._start_due, self._start_still = (now, None) if bal else (None, None)
             if not bal:
+                # Abgesetzt = kann getragen werden (Nutzer 2026-11-22): Startbild weg, ein neues erst nach dem Aufspringen
+                if getattr(self, "startbild", None) is not None:
+                    self.startbild.anker_weg("abgesetzt oder gefallen")
                 self._start_setzen("Absetzen")
         if self._start_due is None:
             return
@@ -1388,6 +1395,16 @@ class App:
         if b.want_idle:
             b.want_idle = False
             self.set_mode("idle")
+        # Fahrbefehl (nicht Drehen): schräg gestellt (Kopfneigen) -> Roll auf 0 und einmal neu ausrichten, sonst
+        # bleiben in der Totzone der Beine bis 2,6° stehen (Nutzer 2026-11-22). Kosten: ein Vergleich je Regelschritt.
+        if abs(self._cmd.v) > 0.01 and self.robot.state.balancing and b.brain.roll_zurueck():
+            log.info("pet: fährt, Roll zurück auf 0, neu ausrichten")
+            self._pet_roll = 0.0
+            try:
+                self.robot.set_roll(0.0)
+                self.robot.request_level()
+            except OSError as e:
+                log.error("pet: Roll zurückstellen fehlgeschlagen: %s", e)
         roll = b.brain.roll_deg
         if roll != getattr(self, "_pet_roll", 0.0):
             self._pet_roll = roll

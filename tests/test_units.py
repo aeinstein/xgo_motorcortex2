@@ -380,6 +380,37 @@ def test_status_camera_height_fields():
         srv.shutdown(); srv.server_close(); app.stop()
 
 
+def test_startbild_endpunkt():
+    """/startbild.jpg: 404 ohne Anker, sonst JPEG; /status startbild live (auch ohne neues Bild)."""
+    import json
+    import urllib.error
+    import urllib.request
+    import numpy as np
+    from xgonav import startbild as sbm
+    from xgonav.app import App
+    from xgonav.web import serve
+    cfg = Config.neutral(); cfg.output.web_port = 0; cfg.detector.enabled = False
+    robot = SimRobot(cfg.robot)
+    world = SimWorld(cfg.camera, robot, None, start=(1.0, 1.5, 0.0))
+    app = App(cfg, robot, world, imu=None, floor_net=SimFloorNet(world))
+    app.startbild = sb = sbm.StartAbgleich(cfg.startbild)
+    srv = serve(app, "127.0.0.1", 0, 5)
+    base = "http://127.0.0.1:%d" % srv.server_address[1]
+    try:
+        with pytest.raises(urllib.error.HTTPError) as e:
+            urllib.request.urlopen(base + "/startbild.jpg", timeout=3)
+        assert e.value.code == 404
+        a = sbm.Ansicht(np.zeros((480, 640), np.uint8), (0.0, 0.0, 0.0), 0.0, 0.0, 310.0, 320.0, 240.0, 5.0, 0.12, 0.036)
+        sb.anker_setzen(a, (0.0, 0.0, 0.0), np.full((480, 640, 3), 90, np.uint8))
+        sb.anker_bereit = True
+        with urllib.request.urlopen(base + "/startbild.jpg", timeout=3) as r:
+            assert r.headers["Content-Type"] == "image/jpeg" and r.read()[:2] == bytes((0xFF, 0xD8))
+        with urllib.request.urlopen(base + "/status", timeout=3) as r:
+            assert json.load(r)["startbild"]["bild"] == 1
+    finally:
+        srv.shutdown(); srv.server_close(); app.stop()
+
+
 def test_object_dist_ignores_clipped_edges():
     g = CamGeometry(640, 480, 62.2, 0.0, 45.0, 85.0)
     d = 1.5

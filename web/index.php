@@ -245,6 +245,9 @@ pre{background:#0b0d10;border-radius:6px;padding:8px;overflow:auto;max-height:40
 .karte-status{display:grid;margin-top:6px;font-size:12px;color:var(--leise)}
 #karte-erkunden,#karte-streife{grid-area:2/1;min-height:1.4em}
 .weg{visibility:hidden}
+#karte-startbild{margin:6px 0 0;display:flex;gap:8px;align-items:flex-end;font-size:12px;color:var(--leise)}
+#karte-startbild[hidden]{display:none}
+#karte-startbild img{width:160px;height:auto;border:1px solid var(--rand2);border-radius:4px}
 #karte{display:block;width:100%;height:100%;pointer-events:none;user-select:none;-webkit-user-select:none}
 
 /* --- Extras */
@@ -611,6 +614,10 @@ details.extras[open]>summary{margin-bottom:8px}
       <div id="karte-erkunden" class="weg"></div>
       <div id="karte-streife" class="weg"></div>
     </div>
+    <figure id="karte-startbild" hidden title="Bild am Startpunkt (Anker des Abgleichs); nach dem Absetzen weg, neu nach dem Aufspringen">
+      <img id="karte-startbild-img" alt="Startbild" width="160" height="120">
+      <figcaption>Startbild</figcaption>
+    </figure>
     <fieldset id="karte-gruppen">
       <div class="gruppe"><span class="g-name">Karte</span><div class="knoepfe">
         <button onclick="befehl('map_save')" title="Raumkarte jetzt speichern ([grid] file)">Speichern</button>
@@ -742,7 +749,9 @@ const EN = {
   'Start · Pose': 'Start · Pose', 'Startpunkt = aktuelle Pose': 'Start point = current pose', 'Start hier': 'Start here',
   'Der Rider wurde versetzt: Die Karte wird nicht mehr beschrieben, bis der Standort bestätigt ist':
     'The Rider was moved: the map is not written until the position is confirmed',
-  'Pose verwerfen': 'Discard pose', 'Route · Zonen': 'Route · Zones',
+  'Pose verwerfen': 'Discard pose', 'Route · Zonen': 'Route · Zones', 'Startbild': 'Start image',
+  'Bild am Startpunkt (Anker des Abgleichs); nach dem Absetzen weg, neu nach dem Aufspringen':
+    'Image at the start point (anchor of the start image check); gone after setting down, new after standing up',
   'Wegpunkte der Streife per Klick auf die Karte setzen': 'Set patrol waypoints by clicking on the map', 'Route setzen': 'Set route',
   'Bereich, den der Rider nie befährt: Ecken anklicken': 'Area the Rider never enters: click its corners', 'Sperrzone': 'No-go zone',
   'Alle Sperrzonen löschen': 'Delete all no-go zones', 'Zonen löschen': 'Delete zones',
@@ -1138,10 +1147,11 @@ function liveVerbinden() {
     setTimeout(liveVerbinden, 1000);
   };
 }
-// IMU nur, wenn die Lage-Karte offen und der Tab sichtbar ist; since: nach Neuverbinden keine Doppelten
+// IMU nur, wenn die Lage-Karte oder das Schallradar (dreht mit der Gier mit) offen und der Tab sichtbar ist;
+// since: nach Neuverbinden keine Doppelten
 let liveImuAn = null;
 function liveImu(neu = false) {
-  const an = !ruhe && $('lagekarte').open && !document.hidden;
+  const an = !ruhe && ($('lagekarte').open || $('radarkarte').open) && !document.hidden;
   if (!liveWs || (an === liveImuAn && !neu)) return;
   liveImuAn = an;
   liveWs.send('imu ' + (an ? 1 : 0) + (neu ? ' ' + imuSeq + ' ' + radSeq : ''));
@@ -1357,6 +1367,7 @@ function statusZeigen(s, fehler) {
       st.textContent = tr('Streife: ') + tr(STREIFE[p.zustand] || p.zustand) + ' · ' + tr('Punkt ') + p.punkt + tr(' von ') + p.von + ' · ' + tr('Runde ') + p.runde
         + (p.ausgelassen.length ? ' · ' + tr('ausgelassen: ') + p.ausgelassen.join(', ') : '') + (p.ende ? ' · ' + p.ende : '');
     }
+    startbildZeigen(s.startbild);
     if (s.grid) {
       const poseWeg = s.grid.pose_ok === false;
       $('karte-pose-warn').hidden = !poseWeg;
@@ -1373,6 +1384,15 @@ function statusZeigen(s, fehler) {
     bildStatus(s.exposure);
     tempoStatus(s.tempo);
   } catch (e) { console.error(e); }
+}
+
+// Startbild: nur bei neuer Nummer laden (am Rider einmal je Anker kodiert); ohne Anker ganz ausblenden
+let startbildN = 0;
+function startbildZeigen(sb) {
+  const n = (sb && sb.bild) || 0;
+  if (n && n !== startbildN) $('karte-startbild-img').src = 'startbild.jpg?n=' + n;
+  startbildN = n;
+  $('karte-startbild').hidden = !n;
 }
 
 // --- Handsteuerung: solange gedrückt alle 200 ms senden; xgonav hält nach 0,5 s ohne Sollwert an
@@ -2915,6 +2935,7 @@ function radarStarten() {
 }
 function radarUmschalten() {
   try { localStorage.setItem('xgonav.radar', $('radarkarte').open ? '1' : '0'); } catch (e) {}
+  liveImu();                                             // Gier zum Mitdrehen
   radarStarten();
 }
 document.addEventListener('visibilitychange', radarStarten);

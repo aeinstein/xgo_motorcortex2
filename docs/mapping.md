@@ -106,13 +106,14 @@ Status JSON `grid`: `pose [x m, y m, yaw °]`, `start [x m, y m, yaw °]`, `zum_
 
 | Item | Value |
 |---|---|
-| Anchor | grey image + SIFT features while the Rider stands at the start point (≤ 3 cm, ≤ 5°, not turning); once per start point, only after the roll calibration after stand-up (`Robot.levelled`); dropped when the start is set anew |
+| Anchor | grey image + SIFT features while the Rider stands at the start point (≤ 3 cm, ≤ 5°, not turning); once per start point, only after the roll calibration after stand-up (`Robot.levelled`); dropped when the start is set anew, on set-down/fall (may be carried) and when the pose becomes unknown (2026-11-22) |
 | Start point | set on every stand-up (once standing still 1 s after the roll calibration) and set-down, in every mode, never on a mode change (`App._start_tick`, 2026-11-22); not with a locked map or unknown pose; "Start hier" in the web as before |
 | Ending of `home` | path to a pre-point 0.40 m before the start → turn to start heading → straight onto the start (grey image every 4 cm) → stand 0.5 s → measure → if > 4 cm left: turn to the start, drive (once) → turn to the start heading within `end_deg` 2° (stop on overshoot or after 8 s) |
 | Measurement | own thread on `cpu.render_cpus`: end image vs. images 0.1–0.3 m earlier, triangulated with the odometry of the straight run (mm-exact over decimetres); anchor matched to these 3D points; anchor pose solved for x, y, heading plus small pitch/roll residuals, camera height fixed (124 mm measured); cross-check free 6-DOF PnP |
 | Camera model | undistorted image, f from hfov, principal point image centre, tilt + `pitch_dev`, IMU roll (without it the 3D points were rotated by the end roll, +2.3° in run 20261119-144940), lens `cam_fwd` ahead of the axle |
 | Gate | ≥ `min_inl` 30 consistent matches, correction ≤ 0.5 m / 15°, pitch/roll residual ≤ 1°, 6-DOF within 5 cm; otherwise no correction, status says why |
 | Correction | `GridMap.shift_pose(k)` with k ∘ measured anchor pose = anchor pose at the start; behaviour heading shifted by the same angle |
+| Web | colour copy of the anchor frame (once per anchor), `GET /startbild.jpg` (JPEG once per anchor, on request), status `startbild.bild` = anchor number (0 = none); shown below the room map, hidden without anchor |
 | Offline | `tools/start_abgleich.py` (same code on recordings). Run 20261119-144940 (37 m): end measured 8.0 cm forward / 10.2 cm left / −4.8°, user with folding rule 5 / 11 cm, odometry −3 / +2 cm. Short pairs of the same run (odometry nearly exact): accepted ones within 1.8 cm |
 | Simulator | `tests/sim_run.py home 120 --wheels --rider --yaw-scale 1.01 --set startbild.enabled=True`: true distance to the start at the end 6.5 cm (without: 22 cm), map heading error 0.9° (3.5°) |
 | Rider | run 2026-11-19 161006: measured 19 cm / −5.1°, 131 matches, 11.4 s on the CM4; end ~1 cm ahead of the start (user), but turned −9.5° (old 10° tolerance) → `end_deg` |

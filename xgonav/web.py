@@ -66,6 +66,7 @@ def ws_kopf(snap, geo, hl) -> bytes:
 API = {"GET": ["/status", "/ws?nick=2 (WebSocket: Bilder, Bestätigung je Bild; nick=2: IMU-Wert des Bildes im Kopf, ws_kopf)",
                "/frame?after=<idx>&raw=1",
                "/map.png?px=480&view=6 (Raumkarte)",
+               "/startbild.jpg (Bild am Startpunkt, Anker des Abgleichs; 404 ohne, z. B. nach dem Absetzen)",
                "/detector (wählbare Ziele für follow/approach: Klassen des Detektors)",
                "/floornet (wählbare Bodenmodelle in [freespace] net_dir, aktives und geladenes)"],
        "POST": ["/mode?name=..&target=..", "/stop", "/action?n=3|4|5 (Fahr-Aktion der Firmware, nur idle; Bahnprüfung bleibt)","/pipeline?on=0|1", "/ruhe?on=0|1 (Ruhemodus; Wecken startet nichts)", "/wlan?on=0|1 (WLAN-Einrichtung: QR-Code; wie Tasten C+D halten)", "/record?on=0|1 (Rohaufzeichnung, nur balancierend)",
@@ -185,6 +186,9 @@ def serve(app: App, host: str, port: int, fps: int, render_cpus=None) -> Threadi
                 body["height_u8"] = None if h is None else app.geo.body_to_u8(h)
                 body["cam_h_mm"] = None if h is None else round(app.geo.cam_h_at(h), 1)
                 body["aufzeichnung"] = None if app.rawrec is None else app.rawrec.status()
+                # Startbild live statt aus dem Snapshot: nach dem Absetzen (Bildverarbeitung oft aus) sofort weg
+                sb = getattr(app, "startbild", None)
+                body["startbild"] = None if sb is None else sb.info()
                 return self._send(200, json.dumps(body).encode())
             if u.path == "/route":
                 gm = app.gridmap
@@ -204,6 +208,13 @@ def serve(app: App, host: str, port: int, fps: int, render_cpus=None) -> Threadi
                 return self._send(200, json.dumps(app.floornet_info()).encode())
             if u.path == "/map.png":
                 return self._map_png(parse_qs(u.query))
+            if u.path == "/startbild.jpg":
+                sb = getattr(app, "startbild", None)
+                pin_thread(render_cpus, "Bild-Thread", quiet=True)
+                body = sb.anker_jpeg(jpeg) if sb is not None else None
+                if body is None:
+                    return self._send(404, b'{"error":"kein Startbild"}')
+                return self._send(200, body, "image/jpeg")
             if u.path == "/ws":
                 return self._ws(parse_qs(u.query))
             if u.path == "/frame":

@@ -1872,7 +1872,7 @@ Status JSON <code>grid</code>: <code>pose [x m, y m, yaw °]</code>, <code>start
 <tbody>
 <tr>
 <td>Anchor</td>
-<td>grey image + SIFT features while the Rider stands at the start point (≤ 3 cm, ≤ 5°, not turning); once per start point, only after the roll calibration after stand-up (<code>Robot.levelled</code>); dropped when the start is set anew</td>
+<td>grey image + SIFT features while the Rider stands at the start point (≤ 3 cm, ≤ 5°, not turning); once per start point, only after the roll calibration after stand-up (<code>Robot.levelled</code>); dropped when the start is set anew, on set-down/fall (may be carried) and when the pose becomes unknown (2026-11-22)</td>
 </tr>
 <tr>
 <td>Start point</td>
@@ -1897,6 +1897,10 @@ Status JSON <code>grid</code>: <code>pose [x m, y m, yaw °]</code>, <code>start
 <tr>
 <td>Correction</td>
 <td><code>GridMap.shift_pose(k)</code> with k ∘ measured anchor pose = anchor pose at the start; behaviour heading shifted by the same angle</td>
+</tr>
+<tr>
+<td>Web</td>
+<td>colour copy of the anchor frame (once per anchor), <code>GET /startbild.jpg</code> (JPEG once per anchor, on request), status <code>startbild.bild</code> = anchor number (0 = none); shown below the room map, hidden without anchor</td>
 </tr>
 <tr>
 <td>Offline</td>
