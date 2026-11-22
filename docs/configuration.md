@@ -206,12 +206,12 @@ All keys with comments: `PetCfg` in `xgonav/config.py`.
 | `hear_seek` | true | heard, nobody in view: search instead of giving up (direction known: drive there like calling; unknown: look around once, listening `hear_listen_s` per view); lockout `call_repeat_s` |
 | `seek_home` | false (2026-11-22) | search after hearing over, nobody found: back to the map start like `home` (start image check), only with an anchor there; false: stays and listens |
 | `call_openings`, `call_louder_db` | 4, 3.0 | call search via the openings of the room map (needs map + confirmed pose); 0 = old straight search (calling goals with a wall ahead go the other way) |
+| `call_dir_s_per_deg`, `call_min_m` | 0.1, 0.3 | call search after he turned toward the sound: openings off the heard direction cost this much s per degree (90° = 9 s); openings with a shorter path than `call_min_m` do not count (2026-11-22) |
 | `lost_home` | false | the same after the search for a vanished person; false: stays there and listens |
-| `follow`, `follow_trust`, `follow_start_m`, `follow_hold_s`, `follow_m` | true, 0.6, 0.5, 1.0, −1 = no limit (sim: 0) | follow a trusted person like mode `follow` (servo, `behavior.follow_dist_m`), start when `follow_start_m` farther than that for `follow_hold_s` |
+| `follow`, `follow_m`, `follow_repeat_s` | true, −1 = no limit (sim: 0), 3 | any person in view (not lying/sitting) → exactly the routine of mode `follow` (`behaviors.Follow`: `behavior.follow_dist_m`, speed, backwards up to `backup_v`, heights, search at the last place); follow waits → pet again; lockout from the end (2026-11-22; `follow_trust`, `follow_dist_m`, `follow_start_m`, `follow_hold_s`, `follow_settle_s`, `follow_block_s`, `follow_lost_s` removed, warning) |
+| `wide_babble_s` | 6 | person box wider than tall (lying/sitting): no following, turns toward her, trust grows, babbles every 6 s with head tilt |
 | `eyes_fix_s`, `eyes_fix_lid` | 1.5, 2 | eyes narrow to slits once a person is fixated (0 s = off) |
-| `follow_settle_s`, `follow_block_s`, `follow_lost_s`, `follow_repeat_s` | 2, 3, 1, 3 | end when close and standing / arc blocked; lost → search at once; lockout before a new start |
 | `come_events`, `come_m`, `come_stop_m`, `come_repeat_s` | 1, −1 = no limit (sim: 0), 0.4 (2026-11-22, was 0.8), 8 | come here: drive toward a visible person who speaks (also after a call search found someone); no planner path → straight toward her; at most 30 s |
-| `follow_dist_m` | 0.5 | distance when following in pet (mode `follow`: `behavior.follow_dist_m`) |
 | `talk`, `talk_min_events`, `talk_pause_s`, `talk_repeat_s` | true, 2, 1.6, 7 | talking back |
 | `parrot`, `parrot_p`, `parrot_repeat_s`, `parrot_delay_s`, `parrot_listen_s` | true, 0.5, 30, 0.2, 3 | voice samples: play instead of babbling, min. gap, delay before parroting a confirmed/recognized sample, capture while person gone ≤ s ([audio.md](audio.md#voice-samples-xgonavstimmepy-mode-pet)) |
 | `faint` | true (sim: false) | hard scare: set down, wake up, stand up by itself; on at the RiderPi since 2026-11-13 |

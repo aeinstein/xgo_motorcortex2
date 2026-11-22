@@ -790,6 +790,11 @@ class PetCfg:
     # von dort, höchstens call_openings Öffnungen je Ruf (0 = alte Suche geradeaus). Nur Unit-Tests.
     call_openings: int = 4
     call_louder_db: float = 3.0
+    # Rufsuche nach klarer Peilung (er hat sich zum Geräusch gedreht): Öffnungen abseits der gehörten Richtung kosten
+    # so viel s je Grad mehr (90° = 9 s, etwa 3 m Fahrt); nur von vorn gehört (Nebenraum, Hall) zählt keine Richtung.
+    # Öffnungen mit kürzerem Weg als call_min_m zählen nicht (fand sonst die Stelle, an der er steht). Nutzer 2026-11-22
+    call_dir_s_per_deg: float = 0.1
+    call_min_m: float = 0.3
     call_m: float = -1.0
     call_repeat_s: float = 45.0        # frühestens dann wieder (ein Fernseher vorn ruft sonst endlos)
     # Komm her: Er sieht eine Person, die weiter als come_stop_m entfernt ist und spricht (come_events Meldungen
@@ -812,21 +817,15 @@ class PetCfg:
     parrot_repeat_s: float = 30.0
     parrot_delay_s: float = 0.2        # Nutzer 2026-11-19: 0,8 dauerte zu lang (mit Nachlauf 0,6 s ~1,5 s)
     parrot_listen_s: float = 3.0
-    # Folgen (Nutzer 2026-11-22): Vertraut er der Person (trust >= follow_trust) und ist sie follow_start_m weiter weg
-    # als behavior.follow_dist_m, fährt er ihr nach wie im Modus follow (Servo, Abstand follow_dist_m), höchstens
-    # follow_m je Mal (0 = aus, -1 = ohne Grenze); nie rückwärts. Steht sie follow_settle_s lang und er ist dran
-    # (höchstens die Hälfte von follow_start_m über follow_dist_m): vorbei.
-    # Verloren (follow_lost_s): gleich suchen wie nach gone_s. Bedingungen wie jede pet-Fahrt. Nur Unit-Tests.
+    # Folgen (Nutzer 2026-11-22): Sieht er eine Person, folgt er ihr mit genau der Routine des Modus follow
+    # (behaviors.Follow: behavior.follow_dist_m, Tempo, rückwärts bis backup_v, Höhen, verloren zur letzten Stelle
+    # und umschauen), ohne Vertrauensschwelle; follow_m je Mal (0 = aus, -1 = ohne Grenze), sonst Bedingungen wie
+    # jede pet-Fahrt. Meldet follow „warte“, ist er wieder pet; neu folgen frühestens nach follow_repeat_s.
+    # Liegt oder sitzt sie (Box breiter als hoch): nicht folgen, hinschauen, Vertrauen, alle wide_babble_s brabbeln.
     follow: bool = True
-    follow_trust: float = 0.6
-    follow_dist_m: float = 0.5         # Wunschabstand beim Folgen in pet (Modus follow: behavior.follow_dist_m)
-    follow_start_m: float = 0.5
-    follow_hold_s: float = 1.0         # so lange ununterbrochen weit genug weg, erst dann losfahren
     follow_m: float = -1.0
-    follow_lost_s: float = 1.0
-    follow_settle_s: float = 2.0
-    follow_block_s: float = 3.0        # so lange will er vor, die Bahn ist aber zu: Folgen vorbei
     follow_repeat_s: float = 3.0
+    wide_babble_s: float = 6.0
     # Suche nach einer verschwundenen Person ohne Erfolg: zum Start (true) oder dort bleiben und horchen (false,
     # Nutzer 2026-11-22). seek_home gilt für die Suche nach dem Horchen.
     lost_home: bool = False
@@ -1086,6 +1085,9 @@ ENTFERNT.update({k: "ein Kurs für alles seit 2026-11-19 ([odom] contra_*, odomf
                  for k in ("odom.yaw_source", "map.yaw_source", "grid.yaw_source")})
 ENTFERNT.update({k: "Hotspot öffnet seit 2026-11-21 xgo-wlan-auto.service von selbst (offen, RiderKerk)"
                  for k in ("wlan.hotspot_ssid", "wlan.hotspot_timeout_s")})
+ENTFERNT.update({f"pet.{k}": "pet folgt seit 2026-11-22 mit der Routine des Modus follow ([behavior] follow_dist_m)"
+                 for k in ("follow_trust", "follow_dist_m", "follow_start_m", "follow_hold_s", "follow_lost_s",
+                           "follow_settle_s", "follow_block_s")})
 UMBENANNT = {"freespace.shadow_net": "freespace.net"}
 
 # Die Defaults oben sind seit 2026-11-12 die Werte des RiderPi (/opt/xgonav/config.toml ohne Testbetrieb und

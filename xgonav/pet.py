@@ -34,9 +34,9 @@ import collections
 import logging
 import math
 import random
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
-from .behaviors import Behavior, Command, Home, PathFollower, Servo, World, _wrap, clamp
+from .behaviors import Behavior, Command, Follow, Home, PathFollower, World, _wrap, clamp
 from .config import ExploreCfg, HomeCfg, PetCfg, RobotCfg
 from .planner import path_length
 
@@ -80,6 +80,7 @@ class Seen:
     hits: int = 99
     tall: bool = False               # groß im Bild (zählt auch im Liegen, wo die Bodengeometrie nicht stimmt)
     side_free: bool = True           # Box links/rechts nicht am Bildrand: nur dann taugt die Breite
+    wide: bool = False               # Box breiter als hoch: Person liegt oder sitzt am Boden (Nutzer 2026-11-22)
 
 
 @dataclass
@@ -114,8 +115,6 @@ class Sense:
     nav: tuple | None = None
     nav_pending: bool = False
     nav_fail: bool = False
-    # Folgen (Aufgabe "folgen"): (v, w, Abstand m oder None) vom Servo wie im Modus follow (Pet.step), sonst None
-    follow: tuple | None = None
     # Startbild am Startpunkt aufgenommen (World.anker): nur dann fährt er zum Start (Nutzer 2026-11-22)
     anker: bool = False
     # Raumkarte mit bestätigter Pose: Rufsuche über die Öffnungen der Karte (Pet wählt sie, Planer-Thread)
@@ -233,8 +232,6 @@ class PetBrain:
         self.n_heard = self.n_talk = self.n_called = self.n_come = 0
         self.come_m = _limit(cfg.come_m)
         self.follow_m = _limit(cfg.follow_m)
-        self._follow_lost_t: float | None = None
-        self._follow_near_t: float | None = None
         self._seek_person = False            # Suche gilt einer verschwundenen Person (nicht dem Horchen)
         self._seek_gerufen = False           # Suche nach einem Ruf/Geräusch: gefunden -> hinfahren
         self._heim_result: str | None = None # Heimfahrt (Pet fährt sie wie home): Ergebnis, sobald fertig
@@ -247,12 +244,10 @@ class PetBrain:
         self._db_hist: collections.deque = collections.deque(maxlen=12)   # (t, Pegel dB) im Stand gehört
         self.n_oeffnungen = 0
         self.n_follow = 0
-        self.follow_want = 0.9               # Wunschabstand beim Folgen (Pet: behavior.follow_dist_m)
-        # Abstand (Fußpunkt, wie Seen.dist) beim Ende „dran“: Neu folgen erst, wenn sie sich davon entfernt. Der Servo
-        # misst anders (Boxhöhe, Kalman); ohne das pendelte er im Simulator zwischen folgen und dran.
-        self._follow_end_d: float | None = None
-        self._follow_far_t: float | None = None  # seit wann sie ununterbrochen weit genug weg ist (follow_hold_s)
-        self._follow_block_t: float | None = None
+        # Folgen (Nutzer 2026-11-22): Aufgabe "folgen", Phase "extern"; gefahren wird mit behaviors.Follow (Pet),
+        # das Gehirn prüft nur, ob es weitergehen darf. Ergebnis von Pet (folgen_ende), sobald follow aufgibt.
+        self._folgen_ende: str | None = None
+        self._wide_babble_t = -1e9           # zuletzt einer liegenden/sitzenden Person zugebrabbelt
         self._come_lost_t: float | None = None
         self._ev: tuple[Heard, bool] | None = None    # neue Meldung dieses Schritts, Richtung brauchbar?
         self._ear_key: float | None = None
@@ -551,93 +546,51 @@ class PetBrain:
 
     # ---- Folgen ---------------------------------------------------------------
     def _follow_check(self, s: Sense, tg: Seen | None) -> None:
-        """Vertraut er der Person (trust >= follow_trust) und geht sie weg (follow_start_m weiter als follow_want), fährt er ihr
-        nach wie im Modus follow; gelenkt wird mit dem Servo von dort (Sense.follow)."""
+        """Sieht er eine Person (nicht liegend/sitzend), folgt er ihr mit der Routine des Modus follow (Pet fährt
+        behaviors.Follow: Abstand, Tempo, Rückwärts, Höhen, Suche an der letzten Stelle). Nutzer 2026-11-22: ohne
+        Vertrauensschwelle, sobald er sie sieht."""
         c, t = self.cfg, s.t
-        if tg is None or tg.cls != "person" or self.task is not None:
-            self._follow_far_t = None
+        if tg is None or tg.cls != "person" or tg.wide or self.task is not None:
             return
-        # weit genug weg, und das follow_hold_s lang: Der Fußpunkt rauscht im Stand um ±0,3 m (Nicken)
-        far = tg.dist is not None and tg.dist > self.follow_want + c.follow_start_m and (
-            self._follow_end_d is None or tg.dist > self._follow_end_d + 0.3)
-        if not far:
-            self._follow_far_t = None
-            return
-        if self._follow_far_t is None:
-            self._follow_far_t = t
-        if t - self._follow_far_t < c.follow_hold_s:
-            return
-        if not (c.follow and s.balancing and not self._dozing and self.trust >= c.follow_trust
-                and t >= self._blind_until and self._may_drive(s, self.follow_m)
+        if not (c.follow and s.balancing and t >= self._blind_until and self._may_drive(s, self.follow_m)
                 and self._ready("folgen", t, c.follow_repeat_s)):
             return
-        log.info("pet: folge (Person in %.1f m, Vertrauen %.2f)", tg.dist, self.trust)
+        log.info("pet: folge wie follow (Person %s, Vertrauen %.2f)",
+                 "in %.1f m" % tg.dist if tg.dist is not None else "ohne Abstand", self.trust)
         self.n_follow += 1
         self.task = "folgen"
         self._task_left = self.follow_m
         self._looks, self._fails = [], 0
-        self._follow_lost_t = self._follow_near_t = self._follow_block_t = None
+        self._folgen_ende = None
+        self.det_hz = None                                           # Detektor wie im Modus follow
         self._phase_set("folgen", t)
 
+    def folgen_ende(self, grund: str) -> None:
+        """Pet: follow hat aufgegeben (Person nicht wiedergefunden). Das Gehirn beendet die Aufgabe im nächsten Schritt."""
+        self._folgen_ende = grund
+
     def _follow_step(self, s: Sense, act: Act) -> None:
-        c, t = self.cfg, s.t
+        """Gefahren wird von Pet (behaviors.Follow); hier nur, ob es weitergehen darf."""
+        t = s.t
         tg = self.target
         self._blind_until = max(self._blind_until, t + 1.0)          # eigene Fahrt ist kein Schreck
+        if self._folgen_ende is not None:
+            grund, self._folgen_ende = self._folgen_ende, None
+            self._gone_done, self.zone = True, None
+            self._react(t, "sad", "verloren")
+            self._task_end(s, grund)
+            if self.cfg.seek_home and self.cfg.lost_home:      # wie nach der Suche einer verschwundenen Person
+                self._go_home(s)
+            return
         if tg is not None and tg.cls != "person":
             self._task_end(s, "Tier im Bild")
             return
-        if tg is None:
-            if self._follow_lost_t is None:
-                self._follow_lost_t = t
-            elif t - self._follow_lost_t > c.follow_lost_s:
-                self._follow_lost(s)
+        if tg is not None and tg.wide:
+            self._task_end(s, "sitzt oder liegt")
             return
-        self._follow_lost_t = None
         why = self._no_drive(s, self._task_left)
         if why is not None:
             self._task_end(s, why)
-            return
-        if s.follow is None:
-            return
-        v, w, dist = s.follow
-        # steht sie und er ist dran: Aufgabe vorbei, die Gesten der Begegnung übernehmen wieder
-        if dist is not None and dist <= self.follow_want + 0.5 * c.follow_start_m and abs(v) < 0.02:
-            if self._follow_near_t is None:
-                self._follow_near_t = t
-            elif t - self._follow_near_t > c.follow_settle_s:
-                self._follow_end_d = tg.dist
-                self._task_end(s, "dran")
-                return
-        else:
-            self._follow_near_t = None
-        v = max(0.0, v)                                              # rückwärts ist blind
-        if v > 0.02 and (s.path_blocked or (s.free_center or 0.0) < 0.5 * c.roam_free_min):
-            v = 0.0
-            if self._follow_block_t is None:
-                self._follow_block_t = t
-            elif t - self._follow_block_t > c.follow_block_s:
-                # vor ihm zu: nicht ewig dastehen; neu erst, wenn sie weiter weg geht
-                self._follow_end_d = tg.dist
-                self._task_end(s, "Bahn blockiert")
-                return
-        else:
-            self._follow_block_t = None
-        act.v, act.w = v, w
-
-    def _follow_lost(self, s: Sense) -> None:
-        """Beim Folgen aus den Augen verloren: gleich zur letzten Stelle (Planer) und umschauen, Schall zählt erst
-        danach (Nutzer 2026-11-22)."""
-        t = s.t
-        log.info("pet: folgen: Person verloren, suche an der letzten Stelle")
-        self._task_reset(t)
-        self._gone_done, self.zone, self._follow_end_d = True, None, None
-        if not (self.cfg.look and self.cfg.gestures):
-            self._react(t, "sad", "verloren")
-            return
-        self._react(t, "doubt", None)
-        self._look_dir = 1.0 if self._person_bearing >= 0 else -1.0
-        self._task_start("suchen", s, self._seek_goal())
-        self._seek_person = True
 
     def _come_start(self, s: Sense, tg: Seen, why: str) -> None:
         log.info("pet: komme (%s)", why)
@@ -793,10 +746,11 @@ class PetBrain:
         c = self.cfg
         self.n_called += 1
         self._cool["horchen"] = s.t + c.hear_repeat_s
+        seite = self._ear_turns > 0                   # zum Geräusch gedreht: die Richtung ist klar (er schaut hin)
         self._task_reset(s.t)
         budget = min(self.seek_m, _limit(c.call_m))
         if s.karte and c.call_openings > 0 and budget > self._stop_m() + 0.05:
-            self._ruf_start(s, budget)
+            self._ruf_start(s, budget, seite)
             return
         goal = None
         if budget > self._stop_m() + 0.05:
@@ -812,16 +766,18 @@ class PetBrain:
                                                       # keinen Weg, gilt hinten
 
     # ---- Rufsuche über die Öffnungen der Raumkarte ------------------------------
-    def _ruf_start(self, s: Sense, budget: float) -> None:
+    def _ruf_start(self, s: Sense, budget: float, seite: bool = False) -> None:
+        """seite: Er hat sich zum Geräusch gedreht; Öffnungen in Blickrichtung zuerst (Pet merkt sie beim ersten Auftrag)."""
         t = s.t
         pegel = max((db for tt, db in self._db_hist if t - tt <= 6.0), default=0.0)
-        log.info("pet: gerufen (%.0f dB), suche über die Öffnungen der Karte (Budget %.1f m)", pegel, budget)
+        log.info("pet: gerufen (%.0f dB), suche über die Öffnungen der Karte%s (Budget %.1f m)", pegel,
+                 ", in Blickrichtung zuerst" if seite else "", budget)
         self._react(t, "like", "horch")
         self.task = "suchen"
         self.n_seek += 1
         self._task_left = budget
         self._looks, self._fails, self._goal_flip = [], 0, None
-        self._ruf = {"pegel": pegel, "best": pegel, "n": 0, "dbs": [], "lauter": False}
+        self._ruf = {"pegel": pegel, "best": pegel, "n": 0, "dbs": [], "lauter": False, "seite": seite}
         self._oeff_result = None
         self._phase_set("oeffnung", t)
 
@@ -1078,13 +1034,30 @@ class PetBrain:
             self.zone = z
             if self._ready("zone_" + z, t, c.zone_repeat_s):
                 self._enter_zone(z, t, tg)
-        if self.zone in ("nah", "knien"):
+        if self.zone in ("nah", "knien") or tg.wide:
             self.trust = clamp(self.trust + c.trust_gain * s.dt, 0.0, 1.0)
+        if tg.wide:
+            self._wide_babble(s)
         if self.zone == "zunah" and c.gestures:
             if self._duck_until < t:
                 self._blind_until = max(self._blind_until, t + 1.5)  # Höhe ändert die Bodengeometrie
             self._duck_until = t + 0.5
             act.height_mm = self.duck_mm
+
+    def _wide_babble(self, s: Sense) -> None:
+        """Person liegt oder sitzt am Boden (Box breiter als hoch): nicht folgen, hinschauen (_apply_gesture), Vertrauen
+        (in _person) und alle wide_babble_s brabbeln, dazu Kopf schief wie beim Mitreden (Nutzer 2026-11-22)."""
+        c, t = self.cfg, s.t
+        if self.task is not None or self._gesture is not None or t - self._wide_babble_t < c.wide_babble_s:
+            return
+        self._wide_babble_t = t
+        self.n_talk += 1
+        self._react(t, None, self._babble_sound(t))
+        if c.gestures and self.roll_mag > 0:
+            self._gesture = ("kopf", t, t + c.tilt_s)
+            self.roll_deg = self.rng.choice((-1.0, 1.0)) * self.roll_mag
+            self.rolled = True
+            self._blind_until = max(self._blind_until, t + c.tilt_s + 0.5)
 
     def _enter_zone(self, z: str, t: float, tg: Seen) -> None:
         c = self.cfg
@@ -1128,7 +1101,6 @@ class PetBrain:
         elif not self._gone_done and t - self._person_t >= c.gone_s:
             self._gone_done = True
             self.zone = None
-            self._follow_end_d = None
             if c.look and c.gestures and self.task is None:
                 self._react(t, "doubt", None)
                 self._look_dir = 1.0 if self._person_bearing >= 0 else -1.0   # zur Seite, wo sie verschwand
@@ -1205,6 +1177,10 @@ class PetBrain:
         if self.task is None:
             return
         self._phase_set("", t)
+        if self.task == "folgen":
+            self._cool["folgen"] = t + self.cfg.follow_repeat_s      # neu folgen erst nach der Pause, ab dem Ende
+            if self.det_hz is None:
+                self.det_hz = self.cfg.doze_hz if self._dozing else self.cfg.active_hz
         if self.task == "streifen":
             self._roam_t = t
         self.task, self._goal = None, None
@@ -1686,6 +1662,12 @@ class PetBrain:
                 "nachgeplappert": self.n_parrot, "proben": len(self._parrot_ids)}
 
 
+def _wide(tr) -> bool:
+    """Box breiter als hoch: Person liegt oder sitzt am Boden (Nutzer 2026-11-22)."""
+    x1, y1, x2, y2 = tr.box
+    return x2 - x1 > y2 - y1
+
+
 class Pet(Behavior):
     name = "pet"
 
@@ -1699,6 +1681,7 @@ class Pet(Behavior):
         self.e = ecfg or ExploreCfg()
         # Rufsuche: Öffnungen der Raumkarte (frontier.next_goal im Planer-Thread), besuchte nicht noch einmal
         self._oeff_of = None                 # brain._ruf, zu dem _oeff_besucht gehört
+        self._oeff_dir: float | None = None  # Rufsuche nach klarer Peilung: gehörte Richtung (rad, Karten-KS)
         self._oeff_besucht: list = []
         self._oeff_req = False               # laufender Auftrag ist eine Öffnungssuche
         self._oeff_asked = False
@@ -1711,10 +1694,9 @@ class Pet(Behavior):
         self.want_stand_up = False           # App._pet_tick
         self.want_idle = False
         self.gaze = self.brain.gaze          # lcd.py liest das aus seinem Thread (Tupel, atomar ersetzt)
-        # Folgen: derselbe Servo wie im Modus follow (Abstand behavior.follow_dist_m)
-        self.servo = Servo(cfg, rcfg, self.pcfg.follow_dist_m)
-        self.brain.follow_want = self.pcfg.follow_dist_m
-        self._servo_id: int | None = None
+        # Folgen: genau die Routine des Modus follow (Nutzer 2026-11-22), solange die Aufgabe folgen läuft
+        self.follow_drive: Follow | None = None
+        self._f_seek = self._f_found = 0     # Suchfahrten/Wiederfunde früherer Folgen (info)
         # Planer (App._plan_tick, nur mit Raumkarte): Fahrziele des Gehirns in Kartenkoordinaten
         self.h = hcfg or HomeCfg()
         self.f = PathFollower(cfg, rcfg, self.h)
@@ -1731,19 +1713,30 @@ class Pet(Behavior):
     @property
     def drives(self) -> bool:
         """Fährt gerade eine Aufgabe: Nur dann rechnet App.path_blocked für pet (eine Bahnprüfung je Regelschritt)."""
-        return self.brain.phase in ("fahren", "folgen")
+        return self.brain.phase == "fahren"           # Folgen: Bahnprüfung der App wie im Modus follow
+
+    @property
+    def _drive(self):
+        """Eingebettetes Verhalten, das gerade fährt und plant (Heimfahrt oder Folgen), sonst None."""
+        return self.home_drive if self.home_drive is not None else self.follow_drive
 
     @property
     def path(self):
-        return self.home_drive.path if self.home_drive is not None else self.f.path
+        d = self._drive
+        return d.path if d is not None else self.f.path
 
     @property
     def pending(self) -> bool:
-        return self.home_drive.pending if self.home_drive is not None else self._pending
+        d = self._drive
+        return d.pending if d is not None else self._pending
 
     @pending.setter
     def pending(self, v: bool) -> None:
-        self._pending = v
+        d = self._drive
+        if d is not None:
+            d.pending = v
+        else:
+            self._pending = v
 
     # App._startbild_tick / _startbild_messen: Messung am Start, solange die Heimfahrt läuft
     @property
@@ -1766,8 +1759,8 @@ class Pet(Behavior):
 
     # --- Planung (von App bedient, wie home/explore) ---
     def want_plan(self, t: float) -> bool:
-        if self.home_drive is not None:
-            return self.home_drive.want_plan(t)
+        if self._drive is not None:
+            return self._drive.want_plan(t)
         b = self.brain
         if b.phase == "oeffnung" and b._ruf is not None:
             if self.pending or self._oeff_asked:
@@ -1784,14 +1777,18 @@ class Pet(Behavior):
         return False
 
     def request_plan(self, planner, grid, w: World, obstacles) -> int:
-        if self.home_drive is not None:
-            return self.home_drive.request_plan(planner, grid, w, obstacles)
+        if self._drive is not None:
+            return self._drive.request_plan(planner, grid, w, obstacles)
         if self.brain.phase == "oeffnung":
             from .frontier import next_goal
             self._oeff_req = True
             r = self.e.avoid_r_m
+            pc = self.pcfg
+            prefer = ((self._oeff_dir, pc.call_dir_s_per_deg)
+                      if self._oeff_dir is not None and pc.call_dir_s_per_deg > 0 else None)
             return planner.request_fn(next_goal, grid, w.pose, self.h, self.e, obstacles,
-                                      [(x, y, r) for x, y in self._oeff_besucht], None, None, True)
+                                      [(x, y, r) for x, y in self._oeff_besucht], None, None, True,
+                                      prefer=prefer, min_m=max(0.0, pc.call_min_m))
         self._oeff_req = False
         if self.brain._goal_flip is not None and self._ray_for is not self._nav_goal:
             self._call_ray(grid, w)
@@ -1800,8 +1797,8 @@ class Pet(Behavior):
                                clear_goal=self._nav_clear)
 
     def set_path(self, path) -> None:
-        if self.home_drive is not None:
-            self.home_drive.set_path(path)
+        if self._drive is not None:
+            self._drive.set_path(path)
             return
         if self._oeff_req:
             self._oeff_req, self.pending, self._oeff_asked = False, False, False
@@ -1925,21 +1922,28 @@ class Pet(Behavior):
         self._t_plan = w.t
         self.f.set_path(res.path)
 
-    def _follow(self, w: World) -> tuple | None:
-        """Servo auf die Person, der das Gehirn folgt (sein letztes Ziel); sonst None und Servo zurücksetzen."""
+    def _folgen(self, w: World) -> Command | None:
+        """Aufgabe folgen des Gehirns mit behaviors.Follow fahren, genau wie im Modus follow: Abstand
+        behavior.follow_dist_m, Tempo, Rückwärts bis backup_v, Höhen, verloren zur letzten Stelle und umschauen
+        (Nutzer 2026-11-22). Liegende/sitzende Personen sieht follow nicht (die übernimmt das Gehirn). Meldet
+        follow „warte“ (oder sucht ohne Karte länger als search_timeout_s), endet die Aufgabe."""
         b = self.brain
-        tg = b.target
-        tr = next((t for t in w.tracks if tg is not None and t.id == tg.id), None) if b.task == "folgen" else None
-        if tr is None:
-            if self._servo_id is not None:
-                self.servo.reset()
-                self._servo_id = None
+        if b.task != "folgen":
+            if self.follow_drive is not None:
+                self._f_seek += self.follow_drive.n_seek
+                self._f_found += self.follow_drive.n_found
+            self.follow_drive = None
             return None
-        if tr.id != self._servo_id:
-            self.servo.reset()
-            self._servo_id = tr.id
-        v, wc, _err, dist = self.servo(w, tr)
-        return v, wc, dist
+        if self.follow_drive is None:
+            self.follow_drive = Follow(self.cfg, self.rcfg, "person", hcfg=self.h, seek=True)
+            self.f.clear()
+        fd = self.follow_drive
+        tracks = [t for t in w.tracks if not (t.cls == "person" and _wide(t))]
+        c = fd.step(replace(w, tracks=tracks) if len(tracks) != len(w.tracks) else w)
+        if fd.phase == "warten" or (fd.phase == "" and fd.search_start is not None
+                                    and w.t - fd.search_start > self.cfg.search_timeout_s):
+            b.folgen_ende("nicht wiedergefunden")
+        return c
 
     @staticmethod
     def sense_tracks(w: World) -> list[Seen]:
@@ -1954,7 +1958,7 @@ class Pet(Behavior):
             wm = getattr(tr, "w_meas", tr.w)             # gemessen, nicht geglättet/vorhergesagt
             out.append(Seen(tr.id, tr.cls, dist, w.bearing(tr.cx), not tr.clip[1] and y1 > 0.03 * w.H, wm or tr.w,
                             tr.t_seen, tr.conf, tr.hits, tr.clip[3] or tr.h > 0.5 * w.H,
-                            wm > 0 and x1 > 0.03 * w.W and x2 < 0.97 * w.W))
+                            wm > 0 and x1 > 0.03 * w.W and x2 < 0.97 * w.W, _wide(tr)))
         return out
 
     def step(self, w: World) -> Command:
@@ -1962,6 +1966,9 @@ class Pet(Behavior):
         self._w = w
         if b._ruf is not self._oeff_of:                  # neue Rufsuche: alle Öffnungen wieder offen
             self._oeff_of, self._oeff_besucht, self._oeff_asked = b._ruf, [], False
+            # klare Peilung: Blickrichtung jetzt (er hat sich eben hingedreht) im Karten-KS, gilt für die ganze Rufsuche
+            self._oeff_dir = (w.pose[2] if b._ruf is not None and b._ruf.get("seite") and w.pose is not None
+                              else None)
         heard = None
         if w.sound is not None:
             sch, age = w.sound
@@ -1970,7 +1977,7 @@ class Pet(Behavior):
                   ds=w.ds, ds_measured=w.ds_measured, tilt=w.tilt, fw_mode=w.fw_mode,
                   floor_ok=w.map_ok and w.free is not None and bool(w.free.valid), height_mm=w.height_mm,
                   yaw=w.yaw, free_center=w.free.center if w.free is not None and w.free.valid else None,
-                  path_blocked=w.path_blocked, heard=heard, stimmen=w.stimmen, follow=self._follow(w),
+                  path_blocked=w.path_blocked, heard=heard, stimmen=w.stimmen,
                   anker=w.anker and w.pose is not None and w.goal is not None,
                   karte=w.pose is not None and w.pose_ok,
                   heim_m=math.hypot(w.goal[0] - w.pose[0], w.goal[1] - w.pose[1])
@@ -1978,9 +1985,22 @@ class Pet(Behavior):
                   nav_extern=self._ruf_faehrt(w), nav_stuck=self._oeff_stucks >= 2, **self._nav(w))
         act = b.update(s)
         heim = self._heim(w)
+        if heim is None:
+            fc = self._folgen(w)
+            if fc is not None:                           # Folgen: Befehl, Höhe und Ziel ganz von follow
+                fc.status = "%s | %s" % (act.status, fc.status) if act.status else fc.status
+                self._flags(b)
+                return fc
         if heim is None and self._ruf_faehrt(w):
             # Rufsuche: den Weg wie home abfahren (Engstellen, Lücke, Anschub); Bahnprüfung der App bremst ohnehin
             heim = self.f.drive(w, "Rufsuche", slow_end=True)
+        self._flags(b)
+        if heim is not None:
+            return Command(heim.v, heim.w, heim.height_mm if act.height_mm is None else act.height_mm,
+                           "%s | %s" % (act.status, heim.status), act.target_id)
+        return Command(act.v, act.w, act.height_mm, act.status, act.target_id)
+
+    def _flags(self, b: PetBrain) -> None:
         if b.want_set_down:
             b.want_set_down, self.want_set_down = False, True
         if b.want_stand_up:
@@ -1988,10 +2008,6 @@ class Pet(Behavior):
         if b.want_idle:
             b.want_idle, self.want_idle = False, True
         self.gaze = b.gaze
-        if heim is not None:
-            return Command(heim.v, heim.w, heim.height_mm if act.height_mm is None else act.height_mm,
-                           "%s | %s" % (act.status, heim.status), act.target_id)
-        return Command(act.v, act.w, act.height_mm, act.status, act.target_id)
 
     def _heim(self, w: World) -> Command | None:
         """Heimfahrt des Gehirns (Aufgabe heim, Phase extern) mit behaviors.Home fahren: Planer, Vorpunkt, gerade
@@ -2013,4 +2029,6 @@ class Pet(Behavior):
         return c
 
     def info(self) -> dict:
-        return self.brain.info()
+        fd = self.follow_drive
+        return {**self.brain.info(), "folgen_suche": self._f_seek + (fd.n_seek if fd else 0),
+                "folgen_wieder": self._f_found + (fd.n_found if fd else 0)}

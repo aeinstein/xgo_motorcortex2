@@ -2196,6 +2196,43 @@ def test_frontier_finds_door_and_nothing_in_closed_room():
     assert p.path is None and p.avoided == 1
 
 
+def test_frontier_prefer_richtung_und_min_m():
+    """Rufsuche (pet, Nutzer 2026-11-22): prefer zieht die Öffnung in der gehörten Richtung vor, min_m lässt
+    Öffnungen direkt am Rider weg."""
+    from xgonav.frontier import next_goal
+    cfg, m = _room_map(door=True)                              # Tür in +x
+    r1, _ = (int(v) for v in m.cell(1.2, 1.2))
+    _, dc0 = (int(v) for v in m.cell(-0.4, 0.0))
+    _, dc1 = (int(v) for v in m.cell(0.4, 0.0))
+    m.lo[r1, dc0:dc1 + 1] = cfg.grid.l_min                     # zweite Tür in +y
+    p = next_goal(m, (0.0, 0.0, 0.0), cfg.home, cfg.explore)
+    assert p.frontier[0] > 1.0                                 # ohne Vorgabe: geradeaus (+x)
+    p = next_goal(m, (0.0, 0.0, 0.0), cfg.home, cfg.explore, prefer=(math.pi / 2, 0.1))
+    assert p.frontier[1] > 1.0                                 # gehört von links: Tür in +y
+    p = next_goal(m, (0.0, 0.0, 0.0), cfg.home, cfg.explore, min_m=5.0)
+    assert p.path is None                                      # alle zu nah
+
+
+def test_pet_rufsuche_richtung_nur_nach_drehen():
+    """Peilung von der Seite (hingedreht): Richtung gilt für die Rufsuche; nur von vorn gehört: keine."""
+    from xgonav.pet import PetBrain
+    cfg = Config.neutral()
+    cfg.pet.call_m = -1.0                                      # neutral 0: dann gar keine Suche
+    b = PetBrain(cfg.pet, cfg.robot, 1)
+    b._ear_turns = 1
+    seen = {}
+    b._ruf_start = lambda s, budget, seite=False: seen.update(seite=seite)
+    b.seek_m = 5.0
+
+    class S:
+        t, karte = 0.0, True
+    b._hear_call(S())
+    assert seen["seite"] is True
+    b._ear_turns = 0
+    b._hear_call(S())
+    assert seen["seite"] is False
+
+
 def test_frontier_ignores_unreachable_and_small():
     from xgonav.frontier import next_goal
     cfg, m = _room_map()

@@ -1410,10 +1410,12 @@ class App:
             self._pet_roll = roll
             self.robot.set_roll(roll)
         det = getattr(self.det, "cfg", None)          # FakeDetector im Simulator hat keine
-        if det is not None and det.max_hz != b.brain.det_hz:
+        if det is not None:
             if getattr(self, "_pet_det_hz", None) is None:
                 self._pet_det_hz = det.max_hz
-            det.max_hz = b.brain.det_hz
+            hz = b.brain.det_hz if b.brain.det_hz is not None else self._pet_det_hz   # None: wie im Modus follow
+            if det.max_hz != hz:
+                det.max_hz = hz
         for kind, name, urgent in b.brain.drain():
             if self.emotions is not None:
                 try:

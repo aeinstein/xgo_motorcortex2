@@ -76,9 +76,12 @@ def wavefront(passable: np.ndarray, start: tuple[int, int], step: int = 2, nativ
 
 def next_goal(grid: GridMap, pose: tuple, hcfg: HomeCfg, ecfg: ExploreCfg, obstacles: np.ndarray | None = None,
               avoid: list | tuple = (), keep_frontier: tuple | None = None, keep_path: list | None = None,
-              allow_tight: bool = True) -> ExplorePlan:
+              allow_tight: bool = True, prefer: tuple | None = None, min_m: float = 0.0) -> ExplorePlan:
     """pose: (x, y, th). avoid: gesperrte Stellen (x, y, r). keep_frontier/keep_path: bisheriges Ziel.
-    allow_tight: False = Stellen, die nur in Engstellen liegen, zählen nicht mehr (explore.tight_max erreicht)."""
+    allow_tight: False = Stellen, die nur in Engstellen liegen, zählen nicht mehr (explore.tight_max erreicht).
+    prefer: (Richtung rad im Karten-KS, s je Grad): Stellen abseits dieser Richtung (von der Pose aus) kosten so
+    viel mehr (pet: Rufsuche nach klarer Peilung). min_m: Stellen, deren Weg kürzer wäre, zählen nicht (Frontier
+    näher als standoff_m + min_m). Beides nur in Python auf den Kandidaten, nicht im C++-Kern."""
     res = grid.res
     x, y, th = pose
     if callable(obstacles):                             # erst hier rechnen, im Planer-Thread
@@ -169,6 +172,16 @@ def next_goal(grid: GridMap, pose: tuple, hcfg: HomeCfg, ecfg: ExploreCfg, obsta
         avoided = int((code == 3).sum()) + (int((code == 4).sum()) if allow_tight else 0)
         score = score.copy()
         score[eng] -= ecfg.tight_penalty_s
+    if len(cand) and (prefer is not None or min_m > 0):
+        fx = (cc[cand] + c0 + 0.5 - n / 2) * res
+        fy = (cr[cand] + r0 + 0.5 - n / 2) * res
+        if min_m > 0:
+            near = np.hypot(fx - x, fy - y) < ecfg.standoff_m + min_m
+            cand, fx, fy = cand[~near], fx[~near], fy[~near]
+        if prefer is not None and len(cand):
+            dev = np.abs((np.arctan2(fy - y, fx - x) - prefer[0] + math.pi) % (2 * math.pi) - math.pi)
+            score = score.copy()
+            score[cand] -= np.degrees(dev) * prefer[1]
     if not len(cand):
         return ExplorePlan(None, clusters=avoided, avoided=avoided, known_m2=known_m2)
     cand = cand[np.argsort(-score[cand], kind="stable")]      # die Beste zuerst, bei Gleichstand die frühere Gruppe

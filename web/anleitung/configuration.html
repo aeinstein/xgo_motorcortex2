@@ -2675,14 +2675,24 @@ Sounds: <code>sound</code> true, <code>sound_dir</code> <code>/opt/xgonav/sounds
 <td>call search via the openings of the room map (needs map + confirmed pose); 0 = old straight search (calling goals with a wall ahead go the other way)</td>
 </tr>
 <tr>
+<td><code>call_dir_s_per_deg</code>, <code>call_min_m</code></td>
+<td>0.1, 0.3</td>
+<td>call search after he turned toward the sound: openings off the heard direction cost this much s per degree (90° = 9 s); openings with a shorter path than <code>call_min_m</code> do not count (2026-11-22)</td>
+</tr>
+<tr>
 <td><code>lost_home</code></td>
 <td>false</td>
 <td>the same after the search for a vanished person; false: stays there and listens</td>
 </tr>
 <tr>
-<td><code>follow</code>, <code>follow_trust</code>, <code>follow_start_m</code>, <code>follow_hold_s</code>, <code>follow_m</code></td>
-<td>true, 0.6, 0.5, 1.0, −1 = no limit (sim: 0)</td>
-<td>follow a trusted person like mode <code>follow</code> (servo, <code>behavior.follow_dist_m</code>), start when <code>follow_start_m</code> farther than that for <code>follow_hold_s</code></td>
+<td><code>follow</code>, <code>follow_m</code>, <code>follow_repeat_s</code></td>
+<td>true, −1 = no limit (sim: 0), 3</td>
+<td>any person in view (not lying/sitting) → exactly the routine of mode <code>follow</code> (<code>behaviors.Follow</code>: <code>behavior.follow_dist_m</code>, speed, backwards up to <code>backup_v</code>, heights, search at the last place); follow waits → pet again; lockout from the end (2026-11-22; <code>follow_trust</code>, <code>follow_dist_m</code>, <code>follow_start_m</code>, <code>follow_hold_s</code>, <code>follow_settle_s</code>, <code>follow_block_s</code>, <code>follow_lost_s</code> removed, warning)</td>
+</tr>
+<tr>
+<td><code>wide_babble_s</code></td>
+<td>6</td>
+<td>person box wider than tall (lying/sitting): no following, turns toward her, trust grows, babbles every 6 s with head tilt</td>
 </tr>
 <tr>
 <td><code>eyes_fix_s</code>, <code>eyes_fix_lid</code></td>
@@ -2690,19 +2700,9 @@ Sounds: <code>sound</code> true, <code>sound_dir</code> <code>/opt/xgonav/sounds
 <td>eyes narrow to slits once a person is fixated (0 s = off)</td>
 </tr>
 <tr>
-<td><code>follow_settle_s</code>, <code>follow_block_s</code>, <code>follow_lost_s</code>, <code>follow_repeat_s</code></td>
-<td>2, 3, 1, 3</td>
-<td>end when close and standing / arc blocked; lost → search at once; lockout before a new start</td>
-</tr>
-<tr>
 <td><code>come_events</code>, <code>come_m</code>, <code>come_stop_m</code>, <code>come_repeat_s</code></td>
 <td>1, −1 = no limit (sim: 0), 0.4 (2026-11-22, was 0.8), 8</td>
 <td>come here: drive toward a visible person who speaks (also after a call search found someone); no planner path → straight toward her; at most 30 s</td>
-</tr>
-<tr>
-<td><code>follow_dist_m</code></td>
-<td>0.5</td>
-<td>distance when following in pet (mode <code>follow</code>: <code>behavior.follow_dist_m</code>)</td>
 </tr>
 <tr>
 <td><code>talk</code>, <code>talk_min_events</code>, <code>talk_pause_s</code>, <code>talk_repeat_s</code></td>

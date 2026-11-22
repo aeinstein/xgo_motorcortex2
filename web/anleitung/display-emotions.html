@@ -1950,8 +1950,8 @@ python tools/eyes.py --gaze DIR      # eye atlas for mode pet: 11 gaze positions
 </thead>
 <tbody>
 <tr>
-<td>follow (trust ≥ <code>follow_trust</code> 0.6, person <code>follow_start_m</code> 0.5 m farther than <code>behavior.follow_dist_m</code> for <code>follow_hold_s</code> 1 s; 2026-11-22)</td>
-<td>drives after the person with the servo of <code>follow</code> (distance filter, turn PD, feed-forward), never backwards, at most <code>follow_m</code> (−1 = no limit, simulator 0). Ends: close and standing for <code>follow_settle_s</code> (restart only when she gets 0.3 m farther than at the end), arc blocked for <code>follow_block_s</code> (3 s), animal in view, no drive allowed. Lost for <code>follow_lost_s</code> (1 s) → search at once. Simulator (<code>--scene zwei</code>) and unit tests only</td>
+<td>follow (any person in view whose box is not wider than tall; no trust threshold; 2026-11-22)</td>
+<td>exactly the routine of mode <code>follow</code> (<code>behaviors.Follow</code> inside <code>Pet</code>): <code>behavior.follow_dist_m</code> 0.9 m, speed, backwards up to <code>backup_v</code> when she comes too close, heights, detector at its full rate; lost → drives to the last place and looks around (map), without map turns to the last side. Ends when follow waits (<code>lost_home</code>: then home), animal in view, she sits/lies, no drive allowed (<code>follow_m</code>, battery, floor); new start after <code>follow_repeat_s</code>. Person lying/sitting (box wider than tall): no following, turns toward her, trust grows, babbles every <code>wide_babble_s</code> 6 s with head tilt. Simulator (<code>--scene zwei</code>) and unit tests only</td>
 </tr>
 <tr>
 <td>search (person gone &gt; <code>gone_s</code>, or lost while following)</td>
@@ -2008,7 +2008,7 @@ python tools/eyes.py --gaze DIR      # eye atlas for mode pet: 11 gaze positions
 </tr>
 <tr>
 <td>call without usable direction, room map with confirmed pose (<code>call_openings</code> 4, 2026-11-22)</td>
-<td>calls from another room arrive at ~0° whatever his heading (reverb, mics 4 mm apart). Instead of driving straight: next opening of the room map (border to unknown, <code>frontier.next_goal</code> in the planner thread, visited ones excluded) → drive there with the path follower of <code>home</code> (tight spots, push, replanning; gives up only after two replans while stuck, time from the path length) → look around and listen (<code>hear_listen_s</code> standing per view, levels) → a person found there: drives to her like "come here" (no second call needed) → <code>call_louder_db</code> (3 dB) louder than so far = louder, either way on to the next opening; after <code>call_openings</code> openings or none left he stays and listens. Sound is not used while driving. Unit tests only</td>
+<td>calls from another room arrive at ~0° whatever his heading (reverb, mics 4 mm apart). Instead of driving straight: next opening of the room map (border to unknown, <code>frontier.next_goal</code> in the planner thread, visited ones excluded, none with a path shorter than <code>call_min_m</code> 0.3 m; if he had turned toward the sound, openings off that direction cost <code>call_dir_s_per_deg</code> 0.1 s/° extra, 2026-11-22) → drive there with the path follower of <code>home</code> (tight spots, push, replanning; gives up only after two replans while stuck, time from the path length) → look around and listen (<code>hear_listen_s</code> standing per view, levels) → a person found there: drives to her like "come here" (no second call needed) → <code>call_louder_db</code> (3 dB) louder than so far = louder, either way on to the next opening; after <code>call_openings</code> openings or none left he stays and listens. Sound is not used while driving. Unit tests only</td>
 </tr>
 <tr>
 <td>search over, nobody found (<code>seek_home</code>, off since 2026-11-22; for a vanished person only with <code>lost_home</code>)</td>

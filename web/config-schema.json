@@ -2682,6 +2682,18 @@
        "hilfe": ""
       },
       {
+       "key": "call_dir_s_per_deg",
+       "typ": "float",
+       "default": 0.1,
+       "hilfe": "Rufsuche nach klarer Peilung (er hat sich zum Geräusch gedreht): Öffnungen abseits der gehörten Richtung kosten so viel s je Grad mehr (90° = 9 s, etwa 3 m Fahrt); nur von vorn gehört (Nebenraum, Hall) zählt keine Richtung. Öffnungen mit kürzerem Weg als call_min_m zählen nicht (fand sonst die Stelle, an der er steht). Nutzer 2026-11-22"
+      },
+      {
+       "key": "call_min_m",
+       "typ": "float",
+       "default": 0.3,
+       "hilfe": ""
+      },
+      {
        "key": "call_m",
        "typ": "float",
        "default": -1.0,
@@ -2775,31 +2787,7 @@
        "key": "follow",
        "typ": "bool",
        "default": true,
-       "hilfe": "Folgen (Nutzer 2026-11-22): Vertraut er der Person (trust >= follow_trust) und ist sie follow_start_m weiter weg als behavior.follow_dist_m, fährt er ihr nach wie im Modus follow (Servo, Abstand follow_dist_m), höchstens follow_m je Mal (0 = aus, -1 = ohne Grenze); nie rückwärts. Steht sie follow_settle_s lang und er ist dran (höchstens die Hälfte von follow_start_m über follow_dist_m): vorbei. Verloren (follow_lost_s): gleich suchen wie nach gone_s. Bedingungen wie jede pet-Fahrt. Nur Unit-Tests."
-      },
-      {
-       "key": "follow_trust",
-       "typ": "float",
-       "default": 0.6,
-       "hilfe": ""
-      },
-      {
-       "key": "follow_dist_m",
-       "typ": "float",
-       "default": 0.5,
-       "hilfe": "Wunschabstand beim Folgen in pet (Modus follow: behavior.follow_dist_m)"
-      },
-      {
-       "key": "follow_start_m",
-       "typ": "float",
-       "default": 0.5,
-       "hilfe": ""
-      },
-      {
-       "key": "follow_hold_s",
-       "typ": "float",
-       "default": 1.0,
-       "hilfe": "so lange ununterbrochen weit genug weg, erst dann losfahren"
+       "hilfe": "Folgen (Nutzer 2026-11-22): Sieht er eine Person, folgt er ihr mit genau der Routine des Modus follow (behaviors.Follow: behavior.follow_dist_m, Tempo, rückwärts bis backup_v, Höhen, verloren zur letzten Stelle und umschauen), ohne Vertrauensschwelle; follow_m je Mal (0 = aus, -1 = ohne Grenze), sonst Bedingungen wie jede pet-Fahrt. Meldet follow „warte“, ist er wieder pet; neu folgen frühestens nach follow_repeat_s. Liegt oder sitzt sie (Box breiter als hoch): nicht folgen, hinschauen, Vertrauen, alle wide_babble_s brabbeln."
       },
       {
        "key": "follow_m",
@@ -2808,27 +2796,15 @@
        "hilfe": ""
       },
       {
-       "key": "follow_lost_s",
-       "typ": "float",
-       "default": 1.0,
-       "hilfe": ""
-      },
-      {
-       "key": "follow_settle_s",
-       "typ": "float",
-       "default": 2.0,
-       "hilfe": ""
-      },
-      {
-       "key": "follow_block_s",
-       "typ": "float",
-       "default": 3.0,
-       "hilfe": "so lange will er vor, die Bahn ist aber zu: Folgen vorbei"
-      },
-      {
        "key": "follow_repeat_s",
        "typ": "float",
        "default": 3.0,
+       "hilfe": ""
+      },
+      {
+       "key": "wide_babble_s",
+       "typ": "float",
+       "default": 6.0,
        "hilfe": ""
       },
       {
