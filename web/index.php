@@ -764,7 +764,8 @@ const EN = {
   'befreit sich': 'freeing itself', 'fährt zum Start': 'driving home', 'fertig': 'done', 'fährt': 'driving',
   'verbunden': 'connected', 'getrennt': 'disconnected', 'keine Verbindung': 'no connection',
   'keine Verbindung zum Rider': 'no connection to the Rider', 'keine Verbindung zu xgonav': 'no connection to xgonav',
-  'balanciert': 'balancing', 'liegt': 'lying', 'läuft': 'running', 'gestoppt': 'stopped', 'Stoppen': 'Stop', 'Starten': 'Start',
+  'balanciert': 'balancing', 'liegt': 'lying', 'gefallen': 'fallen', 'Akku leer': 'battery low',
+  'Aktorfehler': 'actuator fault', 'Fehler': 'fault', 'läuft': 'running', 'gestoppt': 'stopped', 'Stoppen': 'Stop', 'Starten': 'Start',
   'Aufzeichnung aus': 'Stop recording', 'Bilder': 'frames', 'wartet: liegt': 'waiting: lying down',
   'wartet: Bildverarb. aus': 'waiting: vision off', 'wartet auf Bild': 'waiting for image', 'Aufzeichnung aus: ': 'Recording off: ',
   'Bodenmodell': 'Floor model', 'Aktivieren': 'Activate', 'FloorNet-Gewichte aus [freespace] net_dir': 'FloorNet weights from [freespace] net_dir',
@@ -967,6 +968,17 @@ function pille(id, wert, art = '') {
   const p = $(id);
   p.querySelector('b').textContent = wert;
   p.className = 'pille' + (art ? ' ' + art : '');
+}
+// Firmware-Zustand (/proc/XGORider/state, robot.FW_ZUSTAND): abgesetzt (254, LEDs orange) ist kein Sturz (0, LEDs rot)
+const ZUSTAND = {1: ['balanciert', 'gut'], 254: ['liegt', 'warn'], 0: ['gefallen', 'schlecht'], 253: ['bereit', 'warn'],
+  250: ['Akku leer', 'schlecht'], 251: ['Aktorfehler', 'schlecht'], 252: ['Fehler', 'schlecht']};
+function zustandPille(state, balancing) {
+  if (state == null) {
+    if (balancing == null) return pille('p-zustand', '-');
+    return pille('p-zustand', tr(balancing ? 'balanciert' : 'liegt'), balancing ? 'gut' : 'warn');
+  }
+  const [t, art] = ZUSTAND[state] || ['Zustand ' + state, 'schlecht'];
+  pille('p-zustand', tr(t), art);
 }
 // Verbindungsfehler verschwinden von selbst, sobald xgonav wieder antwortet (andere Meldungen bleiben)
 const VERBINDUNG = /nicht erreichbar|keine Verbindung|no connection/;
@@ -1320,8 +1332,7 @@ function statusZeigen(s, fehler) {
     document.querySelectorAll('[data-modus]').forEach(b => b.classList.toggle('aktiv', b.dataset.modus === s.mode));
     sprechZeigen();
     pille('p-modus', tr(MODI[s.mode] || s.mode || '-'), s.mode && s.mode !== 'idle' ? 'warn' : '');
-    pille('p-zustand', s.balancing == null ? '-' : tr(s.balancing ? 'balanciert' : 'liegt'),
-          s.balancing == null ? '' : (s.balancing ? 'gut' : 'warn'));
+    zustandPille(s.state, s.balancing);
     akkuMerken(s.battery);
     pille('p-akku', s.battery != null ? s.battery + ' %' : '-',
           s.battery == null ? '' : (s.battery < 20 ? 'schlecht' : s.battery < 40 ? 'warn' : 'gut'));
@@ -2961,6 +2972,7 @@ function sysVerarbeiten(s) {
   if (s.height != null) { beinSoll.h = s.height; if (!hoeheAusStatus) hoeheSetzen(s.height); }
   if (s.roll != null) { beinSoll.r = s.roll; reglerSetzen('roll', s.roll, s.roll + '°'); }
   beinSoll.abgesetzt = s.state === 254;
+  if (s.state != null) zustandPille(s.state, s.state === 1);
   const jetzt = Date.now();
   // Auslastung auf den Höchsttakt bezogen: 100 % bei halbem Takt zählt als 50 %
   const takt = s.mhz && s.mhz[1] > 0 ? Math.min(1, s.mhz[0] / s.mhz[1]) : 1;

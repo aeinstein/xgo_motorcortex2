@@ -18,6 +18,7 @@ from .config import BehaviorCfg, ExploreCfg, HomeCfg, PatrolCfg, RobotCfg
 from .egomotion import EgoResult
 from .freespace import FreeSpace
 from .geometry import CamGeometry
+from .robot import stopp_text
 from .tracker import Track
 
 log = logging.getLogger(__name__)
@@ -49,7 +50,7 @@ class World:
     ds: float = 0.0                   # Strecke seit dem letzten Regelschritt (m)
     ds_measured: bool = False         # ds stammt von den Rädern, nicht aus dem Fahrbefehl
     tilt: tuple | None = None         # (roll, pitch) in Grad aus frischer IMU
-    fw_mode: int | None = None        # /proc/XGORider/state
+    fw_mode: int | None = None        # /proc/XGORider/state (robot.FW_ZUSTAND; 254 liegt, 0 gefallen)
     height_mm: float | None = None    # Höhen-Sollwert
     sound: tuple | None = None        # (ortung.Schall, Alter s) der letzten Schallmeldung, nur für pet
     stimmen: tuple | None = None      # (bestätigte Stimmproben NN, neu bestätigte NN), nur für pet
@@ -1340,9 +1341,9 @@ def make_behavior(name: str, cfg: BehaviorCfg, rcfg: RobotCfg, target: str | Non
 
 # ---------------------------------------------------------------------------
 def safety(cmd: Command, w: World, cfg: BehaviorCfg) -> Command:
-    """Letzte Instanz: gefallen -> Stopp; Hindernis/TTC -> keine Vorwärtsfahrt."""
+    """Letzte Instanz: liegt/gefallen -> Stopp; Hindernis/TTC -> keine Vorwärtsfahrt."""
     if not w.balancing:
-        return Command(0, 0, None, "GEFALLEN – Stopp", cmd.target_id)
+        return Command(0, 0, None, stopp_text(w.fw_mode), cmd.target_id)
     if w.blind:
         return Command(0, 0, None, "BLIND – keine Bodengrenze (FloorNet), Stopp", cmd.target_id)
     if cmd.v > 0:

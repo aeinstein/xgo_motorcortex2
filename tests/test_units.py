@@ -3942,3 +3942,24 @@ def test_sichtfeld_lage_korrektur_bringt_horizont_auf_nick_null():
     for x in (100, 320, 540):
         zeile = int(np.argmax(out[:, x] > 127))
         assert abs(zeile - soll) <= 1.5, (x, zeile, soll)
+
+
+def test_fw_zustand_liegt_ist_kein_sturz():
+    """Absetzen (254, LEDs orange) und Kippen (0, LEDs rot) sind getrennte Zustände (robot.FW_ZUSTAND)."""
+    from xgonav.behaviors import Command, World, safety
+    from xgonav.robot import lage, stopp_text
+    assert lage(1) == "balanciert" and lage(254) == "liegt" and lage(0) == "gefallen"
+    assert lage(None) is None and lage(77) == "zustand 77"
+    assert stopp_text(254) == "LIEGT – Stopp" and stopp_text(0) == "GEFALLEN – Stopp"
+    assert stopp_text(None) == "GEFALLEN – Stopp"
+    cfg = Config.neutral()
+
+    def welt(mode):
+        return World(t=0.0, dt=0.05, W=640, H=480, hfov=1.6, ego=None, tracks=[], free=None, balancing=False,
+                     yaw=0.0, cmd_v=0.0, fw_mode=mode)
+    for mode, text in ((254, "LIEGT – Stopp"), (0, "GEFALLEN – Stopp")):
+        c = safety(Command(0.3, 0.2, None, "fährt"), welt(mode), cfg.behavior)
+        assert (c.v, c.w, c.status) == (0, 0, text)
+    r = SimRobot(cfg.robot)
+    r._write("action", 254)
+    assert r.state.lage == "liegt" and not r.state.balancing

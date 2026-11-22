@@ -31,7 +31,7 @@ from . import startbild as sbm
 from .imu import ImuFrame, ImuSource, ImuSync, imu_frame, make_imu, max_age as imu_max_age
 from .localmap import LocalMap, mask_movable
 from .route import arc_hits_zone, check as route_check, load as route_load, save as route_save
-from .robot import FW_ACTIONS, Robot, SpeedCtrl, action_cmds
+from .robot import FW_ACTIONS, Robot, SpeedCtrl, action_cmds, stopp_text
 from .tracker import Tracker
 from .wlan import Helfer, HoldDetector, PressDetector, WlanSetup
 from .dunkel import Dunkelangst, helligkeit, sperr_rechteck
@@ -885,7 +885,7 @@ class App:
         aus) fährt er dann nicht, Drehen bleibt."""
         cmd = self.behavior.step(None)
         if not self.robot.state.balancing:
-            return Command(0.0, 0.0, None, "GEFALLEN – Stopp")
+            return Command(0.0, 0.0, None, stopp_text(self.robot.state.mode))
         if getattr(self.behavior, "checked", False) and (cmd.v or cmd.w):
             if w is None:
                 if cmd.v:
@@ -1011,6 +1011,7 @@ class App:
             self._pose_watch(now)
             w = World(t=f.t, dt=dt, W=self.cfg.camera.width, H=self.cfg.camera.height, hfov=self.hfov,
                       ego=ego, tracks=tracks, free=free, balancing=self.robot.state.balancing,
+                      fw_mode=self.robot.state.mode,
                       yaw=self.yaw, cmd_v=self.robot.command[0],
                       geo=self.geo, pitch_dev=pitch_dev, battery=self.robot.state.battery,
                       blind=self.fs_worker is not None and self.fs_worker.blind)
@@ -1131,7 +1132,7 @@ class App:
                                "mode": self.behavior.name, "yaw_vis_deg": round(math.degrees(self.vis_yaw), 1),
                                "yaw_deg": round(math.degrees(self.yaw), 1), "yaw_src": self.yaw_src,
                                "yaw_imu": self.kurs_deg(), "battery": self.robot.state.battery,
-                               "balancing": self.robot.state.balancing,
+                               "balancing": self.robot.state.balancing, "state": self.robot.state.mode,
                                "height_mm": round(self.geo.body_height_mm, 1),
                                "pitch_src": self.pitch_src, "pitch_deg": round(math.degrees(pitch_dev), 2),
                                "imu": None if self.imu is None else {

@@ -1602,7 +1602,7 @@
 <tbody>
 <tr>
 <td>Header (sticky)</td>
-<td>host, connection, mode, state (balancing/lying), battery (green ≥ 40 %, yellow ≥ 20 %, red &lt; 20 %), pipeline, recording (only while switched on), WLAN (signal dBm: green ≥ −60, yellow ≥ −70, red below; ↓/↑ kB/s of <code>wlan0</code>), language DE/EN, <strong>Anleitung</strong> (opens <code>anleitung/index.html</code>: this manual, static), <strong>Schaubild</strong> (opens <code>schaubild.html</code>: static diagram of the image pipeline, no cost on the Pi), <strong>Einstellungen</strong> (modal, see below), <strong>Herunterfahren</strong> (confirm dialog), <strong>Ruhe</strong>, <strong>STOPP</strong>; below 1000 px the two buttons show only ⚙/⏻</td>
+<td>host, connection, mode, state (firmware <code>state</code>: balancing / lying = set down (254) / fallen (0) / ready (253) / battery low / actuator fault / fault; mapped in the browser), battery (green ≥ 40 %, yellow ≥ 20 %, red &lt; 20 %), pipeline, recording (only while switched on), WLAN (signal dBm: green ≥ −60, yellow ≥ −70, red below; ↓/↑ kB/s of <code>wlan0</code>), language DE/EN, <strong>Anleitung</strong> (opens <code>anleitung/index.html</code>: this manual, static), <strong>Schaubild</strong> (opens <code>schaubild.html</code>: static diagram of the image pipeline, no cost on the Pi), <strong>Einstellungen</strong> (modal, see below), <strong>Herunterfahren</strong> (confirm dialog), <strong>Ruhe</strong>, <strong>STOPP</strong>; below 1000 px the two buttons show only ⚙/⏻</td>
 </tr>
 <tr>
 <td>Left</td>
@@ -1916,7 +1916,7 @@ works without xgonav.</p>
 <tr>
 <td>GET</td>
 <td><code>/status</code></td>
-<td>JSON (mode, pipeline, status, cmd, tracks, free, ttc, fps, loop_ms, loop_p95, loop_max, det_ms, grid, exposure, battery, balancing, yaw_imu (heading in degrees from the IMU stream, all turns summed, not wrapped), height_mm, height_u8, cam_h_mm, cam_h_gerade <code>[a, b]</code> (mm = a + b·u8), pitch_src, pitch_deg, ego, odom, …); <code>?breakdown=1</code> adds per-section loop timing</td>
+<td>JSON (mode, pipeline, status, cmd, tracks, free, ttc, fps, loop_ms, loop_p95, loop_max, det_ms, grid, exposure, battery, balancing, state (firmware state, see <code>driver.md</code>), yaw_imu (heading in degrees from the IMU stream, all turns summed, not wrapped), height_mm, height_u8, cam_h_mm, cam_h_gerade <code>[a, b]</code> (mm = a + b·u8), pitch_src, pitch_deg, ego, odom, …); <code>?breakdown=1</code> adds per-section loop timing</td>
 </tr>
 <tr>
 <td>GET</td>

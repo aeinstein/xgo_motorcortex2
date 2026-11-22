@@ -63,7 +63,7 @@ cat /proc/XGORider/serial_stats; cat /proc/XGORider/imu
 | `action` | w | u8; R-1.1.6+patch: 1..6 actions, 237 restart the ESP32 (firmware patch 0018, refused while balancing), 253 stand up from lying, 254 disarm/emergency stop, 255 arm, 0 = no action | 0x3e |
 | `leds/0`..`leds/3` | w | `#RRGGBB` | 0x69..0x6c |
 | `battery` | r | % | 0x01 |
-| `state` | r | firmware state, 0 = fallen, 1 = balancing | |
+| `state` | r | firmware state: 1 = balancing, 254 = lying (set down by action 254, LEDs orange), 0 = fallen (tilt, LEDs red), 253 = ready (disarmed, starts when upright), 250 = low battery, 251 = actuator fault, 252 = other fault; names in `robot.FW_ZUSTAND` | |
 | `yaw` | r | integer degrees, only updated while balancing; from the stream, without stream from register 0x68 every `sleep_ms_on_loop` | |
 | `buttons` | r | bit mask, 1 = pressed: A = 1 (GPIO 17), B = 2 (22), C = 4 (23), D = 8 (24); polled every `sleep_ms_on_loop`. **A+B together = `orderly_poweroff`** (driver). C+D held 3 s = Wi-Fi setup ([wifi-setup.md](wifi-setup.md)) | |
 | `imu` | r | `seq t_ns roll pitch yaw` (millidegrees), newest sample | |

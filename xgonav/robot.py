@@ -70,13 +70,35 @@ def u8_to_norm(u: int) -> float:
     return (u - NEUTRAL) / 127.0
 
 
+# Zustand der Firmware (/proc/XGORider/state, xgorider2_rl main.cpp requestMode): abgesetzt (Aktion 254,
+# StopReason::Manual, LEDs orange) und gekippt (0, StopReason::Tilt, LEDs rot) sind verschiedene Zustände.
+FW_ZUSTAND: dict[int, str] = {1: "balanciert", 254: "liegt", 0: "gefallen", 253: "bereit",
+                              250: "akku", 251: "aktorfehler", 252: "fehler"}
+
+
+def lage(mode: int | None) -> str | None:
+    """Firmware-Zustand -> Wort (FW_ZUSTAND); None = unbekannt."""
+    if mode is None:
+        return None
+    return FW_ZUSTAND.get(mode, f"zustand {mode}")
+
+
+def stopp_text(mode: int | None) -> str:
+    """Begründung des Stopps, wenn er nicht balanciert: abgesetzt ist kein Sturz."""
+    return "LIEGT – Stopp" if mode == 254 else "GEFALLEN – Stopp"
+
+
 @dataclass
 class RobotState:
     balancing: bool = True      # Kurs kommt allein aus dem IMU-Strom (App.kurs_deg), nicht aus /proc yaw
     battery: int | None = None
     buttons: int = 0
     t: float = 0.0
-    mode: int | None = None    # Wert aus /proc/XGORider/state (1 = balanciert)
+    mode: int | None = None    # Wert aus /proc/XGORider/state (1 = balanciert, FW_ZUSTAND)
+
+    @property
+    def lage(self) -> str | None:
+        return lage(self.mode)
 
 
 class SpeedCtrl:
@@ -544,11 +566,18 @@ class ProcRobot(Robot):
 
     def _poll_state(self) -> None:
         st = self._read_int("state")
-        self.state.mode = st
+        alt, self.state.mode = self.state.mode, st
         if st is not None:
             bal = st == 1
-            if bal != self.state.balancing:
-                log.warning("Rider %s", "balanciert" if bal else "GEFALLEN – Stopp")
+            if st != alt:
+                if bal:
+                    log.warning("Rider balanciert")
+                elif st == 254:
+                    log.warning("Rider liegt (abgesetzt)")
+                elif st == 0:
+                    log.warning("Rider GEFALLEN – Stopp")
+                else:
+                    log.warning("Rider %s (Zustand %d)", lage(st), st)
             self.state.balancing = bal
         self.state.battery = self._read_int("battery")
         self.state.buttons = self._read_int("buttons") or 0

@@ -756,7 +756,7 @@ function w_fahren(array $a): array
             }
             post(sprintf('/drive?v=%.3f&w=%.3f&sicher=1', $v, $w));    // 409, sobald jemand „stopp“ ruft
             $m = (string)(status()['status'] ?? '');
-            foreach (['Freiraum!', 'Bahn', 'TTC', 'Sperrzone', 'BLIND', 'GEFALLEN'] as $wort) {
+            foreach (['Freiraum!', 'Bahn', 'TTC', 'Sperrzone', 'BLIND', 'GEFALLEN', 'LIEGT'] as $wort) {
                 if (strpos($m, $wort) !== false) {
                     $meldungen[$wort] = $m;
                 }

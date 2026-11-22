@@ -1641,7 +1641,7 @@ cat /proc/XGORider/serial_stats; cat /proc/XGORider/imu
 <tr>
 <td><code>state</code></td>
 <td>r</td>
-<td>firmware state, 0 = fallen, 1 = balancing</td>
+<td>firmware state: 1 = balancing, 254 = lying (set down by action 254, LEDs orange), 0 = fallen (tilt, LEDs red), 253 = ready (disarmed, starts when upright), 250 = low battery, 251 = actuator fault, 252 = other fault; names in <code>robot.FW_ZUSTAND</code></td>
 <td></td>
 </tr>
 <tr>
