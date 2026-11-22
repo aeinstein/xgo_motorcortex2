@@ -14,6 +14,7 @@ Development happens on the PC. The simulator (`xgonav/sim.py`) renders a room by
 
 ```bash
 python tests/sim_run.py follow 40 out.mp4                         # follow, overlay video
+python tests/sim_run.py follow 70 --scene zwei --wheels --dyn     # follow: person vanishes behind a wall, search at last position
 python tests/sim_run.py explore 300 --wheels --fs-thread --dyn --rider --scene spalt
 python tests/sim_run.py home 60 --wheels --dyn                    # 30 s explore, then home
 python tests/sim_run.py pet 35 --wheels --imu --animal cat

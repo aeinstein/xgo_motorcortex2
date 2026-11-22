@@ -309,7 +309,15 @@ class BehaviorCfg:
     search_w: float = 0.07
     turn_w: float = 0.21           # Erkunden: Drehrate beim Wegdrehen (früher fest 1,5 x search_w)
     lost_search_s: float = 1.0
-    search_timeout_s: float = 10.0
+    search_timeout_s: float = 10.0     # Suche ohne Raumkarte (auf der Stelle drehen): danach warten
+    # follow, Ziel verloren: mit Raumkarte und bestätigter Pose zur letzten bekannten Stelle fahren (Planer wie home),
+    # dort lost_look_deg umschauen (Drehrate lost_look_w), dann warten. Stelle = Pose + Abstand (höchstens
+    # lost_seek_max_m) + Peilung bei der letzten Sichtung. Nur im Simulator gefahren.
+    lost_seek: bool = True
+    lost_seek_max_m: float = 4.0
+    lost_arrive_m: float = 0.25
+    lost_look_deg: float = 360.0
+    lost_look_w: float = 0.10
     blocked_free: float = 0.22     # Freiraum im Zentrum darunter = blockiert
     slow_free: float = 0.55        # darunter proportional abbremsen
     ttc_avoid_s: float = 1.2       # Erkunden: Time-to-contact darunter -> ausweichen
@@ -768,7 +776,15 @@ class PetCfg:
     # Suchen vorbei, niemand gefunden: zurück zum Start (wo er aufstand), wie explore am Ende (Nutzer 2026-11-19).
     # Der Weg kommt wie alle pet-Fahrten mit Raumkarte vom Planer; findet er vorn keinen Weg zum Rufziel (oder nur
     # einen Umweg über das 1,5-Fache), versucht er die Gegenrichtung (vorn und hinten klingen gleich).
-    seek_home: bool = True
+    # Nutzer 2026-11-22: nach einer Rufsuche ohne Erfolg nicht mehr heim (der Start ist der Platz des Aufstehens,
+    # er hing so immer wieder in der Küche), sondern dort bleiben und weiter horchen.
+    seek_home: bool = False
+    # Rufsuche über die Öffnungen der Raumkarte (Nutzer 2026-11-22): Rufe aus einem anderen Raum kommen am Rider mit
+    # ~0° an, egal wohin er schaut. Mit Raumkarte und bestätigter Pose fährt er statt geradeaus zur nächsten Öffnung
+    # (Grenze zum Unbekannten, wie explore), schaut sich dort um und horcht; call_louder_db lauter als bisher = weiter
+    # von dort, höchstens call_openings Öffnungen je Ruf (0 = alte Suche geradeaus). Nur Unit-Tests.
+    call_openings: int = 4
+    call_louder_db: float = 3.0
     call_m: float = -1.0
     call_repeat_s: float = 45.0        # frühestens dann wieder (ein Fernseher vorn ruft sonst endlos)
     # Komm her: Er sieht eine Person, die weiter als come_stop_m entfernt ist und spricht (come_events Meldungen
@@ -791,6 +807,23 @@ class PetCfg:
     parrot_repeat_s: float = 30.0
     parrot_delay_s: float = 0.2        # Nutzer 2026-11-19: 0,8 dauerte zu lang (mit Nachlauf 0,6 s ~1,5 s)
     parrot_listen_s: float = 3.0
+    # Folgen (Nutzer 2026-11-22): Vertraut er der Person (trust >= follow_trust) und ist sie follow_start_m weiter weg
+    # als behavior.follow_dist_m, fährt er ihr nach wie im Modus follow (Servo, Abstand follow_dist_m), höchstens
+    # follow_m je Mal (0 = aus, -1 = ohne Grenze); nie rückwärts. Steht sie follow_settle_s lang und er ist dran
+    # (höchstens die Hälfte von follow_start_m über follow_dist_m): vorbei.
+    # Verloren (follow_lost_s): gleich suchen wie nach gone_s. Bedingungen wie jede pet-Fahrt. Nur Unit-Tests.
+    follow: bool = True
+    follow_trust: float = 0.6
+    follow_start_m: float = 0.5
+    follow_hold_s: float = 1.0         # so lange ununterbrochen weit genug weg, erst dann losfahren
+    follow_m: float = -1.0
+    follow_lost_s: float = 1.0
+    follow_settle_s: float = 2.0
+    follow_block_s: float = 3.0        # so lange will er vor, die Bahn ist aber zu: Folgen vorbei
+    follow_repeat_s: float = 3.0
+    # Suche nach einer verschwundenen Person ohne Erfolg: zum Start (true) oder dort bleiben und horchen (false,
+    # Nutzer 2026-11-22). seek_home gilt für die Suche nach dem Horchen.
+    lost_home: bool = False
     seek_m: float = -1.0               # je Verschwinden höchstens so weit zur letzten Stelle
     seek_stop_m: float = 0.4           # so weit vor der letzten Stelle halten
     roam_m: float = -1.0               # je Phase ohne Begegnung höchstens so weit streifen (endet spätestens mit doze_s)
@@ -1051,7 +1084,7 @@ UMBENANNT = {"freespace.shadow_net": "freespace.net"}
 
 # Die Defaults oben sind seit 2026-11-12 die Werte des RiderPi (/opt/xgonav/config.toml ohne Testbetrieb und
 # ohne Pfade unter /opt). Simulator und Tests rechnen mit dem früheren neutralen Stand: Config.neutral().
-NEUTRAL = {"pet.call_m": 0.0, "pet.come_m": 0.0, "pet.drive_v": 0.08, "pet.look_w": 0.12, "pet.turn_w": 0.20, "pet.faint": False, "pet.faint_level": 1.0, "pet.seek_m": 0.0, "pet.roam_m": 0.0, "pet.roam_radius_m": 1.0,
+NEUTRAL = {"pet.call_m": 0.0, "pet.come_m": 0.0, "pet.follow_m": 0.0, "pet.drive_v": 0.08, "pet.look_w": 0.12, "pet.turn_w": 0.20, "pet.faint": False, "pet.faint_level": 1.0, "pet.seek_m": 0.0, "pet.roam_m": 0.0, "pet.roam_radius_m": 1.0,
            "robot.vx_limit": 1.5, "robot.max_v": 0.25, "robot.max_w": 0.25, "robot.reverse_gain": 1.0,
            "robot.manual_forward_gain": 1.0, "robot.level_after_standup": False, "camera.sensor_mode": "",
            "camera.scaler_crop": [], "camera.lens_knots_px": [], "camera.lens_g_px": [], "camera.lens_center": [], "camera.lens_roll_deg": 0.0, "camera.lens_yaw_deg": 0.0, "camera.exposure_us": 4000, "camera.analogue_gain": 0.0,

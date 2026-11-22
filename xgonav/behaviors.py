@@ -40,6 +40,7 @@ class World:
     geo: CamGeometry | None = None
     pitch_dev: float = 0.0            # hochfrequentes Nicken in rad (aus Ego-Motion)
     pose: tuple | None = None         # (x, y, th) in der Raumkarte (m, rad), None = keine Karte
+    pose_ok: bool = False             # Pose in der Raumkarte bestätigt (GridMap.pose_ok)
     goal: tuple | None = None         # Startpunkt (x, y, th) in der Raumkarte
     # Geradeaus mit cruise_v laut Merkkarte blockiert (gleiche Prüfung wie App._arc_check).
     # Erkunden braucht das: sonst will es weiter vorwärts, die Bahnprüfung setzt v auf 0 und
@@ -219,9 +220,14 @@ class Servo:
 
 
 class Follow(Behavior):
+    """Ziel per Servo folgen. Verloren: mit Raumkarte (seek) zur letzten bekannten Stelle fahren (Planer wie home,
+    App._plan_tick) und dort einmal umschauen, dann warten; ohne Karte oder bestätigte Pose auf der Stelle zur
+    Seite der letzten Sichtung drehen wie bisher."""
     name = "follow"
+    PLAN_FAILS = 2                # so oft kein Weg in Folge: dort umschauen, wo er steht
 
-    def __init__(self, cfg, rcfg, target_class: str | None = None, want_dist: float | None = None):
+    def __init__(self, cfg, rcfg, target_class: str | None = None, want_dist: float | None = None,
+                 hcfg: HomeCfg | None = None, seek: bool = False):
         super().__init__(cfg, rcfg)
         self.cls = target_class or cfg.target_class
         self.servo = Servo(cfg, rcfg, want_dist if want_dist is not None else cfg.follow_dist_m)
@@ -229,6 +235,106 @@ class Follow(Behavior):
         self.last_seen_t = -1e9
         self.last_side = 1.0
         self.search_start: float | None = None
+        # Suche nach der Karte
+        self.seek = seek and cfg.lost_seek
+        self.h = hcfg or HomeCfg()
+        self.f = PathFollower(cfg, rcfg, self.h)
+        self.last_pos: tuple[float, float] | None = None   # letzte Stelle des Ziels in der Raumkarte (m)
+        self.phase = ""               # "" | "fahren" | "umschauen" | "warten"
+        self._goal: tuple[float, float] | None = None
+        self._req = None
+        self.pending = False
+        self._t_plan = -1e9
+        self._fails = 0
+        self._stucks = 0
+        self._drive_until = 0.0
+        self._look_th: float | None = None
+        self._look_sum = 0.0
+        self.n_seek = self.n_found = 0     # Suchfahrten zur letzten Stelle / danach wiedergefunden
+
+    @property
+    def path(self):
+        return self.f.path
+
+    # --- Planung (von App bedient, wie home) ---
+    def want_plan(self, t: float) -> bool:
+        if self.pending or self.phase != "fahren" or self._goal is None:
+            return False
+        if self.f.path is None or t - self._t_plan > self.h.replan_s or self.f.stuck:
+            self._stucks += self.f.stuck
+            self.pending, self._t_plan, self.f.stuck = True, t, False
+            return True
+        return False
+
+    def request_plan(self, planner, grid, w: World, obstacles) -> int:
+        self._req = self._goal
+        # Dort stand eben das Ziel: Die Karte kann an der Stelle unsicher sein
+        return planner.request(w.pose[:2], self._goal, keep=self.f.path, obstacles=obstacles, clear_goal=True)
+
+    def set_path(self, path) -> None:
+        self.pending = False
+        if self._req is not self._goal or self.phase != "fahren":
+            return                                       # Ziel inzwischen ein anderes oder Suche vorbei
+        if path is None:
+            self._fails += 1
+            return                                       # alten Weg behalten, falls vorhanden
+        self._fails = 0
+        self.f.set_path(path)
+
+    def _seek_reset(self) -> None:
+        self.phase, self._goal, self._req = "", None, None
+        self.f.clear()
+        self._fails = self._stucks = 0
+        self._look_th, self._look_sum = None, 0.0
+
+    def _look(self, w: World, why: str) -> None:
+        log.info("follow: %s verloren, %s: schaue mich um", self.cls, why)
+        self.phase = "umschauen"
+        self.f.clear()
+        self._look_th, self._look_sum = None, 0.0
+
+    def _seek_step(self, w: World) -> Command | None:
+        """Suche nach der Raumkarte; None = nicht möglich (alter Suchweg)."""
+        if not (self.seek and self.last_pos is not None and w.pose is not None and w.pose_ok):
+            return None
+        x, y, th = w.pose
+        c = self.cfg
+        if self.phase == "":
+            lx, ly = self.last_pos
+            d = math.hypot(lx - x, ly - y)
+            if d < c.lost_arrive_m:
+                self._look(w, "an der letzten Stelle")
+            else:
+                self.phase, self._goal = "fahren", self.last_pos
+                self.n_seek += 1
+                self._fails = self._stucks = 0
+                self._t_plan = -1e9
+                v_ms = max(self.f.v * self.rcfg.vx_limit, 0.02)
+                self._drive_until = w.t + 4.0 + 2.0 * d / v_ms
+                log.info("follow: %s verloren, fahre zur letzten Stelle (%.2f, %.2f), %.2f m", self.cls, lx, ly, d)
+        if self.phase == "fahren":
+            gx, gy = self._goal
+            d = math.hypot(gx - x, gy - y)
+            if d < c.lost_arrive_m:
+                self._look(w, "an der letzten Stelle")
+            elif self._fails >= self.PLAN_FAILS or self._stucks >= 2 or w.t > self._drive_until:
+                self._look(w, "kein Weg" if self._fails >= self.PLAN_FAILS else "festgefahren" if self._stucks >= 2 else "Zeit um")
+            elif self.f.path is None:
+                return Command(0, 0, c.height_cruise_mm, "suche %s: plane Weg zur letzten Stelle" % self.cls)
+            else:
+                cmd = self.f.drive(w, "suche %s: zur letzten Stelle %.2f m" % (self.cls, d), slow_end=True)
+                cmd.height_mm = c.height_search_mm if abs(cmd.v) < 1e-6 else cmd.height_mm
+                return cmd
+        if self.phase == "umschauen":
+            if self._look_th is not None:
+                self._look_sum += abs(_wrap(th - self._look_th))
+            self._look_th = th
+            if self._look_sum < math.radians(c.lost_look_deg):
+                return Command(0.0, self.last_side * c.lost_look_w, c.height_search_mm,
+                               "suche %s: schaue mich um %.0f°" % (self.cls, math.degrees(self._look_sum)))
+            log.info("follow: %s nicht wiedergefunden, warte", self.cls)
+            self.phase = "warten"
+        return Command(0, 0, c.height_cruise_mm, "Ziel verloren – warte")
 
     def pick(self, w: World) -> Track | None:
         cands = [t for t in w.tracks if t.cls == self.cls]
@@ -251,6 +357,14 @@ class Follow(Behavior):
             self.last_seen_t = w.t
             v, wc, err, dist = self.servo(w, tr)
             self.last_side = 1.0 if err >= 0 else -1.0
+            if self.phase:
+                log.info("follow: %s wiedergefunden (%s)", self.cls, self.phase)
+                self.n_found += self.phase != "warten"
+                self._seek_reset()
+            if self.seek and w.pose is not None and w.pose_ok and w.balancing and dist is not None:
+                x, y, th = w.pose
+                d, a = min(dist, self.cfg.lost_seek_max_m), th + err
+                self.last_pos = (x + d * math.cos(a), y + d * math.sin(a))
             fast = abs(v) > 0.6 * self.rcfg.max_v
             hmm = self.cfg.height_fast_mm if fast else self.cfg.height_cruise_mm
             st = "verfolge #%d %s (%+.0f°, %s)" % (tr.id, tr.cls, math.degrees(err),
@@ -260,6 +374,9 @@ class Follow(Behavior):
         if self.search_start is None:
             self.search_start = w.t
             self.servo.reset()
+        c = self._seek_step(w)
+        if c is not None:
+            return c
         if w.t - self.search_start > self.cfg.search_timeout_s:
             return Command(0, 0, self.cfg.height_cruise_mm, "Ziel verloren – warte")
         return Command(0.0, self.last_side * self.cfg.search_w, self.cfg.height_search_mm,
@@ -1328,11 +1445,11 @@ def make_behavior(name: str, cfg: BehaviorCfg, rcfg: RobotCfg, target: str | Non
     """has_map: Raumkarte vorhanden; sonst erkundet explore nur reaktiv."""
     def pet():
         from .pet import Pet          # pet.py importiert dieses Modul
-        return Pet(cfg, rcfg, petcfg, hcfg=hcfg)
+        return Pet(cfg, rcfg, petcfg, hcfg=hcfg, sbcfg=sbcfg, ecfg=ecfg)
     return {"idle": lambda: Idle(cfg, rcfg),
             "pet": pet,
             "manual": lambda: Manual(cfg, rcfg),
-            "follow": lambda: Follow(cfg, rcfg, target),
+            "follow": lambda: Follow(cfg, rcfg, target, hcfg=hcfg, seek=has_map),
             "explore": lambda: MapExplore(cfg, rcfg, hcfg, ecfg) if has_map else Explore(cfg, rcfg),
             "approach": lambda: Approach(cfg, rcfg, target),
             "home": lambda: Home(cfg, rcfg, hcfg, sbcfg),

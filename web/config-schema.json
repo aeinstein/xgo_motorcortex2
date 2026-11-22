@@ -1653,6 +1653,36 @@
        "key": "search_timeout_s",
        "typ": "float",
        "default": 10.0,
+       "hilfe": "Suche ohne Raumkarte (auf der Stelle drehen): danach warten"
+      },
+      {
+       "key": "lost_seek",
+       "typ": "bool",
+       "default": true,
+       "hilfe": "follow, Ziel verloren: mit Raumkarte und bestätigter Pose zur letzten bekannten Stelle fahren (Planer wie home), dort lost_look_deg umschauen (Drehrate lost_look_w), dann warten. Stelle = Pose + Abstand (höchstens lost_seek_max_m) + Peilung bei der letzten Sichtung. Nur im Simulator gefahren."
+      },
+      {
+       "key": "lost_seek_max_m",
+       "typ": "float",
+       "default": 4.0,
+       "hilfe": ""
+      },
+      {
+       "key": "lost_arrive_m",
+       "typ": "float",
+       "default": 0.25,
+       "hilfe": ""
+      },
+      {
+       "key": "lost_look_deg",
+       "typ": "float",
+       "default": 360.0,
+       "hilfe": ""
+      },
+      {
+       "key": "lost_look_w",
+       "typ": "float",
+       "default": 0.1,
        "hilfe": ""
       },
       {
@@ -2618,8 +2648,20 @@
       {
        "key": "seek_home",
        "typ": "bool",
-       "default": true,
-       "hilfe": "Suchen vorbei, niemand gefunden: zurück zum Start (wo er aufstand), wie explore am Ende (Nutzer 2026-11-19). Der Weg kommt wie alle pet-Fahrten mit Raumkarte vom Planer; findet er vorn keinen Weg zum Rufziel (oder nur einen Umweg über das 1,5-Fache), versucht er die Gegenrichtung (vorn und hinten klingen gleich)."
+       "default": false,
+       "hilfe": "Suchen vorbei, niemand gefunden: zurück zum Start (wo er aufstand), wie explore am Ende (Nutzer 2026-11-19). Der Weg kommt wie alle pet-Fahrten mit Raumkarte vom Planer; findet er vorn keinen Weg zum Rufziel (oder nur einen Umweg über das 1,5-Fache), versucht er die Gegenrichtung (vorn und hinten klingen gleich). Nutzer 2026-11-22: nach einer Rufsuche ohne Erfolg nicht mehr heim (der Start ist der Platz des Aufstehens, er hing so immer wieder in der Küche), sondern dort bleiben und weiter horchen."
+      },
+      {
+       "key": "call_openings",
+       "typ": "int",
+       "default": 4,
+       "hilfe": "Rufsuche über die Öffnungen der Raumkarte (Nutzer 2026-11-22): Rufe aus einem anderen Raum kommen am Rider mit ~0° an, egal wohin er schaut. Mit Raumkarte und bestätigter Pose fährt er statt geradeaus zur nächsten Öffnung (Grenze zum Unbekannten, wie explore), schaut sich dort um und horcht; call_louder_db lauter als bisher = weiter von dort, höchstens call_openings Öffnungen je Ruf (0 = alte Suche geradeaus). Nur Unit-Tests."
+      },
+      {
+       "key": "call_louder_db",
+       "typ": "float",
+       "default": 3.0,
+       "hilfe": ""
       },
       {
        "key": "call_m",
@@ -2710,6 +2752,66 @@
        "typ": "float",
        "default": 3.0,
        "hilfe": ""
+      },
+      {
+       "key": "follow",
+       "typ": "bool",
+       "default": true,
+       "hilfe": "Folgen (Nutzer 2026-11-22): Vertraut er der Person (trust >= follow_trust) und ist sie follow_start_m weiter weg als behavior.follow_dist_m, fährt er ihr nach wie im Modus follow (Servo, Abstand follow_dist_m), höchstens follow_m je Mal (0 = aus, -1 = ohne Grenze); nie rückwärts. Steht sie follow_settle_s lang und er ist dran (höchstens die Hälfte von follow_start_m über follow_dist_m): vorbei. Verloren (follow_lost_s): gleich suchen wie nach gone_s. Bedingungen wie jede pet-Fahrt. Nur Unit-Tests."
+      },
+      {
+       "key": "follow_trust",
+       "typ": "float",
+       "default": 0.6,
+       "hilfe": ""
+      },
+      {
+       "key": "follow_start_m",
+       "typ": "float",
+       "default": 0.5,
+       "hilfe": ""
+      },
+      {
+       "key": "follow_hold_s",
+       "typ": "float",
+       "default": 1.0,
+       "hilfe": "so lange ununterbrochen weit genug weg, erst dann losfahren"
+      },
+      {
+       "key": "follow_m",
+       "typ": "float",
+       "default": -1.0,
+       "hilfe": ""
+      },
+      {
+       "key": "follow_lost_s",
+       "typ": "float",
+       "default": 1.0,
+       "hilfe": ""
+      },
+      {
+       "key": "follow_settle_s",
+       "typ": "float",
+       "default": 2.0,
+       "hilfe": ""
+      },
+      {
+       "key": "follow_block_s",
+       "typ": "float",
+       "default": 3.0,
+       "hilfe": "so lange will er vor, die Bahn ist aber zu: Folgen vorbei"
+      },
+      {
+       "key": "follow_repeat_s",
+       "typ": "float",
+       "default": 3.0,
+       "hilfe": ""
+      },
+      {
+       "key": "lost_home",
+       "typ": "bool",
+       "default": false,
+       "hilfe": "Suche nach einer verschwundenen Person ohne Erfolg: zum Start (true) oder dort bleiben und horchen (false, Nutzer 2026-11-22). seek_home gilt für die Suche nach dem Horchen."
       },
       {
        "key": "seek_m",

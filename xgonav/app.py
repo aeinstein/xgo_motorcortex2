@@ -182,6 +182,11 @@ class App:
         self.startbild = sbm.StartAbgleich(cfg.startbild, cfg.cpu.render_cpus) \
             if cfg.startbild.enabled and self.gridmap is not None else None
         self._sb_tiefen: list = []          # Graubilder der geraden Schlussfahrt (home)
+        # Startpunkt = Pose beim Aufspringen (sobald er danach still steht) oder beim Absetzen (Nutzer 2026-11-22)
+        self._start_bal: bool | None = None
+        self._start_t = 0.0
+        self._start_due: float | None = None
+        self._start_still: tuple | None = None
         self._sb_t_phase = None
         self.planner = PlannerWorker(self.gridmap, cfg.home, cfg.cpu.freespace_cpus) \
             if self.gridmap is not None else None
@@ -899,6 +904,7 @@ class App:
         im Modus manual mit control_hz regeln (ohne Kamera), sonst Stillstand."""
         self._apply_pending_mode()
         self._pose_watch(time.monotonic())
+        self._start_tick(time.monotonic())
         if self.ruhe:
             self._cmd = Command(0.0, 0.0, None, "Ruhemodus")
             time.sleep(self.cfg.ruhe.tick_s)
@@ -1009,6 +1015,7 @@ class App:
             ds, dyaw = st.ds, st.dyaw
             self._speed_tick(now)
             self._pose_watch(now)
+            self._start_tick(now)
             w = World(t=f.t, dt=dt, W=self.cfg.camera.width, H=self.cfg.camera.height, hfov=self.hfov,
                       ego=ego, tracks=tracks, free=free, balancing=self.robot.state.balancing,
                       fw_mode=self.robot.state.mode,
@@ -1050,6 +1057,7 @@ class App:
                 if self.grid_worker is None:
                     self.gridmap.maybe_save(self.cfg.grid.file, self.cfg.grid.save_every_s)
                 w.pose, w.goal = self.gridmap.pose(), self.gridmap.start
+                w.pose_ok = self.gridmap.pose_ok
                 if self.startbild is not None:
                     w.pose = self._startbild_tick(f, w, pitch_dev, dyaw, dt)
                 if hasattr(self.behavior, "want_plan"):
@@ -1175,11 +1183,13 @@ class App:
             rate = abs(dyaw) / dt if dt > 0 else 0.0
             if (math.hypot(pose[0] - sx, pose[1] - sy) < c.anker_m
                     and abs((pose[2] - sth + math.pi) % (2 * math.pi) - math.pi) < math.radians(c.anker_deg)
-                    and rate < math.radians(2.0) and abs(self.robot.command[0]) < 0.01):
+                    and rate < math.radians(2.0) and abs(self.robot.command[0]) < 0.01
+                    and getattr(self.robot, "levelled", True)):           # Startbild erst nach der Roll-Kalibrierung
                 sb.anker_setzen(self._sb_ansicht(f, pose, pitch_dev), gm.start)
         w.anker = sb.anker is not None and sb.anker_bereit
-        # Schlussfahrt: Graubilder je tiefe_schritt_m (neu bei jedem Beginn der Phase)
-        if b.name == "home" and getattr(b, "phase", "") == "gerade":
+        # Schlussfahrt: Graubilder je tiefe_schritt_m (neu bei jedem Beginn der Phase); pet fährt heim mit Home
+        b = b if b.name == "home" else getattr(b, "home_drive", None)
+        if b is not None and getattr(b, "phase", "") == "gerade":
             if self._sb_t_phase != b.t_phase:
                 self._sb_t_phase, self._sb_tiefen = b.t_phase, []
             last = self._sb_tiefen[-1].pose if self._sb_tiefen else None
@@ -1306,6 +1316,52 @@ class App:
             v = sorted(h)
             self._spread = {"loop_p95": round(v[int(0.95 * (len(v) - 1))], 1), "loop_max": round(v[-1], 1)}
         return self._spread
+
+    START_RUHE_S = 1.0           # nach dem Aufspringen so lange still (< 1 cm, < 1°), dann gilt die Pose als Start
+    START_MAX_S = 20.0           # bis dahin nicht still: kein neuer Start
+
+    def _start_tick(self, now: float) -> None:
+        """Startpunkt der Raumkarte fest an Aufspringen und Absetzen (Nutzer 2026-11-22), in jedem Modus, nie beim
+        Moduswechsel. Aufspringen: Die Pose gilt erst nach der Roll-Kalibrierung (Robot.levelled) und wenn er
+        START_RUHE_S still steht (ausgeschwungen; dort nimmt _startbild_tick den Anker). Absetzen: sofort. Nicht bei gesperrter Karte (Start aus explore, Streife) und nur
+        mit bestätigter Pose. Lief die Schleife länger nicht (Ruhe, Pause), nur neu einlesen."""
+        gm = self.gridmap
+        if gm is None:
+            return
+        bal = self.robot.state.balancing
+        gap = now - self._start_t > 1.0
+        self._start_t = now
+        if self._start_bal is None or gap:
+            self._start_bal, self._start_due = bal, None
+            return
+        if bal != self._start_bal:
+            self._start_bal = bal
+            self._start_due, self._start_still = (now, None) if bal else (None, None)
+            if not bal:
+                self._start_setzen("Absetzen")
+        if self._start_due is None:
+            return
+        if now - self._start_due > self.START_MAX_S:
+            log.info("Startpunkt: nach dem Aufspringen nicht still gestanden, bleibt")
+            self._start_due = None
+            return
+        x, y, th = gm.pose()
+        cmd = self.robot.command
+        ref = self._start_still
+        if (abs(cmd[0]) > 0.01 or abs(cmd[1]) > 0.01 or ref is None or math.hypot(x - ref[1], y - ref[2]) > 0.01
+                or abs((th - ref[3] + math.pi) % (2 * math.pi) - math.pi) > math.radians(1.0)):
+            self._start_still = (now, x, y, th)
+        elif now - ref[0] >= self.START_RUHE_S and getattr(self.robot, "levelled", True):
+            self._start_due = None                    # erst nach der Roll-Kalibrierung (Nivellier-Impuls)
+            self._start_setzen("Aufspringen")
+
+    def _start_setzen(self, why: str) -> None:
+        gm = self.gridmap
+        if gm.locked or not gm.pose_ok:
+            log.info("Startpunkt beim %s nicht gesetzt (%s)", why, "Karte gesperrt" if gm.locked else "Pose unbekannt")
+            return
+        gm.set_start()
+        log.info("Startpunkt = Pose beim %s", why)
 
     def _pet_world(self, w: World, ds: float, now: float) -> None:
         """Was nur der Modus pet braucht; die anderen Modi zahlen dafür nichts."""

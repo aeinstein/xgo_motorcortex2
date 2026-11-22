@@ -1080,11 +1080,17 @@ def test_horchen_dreht_bei_erster_meldung():
 
 
 def test_nach_dem_suchen_zum_start():
-    """Gerufen, dort niemand: Er sucht, dann fährt er zurück zum Start wie explore (seek_home)."""
+    """Gerufen, dort niemand: Er sucht, dann fährt er zurück zum Start (seek_home), aber nur mit Startbild; die Fahrt
+    selbst macht Pet wie home (Phase extern), das Gehirn wartet auf heim_ende."""
     b = brain(seek_m=-1.0, call_m=1.0, seek_home=True)
     _, _, weg, _, _ = hoeren(b, 0.0, 60.0, 60.0, bis=2.5, fahrbar=True)
-    assert b.n_called == 1 and weg > 1.0, weg                    # hin und zurück
-    assert math.hypot(b.x, b.y) < 0.35 and b.task is None, (b.x, b.y, b.task)
+    assert b.n_called == 1 and weg > 0.3 and b.task is None          # ohne Startbild: bleibt dort
+    b = brain(seek_m=-1.0, call_m=1.0, seek_home=True)
+    t, _, _, acts, _ = hoeren(b, 0.0, 40.0, 60.0, bis=2.5, fahrbar=True, anker=True)
+    assert b.task == "heim" and b.phase == "extern" and acts[-1].v == 0.0
+    b.heim_ende("am Start")
+    hoeren(b, t, t + 0.2, None, fahrbar=True, anker=True)
+    assert b.task != "heim"                                          # danach allein: streift wie sonst
 
 
 def test_planer_kein_weg_rufziel_gegenrichtung():
@@ -1179,3 +1185,137 @@ def test_liegend_mitschneiden_und_nachplappern():
     assert [e for e in evs if e[1].startswith("stimme:")] == [("sound", "stimme:01", True)]
     run(b, 3.0, 3.0 + b.cfg.parrot_listen_s + 0.5, balancing=False)
     assert not b.hoert_zu
+
+
+# ---- Folgen (Nutzer 2026-11-22: wie follow, nur mit Vertrauen) -------------
+def _steht(dist=2.0, bis=1e9):
+    return lambda t: [seen("person", dist, t, vs=0)] if t < bis else []
+
+
+def test_folgen_nur_mit_vertrauen():
+    k = Kin(brain(trust_start=0.3))
+    k.run(0.0, 5.0, _steht(2.0), follow=(0.1, 0.0, 2.0))
+    assert k.b.n_follow == 0 and k.moved == 0.0
+    k = Kin(brain(trust_start=0.8))
+    k.run(0.0, 2.5, _steht(2.0), follow=(0.1, 0.05, 2.0))
+    assert k.b.task == "folgen" and k.b.n_follow == 1
+    assert k.acts[-1].v == pytest.approx(0.1) and k.acts[-1].w == pytest.approx(0.05)
+
+
+def test_folgen_nie_rueckwaerts_und_haelt_bei_blockierter_bahn():
+    k = Kin(brain(trust_start=0.8))
+    k.run(0.0, 3.0, _steht(2.0), follow=(-0.1, 0.0, 2.0))
+    assert k.b.task == "folgen" and all(a.v >= 0.0 for a in k.acts)
+    k.run(3.0, 4.0, _steht(2.0), follow=(0.1, 0.05, 2.0), path_blocked=True)
+    assert k.acts[-1].v == 0.0 and k.acts[-1].w == pytest.approx(0.05)
+
+
+def test_folgen_dran_endet_aufgabe():
+    k = Kin(brain(trust_start=0.8))
+    k.run(0.0, 3.0, _steht(2.0), follow=(0.1, 0.0, 2.0))
+    assert k.b.task == "folgen"
+    k.run(3.0, 6.0, _steht(1.3), follow=(0.0, 0.0, 0.9))       # Servo: dran; Fußpunkt sagt 1,3 m
+    assert k.b.task is None
+    k.run(6.0, 9.0, _steht(1.5), follow=(0.0, 0.0, 0.9))       # über der Schwelle, aber < Ende + 0,3: kein Neustart
+    assert k.b.task is None and k.b.n_follow == 1
+    k.run(9.0, 11.0, _steht(2.0), follow=(0.1, 0.0, 2.0))      # geht wirklich weg: folgt wieder
+    assert k.b.task == "folgen" and k.b.n_follow == 2
+
+
+def test_folgen_ohne_budget_oder_boden_faehrt_nicht():
+    for kw, sense in ((dict(follow_m=0.0), {}), ({}, dict(floor_ok=False)), (dict(follow=False), {})):
+        k = Kin(brain(trust_start=0.8, **kw))
+        k.run(0.0, 3.0, _steht(2.0), follow=(0.1, 0.0, 2.0), **sense)
+        assert k.b.n_follow == 0 and k.moved == 0.0
+
+
+def test_folgen_verloren_sucht_erst_dann_schall_und_nicht_heim():
+    """Beim Folgen verloren: zur letzten Stelle fahren und umschauen, ohne auf Schall zu hören; danach horchen,
+    nicht zum Start (lost_home aus, seek_home an)."""
+    b = brain(trust_start=0.8, seek_m=-1.0, seek_home=True)
+    _, _, weg, acts, evs = hoeren(b, 0.0, 45.0, 70.0, who=_steht(2.0, bis=3.0), fahrbar=True, follow=(0.1, 0.0, 2.0))
+    st = [a.status for a in acts]
+    i_such = [i for i, s in enumerate(st) if "suchen/" in s]
+    i_hor = [i for i, s in enumerate(st) if "horchen/" in s]
+    assert b.n_follow == 1 and i_such and i_hor
+    assert any("suchen/fahren" in s for s in st) and any("suchen/schauen" in s for s in st)
+    erste = i_such[0]
+    while erste + 1 in i_such:
+        erste += 1                                             # Ende der ersten Suche (nach dem Verlieren)
+    assert any("suchen/schauen" in st[i] for i in range(i_such[0], erste + 1))
+    assert min(i_hor) > erste                                  # Schall erst nach Ankunft und Umschauen
+    assert not any("heim/" in s for s in st)
+    assert weg > 1.0
+
+
+def test_personensuche_lost_home_faehrt_heim():
+    b = brain(trust_start=0.3, seek_m=-1.0, seek_home=True, lost_home=True)
+    _, _, _, acts, _ = hoeren(b, 0.0, 60.0, None, who=_steht(1.6, bis=3.0), fahrbar=True, anker=True)
+    assert any("heim/extern" in a.status for a in acts)
+
+
+def test_pet_servo_liefert_follow_nur_beim_folgen():
+    cfg = Config.neutral()
+    p = Pet(cfg.behavior, cfg.robot, dataclasses.replace(cfg.pet, follow_m=-1.0, trust_start=0.8), seed=1,
+            hcfg=cfg.home)
+    geo = CamGeometry(640, 480, 91.8)
+    tr = Track("person", 320, 300, 80, 260, 0.9, 0.0)
+    w = World(t=0.0, dt=0.05, W=640, H=480, hfov=1.6, ego=None, tracks=[tr], free=None, balancing=True, yaw=0.0,
+              cmd_v=0.0, geo=geo)
+    assert p._follow(w) is None
+    p.brain.task, p.brain.target = "folgen", seen(id_=tr.id)
+    r = p._follow(w)
+    assert r is not None and len(r) == 3 and p._servo_id == tr.id
+    p.brain.task = None
+    assert p._follow(w) is None and p._servo_id is None
+
+
+# ---- Rufsuche über die Öffnungen (Nutzer 2026-11-22) -----------------------
+def test_rufsuche_ueber_oeffnungen_und_lauter():
+    """Ruf von vorn (~0°, wie aus dem Nebenraum), Karte da: Öffnung anfordern, hinfahren, umschauen und horchen;
+    nach call_openings Öffnungen bleibt er (seek_home aus)."""
+    b = brain(seek_m=-1.0, call_m=-1.0, call_openings=2)
+    t, acts = 0.0, []
+    while t < 20.0 and b.phase != "oeffnung":
+        t, _, _, a, _ = hoeren(b, t, t + 0.5, 0.0, fahrbar=True, karte=True, ab=0.0)
+        acts += a
+    assert b.task == "suchen" and b.phase == "oeffnung" and b._ruf is not None
+    assert all(a.v == 0.0 for a in acts)                       # ohne Öffnung fährt er nicht geradeaus los
+    b.oeffnung((1.0, 0.0))
+    t, weg, t1 = t + 0.0, 0.0, t + 40.0
+    while t < t1 and not (b.phase == "oeffnung" and b._ruf and b._ruf["n"] == 1):
+        t, _, d, _, _ = hoeren(b, t, t + 0.5, 0.0, fahrbar=True, karte=True, db=20.0, ab=0.0)
+        weg += d
+    assert weg > 0.5 and b._ruf["n"] == 1 and b.phase == "oeffnung"
+    assert b._ruf["lauter"]                                    # 20 dB statt 14 dB beim Ruf
+    b.oeffnung(None)                                           # keine Öffnung mehr: bleibt dort
+    hoeren(b, t, t + 0.2, None, fahrbar=True, karte=True)
+    assert b.task not in ("suchen", "heim") and b.n_oeffnungen == 1   # bleibt dort (allein: streift wie sonst)
+
+
+def test_rufsuche_ohne_karte_wie_bisher():
+    b = brain(seek_m=-1.0, call_m=1.0)
+    hoeren(b, 0.0, 12.0, 0.0, fahrbar=True)
+    assert b._ruf is None and b.n_called >= 1
+
+
+def test_pet_oeffnung_vom_planer_ans_gehirn():
+    from xgonav.frontier import ExplorePlan
+    cfg = Config.neutral()
+    p = Pet(cfg.behavior, cfg.robot, cfg.pet, seed=1, hcfg=cfg.home, ecfg=cfg.explore)
+    w = World(t=1.0, dt=0.05, W=640, H=480, hfov=1.6, ego=None, tracks=[], free=None, balancing=True, yaw=0.0,
+              cmd_v=0.0, pose=(0.0, 0.0, 0.0), pose_ok=True)
+    b = p.brain
+    b.task, b.phase, b._ruf = "suchen", "oeffnung", {"pegel": 10, "best": 10, "n": 0, "dbs": [], "lauter": False}
+    p._w = w
+    assert p.want_plan(1.0) and not p.want_plan(1.1)           # ein Auftrag je Öffnung
+    class Pl:
+        def request_fn(self, fn, *a, **k):
+            self.avoid = a[5]
+            return 7
+    pl = Pl()
+    p.request_plan(pl, None, w, None)
+    p.set_path(ExplorePlan(path=[(0.0, 0.0), (1.0, 0.5)], goal=(1.0, 0.5), frontier=(1.2, 0.6)))
+    assert b._oeff_result is not None and p.f.path and p._oeff_besucht == [(1.2, 0.6)]
+    g = b._oeff_result[0]
+    assert math.hypot(g[0] - b.x - 1.0, g[1] - b.y - 0.5) < 1e-6

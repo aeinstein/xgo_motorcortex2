@@ -39,7 +39,8 @@ Detections (YOLO) are only targets, never obstacles: obstacles come from FloorNe
 |---|---|
 | Target | class from the dropdown (`GET /detector`); detector runs only in follow, approach, pet |
 | Distance | from the foot point of the box and the camera geometry |
-| Lost target | searches by turning towards the side it was last seen |
+| Lost target, with room map and confirmed pose | planner drives to the last known position (pose + distance + bearing at last sighting), there turns 360° (`lost_look_deg`), then waits; target back in view ends the search. Simulator only |
+| Lost target, otherwise | turns towards the side it was last seen, waits after `search_timeout_s` |
 
 ## Explore → Home → Patrol
 
@@ -59,7 +60,8 @@ Explore (map the room) → map locked → draw route + no-go zones → Patrol (d
 | Situation | Reaction |
 |---|---|
 | person far / near / very near | notices, turns towards, cute, shy |
-| person gone | searches the last position, sad if not found |
+| trusted person walks away (`follow_trust`) | follows like `follow` (same servo), stops when close |
+| person gone | searches the last position (planner), looks around, then listens; sound only counts after that |
 | nobody for 30 s | roams (looks around, short legs) |
 | sound from the side | turns towards it and listens; calling makes it come |
 | dog close | whimpers, ducks; optional faint (sets down, stands up again by itself) |

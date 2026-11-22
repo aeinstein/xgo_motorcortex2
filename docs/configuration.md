@@ -172,7 +172,10 @@ Floor boundary from FloorNet only (`xgonav/freespace.py`, `docs/floornet.md`). T
 | `cruise_v` / `backup_v` | 0.15 / 0.10 | 0.15 / |
 | `search_w` | 0.07 (sim: 0.12) | |
 | `turn_w` (explore: turn away) | 0.21 (sim: 0.18) | |
-| `search_timeout_s` | 10.0 (sim: 20.0) | |
+| `search_timeout_s` | 10.0 (sim: 20.0) | | search without room map (turning in place), then wait |
+| `lost_seek` | true | | follow, target lost: drive to its last known position via the planner, then look around; needs room map + confirmed pose |
+| `lost_seek_max_m` / `lost_arrive_m` | 4.0 / 0.25 | | cap of the distance used for the last position / arrived there |
+| `lost_look_deg` / `lost_look_w` | 360 / 0.10 | | look around at the last position: angle, turn rate |
 | `blocked_free` / `slow_free` | 0.22 / 0.55 | |
 | `ttc_avoid_s` / `ttc_stop_s` | 1.2 / 0.8 | |
 | `push_v` / `push_s` / `push_n` / `push_free_m` | 0.45 / 0.6 / 2 / 0.4 | push: forward commanded, < 2 cm progress for 2.5 s (1 s after a push) and FloorNet ≥ `push_free_m` free ahead → drive `push_v` for `push_s`; at most `push_n` times until 0.3 m progress, then back up as before. Path following, `home`, `patrol`, and the reactive escape of `explore`. 0 = off. Not driven (carpet groove 2026-11-17) |
@@ -201,7 +204,11 @@ All keys with comments: `PetCfg` in `xgonav/config.py`.
 | `hear_startle_db`, `hear_quiet_s` | 20, 8 | sudden loud sound after silence |
 | `call_events`, `call_m`, `call_repeat_s` | 3, −1 = no limit, 3 m per call (sim: 0), 45 | calling: drive toward a voice from the front, never more than `seek_m` |
 | `hear_seek` | true | heard, nobody in view: search instead of giving up (direction known: drive there like calling; unknown: look around once, listening `hear_listen_s` per view); lockout `call_repeat_s` |
-| `seek_home` | true | search over, nobody found: back to the start via the planner (room map), like explore; calling goals with a wall ahead go the other way |
+| `seek_home` | false (2026-11-22) | search after hearing over, nobody found: back to the map start like `home` (start image check), only with an anchor there; false: stays and listens |
+| `call_openings`, `call_louder_db` | 4, 3.0 | call search via the openings of the room map (needs map + confirmed pose); 0 = old straight search (calling goals with a wall ahead go the other way) |
+| `lost_home` | false | the same after the search for a vanished person; false: stays there and listens |
+| `follow`, `follow_trust`, `follow_start_m`, `follow_hold_s`, `follow_m` | true, 0.6, 0.5, 1.0, −1 = no limit (sim: 0) | follow a trusted person like mode `follow` (servo, `behavior.follow_dist_m`), start when `follow_start_m` farther than that for `follow_hold_s` |
+| `follow_settle_s`, `follow_block_s`, `follow_lost_s`, `follow_repeat_s` | 2, 3, 1, 3 | end when close and standing / arc blocked; lost → search at once; lockout before a new start |
 | `come_events`, `come_m`, `come_stop_m`, `come_repeat_s` | 1, −1 = no limit (sim: 0), 0.8, 8 | come here: drive toward a visible person who speaks |
 | `talk`, `talk_min_events`, `talk_pause_s`, `talk_repeat_s` | true, 2, 1.6, 7 | talking back |
 | `parrot`, `parrot_p`, `parrot_repeat_s`, `parrot_delay_s`, `parrot_listen_s` | true, 0.5, 30, 0.2, 3 | voice samples: play instead of babbling, min. gap, delay before parroting a confirmed/recognized sample, capture while person gone ≤ s ([audio.md](audio.md#voice-samples-xgonavstimmepy-mode-pet)) |

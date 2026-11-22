@@ -1468,8 +1468,12 @@
 <td>from the foot point of the box and the camera geometry</td>
 </tr>
 <tr>
-<td>Lost target</td>
-<td>searches by turning towards the side it was last seen</td>
+<td>Lost target, with room map and confirmed pose</td>
+<td>planner drives to the last known position (pose + distance + bearing at last sighting), there turns 360° (<code>lost_look_deg</code>), then waits; target back in view ends the search. Simulator only</td>
+</tr>
+<tr>
+<td>Lost target, otherwise</td>
+<td>turns towards the side it was last seen, waits after <code>search_timeout_s</code></td>
 </tr>
 </tbody>
 </table>
@@ -1516,8 +1520,12 @@
 <td>notices, turns towards, cute, shy</td>
 </tr>
 <tr>
+<td>trusted person walks away (<code>follow_trust</code>)</td>
+<td>follows like <code>follow</code> (same servo), stops when close</td>
+</tr>
+<tr>
 <td>person gone</td>
-<td>searches the last position, sad if not found</td>
+<td>searches the last position (planner), looks around, then listens; sound only counts after that</td>
 </tr>
 <tr>
 <td>nobody for 30 s</td>

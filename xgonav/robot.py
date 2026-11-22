@@ -397,6 +397,14 @@ class Robot:
                 if not self._action_tick(now):
                     self._send(now)
 
+    @property
+    def levelled(self) -> bool:
+        """Balanciert und die Roll-Kalibrierung nach dem Aufstehen (Nivellier-Impuls) ist vorbei bzw. nicht vorgesehen;
+        kein Impuls läuft oder steht an. Startpunkt und Startbild warten darauf (Nutzer 2026-11-22)."""
+        if not self.state.balancing or self._level_on_t is not None or self._level_request:
+            return False
+        return not (self.cfg.level_after_standup and self._seen_down and not self._standup_levelled)
+
     def request_level(self) -> bool:
         """Neu ausrichten (Knopf im Web); False, wenn er nicht balanciert."""
         if not self.state.balancing:

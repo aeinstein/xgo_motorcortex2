@@ -1872,7 +1872,11 @@ Status JSON <code>grid</code>: <code>pose [x m, y m, yaw °]</code>, <code>start
 <tbody>
 <tr>
 <td>Anchor</td>
-<td>grey image + SIFT features while the Rider stands at the start point (≤ 3 cm, ≤ 5°, not turning); once per start point, dropped when the start is set anew ("Start hier")</td>
+<td>grey image + SIFT features while the Rider stands at the start point (≤ 3 cm, ≤ 5°, not turning); once per start point, only after the roll calibration after stand-up (<code>Robot.levelled</code>); dropped when the start is set anew</td>
+</tr>
+<tr>
+<td>Start point</td>
+<td>set on every stand-up (once standing still 1 s after the roll calibration) and set-down, in every mode, never on a mode change (<code>App._start_tick</code>, 2026-11-22); not with a locked map or unknown pose; "Start hier" in the web as before</td>
 </tr>
 <tr>
 <td>Ending of <code>home</code></td>

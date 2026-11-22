@@ -18,6 +18,38 @@ def test_follow_person_with_shake():
 
 
 @pytest.mark.slow
+def test_follow_tuer_sucht_an_letzter_stelle():
+    # Person geht durch die Tür und biegt hinter die Wand ab: verloren, zur letzten Stelle fahren, wiederfinden
+    r = run("follow", 70.0, scene="zwei", wheels=True, dyn=True)
+    assert r["collisions"] == 0
+    assert r["suche"][0] >= 1 and r["suche"][1] >= 1
+    assert r["status"].startswith("verfolge") and r["dist_max_late"] < 3.0
+
+
+@pytest.mark.slow
+def test_pet_folgt_mit_vertrauen_und_sucht():
+    # wie follow durch die Tür; mit Vertrauen folgt pet, verliert sie und findet sie an der letzten Stelle wieder
+    over = {"pet.follow_m": -1.0, "pet.trust_start": 0.8, "pet.seek_m": -1.0, "pet.drive_v": 0.12, "pet.roam_m": 0.0}
+    r = run("pet", 90.0, scene="zwei", wheels=True, dyn=True, overrides=over)
+    assert r["collisions"] == 0 and r["pet"]["folgen"] >= 1
+    assert r["pet"]["suchen"] >= 1 and r["pet"]["gefunden"] >= 1 and r["dist_max_late"] < 3.0
+
+
+@pytest.mark.slow
+def test_pet_heim_nur_mit_startbild():
+    # Sie verschwindet: Suche ohne Erfolg; mit lost_home fährt er wie home zum Start und misst am Startbild
+    over = {"startbild.enabled": True, "pet.follow_m": -1.0, "pet.trust_start": 0.8, "pet.seek_m": -1.0,
+            "pet.drive_v": 0.12, "pet.roam_m": 0.0, "pet.lost_home": True, "pet.seek_home": True}
+    r = run("pet", 150.0, scene="zwei", wheels=True, dyn=True, speed=0.8, overrides=over)
+    assert r["collisions"] == 0 and r["pet"]["folgen"] >= 1 and r["pet"]["suchen"] >= 1
+    assert r["startbild"]["ok"] + r["startbild"]["verworfen"] >= 1       # am Start gemessen
+    assert r["start_wahr_m"] < 0.3
+    over["startbild.enabled"] = False                                      # ohne Startbild: bleibt dort
+    r = run("pet", 150.0, scene="zwei", wheels=True, dyn=True, speed=0.8, overrides=over)
+    assert r["start_wahr_m"] > 1.0
+
+
+@pytest.mark.slow
 def test_pet_ruck_im_budget_und_keine_fehlalarme():
     r = run("pet", 8.0, imu=True, wheels=True, dyn=True, animal="person", speed=2.5,
             overrides={"robot.vx_limit": 1.8, "pet.retreat_m": 0.12})

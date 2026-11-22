@@ -66,7 +66,13 @@ def run(mode="follow", secs=25.0, video=None, shake=1.0, quiet=True, imu=False, 
         cfg.grid.threaded = False
     robot = SimRobot(cfg.robot)
     person = Person([(3.2, 1.3), (4.8, 4.6), (1.4, 5.0), (1.2, 3.0)], speed=0.3) if mode not in ("explore", "home", "patrol") else None
-    if mode == "pet":
+    if mode in ("follow", "pet") and scene in ("zwei", "spalt"):
+        # geht durch die Tür ins andere Zimmer und bleibt dort hinter der Wand stehen: Der Rider verliert sie und
+        # muss zur letzten Stelle fahren und sich umschauen ([behavior] lost_seek)
+        # speed (nur pet): so schnell, und am Ende verschwindet sie (Suche ohne Erfolg)
+        person = Person([(2.2, 1.9), (2.6, 3.0), (3.5, 3.0), (3.5, 5.3)], speed=speed or 0.6, loop=False,
+                        vanish=bool(speed))
+    if mode == "pet" and scene == "raum":
         # kommt geradewegs auf den Rider zu (Start bei x=1, y=1,2, Blick 0,2 rad), wartet 0,3 m davor kurz und
         # geht seitlich aus dem Bild: Danach ist die Luft rein
         h, b = {"person": (1.72, 0.50), "dog": (0.5, 0.5), "cat": (0.3, 0.35)}[animal]
@@ -211,6 +217,8 @@ def run(mode="follow", secs=25.0, video=None, shake=1.0, quiet=True, imu=False, 
         out.update(home_weg_m=round(math.hypot(L[k]["x"] - x0, L[k]["y"] - y0), 2),
                    home_end_m=round(math.hypot(world.x - x0, world.y - y0), 2),
                    home_status=app._cmd.status)
+    if mode == "follow" and app.behavior.name == "follow":
+        out.update(suche=(app.behavior.n_seek, app.behavior.n_found))
     if mode == "approach":
         out.update(ziel_ende_m=round(math.hypot(person.x - world.x, person.y - world.y), 2),
                    angekommen=getattr(app.behavior, "done", False))

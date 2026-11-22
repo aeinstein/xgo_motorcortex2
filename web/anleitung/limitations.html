@@ -1450,7 +1450,7 @@
 </tr>
 <tr>
 <td><code>follow</code></td>
-<td>tested 2026-11-02 (runs 3–8, <code>max_v</code> 0.10–0.15); works, path check blocked in some runs</td>
+<td>tested 2026-11-02 (runs 3–8, <code>max_v</code> 0.10–0.15); works, path check blocked in some runs. Search at the last known position (planner, look around, since 2026-11-22): simulator only (<code>--scene zwei</code>)</td>
 </tr>
 <tr>
 <td><code>explore</code></td>
@@ -1466,7 +1466,7 @@
 </tr>
 <tr>
 <td><code>pet</code></td>
-<td>simulator and unit tests only, <strong>not run on the Rider</strong>. Approach thresholds not tuned on real footage; cats and dogs from 12.8 cm camera height untested. A person standing &lt; 1.9 m has no head in the image, so "kneeling" is inferred from the box top. Reverse is blind. Auto stand-up relies on IMU, wheels, <code>/proc/XGORider/state</code> and an empty image; the lying camera view is limited, floor or steps in front are not checked. A direct <code>echo 254 &gt; action</code> without <code>POST /stop</code> is not noticed. Search/roam (<code>seek_m</code>, <code>roam_m</code>) (RiderPi: no distance limit) drive straight toward a point without path planning and only stop at obstacles; the last position comes from the noisy foot point; steps are not detected</td>
+<td>simulator and unit tests only, <strong>not run on the Rider</strong>. Approach thresholds not tuned on real footage; cats and dogs from 12.8 cm camera height untested. A person standing &lt; 1.9 m has no head in the image, so "kneeling" is inferred from the box top. Reverse is blind. Auto stand-up relies on IMU, wheels, <code>/proc/XGORider/state</code> and an empty image; the lying camera view is limited, floor or steps in front are not checked. A direct <code>echo 254 &gt; action</code> without <code>POST /stop</code> is not noticed. Search/roam (<code>seek_m</code>, <code>roam_m</code>) (RiderPi: no distance limit) drive via the planner with a room map, otherwise straight, and stop at obstacles; the last position comes from the noisy foot point (±0.3 m standing). Following a trusted person and the drive home with start image (2026-11-22): simulator only; call search via the openings of the map (2026-11-22): unit tests only; the start image measurement gave no correction in the simulator runs without <code>--rider</code> (pet and home: too few matches/depth)</td>
 </tr>
 <tr>
 <td>Fear of the dark (<code>dunkel.py</code>)</td>

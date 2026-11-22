@@ -47,12 +47,17 @@ class Person:
     height_m: float = 1.72
     width_m: float = 0.50
     loop: bool = True         # False: bleibt am letzten Punkt
+    vanish: bool = False      # mit loop False: am letzten Punkt verschwinden (aus dem Raum, nicht mehr zu sehen)
 
     def __post_init__(self):
         self.x, self.y = self.path[0]
 
     def step(self, t: float, dt: float) -> None:
-        if t < self.pause_until or (not self.loop and self.seg >= len(self.path) - 1):
+        if not self.loop and self.seg >= len(self.path) - 1:
+            if self.vanish:
+                self.x, self.y = -50.0, -50.0
+            return
+        if t < self.pause_until:
             return
         tx, ty = self.path[(self.seg + 1) % len(self.path)]
         dx, dy = tx - self.x, ty - self.y
