@@ -122,6 +122,11 @@ class Sense:
     karte: bool = False
     # Abstand zum Startpunkt der Raumkarte (m; gesetzt beim Aufspringen/Absetzen), None = keine Karte
     heim_m: float | None = None
+    # Rufsuche: Pet fährt den Weg mit dem Wegfolger von home (Engstellen, Anschub, Neuplanen); das Gehirn prüft nur
+    # Ankunft, Budget, Zeit und ob Pet festgefahren meldet (nav_stuck). Geradeaus-Bahnprüfung und Stillstand zählen
+    # dann nicht: Am Rider verwarf das 2026-11-22 den Weg durch die Tür nach 3 s.
+    nav_extern: bool = False
+    nav_stuck: bool = False
 
 
 @dataclass
@@ -196,6 +201,7 @@ class PetBrain:
         self._peek_t = 0.0                   # Augen gehen seit dann auf
         self._clear_t: float | None = None   # niemand im Bild seit dann
         self._next_blink = 0.0
+        self._fix: tuple | None = None       # (Ziel-Id, seit) solange der Blick auf demselben Ziel ruht
         self._blink_t = -1e9
         self._gaze_goal = GAZE_CENTER         # dorthin gleitet der Blick, eine Stufe je Regelschritt
         self._next_glance = 0.0
@@ -230,6 +236,7 @@ class PetBrain:
         self._follow_lost_t: float | None = None
         self._follow_near_t: float | None = None
         self._seek_person = False            # Suche gilt einer verschwundenen Person (nicht dem Horchen)
+        self._seek_gerufen = False           # Suche nach einem Ruf/Geräusch: gefunden -> hinfahren
         self._heim_result: str | None = None # Heimfahrt (Pet fährt sie wie home): Ergebnis, sobald fertig
         # Rufsuche (Nutzer 2026-11-22): Rufe aus einem anderen Raum kommen am Rider mit ~0° an, egal wohin er schaut
         # (Hall, Mikros 4 mm auseinander). Statt der Richtung: Öffnungen der Raumkarte anfahren, dort umschauen und
@@ -502,15 +509,7 @@ class PetBrain:
                 and tg.dist is not None and tg.dist > c.come_stop_m + 0.3 and self._talk_n >= c.come_events
                 and t >= self._blind_until and self._may_drive(s, self.come_m)
                 and self._ready("kommen", t, c.come_repeat_s)):
-            log.info("pet: komme (Person in %.1f m spricht)", tg.dist)
-            self.n_come += 1
-            self.task = "kommen"
-            self._task_left = self.come_m
-            self._looks, self._fails, self._come_lost_t = [], 0, None
-            self._goal = (self.x, self.y)
-            self._come_goal(tg)
-            self._react(t, "like", "traellern")
-            self._phase_set("fahren", t)
+            self._come_start(s, tg, "Person in %.1f m spricht" % tg.dist)
         if self._ev is None or tg is not None or self.task in ("suchen", "horchen", "kommen", "folgen", "heim") or not s.balancing:
             return
         h, ok = self._ev
@@ -640,6 +639,18 @@ class PetBrain:
         self._task_start("suchen", s, self._seek_goal())
         self._seek_person = True
 
+    def _come_start(self, s: Sense, tg: Seen, why: str) -> None:
+        log.info("pet: komme (%s)", why)
+        self.n_come += 1
+        self.task = "kommen"
+        self._task_left = self.come_m
+        self._looks, self._fails, self._come_lost_t = [], 0, None
+        self._goal = (self.x, self.y)
+        self._come_goal(tg)
+        self._react(s.t, "like", "traellern")
+        self._phase_set("fahren", s.t)
+        self._drive_t_max = s.t + 30.0                       # das Ziel wandert mit ihr; Hänger fängt STALL_S ab
+
     def _come_goal(self, tg: Seen) -> bool:
         """Ziel come_stop_m vor der Person. False: schon nah genug."""
         d = min(tg.dist, POS_CAP_M) if tg.dist > 0 else CLOSE_M
@@ -766,6 +777,7 @@ class PetBrain:
         self._task_reset(t)
         self._task_start("suchen", s)
         self._seek_ear = True
+        self._seek_gerufen = True
 
     def _call_ok(self, t: float) -> bool:
         """Rufen erlaubt? Nach dem Umschauen-und-Lauschen einmal ohne Sperre (die Sperre lief schon an)."""
@@ -793,6 +805,7 @@ class PetBrain:
         log.info("pet: gerufen, suche vorn (Budget %.1f m)", budget)
         self._react(s.t, "like", "horch")
         self._task_start("suchen", s, goal)
+        self._seek_gerufen = True
         self._task_left = min(self._task_left, budget)
         if goal is not None:
             self._goal_flip = (self.x, self.y)        # vorn und hinten klingen gleich: findet der Planer vorn
@@ -812,9 +825,9 @@ class PetBrain:
         self._oeff_result = None
         self._phase_set("oeffnung", t)
 
-    def oeffnung(self, goal: tuple | None) -> None:
-        """Pet: nächste Öffnung (Ziel im Gehirn-KS) oder None = keine mehr erreichbar."""
-        self._oeff_result = (goal,)
+    def oeffnung(self, goal: tuple | None, weg_m: float | None = None) -> None:
+        """Pet: nächste Öffnung (Ziel im Gehirn-KS) oder None = keine mehr erreichbar; weg_m: Länge des Wegs."""
+        self._oeff_result = (goal, weg_m)
 
     def _ruf_oeffnung(self, s: Sense, act: Act) -> None:
         """Wartet auf die Öffnung vom Planer, dann hinfahren."""
@@ -823,7 +836,7 @@ class PetBrain:
             if t - self._phase_t > 8.0:
                 self._task_end(s, "Planer antwortet nicht")
             return
-        goal, self._oeff_result = self._oeff_result[0], None
+        (goal, weg_m), self._oeff_result = self._oeff_result, None
         if goal is None:
             self._task_end(s, "keine Öffnung mehr")
             return
@@ -835,8 +848,12 @@ class PetBrain:
         self._ruf["dbs"] = []
         self._goal = goal
         self._looks = []
-        log.info("pet: Rufsuche: Öffnung %d, %.1f m", self._ruf["n"], math.hypot(goal[0] - self.x, goal[1] - self.y))
+        luft = math.hypot(goal[0] - self.x, goal[1] - self.y)
+        log.info("pet: Rufsuche: Öffnung %d, %.1f m (Weg %.1f m)", self._ruf["n"], luft, weg_m or luft)
         self._phase_set("fahren", t)
+        if weg_m is not None:                                # Zeit nach dem Weg, nicht nach der Luftlinie
+            v = max(self.cfg.drive_v * self.rcfg.vx_limit, 1e-3)
+            self._drive_t_max = max(self._drive_t_max, t + 8.0 + 2.5 * weg_m / v)
 
     def _ruf_umgeschaut(self, s: Sense) -> None:
         """An der Öffnung rundum geschaut und gehorcht: lauter -> von hier weiter, sonst die nächste Öffnung."""
@@ -1181,6 +1198,7 @@ class PetBrain:
     def _task_reset(self, t: float) -> None:
         self._seek_ear = self._ear_again = False
         self._seek_person = False
+        self._seek_gerufen = False
         self._heim_result = None
         self._ruf = self._oeff_result = None
         self._goal_flip = None
@@ -1202,7 +1220,14 @@ class PetBrain:
         else:
             self._react(t, "surprised", "gefunden")
         log.info("pet: %s: gefunden", self.task)
+        gerufen = self.task == "suchen" and (self._ruf is not None or self._seek_gerufen)
         self._task_reset(t)
+        # Er wurde gerufen und hat jemanden gefunden: hinfahren wie bei „Komm her“, ohne zweiten Zuruf und ohne
+        # Sperre (am Rider 2026-11-22 fand er den Rufer, blieb stehen und suchte, sobald er aus dem Bild war)
+        tg = self.target
+        if (gerufen and tg is not None and tg.cls == "person" and tg.dist is not None
+                and tg.dist > self.cfg.come_stop_m + 0.3 and self._may_drive(s, self.come_m)):
+            self._come_start(s, tg, "gerufen und gefunden, %.1f m" % tg.dist)
 
     def _task_end(self, s: Sense, why: str) -> None:
         log.info("pet: %s endet: %s", self.task, why)
@@ -1270,9 +1295,18 @@ class PetBrain:
             log.info("pet: %s: dort kein Weg, versuche die Gegenrichtung", self.task)
             self._phase_set("fahren", t)
             return
+        if s.nav_extern and self.task == "suchen" and self._ruf is not None:
+            why = ("angekommen" if rest <= stop else "festgefahren" if s.nav_stuck else
+                   self._no_drive(s, self._task_left) or ("Zeit" if t > self._drive_t_max else None))
+            if why is not None:
+                log.info("pet: %s: halte (%s, Rest %.2f m)", self.task, why, rest)
+                if why != "angekommen":
+                    self._fails += 1
+                self._phase_set("schauen", t)
+            return                                           # gefahren wird in Pet
         if rest <= stop:
             why = "angekommen"
-        elif s.nav_fail:
+        elif s.nav_fail and self.task != "kommen":           # kommen: sie ist zu sehen, dann geradeaus
             why = "kein Weg"
         elif s.nav_pending:
             self._stall = None                               # Weg wird gerechnet: stehen, das zählt nicht
@@ -1330,7 +1364,8 @@ class PetBrain:
             self._hear_start(s, h.bearing)
             self._ear_again = True
             return
-        if t - self._phase_t < (max(c.look_pause_s, c.hear_listen_s) if self._seek_ear else c.look_pause_s):
+        if t - self._phase_t < (max(c.look_pause_s, c.hear_listen_s) if self._seek_ear or self._ruf is not None
+                                else c.look_pause_s):
             return
         self._looks.append((self.yaw, s.free_center))
         if len(self._looks) < max(c.look_steps, 1):
@@ -1606,6 +1641,14 @@ class PetBrain:
         self._gaze_goal = goal
         gx = self.gaze[0]
         gx += (goal > gx) - (goal < gx)                      # gleitet, springt nicht
+        # Fixieren: dieselbe Person, Blick angekommen (±1 Stufe), seit eyes_fix_s -> Schlitze
+        tg = self.target
+        if tg is not None and tg.cls == "person" and abs(gx - goal) <= 1:
+            if self._fix is None or self._fix[0] != tg.id:
+                self._fix = (tg.id, t)
+        else:
+            self._fix = None
+        fix = (self.cfg.eyes_fix_s > 0 and self._fix is not None and t - self._fix[1] >= self.cfg.eyes_fix_s)
         if t >= self._next_blink:
             self._blink_t = t
             self._next_blink = t + BLINK_S + self.rng.uniform(2.0, 6.0)
@@ -1619,8 +1662,9 @@ class PetBrain:
         elif self._dozing or self.state == "liegt":
             lid = LID_HALF + int(round((LID_SHUT - LID_HALF) * closing))
         else:
-            lid = LID_OPEN + int(round((LID_SHUT - LID_OPEN) * closing))
-        self.gaze = (int(gx), lid)
+            base = clamp(self.cfg.eyes_fix_lid, LID_OPEN, LID_SHUT) if fix else LID_OPEN
+            lid = base + int(round((LID_SHUT - base) * closing))
+        self.gaze = (int(gx), int(lid))
 
     def info(self) -> dict:
         return {"zustand": self.state, "zone": self.zone, "vertrauen": round(self.trust, 2),
@@ -1648,6 +1692,7 @@ class Pet(Behavior):
         self._oeff_besucht: list = []
         self._oeff_req = False               # laufender Auftrag ist eine Öffnungssuche
         self._oeff_asked = False
+        self._oeff_stucks = 0                # festgefahren auf dem Weg zur Öffnung (PathFollower.stuck)
         self._w: World | None = None
         self.home_drive: Home | None = None  # Heimfahrt wie Modus home (Startbild-Abgleich), solange sie läuft
         self.pcfg = pcfg or PetCfg()
@@ -1657,8 +1702,8 @@ class Pet(Behavior):
         self.want_idle = False
         self.gaze = self.brain.gaze          # lcd.py liest das aus seinem Thread (Tupel, atomar ersetzt)
         # Folgen: derselbe Servo wie im Modus follow (Abstand behavior.follow_dist_m)
-        self.servo = Servo(cfg, rcfg, cfg.follow_dist_m)
-        self.brain.follow_want = cfg.follow_dist_m
+        self.servo = Servo(cfg, rcfg, self.pcfg.follow_dist_m)
+        self.brain.follow_want = self.pcfg.follow_dist_m
         self._servo_id: int | None = None
         # Planer (App._plan_tick, nur mit Raumkarte): Fahrziele des Gehirns in Kartenkoordinaten
         self.h = hcfg or HomeCfg()
@@ -1721,6 +1766,8 @@ class Pet(Behavior):
             return True
         if self.pending or self._nav_goal is None or self._nav_fail:
             return False
+        if self.f.stuck and b._ruf is not None:
+            self._oeff_stucks += 1                       # Rufsuche: nach zwei Neuplanungen gilt er als festgefahren
         if self.f.path is None or t - self._t_plan > self.h.replan_s or self.f.stuck:
             self.pending, self._t_plan, self.f.stuck = True, t, False
             return True
@@ -1835,7 +1882,8 @@ class Pet(Behavior):
         heim = b.task == "heim" and self._home_g is not None
         g = self._home_g if heim else self._to_grid(w, b._goal)
         if self._nav_goal is None or math.hypot(g[0] - self._nav_goal[0], g[1] - self._nav_goal[1]) > 0.10:
-            self._nav_goal, self._nav_fail, self._nav_clear = g, False, heim
+            # Ziel freiräumen: Start (driftet) und Kommen (dort steht die Person, die Karte sieht oft Belegtes)
+            self._nav_goal, self._nav_fail, self._nav_clear = g, False, heim or b.task == "kommen"
             self._t_plan = -1e9
             self.f.clear()
         if self.f.path:
@@ -1843,6 +1891,11 @@ class Pet(Behavior):
         if self._nav_fail:
             return {"nav_fail": True}
         return {"nav_pending": True}
+
+    def _ruf_faehrt(self, w: World) -> bool:
+        b = self.brain
+        return (b.task == "suchen" and b._ruf is not None and b.phase == "fahren" and bool(self.f.path)
+                and w.pose is not None)
 
     def _oeff_ergebnis(self, res) -> None:
         """Antwort der Öffnungssuche (frontier.ExplorePlan oder None) ans Gehirn; Weg gleich übernehmen."""
@@ -1853,8 +1906,9 @@ class Pet(Behavior):
             b.oeffnung(None)
             return
         self._oeff_besucht.append(res.frontier)
+        self._oeff_stucks = 0
         g = tuple(res.goal)
-        b.oeffnung(self._to_brain(w, g))
+        b.oeffnung(self._to_brain(w, g), path_length(res.path))
         # _nav() findet im nächsten Schritt dasselbe Ziel und behält den Weg
         self._nav_goal, self._nav_req, self._nav_fail, self._nav_clear = g, g, False, False
         self._ray_for = g
@@ -1910,9 +1964,13 @@ class Pet(Behavior):
                   anker=w.anker and w.pose is not None and w.goal is not None,
                   karte=w.pose is not None and w.pose_ok,
                   heim_m=math.hypot(w.goal[0] - w.pose[0], w.goal[1] - w.pose[1])
-                  if w.pose is not None and w.goal is not None else None, **self._nav(w))
+                  if w.pose is not None and w.goal is not None else None,
+                  nav_extern=self._ruf_faehrt(w), nav_stuck=self._oeff_stucks >= 2, **self._nav(w))
         act = b.update(s)
         heim = self._heim(w)
+        if heim is None and self._ruf_faehrt(w):
+            # Rufsuche: den Weg wie home abfahren (Engstellen, Lücke, Anschub); Bahnprüfung der App bremst ohnehin
+            heim = self.f.drive(w, "Rufsuche", slow_end=True)
         if b.want_set_down:
             b.want_set_down, self.want_set_down = False, True
         if b.want_stand_up:

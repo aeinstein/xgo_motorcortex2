@@ -2088,6 +2088,12 @@
        "hilfe": "normiert, wie behavior.cruise_v"
       },
       {
+       "key": "start_v",
+       "typ": "float",
+       "default": 0.225,
+       "hilfe": "„Zum Start“ (home, Heimfahrt in pet): +50 % (Nutzer 2026-11-22); Schlussfahrt startbild.gerade_v"
+      },
+      {
        "key": "kp_turn",
        "typ": "float",
        "default": 1.5,
@@ -2502,6 +2508,18 @@
        "hilfe": "Augen öffnen, dabei schaut er sich um"
       },
       {
+       "key": "eyes_fix_s",
+       "typ": "float",
+       "default": 1.5,
+       "hilfe": "Fixieren (Nutzer 2026-11-22): dieselbe Person so lange ununterbrochen im Blick und der Blick angekommen -> Augen zu Schlitzen (Lidstellung im Atlas, 0 offen .. 4 zu); 0 s = aus"
+      },
+      {
+       "key": "eyes_fix_lid",
+       "typ": "int",
+       "default": 2,
+       "hilfe": ""
+      },
+      {
        "key": "clear_s",
        "typ": "float",
        "default": 2.5,
@@ -2690,8 +2708,8 @@
       {
        "key": "come_stop_m",
        "typ": "float",
-       "default": 0.8,
-       "hilfe": ""
+       "default": 0.4,
+       "hilfe": "Nutzer 2026-11-22: mit 0,8 musste er sich fast auf den Boden legen"
       },
       {
        "key": "come_repeat_s",
@@ -2764,6 +2782,12 @@
        "typ": "float",
        "default": 0.6,
        "hilfe": ""
+      },
+      {
+       "key": "follow_dist_m",
+       "typ": "float",
+       "default": 0.5,
+       "hilfe": "Wunschabstand beim Folgen in pet (Modus follow: behavior.follow_dist_m)"
       },
       {
        "key": "follow_start_m",

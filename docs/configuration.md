@@ -208,8 +208,10 @@ All keys with comments: `PetCfg` in `xgonav/config.py`.
 | `call_openings`, `call_louder_db` | 4, 3.0 | call search via the openings of the room map (needs map + confirmed pose); 0 = old straight search (calling goals with a wall ahead go the other way) |
 | `lost_home` | false | the same after the search for a vanished person; false: stays there and listens |
 | `follow`, `follow_trust`, `follow_start_m`, `follow_hold_s`, `follow_m` | true, 0.6, 0.5, 1.0, −1 = no limit (sim: 0) | follow a trusted person like mode `follow` (servo, `behavior.follow_dist_m`), start when `follow_start_m` farther than that for `follow_hold_s` |
+| `eyes_fix_s`, `eyes_fix_lid` | 1.5, 2 | eyes narrow to slits once a person is fixated (0 s = off) |
 | `follow_settle_s`, `follow_block_s`, `follow_lost_s`, `follow_repeat_s` | 2, 3, 1, 3 | end when close and standing / arc blocked; lost → search at once; lockout before a new start |
-| `come_events`, `come_m`, `come_stop_m`, `come_repeat_s` | 1, −1 = no limit (sim: 0), 0.8, 8 | come here: drive toward a visible person who speaks |
+| `come_events`, `come_m`, `come_stop_m`, `come_repeat_s` | 1, −1 = no limit (sim: 0), 0.4 (2026-11-22, was 0.8), 8 | come here: drive toward a visible person who speaks (also after a call search found someone); no planner path → straight toward her; at most 30 s |
+| `follow_dist_m` | 0.5 | distance when following in pet (mode `follow`: `behavior.follow_dist_m`) |
 | `talk`, `talk_min_events`, `talk_pause_s`, `talk_repeat_s` | true, 2, 1.6, 7 | talking back |
 | `parrot`, `parrot_p`, `parrot_repeat_s`, `parrot_delay_s`, `parrot_listen_s` | true, 0.5, 30, 0.2, 3 | voice samples: play instead of babbling, min. gap, delay before parroting a confirmed/recognized sample, capture while person gone ≤ s ([audio.md](audio.md#voice-samples-xgonavstimmepy-mode-pet)) |
 | `faint` | true (sim: false) | hard scare: set down, wake up, stand up by itself; on at the RiderPi since 2026-11-13 |
@@ -338,7 +340,8 @@ All keys with comments: `PetCfg` in `xgonav/config.py`.
 | `replan_s` | 2.0 | replan interval (also after 3 s without progress) |
 | `keep_factor` | 1.2 | keep the current path while free and ≤ factor × new path + 0.3 m (not after getting stuck) |
 | `use_localmap` | true | confirmed `LocalMap` points (same as the path check) are obstacles for planning |
-| `v` | 0.15 | normalised speed (`home`, `patrol`; `explore` uses `explore.v`) |
+| `v` | 0.15 | normalised speed (`patrol`, path following in `follow`/`pet` searches; `explore` uses `explore.v`) |
+| `start_v` | 0.225 (sim: 0.15) | "Zum Start": mode `home` and the drive home in `pet`, +50 % (2026-11-22); final straight run `startbild.gerade_v` |
 | `kp_turn` | 1.5 | 1/s, turn rate per heading error (follow uses `behavior.kp_turn`) |
 | `turn_w_max` | 0.25 | cap for turning in place (path follower, final alignment); 1.0 = only `robot.max_w` (sim). Turning at 0.5 rolled the Rider 7° and upset IMU pitch and pose (2026-11-17) |
 | `turn_enter_deg` / `turn_exit_deg` | 75 / 25 | turn in place above enter until below exit; otherwise drive the curve (speed ≥ 30 %) |

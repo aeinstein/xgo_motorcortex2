@@ -1058,7 +1058,7 @@ def test_komm_her_faehrt_zur_sprechenden_person():
     b = brain(come_m=-1.0)
     assert lauf(b, fahrbar=False)[0] == 0.0
     b = brain(come_m=-1.0)                                       # schon nah: bleibt stehen
-    assert lauf(b, d0=0.9)[0] == 0.0
+    assert lauf(b, d0=0.6)[0] == 0.0                             # come_stop_m 0,4 + 0,3
 
 
 def test_horchen_unterbricht_streifen():
@@ -1282,7 +1282,7 @@ def test_rufsuche_ueber_oeffnungen_und_lauter():
     assert b.task == "suchen" and b.phase == "oeffnung" and b._ruf is not None
     assert all(a.v == 0.0 for a in acts)                       # ohne Öffnung fährt er nicht geradeaus los
     b.oeffnung((1.0, 0.0))
-    t, weg, t1 = t + 0.0, 0.0, t + 40.0
+    t, weg, t1 = t + 0.0, 0.0, t + 80.0
     while t < t1 and not (b.phase == "oeffnung" and b._ruf and b._ruf["n"] == 1):
         t, _, d, _, _ = hoeren(b, t, t + 0.5, 0.0, fahrbar=True, karte=True, db=20.0, ab=0.0)
         weg += d
@@ -1319,3 +1319,84 @@ def test_pet_oeffnung_vom_planer_ans_gehirn():
     assert b._oeff_result is not None and p.f.path and p._oeff_besucht == [(1.2, 0.6)]
     g = b._oeff_result[0]
     assert math.hypot(g[0] - b.x - 1.0, g[1] - b.y - 0.5) < 1e-6
+
+
+def test_rufsuche_extern_gefahren_gibt_nicht_vorschnell_auf():
+    """Am Rider 2026-11-22: Weg durch die Tür nach 3 s verworfen (Stillstand, Geradeaus-Bahnprüfung). Fährt Pet den
+    Weg, zählen nur Ankunft, Budget, Zeit und festgefahren (nav_stuck)."""
+    b = brain(seek_m=-1.0, call_m=-1.0)
+    b.task, b._ruf = "suchen", {"pegel": 10, "best": 10, "n": 1, "dbs": [], "lauter": False}
+    b._task_left = math.inf
+    b._goal = (3.0, 0.0)
+    b._phase_set("fahren", 0.0)
+    b._drive_t_max = 100.0
+    t = 0.0
+    while t < 10.0:                                            # steht (Bahn blockiert, kein Fortschritt): bleibt dran
+        a = b.update(Sense(t=t, floor_ok=True, free_center=1.0, path_blocked=True, nav_extern=True, nav=(1.0, 0.0)))
+        t += 0.05
+    assert b.phase == "fahren" and a.v == 0.0                  # Fahrbefehl kommt von Pet
+    b.update(Sense(t=t, floor_ok=True, free_center=1.0, nav_extern=True, nav_stuck=True, nav=(1.0, 0.0)))
+    assert b.phase == "schauen" and b._fails == 1
+
+
+def test_pet_faehrt_rufsuche_mit_wegfolger():
+    cfg = Config.neutral()
+    p = Pet(cfg.behavior, cfg.robot, dataclasses.replace(cfg.pet, seek_m=-1.0, call_m=-1.0), seed=1,
+            hcfg=cfg.home, ecfg=cfg.explore)
+    b = p.brain
+    import types
+    free = types.SimpleNamespace(valid=True, center=1.0)      # Bodengrenze gültig, vorn frei
+    w = World(t=0.0, dt=0.05, W=640, H=480, hfov=1.6, ego=None, tracks=[], free=free, balancing=True, yaw=0.0,
+              cmd_v=0.0, pose=(0.0, 0.0, 0.0), pose_ok=True, map_ok=True, ds_measured=True, battery=100)
+    b.update(Sense(t=0.0))
+    b.task, b._ruf = "suchen", {"pegel": 10, "best": 10, "n": 1, "dbs": [], "lauter": False}
+    b._task_left = math.inf
+    b._goal = (2.0, 0.0)
+    b._phase_set("fahren", 0.0)
+    b._drive_t_max = 100.0
+    p._nav_goal = p._to_grid(w, b._goal)
+    p.f.set_path([(0.0, 0.0), (1.0, 0.0), (2.0, 0.0)])
+    c = p.step(w)
+    assert c.v > 0 and "Rufsuche" in c.status
+
+
+def test_gerufen_und_gefunden_kommt_her():
+    """Am Rider 2026-11-22: Rufer gefunden, blieb stehen und suchte wieder. Jetzt: hinfahren (kommen)."""
+    b = brain(seek_m=-1.0, call_m=-1.0, come_m=-1.0)
+    b.update(Sense(t=0.0, floor_ok=True, free_center=1.0))
+    b.task, b._ruf = "suchen", {"pegel": 10, "best": 10, "n": 1, "dbs": [], "lauter": False}
+    b._task_left = math.inf
+    b._phase_set("schauen", 0.0)
+    b.update(Sense(t=0.1, floor_ok=True, free_center=1.0, seen=[seen("person", 2.5, 0.1, vs=0)]))
+    assert b.task == "kommen" and b.n_found == 1 and b.n_come == 1
+    b2 = brain(seek_m=-1.0)                                    # Personensuche (nicht gerufen): wie bisher
+    b2.update(Sense(t=0.0, floor_ok=True, free_center=1.0))
+    b2._task_start("suchen", Sense(t=0.0), None)
+    b2.update(Sense(t=0.1, floor_ok=True, free_center=1.0, seen=[seen("person", 2.5, 0.1, vs=0)]))
+    assert b2.task is None and b2.n_come == 0
+
+
+def test_augen_schlitze_beim_fixieren():
+    """Nutzer 2026-11-22: Hat er jemanden fixiert, werden die Augen zu Schlitzen."""
+    b = brain(eyes_fix_s=1.5, eyes_fix_lid=2)
+    b._next_blink = 1e9                                         # kein Lidschlag im Test
+    t, _, _ = run(b, 0.0, 1.0, lambda t: [seen("person", 2.0, t, vs=0)])
+    assert b.gaze[1] == LID_OPEN
+    t, _, _ = run(b, t, 3.0, lambda t: [seen("person", 2.0, t, vs=0)])
+    assert b.gaze[1] == 2
+    run(b, t, t + 0.2, None)                                    # weg: wieder offen
+    assert b.gaze[1] == LID_OPEN
+
+
+def test_kommen_ohne_planerweg_faehrt_direkt():
+    """Am Rider 2026-11-22 endete Kommen sofort mit „kein Weg“: Sie ist zu sehen, dann geradeaus."""
+    b = brain(come_m=-1.0)
+    b.update(Sense(t=0.0, floor_ok=True, free_center=1.0))
+    tg = seen("person", 2.0, 0.0, vs=0)
+    b.target = tg
+    b._come_start(Sense(t=0.0, floor_ok=True, free_center=1.0), tg, "Test")
+    a = None
+    for k in range(10):
+        a = b.update(Sense(t=0.05 * (k + 1), floor_ok=True, free_center=1.0, nav_fail=True,
+                           seen=[seen("person", 2.0, 0.05 * (k + 1), vs=0)]))
+    assert b.task == "kommen" and a.v > 0

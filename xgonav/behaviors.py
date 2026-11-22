@@ -733,7 +733,7 @@ class Home(Behavior):
         self._end_vz = 0.0
         self._gemessen = False        # Messung für diesen Halt schon angefordert
         self._grund = "–"             # Ergebnis der Messung (Status am Ende)
-        self.f = PathFollower(cfg, rcfg, self.h)
+        self.f = PathFollower(cfg, rcfg, self.h, v=self.h.start_v)
         self.pending = False
         self.t_plan = -1e9
         self.fails = 0

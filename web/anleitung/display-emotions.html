@@ -1938,7 +1938,7 @@ python tools/eyes.py --gaze DIR      # eye atlas for mode pet: 11 gaze positions
 </tr>
 </tbody>
 </table>
-<p>Eyes follow the bearing of the target, gliding one position per control step, and blink through all lid positions in 0.4 s (atlas, neutral eye style without pupils, replaces the overlay on the LCD; written only when changed, checked at ~33 Hz). Priority: dog, cat, person. Trust (0..1) shifts thresholds; repeated scares weaken (habituation).</p>
+<p>Eyes follow the bearing of the target, gliding one position per control step; once the same person has been fixated for <code>eyes_fix_s</code> (1.5 s, gaze arrived) the lids narrow to slits (<code>eyes_fix_lid</code> 2, 2026-11-22). They blink through all lid positions in 0.4 s (atlas, neutral eye style without pupils, replaces the overlay on the LCD; written only when changed, checked at ~33 Hz). Priority: dog, cat, person. Trust (0..1) shifts thresholds; repeated scares weaken (habituation).</p>
 <h3 id="search-and-roam">Search and roam<a class="headerlink" href="#search-and-roam" title="Permanent link">&para;</a></h3>
 <p>Tasks inside state <code>wach</code>; any person/cat/dog in view ends them (search: <code>like</code> + found sound; roam: <code>surprised</code>). Position from wheels and heading (<code>World.yaw</code>), independent of the room map; reset on stand-up.</p>
 <table>
@@ -1992,7 +1992,7 @@ python tools/eyes.py --gaze DIR      # eye atlas for mode pet: 11 gaze positions
 </tr>
 <tr>
 <td>come here: a person in view farther than <code>come_stop_m</code> + 0.3 m speaks (<code>come_events</code> = 1 report, a short call is enough)</td>
-<td>happy sound, drives toward the person and stops <code>come_stop_m</code> (0.8 m) short, following while they move; at most <code>come_m</code> per time (RiderPi −1 = no limit, simulator 0), again after <code>come_repeat_s</code> (8 s). Ends when the person is lost for 1 s (then the normal search) or the arc is blocked</td>
+<td>happy sound, drives toward the person and stops <code>come_stop_m</code> (0.4 m since 2026-11-22, was 0.8) short, following while they move; no planner path → straight toward her, at most 30 s; at most <code>come_m</code> per time (RiderPi −1 = no limit, simulator 0), again after <code>come_repeat_s</code> (8 s). Ends when the person is lost for 1 s (then the normal search) or the arc is blocked</td>
 </tr>
 <tr>
 <td>calling: voice keeps coming from the front (<code>call_events</code> = 3 reports), nobody in view</td>
@@ -2008,7 +2008,7 @@ python tools/eyes.py --gaze DIR      # eye atlas for mode pet: 11 gaze positions
 </tr>
 <tr>
 <td>call without usable direction, room map with confirmed pose (<code>call_openings</code> 4, 2026-11-22)</td>
-<td>calls from another room arrive at ~0° whatever his heading (reverb, mics 4 mm apart). Instead of driving straight: next opening of the room map (border to unknown, <code>frontier.next_goal</code> in the planner thread, visited ones excluded) → drive there → look around and listen (levels while standing) → <code>call_louder_db</code> (3 dB) louder than so far = louder, either way on to the next opening; after <code>call_openings</code> openings or none left he stays and listens. Sound is not used while driving. Unit tests only</td>
+<td>calls from another room arrive at ~0° whatever his heading (reverb, mics 4 mm apart). Instead of driving straight: next opening of the room map (border to unknown, <code>frontier.next_goal</code> in the planner thread, visited ones excluded) → drive there with the path follower of <code>home</code> (tight spots, push, replanning; gives up only after two replans while stuck, time from the path length) → look around and listen (<code>hear_listen_s</code> standing per view, levels) → a person found there: drives to her like "come here" (no second call needed) → <code>call_louder_db</code> (3 dB) louder than so far = louder, either way on to the next opening; after <code>call_openings</code> openings or none left he stays and listens. Sound is not used while driving. Unit tests only</td>
 </tr>
 <tr>
 <td>search over, nobody found (<code>seek_home</code>, off since 2026-11-22; for a vanished person only with <code>lost_home</code>)</td>

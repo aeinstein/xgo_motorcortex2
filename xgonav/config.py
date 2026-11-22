@@ -560,6 +560,7 @@ class HomeCfg:
     use_localmap: bool = True          # Hindernisse der Bahnprüfung (Merkkarte) mit einplanen
     localmap_reach_m: float = 1.0      # nur so nahe: weiter weg misst die Merkkarte zu ungenau
     v: float = 0.15                    # normiert, wie behavior.cruise_v
+    start_v: float = 0.225             # „Zum Start“ (home, Heimfahrt in pet): +50 % (Nutzer 2026-11-22); Schlussfahrt startbild.gerade_v
     # Lenkung: am RiderPi rollt der Rider bei jedem Anfahren erst zurück und eine Drehung läuft
     # ~15° nach; ständiges Wechseln zwischen Drehen und Fahren brachte ihn nicht vom Fleck
     # (2026-11-05). Deshalb in Kurven weiterfahren, auf der Stelle nur bei großem Fehler drehen.
@@ -732,6 +733,10 @@ class PetCfg:
     faint_window_s: float = 600.0
     nap_s: float = 10.0                # so lange ganz weg, dann gehen langsam die Augen auf
     eyes_open_s: float = 3.0           # Augen öffnen, dabei schaut er sich um
+    # Fixieren (Nutzer 2026-11-22): dieselbe Person so lange ununterbrochen im Blick und der Blick angekommen ->
+    # Augen zu Schlitzen (Lidstellung im Atlas, 0 offen .. 4 zu); 0 s = aus
+    eyes_fix_s: float = 1.5
+    eyes_fix_lid: int = 2
     clear_s: float = 2.5               # so lange niemand im Bild: die Luft ist rein, er springt auf
     nap_max_s: float = 60.0            # bis dahin nicht rein: bleibt liegen
     nap_rest_s: float = 2.0            # so lange nach dem Absetzen, bevor die Liegelage als Referenz gilt
@@ -792,7 +797,7 @@ class PetCfg:
     # seit 2026-11-13). Bedingungen wie jede pet-Fahrt (Räder, Bodenmodell, Merkkarte, Bahnprüfung, Akku).
     come_events: int = 1
     come_m: float = -1.0
-    come_stop_m: float = 0.8
+    come_stop_m: float = 0.4           # Nutzer 2026-11-22: mit 0,8 musste er sich fast auf den Boden legen
     come_repeat_s: float = 8.0
     # Mitreden: nach talk_min_events Meldungen und talk_pause_s Pause antwortet er (Ton brabbeln, Kopf schief)
     talk: bool = True
@@ -814,6 +819,7 @@ class PetCfg:
     # Verloren (follow_lost_s): gleich suchen wie nach gone_s. Bedingungen wie jede pet-Fahrt. Nur Unit-Tests.
     follow: bool = True
     follow_trust: float = 0.6
+    follow_dist_m: float = 0.5         # Wunschabstand beim Folgen in pet (Modus follow: behavior.follow_dist_m)
     follow_start_m: float = 0.5
     follow_hold_s: float = 1.0         # so lange ununterbrochen weit genug weg, erst dann losfahren
     follow_m: float = -1.0
@@ -1084,7 +1090,7 @@ UMBENANNT = {"freespace.shadow_net": "freespace.net"}
 
 # Die Defaults oben sind seit 2026-11-12 die Werte des RiderPi (/opt/xgonav/config.toml ohne Testbetrieb und
 # ohne Pfade unter /opt). Simulator und Tests rechnen mit dem früheren neutralen Stand: Config.neutral().
-NEUTRAL = {"pet.call_m": 0.0, "pet.come_m": 0.0, "pet.follow_m": 0.0, "pet.drive_v": 0.08, "pet.look_w": 0.12, "pet.turn_w": 0.20, "pet.faint": False, "pet.faint_level": 1.0, "pet.seek_m": 0.0, "pet.roam_m": 0.0, "pet.roam_radius_m": 1.0,
+NEUTRAL = {"home.start_v": 0.15, "pet.call_m": 0.0, "pet.come_m": 0.0, "pet.follow_m": 0.0, "pet.drive_v": 0.08, "pet.look_w": 0.12, "pet.turn_w": 0.20, "pet.faint": False, "pet.faint_level": 1.0, "pet.seek_m": 0.0, "pet.roam_m": 0.0, "pet.roam_radius_m": 1.0,
            "robot.vx_limit": 1.5, "robot.max_v": 0.25, "robot.max_w": 0.25, "robot.reverse_gain": 1.0,
            "robot.manual_forward_gain": 1.0, "robot.level_after_standup": False, "camera.sensor_mode": "",
            "camera.scaler_crop": [], "camera.lens_knots_px": [], "camera.lens_g_px": [], "camera.lens_center": [], "camera.lens_roll_deg": 0.0, "camera.lens_yaw_deg": 0.0, "camera.exposure_us": 4000, "camera.analogue_gain": 0.0,
