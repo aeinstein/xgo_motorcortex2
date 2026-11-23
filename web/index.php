@@ -151,6 +151,7 @@ details.hilfe p{margin:4px 0 0}
 .bild-leiste .w{white-space:nowrap;min-width:3.6em}
 .bild-leiste input[type=range]{min-width:0}
 .bild-leiste .ist{display:flex;gap:6px;align-items:center;justify-content:flex-end;white-space:nowrap;flex-wrap:wrap}
+.umschalt{font-size:15px;line-height:1;padding:3px 7px}   /* Symbol-Umschalter wie die Kopf-Symbole */
 .bild-leiste .imu-bild{grid-column:1/-1;font-variant-numeric:tabular-nums}
 .bild-leiste .tempo-zeile{grid-column:1/-1;display:flex;align-items:center;gap:8px}
 .tempo-zeile label{color:var(--leise);font-size:13px}
@@ -463,7 +464,7 @@ details.extras[open]>summary{margin-bottom:8px}
           <span class="ausgleich"><label title="Helligkeit/Kontrast/Sättigung wirken an der Quelle (ISP) und damit auch auf FloorNet und die Aufnahmen. Für die Anzeige hier per Filter wieder herunterziehen (Näherung; abgeschnittene Lichter und Schatten bleiben weg)."><input type="checkbox" id="bild-ausgleich" onchange="bildAusgleich(this.checked)"> Im Browser ausgleichen</label><span class="info" tabindex="0" title="Gilt bis zum Neustart von xgonav. Kürzere Belichtung = weniger Bewegungsunschärfe, aber dunkler; mehr Verstärkung = heller, aber mehr Rauschen (Automatik nur bis 8; über ~8× wird der Rauschabstand nicht besser, nur das Bild heller). Dauerhaft über [camera] exposure_us / analogue_gain in config.toml.">i</span></span>
         </div>
       </details>
-      <span class="ist"><label title="Bild senkrecht so verschieben, dass der IMU-Nick fest steht: stimmt die IMU, steht die Szene still"><input type="checkbox" id="hz-stabil" onchange="hzStabil(this.checked)"> Bild am IMU-Nick festhalten</label><label title="Bild um den IMU-Roll drehen: stimmt der Roll, stehen senkrechte Kanten senkrecht und die cyan Linie waagerecht"><input type="checkbox" id="hz-roll" onchange="hzRoll(this.checked)"> Roll ausgleichen</label><label title="Geplanten Weg des Planers (Zum Start, Streife, Haustier-Suche) aus der Raumkarte ins Bild legen; im Browser gerechnet aus Kartenpose, Nick, Roll und Kamerahöhe"><input type="checkbox" id="hz-plan" onchange="hzPlan(this.checked)"> Planerbahn</label><label title="Konfigurierte Bildmitte einblenden: gestrichelt die Spalte der Fahrtrichtung (W/2), Kreis bei Zeile H/2"><input type="checkbox" id="hz-mitte" onchange="hzMitte(this.checked)"> Bildmitte</label></span>
+      <span class="ist"><label title="Bild senkrecht so verschieben, dass der IMU-Nick fest steht: stimmt die IMU, steht die Szene still"><input type="checkbox" id="hz-stabil" onchange="hzStabil(this.checked)"> Bild am IMU-Nick festhalten</label><label title="Bild um den IMU-Roll drehen: stimmt der Roll, stehen senkrechte Kanten senkrecht und die cyan Linie waagerecht"><input type="checkbox" id="hz-roll" onchange="hzRoll(this.checked)"> Roll ausgleichen</label><button id="hz-plan" class="umschalt" onclick="hzPlan(!planAn)" aria-pressed="false" aria-label="Planerbahn" title="Planerbahn: geplanten Weg des Planers (Zum Start, Streife, Haustier-Suche) aus der Raumkarte ins Bild legen; im Browser gerechnet aus Kartenpose, Nick, Roll und Kamerahöhe"><span aria-hidden="true">↝</span></button><button id="hz-mitte" class="umschalt" onclick="hzMitte(!bildMitteAn)" aria-pressed="false" aria-label="Bildmitte" title="Bildmitte: konfigurierte Bildmitte einblenden, gestrichelt die Spalte der Fahrtrichtung (W/2), Kreis bei Zeile H/2"><span aria-hidden="true">⌖</span></button></span>
       <div class="tempo-zeile">
         <label for="tempo">Tempo</label>
         <input type="range" id="tempo" min="5" max="100" value="60">
@@ -764,6 +765,10 @@ const EN = {
   'Geplanten Weg des Planers (Zum Start, Streife, Haustier-Suche) aus der Raumkarte ins Bild legen; im Browser gerechnet aus Kartenpose, Nick, Roll und Kamerahöhe':
     'Overlay the planner path from the room map on the image (Home, Patrol, Pet search); computed in the browser from map pose, pitch, roll and camera height',
   'Planerbahn': 'Planner path',
+  'Planerbahn: geplanten Weg des Planers (Zum Start, Streife, Haustier-Suche) aus der Raumkarte ins Bild legen; im Browser gerechnet aus Kartenpose, Nick, Roll und Kamerahöhe':
+    'Planner path: overlay the planner path from the room map on the image (Home, Patrol, Pet search); computed in the browser from map pose, pitch, roll and camera height',
+  'Bildmitte: konfigurierte Bildmitte einblenden, gestrichelt die Spalte der Fahrtrichtung (W/2), Kreis bei Zeile H/2':
+    'Image centre: show the configured image centre, dashed the column of the driving direction (W/2), circle at row H/2',
   'Bild senkrecht so verschieben, dass der IMU-Nick fest steht: stimmt die IMU, steht die Szene still': 'Shift the image vertically so the IMU pitch stays fixed: if the IMU is right, the scene stands still',
   'Bild am IMU-Nick festhalten': 'Pin image to IMU pitch', 'Roll ausgleichen': 'Level roll', 'Bildmitte': 'Image centre',
   'Konfigurierte Bildmitte einblenden: gestrichelt die Spalte der Fahrtrichtung (W/2), Kreis bei Zeile H/2':
@@ -1040,12 +1045,18 @@ function verbindungWeg() { pille('p-verb', tr('getrennt'), 'schlecht'); }
 // Kanten senkrecht und die cyan Linie liegt waagerecht. Am Pi rechnet dafür nichts zusätzlich.
 let bildUrl = null, bildDy = 0, bildRoll = 0, bildCx = NaN, bildRowImu = NaN;
 let bildStabil = false, bildRollAn = false, bildMitteAn = true;
+// Symbol-Umschalter (Kameraleiste): an = blau hervorgehoben wie ein aktiver Knopf
+function umschaltZeigen(id, an) {
+  const b = $(id);
+  b.classList.toggle('aktiv', an);
+  b.setAttribute('aria-pressed', an ? 'true' : 'false');
+}
 try { bildStabil = localStorage.getItem('xgonav.stabil') === '1'; } catch (e) {}
 try { bildRollAn = localStorage.getItem('xgonav.roll') === '1'; } catch (e) {}
 try { bildMitteAn = localStorage.getItem('xgonav.mitte') !== '0'; } catch (e) {}
 $('hz-stabil').checked = bildStabil;
 $('hz-roll').checked = bildRollAn;
-$('hz-mitte').checked = bildMitteAn;
+umschaltZeigen('hz-mitte', bildMitteAn);
 // Konfigurierte Bildmitte (Spalte cx aus dem Bild-Kopf = W/2, Zeile H/2 wie geometry.py) als SVG über
 // dem Bild; bekommt dieselbe CSS-Verschiebung/Drehung wie das <img>, steht also immer auf demselben Bildpunkt.
 function bildMitte(W, H, transform, origin) {
@@ -1082,9 +1093,10 @@ function bildVerschieben() {
 // deshalb genügt es, die Strecken vor der Kamera (z > Z_MIN) abzuschneiden. Am Pi kostet das nichts.
 let bildPose = null, planAn = true;
 try { planAn = localStorage.getItem('xgonav.plan') !== '0'; } catch (e) {}
-$('hz-plan').checked = planAn;
+umschaltZeigen('hz-plan', planAn);
 function hzPlan(an) {
   planAn = an;
+  umschaltZeigen('hz-plan', an);
   try { localStorage.setItem('xgonav.plan', an ? '1' : '0'); } catch (e) {}
   bildVerschieben();
 }
@@ -1388,6 +1400,7 @@ function hzRoll(an) {
 }
 function hzMitte(an) {
   bildMitteAn = an;
+  umschaltZeigen('hz-mitte', an);
   try { localStorage.setItem('xgonav.mitte', an ? '1' : '0'); } catch (e) {}
   bildVerschieben();
 }

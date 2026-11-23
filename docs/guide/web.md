@@ -30,7 +30,7 @@
 | Image | live camera with overlay: magenta = floor boundary (FloorNet), cyan = horizon from IMU pitch, bars at the bottom = free space per sector, blue = drive command, dashed line = image centre |
 | D-pad | hold to drive by hand (also arrow keys / WASD); switches to **Manual** |
 | Camera bar | exposure, gain (auto or fixed), brightness / contrast / saturation (ISP: also affects FloorNet and recordings), hue (browser only) |
-| Checkboxes | *Pin image to IMU pitch*, *Level roll*, *Planner path* (orange: planned path from the room map projected onto the floor in the image), *Image centre*: done in the browser, no cost on the Pi |
+| Checkboxes, icons | checkboxes *Pin image to IMU pitch*, *Level roll*; icon toggles ↝ *Planner path* (orange: planned path from the room map projected onto the floor in the image) and ⌖ *Image centre*, blue = on: done in the browser, no cost on the Pi |
 | Speed | scales every drive command of all modes |
 | IMU line | IMU values of the shown frame (pitch, roll, heading, age) |
 
