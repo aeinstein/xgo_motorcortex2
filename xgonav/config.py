@@ -442,7 +442,8 @@ class GridCfg:
     # (gerader Flur) kam bei 10,7 m an den Rand, fand voraus kein Ziel mehr und kehrte um. Kleinere
     # gespeicherte Karten werden mittig übernommen. 48 m = 960 x 960 Zellen, ~16 MB.
     size_m: float = 48.0
-    # Treffer nur bis hierhin: Kamera nur 12,8 cm hoch, eine Bildzeile sind bei 2 m schon ~40 cm.
+    # Treffer nur bis hierhin (Abstand entlang des Strahls, seit 2026-11-23; vorher nach vorn, am Bildrand also
+    # bis ~1,44-fach weiter): Kamera nur 12,8 cm hoch, eine Bildzeile sind bei 2 m schon ~40 cm.
     # 1,5 seit 2026-11-14 (Nutzer: Hindernisse schon aus 1,5 m eintragen); vorher und im Simulator 1,25
     max_range_m: float = 1.5
     min_range_m: float = 0.15          # davor sieht die Kamera den Boden nicht
@@ -469,7 +470,7 @@ class GridCfg:
     # aus der Nähe. 0,05: 1 m ±5 cm, 1,5 m ±11 cm, Wand dort schon aus der Ferne geschlossen; 0,08 ließ Stuhl- und
     # Tischbeine unter dem Tisch zusammenwachsen. 0 = eine Zelle (Simulator). Seit 2026-11-18, nicht gefahren.
     hit_band_quad: float = 0.05
-    # Freistrahlen bis hierhin (Treffer nur bis max_range_m); 0 = wie max_range_m. RiderPi 1,1 ab 2026-11-06 (eine
+    # Freistrahlen bis hierhin, entlang des Strahls (Treffer nur bis max_range_m); 0 = wie max_range_m. RiderPi 1,1 ab 2026-11-06 (eine
     # Stufe wurde aus > 1 m als Boden gesehen und bei 1,5 m als frei eingetragen), seit 2026-11-14 wieder 1,5
     # (Nutzer: offenen Boden so weit sehen wie Hindernisse; mit dem Bodennetz, nicht gefahren)
     free_range_m: float = 1.5

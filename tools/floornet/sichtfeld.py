@@ -4,7 +4,8 @@ Eingangsbilder (entzerrt, wie sie ins Netz gehen). Nur am PC, am Rider läuft da
   grün: was ins Netz geht (Ausschnitt; die Helligkeitsnorm aus net.prep ist aus, train.py --norm 0, der C++-Kern kennt sie nicht)
   rot:  was das Netz ausgeben kann (80 Spalten, 64 Zeilenfächer; Skala links), dazu die 5 Sektoren von xgonav
 
-Zweite Lage (nominal, Nick 0): Horizont und Bodenentfernungen 0,5 / 1,0 / 1,5 m (1,5 = grid.max_range_m).
+Zweite Lage (nominal, Nick 0): Horizont und Bodenentfernungen 0,5 / 1,0 / 1,5 m (1,5 = grid.max_range_m), als
+Geraden (Abstand nach vorn = Bildzeile) und als Bögen (Abstand zur Kamera; so begrenzt die Raumkarte).
 
   python tools/floornet/sichtfeld.py                                   # docs/img/floornet_maske*.png neu
   python tools/floornet/sichtfeld.py --bild a.png --out vorschau.png   # beide Lagen über ein Bild legen
@@ -122,18 +123,38 @@ def maske(k: dict, sektoren: int) -> np.ndarray:
     return rgba
 
 
+def zeile_vorn(geo: CamGeometry, x: float) -> float:
+    """Bildzeile (Nick 0) eines Bodenpunkts x Meter vor dem Kamerafußpunkt."""
+    return H / 2 + geo.f * math.tan(math.atan2(geo.cam_h, x) + math.radians(geo.tilt_deg))
+
+
 def maske_entfernung(geo: CamGeometry, meter=(0.5, 1.0, 1.5)) -> np.ndarray:
-    """Zusatzlage bei Nick 0: Horizont und Bodenentfernungen ab Kamerafußpunkt."""
+    """Zusatzlage bei Nick 0: Horizont und Bodenentfernungen ab Kamerafußpunkt. Geraden = Abstand nach vorn
+    (eine Bildzeile), Bögen = Abstand zur Kamera entlang der Peilung (so rechnet die Raumkarte max_range_m)."""
     rgba = np.zeros((H, W, 4), np.uint8)
-    tilt = math.radians(geo.tilt_deg)
     hz = int(round(geo.horizon_row()))
     linie(rgba, (0, hz), (W - 1, hz), (255, 220, 0), 0.9, 1, strich=10)
     text(rgba, "Horizont (Nick 0)", W - 150, hz - 5, (255, 220, 0))
+    gerade, bogen = (0, 200, 255), (255, 120, 255)
     for d in meter:
-        y = int(round(H / 2 + geo.f * math.tan(math.atan2(geo.cam_h, d) + tilt)))
+        y = int(round(zeile_vorn(geo, d)))
         if 0 <= y < H:
-            linie(rgba, (20, y), (W - 61, y), (0, 200, 255), 0.9, 1)
-            text(rgba, "%.1f m" % d, W - 56, y + (-3 if d == max(meter) else 12), (0, 200, 255))
+            linie(rgba, (20, y), (W - 81, y), gerade, 0.9, 1)
+            text(rgba, "x %.1f m" % d, W - 76, y + (-3 if d == max(meter) else 12), gerade)
+        # Bogen: je Spalte Peilung phi, Abstand nach vorn d·cos(phi); gestrichelt (8 px an, 8 px aus)
+        us = np.arange(W)
+        xs = d * np.cos(geo.bearing(us + 0.5))
+        ys = np.array([zeile_vorn(geo, x) for x in xs])
+        m = np.zeros((H, W), np.uint8)
+        pts = np.stack([us, np.round(ys)], 1).astype(np.int32)
+        for i in range(0, W - 1, 16):
+            cv2.polylines(m, [pts[i:i + 9]], False, 255, 1, cv2.LINE_AA)
+        rgba[m > 0, :3] = bogen
+        rgba[m > 0, 3] = np.maximum(rgba[m > 0, 3], (m[m > 0] * 0.9).astype(np.uint8))
+        yb = int(round(ys[24]))
+        if 0 <= yb < H:
+            text(rgba, "%.1f m" % d, 24, yb - 4, bogen)
+    text(rgba, "Gerade: Abstand nach vorn   Bogen: Abstand zur Kamera (Raumkarte)", 18, 30, (230, 230, 230), 0.38)
     text(rgba, "Kamerahoehe %.0f mm, f %.0f px, bei Nick 0 Blick %.2f Grad %s" % (
         geo.cam_h * 1000, geo.f, abs(geo.tilt_deg), "nach oben" if geo.tilt_deg >= 0 else "nach unten"),
         18, 14, (0, 200, 255))

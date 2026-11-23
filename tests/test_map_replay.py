@@ -69,7 +69,9 @@ def test_wand_liegt_richtig_mit_pose_des_bildes():
 
 
 def test_alte_pose_beim_drehen_verschmiert_die_wand():
-    genau, alt = _karten(["genau:versatz=0,sperre=1000", "alt:versatz=-100,sperre=1000"])
+    # Reichweite 1,5 m entlang des Strahls: die Wand (1 m) reicht über die ganze Bildbreite (am Rand ~1,44 m)
+    genau, alt = _karten(["genau:versatz=0,sperre=1000,grid.max_range_m=1.5",
+                          "alt:versatz=-100,sperre=1000,grid.max_range_m=1.5"])
     a, b = _belegt(genau[1]), _belegt(alt[1])
     # 60 °/s × 100 ms = 6°: die Wand steht einmal links-, einmal rechtsherum verdreht in der Karte
     assert np.abs(b[:, 0] - 1.0).max() > np.abs(a[:, 0] - 1.0).max() + 0.03

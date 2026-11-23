@@ -160,6 +160,9 @@ details.hilfe p{margin:4px 0 0}
 .tempo-kopf label{color:var(--leise);font-size:13px}
 .tempo-kopf input{width:120px;margin:0}
 .tempo-kopf .w{font-variant-numeric:tabular-nums;text-align:right;font-size:13px;min-width:3.2em}
+/* zu schmal (kopfHoehe misst): Tempo bricht selbst um statt das Bodenmodell, Titel fällt weg */
+.kopf-zeile2.tempo-unten .tempo-kopf{order:5}
+header.ohne-titel h1{display:none}
 .bild-leiste .imu-bild.schlecht{color:#ff8a8d}
 .sprech-zeile{margin-top:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px}
 .sprech-zeile label{color:var(--leise)}
@@ -391,11 +394,11 @@ details.extras[open]>summary{margin-bottom:8px}
           <button data-modus="approach" onclick="modus('approach')">Anfahren</button>
           <select id="ziel" title="Ziel für Folgen/Anfahren (aktive YOLO-Klassen)" aria-label="Ziel"><option value="person">person</option></select>
         </div>
-        <div class="tempo-kopf" title="Tempo aller Fahr- und Drehbefehle in allen Modi, bis zum Neustart von xgonav">
-          <label for="tempo">Tempo</label>
-          <input type="range" id="tempo" min="25" max="100" step="25" value="75">
-          <span class="w" id="tempo-w"></span>
-        </div>
+      </div>
+      <div class="tempo-kopf" id="tempo-kopf" title="Tempo aller Fahr- und Drehbefehle in allen Modi, bis zum Neustart von xgonav">
+        <label for="tempo">Tempo</label>
+        <input type="range" id="tempo" min="25" max="100" step="25" value="75">
+        <span class="w" id="tempo-w"></span>
       </div>
       <div class="fn-wahl">
         <label for="fn-wahl">Bodenmodell</label>
@@ -494,12 +497,12 @@ details.extras[open]>summary{margin-bottom:8px}
       <span class="leise" id="bild-text"></span>
     </div>
   </details>
-  <div class="karte">
-    <div class="kopf"><h2>Laufzeit Infos</h2><span class="leise" id="rec-text"></span>
+  <details class="karte extras" id="laufzeit" ontoggle="laufzeitUmschalten()">
+    <summary><h2>Laufzeit Infos</h2><span class="leise" id="rec-text"></span>
       <span class="leise" id="rec-platz" hidden title="Frei am Rider bis zur Abbruchgrenze (output.record_min_free_mb); Minuten aus der Schreibrate der letzten Aufnahme (~ = geschätzt)"></span>
-</div>
+    </summary>
     <div class="kacheln" id="kurz"></div>
-  </div>
+  </details>
   <details class="karte extras" id="verlauf" ontoggle="verlaufUmschalten()">
     <summary><h2>Verlauf</h2><span class="leise">CPU · WLAN · Akku</span></summary>
     <div class="unter">CPU je Kern (bezogen auf Höchsttakt), letzte 10 min <span class="rechts" id="v-temp"></span></div>
@@ -1341,7 +1344,19 @@ function poseBestaetigen(aktion) {
 function pipelineUmschalten() { return befehl('pipeline', {on: aktPipeline === 'läuft' ? 0 : 1}); }
 // Feste Kopfleiste: ihre Höhe (je nach Breite ein- oder mehrzeilig) als --kopf-h, damit nichts darunter verschwindet
 function kopfHoehe() {
-  document.documentElement.style.setProperty('--kopf-h', document.querySelector('header').offsetHeight + 'px');
+  const kopf = document.querySelector('header'), z2 = kopf.querySelector('.kopf-zeile2');
+  // erst ohne Ausweichen messen: bricht die erste Zeile um (STOPP tiefer als der Titel) oder brechen die
+  // Statuspillen um, fällt der Titel weg;
+  // landet das Bodenmodell unter den Modi, rutscht stattdessen das Tempo ans Ende
+  kopf.classList.remove('ohne-titel');
+  z2.classList.remove('tempo-unten');
+  const h1 = kopf.querySelector('h1');
+  const pillen = kopf.querySelector('.pillen'), pille = pillen.firstElementChild;
+  const titelWeg = $('stop').offsetTop > h1.offsetTop + 4 || pillen.offsetHeight > 1.6 * pille.offsetHeight;
+  const tempoUnten = $('fn-wahl').parentNode.offsetTop > kopf.querySelector('.modus').offsetTop + 4;
+  kopf.classList.toggle('ohne-titel', titelWeg);
+  z2.classList.toggle('tempo-unten', tempoUnten);
+  document.documentElement.style.setProperty('--kopf-h', kopf.offsetHeight + 'px');
 }
 if (window.ResizeObserver) new ResizeObserver(kopfHoehe).observe(document.querySelector('header'));
 kopfHoehe();
@@ -2951,6 +2966,9 @@ function verlaufUmschalten() {
   try { localStorage.setItem('xgonav.verlauf', $('verlauf').open ? '1' : '0'); } catch (e) {}
   if ($('verlauf').open) verlaufZeichnen();
 }
+function laufzeitUmschalten() {
+  try { localStorage.setItem('xgonav.laufzeit', $('laufzeit').open ? '1' : '0'); } catch (e) {}
+}
 function extrasUmschalten() {
   try { localStorage.setItem('xgonav.extras', $('extras').open ? '1' : '0'); } catch (e) {}
 }
@@ -3153,7 +3171,8 @@ try {
   if (localStorage.getItem('xgonav.lage') !== '0') $('lagekarte').open = true;   // Standard: offen
   if (localStorage.getItem('xgonav.extras') === '1') $('extras').open = true;
   if (localStorage.getItem('xgonav.radar') !== '0') $('radarkarte').open = true;   // Standard: offen
-} catch (e) { $('lagekarte').open = true; $('raumkarte').open = true; }
+  if (localStorage.getItem('xgonav.laufzeit') !== '0') $('laufzeit').open = true;   // Standard: offen
+} catch (e) { $('lagekarte').open = true; $('raumkarte').open = true; $('laufzeit').open = true; }
 liveVerbinden();
 lageStarten();
 </script>

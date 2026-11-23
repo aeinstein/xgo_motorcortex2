@@ -70,7 +70,7 @@ threaded = true          # Netz in eigenem Thread
 file = "/opt/xgonav/raumkarte.npz"   # Raumkarte speichern/laden; beim Laden muss der Rider am Startpunkt stehen
 # free_range_m = 1.5 ist Standard (2026-11-14): offener Boden so weit wie Treffer
 # free_range_m = 1.1     # 2026-11-06: Stufe wurde aus > 1 m als Boden gesehen und bei 1,5 m als frei eingetragen
-# max_range_m = 1.5 und confirm_dr_m = 0 sind Standard (2026-11-14): Treffer bis 1,5 m, eine Sichtung genügt (FloorNet).
+# max_range_m = 1.5 und confirm_dr_m = 0 sind Standard (2026-11-14): Treffer bis 1,5 m (entlang des Strahls), eine Sichtung genügt (FloorNet).
 # confirm_dr_m = 0.2     # Treffer erst aus zwei Abständen (2026-11-08 gegen das Spiegelbild der Fensterunterkante)
 
 [map]

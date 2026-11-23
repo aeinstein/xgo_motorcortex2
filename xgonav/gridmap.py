@@ -7,7 +7,8 @@ der Ego-Motion – dieselben Größen wie für die Merkkarte. Ohne Korrektur (Ma
 driftet sie mit der Zeit.
 
 Jede Bildspalte des Bodenmodells wird ein Strahl: frei bis zur Bodengrenze, belegt an der
-Grenze (Log-Odds, begrenzt). Spalten "frei bis Horizont" setzen nur frei bis max_range,
+Grenze (Log-Odds, begrenzt). Reichweiten gelten entlang des Strahls (am Bildrand ist eine Zeile
+weiter weg als in der Mitte). Spalten "frei bis Horizont" setzen nur frei bis max_range,
 nicht messbare Bereiche (known_from) bleiben unbekannt. Für Fahrentscheidungen wird
 die Karte (noch) nicht benutzt, nur angezeigt.
 """
@@ -377,16 +378,18 @@ class GridMap:
             kd = self.geo.ground_dist_np((self.fh - kf * span) * sc, pitch_dev)
             start = np.where(kf >= 0.98, np.inf, np.maximum(start, np.nan_to_num(kd, nan=np.inf)))
         to_horizon = v >= 0.98
+        # ground_dist_np liefert den Abstand nach vorn (wie LocalMap: x = d, y = d*tan), die Strahlen
+        # brauchen die Länge entlang der Peilung; auch max_range_m und free_range_m gelten entlang der Peilung
+        ray = dist * rad
         with np.errstate(invalid="ignore"):
-            hit = ~to_horizon & np.isfinite(dist) & (dist <= cfg.max_range_m)
-            # Freistrahl endet vor der Grenze: die gemessene Grenze schwankt mit der Entfernung,
+            hit = ~to_horizon & np.isfinite(dist) & (ray <= cfg.max_range_m)
+            # Freistrahl endet vor der Grenze: die gemessene Grenze schwankt mit der Entfernung (nach vorn, ∝ d²),
             # sonst löscht jede etwas zu weite Messung die zuvor belegte Zelle
             free_r = cfg.free_range_m if cfg.free_range_m > 0 else cfg.max_range_m
             margin = max(self.res, cfg.free_margin_m) + cfg.free_margin_quad * dist * dist
-            free_len = np.where(to_horizon, free_r, np.where(np.isfinite(dist), np.minimum(dist - margin, free_r), np.nan))
-        # ground_dist_np liefert den Abstand nach vorn (wie LocalMap: x = d, y = d*tan),
-        # die Strahlen brauchen die Länge entlang der Peilung
-        dist, free_len, start = dist * rad, free_len * rad, start * rad
+            free_len = np.where(to_horizon, free_r,
+                                np.where(np.isfinite(dist), np.minimum((dist - margin) * rad, free_r), np.nan))
+        dist, start = ray, start * rad
         ok = np.isfinite(free_len) & (free_len > start)
         return idx, bear, dist, free_len, start, ok, hit
 

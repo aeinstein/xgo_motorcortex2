@@ -55,12 +55,12 @@ XGO_API void grid_rays(const GridParams* p, const double* cols, const double* kf
             s = kf[k] >= 0.98 ? inf : std::max(s, kn);
         }
         const bool to_horizon = v >= 0.98;
-        hit[j] = !to_horizon && std::isfinite(d) && d <= p->max_range;
-        // Freistrahl endet vor der Grenze: die gemessene Grenze schwankt mit der Entfernung
-        const double margin = p->margin0 + p->margin_quad * d * d;
-        const double fl = to_horizon ? p->free_r : (std::isfinite(d) ? std::min(d - margin, p->free_r) : xgo::kNaN);
+        // d ist der Abstand nach vorn; Reichweiten (max_range, free_r) gelten entlang der Peilung
         dist[j] = d * rad[j];
-        free_len[j] = fl * rad[j];
+        hit[j] = !to_horizon && std::isfinite(d) && dist[j] <= p->max_range;
+        // Freistrahl endet vor der Grenze: die gemessene Grenze schwankt mit der Entfernung (nach vorn, ∝ d²)
+        const double margin = p->margin0 + p->margin_quad * d * d;
+        free_len[j] = to_horizon ? p->free_r : (std::isfinite(d) ? std::min((d - margin) * rad[j], p->free_r) : xgo::kNaN);
         start[j] = s * rad[j];
         ok[j] = std::isfinite(free_len[j]) && free_len[j] > start[j];
     }

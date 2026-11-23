@@ -27,8 +27,8 @@ While driving `pitch_dev` is typically −2 to −4°, so the horizon sits at ro
 | Mask | Shows |
 |---|---|
 | `img/floornet_maske.png` | green: network input rows 137–478; red over it: output range rows 215–480 (nets from p11i; up to p11h 205), so the mixed colour is input and output, pure green is input only (context); output with 80 column lines and the 64 bin edges as a scale on the left; white dashed: the 5 `freespace.sectors` |
-| `img/floornet_maske_entfernung.png` | nominal (pitch 0, cruise height, camera 121 mm): horizon (row 268) and floor distances 0.5 / 1.0 / 1.5 m (rows 346 / 306 / 294) |
-| `img/floornet_beispiel1.png`, `img/floornet_beispiel2.png` | both masks over a kitchen (tiles, pitch −2.2°, roll −1.0°) and an office (carpet, pitch −3.2°, roll +2.0°) frame, each rotated to pitch 0 / roll 0 first; black border = outside the original frame |
+| `img/floornet_maske_entfernung.png` | nominal (pitch 0, cruise height, camera 121 mm): horizon (row 268) and floor distances 0.5 / 1.0 / 1.5 m: straight lines = forward distance (rows 346 / 306 / 294), dashed arcs = distance from the camera along the bearing (1.44× the forward distance at the image edge; `grid.max_range_m` and `free_range_m` count this way since 2026-11-23) |
+| `img/floornet_beispiel1.png`, `img/floornet_beispiel2.png` | both masks over a kitchen (tiles, ride 20261122-202716 frame 029299, pitch −2.9°, roll 0.0°) and a living room (carpet, ride 20261123-130232 frame 004023, pitch −1.1°, roll +0.4°) frame, each rotated to pitch 0 / roll 0 first; black border = outside the original frame |
 
 ![FloorNet field of view](img/floornet_beispiel1.png)
 

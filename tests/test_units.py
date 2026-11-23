@@ -1489,6 +1489,7 @@ def test_gridmap_wall_and_turn():
     from xgonav.geometry import CamGeometry
     from xgonav.gridmap import GridMap
     cfg = Config.neutral()
+    cfg.grid.max_range_m = 1.5                                  # entlang des Strahls: Wand 1 m am Rand ~1,44 m
     g = CamGeometry(640, 480, 91.0, 1.39, 43.0, 85.0)
     m = GridMap(cfg.grid, g, 160, 120)
     hz = g.horizon_row(0) / 4
@@ -1542,6 +1543,24 @@ def test_gridmap_range_hits_and_margin():
     r, c = np.nonzero(far.lo < -cfg.grid.l_show)
     xs = (c + 0.5 - far.n / 2) * far.res
     assert 1.3 < xs.max() < cfg.grid.free_range_m + 0.1         # frei nur bis free_range_m
+
+
+def test_gridmap_range_along_ray():
+    """max_range_m und free_range_m gelten entlang des Strahls: eine Bildzeile ist am Rand weiter weg als in der
+    Mitte (Peilung ~45°, Faktor ~1,4)."""
+    from xgonav.gridmap import GridMap
+    cfg = Config.neutral()
+    g = CamGeometry(640, 480, 91.0, 1.39, 43.0, 85.0)
+    m = GridMap(cfg.grid, g, 160, 120)
+    x = 0.9 * cfg.grid.max_range_m                              # Wand quer, 0,9 x Reichweite voraus
+    _, bear, dist, _, _, _, hit = m._rays(_wall_fs(g, x), 0.0)
+    mitte, rand = np.argmin(np.abs(bear)), np.argmax(np.abs(bear))
+    assert hit[mitte] and dist[mitte] <= cfg.grid.max_range_m
+    assert dist[rand] > cfg.grid.max_range_m and not hit[rand]   # vorher (Abstand nach vorn) ein Treffer
+    assert np.all(dist[hit] <= cfg.grid.max_range_m)
+    _, bear, _, free_len, _, ok, _ = m._rays(_wall_fs(g, 2.2), 0.0)
+    assert np.all(free_len[ok] <= cfg.grid.free_range_m + 1e-9)
+    assert free_len[np.argmin(np.abs(bear))] > cfg.grid.free_range_m - 0.05
 
 
 def test_localmap_origin_is_wheel_axle():

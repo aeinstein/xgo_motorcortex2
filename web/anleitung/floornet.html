@@ -1519,11 +1519,11 @@ While driving <code>pitch_dev</code> is typically −2 to −4°, so the horizon
 </tr>
 <tr>
 <td><code>img/floornet_maske_entfernung.png</code></td>
-<td>nominal (pitch 0, cruise height, camera 121 mm): horizon (row 268) and floor distances 0.5 / 1.0 / 1.5 m (rows 346 / 306 / 294)</td>
+<td>nominal (pitch 0, cruise height, camera 121 mm): horizon (row 268) and floor distances 0.5 / 1.0 / 1.5 m: straight lines = forward distance (rows 346 / 306 / 294), dashed arcs = distance from the camera along the bearing (1.44× the forward distance at the image edge; <code>grid.max_range_m</code> and <code>free_range_m</code> count this way since 2026-11-23)</td>
 </tr>
 <tr>
 <td><code>img/floornet_beispiel1.png</code>, <code>img/floornet_beispiel2.png</code></td>
-<td>both masks over a kitchen (tiles, pitch −2.2°, roll −1.0°) and an office (carpet, pitch −3.2°, roll +2.0°) frame, each rotated to pitch 0 / roll 0 first; black border = outside the original frame</td>
+<td>both masks over a kitchen (tiles, ride 20261122-202716 frame 029299, pitch −2.9°, roll 0.0°) and a living room (carpet, ride 20261123-130232 frame 004023, pitch −1.1°, roll +0.4°) frame, each rotated to pitch 0 / roll 0 first; black border = outside the original frame</td>
 </tr>
 </tbody>
 </table>

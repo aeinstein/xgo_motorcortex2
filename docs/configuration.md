@@ -278,10 +278,10 @@ All keys with comments: `PetCfg` in `xgonav/config.py`.
 |---|---|
 | `enabled` | true |
 | `resolution_m` / `size_m` | 0.05 / 48.0 (16 until 2026-11-17, then 24: a straight corridor hit the edge 12 m from the start and explore turned back; sim 16; a smaller saved map is loaded centred, a larger one ignored) |
-| `min_range_m` / `max_range_m` | 0.15 / 1.5 (hits only up to here; sim 1.25) |
+| `min_range_m` / `max_range_m` | 0.15 / 1.5 (hits only up to here, distance along the ray since 2026-11-23; sim 1.25) |
 | `confirm_dr_m` / `confirm_cells` | 0 = off (since 2026-11-14, one sighting is enough with FloorNet; 0.2 before) / 2: with > 0 a hit counts only once the same spot (± cells) was hit from ranges at least this far apart; until then it is a candidate (orange in `/map.png`). Reflections in a glossy floor and seams move with the Rider and are never confirmed; turning on the spot alone confirms nothing |
 | `mark_blocking` | true | `LocalMap` points the path check brakes for are entered as confirmed and occupied (what stops the Rider is on the map); free rays remove them again if the spot is later seen free |
-| `free_range_m` | 1.5 (RiderPi 1.1 from 2026-11-06 to 2026-11-14); free rays up to here |
+| `free_range_m` | 1.5 (RiderPi 1.1 from 2026-11-06 to 2026-11-14); free rays up to here (along the ray) |
 | `column_step` | 2 |
 | `l_free` / `l_occ` | -0.4 / 0.5 (two hits to `l_show`) |
 | `l_min` / `l_max` / `l_show` | -3.0 / 3.5 / 0.7 |
