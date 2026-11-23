@@ -510,7 +510,11 @@ class GridCfg:
     # (Nutzer: offenen Boden so weit sehen wie Hindernisse; mit dem Bodennetz, nicht gefahren)
     free_range_m: float = 1.5
     driven_free_r_m: float = 0.10      # gefahrener Weg gilt so breit als frei; 0 = aus
-    max_turn_dps: float = 40.0         # bei schnellerer Drehung nichts eintragen (Unschärfe, Pose)
+    # Bei schnellerer Drehung nichts eintragen (Unschärfe, Pose). 60 seit 2026-11-23 (vorher 40): Beim Erkunden mit
+    # v 0,8 fuhr er Kurven mit ~50 °/s, 20 % der Bilder in Fahrt lagen über 40 °/s; Stellen, die er so passierte,
+    # blieben unbekannt und wurden ein zweites Mal angefahren (Fahrt 20261123-200817, 48-52 s). Offline
+    # (map_replay sperre=60) 13-15 % mehr Bilder in der Karte, Doppelwand-Zellen +2-3 % (80: +6-14 %).
+    max_turn_dps: float = 60.0
     occ_free_factor: float = 0.5       # schon belegte Zellen baut ein Freistrahl nur so stark ab
     l_min: float = -3.0
     l_max: float = 3.5

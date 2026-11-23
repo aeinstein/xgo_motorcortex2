@@ -1662,7 +1662,7 @@ Status JSON: <code>odom.src</code> = <code>räder</code> | <code>befehl</code>, 
 </tr>
 <tr>
 <td>Filter</td>
-<td>only while balancing, below <code>max_turn_dps</code> 40 °/s (the pause after a fast turn, <code>turn_settle_s</code>, was removed 2026-11-17; offline still <code>tools/map_replay.py</code> variant <code>ruhe=S</code>); the rate is the dead-reckoning heading at the control step in which the result arrives, not at capture</td>
+<td>only while balancing, below <code>max_turn_dps</code> 60 °/s (40 until 2026-11-23: curves in explore at ~50 °/s left passed frontiers unknown, they were visited twice; offline 60 adds 13–15 % observations, double-wall cells +2–3 %; the pause after a fast turn, <code>turn_settle_s</code>, was removed 2026-11-17; offline still <code>tools/map_replay.py</code> variant <code>ruhe=S</code>); the rate is the dead-reckoning heading at the control step in which the result arrives, not at capture</td>
 </tr>
 <tr>
 <td>Driven path</td>
