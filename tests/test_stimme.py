@@ -262,3 +262,22 @@ def test_oktave_hoeher_bei_gleichem_tempo(tmp_path):
     spec = np.abs(np.fft.rfft(y * np.hanning(len(y))))
     f = np.argmax(spec) * stimme.RATE_OUT / len(y)
     assert abs(f - 440.0) < 5.0
+
+
+def test_loeschen_aus_dem_web(tmp_path):
+    st = stimmen(tmp_path, max_confirmed=2)
+    st.lerne(aeusserung(WORT_A, seed=60))
+    assert st.lerne(aeusserung(WORT_A, seed=61)) == "bestaetigt"
+    assert st.lerne(aeusserung(WORT_B, seed=62)) == "kandidat"
+    kand = st.kandidaten[0].name
+    with pytest.raises(ValueError):
+        st.loeschen("../01")
+    assert st.loeschen("05") is False
+    assert st.loeschen(kand) is True and st.kandidaten == [] and os.listdir(tmp_path / "kandidaten") == []
+    assert st.loeschen("01") is True and st.ids == () and st.bestaetigt == []
+    assert sorted(os.listdir(tmp_path / "bestaetigt")) == ["zaehler.json"]
+    assert (tmp_path / "bestaetigt" / "zaehler.json").read_text() == "{}"
+    st.lerne(aeusserung(WORT_B, seed=63))                                # frei gewordener Platz wird wieder belegt
+    assert st.lerne(aeusserung(WORT_B, seed=64)) == "bestaetigt" and st.ids == ("01",)
+    neu = stimmen(tmp_path, max_confirmed=2)                             # ungeladen: nur Platte und ids
+    assert neu.loeschen("01") is True and neu.ids == () and not (tmp_path / "bestaetigt" / "01.wav").exists()

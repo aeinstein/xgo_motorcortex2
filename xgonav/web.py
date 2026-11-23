@@ -12,6 +12,7 @@ import hashlib
 import json
 import logging
 import math
+import os
 import socket
 import struct
 import threading
@@ -264,6 +265,24 @@ def serve(app: App, host: str, port: int, fps: int, render_cpus=None) -> Threadi
                 except OSError as e:
                     return self._send(500, json.dumps({"error": f"Symlink nicht umstellbar: {e}"}).encode())
                 return self._send(200, json.dumps({"ok": True, "geladen": name}).encode())
+            if u.path in ("/stimme/spielen", "/stimme/loeschen"):
+                # Stimmproben aus der Kachel „Samples“: Abspielen über Emotions.sound (die Ortung hört dann weg)
+                st = getattr(app, "stimmen", None)
+                if st is None:
+                    return self._send(404, b'{"error":"keine Stimmproben (Ortung/Stimme aus)"}')
+                name = q.get("name", [""])[0]
+                try:
+                    if u.path == "/stimme/loeschen":
+                        if not st.loeschen(name):
+                            return self._send(404, b'{"error":"Probe nicht vorhanden"}')
+                    else:
+                        emo = getattr(app, "emotions", None)
+                        if name not in st.ids or emo is None or not os.path.isfile(st.datei(name)):
+                            return self._send(404, b'{"error":"Probe nicht abspielbar"}')
+                        emo.sound("stimme:" + name)
+                except ValueError as e:
+                    return self._send(400, json.dumps({"error": str(e)}).encode())
+                return self._send(200, b'{"ok":true}')
             if u.path == "/level":
                 if not app.robot.request_level():
                     return self._send(409, b'{"error":"Rider balanciert nicht"}')

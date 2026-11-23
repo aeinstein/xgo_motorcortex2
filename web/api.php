@@ -69,6 +69,7 @@ const MODES = ['idle', 'manual', 'follow', 'explore', 'approach', 'home', 'patro
 const PROC = '/proc/XGORider';
 const EMOTION = '/opt/xgonav/tools/emotion.sh';         // Player (RGB565-Rohbilder statt ffmpeg)
 const EMOTION_RAW = '/opt/xgonav/emotions';             // tools/eyes.py, von deploy/install.sh erzeugt
+const STIMMEN = '/opt/xgonav/stimmen';                 // [stimme] dir: bestaetigt/NN(_roh).wav, kandidaten/<Zeit>.wav
 const HEIGHT_MIN = 61;                                   // u8; ~10 mm über dem Minimum, dazu ~4 mm fürs Ausrichten (ein Bein tiefer)
 const LED_FILE = '/var/lib/xgonav/led_brightness';      // n/256 (Firmware-Patch 0016), deploy/install.sh legt den Ordner an
 const HEIGHT_MAX = 205;                                 // u8; Firmware nähme 255, bei 235 Stopp 252 (2026-11-06, Ursache offen)
@@ -277,6 +278,30 @@ function konfig_hash_pruefen(string $text): void
     }
 }
 
+// Stimmprobe: Name (NN = bestätigt, Zeitname = Kandidat) -> Pfad; ungültig = 400
+function stimme_pfad(string $name, bool $roh): string
+{
+    if (preg_match('/^\d\d$/', $name)) {
+        return STIMMEN . '/bestaetigt/' . $name . ($roh ? '_roh' : '') . '.wav';
+    }
+    if (preg_match('/^\d{8}-\d{6}-\d{3}x*$/', $name)) {
+        return STIMMEN . '/kandidaten/' . $name . '.wav';
+    }
+    antwort(400, json_encode(['error' => 'Probe ungültig']));
+}
+
+// Dauer in s aus dem WAV-Kopf (write_wav: 44 Byte Kopf, 16 bit)
+function wav_dauer(string $f): ?float
+{
+    $h = @file_get_contents($f, false, null, 0, 44);
+    if ($h === false || strlen($h) < 44 || substr($h, 0, 4) !== 'RIFF') {
+        return null;
+    }
+    $k = unpack('vch/Vrate', substr($h, 22, 6));
+    $n = (filesize($f) ?: 44) - 44;
+    return $k['rate'] > 0 && $k['ch'] > 0 ? round($n / (2 * $k['ch'] * $k['rate']), 2) : null;
+}
+
 $a = $_GET['a'] ?? '';
 $post = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST';
 
@@ -300,6 +325,35 @@ if ($a === 'detector' && !$post) {
 }
 if ($a === 'floornet' && !$post) {
     xgonav('GET', '/floornet');
+}
+if ($a === 'stimmen' && !$post) {
+    // Kachel „Samples“: direkt von der Platte, auch ohne xgonav (kostet nur beim Aufklappen)
+    $zaehler = json_decode((string)@file_get_contents(STIMMEN . '/bestaetigt/zaehler.json'), true) ?: [];
+    $best = [];
+    foreach (glob(STIMMEN . '/bestaetigt/[0-9][0-9]_roh.wav') ?: [] as $f) {
+        $nn = substr(basename($f), 0, 2);
+        $sittich = STIMMEN . "/bestaetigt/$nn.wav";
+        [$n, $t] = $zaehler[$nn] ?? [null, filemtime($f)];
+        $best[] = ['name' => $nn, 'n' => $n, 'zuletzt' => $t, 'angelegt' => filemtime($f), 's' => wav_dauer($f),
+                   'sittich' => is_file($sittich), 's_sittich' => is_file($sittich) ? wav_dauer($sittich) : null];
+    }
+    $kand = [];
+    foreach (glob(STIMMEN . '/kandidaten/*.wav') ?: [] as $f) {
+        $kand[] = ['name' => basename($f, '.wav'), 'zeit' => filemtime($f), 's' => wav_dauer($f)];
+    }
+    usort($kand, fn($x, $y) => $y['zeit'] <=> $x['zeit']);
+    antwort(200, json_encode(['dir' => STIMMEN, 'bestaetigt' => $best, 'kandidaten' => $kand]));
+}
+if ($a === 'stimme_wav' && !$post) {
+    $f = stimme_pfad($_GET['name'] ?? '', ($_GET['roh'] ?? '') === '1');
+    if (!is_file($f)) {
+        antwort(404, json_encode(['error' => 'Probe nicht vorhanden']));
+    }
+    header('Content-Type: audio/wav');
+    header('Content-Length: ' . filesize($f));
+    header('Cache-Control: no-cache');
+    readfile($f);
+    exit;
 }
 if ($a === 'wlan_status' && !$post) {
     [$rc, $z] = wlan_helfer('status');
@@ -372,6 +426,11 @@ switch ($a) {
             antwort(400, json_encode(['error' => 'Modellname ungültig']));
         }
         xgonav('POST', '/floornet?name=' . rawurlencode($name), 20);   // Laden + Selbstprüfung am CM4
+    case 'stimme_spielen':
+    case 'stimme_loeschen':
+        $name = $_GET['name'] ?? '';
+        stimme_pfad($name, false);                                   // nur prüfen
+        xgonav('POST', '/stimme/' . ($a === 'stimme_spielen' ? 'spielen' : 'loeschen') . '?name=' . rawurlencode($name));
     case 'stop':
         xgonav('POST', '/stop');
     case 'ausrichten':

@@ -27,6 +27,7 @@ import json
 import logging
 import math
 import os
+import re
 import threading
 import time
 import wave
@@ -427,6 +428,7 @@ class Stimmen:
         self._reset_tor()
         self._slot = None
         self._ev = threading.Event()
+        self._lock = threading.RLock()               # Lernen/Verfall (Thread stimme) gegen Löschen (Web)
         self._ende = False
         self._thread: threading.Thread | None = None
 
@@ -469,6 +471,32 @@ class Stimmen:
     def close(self) -> None:
         self._ende = True
         self._ev.set()
+
+    def loeschen(self, name: str) -> bool:
+        """Eine Probe löschen (Web): NN = bestätigt (roh + gefiltert), sonst Kandidat (Zeitname). False = nicht da."""
+        if re.fullmatch(r"\d\d", name):
+            art = "bestaetigt"
+        elif re.fullmatch(r"\d{8}-\d{6}-\d{3}x*", name):
+            art = "kandidat"
+        else:
+            raise ValueError(f"Probe {name!r} ungültig")
+        with self._lock:
+            if art == "bestaetigt":
+                da = name in self._ids or os.path.exists(os.path.join(self.d_best, name + "_roh.wav"))
+                self._ids = tuple(x for x in self._ids if x != name)
+                self.bestaetigt = [p for p in self.bestaetigt if p.name != name]
+                _rm(os.path.join(self.d_best, name + "_roh.wav"))
+                _rm(self.datei(name))
+                if da and self._geladen:
+                    self._zaehler_speichern()
+            else:
+                f = os.path.join(self.d_kand, name + ".wav")
+                da = os.path.exists(f) or any(p.name == name for p in self.kandidaten)
+                self.kandidaten = [p for p in self.kandidaten if p.name != name]
+                _rm(f)
+        if da:
+            log.info("Stimmen: %s im Web gelöscht", name)
+        return da
 
     # ------------------------------------------------------------------ Mitschnitt (Ortungs-Thread)
     def _reset_tor(self) -> None:
@@ -531,10 +559,11 @@ class Stimmen:
             if self._ende:
                 break
             try:
-                if seg is None:
-                    self._verfall()
-                    continue
-                self.lerne(seg)
+                with self._lock:
+                    if seg is None:
+                        self._verfall()
+                        continue
+                    self.lerne(seg)
             except Exception as e:                      # darf nie etwas anderes stören
                 self.fehler = str(e)
                 log.warning("Stimmen: %s", e)

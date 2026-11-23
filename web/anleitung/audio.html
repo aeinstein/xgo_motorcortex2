@@ -1534,6 +1534,10 @@ Intercom with the browser (mode manual, 8 kHz mono both ways, <code>plughw:0,0</
 <td><code>[stimme] dir</code> (<code>/opt/xgonav/stimmen</code>): <code>kandidaten/&lt;time&gt;.wav</code> (16 kHz raw), <code>bestaetigt/NN_roh.wav</code>, <code>NN.wav</code> (48 kHz filtered); delete the directory to forget everything</td>
 </tr>
 <tr>
+<td>Web</td>
+<td>card <strong>Samples</strong>: <code>api.php?a=stimmen</code> lists the files (disk only, works without xgonav), <code>a=stimme_wav&amp;name=NN\|&lt;time&gt;&amp;roh=0\|1</code> serves one WAV for the browser; <code>POST a=stimme_spielen&amp;name=NN</code> → xgonav <code>POST /stimme/spielen</code> (sound <code>stimme:NN</code>, sound location ignores it), <code>POST a=stimme_loeschen&amp;name=…</code> → xgonav <code>POST /stimme/loeschen</code> (<code>Stimmen.loeschen</code>: files + memory + counts; 400 bad name, 404 missing). Cost on the Pi only on request</td>
+</tr>
+<tr>
 <td>Status</td>
 <td><code>GET /status</code> → <code>ortung.stimme</code> (<code>aufnahme</code>, <code>bestaetigt</code>, <code>kandidaten</code>, <code>voll</code>, <code>segmente</code>, <code>verworfen</code>, <code>wieder</code>); pet info <code>nachgeplappert</code>, <code>proben</code></td>
 </tr>

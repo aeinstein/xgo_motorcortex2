@@ -1624,6 +1624,10 @@
 <td>Verlauf (collapsed)</td>
 <td>history charts, see below</td>
 </tr>
+<tr>
+<td>Samples (collapsed, after Schallradar)</td>
+<td>voice samples of <code>pet</code> from <code>[stimme] dir</code>: learned (NN, length, times heard, last heard; ▶ parrot version / raw in the browser, 🔊 on the Rider, ✕ delete with confirm) and candidates (▶, ✕); list via <code>api.php?a=stimmen</code> only when opened or on Reload, playback in the browser (<code>&lt;audio&gt;</code>), open/closed in <code>localStorage</code> <code>xgonav.samples</code></td>
+</tr>
 </tbody>
 </table>
 <p>Language: German is in the HTML, English in the dictionaries <code>EN</code>/<code>EN_HTML</code> of <code>index.php</code> (keyed by the German text; long help blocks via <code>data-i18n-html</code>). Switched in the browser only, choice in <code>localStorage</code> <code>xgonav.lang</code>; free text from xgonav/<code>api.php</code> (status, errors) stays German. <code>?i18n=debug</code> logs missing translations to the console. No cost on the Pi.</p>
@@ -2027,6 +2031,16 @@ works without xgonav.</p>
 <td>GET</td>
 <td><code>/detector</code></td>
 <td>selectable targets (detector classes), computed on request only</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/stimme/spielen?name=NN</code></td>
+<td>play learned voice sample NN on the speaker (<code>Emotions.sound("stimme:NN")</code>); 404 without <code>[stimme]</code> or file. Card <strong>Samples</strong> (<a href="audio.html#voice-samples-xgonavstimmepy-mode-pet">audio.md</a>)</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/stimme/loeschen?name=NN\|&lt;time&gt;</code></td>
+<td>delete a learned sample or candidate (files, memory, <code>zaehler.json</code>); 400 bad name, 404 missing</td>
 </tr>
 <tr>
 <td>GET</td>

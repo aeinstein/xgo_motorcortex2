@@ -282,6 +282,11 @@ details.extras[open]>summary::after{transform:rotate(90deg)}
 details.extras[open]>summary{margin-bottom:8px}
 .unter{font-size:12px;color:var(--leise);margin:10px 0 4px}
 .unter:first-of-type{margin-top:0}
+.samples{width:100%;border-collapse:collapse;font-size:12px;font-variant-numeric:tabular-nums}
+.samples td{padding:3px 4px;border-top:1px solid var(--rand);white-space:nowrap}
+.samples td.knoepfe{display:table-cell;text-align:right}
+.samples td.knoepfe button{padding:2px 6px;margin-left:3px}
+.samples tr.spielt td{background:var(--karte2)}
 .leds{display:grid;grid-template-columns:repeat(2,52px);gap:6px}
 .ledzeile{display:flex;gap:12px;align-items:center}
 
@@ -568,6 +573,20 @@ details.extras[open]>summary{margin-bottom:8px}
         Mikrofone trennen nur links und rechts: jeder Strahl hat deshalb einen gestrichelten Zwilling nach hinten,
         die Quelle liegt auf einem von beiden. Länge = Pegel über dem Ruhepegel, Deckkraft = Güte und Alter.
         Lauscht nur in den Modi aus <code>[ortung] modes</code>, nie im Ruhemodus; eigene Töne werden ausgeblendet.</p>
+    </details>
+  </details>
+  <details class="karte extras" id="samplekarte" ontoggle="samplesUmschalten()">
+    <summary><h2>Samples</h2><span class="leise" id="samples-zustand">eingeklappt: kein Nachladen</span></summary>
+    <div class="unter">Gelernte Stimmen <button class="rechts" onclick="samplesLaden()" title="Liste neu von der Platte lesen">Neu laden</button></div>
+    <table class="samples" id="samples-best"></table>
+    <div class="unter">Kandidaten (einmal gehört, verfallen nach 1 min)</div>
+    <table class="samples" id="samples-kand"></table>
+    <audio id="samples-audio" preload="none"></audio>
+    <details class="hilfe" data-i18n-html="hilfe-samples"><summary>▶ hier anhören · 🔊 am Rider · ✕ löschen</summary>
+      <p>Stimmproben des Modus Haustier (<code>[stimme]</code>, Ablage <code>/opt/xgonav/stimmen</code>): zweimal binnen
+        einer Minute gehört = gelernt, dann plappert er sie als Sittich nach. ▶ spielt die Sittich-Fassung im Browser,
+        „roh“ die Aufnahme, 🔊 die Sittich-Fassung über den Lautsprecher des Riders (die Ortung hört dabei weg).
+        Kandidaten sind einmal Gehörtes (16 kHz roh). Liste nur beim Aufklappen und nach „Neu laden“, kein Nachladen.</p>
     </details>
   </details>
   <details class="karte extras" id="extras" ontoggle="extrasUmschalten()">
@@ -887,6 +906,13 @@ const EN = {
   'Mikrofon belegt oder arecord beendet': 'microphone busy or arecord ended', 'aplay beendet (Lautsprecher belegt?)': 'aplay ended (speaker busy?)',
   'arecord/aplay starten nicht': 'arecord/aplay do not start',
   'xgonav nicht erreichbar (läuft der Dienst?)': 'xgonav not reachable (is the service running?)',
+  'Samples': 'Samples', 'Gelernte Stimmen': 'Learned voices', 'Neu laden': 'Reload', 'Liste neu von der Platte lesen': 'Read the list from disk again',
+  'Kandidaten (einmal gehört, verfallen nach 1 min)': 'Candidates (heard once, expire after 1 min)',
+  'noch keine gelernt': 'none learned yet', 'keine': 'none', 'roh': 'raw', '{n}-mal gehört': 'heard {n}×',
+  'zuletzt {t}': 'last {t}', '{a} von {b} gelernt · {k} Kandidaten': '{a} of {b} learned · {k} candidates',
+  'Sittich-Fassung hier anhören': 'Play the parrot version here', 'Aufnahme roh hier anhören': 'Play the raw recording here',
+  'Am Rider abspielen': 'Play on the Rider', 'Löschen': 'Delete', 'Probe {n} löschen?': 'Delete sample {n}?',
+  'nicht lesbar': 'not readable', 'Hier anhören': 'Play here',
   'Kamera senden': 'Send camera', 'hier': 'here', 'Lautstärke hier': 'Volume here', 'Lautstärke am Rider': 'Volume on the Rider',
   'Verstärkung der eigenen Stimme zum Rider (mit weichem Begrenzer, kein Übersteuern)': 'Gain of your voice to the Rider (soft limiter, no clipping)', 'Telefon': 'Phone', 'bereit': 'ready', 'Bilder je Sekunde': 'Frames per second',
   'Eigenes Kamerabild aufs Display des Riders (320×240, im Browser umgerechnet; 0,75 MB/s bei 5 Bildern/s, am Rider ~9 % eines Kerns, bei 10/s doppelt). Nur während eines Gesprächs.':
@@ -902,6 +928,11 @@ const EN_HTML = {
         Two microphones only separate left and right: every ray therefore has a dashed twin to the rear, the
         source is on one of them. Length = level above the noise floor, opacity = quality and age. Listens only
         in the modes of <code>[ortung] modes</code>, never in rest mode; own sounds are ignored.</p>`,
+  'hilfe-samples': `<summary>▶ listen here · 🔊 on the Rider · ✕ delete</summary>
+      <p>Voice samples of pet mode (<code>[stimme]</code>, stored in <code>/opt/xgonav/stimmen</code>): heard twice within
+        one minute = learned, then the Rider parrots it back. ▶ plays the parrot version in the browser, “raw” the
+        recording, 🔊 the parrot version on the Rider's speaker (sound location ignores it). Candidates were heard once
+        (16 kHz raw). The list is read only when opened and on “Reload”, no polling.</p>`,
   'hilfe-lage': `<summary>Camera height, roll, stand up and sit down</summary>
       <p>Camera height: value of the floor geometry from <code>cam_h_u8</code> (lens centre above floor, setpoint u8
         in the tooltip); the legs need about 1 s afterwards. The value matches the folding-rule measurement
@@ -3086,6 +3117,50 @@ function radarUmschalten() {
 }
 document.addEventListener('visibilitychange', radarStarten);
 window.addEventListener('resize', radarStarten);
+// Kachel „Samples“: Liste nur beim Aufklappen/Neu laden (api.php liest die Platte), Wiedergabe im Browser
+const samplesMax = 10;                                  // [stimme] max_confirmed
+function samplesUmschalten() {
+  try { localStorage.setItem('xgonav.samples', $('samplekarte').open ? '1' : '0'); } catch (e) {}
+  if ($('samplekarte').open) samplesLaden(); else { $('samples-audio').pause(); $('samples-zustand').textContent = tr('eingeklappt: kein Nachladen'); }
+}
+async function samplesLaden() {
+  let d = null;
+  try { const r = await fetch('api.php?a=stimmen', {cache: 'no-store'}); if (r.ok) d = await r.json(); } catch (e) {}
+  if (!d) { $('samples-zustand').textContent = tr('nicht lesbar'); return; }
+  const zeit = t => t ? new Date(t * 1000).toLocaleString(LOCALE(), {day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit'}) : '-';
+  const dauer = s => s != null ? s.toFixed(1).replace('.', LANG === 'en' ? '.' : ',') + ' s' : '-';
+  const knopf = (txt, tip, f) => '<button title="' + esc(tr(tip)) + '" onclick="' + f + '">' + txt + '</button>';
+  $('samples-best').innerHTML = d.bestaetigt.length ? d.bestaetigt.map(p => {
+    const n = esc(p.name);
+    return '<tr data-name="' + n + '"><td><b>' + n + '</b></td><td>' + dauer(p.s) + '</td><td>' +
+      (p.n != null ? esc(tr('{n}-mal gehört', {n: p.n})) : '') + '</td><td class="leise">' + esc(tr('zuletzt {t}', {t: zeit(p.zuletzt)})) +
+      '</td><td class="knoepfe">' +
+      (p.sittich ? knopf('▶', 'Sittich-Fassung hier anhören', `sampleHoeren('${n}', 0)`) : '') +
+      knopf(tr('roh'), 'Aufnahme roh hier anhören', `sampleHoeren('${n}', 1)`) +
+      (p.sittich ? knopf('🔊', 'Am Rider abspielen', `sampleRider('${n}')`) : '') +
+      knopf('✕', 'Löschen', `sampleLoeschen('${n}')`) + '</td></tr>';
+  }).join('') : '<tr><td class="leise">' + tr('noch keine gelernt') + '</td></tr>';
+  $('samples-kand').innerHTML = d.kandidaten.length ? d.kandidaten.map(p => {
+    const n = esc(p.name);
+    return '<tr data-name="' + n + '"><td>' + zeit(p.zeit) + '</td><td>' + dauer(p.s) + '</td><td class="knoepfe">' +
+      knopf('▶', 'Hier anhören', `sampleHoeren('${n}', 0)`) + knopf('✕', 'Löschen', `sampleLoeschen('${n}')`) + '</td></tr>';
+  }).join('') : '<tr><td class="leise">' + tr('keine') + '</td></tr>';
+  $('samples-zustand').textContent = tr('{a} von {b} gelernt · {k} Kandidaten', {a: d.bestaetigt.length, b: samplesMax, k: d.kandidaten.length});
+}
+function sampleHoeren(name, roh) {
+  const a = $('samples-audio');
+  document.querySelectorAll('.samples tr.spielt').forEach(z => z.classList.remove('spielt'));
+  a.src = 'api.php?' + new URLSearchParams({a: 'stimme_wav', name, roh, t: Date.now()});
+  a.play().catch(() => {});
+  document.querySelector('.samples tr[data-name="' + name + '"]')?.classList.add('spielt');
+  a.onended = () => document.querySelectorAll('.samples tr.spielt').forEach(z => z.classList.remove('spielt'));
+}
+function sampleRider(name) { befehl('stimme_spielen', {name}, true); }
+async function sampleLoeschen(name) {
+  if (!confirm(tr('Probe {n} löschen?', {n: name}))) return;
+  await befehl('stimme_loeschen', {name}, true);
+  samplesLaden();
+}
 function raumkarteUmschalten() {
   try { localStorage.setItem('xgonav.raumkarte', $('raumkarte').open ? '1' : '0'); } catch (e) {}
   if ($('raumkarte').open) karteAnstoss(); else clearTimeout(karteTimer);
@@ -3171,6 +3246,7 @@ try {
   if (localStorage.getItem('xgonav.lage') !== '0') $('lagekarte').open = true;   // Standard: offen
   if (localStorage.getItem('xgonav.extras') === '1') $('extras').open = true;
   if (localStorage.getItem('xgonav.radar') !== '0') $('radarkarte').open = true;   // Standard: offen
+  if (localStorage.getItem('xgonav.samples') === '1') $('samplekarte').open = true;
   if (localStorage.getItem('xgonav.laufzeit') !== '0') $('laufzeit').open = true;   // Standard: offen
 } catch (e) { $('lagekarte').open = true; $('raumkarte').open = true; $('laufzeit').open = true; }
 liveVerbinden();

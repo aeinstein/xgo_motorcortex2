@@ -62,6 +62,10 @@
 
 Direction of sound from the two microphones (modes `idle`, `pet`): ray = sound, length = loudness, fades in 12 s. Rays turn with the Rider (IMU yaw), so they keep pointing at the source. Front and back cannot be told apart. Reference: [Audio](../audio.md).
 
+## Samples
+
+Voice samples learned in mode `pet` ([Audio](../audio.md#voice-samples-xgonavstimmepy-mode-pet)), read from disk only when the card is opened or on Reload. Learned: number, length, times heard, last heard; ▶ parrot version in the browser, raw recording in the browser, 🔊 parrot version on the Rider's speaker, ✕ delete. Candidates (heard once): ▶, ✕. Collapsed by default.
+
 ## Extras
 
 ![Extras](../screenshots/web-drive.png)
