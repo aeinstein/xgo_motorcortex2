@@ -686,6 +686,10 @@ class ExploreCfg:
     settle_s: float = 0.6              # nach Ankunft stehen und schauen (Nicken beruhigen)
     keep_dist_m: float = 0.5           # altes Ziel besteht, solange Frontier-Zellen so nah sind
     goal_timeout_s: float = 60.0       # länger an einem Ziel: gilt als festgefahren
+    # Festgefahren und höchstens so lange davor noch in einer Engstelle/Lücke gefahren (Wegfolger „eng“/„Lücke“):
+    # Ziel gleich sperren statt erst neu zu planen; 0 = aus (erst beim zweiten Festfahren). Seit 2026-11-23:
+    # Neu planen führte am RiderPi wieder durch dieselbe Lücke zwischen Stuhlbeinen, die nur die Merkkarte kannte.
+    gap_block_s: float = 2.0
     no_growth_s: float = 120.0         # so lange kaum Zuwachs an bekanntem Boden: Karte gilt als fertig
     min_growth_m2: float = 0.5
     # Umkreis besuchter und gesperrter Stellen. Mit 0,5 m fiel die letzte Stelle eines Gangs weg, die nur

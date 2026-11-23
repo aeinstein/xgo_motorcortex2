@@ -684,6 +684,7 @@ class PathFollower:
         self._anchor: tuple[float, float] | None = None
         self._t_prog = 0.0
         self._err_ref = 0.0
+        self.tight_t = -math.inf                  # zuletzt in einer Engstelle gefahren (Zeit)
 
     def set_path(self, path) -> None:
         self.path = list(path) if path else None
@@ -881,10 +882,12 @@ class PathFollower:
         tm = self.h.tight_m
         tight = tm > 0 and w.wall_fn is not None and any(
             w.wall_fn(px, py, tm) < tm for px, py in [(x, y)] + [self.target(x, y, d) for d in (0.15, 0.3, 0.45)])
+        gap = w.gap_fn() if tight and w.gap_fn is not None else None
+        if tight:
+            self.tight_t = w.t
         tx, ty = self.target(x, y, self.h.tight_lookahead_m if tight else None)
         err = _wrap(math.atan2(ty - y, tx - x) - th)
         mitte = False
-        gap = w.gap_fn() if tight and w.gap_fn is not None else None
         if gap is not None:
             # Lücke voraus in Wegrichtung: auf ihre gemessene Mitte zielen statt auf den Weg der Raumkarte
             eg = math.atan2(gap[1], max(gap[0], 0.10))
@@ -1419,7 +1422,10 @@ class MapExplore(Behavior):
         timed_out = self.frontier is not None and w.t - self.t_goal > e.goal_timeout_s
         if self.f.stuck or timed_out:
             self.f.stuck = False
-            self.stucks = 2 if timed_out or self.f.pressing else self.stucks + 1   # Kontakt: gleich zurück
+            # Kontakt oder festgefahren in einer Engstelle/Lücke (explore.gap_block_s): gleich sperren statt erst
+            # neu zu planen. Neu planen führte durch dieselbe Lücke (RiderPi 2026-11-23, Stühle: 3 s „Bahn 0,17 m“)
+            in_gap = self.e.gap_block_s > 0 and w.t - self.f.tight_t <= self.e.gap_block_s
+            self.stucks = 2 if timed_out or self.f.pressing or in_gap else self.stucks + 1
             self.f.pressing = False
             if self.stucks == 1:
                 self.keep_ok = False

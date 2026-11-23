@@ -148,7 +148,7 @@ Status JSON `grid`: `pose [x m, y m, yaw °]`, `start [x m, y m, yaw °]`, `zum_
 | Arrival | stops `standoff_m` before the frontier, turns towards it, `settle_s`; no new goal within `avoid_r_m` 0.3 m of the spot |
 | Driven ground | cells within `driven_free_r_m` of the driven path stay passable for the planner despite occupied specks and `inflate_m`; obstacles the local map sees now still block |
 | Contact | command > 0.08 but < 2 cm movement in 2.5 s (normal start-up takes up to 1.8 s): treated as contact, back up and block the goal at once. Wheel slip hides it |
-| Stuck | no 5 cm progress or 10° turn in 3 s: replan without the old path; again, or `goal_timeout_s`: back up 0.8 s, block the goal. No goal left: `wander_s` reactive driving, at most `max_wander` times, then stop |
+| Stuck | no 5 cm progress or 10° turn in 3 s: replan without the old path; again, or `goal_timeout_s`: back up 0.8 s, block the goal. Stuck within `gap_block_s` 2 s after driving in a tight spot or gap (follower "eng"/"Lücke"): block at once (since 2026-11-23; replanning led through the same gap between chair legs that only the local map knew). No goal left: `wander_s` reactive driving, at most `max_wander` times, then stop |
 | End | nothing reachable, < `min_growth_m2` new floor in `no_growth_s`, `max_s`, or `min_battery`. Then save and drive to the start (`return_home`). Arrived there after a way home of at least `recheck_min_m` 1 m, it searches once more (new floor was seen on the way; at most `recheck_max` 3 times per run, 0 = off) and only then reports the map as done |
 | Status JSON | `explore`: `zustand`, `stellen`, `gesperrt`, `befreit`, `ziel`, `ende` |
 | Without room map | `explore` drives reactively (`Explore`), as `approach` does while searching |

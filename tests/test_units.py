@@ -2505,6 +2505,25 @@ def test_map_explore_stuck_replans_then_blocks_goal():
     assert b.state == "ziel"
 
 
+def test_map_explore_stuck_in_gap_blocks_goal_at_once():
+    """explore.gap_block_s: Festgefahren direkt nach einer Engstelle/Lücke sperrt das Ziel sofort (RiderPi
+    2026-11-23: Neu planen führte wieder durch die Lücke zwischen Stuhlbeinen); nach gap_block_s wie bisher."""
+    cfg, b = _explore_ready()
+    b.want_plan(0.0)
+    b.set_path(_plan())
+    b.f.tight_t = 0.5
+    b.f.stuck = True
+    b.step(_ex_world(2.0, (0.0, 0.0, 0.0)))
+    assert b.blocked_goals == [(1.3, 0.0)] and b.state == "backup"
+    cfg, b = _explore_ready()
+    b.want_plan(0.0)
+    b.set_path(_plan())
+    b.f.tight_t = 0.5
+    b.f.stuck = True
+    b.step(_ex_world(3.0, (0.0, 0.0, 0.0)))                    # 2,5 s nach der Engstelle: erst neu planen
+    assert b.stucks == 1 and not b.blocked_goals
+
+
 def test_map_explore_goal_timeout_blocks_goal():
     cfg, b = _explore_ready()
     b.t_plan = 0.0

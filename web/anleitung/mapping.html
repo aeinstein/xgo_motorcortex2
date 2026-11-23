@@ -2022,7 +2022,7 @@ Status JSON <code>grid</code>: <code>pose [x m, y m, yaw °]</code>, <code>start
 </tr>
 <tr>
 <td>Stuck</td>
-<td>no 5 cm progress or 10° turn in 3 s: replan without the old path; again, or <code>goal_timeout_s</code>: back up 0.8 s, block the goal. No goal left: <code>wander_s</code> reactive driving, at most <code>max_wander</code> times, then stop</td>
+<td>no 5 cm progress or 10° turn in 3 s: replan without the old path; again, or <code>goal_timeout_s</code>: back up 0.8 s, block the goal. Stuck within <code>gap_block_s</code> 2 s after driving in a tight spot or gap (follower "eng"/"Lücke"): block at once (since 2026-11-23; replanning led through the same gap between chair legs that only the local map knew). No goal left: <code>wander_s</code> reactive driving, at most <code>max_wander</code> times, then stop</td>
 </tr>
 <tr>
 <td>End</td>

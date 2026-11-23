@@ -1956,6 +1956,12 @@
        "hilfe": "länger an einem Ziel: gilt als festgefahren"
       },
       {
+       "key": "gap_block_s",
+       "typ": "float",
+       "default": 2.0,
+       "hilfe": "Festgefahren und höchstens so lange davor noch in einer Engstelle/Lücke gefahren (Wegfolger „eng“/„Lücke“): Ziel gleich sperren statt erst neu zu planen; 0 = aus (erst beim zweiten Festfahren). Seit 2026-11-23: Neu planen führte am RiderPi wieder durch dieselbe Lücke zwischen Stuhlbeinen, die nur die Merkkarte kannte."
+      },
+      {
        "key": "no_growth_s",
        "typ": "float",
        "default": 120.0,
