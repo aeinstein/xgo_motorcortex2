@@ -15,8 +15,8 @@
 | Sit down (Absetzen) | set down (254); shown only while balancing |
 | Jump up (Aufspringen) | action 253 (confirm); shown only while lying |
 | Stand up (Aufstehen) | action 255; shown only while lying |
-| Start / stop vision | camera and image processing on / off |
-| Record (Aufzeichnen) | checkbox: raw recording (JPEG + `meta.jsonl`) while balancing, input for [FloorNet training](advanced/floornet-training.md) |
+| ▶ / ■ Start / stop vision | camera and image processing on / off |
+| ● Record (Aufzeichnen) | toggle, white on red while on: raw recording (JPEG + `meta.jsonl`) while balancing, input for [FloorNet training](advanced/floornet-training.md) |
 | ⚙ Settings (Einstellungen) | all parameters of `config.toml`, with backup and restart |
 | ☾ Rest (Ruhe) | sleep mode: set down, pipeline off, CPU clock down, sleeping eyes; only **Wake** (Wecken) ends it |
 | **STOP** | standstill, mode `idle` |

@@ -49,12 +49,13 @@ header{position:fixed;top:0;left:0;right:0;z-index:10;display:flex;align-items:c
   padding:8px 12px;background:rgba(15,17,20,.92);backdrop-filter:blur(6px);border-bottom:1px solid var(--rand)}
 body{padding-top:var(--kopf-h,52px)}
 html{scroll-padding-top:var(--kopf-h,52px)}
-#einst-knopf,#ruhe-knopf{font-size:15px;line-height:1;padding:3px 7px}   /* immer nur Symbol, gleiche Höhe wie die Textknöpfe */
+#einst-knopf,#ruhe-knopf{font-size:15px;line-height:1;padding:3px 7px}
+@media (hover:hover){#rec.an:hover{background:#ff2b30;border-color:#ff6b6e}}   /* immer nur Symbol, gleiche Höhe wie die Textknöpfe */
 .kopf-knoepfe{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
-.kopf-check{display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--text);cursor:pointer;white-space:nowrap;
-  padding:3px 8px;border:1px solid var(--rand2);border-radius:6px;background:var(--karte2)}
-.kopf-check input{width:13px;height:13px;margin:0;accent-color:var(--gefahr);cursor:pointer}
-.kopf-check[hidden]{display:none}
+/* Symbolknöpfe im Header (immer nur Symbol, gleiche Höhe wie die Textknöpfe) */
+.kopf-ic{font-size:15px;line-height:1;padding:3px 7px}
+#rec{color:var(--gefahr)}
+#rec.an{background:var(--gefahr);border-color:var(--gefahr);color:#fff}   /* Aufnahme läuft: weiß auf rot */
 header h1{font-size:15px;font-weight:600;margin:0 4px 0 0;white-space:nowrap}
 header h1 span{color:var(--leise);font-weight:400}
 @media (max-width:640px){
@@ -364,8 +365,8 @@ details.extras[open]>summary{margin-bottom:8px}
     <button id="k-absetzen" class="gefahr symbol" onclick="befehl('action', {n: 254})" aria-label="Absetzen" title="Aktion 254, Not-Stopp"><span class="ic" aria-hidden="true">⤓</span><span class="txt">Absetzen</span></button>
     <button id="k-aufspringen" class="symbol" onclick="aufspringen()" aria-label="Aufspringen" title="Aktion 253 (!standup): Rider muss stehen und Platz haben"><span class="ic" aria-hidden="true">⤒</span><span class="txt">Aufspringen</span></button>
     <button id="k-aufstehen" class="symbol" onclick="arm()" aria-label="Aufstehen" title="Aktion 255"><span class="ic" aria-hidden="true">↑</span><span class="txt">Aufstehen</span></button>
-    <button id="pip" class="symbol" onclick="pipelineUmschalten()" aria-label="Bildverarbeitung" title="Bildverarbeitung (Kamera und Auswertung) starten oder stoppen"><span class="ic" aria-hidden="true" id="pip-ic">▶</span><span class="txt" id="pip-txt">…</span></button>
-    <label id="rec-l" class="kopf-check" hidden title="Rohbilder und Metadaten am Rider speichern. Schreibt nur, solange er balanciert; Absetzen beendet die Aufnahme, jedes Aufstehen beginnt eine neue."><input type="checkbox" id="rec" onchange="aufzeichnungSetzen(this.checked)"> Aufzeichnen</label>
+    <button id="pip" class="kopf-ic" onclick="pipelineUmschalten()" aria-label="Bildverarbeitung starten" title="Bildverarbeitung (Kamera und Auswertung) starten"><span aria-hidden="true" id="pip-ic">▶</span></button>
+    <button id="rec" class="kopf-ic" hidden onclick="aufzeichnungSetzen(!aktAufzeichnung)" aria-pressed="false" aria-label="Aufzeichnen" title="Aufzeichnen: Rohbilder und Metadaten am Rider speichern. Schreibt nur, solange er balanciert; Absetzen beendet die Aufnahme, jedes Aufstehen beginnt eine neue."><span aria-hidden="true">●</span></button>
   </div>
   <button id="einst-knopf" onclick="einstOeffnen()" aria-label="Einstellungen" title="Alle Einstellungen aus config.toml ändern (mit Sicherung), xgonav neu starten"><span aria-hidden="true">⚙</span></button>
   <button id="ruhe-knopf" onclick="ruheSchalten(true)" aria-label="Ruhe" title="Ruhemodus: absetzen, Bildverarbeitung aus, Abfragen aus, CPU-Takt runter, Schlafaugen am Display"><span aria-hidden="true">☾</span></button>
@@ -748,7 +749,10 @@ const EN = {
   'Neu ausrichten: Roll auf 0° und die Beine 3 s nivellieren (nur wenn er steht)': 'Re-level: roll to 0° and level the legs for 3 s (only while standing)', 'Aktion 254, Not-Stopp': 'Action 254, emergency stop', 'Absetzen': 'Sit down',
   'Extras': 'Extras', 'Aktionen · LEDs · Emotionen': 'Actions · LEDs · Emotions',
   'System · Aktionen · LEDs · Emotionen': 'System · Actions · LEDs · Emotions', 'System': 'System',
-  'Bildverarb. starten': 'Start vision', 'Bildverarb. stoppen': 'Stop vision',
+  'Bildverarbeitung starten': 'Start vision', 'Bildverarbeitung stoppen': 'Stop vision', '(Kamera und Auswertung)': '(camera and processing)',
+  'Aufzeichnung beenden': 'Stop recording', 'Bildverarbeitung (Kamera und Auswertung) starten': 'Start vision (camera and processing)',
+  'Aufzeichnen: Rohbilder und Metadaten am Rider speichern. Schreibt nur, solange er balanciert; Absetzen beendet die Aufnahme, jedes Aufstehen beginnt eine neue.':
+    'Record: store raw images and metadata on the Rider. Writes only while balancing; sitting down ends the recording, every stand-up starts a new one.',
   'Bildverarbeitung (Kamera und Auswertung) starten oder stoppen': 'Start or stop vision (camera and processing)', 'Aktionen': 'Actions', 'LEDs': 'LEDs',
   'Fährt bzw. dreht selbst: nur im Modus idle, braucht Platz': 'Drives or turns by itself: mode idle only, needs room',
   'Alle aus': 'All off', 'Strobe': 'Strobe', 'Gilt für alle LEDs, bleibt über Neustarts gespeichert': 'Applies to all LEDs, kept across restarts',
@@ -1321,6 +1325,7 @@ function kopfHoehe() {
 }
 if (window.ResizeObserver) new ResizeObserver(kopfHoehe).observe(document.querySelector('header'));
 kopfHoehe();
+let aktAufzeichnung = false;
 function aufzeichnungSetzen(an) { return befehl('record', {on: an ? 1 : 0}); }
 // Freier Platz mit 3 Stellen und Komma (987 MB, 1,23 GB, 12,3 GB), gerechnet im Browser
 function platzText(mb) {
@@ -1337,10 +1342,15 @@ function platzZeigen(a) {
 }
 function aufzeichnungZeigen(s) {
   const a = s.aufzeichnung;
-  $('rec-l').hidden = !a;
+  $('rec').hidden = !a;
   platzZeigen(a);
   if (!a) return;
-  $('rec').checked = !!a.an;
+  aktAufzeichnung = !!a.an;
+  const rec = $('rec'), recText = tr(a.an ? 'Aufzeichnung beenden' : 'Aufzeichnen');
+  rec.classList.toggle('an', aktAufzeichnung);
+  rec.setAttribute('aria-pressed', aktAufzeichnung ? 'true' : 'false');
+  rec.setAttribute('aria-label', recText);
+  rec.title = recText + ': ' + tr('Rohbilder und Metadaten am Rider speichern. Schreibt nur, solange er balanciert; Absetzen beendet die Aufnahme, jedes Aufstehen beginnt eine neue.');
   const ordner = a.ordner ? a.ordner.split('/').pop() : '';
   let text = '', art = 'warn';
   if (a.laeuft) { text = a.bilder + ' ' + tr('Bilder'); art = 'schlecht'; }
@@ -1435,9 +1445,10 @@ function statusZeigen(s, fehler) {
           s.battery == null ? '' : (s.battery < 20 ? 'schlecht' : s.battery < 40 ? 'warn' : 'gut'));
     pille('p-pip', tr(s.pipeline ?? '-'), s.pipeline === 'läuft' ? 'gut' : (s.pipeline ? 'warn' : ''));
     const laeuft = s.pipeline === 'läuft';
-    $('pip-txt').textContent = tr(laeuft ? 'Bildverarb. stoppen' : 'Bildverarb. starten');
+    const pt = tr(laeuft ? 'Bildverarbeitung stoppen' : 'Bildverarbeitung starten');
     $('pip-ic').textContent = laeuft ? '■' : '▶';
-    $('pip').setAttribute('aria-label', $('pip-txt').textContent);
+    $('pip').setAttribute('aria-label', pt);
+    $('pip').title = pt + ' ' + tr('(Kamera und Auswertung)');
     $('pip').classList.toggle('aktiv', !laeuft);
     aufzeichnungZeigen(s);
     if (s.grid) $('karte-pose').textContent =
