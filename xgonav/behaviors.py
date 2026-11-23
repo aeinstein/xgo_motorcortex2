@@ -64,6 +64,10 @@ class World:
     gap_fn: object = None
     # Abgleich am Startbild (startbild.py): Anker zum aktuellen Startpunkt vorhanden
     anker: bool = False
+    # Radgeschwindigkeit (m/s) über ~0,2 s, None ohne frische Raddaten; clear_fn() = freie Strecke geradeaus laut
+    # Merkkarte (m, inf frei). Beide für den Anschub (PathFollower), clear_fn nur beim Auslösen gerufen.
+    v_rad: float | None = None
+    clear_fn: object = None
 
     def bearing(self, x: float) -> float:
         """Bildspalte -> Winkel rad (links positiv)."""
@@ -541,6 +545,10 @@ class PathFollower:
         self._push_until: float | None = None    # Anschub läuft bis dahin
         self._push_n = 0                          # Anschübe seit dem letzten echten Fortschritt
         self._push_at: tuple[float, float] | None = None
+        self._push_from: tuple[float, float] = (0.0, 0.0)
+        self._push_budget = 0.0                   # Strecke (m), die der laufende Anschub höchstens fährt
+        self._v_hoch_t = -math.inf               # zuletzt Räder >= kante_v
+        self._kante: tuple | None = None         # (x, y, t): Räder standen schlagartig still
         self._turning = False
         self._anchor: tuple[float, float] | None = None
         self._t_prog = 0.0
@@ -555,6 +563,7 @@ class PathFollower:
         self.pressing = False
         self._press = None
         self._push_until = None     # _push_n bleibt: erst 0,3 m Fortschritt erlaubt neue Anschübe
+        self._kante = None
         self._anchor = None
 
     def target(self, x: float, y: float, lookahead_m: float | None = None) -> tuple[float, float]:
@@ -608,8 +617,26 @@ class PathFollower:
     def _watch_press(self, w: World) -> None:
         t, cmd_v = w.t, w.cmd_v
         x, y = w.pose[0], w.pose[1]
+        c = self.cfg
         if self._push_at is not None and math.hypot(x - self._push_at[0], y - self._push_at[1]) > 0.3:
             self._push_n, self._push_at = 0, None      # wieder richtig vorangekommen
+        # Schneller Anschub: Räder liefen eben noch und stehen schlagartig, obwohl vorwärts befohlen war (Fuge,
+        # Kante). safety()/Bahnprüfung senken den Fahrwert danach oft sofort (Stufe dahinter), dann käme die
+        # Drückerkennung unten nie auf ihre PRESS_S (RiderPi 2026-11-23, Fuge vor der Fensterstufe).
+        vr = w.v_rad
+        if c.kante_v > 0 and vr is not None:
+            if vr >= c.kante_v:
+                self._v_hoch_t = t
+            k = self._kante
+            if k is None:
+                if vr < 0.03 and cmd_v > self.PRESS_V and t - self._v_hoch_t <= c.kante_fenster_s:
+                    self._kante = (x, y, t)
+            elif math.hypot(x - k[0], y - k[1]) >= self.PRESS_M or vr > 0.05 or t - k[2] > c.kante_s + 1.0:
+                self._kante = None
+            elif t - k[2] >= c.kante_s:
+                self._kante = None
+                if self._start_push(w, "Räder stehen schlagartig"):
+                    return
         if cmd_v <= self.PRESS_V:
             self._press = None
         elif self._press is None or math.hypot(x - self._press[0], y - self._press[1]) >= self.PRESS_M:
@@ -617,27 +644,55 @@ class PathFollower:
         elif t - self._press[2] > self.PRESS_S:
             self._press = None
             free = self.free_ahead_m(w)
-            if self._push_n < self.cfg.push_n and free is not None and free >= self.cfg.push_free_m:
-                # Etwas Niedriges hält die Räder (Rille, Kante), vorn ist frei: kurz kräftig anschieben
-                self._push_n += 1
-                self._push_at = (x, y)
-                self._push_until = t + self.cfg.push_s
-                self._anchor = None                    # die Zeit am Hindernis zählt nicht als Festfahren
-                log.info("Anschub %d: Räder stehen, vorn %.2f m frei", self._push_n, free)
-            else:
+            # Etwas Niedriges hält die Räder (Rille, Kante), vorn ist frei: kurz kräftig anschieben
+            if not (free is not None and free >= c.push_free_m and self._start_push(w, "Räder stehen")):
                 self.stuck = self.pressing = True
 
+    def _start_push(self, w: World, grund: str) -> bool:
+        """Anschub beginnen, wenn noch einer frei ist und vorn Platz ist: Strecke = freier Boden (Bodenmodell)
+        und freie Bahn (Merkkarte) minus push_rest_m, höchstens push_max_m."""
+        c = self.cfg
+        if self._push_n >= c.push_n:
+            return False
+        free = self.free_ahead_m(w)
+        if free is None:
+            return False
+        if w.clear_fn is not None:
+            free = min(free, w.clear_fn())
+        budget = min(c.push_max_m, free - c.push_rest_m)
+        if budget < c.push_min_m:
+            return False
+        x, y = w.pose[0], w.pose[1]
+        self._push_n += 1
+        self._push_at = self._push_from = (x, y)
+        self._push_budget = budget
+        self._push_until = w.t + c.push_s
+        self._anchor = None                    # die Zeit am Hindernis zählt nicht als Festfahren
+        log.info("Anschub %d: %s, vorn %.2f m frei, höchstens %.2f m", self._push_n, grund, free, budget)
+        return True
+
     def press_step(self, w: World, label: str) -> Command | None:
-        """Drücken ohne Fortschritt prüfen; während eines Anschubs dessen Fahrbefehl, sonst None."""
+        """Drücken ohne Fortschritt prüfen; während eines Anschubs dessen Fahrbefehl, sonst None.
+        Der Anschub (extra anschub) übergeht Freiraum/TTC in safety() und die Strecke der Bahnprüfung; begrenzt
+        ist er durch seine Strecke: Weg + Radtempo x push_brake_s (Bremsweg) bleibt unter _push_budget."""
         if self._push_until is None:
             self._watch_press(w)
         if self._push_until is not None:
-            if w.t < self._push_until:
-                return Command(self.cfg.push_v, 0.0, self.cfg.height_cruise_mm,
-                               "%s – Anschub %d" % (label, self._push_n))
+            c = self.cfg
+            # nur vorwärts gezählt: beim Anfahren rollt der Rider erst kurz zurück
+            th = w.pose[2]
+            moved = max(0.0, (w.pose[0] - self._push_from[0]) * math.cos(th) + (w.pose[1] - self._push_from[1]) * math.sin(th))
+            ahead = moved + max(0.0, w.v_rad or 0.0) * c.push_brake_s
+            if w.t < self._push_until and ahead < self._push_budget:
+                return Command(c.push_v, 0.0, c.height_cruise_mm, "%s – Anschub %d" % (label, self._push_n),
+                               extra={"anschub": True})
             # Danach genügt 1 s ohne Fortschritt für den nächsten Schritt: Anfahren ist dann vorbei
             self._push_until = None
             self._press = (w.pose[0], w.pose[1], w.t - self.PRESS_S + self.PRESS_AFTER_PUSH_S)
+            if ahead >= self._push_budget:
+                # Strecke erreicht: voll bremsen (nur 0 setzt der Rider schnell um)
+                return Command(0.0, 0.0, c.height_cruise_mm, "%s – Anschub %d: %.2f m, bremse" % (
+                    label, self._push_n, moved), extra={"bremsen": True})
         return None
 
     def _watch(self, t: float, x: float, y: float, err: float) -> None:
@@ -1463,7 +1518,9 @@ def safety(cmd: Command, w: World, cfg: BehaviorCfg) -> Command:
         return Command(0, 0, None, stopp_text(w.fw_mode), cmd.target_id)
     if w.blind:
         return Command(0, 0, None, "BLIND – keine Bodengrenze (FloorNet), Stopp", cmd.target_id)
-    if cmd.v > 0:
+    # Anschub des Wegfolgers (extra anschub): Freiraum und TTC sehen die Kante/Stufe, an der er hängt; seine
+    # Strecke ist auf den freien Boden davor begrenzt (PathFollower._start_push)
+    if cmd.v > 0 and not cmd.extra.get("anschub"):
         fs = w.free
         center = fs.center if fs and fs.valid else 1.0
         # Beim Folgen steht das Ziel selbst im Bild -> dessen Box nicht als Hindernis

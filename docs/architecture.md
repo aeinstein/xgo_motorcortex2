@@ -73,8 +73,8 @@ camera.FrameSource ─► egomotion.EgoMotion ─► tracker.Tracker ◄── d
 
 | Layer | Action |
 |---|---|
-| `behaviors.safety()` | not balancing → stop; blind (no FloorNet) → stop; centre free space < `blocked_free`·0.6 → no forward; < `slow_free` → scale v (≥ 0.25); TTC < `ttc_stop_s` (0.8 s) → no forward |
-| `App._arc_check()` | planned arc (forward and reverse) checked against local map; speed = max(command, wheels over 0.2 s), look-ahead ≥ braking distance + 0.15 m (min. 1.2 s); free length < `0.6·v + 0.08 + 0.8·max(0, v − 0.3)` → v scaled, or v = 0 without ramp if the wheels are > 0.05 m/s faster than the scaled value (Rider follows smaller commands only after ~1–2 s, brakes on 0 in ~0.3 s; 2026-11-23, simulator only) |
+| `behaviors.safety()` | not balancing → stop; blind (no FloorNet) → stop; centre free space < `blocked_free`·0.6 → no forward; < `slow_free` → scale v (≥ 0.25); TTC < `ttc_stop_s` (0.8 s) → no forward; free space and TTC skipped for a push of the path follower (length limited, see `push_*`) |
+| `App._arc_check()` | planned arc (forward and reverse) checked against local map; speed = max(command, wheels over 0.2 s), look-ahead ≥ braking distance + 0.15 m (min. 1.2 s); free length < `0.6·v + 0.08 + 0.8·max(0, v − 0.3)` → v scaled, or v = 0 without ramp if the wheels are > 0.05 m/s faster than the scaled value (Rider follows smaller commands only after ~1–2 s, brakes on 0 in ~0.3 s; 2026-11-23, simulator only); a push of the path follower only checks keep-out zones |
 | `Robot` | clamp to `max_v`/`max_w`, ramp (`accel_v`, `accel_w`; skipped for a full brake from the arc check), keepalive 0.3 s, userspace watchdog `stall_timeout_s` 0.5 s |
 | Kernel | `settings/motion_timeout_ms` (xgonav sets `robot.kernel_watchdog_ms` = 1000) |
 

@@ -3175,6 +3175,67 @@ def test_pathfollower_kein_anschub_ohne_freiraum():
         assert f.pressing
 
 
+def test_pathfollower_schneller_anschub_an_fuge():
+    """Räder stehen schlagartig (Fuge vor einer Stufe): nach kante_s Anschub, auch wenn safety/Bahnprüfung den
+    Fahrwert schon gesenkt haben; Strecke auf freien Boden minus push_rest_m begrenzt, dann Vollbremsung."""
+    import dataclasses
+    from xgonav.behaviors import Command, PathFollower, safety
+    cfg = Config.neutral()
+    b = cfg.behavior
+    f = PathFollower(b, cfg.robot, cfg.home)
+    f.set_path([(0.0, 0.0), (3.0, 0.0)])
+
+    def welt(t, x, v, vr, clear=0.12):
+        w = _press_world(t, x, v, 0.71)
+        return dataclasses.replace(w, v_rad=vr, clear_fn=lambda: clear)
+    t, x = 0.0, 0.0
+    while t < 1.0:                                       # fährt mit 0,25 m/s
+        assert "Anschub" not in f.drive(welt(t, x, 0.23, 0.25), "x").status
+        x += 0.25 * 0.05
+        t += 0.05
+    st = []
+    while t < 2.0:                                       # Fuge: Räder stehen, Fahrwert sinkt (Freiraum!/Bahn)
+        c = f.drive(welt(t, x, 0.23 if t < 1.3 else 0.036, 0.0), "x")
+        st.append((round(t, 2), c))
+        t += 0.05
+    push = [(tt, c) for tt, c in st if "Anschub" in c.status]
+    assert push and 1.45 <= push[0][0] <= 1.6, push[:1]
+    c = push[0][1]
+    assert c.v == b.push_v and c.extra.get("anschub")
+    assert abs(f._push_budget - (0.12 - b.push_rest_m)) < 1e-9
+    # safety() lässt den Anschub trotz „Freiraum!“ durch (Bodenmodell sieht die Stufe)
+    w = dataclasses.replace(_press_world(t, x, 0.2, 0.05), v_rad=0.0)
+    assert safety(Command(b.push_v, 0.0, extra={"anschub": True}), w, b).v == b.push_v
+    assert safety(Command(b.push_v, 0.0), w, b).v == 0.0
+    # Er kommt frei und rollt: Bremsweg eingerechnet, Ende mit Vollbremsung vor der Stufe
+    x0, last = x, None
+    for _ in range(20):
+        last = f.drive(welt(t, x, b.push_v, 0.2), "x")
+        if "Anschub" in last.status and last.v == 0:
+            break
+        x += 0.01
+        t += 0.05
+    assert last.v == 0 and last.extra.get("bremsen")
+    assert x - x0 + 0.2 * b.push_brake_s >= f._push_budget and x - x0 < f._push_budget
+
+
+def test_pathfollower_kein_schneller_anschub_ohne_platz_oder_beim_bremsen():
+    """Kein Platz vor der Kante (Merkkarte) oder Fahrwert war schon 0 (Bremsen): kein schneller Anschub."""
+    import dataclasses
+    from xgonav.behaviors import PathFollower
+    cfg = Config.neutral()
+    for clear, v_stop in ((0.06, 0.23), (1.0, 0.0)):
+        f = PathFollower(cfg.behavior, cfg.robot, cfg.home)
+        f.set_path([(0.0, 0.0), (3.0, 0.0)])
+        t = 0.0
+        while t < 2.0:
+            moving = t < 1.0
+            w = dataclasses.replace(_press_world(t, min(t, 1.0) * 0.25, 0.23 if moving else v_stop, 0.71),
+                                    v_rad=0.25 if moving else 0.0, clear_fn=lambda c=clear: c)
+            assert "Anschub" not in f.drive(w, "x").status
+            t += 0.05
+
+
 def test_map_explore_befreien_erkennt_druecken():
     """„befreie mich“ (reaktiv) drückt nicht mehr wander_s lang: Anschub, dann zurücksetzen."""
     from xgonav.behaviors import MapExplore
@@ -3185,7 +3246,7 @@ def test_map_explore_befreien_erkennt_druecken():
     while t < 10 and b.state == "wander":
         st.append(b.step(_press_world(t, 0.3, 0.15, 0.71)).status)
         t += 0.05
-    assert b.state == "backup" and t < 7
+    assert b.state == "backup" and t < 8                 # 2,5 s + 2 Anschübe à push_s 1,2 s + je 1 s danach
     assert any("befreie mich – Anschub" in s for s in st) and st[-1] == "befreie mich: hänge fest"
 
 

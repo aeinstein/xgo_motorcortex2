@@ -329,9 +329,27 @@ class BehaviorCfg:
     # push_n Mal, bis er wieder 0,3 m weitergekommen ist. Anlass: RiderPi 2026-11-17, Rille im Teppich
     # vor der Heizung, 15 s mit 0,25 gedrückt, Räder standen. Am Rider nicht gefahren. push_n 0 = aus.
     push_v: float = 0.45
-    push_s: float = 0.6            # mit robot.accel_v 0,8/s erreicht er 0,45 erst nach ~0,4 s
+    # Bis 2026-11-23 0,6 s: Der Rider setzt einen Fahrwert erst nach ~0,7-1 s an den Rädern um (Fahrt 2026-11-23),
+    # im Simulator (--dyn, Szene fuge) kam er damit nie über die Fuge; die Strecke begrenzt push_max_m
+    push_s: float = 1.2
     push_n: int = 2
     push_free_m: float = 0.4
+    # Schneller Anschub (2026-11-23): Liefen die Räder eben noch (>= kante_v m/s binnen kante_fenster_s) und
+    # stehen schlagartig (< 0,03 m/s), während vorwärts befohlen war, hängt er an einer Fuge oder Kante. Kommt er
+    # kante_s lang keine 2 cm weiter, schiebt er an, auch wenn safety() oder die Bahnprüfung den Fahrwert
+    # inzwischen gesenkt haben (dort braucht der langsame Weg 2,5 s Drücken mit Fahrwert > 0,08). Jeder Anschub
+    # (beide Wege) fährt höchstens bis freier Boden (Bodenmodell, Merkkarte) minus push_rest_m, höchstens
+    # push_max_m, und endet mit Vollbremsung, sobald Weg + Radtempo x push_brake_s das erreicht; unter push_min_m
+    # Platz kein Anschub. Dafür übergeht er Freiraum/TTC und die Strecke der Bahnprüfung (Sperrzonen nicht).
+    # Anlass: RiderPi 2026-11-23, Fuge vor der Fensterstufe, Räder bei 0,23 binnen 0,3 s stehen, „Freiraum!“
+    # und „Bahn 0,12m“ senkten den Fahrwert, kein Anschub. kante_v 0 = aus.
+    kante_v: float = 0.15
+    kante_fenster_s: float = 0.5
+    kante_s: float = 0.5
+    push_rest_m: float = 0.05
+    push_min_m: float = 0.03
+    push_max_m: float = 0.15
+    push_brake_s: float = 0.25     # Bremsweg je m/s: Fahrwert 0 setzt der Rider in ~0,25 s um
     height_cruise_mm: float = 85.0
     height_search_mm: float = 100.0
     height_fast_mm: float = 80.0

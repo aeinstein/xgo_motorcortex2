@@ -1031,7 +1031,8 @@ class App:
                       fw_mode=self.robot.state.mode,
                       yaw=self.yaw, cmd_v=self.robot.command[0],
                       geo=self.geo, pitch_dev=pitch_dev, battery=self.robot.state.battery,
-                      blind=self.fs_worker is not None and self.fs_worker.blind)
+                      blind=self.fs_worker is not None and self.fs_worker.blind,
+                      v_rad=self._v_rad, clear_fn=self._clear_ahead if self.lmap is not None else None)
             if self.behavior.name == "pet":
                 self._pet_world(w, ds, now)
             if self.lmap is not None:
@@ -1528,6 +1529,10 @@ class App:
     def _map_view(self, free: FreeSpace, tracks) -> FreeSpace:
         return mask_movable(free, [(t.cls, t.box) for t in tracks], self.cfg.camera.width, self.cfg.camera.height)
 
+    def _clear_ahead(self) -> float:
+        """Freie Strecke geradeaus laut Merkkarte (m, bis 0,3 m geprüft, sonst inf); nur beim Auslösen eines Anschubs."""
+        return self.lmap.arc_clearance(0.3, 0.0, horizon_s=1.0)
+
     def _arc_check(self, cmd: Command) -> Command:
         """Geplanten Bogen gegen die Hinderniskarte prüfen (auch außerhalb des Sichtfelds)."""
         if self.lmap is None or abs(cmd.v) < 1e-3:
@@ -1540,6 +1545,8 @@ class App:
             cmd.v = 0.0
             cmd.status += " | Sperrzone"
             return cmd
+        if cmd.extra.get("anschub"):
+            return cmd              # Strecke begrenzt der Wegfolger selbst (freie Bahn der Merkkarte, Bodenmodell)
         # Gerechnet wird mit dem, was schneller ist: Befehl oder Räder. Der Rider folgt einem kleineren Fahrwert
         # erst nach ~1-2 s und fährt so lange schneller als befohlen; Bahn und Bremsabstand gelten dann für das
         # echte Tempo, auf demselben Bogen (Drehrate mitskaliert).

@@ -1,4 +1,4 @@
-"""Closed-Loop-Szenarien im Simulator. python3 tests/sim_run.py follow|approach|explore|home [sekunden] [video.mp4] [--dunkel x0,y0,x1,y1[,rest]] [--yaw-scale 1.01] [--imu] [--fs-thread] [--wheels] [--dyn] [--rider] [--scene raum|zwei|spalt] [--video-step n] [--set a.b=wert] [--vx-true m/s]
+"""Closed-Loop-Szenarien im Simulator. python3 tests/sim_run.py follow|approach|explore|home [sekunden] [video.mp4] [--dunkel x0,y0,x1,y1[,rest]] [--yaw-scale 1.01] [--imu] [--fs-thread] [--wheels] [--dyn] [--rider] [--scene raum|zwei|spalt|fuge] [--video-step n] [--set a.b=wert] [--vx-true m/s]
 
 home: erste Hälfte explore, dann Modus home (zurück zum Startpunkt der Raumkarte).
 --dyn: Trägheit wie am RiderPi (Totzone, Nachlaufen der Drehung, Rückrollen beim Anfahren).

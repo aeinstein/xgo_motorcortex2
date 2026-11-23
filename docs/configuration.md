@@ -178,7 +178,9 @@ Floor boundary from FloorNet only (`xgonav/freespace.py`, `docs/floornet.md`). T
 | `lost_look_deg` / `lost_look_w` | 360 / 0.10 | | look around at the last position: angle, turn rate |
 | `blocked_free` / `slow_free` | 0.22 / 0.55 | |
 | `ttc_avoid_s` / `ttc_stop_s` | 1.2 / 0.8 | |
-| `push_v` / `push_s` / `push_n` / `push_free_m` | 0.45 / 0.6 / 2 / 0.4 | push: forward commanded, < 2 cm progress for 2.5 s (1 s after a push) and FloorNet ≥ `push_free_m` free ahead → drive `push_v` for `push_s`; at most `push_n` times until 0.3 m progress, then back up as before. Path following, `home`, `patrol`, and the reactive escape of `explore`. 0 = off. Not driven (carpet groove 2026-11-17) |
+| `push_v` / `push_s` / `push_n` / `push_free_m` | 0.45 / 1.2 / 2 / 0.4 | push: forward commanded, < 2 cm progress for 2.5 s (1 s after a push) and FloorNet ≥ `push_free_m` free ahead → drive `push_v` for `push_s`; at most `push_n` times until 0.3 m progress, then back up as before. Path following, `home`, `patrol`, and the reactive escape of `explore`. 0 = off. Not driven (carpet groove 2026-11-17) |
+| `kante_v` / `kante_fenster_s` / `kante_s` | 0.15 / 0.5 / 0.5 | | fast push (2026-11-23): wheels ≥ `kante_v` m/s within `kante_fenster_s`, then < 0.03 m/s while forward was commanded (joint, edge) and < 2 cm progress for `kante_s` → push, even if `safety()`/arc check have lowered the command meanwhile (joint in front of a step: free space and arc check cut v, the 2.5 s rule never fired). `kante_v` 0 = off. Simulator only (scene `fuge`) |
+| `push_rest_m` / `push_min_m` / `push_max_m` / `push_brake_s` | 0.05 / 0.03 / 0.15 / 0.25 | | every push drives at most min(FloorNet free ahead, local-map clearance) − `push_rest_m`, capped at `push_max_m`; no push below `push_min_m`; ends with a full brake once distance + wheel speed × `push_brake_s` reaches it. A push skips free space/TTC in `safety()` and the arc-check distance (keep-out zones still apply) |
 | `height_cruise_mm` / `height_search_mm` / `height_fast_mm` | 85 / 100 / 80 (sim: 85 / 115 / 70) | |
 
 ### `[output]`

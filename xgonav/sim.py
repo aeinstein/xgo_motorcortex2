@@ -94,6 +94,21 @@ class SimScene:
     wall_h: float = 1.0
     box_h: float = 0.6
     robot_r: float = 0.12              # Kollisionsradius (rund); der echte Rider ist 11,5 cm breit, 13,3 cm lang
+    # Fugen im Boden (x1, y1, x2, y2), unsichtbar: Die Radachse kommt nur mit Fahrwert >= rille_v darüber,
+    # sonst stehen Rider und Räder (RiderPi 2026-11-23: Fuge vor der Fensterstufe, bei 0,23 fest)
+    rillen: list = field(default_factory=list)
+    rille_v: float = 0.35
+
+    def kreuzt_rille(self, x0: float, y0: float, x1: float, y1: float) -> bool:
+        """Schneidet der Weg der Radachse (x0, y0) -> (x1, y1) eine Fuge?"""
+        def seite(ax, ay, bx, by, px, py):
+            return (bx - ax) * (py - ay) - (by - ay) * (px - ax)
+        for ax, ay, bx, by in self.rillen:
+            if (seite(ax, ay, bx, by, x0, y0) * seite(ax, ay, bx, by, x1, y1) <= 0
+                    and seite(x0, y0, x1, y1, ax, ay) * seite(x0, y0, x1, y1, bx, by) <= 0
+                    and (x0, y0) != (x1, y1)):
+                return True
+        return False
 
     def segments(self):
         s = self.size
@@ -120,7 +135,18 @@ SCENES = {
     # wie "zwei", aber die Tür nur 25 cm breit; Kollisionsradius wie der echte Rider (halbe Länge 7 cm)
     "spalt": lambda: SimScene(boxes=[(3.0, 0.0, 3.1, 2.875), (3.0, 3.125, 3.1, 6.0), (1.2, 4.4, 1.9, 5.1),
                                      (4.3, 0.9, 4.9, 1.8)], robot_r=0.07),
+    # wie "raum", dazu eine Fuge quer durch den Raum (x = 3) und rings um die rechte Kiste eine Fuge, an der die
+    # Radachse 0,12 m Luft zur Kiste hat (wie vor der Fensterstufe)
+    # rille_v 0,5: explore.v 0,4 des Riders bleibt hängen, push_v 0,45 + Korrektur des Temporeglers kommt drüber
+    "fuge": lambda: SimScene(rillen=[(3.0, 0.0, 3.0, 6.0)] + _ring((4.2, 0.9, 4.8, 2.6), 0.24), rille_v=0.5),
 }
+
+
+def _ring(box, d):
+    """Vier Fugen im Abstand d um eine Kiste."""
+    x1, y1, x2, y2 = box
+    a, b, c, e = x1 - d, y1 - d, x2 + d, y2 + d
+    return [(a, b, c, b), (c, b, c, e), (c, e, a, e), (a, e, a, b)]
 
 
 def scene_floor(scene: SimScene, x: np.ndarray, y: np.ndarray, margin: float = 0.0) -> np.ndarray:
@@ -270,10 +296,14 @@ class SimWorld(FrameSource):
         if self.dynamics:
             v, w = self._dyn(v, w, wn, dt)
         self.th += w * dt
-        self.wheel_l += (v - w * self.track_m / 2) * dt
-        self.wheel_r += (v + w * self.track_m / 2) * dt
         nx = self.x + v * math.cos(self.th) * dt
         ny = self.y + v * math.sin(self.th) * dt
+        if self.scene.rillen and abs(vn) < self.scene.rille_v and self.scene.kreuzt_rille(self.x, self.y, nx, ny):
+            # Rad hängt in der Fuge: Rider und Encoder stehen (nur Drehen geht)
+            v, self._vf, nx, ny = 0.0, 0.0, self.x, self.y
+            self.rille_steps = getattr(self, "rille_steps", 0) + 1
+        self.wheel_l += (v - w * self.track_m / 2) * dt
+        self.wheel_r += (v + w * self.track_m / 2) * dt
         if self.scene.collides(nx, ny):
             if v != 0 and not getattr(self, "_in_coll", False):
                 self.collisions += 1
