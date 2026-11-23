@@ -826,7 +826,6 @@ const EN = {
   'Bodenmodell wechseln auf ': 'Switch floor model to ', '? Nur in Idle oder Hand; das Bodenmodell ist danach kurz aus.': '? Idle or manual only; the floor model is briefly off afterwards.',
   'lädt …': 'loading …',
   'YOLO aus': 'YOLO off', ' – YOLO ist aus ([detector] enabled)': ' – YOLO is off ([detector] enabled)',
-  'Ruhemodus? Der Rider setzt sich ab, Bildverarbeitung aus, CPU-Takt runter.': 'Rest mode? The Rider sits down, vision off, CPU clock down.',
   'Steht der Rider (aufgestanden) am Startpunkt, in Startrichtung? Die Pose springt dann dorthin. Sind Treppen und Kanten abgesperrt?':
     'Is the Rider (standing) at the start point, facing the start direction? The pose then jumps there. Are stairs and edges blocked off?',
   'Steht der Rider (aufgestanden) am Startpunkt, in Startrichtung? Die Pose springt dann dorthin.':
@@ -1180,7 +1179,6 @@ function ruheZeigen(an, akku) {
   liveImu();
 }
 async function ruheSchalten(an) {
-  if (an && !confirm(tr('Ruhemodus? Der Rider setzt sich ab, Bildverarbeitung aus, CPU-Takt runter.'))) return;
   try {
     const r = await fetch('api.php?a=ruhe&on=' + (an ? '1' : '0'), {method: 'POST'});
     const j = await r.json();
