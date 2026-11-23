@@ -210,8 +210,6 @@ details.hilfe p{margin:4px 0 0}
 .kachel .w{font-variant-numeric:tabular-nums;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .kachel.breit{grid-column:1/-1}
 .kachel.breit .w{white-space:normal}
-details.roh summary{cursor:pointer;color:var(--leise);font-size:12px;margin-top:8px}
-pre{background:#0b0d10;border-radius:6px;padding:8px;overflow:auto;max-height:40vh;font-size:12px;margin:6px 0 0}
 
 /* --- Fahren */
 /* Aktionen klein in der Lage-Kachel */
@@ -501,7 +499,6 @@ details.extras[open]>summary{margin-bottom:8px}
       <span class="leise" id="rec-platz" hidden title="Frei am Rider bis zur Abbruchgrenze (output.record_min_free_mb); Minuten aus der Schreibrate der letzten Aufnahme (~ = geschätzt)"></span>
 </div>
     <div class="kacheln" id="kurz"></div>
-    <details class="roh"><summary>Status (roh)</summary><pre id="roh"></pre></details>
   </div>
   <details class="karte extras" id="verlauf" ontoggle="verlaufUmschalten()">
     <summary><h2>Verlauf</h2><span class="leise">CPU · WLAN · Akku</span></summary>
@@ -735,7 +732,7 @@ const EN = {
   'Rohbilder und Metadaten am Rider speichern. Schreibt nur, solange er balanciert; Absetzen beendet die Aufnahme, jedes Aufstehen beginnt eine neue.':
     'Store raw images and metadata on the Rider. Writes only while balancing; sitting down ends the recording, every stand-up starts a new one.',
   'Aufzeichnen': 'Record',
-  'Frei am Rider bis zur Abbruchgrenze (output.record_min_free_mb); Minuten aus der Schreibrate der letzten Aufnahme (~ = geschätzt)': 'Free on the Rider down to the stop limit (output.record_min_free_mb); minutes from the write rate of the last recording (~ = estimated)', 'Status (roh)': 'Status (raw)', 'Verlauf': 'History', 'CPU · WLAN · Akku': 'CPU · Wi-Fi · Battery',
+  'Frei am Rider bis zur Abbruchgrenze (output.record_min_free_mb); Minuten aus der Schreibrate der letzten Aufnahme (~ = geschätzt)': 'Free on the Rider down to the stop limit (output.record_min_free_mb); minutes from the write rate of the last recording (~ = estimated)', 'Verlauf': 'History', 'CPU · WLAN · Akku': 'CPU · Wi-Fi · Battery',
   'CPU je Kern (bezogen auf Höchsttakt), letzte 10 min': 'CPU per core (relative to max clock), last 10 min', 'WLAN-Durchsatz, letzte 10 min': 'Wi-Fi throughput, last 10 min',
   'WLAN-Empfang (Pegel)': 'Wi-Fi signal (level)', 'Akku, 120 min (im Browser gespeichert)': 'Battery, 120 min (stored in the browser)',
   'Schallradar': 'Sound radar', 'lauscht': 'listening', 'aus': 'off', 'links': 'left', 'rechts': 'right', 'Mitte': 'centre',
@@ -1462,7 +1459,6 @@ function statusZeigen(s, fehler) {
     radarStatus(s.ortung);
     $('kurz').innerHTML = felder.map(([k, f, breit]) =>
       '<div class="kachel' + (breit ? ' breit' : '') + '"><div class="k">' + tr(k) + '</div><div class="w">' + esc(f(s)) + '</div></div>').join('');
-    $('roh').textContent = JSON.stringify(s, null, 1);
     document.querySelectorAll('[data-modus]').forEach(b => b.classList.toggle('aktiv', b.dataset.modus === s.mode));
     sprechZeigen();
     pille('p-modus', tr(MODI[s.mode] || s.mode || '-'), s.mode && s.mode !== 'idle' ? 'warn' : '');
