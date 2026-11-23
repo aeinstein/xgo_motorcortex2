@@ -19,6 +19,9 @@ class RobotCfg:
     # ~0,9 m/s und 180 °/s; über 0,24 (50 cm/s) ist nie gefahren worden.
     max_v: float = 0.5
     max_w: float = 0.5
+    # Kleinere Drehbefehle setzt die Firmware nicht um (Totband ~5 %): Untergrenze des gemeinsamen Drehreglers
+    # behaviors.dreh_w für alle Drehungen auf der Stelle (PathFollower, pet, Dunkelangst; seit 2026-11-23)
+    turn_min_w: float = 0.06
     # Tempo (Anteil, 0,05..1): jeder Fahr- und Drehbefehl aller Modi wird nach der Begrenzung auf max_v/max_w
     # damit malgenommen (Robot.drive). Startwert; zur Laufzeit über den Temporegler im Web (POST /tempo),
     # gilt bis zum Neustart. Firmware-Aktionen (POST /action) fahren mit eigener Geschwindigkeit.
@@ -719,8 +722,7 @@ class PetCfg:
     wiggle_s: float = 1.2
     turn_kp: float = 1.5               # 1/s
     turn_deadband_deg: float = 8.0
-    turn_w: float = 0.40               # Nutzer 2026-11-13: Drehen x2 (vorher 0,20)
-    turn_min_w: float = 0.06           # kleinere Lenkbefehle ignoriert die Firmware
+    turn_w: float = 0.40               # Nutzer 2026-11-13: Drehen x2 (vorher 0,20); Untergrenze robot.turn_min_w
     # Budgets, 0 = aus. Rückwärts ist blind und vorwärts sieht das Bodenmodell Stufen zu spät: nur mit
     # Beobachtung und nur, wo keine Treppe ist. Ohne Räder fährt er nie, Obergrenzen 0,30 m / 1,0 m.
     retreat_m: float = 0.0             # je Ereignis (RiderPi-Test: 0.12)
@@ -895,8 +897,7 @@ class DunkelCfg:
     fright_s: float = 1.5              # Angst: so lange stehen (Emotion, Ton)
     settle_s: float = 1.5              # nach dem Drehen warten, bis die Belichtung nachgeregelt hat
     turn_kp: float = 1.5               # 1/s, wie pet
-    turn_w: float = 0.20
-    turn_min_w: float = 0.06
+    turn_w: float = 0.20               # Untergrenze robot.turn_min_w
     tol_deg: float = 8.0
     turn_timeout_s: float = 10.0
     max_events: int = 3                # so oft in events_window_s ins Dunkle: gleich aufgeben
@@ -1109,6 +1110,8 @@ ENTFERNT.update({k: "Hotspot öffnet seit 2026-11-21 xgo-wlan-auto.service von s
 ENTFERNT.update({f"pet.{k}": "pet folgt seit 2026-11-22 mit der Routine des Modus follow ([behavior] follow_dist_m)"
                  for k in ("follow_trust", "follow_dist_m", "follow_start_m", "follow_hold_s", "follow_lost_s",
                            "follow_settle_s", "follow_block_s")})
+ENTFERNT.update({k: "eine Untergrenze für alle Drehungen seit 2026-11-23 ([robot] turn_min_w)"
+                 for k in ("pet.turn_min_w", "dunkel.turn_min_w")})
 UMBENANNT = {"freespace.shadow_net": "freespace.net"}
 
 # Die Defaults oben sind seit 2026-11-12 die Werte des RiderPi (/opt/xgonav/config.toml ohne Testbetrieb und

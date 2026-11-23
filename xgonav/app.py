@@ -233,7 +233,7 @@ class App:
         self._wlan_cancel = PressDetector(cfg.wlan.cancel_buttons)
         self._wlan_pipeline = False                   # lief die Bildverarbeitung vorher?
         # Dunkelangst (dunkel.py): Helligkeit je check_hz, im Regelschritt ausgewertet
-        self.dunkel = Dunkelangst(cfg.dunkel, cfg.robot.vyaw_limit_dps)
+        self.dunkel = Dunkelangst(cfg.dunkel, cfg.robot)
         self._luma: float | None = None
         self._dunkel_zonen: list[tuple[float, list]] = []      # (Ablaufzeit, Rechteck): Dunkelzonen der Raumkarte
         self._luma_t = 0.0

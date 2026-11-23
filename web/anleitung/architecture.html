@@ -809,6 +809,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#steering" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Steering
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#swappable-backends" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1359,6 +1370,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#steering" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Steering
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#swappable-backends" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1542,7 +1564,7 @@
 </tr>
 <tr>
 <td><code>behaviors.py</code></td>
-<td><code>idle</code>, <code>manual</code>, <code>follow</code>, <code>explore</code> (<code>MapExplore</code>, reactive <code>Explore</code> without room map), <code>approach</code>, <code>home</code>; <code>PathFollower</code>, <code>safety()</code></td>
+<td><code>idle</code>, <code>manual</code>, <code>follow</code>, <code>explore</code> (<code>MapExplore</code>, reactive <code>Explore</code> without room map), <code>approach</code>, <code>home</code>; <code>PathFollower</code>, <code>dreh_w</code>, <code>safety()</code></td>
 </tr>
 <tr>
 <td><code>pet.py</code></td>
@@ -1578,6 +1600,40 @@
 </tr>
 </tbody>
 </table>
+<h2 id="steering">Steering<a class="headerlink" href="#steering" title="Permanent link">&para;</a></h2>
+<p>Every mode ends in <code>Command(v, w)</code> → <code>safety()</code> → <code>_arc_check()</code> → <code>Robot.drive()</code>. Since 2026-11-23:</p>
+<table>
+<thead>
+<tr>
+<th>Situation</th>
+<th>Planner</th>
+<th>v/w from</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>home</code>, <code>explore</code>, <code>patrol</code>; <code>follow</code> search at the last position; every planned path in <code>pet</code> (come, roam, search, call search, home)</td>
+<td>yes</td>
+<td><code>PathFollower.drive</code> (hysteresis, narrow passages, <code>slow_end</code>, stuck, push)</td>
+</tr>
+<tr>
+<td><code>follow</code> with target in view (also <code>pet</code> following)</td>
+<td>no</td>
+<td><code>Servo</code> (PD on bearing, distance Kalman filter)</td>
+</tr>
+<tr>
+<td><code>pet</code> without room map / without path</td>
+<td>no</td>
+<td><code>PetBrain._drive</code> (straight to the spot)</td>
+</tr>
+<tr>
+<td>turning on the spot (path follower, <code>pet</code>, fear of the dark)</td>
+<td>–</td>
+<td><code>behaviors.dreh_w</code>: kp × error, between <code>robot.turn_min_w</code> and the mode's cap</td>
+</tr>
+</tbody>
+</table>
+<p><code>pet</code> keeps its decisions (arrival, budget, time, radius, stuck after two replans) in <code>PetBrain</code>; the path is driven by <code>Pet.f</code> at <code>pet.drive_v</code>.</p>
 <h2 id="swappable-backends">Swappable backends<a class="headerlink" href="#swappable-backends" title="Permanent link">&para;</a></h2>
 <table>
 <thead>

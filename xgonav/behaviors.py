@@ -94,6 +94,17 @@ def clamp(x, lo, hi):
     return max(lo, min(hi, x))
 
 
+def dreh_w(err: float, kp: float, w_max: float, rcfg: RobotCfg, deadband_deg: float = 0.0,
+           w_min: float | None = None) -> float:
+    """Gemeinsamer Drehregler für alle Drehungen (PathFollower, Servo, pet, Dunkelangst; seit 2026-11-23):
+    Soll-Drehrate kp * err (rad/s) als normierter Drehwert, Betrag zwischen w_min (Standard robot.turn_min_w:
+    kleinere Werte setzt die Firmware nicht um) und w_max, im Totband (Grad) 0."""
+    if err == 0.0 or abs(err) < math.radians(deadband_deg):
+        return 0.0
+    lo = rcfg.turn_min_w if w_min is None else w_min
+    return math.copysign(clamp(yaw_rate_to_w(kp * abs(err), rcfg), lo, max(w_max, lo)), err)
+
+
 # ---------------------------------------------------------------------------
 class Behavior:
     name = "base"
@@ -201,7 +212,7 @@ class Servo:
             self._derr = 0.7 * self._derr + 0.3 * d
         self._prev_err = err
         rate = self.cfg.kp_turn * err + self.cfg.kd_turn * self._derr
-        w_cmd = yaw_rate_to_w(rate, self.rcfg)
+        w_cmd = dreh_w(rate, 1.0, self.rcfg.max_w, self.rcfg, w_min=0.0)   # PD: dem bewegten Ziel nach, ohne Untergrenze
 
         z = None
         if wd.geo and tr.t_seen != self._t_meas:      # nur neue Detektionen messen
@@ -735,12 +746,10 @@ class PathFollower:
         else:
             self._turning = abs(err) > math.radians(self.h.tight_turn_enter_deg if tight else self.h.turn_enter_deg)
         self._watch(w.t, x, y, err)
-        wc = clamp(yaw_rate_to_w(self.h.kp_turn * err, self.rcfg), -1.0, 1.0)
         if self._turning:
-            wc = clamp(wc, -self.h.turn_w_max, self.h.turn_w_max)
-            if abs(wc) < self.cfg.search_w:          # kleine Werte ignoriert die Firmware
-                wc = math.copysign(self.cfg.search_w, err)
+            wc = dreh_w(err, self.h.kp_turn, self.h.turn_w_max, self.rcfg)
             return Command(0.0, wc, hmm, "%s – drehe (%+.0f°)" % (label, math.degrees(err)), extra={"tight": tight})
+        wc = clamp(yaw_rate_to_w(self.h.kp_turn * err, self.rcfg), -1.0, 1.0)     # Kurve: Lenken beim Fahren
         if abs(wc) < self.h.min_w and abs(err) > math.radians(self.h.min_w_err_deg):
             wc = math.copysign(self.h.min_w, err)
         v = self.v * clamp(1.0 - abs(err) / math.radians(90), 0.3, 1.0)
@@ -754,9 +763,7 @@ class PathFollower:
 
     def align(self, err: float, label: str) -> Command:
         """Auf der Stelle auf einen Endkurs drehen (err rad)."""
-        wc = clamp(yaw_rate_to_w(self.h.kp_turn * err, self.rcfg), -self.h.turn_w_max, self.h.turn_w_max)
-        if abs(wc) < self.cfg.search_w:              # kleine Werte ignoriert die Firmware
-            wc = math.copysign(self.cfg.search_w, err)
+        wc = dreh_w(err, self.h.kp_turn, self.h.turn_w_max, self.rcfg)
         return Command(0.0, wc, self.cfg.height_cruise_mm, "%s (%+.0f°)" % (label, math.degrees(err)))
 
 

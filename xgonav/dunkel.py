@@ -20,6 +20,8 @@ import logging
 import math
 from dataclasses import dataclass
 
+from .behaviors import dreh_w
+
 log = logging.getLogger(__name__)
 
 SCHRITTE_DEG = (180.0, 90.0, 180.0)      # relative Drehungen: nach hinten, dann rechts/links davon
@@ -49,8 +51,8 @@ class DunkelCmd:
 
 
 class Dunkelangst:
-    def __init__(self, cfg, vyaw_limit_dps: float):
-        self.cfg, self.vyaw = cfg, vyaw_limit_dps
+    def __init__(self, cfg, rcfg):
+        self.cfg, self.rcfg = cfg, rcfg
         self.state = "ok"
         self.t_state = 0.0
         self._dark_since: float | None = None
@@ -110,9 +112,7 @@ class Dunkelangst:
         if st == "drehen":
             err = _wrap(self._yaw_goal - yaw)
             if abs(err) > math.radians(c.tol_deg) and now - self.t_state < c.turn_timeout_s:
-                w = math.degrees(c.turn_kp * abs(err)) / max(self.vyaw, 1e-6)
-                w = min(max(w, c.turn_min_w), c.turn_w)
-                return DunkelCmd(math.copysign(w, err), "Dunkel – dreht um")
+                return DunkelCmd(dreh_w(err, c.turn_kp, c.turn_w, self.rcfg), "Dunkel – dreht um")
             self._set("pruefen", now)
             return DunkelCmd(0.0, "Dunkel – schaut")
         if st == "pruefen":

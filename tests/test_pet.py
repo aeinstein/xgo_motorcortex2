@@ -1408,3 +1408,70 @@ def test_kommen_ohne_planerweg_faehrt_direkt():
         a = b.update(Sense(t=0.05 * (k + 1), floor_ok=True, free_center=1.0, nav_fail=True,
                            seen=[seen("person", 2.0, 0.05 * (k + 1), vs=0)]))
     assert b.task == "kommen" and a.v > 0
+
+
+def _pet_mit_karte(task="streifen", goal=(0.8, 0.0), pose=(0.0, 0.0, 0.0)):
+    cfg = Config.neutral()
+    p = Pet(cfg.behavior, cfg.robot, dataclasses.replace(cfg.pet, seek_m=-1.0, roam_m=-1.0), seed=1,
+            hcfg=cfg.home, ecfg=cfg.explore)
+    b = p.brain
+    import types
+    free = types.SimpleNamespace(valid=True, center=1.0)
+    w = World(t=0.0, dt=0.05, W=640, H=480, hfov=1.6, ego=None, tracks=[], free=free, balancing=True, yaw=0.0,
+              cmd_v=0.0, pose=pose, pose_ok=pose is not None, map_ok=True, ds_measured=True, battery=100)
+    b.update(Sense(t=0.0))
+    b.task, b._task_left, b._roam_left, b._home = task, math.inf, math.inf, (0.0, 0.0)
+    b._goal = goal
+    b._phase_set("fahren", 0.0)
+    b._drive_t_max = 100.0
+    return cfg, p, b, w
+
+
+def test_pet_streifen_faehrt_geplanten_weg_mit_wegfolger():
+    """Seit 2026-11-23 fährt pet jeden geplanten Weg mit dem PathFollower (Tempo pet.drive_v), nicht nur die Rufsuche."""
+    cfg, p, b, w = _pet_mit_karte()
+    p._nav_goal = p._to_grid(w, b._goal)
+    p.f.set_path([(0.0, 0.0), (0.4, 0.0), (0.8, 0.0)])
+    c = p.step(w)
+    assert "streifen (" in c.status and 0 < c.v <= cfg.pet.drive_v + 1e-9
+    # Weg hinter ihm: dreht auf der Stelle mit dem Drehregler von home (höchstens home.turn_w_max)
+    p.f.set_path([(0.0, 0.0), (-0.4, 0.0), (-0.8, 0.0)])
+    b._goal = (-0.8, 0.0)
+    p._nav_goal = p._to_grid(w, b._goal)
+    c = p.step(w)
+    assert c.v == 0.0 and "drehe" in c.status
+    assert cfg.robot.turn_min_w <= abs(c.w) <= cfg.home.turn_w_max + 1e-9
+
+
+def test_pet_gehirn_haelt_bei_festgefahren_nicht_bei_bahnpruefung():
+    b = brain(roam_m=-1.0)
+    b.update(Sense(t=0.0, floor_ok=True, free_center=1.0))
+    b.task, b._task_left, b._roam_left, b._home = "streifen", math.inf, math.inf, (0.0, 0.0)
+    b._goal = (0.8, 0.0)
+    b._phase_set("fahren", 0.0)
+    b._drive_t_max = 100.0
+    t = 0.0
+    while t < 6.0:                                             # blockiert und kein Fortschritt: bleibt dran
+        a = b.update(Sense(t=t, floor_ok=True, free_center=0.1, path_blocked=True, nav_extern=True, nav=(0.5, 0.0)))
+        t += 0.05
+    assert b.phase == "fahren" and a.v == 0.0 and a.w == 0.0
+    b.update(Sense(t=t, floor_ok=True, free_center=1.0, nav_extern=True, nav_stuck=True, nav=(0.5, 0.0)))
+    assert b.phase == "schauen" and b._fails == 1
+
+
+def test_pet_ohne_karte_faehrt_das_gehirn():
+    cfg, p, b, w = _pet_mit_karte(pose=None)
+    c = p.step(w)
+    assert abs(c.v - cfg.pet.drive_v) < 1e-9 and "streifen (" not in c.status
+
+
+def test_dreh_w_gemeinsamer_drehregler():
+    from xgonav.behaviors import dreh_w
+    r = RobotCfg()
+    assert dreh_w(0.0, 1.5, 0.4, r) == 0.0
+    assert dreh_w(math.radians(5), 1.5, 0.4, r, deadband_deg=8.0) == 0.0
+    assert dreh_w(math.radians(2), 1.5, 0.4, r) == pytest.approx(r.turn_min_w)       # Untergrenze Firmware
+    assert dreh_w(-math.radians(2), 1.5, 0.4, r) == pytest.approx(-r.turn_min_w)
+    assert dreh_w(math.radians(170), 1.5, 0.4, r) == pytest.approx(0.4)               # Obergrenze je Modus
+    assert dreh_w(math.radians(40), 1.5, 0.4, r) == pytest.approx(math.degrees(1.5 * math.radians(40)) / r.vyaw_limit_dps)
+    assert dreh_w(math.radians(2), 1.5, 0.4, r, w_min=0.0) == pytest.approx(math.degrees(1.5 * math.radians(2)) / r.vyaw_limit_dps)

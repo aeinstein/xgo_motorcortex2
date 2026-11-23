@@ -36,7 +36,7 @@ import math
 import random
 from dataclasses import dataclass, field, replace
 
-from .behaviors import Behavior, Command, Follow, Home, PathFollower, World, _wrap, clamp
+from .behaviors import Behavior, Command, Follow, Home, PathFollower, World, _wrap, clamp, dreh_w
 from .config import ExploreCfg, HomeCfg, PetCfg, RobotCfg
 from .planner import path_length
 
@@ -121,9 +121,10 @@ class Sense:
     karte: bool = False
     # Abstand zum Startpunkt der Raumkarte (m; gesetzt beim Aufspringen/Absetzen), None = keine Karte
     heim_m: float | None = None
-    # Rufsuche: Pet fährt den Weg mit dem Wegfolger von home (Engstellen, Anschub, Neuplanen); das Gehirn prüft nur
-    # Ankunft, Budget, Zeit und ob Pet festgefahren meldet (nav_stuck). Geradeaus-Bahnprüfung und Stillstand zählen
-    # dann nicht: Am Rider verwarf das 2026-11-22 den Weg durch die Tür nach 3 s.
+    # Geplanter Weg (alle Aufgaben seit 2026-11-23, vorher nur Rufsuche): Pet fährt ihn mit dem Wegfolger von home
+    # (Engstellen, Anschub, Neuplanen); das Gehirn prüft nur Ankunft, Budget, Zeit, Radius und ob Pet festgefahren
+    # meldet (nav_stuck). Geradeaus-Bahnprüfung und Stillstand zählen dann nicht: Am Rider verwarf das 2026-11-22
+    # den Weg durch die Tür nach 3 s.
     nav_extern: bool = False
     nav_stuck: bool = False
 
@@ -602,7 +603,7 @@ class PetBrain:
         self._come_goal(tg)
         self._react(s.t, "like", "traellern")
         self._phase_set("fahren", s.t)
-        self._drive_t_max = s.t + 30.0                       # das Ziel wandert mit ihr; Hänger fängt STALL_S ab
+        self._drive_t_max = s.t + 30.0                       # das Ziel wandert mit ihr; Hänger fangen STALL_S bzw. nav_stuck ab
 
     def _come_goal(self, tg: Seen) -> bool:
         """Ziel come_stop_m vor der Person. False: schon nah genug."""
@@ -665,8 +666,7 @@ class PetBrain:
         c, t = self.cfg, s.t
         err = _wrap(self._yaw_goal - self.yaw)
         if abs(err) > math.radians(6.0) and t - self._phase_t < 8.0 and c.gestures:
-            w = math.degrees(c.turn_kp * abs(err)) / self.rcfg.vyaw_limit_dps
-            act.w = math.copysign(clamp(w, c.turn_min_w, c.turn_w if self._ear_fast else max(c.look_w, c.turn_min_w)), err)
+            act.w = dreh_w(err, c.turn_kp, c.turn_w if self._ear_fast else c.look_w, self.rcfg)
             return
         self._ear_fast = False
         self._phase_set("lauschen", t)
@@ -1271,14 +1271,12 @@ class PetBrain:
             log.info("pet: %s: dort kein Weg, versuche die Gegenrichtung", self.task)
             self._phase_set("fahren", t)
             return
-        if s.nav_extern and self.task == "suchen" and self._ruf is not None:
+        if s.nav_extern:                                     # Pet fährt den geplanten Weg (PathFollower)
             why = ("angekommen" if rest <= stop else "festgefahren" if s.nav_stuck else
-                   self._no_drive(s, self._task_left) or ("Zeit" if t > self._drive_t_max else None))
+                   self._no_drive(s, self._task_left) or ("Zeit" if t > self._drive_t_max else None)
+                   or ("Radius" if self._out_of_radius() else None))
             if why is not None:
-                log.info("pet: %s: halte (%s, Rest %.2f m)", self.task, why, rest)
-                if why != "angekommen":
-                    self._fails += 1
-                self._phase_set("schauen", t)
+                self._halt(s, why, rest)
             return                                           # gefahren wird in Pet
         if rest <= stop:
             why = "angekommen"
@@ -1293,8 +1291,7 @@ class PetBrain:
             why = "Bahn blockiert"
         elif t > self._drive_t_max:
             why = "Zeit"
-        elif self.task == "streifen" and self._home is not None and \
-                math.hypot(self.x - self._home[0], self.y - self._home[1]) > self.roam_radius + 0.1:
+        elif self._out_of_radius():
             why = "Radius"
         if why is None and abs(err) > math.radians(30.0):
             act.w = self._turn_to(err)                       # auf der Stelle ausrichten
@@ -1308,16 +1305,24 @@ class PetBrain:
             elif t - self._stall[0] > STALL_S:
                 why = "kommt nicht voran"
         if why is not None:
-            log.info("pet: %s: halte (%s, Rest %.2f m)", self.task, why, rest)
-            if self.task == "kommen" or (self.task == "heim" and why == "angekommen"):
-                self._task_end(s, "am Start" if self.task == "heim" else why)
-                return
-            if why != "angekommen":
-                self._fails += 1
-            self._phase_set("schauen", t)
+            self._halt(s, why, rest)
             return
         act.v = c.drive_v
         act.w = self._turn_to(err)
+
+    def _out_of_radius(self) -> bool:
+        return (self.task == "streifen" and self._home is not None
+                and math.hypot(self.x - self._home[0], self.y - self._home[1]) > self.roam_radius + 0.1)
+
+    def _halt(self, s: Sense, why: str, rest: float) -> None:
+        """Fahrt zur Stelle endet: kommen und Ankunft daheim beenden die Aufgabe, sonst umschauen."""
+        log.info("pet: %s: halte (%s, Rest %.2f m)", self.task, why, rest)
+        if self.task == "kommen" or (self.task == "heim" and why == "angekommen"):
+            self._task_end(s, "am Start" if self.task == "heim" else why)
+            return
+        if why != "angekommen":
+            self._fails += 1
+        self._phase_set("schauen", s.t)
 
     def _look(self, s: Sense, act: Act) -> None:
         """Rundumblick in look_steps Blicken: still stehen (Detektor, Bodenmodell), Freiraum merken, weiterdrehen."""
@@ -1325,8 +1330,7 @@ class PetBrain:
         if self._yaw_goal is not None:
             err = _wrap(self._yaw_goal - self.yaw)
             if abs(err) > math.radians(6.0) and t - self._phase_t < 8.0:
-                w = math.degrees(c.turn_kp * abs(err)) / self.rcfg.vyaw_limit_dps
-                act.w = math.copysign(clamp(w, c.turn_min_w, max(c.look_w, c.turn_min_w)), err)
+                act.w = dreh_w(err, c.turn_kp, c.look_w, self.rcfg)
                 return
             self._yaw_goal, self._phase_t = None, t
             return
@@ -1428,19 +1432,16 @@ class PetBrain:
             period = 0.2 if g[0] == "wackeln" else 0.6
             if g[0] != "kopf":
                 sign = 1.0 if int((t - g[1]) / period) % 2 == 0 else -1.0
-                act.w = sign * (c.wiggle_w if g[0] == "wackeln" else c.turn_min_w)
+                act.w = sign * (c.wiggle_w if g[0] == "wackeln" else self.rcfg.turn_min_w)
             return
         if tg is not None:
             act.w = self._turn_to(tg.bearing)
         elif not self._gone_done and t - self._person_t >= 0.5:
-            act.w = math.copysign(c.turn_min_w, self._person_bearing)    # schaut hinterher
+            act.w = math.copysign(self.rcfg.turn_min_w, self._person_bearing)    # schaut hinterher
 
     def _turn_to(self, err: float) -> float:
         c = self.cfg
-        if abs(err) < math.radians(c.turn_deadband_deg):
-            return 0.0
-        w = math.degrees(c.turn_kp * err) / self.rcfg.vyaw_limit_dps
-        return math.copysign(clamp(abs(w), c.turn_min_w, c.turn_w), w)
+        return dreh_w(err, c.turn_kp, c.turn_w, self.rcfg, c.turn_deadband_deg)
 
     # ---- Ohnmacht ---------------------------------------------------------
     def _can_faint(self, s: Sense) -> bool:
@@ -1685,7 +1686,7 @@ class Pet(Behavior):
         self._oeff_besucht: list = []
         self._oeff_req = False               # laufender Auftrag ist eine Öffnungssuche
         self._oeff_asked = False
-        self._oeff_stucks = 0                # festgefahren auf dem Weg zur Öffnung (PathFollower.stuck)
+        self._nav_stucks = 0                 # festgefahren auf dem geplanten Weg (PathFollower.stuck), je Ziel
         self._w: World | None = None
         self.home_drive: Home | None = None  # Heimfahrt wie Modus home (Startbild-Abgleich), solange sie läuft
         self.pcfg = pcfg or PetCfg()
@@ -1699,7 +1700,9 @@ class Pet(Behavior):
         self._f_seek = self._f_found = 0     # Suchfahrten/Wiederfunde früherer Folgen (info)
         # Planer (App._plan_tick, nur mit Raumkarte): Fahrziele des Gehirns in Kartenkoordinaten
         self.h = hcfg or HomeCfg()
-        self.f = PathFollower(cfg, rcfg, self.h)
+        # Jeder geplante Weg des Gehirns (kommen, streifen, suchen, Rufsuche, heim ohne Startbild) wird hiermit
+        # gefahren, im Tempo von pet (Nutzer 2026-11-23: ein Fahrweg für alle)
+        self.f = PathFollower(cfg, rcfg, self.h, v=self.pcfg.drive_v)
         self._pending = False
         self._nav_goal: tuple[float, float] | None = None
         self._nav_req = None
@@ -1769,8 +1772,8 @@ class Pet(Behavior):
             return True
         if self.pending or self._nav_goal is None or self._nav_fail:
             return False
-        if self.f.stuck and b._ruf is not None:
-            self._oeff_stucks += 1                       # Rufsuche: nach zwei Neuplanungen gilt er als festgefahren
+        if self.f.stuck:
+            self._nav_stucks += 1                        # nach zwei Neuplanungen gilt er als festgefahren
         if self.f.path is None or t - self._t_plan > self.h.replan_s or self.f.stuck:
             self.pending, self._t_plan, self.f.stuck = True, t, False
             return True
@@ -1891,6 +1894,7 @@ class Pet(Behavior):
         if self._nav_goal is None or math.hypot(g[0] - self._nav_goal[0], g[1] - self._nav_goal[1]) > 0.10:
             # Ziel freiräumen: Start (driftet) und Kommen (dort steht die Person, die Karte sieht oft Belegtes)
             self._nav_goal, self._nav_fail, self._nav_clear = g, False, heim or b.task == "kommen"
+            self._nav_stucks = 0
             self._t_plan = -1e9
             self.f.clear()
         if self.f.path:
@@ -1899,10 +1903,9 @@ class Pet(Behavior):
             return {"nav_fail": True}
         return {"nav_pending": True}
 
-    def _ruf_faehrt(self, w: World) -> bool:
-        b = self.brain
-        return (b.task == "suchen" and b._ruf is not None and b.phase == "fahren" and bool(self.f.path)
-                and w.pose is not None)
+    def _pfad_faehrt(self, w: World) -> bool:
+        """Das Gehirn fährt zu einer Stelle und der Planer hat einen Weg: Pet fährt ihn mit dem PathFollower."""
+        return self.brain.phase == "fahren" and bool(self.f.path) and w.pose is not None
 
     def _oeff_ergebnis(self, res) -> None:
         """Antwort der Öffnungssuche (frontier.ExplorePlan oder None) ans Gehirn; Weg gleich übernehmen."""
@@ -1913,7 +1916,7 @@ class Pet(Behavior):
             b.oeffnung(None)
             return
         self._oeff_besucht.append(res.frontier)
-        self._oeff_stucks = 0
+        self._nav_stucks = 0
         g = tuple(res.goal)
         b.oeffnung(self._to_brain(w, g), path_length(res.path))
         # _nav() findet im nächsten Schritt dasselbe Ziel und behält den Weg
@@ -1982,7 +1985,7 @@ class Pet(Behavior):
                   karte=w.pose is not None and w.pose_ok,
                   heim_m=math.hypot(w.goal[0] - w.pose[0], w.goal[1] - w.pose[1])
                   if w.pose is not None and w.goal is not None else None,
-                  nav_extern=self._ruf_faehrt(w), nav_stuck=self._oeff_stucks >= 2, **self._nav(w))
+                  nav_extern=self._pfad_faehrt(w), nav_stuck=self._nav_stucks >= 2, **self._nav(w))
         act = b.update(s)
         heim = self._heim(w)
         if heim is None:
@@ -1991,9 +1994,9 @@ class Pet(Behavior):
                 fc.status = "%s | %s" % (act.status, fc.status) if act.status else fc.status
                 self._flags(b)
                 return fc
-        if heim is None and self._ruf_faehrt(w):
-            # Rufsuche: den Weg wie home abfahren (Engstellen, Lücke, Anschub); Bahnprüfung der App bremst ohnehin
-            heim = self.f.drive(w, "Rufsuche", slow_end=True)
+        if heim is None and self._pfad_faehrt(w):
+            # Geplanter Weg: wie home abfahren (Engstellen, Lücke, Anschub); Bahnprüfung der App bremst ohnehin
+            heim = self.f.drive(w, "Rufsuche" if b._ruf is not None else b.task, slow_end=True)
         self._flags(b)
         if heim is not None:
             return Command(heim.v, heim.w, heim.height_mm if act.height_mm is None else act.height_mm,

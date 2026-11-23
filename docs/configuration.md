@@ -42,6 +42,7 @@ Default = `config.py`; since 2026-11-12 these are the RiderPi values (`/opt/xgon
 | `max_v` | 0.5 (sim: 0.25) | | normalised; RiderPi 0.15 → 0.5 on 2026-11-13 (user), **never driven above 0.24**. Sent 0.12 ≈ 26 cm/s, 0.24 ≈ 50 cm/s. |
 | `max_sent` | 0.5 | | hard cap on the sent drive and turn value, after the gains below and `speed_ctrl` |
 | `max_w` | 0.5 (sim: 0.25) | | normalised; 0.25 ≈ 90 °/s (firmware scale assumed); RiderPi 0.30 → 0.5 on 2026-11-13 (user) |
+| `turn_min_w` | 0.06 | | lower bound of the shared turn controller `behaviors.dreh_w` (firmware ignores smaller turn values): path follower turning in place and final alignment, `pet` turns, fear of the dark. Since 2026-11-23; replaces `pet.turn_min_w`, `dunkel.turn_min_w` and `behavior.search_w` as the path follower's minimum |
 | `tempo` | 1.0 | | start value of the speed slider: every drive and turn command of every mode is multiplied by it after the `max_v`/`max_w` clamp (`Robot.drive`); at runtime `POST /tempo?f=0.05..1` (web slider), until restart. Firmware actions run at their own speed |
 | `manual_forward_gain` | 2.0 (sim: 1.0) | | multiplier for positive v, manual mode only (applied after `max_v`, capped by `max_sent`) |
 | `reverse_gain` | 2.0 (sim: 1.0) | | multiplier for negative v (applied after `max_v`, capped by `max_sent`) |
@@ -103,6 +104,10 @@ Default = `config.py`; since 2026-11-12 these are the RiderPi values (`/opt/xgon
 | `min_corr` | 0.6 | | auto sync only: accepted above |
 | `sync_range_ms` / `sync_step_ms` | 100 / 4 | | auto sync only |
 | `poll_s` | 0.01 | | read `imu_log` this often; only new lines are parsed (RiderPi: one read 185 µs for 128 lines). At 0.05 the newest sample was up to ~50 ms older than the frame and the pitch was held, not interpolated |
+
+### Removed 2026-11-23
+
+Ignored with a warning: `pet.turn_min_w`, `dunkel.turn_min_w` → `robot.turn_min_w`.
 
 ### Removed 2026-11-17
 
@@ -342,7 +347,7 @@ All keys with comments: `PetCfg` in `xgonav/config.py`.
 | `replan_s` | 2.0 | replan interval (also after 3 s without progress) |
 | `keep_factor` | 1.2 | keep the current path while free and ≤ factor × new path + 0.3 m (not after getting stuck) |
 | `use_localmap` | true | confirmed `LocalMap` points (same as the path check) are obstacles for planning |
-| `v` | 0.15 | normalised speed (`patrol`, path following in `follow`/`pet` searches; `explore` uses `explore.v`) |
+| `v` | 0.15 | normalised speed (`patrol`, path following in the `follow` search; `explore` uses `explore.v`, every planned path in `pet` uses `pet.drive_v`) |
 | `start_v` | 0.225 (sim: 0.15) | "Zum Start": mode `home` and the drive home in `pet`, +50 % (2026-11-22); final straight run `startbild.gerade_v` |
 | `kp_turn` | 1.5 | 1/s, turn rate per heading error (follow uses `behavior.kp_turn`) |
 | `turn_w_max` | 0.25 | cap for turning in place (path follower, final alignment); 1.0 = only `robot.max_w` (sim). Turning at 0.5 rolled the Rider 7° and upset IMU pitch and pose (2026-11-17) |

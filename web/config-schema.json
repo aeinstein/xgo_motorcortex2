@@ -39,6 +39,12 @@
        "hilfe": ""
       },
       {
+       "key": "turn_min_w",
+       "typ": "float",
+       "default": 0.06,
+       "hilfe": "Kleinere Drehbefehle setzt die Firmware nicht um (Totband ~5 %): Untergrenze des gemeinsamen Drehreglers behaviors.dreh_w für alle Drehungen auf der Stelle (PathFollower, pet, Dunkelangst; seit 2026-11-23)"
+      },
+      {
        "key": "tempo",
        "typ": "float",
        "default": 1.0,
@@ -2397,13 +2403,7 @@
        "key": "turn_w",
        "typ": "float",
        "default": 0.4,
-       "hilfe": "Nutzer 2026-11-13: Drehen x2 (vorher 0,20)"
-      },
-      {
-       "key": "turn_min_w",
-       "typ": "float",
-       "default": 0.06,
-       "hilfe": "kleinere Lenkbefehle ignoriert die Firmware"
+       "hilfe": "Nutzer 2026-11-13: Drehen x2 (vorher 0,20); Untergrenze robot.turn_min_w"
       },
       {
        "key": "retreat_m",
@@ -3178,13 +3178,7 @@
        "key": "turn_w",
        "typ": "float",
        "default": 0.2,
-       "hilfe": ""
-      },
-      {
-       "key": "turn_min_w",
-       "typ": "float",
-       "default": 0.06,
-       "hilfe": ""
+       "hilfe": "Untergrenze robot.turn_min_w"
       },
       {
        "key": "tol_deg",

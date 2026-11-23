@@ -899,6 +899,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#removed-2026-11-23" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Removed 2026-11-23
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#removed-2026-11-17" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1597,6 +1608,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#removed-2026-11-23" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Removed 2026-11-23
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#removed-2026-11-17" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1953,6 +1975,12 @@
 <td>normalised; 0.25 ≈ 90 °/s (firmware scale assumed); RiderPi 0.30 → 0.5 on 2026-11-13 (user)</td>
 </tr>
 <tr>
+<td><code>turn_min_w</code></td>
+<td>0.06</td>
+<td></td>
+<td>lower bound of the shared turn controller <code>behaviors.dreh_w</code> (firmware ignores smaller turn values): path follower turning in place and final alignment, <code>pet</code> turns, fear of the dark. Since 2026-11-23; replaces <code>pet.turn_min_w</code>, <code>dunkel.turn_min_w</code> and <code>behavior.search_w</code> as the path follower's minimum</td>
+</tr>
+<tr>
 <td><code>tempo</code></td>
 <td>1.0</td>
 <td></td>
@@ -2298,6 +2326,8 @@
 </tr>
 </tbody>
 </table>
+<h3 id="removed-2026-11-23">Removed 2026-11-23<a class="headerlink" href="#removed-2026-11-23" title="Permanent link">&para;</a></h3>
+<p>Ignored with a warning: <code>pet.turn_min_w</code>, <code>dunkel.turn_min_w</code> → <code>robot.turn_min_w</code>.</p>
 <h3 id="removed-2026-11-17">Removed 2026-11-17<a class="headerlink" href="#removed-2026-11-17" title="Permanent link">&para;</a></h3>
 <p>Must not be in <code>config.toml</code> any more (<code>KeyError</code> at load):</p>
 <table>
@@ -3266,7 +3296,7 @@ Sounds: <code>sound</code> true, <code>sound_dir</code> <code>/opt/xgonav/sounds
 <tr>
 <td><code>v</code></td>
 <td>0.15</td>
-<td>normalised speed (<code>patrol</code>, path following in <code>follow</code>/<code>pet</code> searches; <code>explore</code> uses <code>explore.v</code>)</td>
+<td>normalised speed (<code>patrol</code>, path following in the <code>follow</code> search; <code>explore</code> uses <code>explore.v</code>, every planned path in <code>pet</code> uses <code>pet.drive_v</code>)</td>
 </tr>
 <tr>
 <td><code>start_v</code></td>

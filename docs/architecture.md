@@ -47,7 +47,7 @@ camera.FrameSource ─► egomotion.EgoMotion ─► tracker.Tracker ◄── d
 | `gridmap.py` | Room occupancy grid in world frame, start point, save/load; entering an observation (rays, free rays, hits) optionally in C++ (`native/gridfast.cpp`) |
 | `startbild.py` | start image check: anchor image at the start, measurement of the pose against it at the end of `home`, own thread |
 | `planner.py` | A* on the room map for `home`, own thread (`PlannerWorker`); A* and shortening optionally in C++ (`native/navfast.cpp`) |
-| `behaviors.py` | `idle`, `manual`, `follow`, `explore` (`MapExplore`, reactive `Explore` without room map), `approach`, `home`; `PathFollower`, `safety()` |
+| `behaviors.py` | `idle`, `manual`, `follow`, `explore` (`MapExplore`, reactive `Explore` without room map), `approach`, `home`; `PathFollower`, `dreh_w`, `safety()` |
 | `pet.py` | mode `pet`: `PetBrain` (logic only), `Pet` (behavior); reacts to people, cats, dogs. Control step only, nothing per frame |
 | `frontier.py` | mapping targets for `explore`, runs in the planner thread; loops optionally in C++ (`native/navfast.cpp`) |
 | `robot.py` | `ProcRobot` (`/proc/XGORider`), `SimRobot`; ramp, keepalive, watchdog |
@@ -56,6 +56,19 @@ camera.FrameSource ─► egomotion.EgoMotion ─► tracker.Tracker ◄── d
 | `emotion.py` | Automatic emotions on the display |
 | `affinity.py` | CPU pinning |
 | `sim.py` | Simulator (`SimWorld`, `FakeDetector`, `SimImu`) |
+
+## Steering
+
+Every mode ends in `Command(v, w)` → `safety()` → `_arc_check()` → `Robot.drive()`. Since 2026-11-23:
+
+| Situation | Planner | v/w from |
+|---|---|---|
+| `home`, `explore`, `patrol`; `follow` search at the last position; every planned path in `pet` (come, roam, search, call search, home) | yes | `PathFollower.drive` (hysteresis, narrow passages, `slow_end`, stuck, push) |
+| `follow` with target in view (also `pet` following) | no | `Servo` (PD on bearing, distance Kalman filter) |
+| `pet` without room map / without path | no | `PetBrain._drive` (straight to the spot) |
+| turning on the spot (path follower, `pet`, fear of the dark) | – | `behaviors.dreh_w`: kp × error, between `robot.turn_min_w` and the mode's cap |
+
+`pet` keeps its decisions (arrival, budget, time, radius, stuck after two replans) in `PetBrain`; the path is driven by `Pet.f` at `pet.drive_v`.
 
 ## Swappable backends
 

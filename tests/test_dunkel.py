@@ -18,20 +18,20 @@ def _lauf(d, luma_fn, t_end, dt=0.05, yaw=0.0):
         c = d.update(t, luma_fn(yaw), yaw)
         cmds.append(c)
         if c is not None:
-            yaw = (yaw + math.radians(c.w * d.vyaw) * dt + math.pi) % (2 * math.pi) - math.pi
+            yaw = (yaw + math.radians(c.w * d.rcfg.vyaw_limit_dps) * dt + math.pi) % (2 * math.pi) - math.pi
         t += dt
     return t, yaw, cmds
 
 
 def test_hell_nichts_tun():
-    d = Dunkelangst(Config.neutral().dunkel, 360.0)
+    d = Dunkelangst(Config.neutral().dunkel, Config.neutral().robot)
     _, _, cmds = _lauf(d, lambda y: 120.0, 3.0)
     assert all(c is None for c in cmds) and d.n_angst == 0
 
 
 def test_kurz_dunkel_keine_angst():
     cfg = Config.neutral().dunkel
-    d = Dunkelangst(cfg, 360.0)
+    d = Dunkelangst(cfg, Config.neutral().robot)
     for i in range(int(cfg.dark_s / 0.05) - 2):          # knapp unter dark_s
         assert d.update(i * 0.05, 3.0, 0.0) is None
     assert d.update(5.0, 120.0, 0.0) is None and d.n_angst == 0
@@ -40,7 +40,7 @@ def test_kurz_dunkel_keine_angst():
 def test_angst_umdrehen_licht_hinten():
     """Vorn dunkel, hinten hell: Angst, 180° drehen, Licht -> weiter (None)."""
     cfg = Config.neutral().dunkel
-    d = Dunkelangst(cfg, 360.0)
+    d = Dunkelangst(cfg, Config.neutral().robot)
     licht = lambda yaw: 3.0 if abs(yaw) < math.radians(90) else 120.0
     t, yaw, cmds = _lauf(d, licht, 3.0)
     assert d.state == "angst" and d.ausgaben == [("emotion", "angst"), ("sound", "angst"), ("zone", "")]
@@ -49,12 +49,12 @@ def test_angst_umdrehen_licht_hinten():
     assert d.n_licht == 1 and d.state == "ok"
     assert abs(abs(yaw) - math.pi) < math.radians(cfg.tol_deg + 2)
     assert any(c is not None and abs(c.w) > 0 for c in cmds)
-    assert all(c is None or c.w == 0 or abs(c.w) >= cfg.turn_min_w for c in cmds)
+    assert all(c is None or c.w == 0 or abs(c.w) >= Config.neutral().robot.turn_min_w for c in cmds)
 
 
 def test_kein_licht_drei_richtungen_dann_aufgeben():
     cfg = Config.neutral().dunkel
-    d = Dunkelangst(cfg, 360.0)
+    d = Dunkelangst(cfg, Config.neutral().robot)
     gesehen = []
 
     def dunkel(yaw):
@@ -69,7 +69,7 @@ def test_kein_licht_drei_richtungen_dann_aufgeben():
 
 def test_wiederholt_ins_dunkle_gibt_auf():
     cfg = Config.neutral().dunkel
-    d = Dunkelangst(cfg, 360.0)
+    d = Dunkelangst(cfg, Config.neutral().robot)
     t = 0.0
     for n in range(cfg.max_events):
         while d.state == "ok":                            # fährt (Modus) wieder ins Dunkle
