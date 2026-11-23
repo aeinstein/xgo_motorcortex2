@@ -2583,8 +2583,18 @@
 </tr>
 <tr>
 <td><code>push_v</code> / <code>push_s</code> / <code>push_n</code> / <code>push_free_m</code></td>
-<td>0.45 / 0.6 / 2 / 0.4</td>
+<td>0.45 / 1.2 / 2 / 0.4</td>
 <td>push: forward commanded, &lt; 2 cm progress for 2.5 s (1 s after a push) and FloorNet ≥ <code>push_free_m</code> free ahead → drive <code>push_v</code> for <code>push_s</code>; at most <code>push_n</code> times until 0.3 m progress, then back up as before. Path following, <code>home</code>, <code>patrol</code>, and the reactive escape of <code>explore</code>. 0 = off. Not driven (carpet groove 2026-11-17)</td>
+</tr>
+<tr>
+<td><code>kante_v</code> / <code>kante_fenster_s</code> / <code>kante_s</code></td>
+<td>0.15 / 0.5 / 0.5</td>
+<td></td>
+</tr>
+<tr>
+<td><code>push_rest_m</code> / <code>push_min_m</code> / <code>push_max_m</code> / <code>push_brake_s</code></td>
+<td>0.05 / 0.03 / 0.15 / 0.25</td>
+<td></td>
 </tr>
 <tr>
 <td><code>height_cruise_mm</code> / <code>height_search_mm</code> / <code>height_fast_mm</code></td>
@@ -2993,7 +3003,7 @@ Sounds: <code>sound</code> true, <code>sound_dir</code> <code>/opt/xgonav/sounds
 </tr>
 <tr>
 <td><code>min_range_m</code> / <code>max_range_m</code></td>
-<td>0.15 / 1.5 (hits only up to here; sim 1.25)</td>
+<td>0.15 / 1.5 (hits only up to here, distance along the ray since 2026-11-23; sim 1.25)</td>
 </tr>
 <tr>
 <td><code>confirm_dr_m</code> / <code>confirm_cells</code></td>
@@ -3005,7 +3015,7 @@ Sounds: <code>sound</code> true, <code>sound_dir</code> <code>/opt/xgonav/sounds
 </tr>
 <tr>
 <td><code>free_range_m</code></td>
-<td>1.5 (RiderPi 1.1 from 2026-11-06 to 2026-11-14); free rays up to here</td>
+<td>1.5 (RiderPi 1.1 from 2026-11-06 to 2026-11-14); free rays up to here (along the ray)</td>
 </tr>
 <tr>
 <td><code>column_step</code></td>
