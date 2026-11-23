@@ -55,7 +55,9 @@ def test_pet_ruck_im_budget_und_keine_fehlalarme():
     r = run("pet", 8.0, imu=True, wheels=True, dyn=True, animal="person", speed=2.5,
             overrides={"robot.vx_limit": 1.8, "pet.retreat_m": 0.12})
     assert r["pet"]["schrecks"] >= 1 and r["pet"]["ruck"] == 1
-    assert r["collisions"] == 0 and r["weg_von_start_m"] <= 0.12 and r["dist_m"] > 0.03
+    # dist_m > 0,02: Seit dem Trägheitsmodell nach der Fahrt 2026-11-23 (Fahrt folgt mit 1,2 s) kommt der kurze
+    # Ruck nur noch ~3 cm weit (vorher mehr als 3 cm); er muss nur sichtbar fahren
+    assert r["collisions"] == 0 and r["weg_von_start_m"] <= 0.12 and r["dist_m"] > 0.02
     r = run("pet", 14.0, imu=True, wheels=True, dyn=True, animal="person", speed=0.3)
     assert r["pet"]["schrecks"] == 0 and r["dist_m"] == 0.0
 
