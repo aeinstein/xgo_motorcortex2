@@ -360,9 +360,9 @@ details.extras[open]>summary{margin-bottom:8px}
   <!-- Kalibrier-Knöpfe gesperrt (2026-11-02): Speichern bei schlaffen Beinen hat die
        Beinnullpunkte im ESP32-Flash überschrieben. Erst mit geführtem Ablauf wieder freigeben. -->
   <div class="kopf-knoepfe">
-    <button class="gefahr symbol" onclick="befehl('action', {n: 254})" aria-label="Absetzen" title="Aktion 254, Not-Stopp"><span class="ic" aria-hidden="true">⤓</span><span class="txt">Absetzen</span></button>
-    <button class="symbol" onclick="aufspringen()" aria-label="Aufspringen" title="Aktion 253 (!standup): Rider muss stehen und Platz haben"><span class="ic" aria-hidden="true">⤒</span><span class="txt">Aufspringen</span></button>
-    <button class="symbol" onclick="arm()" aria-label="Aufstehen" title="Aktion 255"><span class="ic" aria-hidden="true">↑</span><span class="txt">Aufstehen</span></button>
+    <button id="k-absetzen" class="gefahr symbol" onclick="befehl('action', {n: 254})" aria-label="Absetzen" title="Aktion 254, Not-Stopp"><span class="ic" aria-hidden="true">⤓</span><span class="txt">Absetzen</span></button>
+    <button id="k-aufspringen" class="symbol" onclick="aufspringen()" aria-label="Aufspringen" title="Aktion 253 (!standup): Rider muss stehen und Platz haben"><span class="ic" aria-hidden="true">⤒</span><span class="txt">Aufspringen</span></button>
+    <button id="k-aufstehen" class="symbol" onclick="arm()" aria-label="Aufstehen" title="Aktion 255"><span class="ic" aria-hidden="true">↑</span><span class="txt">Aufstehen</span></button>
     <button id="pip" class="symbol" onclick="pipelineUmschalten()" aria-label="Bildverarbeitung" title="Bildverarbeitung (Kamera und Auswertung) starten oder stoppen"><span class="ic" aria-hidden="true" id="pip-ic">▶</span><span class="txt" id="pip-txt">…</span></button>
     <label id="rec-l" class="kopf-check" hidden title="Rohbilder und Metadaten am Rider speichern. Schreibt nur, solange er balanciert; Absetzen beendet die Aufnahme, jedes Aufstehen beginnt eine neue."><input type="checkbox" id="rec" onchange="aufzeichnungSetzen(this.checked)"> Aufzeichnen</label>
   </div>
@@ -1411,7 +1411,7 @@ async function status() {
 }
 function statusZeigen(s, fehler) {
   try {
-    if (!s) { hoeheAusStatus = false; bildSoll(false); zeige(fehler || 'keine Verbindung zu xgonav'); verbindungWeg(); return; }
+    if (!s) { hoeheAusStatus = false; bildSoll(false); lageKnoepfe(null); zeige(fehler || 'keine Verbindung zu xgonav'); verbindungWeg(); return; }
     verbindungOk();
     ruheZeigen(!!s.ruhe, s.battery);
     bildSoll(!s.ruhe && s.pipeline === 'läuft');
@@ -1430,6 +1430,7 @@ function statusZeigen(s, fehler) {
     sprechZeigen();
     pille('p-modus', tr(MODI[s.mode] || s.mode || '-'), s.mode && s.mode !== 'idle' ? 'warn' : '');
     zustandPille(s.state, s.balancing);
+    lageKnoepfe(s.balancing);
     akkuMerken(s.battery);
     pille('p-akku', s.battery != null ? s.battery + ' %' : '-',
           s.battery == null ? '' : (s.battery < 20 ? 'schlecht' : s.battery < 40 ? 'warn' : 'gut'));
@@ -2041,6 +2042,13 @@ async function lageKalibrieren() {
   if (!confirm(tr('Lage kalibrieren? Der Rider muss balancieren und frei stehen; er regelt sich ein paar Sekunden auf der Stelle ein.'))) return;
   if (aktModus && aktModus !== 'idle' && !(await modus('idle'))) return;
   befehl('pitch_calibration');
+}
+// Kopfleiste: balanciert er, nur Absetzen; liegt er, nur Aufstehen/Aufspringen; unbekannt (keine Verbindung): alle
+function lageKnoepfe(balanciert) {
+  const b = balanciert === true, l = balanciert === false;
+  $('k-absetzen').hidden = l;
+  $('k-aufstehen').hidden = b;
+  $('k-aufspringen').hidden = b;
 }
 // Aktion 255 = Arm (R-1.1.6): Räder laufen an, sobald der Rider aufrecht steht
 function arm() {
