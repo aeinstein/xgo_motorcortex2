@@ -108,7 +108,8 @@ button.aktiv{border-color:var(--akzent);background:#18324f;color:#fff}
 input,select{font:inherit;color:var(--text);background:var(--karte2);border:1px solid var(--rand2);border-radius:6px;padding:5px 8px}
 input[type=range]{padding:0;border:0;background:none;accent-color:var(--akzent);width:100%;cursor:pointer;min-width:80px}
 input[type=color]{width:100%;height:34px;padding:2px;cursor:pointer}
-select{cursor:pointer;padding:3px 6px}
+/* alle Auswahlboxen gleich groß, so hoch wie die Textknöpfe (12 px, 3 px oben/unten) */
+select{cursor:pointer;font-size:12px;line-height:1.4;padding:2px 4px}
 
 /* --- Raster */
 main{display:grid;grid-template-columns:minmax(320px,640px) minmax(300px,1fr);gap:12px;padding:12px;align-items:start;max-width:1400px}
@@ -188,7 +189,7 @@ details.hilfe p{margin:4px 0 0}
 .segment button.aktiv{background:var(--akzent);color:#04121f;font-weight:600}
 #ziel{width:auto;max-width:150px}
 .ziel-gruppe{flex-wrap:nowrap}
-.ziel-gruppe #ziel{border:0;border-radius:0;margin:0;font-size:12px;padding:0 4px;line-height:1.4}   /* nicht höher als die Knöpfe */
+.ziel-gruppe #ziel{border:0;border-radius:0;margin:0}
 @media (max-width:640px){
   .segment{display:grid;grid-template-columns:repeat(3,1fr);width:100%}
   .segment button{padding:3px 2px}
