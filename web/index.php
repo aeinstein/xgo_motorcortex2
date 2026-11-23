@@ -1507,7 +1507,7 @@ function statusZeigen(s, fehler) {
     sprechZeigen();
     pille('p-modus', tr(MODI[s.mode] || s.mode || '-'), s.mode && s.mode !== 'idle' ? 'warn' : '');
     zustandPille(s.state, s.balancing);
-    lageKnoepfe(s.balancing);
+    lageKnoepfe(s.balancing, s.state);
     akkuMerken(s.battery);
     pille('p-akku', s.battery != null ? s.battery + ' %' : '-',
           s.battery == null ? '' : (s.battery < 20 ? 'schlecht' : s.battery < 40 ? 'warn' : 'gut'));
@@ -2121,9 +2121,12 @@ async function lageKalibrieren() {
   befehl('pitch_calibration');
 }
 // Kopfleiste: balanciert er, nur Absetzen; liegt er, nur Aufstehen/Aufspringen; unbekannt (keine Verbindung): alle
-function lageKnoepfe(balanciert) {
+// Gefallen (state 0): Absetzen bleibt sichtbar, sonst käme man aus dem Zustand nicht heraus
+let lageZustand = null;
+function lageKnoepfe(balanciert, state = lageZustand) {
+  lageZustand = state ?? null;
   const b = balanciert === true, l = balanciert === false;
-  $('k-absetzen').hidden = l;
+  $('k-absetzen').hidden = l && lageZustand !== 0;
   $('k-aufstehen').hidden = b;
   $('k-aufspringen').hidden = b;
 }
@@ -3214,7 +3217,7 @@ function sysVerarbeiten(s) {
   if (s.height != null) { beinSoll.h = s.height; if (!hoeheAusStatus) hoeheSetzen(s.height); }
   if (s.roll != null) { beinSoll.r = s.roll; reglerSetzen('roll', s.roll, s.roll + '°'); }
   beinSoll.abgesetzt = s.state === 254;
-  if (s.state != null) zustandPille(s.state, s.state === 1);
+  if (s.state != null) { zustandPille(s.state, s.state === 1); if ((s.state === 0) !== (lageZustand === 0)) lageKnoepfe(s.state === 1, s.state); }
   const jetzt = Date.now();
   // Auslastung auf den Höchsttakt bezogen: 100 % bei halbem Takt zählt als 50 %
   const takt = s.mhz && s.mhz[1] > 0 ? Math.min(1, s.mhz[0] / s.mhz[1]) : 1;
