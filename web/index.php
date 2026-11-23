@@ -7,7 +7,7 @@
  * Aufbau: Kopfleiste (fest oben: Sprache, Absetzen, Aufspringen, Aufstehen, Bildverarbeitung an/aus, Aufzeichnen,
  * Einstellungen, Ruhe, STOPP) – links Bild mit Steuerkreuz als Auflage und Kameraleiste, Modus, Kennzahlen, Verlauf
  * (eingeklappt) – rechts Lage, Schallradar, Extras (Anleitung, Schaubild, Herunterfahren, Aktionen, LEDs, Emotionen),
- * Raumkarte; Tempo in der Kameraleiste.
+ * Raumkarte; Tempo in der Modusleiste.
  * Sprache: Deutsch steht im HTML, Englisch im Wörterbuch EN (nur im Browser umgeschaltet).
  */
 declare(strict_types=1);
@@ -156,10 +156,10 @@ details.hilfe p{margin:4px 0 0}
 .bild-schalter .umschalt{background:rgba(15,17,20,.45);border-color:rgba(255,255,255,.3);color:#fff}
 .bild-schalter .umschalt.aktiv{background:var(--akzent);border-color:var(--akzent);color:#04121f}
 .bild-leiste .imu-bild{grid-column:1/-1;font-variant-numeric:tabular-nums}
-.bild-leiste .tempo-zeile{grid-column:1/-1;display:flex;align-items:center;gap:8px}
-.tempo-zeile label{color:var(--leise);font-size:13px}
-.tempo-zeile input{flex:1;max-width:320px}
-.tempo-zeile .w{font-variant-numeric:tabular-nums;text-align:right;font-size:13px}
+.tempo-kopf{display:inline-flex;align-items:center;gap:6px}
+.tempo-kopf label{color:var(--leise);font-size:13px}
+.tempo-kopf input{width:120px;margin:0}
+.tempo-kopf .w{font-variant-numeric:tabular-nums;text-align:right;font-size:13px;min-width:3.2em}
 .bild-leiste .imu-bild.schlecht{color:#ff8a8d}
 .sprech-zeile{margin-top:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px}
 .sprech-zeile label{color:var(--leise)}
@@ -391,6 +391,11 @@ details.extras[open]>summary{margin-bottom:8px}
           <button data-modus="approach" onclick="modus('approach')">Anfahren</button>
           <select id="ziel" title="Ziel für Folgen/Anfahren (aktive YOLO-Klassen)" aria-label="Ziel"><option value="person">person</option></select>
         </div>
+        <div class="tempo-kopf" title="Tempo aller Fahr- und Drehbefehle in allen Modi, bis zum Neustart von xgonav">
+          <label for="tempo">Tempo</label>
+          <input type="range" id="tempo" min="25" max="100" step="25" value="75">
+          <span class="w" id="tempo-w"></span>
+        </div>
       </div>
       <div class="fn-wahl">
         <label for="fn-wahl">Bodenmodell</label>
@@ -416,7 +421,7 @@ details.extras[open]>summary{margin-bottom:8px}
       <div class="bild-schalter" role="group" aria-label="Anzeige im Bild">
         <button id="hz-stabil" class="umschalt" onclick="hzStabil(!bildStabil)" aria-pressed="false" aria-label="Bild am IMU-Nick festhalten" title="Bild am IMU-Nick festhalten: Bild senkrecht so verschieben, dass der IMU-Nick fest steht; stimmt die IMU, steht die Szene still"><span aria-hidden="true">⇕</span></button><button id="hz-roll" class="umschalt" onclick="hzRoll(!bildRollAn)" aria-pressed="false" aria-label="Roll ausgleichen" title="Roll ausgleichen: Bild um den IMU-Roll drehen; stimmt der Roll, stehen senkrechte Kanten senkrecht und die cyan Linie waagerecht"><span aria-hidden="true">⟲</span></button><button id="hz-plan" class="umschalt" onclick="hzPlan(!planAn)" aria-pressed="false" aria-label="Planerbahn" title="Planerbahn: geplanten Weg des Planers (Zum Start, Streife, Haustier-Suche) aus der Raumkarte ins Bild legen; im Browser gerechnet aus Kartenpose, Nick, Roll und Kamerahöhe"><span aria-hidden="true">↝</span></button><button id="hz-mitte" class="umschalt" onclick="hzMitte(!bildMitteAn)" aria-pressed="false" aria-label="Bildmitte" title="Bildmitte: konfigurierte Bildmitte einblenden, gestrichelt die Spalte der Fahrtrichtung (W/2), Kreis bei Zeile H/2"><span aria-hidden="true">⌖</span></button>
       </div>
-      <div class="pad" title="Gedrückt halten: Maus, Touch, Pfeiltasten/WASD">
+      <div class="pad" title="Steuerkreuz im Bild gedrückt halten, oder Pfeiltasten/WASD. Fahren schaltet auf „Hand“ und ist auf max_v/max_w der Konfiguration begrenzt. Ohne Bodenmodell und Bahnprüfung; Sturz-Erkennung und Watchdogs bleiben aktiv.">
         <span></span><button data-fahrt="vor" aria-label="vor">▲</button><span></span>
         <button data-fahrt="links" aria-label="links">◀</button><span></span><button data-fahrt="rechts" aria-label="rechts">▶</button>
         <span></span><button data-fahrt="zurück" aria-label="zurück">▼</button><span></span>
@@ -469,12 +474,6 @@ details.extras[open]>summary{margin-bottom:8px}
           <span class="ausgleich"><label title="Helligkeit/Kontrast/Sättigung wirken an der Quelle (ISP) und damit auch auf FloorNet und die Aufnahmen. Für die Anzeige hier per Filter wieder herunterziehen (Näherung; abgeschnittene Lichter und Schatten bleiben weg)."><input type="checkbox" id="bild-ausgleich" onchange="bildAusgleich(this.checked)"> Im Browser ausgleichen</label><span class="info" tabindex="0" title="Gilt bis zum Neustart von xgonav. Kürzere Belichtung = weniger Bewegungsunschärfe, aber dunkler; mehr Verstärkung = heller, aber mehr Rauschen (Automatik nur bis 8; über ~8× wird der Rauschabstand nicht besser, nur das Bild heller). Dauerhaft über [camera] exposure_us / analogue_gain in config.toml.">i</span></span>
         </div>
       </details>
-      <div class="tempo-zeile">
-        <label for="tempo">Tempo</label>
-        <input type="range" id="tempo" min="5" max="100" value="60">
-        <span class="w" id="tempo-w"></span>
-        <span class="info" tabindex="0" title="Steuerkreuz im Bild gedrückt halten, oder Pfeiltasten/WASD. Fahren schaltet auf „Hand“ und ist auf max_v/max_w der Konfiguration begrenzt. Ohne Bodenmodell und Bahnprüfung; Sturz-Erkennung und Watchdogs bleiben aktiv.">i</span>
-      </div>
       <div class="imu-bild leise" id="imu-bild" title="IMU-Wert dieses Bildes (Bildzeit + [imu] time_offset_ms), mit dem xgonav Boden, Karten und die cyan Linie rechnet. Nickrate: aus dem Bild (Ego-Motion) gegen die IMU; weichen sie dauerhaft ab, stimmen Zeitversatz oder Brennweite nicht">-</div>
     </div>
   </div>
@@ -743,6 +742,7 @@ const EN = {
   'Roll': 'Roll', 'Roll auf 0°': 'Roll to 0°',
   'Gier 0° = Kurs beim Start des ESP32; + = links. Roll + = rechts tief, Nick + = vorn tief':
     'Yaw 0° = heading at ESP32 start; + = left. Roll + = right side down, pitch + = front down',
+  'Tempo aller Fahr- und Drehbefehle in allen Modi, bis zum Neustart von xgonav': 'Speed of all drive and turn commands in all modes, until xgonav restarts',
   'Fahren': 'Drive', 'vor': 'forward', 'links': 'left', 'rechts': 'right', 'zurück': 'back', 'Tempo': 'Speed', 'Pfeiltasten/WASD': 'Arrow keys/WASD',
   'Aktion 255': 'Action 255', 'Aufstehen': 'Stand up',
   'Absetzen (Aktion 254, Not-Stopp)': 'Sit down (action 254, emergency stop)',
@@ -1530,8 +1530,8 @@ tempoRegler.onchange = () => { tempoBewegt = false; befehl('tempo', {f: (Number(
 tempoRegler.oninput();
 function tempoStatus(t) {
   if (t == null || tempoBewegt || document.activeElement === tempoRegler) return;
-  tempoRegler.value = Math.round(t * 100);
-  tempoRegler.oninput();
+  tempoRegler.value = Math.round(t * 100);                  // rastet auf 25/50/75/100
+  $('tempo-w').textContent = Math.round(t * 100) + ' %';    // angezeigt wird der wirkliche Wert
 }
 // Handsteuerung schickt Vollausschlag, xgonav begrenzt auf max_v/max_w und nimmt mit dem Tempo mal
 function sollwert() {

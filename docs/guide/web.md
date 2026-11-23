@@ -31,7 +31,6 @@
 | D-pad | hold to drive by hand (also arrow keys / WASD); switches to **Manual** |
 | Camera bar | exposure, gain (auto or fixed), brightness / contrast / saturation (ISP: also affects FloorNet and recordings), hue (browser only) |
 | Image toggles (top right on the image) | ⇕ *Pin image to IMU pitch*, ⟲ *Level roll*, ↝ *Planner path* (orange: planned path from the room map projected onto the floor in the image) and ⌖ *Image centre*, blue = on: done in the browser, no cost on the Pi |
-| Speed | scales every drive command of all modes |
 | IMU line | IMU values of the shown frame (pitch, roll, heading, age) |
 
 ## Mode, floor model, vision
@@ -42,6 +41,7 @@
 |---|---|
 | Mode bar (second header row, with target and floor model) | Idle · Manual · Follow · Explore · Home · Patrol · Pet · Approach, see [Behaviours](behaviours.md) |
 | Target | class for Follow / Approach (from the YOLO model) |
+| Speed (Tempo) | after Approach: 25 / 50 / 75 / 100 %, scales every drive and turn command of all modes until xgonav restarts |
 | Floor model (Bodenmodell) | pick a FloorNet from `models/floornet/`, **Activate** switches without restart (idle / manual only) |
 | Runtime info (Laufzeit Infos) | recording status, free space for recordings; status tiles (fps, loop time, FloorNet ms) |
 

@@ -1545,10 +1545,6 @@
 <td>⇕ <em>Pin image to IMU pitch</em>, ⟲ <em>Level roll</em>, ↝ <em>Planner path</em> (orange: planned path from the room map projected onto the floor in the image) and ⌖ <em>Image centre</em>, blue = on: done in the browser, no cost on the Pi</td>
 </tr>
 <tr>
-<td>Speed</td>
-<td>scales every drive command of all modes</td>
-</tr>
-<tr>
 <td>IMU line</td>
 <td>IMU values of the shown frame (pitch, roll, heading, age)</td>
 </tr>
@@ -1571,6 +1567,10 @@
 <tr>
 <td>Target</td>
 <td>class for Follow / Approach (from the YOLO model)</td>
+</tr>
+<tr>
+<td>Speed (Tempo)</td>
+<td>after Approach: 25 / 50 / 75 / 100 %, scales every drive and turn command of all modes until xgonav restarts</td>
 </tr>
 <tr>
 <td>Floor model (Bodenmodell)</td>
