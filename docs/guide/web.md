@@ -75,8 +75,7 @@ Manual (Anleitung), Diagram (Schaubild), ESP restart (only while lying), Shut do
 | Item | Meaning |
 |---|---|
 | Map | occupancy grid (grey unknown, light free, dark occupied, green path, cyan plan, blue start, red Rider); drag to pan, wheel to zoom, double-click follows the Rider |
-| View | 3 / 6 / 10 / 16 / 24 m |
-| Map | Save, Lock map, Reset |
+| Above the map | Save, Lock map, Reset; view 3 / 6 / 10 / 16 / 24 m |
 | Start · Pose | Start here (set the start point), discard pose |
 | Route · Zones | Set route (click patrol points), No-go zone, Delete zones |
 

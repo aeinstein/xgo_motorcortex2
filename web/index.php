@@ -241,7 +241,8 @@ details.hilfe p{margin:4px 0 0}
 /* Rahmen: volle Breite, Höhe höchstens 400 px (schmal quadratisch); darin die quadratische Karte in Kachelbreite,
    senkrecht mittig, oben und unten abgeschnitten. Maßstab: Ausschnitt (m) = Breite. */
 .raumkarte{container-type:inline-size}
-.karte-ausschnitt{display:flex;justify-content:flex-end;align-items:center;gap:6px;margin:0 0 6px;font-size:12px;color:var(--leise)}
+.karte-ausschnitt{display:flex;justify-content:flex-end;align-items:center;gap:6px;flex-wrap:wrap;margin:0 0 6px;font-size:12px;color:var(--leise)}
+.karte-knoepfe{margin-right:auto}
 #karte-rahmen{position:relative;width:100%;height:min(400px,100cqw);overflow:hidden;background:#808080;border-radius:6px;cursor:grab;user-select:none;-webkit-user-select:none}
 #karte-rahmen.zieht{cursor:grabbing}
 #karte-rahmen.setzt{cursor:crosshair}
@@ -607,7 +608,11 @@ details.extras[open]>summary{margin-bottom:8px}
 
   <details class="karte extras raumkarte" id="raumkarte" ontoggle="raumkarteUmschalten()">
     <summary><h2>Raumkarte</h2><span class="leise">eingeklappt: kein Nachladen</span></summary>
-    <div class="karte-ausschnitt"><label for="karte-view">Ausschnitt</label>
+    <div class="karte-ausschnitt"><div class="knoepfe karte-knoepfe">
+        <button onclick="befehl('map_save')" title="Raumkarte jetzt speichern ([grid] file)">Speichern</button>
+        <button id="karte-sperre" onclick="karteSperren()" title="Gesperrt ändern Fahrten die Karte nicht">Karte sperren</button>
+        <button class="gefahr" onclick="karteZuruecksetzen()" title="Karte leeren; Route und Sperrzonen gehen verloren">Zurücksetzen</button>
+      </div><label for="karte-view">Ausschnitt</label>
       <select id="karte-view" aria-label="Ausschnitt" onchange="karteView(this.value)"><option value="3">3 m</option><option value="6" selected>6 m</option><option value="10">10 m</option><option value="16">16 m</option><option value="24">24 m</option><option id="karte-view-frei" hidden></option></select>
     </div>
     <div id="karte-rahmen" title="ziehen: verschieben · Mausrad: zoomen · Doppelklick: zurück zum Rider">
@@ -639,11 +644,6 @@ details.extras[open]>summary{margin-bottom:8px}
       <figcaption>Startbild</figcaption>
     </figure>
     <fieldset id="karte-gruppen">
-      <div class="gruppe"><span class="g-name">Karte</span><div class="knoepfe">
-        <button onclick="befehl('map_save')" title="Raumkarte jetzt speichern ([grid] file)">Speichern</button>
-        <button id="karte-sperre" onclick="karteSperren()" title="Gesperrt ändern Fahrten die Karte nicht">Karte sperren</button>
-        <button class="gefahr" onclick="karteZuruecksetzen()" title="Karte leeren; Route und Sperrzonen gehen verloren">Zurücksetzen</button>
-      </div></div>
       <div class="gruppe"><span class="g-name">Start · Pose</span><div class="knoepfe">
         <button onclick="befehl('map_start')" title="Startpunkt = aktuelle Pose">Start hier</button>
         <button id="karte-pose-weg" hidden onclick="befehl('map_pose', {aktion: 'verwerfen'})" title="Der Rider wurde versetzt: Die Karte wird nicht mehr beschrieben, bis der Standort bestätigt ist">Pose verwerfen</button>
@@ -2404,13 +2404,13 @@ async function bearbeiten(art) {
   bearb.pts = art === 'route' ? akt.points.map(p => [p[0], p[1]]) : [];
   $('route-loop').checked = !!akt.loop;
   $('route-kreis').hidden = art !== 'route';
-  $('karte-gruppen').disabled = true; $('route-edit').hidden = false;
+  $('karte-gruppen').disabled = true; document.querySelectorAll('.karte-knoepfe button').forEach(b => b.disabled = true); $('route-edit').hidden = false;
   $('karte-rahmen').classList.add('setzt');
   bearbeitenHinweis(); punkteZeichnen();
 }
 function bearbeitenEnde() {
   bearb.art = null; bearb.pts = [];
-  $('karte-gruppen').disabled = false; $('route-edit').hidden = true;
+  $('karte-gruppen').disabled = false; document.querySelectorAll('.karte-knoepfe button').forEach(b => b.disabled = false); $('route-edit').hidden = true;
   $('karte-rahmen').classList.remove('setzt');
   punkteZeichnen();
 }
