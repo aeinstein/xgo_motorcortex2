@@ -18,7 +18,7 @@
 | Start / stop vision | camera and image processing on / off |
 | Record (Aufzeichnen) | checkbox: raw recording (JPEG + `meta.jsonl`) while balancing, input for [FloorNet training](advanced/floornet-training.md) |
 | ⚙ Settings (Einstellungen) | all parameters of `config.toml`, with backup and restart |
-| Rest (Ruhe) | sleep mode: set down, pipeline off, CPU clock down, sleeping eyes; only **Wake** (Wecken) ends it |
+| ☾ Rest (Ruhe) | sleep mode: set down, pipeline off, CPU clock down, sleeping eyes; only **Wake** (Wecken) ends it |
 | **STOP** | standstill, mode `idle` |
 
 ## Camera
