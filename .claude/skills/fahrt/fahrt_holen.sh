@@ -59,6 +59,8 @@ for f in $SONST; do
 done
 
 [ ${#OK[@]} -gt 0 ] || exit 0
+# Messfahrten (Drift, Kalibrierung) nicht für ComfyUI einreihen: NICHT_EINREIHEN=1 bash fahrt_holen.sh …
+[ -z "${NICHT_EINREIHEN:-}" ] || { echo "nicht eingereiht (NICHT_EINREIHEN): ${OK[*]}"; exit 0; }
 
 # Einreihen: Bildliste (jedes 2. Bild, ohne Standbilder), neuer laufNN.sh hinter dem laufenden Lauf
 LISTE=$(IFS=,; echo "${OK[*]}")

@@ -3864,7 +3864,7 @@ def test_imu_kurs_skalenfaktor():
     from xgonav.imu import ImuSource
     cfg = Config.neutral()
     assert cfg.imu.yaw_scale_left == 1.0 and cfg.imu.yaw_scale_right == 1.0
-    assert Config().imu.yaw_scale_left == pytest.approx(1.0021) and Config().imu.yaw_scale_right == pytest.approx(1.0025)
+    assert Config().imu.yaw_scale_left == pytest.approx(1.0028) and Config().imu.yaw_scale_right == pytest.approx(1.0043)
     cfg.imu.yaw_scale_left, cfg.imu.yaw_scale_right = 1.01, 1.02
     imu = ImuSource(cfg.imu)
     t0 = time.monotonic()

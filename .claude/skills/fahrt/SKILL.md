@@ -23,7 +23,8 @@ bash .claude/skills/fahrt/fahrt_holen.sh "<scratchpad>/fahrt"
 - Sonstige Dateien dort (`karte*.npz`): nach kimmy `fahrt/ohne_imu`, md5 prüfen, löschen.
 - Einreihen: `ids_fahrt.py` (jedes 2. Bild, ohne Standbilder) → `comfy/ids_laufNN.txt`, neuer
   `stage1_p11/laufNN.sh` (Standard-Prompt T1, Stage2/3, am Ende `sichten.sh` je Fahrt), wartet auf den zuletzt
-  gestarteten laufenden `laufNN.sh`. Laufende Läufe nie abbrechen.
+  gestarteten laufenden `laufNN.sh`. Laufende Läufe nie abbrechen. Messfahrten (Drift, Kalibrierung) mit
+  `NICHT_EINREIHEN=1` holen: kopieren, prüfen, löschen wie sonst, aber nicht für ComfyUI einreihen.
 
 Danach dem Nutzer melden: Fahrten mit Bildzahl/Größe, „am Rider gelöscht“, laufNN und Bilderzahl. Läuft ComfyUI
 gerade, Restzeit aus `tail -1 ~/floornet/stage1_p11/batchNN.log` des laufenden Laufs.

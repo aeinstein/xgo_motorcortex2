@@ -178,9 +178,12 @@ class ImuCfg:
     # yaw_scale_left, nach rechts mal yaw_scale_right. RiderPi 2026-11-18, auf der Stelle an einer Marke, Winkelmesser:
     # 10 × 360° rechts echt 3560°, IMU 3551,3° (1,0025); 10 × links echt 3556°, IMU 3548,4° (1,0021); 4 × links
     # 1431° / 1428,0°. Eine erste Messung (4 × links 1470° / 1453,3°) hat sich nicht wiederholt. Die aufgezeichneten
-    # Proben sind schon korrigiert.
-    yaw_scale_left: float = 1.0021
-    yaw_scale_right: float = 1.0025
+    # Proben sind schon korrigiert. Seit 2026-11-23 schnell gedreht (w 0,5 wie beim Erkunden), mit den Faktoren von
+    # oben: 6 × 360° rechts echt 2160°, IMU 2156,1° (+0,18 %); 6 × links echt 2158°, IMU 2156,6° (+0,07 %). Schnelles
+    # Drehen zählt also weniger als langsames, rechts mehr; Drift aus 46 Bildpaaren der Erkundungen
+    # (tools/drift_kurve.py) zeigte dieselbe Richtung (rechts −3,6° je 1000°, links −0,3°).
+    yaw_scale_left: float = 1.0028
+    yaw_scale_right: float = 1.0043
     # Schneller dreht der Rider nie (°/s): Ein größerer Kurssprung zwischen zwei Proben ist kein Drehen, sondern ein
     # ESP-Neustart (Kurs beginnt bei 0) oder ein Lesefehler; er wird nicht in den Kurs übernommen (ImuSource.yaw_jumps).
     yaw_jump_dps: float = 500.0
