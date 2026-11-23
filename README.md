@@ -45,7 +45,7 @@ CPU time on the CM4 comes first: hot paths run in a C++ core (`xgonav/native/`),
 </tr>
 <tr>
 <td><img src="docs/screenshots/web-lage.png" alt="Attitude"><br><sub><b>Attitude</b>: live 3D model from the IMU, camera height, roll</sub></td>
-<td><img src="docs/screenshots/web-mode.png" alt="Vision status"><br><sub><b>Vision</b>: behaviour status, drive command, loop timing</sub></td>
+<td><img src="docs/screenshots/web-mode.png" alt="Runtime info"><br><sub><b>Runtime info</b>: behaviour status, drive command, loop timing</sub></td>
 </tr>
 <tr>
 <td><img src="docs/screenshots/web-drive.png" alt="Extras"><br><sub><b>Extras</b>: firmware actions, LEDs, display emotions</sub></td>

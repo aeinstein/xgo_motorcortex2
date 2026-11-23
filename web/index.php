@@ -496,7 +496,7 @@ details.extras[open]>summary{margin-bottom:8px}
     </div>
   </details>
   <div class="karte">
-    <div class="kopf"><h2>Bildverarbeitung</h2><span class="leise" id="rec-text"></span>
+    <div class="kopf"><h2>Laufzeit Infos</h2><span class="leise" id="rec-text"></span>
       <span class="leise" id="rec-platz" hidden title="Frei am Rider bis zur Abbruchgrenze (output.record_min_free_mb); Minuten aus der Schreibrate der letzten Aufnahme (~ = geschätzt)"></span>
 </div>
     <div class="kacheln" id="kurz"></div>
@@ -728,7 +728,7 @@ const EN = {
   'Route auf der Raumkarte abfahren': 'Drive the route on the room map', 'Streife': 'Patrol',
   'Reagiert auf Menschen, Katzen und Hunde': 'Reacts to people, cats and dogs', 'Haustier': 'Pet',
   'Ziel für Folgen/Anfahren (aktive YOLO-Klassen)': 'Target for follow/approach (active YOLO classes)', 'Ziel': 'Target',
-  'Bildverarbeitung': 'Vision',
+  'Laufzeit Infos': 'Runtime info',
   'Rohbilder und Metadaten am Rider speichern. Schreibt nur, solange er balanciert; Absetzen beendet die Aufnahme, jedes Aufstehen beginnt eine neue.':
     'Store raw images and metadata on the Rider. Writes only while balancing; sitting down ends the recording, every stand-up starts a new one.',
   'Aufzeichnen': 'Record',

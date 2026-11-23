@@ -43,7 +43,7 @@
 | Mode bar (second header row, with target and floor model) | Idle · Manual · Follow · Explore · Home · Patrol · Pet · Approach, see [Behaviours](behaviours.md) |
 | Target | class for Follow / Approach (from the YOLO model) |
 | Floor model (Bodenmodell) | pick a FloorNet from `models/floornet/`, **Activate** switches without restart (idle / manual only) |
-| Vision (Bildverarbeitung) | recording status, free space for recordings; status tiles (fps, loop time, FloorNet ms) |
+| Runtime info (Laufzeit Infos) | recording status, free space for recordings; status tiles (fps, loop time, FloorNet ms) |
 
 ## Attitude (Lage)
 
