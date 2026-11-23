@@ -49,8 +49,7 @@ header{position:fixed;top:0;left:0;right:0;z-index:10;display:flex;align-items:c
   padding:8px 12px;background:rgba(15,17,20,.92);backdrop-filter:blur(6px);border-bottom:1px solid var(--rand)}
 body{padding-top:var(--kopf-h,52px)}
 html{scroll-padding-top:var(--kopf-h,52px)}
-#einst-knopf,#ruhe-knopf{font-size:15px;line-height:1;padding:3px 7px}
-@media (hover:hover){#rec.an:hover{background:#ff2b30;border-color:#ff6b6e}}   /* immer nur Symbol, gleiche Höhe wie die Textknöpfe */
+@media (hover:hover){#rec.an:hover{background:#ff2b30;border-color:#ff6b6e}}
 .kopf-knoepfe{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
 /* Symbolknöpfe im Header (immer nur Symbol, gleiche Höhe wie die Textknöpfe) */
 .kopf-ic{font-size:15px;line-height:1;padding:3px 7px}
@@ -65,9 +64,6 @@ header h1 span{color:var(--leise);font-weight:400}
   header .pille{padding:1px 7px}
   .pille .lang{display:none}
 }
-/* Einstellungen/Herunterfahren: schmal nur als Symbol */
-header .symbol .ic{display:none}
-@media (max-width:1000px){header .symbol .txt{display:none}header .symbol .ic{display:inline-block}header .symbol{padding:6px 10px}}
 .sprache{display:inline-flex;border:1px solid var(--rand2);border-radius:6px;overflow:hidden}
 .sprache button{border:0;border-radius:0;padding:3px 8px;font-size:12px;background:var(--karte2);color:var(--leise)}
 .sprache button.aktiv{background:var(--akzent);color:#04121f;font-weight:600}
@@ -362,14 +358,14 @@ details.extras[open]>summary{margin-bottom:8px}
   <!-- Kalibrier-Knöpfe gesperrt (2026-11-02): Speichern bei schlaffen Beinen hat die
        Beinnullpunkte im ESP32-Flash überschrieben. Erst mit geführtem Ablauf wieder freigeben. -->
   <div class="kopf-knoepfe">
-    <button id="k-absetzen" class="gefahr symbol" onclick="befehl('action', {n: 254})" aria-label="Absetzen" title="Aktion 254, Not-Stopp"><span class="ic" aria-hidden="true">⤓</span><span class="txt">Absetzen</span></button>
-    <button id="k-aufspringen" class="symbol" onclick="aufspringen()" aria-label="Aufspringen" title="Aktion 253 (!standup): Rider muss stehen und Platz haben"><span class="ic" aria-hidden="true">⤒</span><span class="txt">Aufspringen</span></button>
-    <button id="k-aufstehen" class="symbol" onclick="arm()" aria-label="Aufstehen" title="Aktion 255"><span class="ic" aria-hidden="true">↑</span><span class="txt">Aufstehen</span></button>
+    <button id="k-absetzen" class="gefahr kopf-ic" onclick="befehl('action', {n: 254})" aria-label="Absetzen" title="Absetzen (Aktion 254, Not-Stopp)"><span aria-hidden="true">⤓</span></button>
+    <button id="k-aufspringen" class="kopf-ic" onclick="aufspringen()" aria-label="Aufspringen" title="Aufspringen (Aktion 253, !standup): Rider muss stehen und Platz haben"><span aria-hidden="true">⤒</span></button>
+    <button id="k-aufstehen" class="kopf-ic" onclick="arm()" aria-label="Aufstehen" title="Aufstehen (Aktion 255): balanciert los, sobald er aufrecht steht"><span aria-hidden="true">↑</span></button>
     <button id="pip" class="kopf-ic" onclick="pipelineUmschalten()" aria-label="Bildverarbeitung starten" title="Bildverarbeitung (Kamera und Auswertung) starten"><span aria-hidden="true" id="pip-ic">▶</span></button>
     <button id="rec" class="kopf-ic" hidden onclick="aufzeichnungSetzen(!aktAufzeichnung)" aria-pressed="false" aria-label="Aufzeichnen" title="Aufzeichnen: Rohbilder und Metadaten am Rider speichern. Schreibt nur, solange er balanciert; Absetzen beendet die Aufnahme, jedes Aufstehen beginnt eine neue."><span aria-hidden="true">●</span></button>
   </div>
-  <button id="einst-knopf" onclick="einstOeffnen()" aria-label="Einstellungen" title="Alle Einstellungen aus config.toml ändern (mit Sicherung), xgonav neu starten"><span aria-hidden="true">⚙</span></button>
-  <button id="ruhe-knopf" onclick="ruheSchalten(true)" aria-label="Ruhe" title="Ruhemodus: absetzen, Bildverarbeitung aus, Abfragen aus, CPU-Takt runter, Schlafaugen am Display"><span aria-hidden="true">☾</span></button>
+  <button id="einst-knopf" class="kopf-ic" onclick="einstOeffnen()" aria-label="Einstellungen" title="Alle Einstellungen aus config.toml ändern (mit Sicherung), xgonav neu starten"><span aria-hidden="true">⚙</span></button>
+  <button id="ruhe-knopf" class="kopf-ic" onclick="ruheSchalten(true)" aria-label="Ruhe" title="Ruhemodus: absetzen, Bildverarbeitung aus, Abfragen aus, CPU-Takt runter, Schlafaugen am Display"><span aria-hidden="true">☾</span></button>
   <button id="stop" onclick="befehl('stop')" title="Stillstand, Modus idle">STOPP</button>
 </header>
 <div id="ruhe-decke">
@@ -741,6 +737,9 @@ const EN = {
     'Yaw 0° = heading at ESP32 start; + = left. Roll + = right side down, pitch + = front down',
   'Fahren': 'Drive', 'vor': 'forward', 'links': 'left', 'rechts': 'right', 'zurück': 'back', 'Tempo': 'Speed', 'Pfeiltasten/WASD': 'Arrow keys/WASD',
   'Aktion 255': 'Action 255', 'Aufstehen': 'Stand up',
+  'Absetzen (Aktion 254, Not-Stopp)': 'Sit down (action 254, emergency stop)',
+  'Aufspringen (Aktion 253, !standup): Rider muss stehen und Platz haben': 'Jump up (action 253, !standup): Rider must be upright and have room',
+  'Aufstehen (Aktion 255): balanciert los, sobald er aufrecht steht': 'Stand up (action 255): starts balancing once it is upright',
   'Gedrückt halten: Maus, Touch, Pfeiltasten/WASD': 'Hold: mouse, touch, arrow keys/WASD',
   'Steuerkreuz im Bild gedrückt halten, oder Pfeiltasten/WASD. Fahren schaltet auf „Hand“ und ist auf max_v/max_w der Konfiguration begrenzt. Ohne Bodenmodell und Bahnprüfung; Sturz-Erkennung und Watchdogs bleiben aktiv.': 'Hold the arrow pad on the image, or arrow keys/WASD. Driving switches to “Manual” and is limited to max_v/max_w from the configuration. No floor model and no path check; fall detection and watchdogs stay active.',
   'Aktion 253 (!standup): Rider muss stehen und Platz haben': 'Action 253 (!standup): Rider must be upright and have room',
