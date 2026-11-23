@@ -1962,6 +1962,12 @@
        "hilfe": "Festgefahren und höchstens so lange davor noch in einer Engstelle/Lücke gefahren (Wegfolger „eng“/„Lücke“): Ziel gleich sperren statt erst neu zu planen; 0 = aus (erst beim zweiten Festfahren). Seit 2026-11-23: Neu planen führte am RiderPi wieder durch dieselbe Lücke zwischen Stuhlbeinen, die nur die Merkkarte kannte."
       },
       {
+       "key": "gap_mark_r_m",
+       "typ": "float",
+       "default": 0.6,
+       "hilfe": "Dabei die bestätigten Hindernisse der Merkkarte bis zu diesem Abstand vom Rider in die Raumkarte eintragen (belegt, wie grid.mark_blocking): Die Stuhlbeine standen dort nur als einzelne Flecken. 0 = aus."
+      },
+      {
        "key": "no_growth_s",
        "typ": "float",
        "default": 120.0,

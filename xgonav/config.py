@@ -690,6 +690,9 @@ class ExploreCfg:
     # Ziel gleich sperren statt erst neu zu planen; 0 = aus (erst beim zweiten Festfahren). Seit 2026-11-23:
     # Neu planen führte am RiderPi wieder durch dieselbe Lücke zwischen Stuhlbeinen, die nur die Merkkarte kannte.
     gap_block_s: float = 2.0
+    # Dabei die bestätigten Hindernisse der Merkkarte bis zu diesem Abstand vom Rider in die Raumkarte eintragen
+    # (belegt, wie grid.mark_blocking): Die Stuhlbeine standen dort nur als einzelne Flecken. 0 = aus.
+    gap_mark_r_m: float = 0.6
     no_growth_s: float = 120.0         # so lange kaum Zuwachs an bekanntem Boden: Karte gilt als fertig
     min_growth_m2: float = 0.5
     # Umkreis besuchter und gesperrter Stellen. Mit 0,5 m fiel die letzte Stelle eines Gangs weg, die nur

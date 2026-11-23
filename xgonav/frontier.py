@@ -203,22 +203,29 @@ def next_goal(grid: GridMap, pose: tuple, hcfg: HomeCfg, ecfg: ExploreCfg, obsta
             order = [(k, r, c)] + order[:3]
             keeping = True
 
-    for i, (k, r, c) in enumerate(order):               # der Beste und zur Not die nächsten
-        g = (r, c)
-        path = None
-        if blocked_x is not None and not blocked_x[g]:
-            path = route(blocked_x, cost_x, s, g, to_world, (x, y), to_world(*g), hcfg.native)
-        if path is None:
-            path = route(blocked, cost, s, g, to_world, (x, y), to_world(*g), hcfg.native)
-        if path is None:
-            continue
-        path = shorten(path, ecfg.standoff_m)
-        if keeping and i == 0:                          # Weg nur bei gleichem Ziel behalten
-            kept = kept_path(keep_path, (x, y), blocked_x if blocked_x is not None else blocked, lambda p: to_local(*p))
-            if kept is not None and path_length(kept) <= hcfg.keep_factor * path_length(path) + 0.3:
-                path = kept
-        return ExplorePlan(path, path[-1], to_world(r, c), len(cand) + avoided, avoided, round(float(gain[k]), 2),
-                           known_m2, tight=bool(code[k] == 2))
+    # Erst die Stellen, die auch mit der Merkkarte erreichbar sind (der Beste und zur Not die nächsten), dann
+    # die übrigen ohne sie. Ein Weg, den nur die Raumkarte erlaubt, führte am RiderPi durch Stuhlbeine, die
+    # nur die Merkkarte kannte (2026-11-23); er gilt deshalb als Engstelle (explore.tight_max).
+    gaenge = [True, False] if blocked_x is not None else [False]
+    for mit_merk in gaenge:
+        for i, (k, r, c) in enumerate(order):
+            g = (r, c)
+            if mit_merk:
+                if blocked_x[g]:
+                    continue
+                path = route(blocked_x, cost_x, s, g, to_world, (x, y), to_world(*g), hcfg.native)
+            else:
+                path = route(blocked, cost, s, g, to_world, (x, y), to_world(*g), hcfg.native)
+            if path is None:
+                continue
+            path = shorten(path, ecfg.standoff_m)
+            if keeping and i == 0:                      # Weg nur bei gleichem Ziel behalten
+                kept = kept_path(keep_path, (x, y), blocked_x if blocked_x is not None else blocked, lambda p: to_local(*p))
+                if kept is not None and path_length(kept) <= hcfg.keep_factor * path_length(path) + 0.3:
+                    path = kept
+            nur_raum = blocked_x is not None and not mit_merk
+            return ExplorePlan(path, path[-1], to_world(r, c), len(cand) + avoided, avoided, round(float(gain[k]), 2),
+                               known_m2, tight=bool(code[k] == 2) or nur_raum)
     return ExplorePlan(None, clusters=len(cand) + avoided, avoided=avoided, known_m2=known_m2)
 
 

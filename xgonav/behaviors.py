@@ -1144,6 +1144,7 @@ class MapExplore(Behavior):
         self.goal: tuple | None = None
         self.visited: list = []            # angefahren, Frontier blieb: nicht noch einmal
         self.blocked_goals: list = []      # festgefahren: gesperrt bis zur nächsten Befreiung
+        self.gap_blocked = False           # eben an einer Lücke gesperrt (App: Merkkarte -> Raumkarte)
         self.clusters = self.avoided = 0
         self.no_goal = 0
         self.stucks = 0
@@ -1433,6 +1434,8 @@ class MapExplore(Behavior):
                 return Command(0, 0, hmm, "komme nicht weiter, plane neu")
             if self.frontier is not None:
                 self.blocked_goals.append((self.frontier[0], self.frontier[1]))
+            # an einer Lücke gesperrt: App trägt die Hindernisse der Merkkarte ringsum in die Raumkarte ein
+            self.gap_blocked = in_gap
             self.stucks = 0
             self.frontier = self.goal = None
             self.f.clear()

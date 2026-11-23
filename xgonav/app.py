@@ -1107,6 +1107,9 @@ class App:
                 cmd = self._manual_cmd(w)
             else:
                 cmd = safety(self.behavior.step(w), w, self.cfg.behavior)
+                if getattr(self.behavior, "gap_blocked", False):
+                    self.behavior.gap_blocked = False
+                    self._luecke_eintragen()
                 if getattr(self.behavior, "want_messung", False):
                     self.behavior.want_messung = False
                     self._startbild_messen(f, w, pitch_dev)
@@ -1524,6 +1527,25 @@ class App:
             b.save_map = False
             if self.cfg.grid.file:
                 threading.Thread(target=self.gridmap.save, args=(self.cfg.grid.file,), name="karte-speichern", daemon=True).start()
+
+    def _luecke_eintragen(self) -> None:
+        """Erkunden hat ein Ziel an einer Lücke gesperrt (explore.gap_block_s): bestätigte Punkte der Merkkarte bis
+        explore.gap_mark_r_m um den Rider gelten in der Raumkarte als belegt (GridMap.mark_blocking). Die Raumkarte
+        kannte Stuhlbeine oft nur als einzelne Flecken, die Merkkarte aus der Nähe alle (RiderPi 2026-11-23); so
+        plant er nicht wieder durch dieselbe Lücke. Eigener Faden: confirmed_points kann am Pi ~100 ms dauern."""
+        r = self.cfg.explore.gap_mark_r_m
+        gm = self.gridmap
+        if r <= 0 or gm is None or self.lmap is None:
+            return
+        pose = gm.pose()
+        points = self.lmap.confirmed_later(r)
+
+        def run() -> None:
+            p = points()
+            if len(p):
+                n = gm.mark_blocking(np.column_stack(to_world(pose, p[:, 0], p[:, 1])))
+                log.info("Erkunden: Lücke gesperrt, %d Zellen aus der Merkkarte in die Raumkarte", n)
+        threading.Thread(target=run, name="luecke-eintragen", daemon=True).start()
 
     def _lmap_world(self, pose):
         """Funktion für den Planer-Thread: bestätigte Punkte der Merkkarte (dieselben, die die Bahnprüfung

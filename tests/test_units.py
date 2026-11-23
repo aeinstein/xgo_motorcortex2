@@ -2211,6 +2211,27 @@ def test_frontier_finds_door_and_nothing_in_closed_room():
     assert p.path is None and p.avoided == 1
 
 
+def test_frontier_merkkarte_weg_zuerst():
+    """Eine Stelle, die nur ohne die Merkkarte erreichbar ist (Stuhlbeine nur dort), kommt nach einer, die auch
+    mit ihr erreichbar ist, und gilt als Engstelle; bleibt sie die einzige, wird sie trotzdem angefahren."""
+    from xgonav.frontier import next_goal
+    cfg, m = _room_map(door=True)                              # Tür in +x (geradeaus, sonst die beste)
+    r1, _ = (int(v) for v in m.cell(1.2, 1.2))
+    _, dc0 = (int(v) for v in m.cell(-0.4, 0.0))
+    _, dc1 = (int(v) for v in m.cell(0.4, 0.0))
+    m.lo[r1, dc0:dc1 + 1] = cfg.grid.l_min                     # zweite Tür in +y
+    beine = np.array([(1.1, y) for y in np.arange(-0.4, 0.41, 0.1)])    # Merkkarte: Beine in der Tür +x
+    p = next_goal(m, (0.0, 0.0, 0.0), cfg.home, cfg.explore)
+    assert p.frontier[0] > 1.0 and not p.tight                 # ohne Merkkarte: geradeaus
+    p = next_goal(m, (0.0, 0.0, 0.0), cfg.home, cfg.explore, obstacles=beine)
+    assert not p.tight                                         # mit ihr: ein Weg, der die Beine meidet
+    pfad = np.array(p.path)
+    assert np.min(np.hypot(pfad[:, None, 0] - beine[None, :, 0], pfad[:, None, 1] - beine[None, :, 1])) > 0.2
+    cfg, m = _room_map(door=True)
+    p = next_goal(m, (0.0, 0.0, 0.0), cfg.home, cfg.explore, obstacles=beine)
+    assert p.frontier[0] > 1.0 and p.tight                     # einzige Stelle: trotzdem, als Engstelle
+
+
 def test_frontier_prefer_richtung_und_min_m():
     """Rufsuche (pet, Nutzer 2026-11-22): prefer zieht die Öffnung in der gehörten Richtung vor, min_m lässt
     Öffnungen direkt am Rider weg."""
@@ -2515,6 +2536,7 @@ def test_map_explore_stuck_in_gap_blocks_goal_at_once():
     b.f.stuck = True
     b.step(_ex_world(2.0, (0.0, 0.0, 0.0)))
     assert b.blocked_goals == [(1.3, 0.0)] and b.state == "backup"
+    assert b.gap_blocked                                       # App trägt die Merkkarte ringsum ein
     cfg, b = _explore_ready()
     b.want_plan(0.0)
     b.set_path(_plan())
