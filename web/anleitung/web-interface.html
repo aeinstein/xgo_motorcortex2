@@ -1626,7 +1626,7 @@
 </tr>
 <tr>
 <td>Samples (collapsed, after Schallradar)</td>
-<td>voice samples of <code>pet</code> from <code>[stimme] dir</code>: learned (NN, length, times heard, last heard; ▶ parrot version / raw in the browser, 🔊 on the Rider, ✕ delete with confirm) and candidates (▶, ✕); list via <code>api.php?a=stimmen</code> only when opened or on Reload, playback in the browser (<code>&lt;audio&gt;</code>), open/closed in <code>localStorage</code> <code>xgonav.samples</code></td>
+<td>voice samples of <code>pet</code> from <code>[stimme] dir</code>: learned (NN, 📌 protect/release (uploaded start protected), length, times heard, last heard; ▶ parrot version / raw in the browser, 🔊 on the Rider, ✕ delete with confirm), upload (file → 16 kHz mono ≤ 3 s in the browser → <code>api.php?a=stimme_hochladen</code>; <em>already edited</em>: 48 kHz ≤ 8 s, no filter) and candidates (▶, ✕); list via <code>api.php?a=stimmen</code> only when opened or on Reload, playback in the browser (<code>&lt;audio&gt;</code>), open/closed in <code>localStorage</code> <code>xgonav.samples</code></td>
 </tr>
 </tbody>
 </table>
@@ -2039,8 +2039,18 @@ works without xgonav.</p>
 </tr>
 <tr>
 <td>POST</td>
+<td><code>/stimme/fest?name=NN&amp;an=0\|1</code></td>
+<td>protect a confirmed sample (never replaced) or release it, <code>fest.json</code>; 400 bad name, 404 missing</td>
+</tr>
+<tr>
+<td>POST</td>
 <td><code>/stimme/loeschen?name=NN\|&lt;time&gt;</code></td>
-<td>delete a learned sample or candidate (files, memory, <code>zaehler.json</code>); 400 bad name, 404 missing</td>
+<td>delete a learned sample or candidate (files, memory, <code>zaehler.json</code>, <code>fest.json</code>); 400 bad name, 404 missing</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/stimme/hochladen?fertig=0\|1</code></td>
+<td>body WAV mono int16, 16 kHz (filtered) or with <code>fertig=1</code> 48 kHz (stored unchanged), ≤ 1000 KB: queue as fixed confirmed sample → <code>{ok, name, ersetzt}</code>; 400 bad WAV/rate, 409 all slots uploaded, 413 empty/too large, 404 without <code>[stimme]</code></td>
 </tr>
 <tr>
 <td>GET</td>

@@ -286,7 +286,14 @@ details.extras[open]>summary{margin-bottom:8px}
 .samples td{padding:3px 4px;border-top:1px solid var(--rand);white-space:nowrap}
 .samples td.knoepfe{display:table-cell;text-align:right}
 .samples td.knoepfe button{padding:2px 6px;margin-left:3px}
+.samples button.pin{padding:2px 4px;margin-left:4px;opacity:.35}
+.samples button.pin.aktiv{opacity:1}
 .samples tr.spielt td{background:var(--karte2)}
+.samples-hoch{align-items:center}
+.samples-hoch input[type=file]{font-size:12px;line-height:1.4;padding:2px 4px;cursor:pointer;max-width:100%}
+.samples-hoch input[type=file]::file-selector-button{font:inherit;padding:0 6px;margin-right:6px;border-radius:4px;border:1px solid var(--rand2);background:var(--karte);color:var(--text);cursor:pointer}
+.samples-hoch label{font-size:12px;white-space:nowrap}
+.samples-hoch input[type=checkbox]{padding:0;vertical-align:middle;accent-color:var(--akzent)}
 .leds{display:grid;grid-template-columns:repeat(2,52px);gap:6px}
 .ledzeile{display:flex;gap:12px;align-items:center}
 
@@ -579,6 +586,12 @@ details.extras[open]>summary{margin-bottom:8px}
     <summary><h2>Samples</h2><span class="leise" id="samples-zustand">eingeklappt: kein Nachladen</span></summary>
     <div class="unter">Gelernte Stimmen <button class="rechts" onclick="samplesLaden()" title="Liste neu von der Platte lesen">Neu laden</button></div>
     <table class="samples" id="samples-best"></table>
+    <div class="knoepfe samples-hoch">
+      <input type="file" id="samples-datei" accept="audio/*,.wav,.mp3,.m4a,.ogg,.opus,.flac,.webm">
+      <label title="Ist schon fertig bearbeitet: unverändert abspielen (48 kHz, höchstens 8 s), kein Sittich-Filter"><input type="checkbox" id="samples-fertig"> fertig bearbeitet</label>
+      <button onclick="sampleHochladen()" title="Wird im Browser in 16 kHz mono gewandelt (höchstens 3 s) und am Rider wie eine gelernte Stimme gefiltert; hochgeladene fallen nie raus">Hochladen</button>
+      <span class="leise" id="samples-hoch-zustand"></span>
+    </div>
     <div class="unter">Kandidaten (einmal gehört, verfallen nach 1 min)</div>
     <table class="samples" id="samples-kand"></table>
     <audio id="samples-audio" preload="none"></audio>
@@ -586,7 +599,10 @@ details.extras[open]>summary{margin-bottom:8px}
       <p>Stimmproben des Modus Haustier (<code>[stimme]</code>, Ablage <code>/opt/xgonav/stimmen</code>): zweimal binnen
         einer Minute gehört = gelernt, dann plappert er sie als Sittich nach. ▶ spielt die Sittich-Fassung im Browser,
         „roh“ die Aufnahme, 🔊 die Sittich-Fassung über den Lautsprecher des Riders (die Ortung hört dabei weg).
-        Kandidaten sind einmal Gehörtes (16 kHz roh). Liste nur beim Aufklappen und nach „Neu laden“, kein Nachladen.</p>
+        Kandidaten sind einmal Gehörtes (16 kHz roh). „Hochladen“: beliebige Audiodatei, der Browser wandelt sie in
+        16 kHz mono (höchstens 3 s), der Rider filtert sie wie eine gelernte und reiht sie ohne Prüfung ein („fertig bearbeitet“: 48 kHz, höchstens
+        8 s, unverändert ohne Filter). 📌 schützt eine Stimme: sie fällt nie raus (nur ✕ löscht sie), noch einmal
+        klicken löst den Schutz; hochgeladene sind von Anfang an geschützt. Liste nur beim Aufklappen und nach „Neu laden“, kein Nachladen.</p>
     </details>
   </details>
   <details class="karte extras" id="extras" ontoggle="extrasUmschalten()">
@@ -913,6 +929,13 @@ const EN = {
   'Sittich-Fassung hier anhören': 'Play the parrot version here', 'Aufnahme roh hier anhören': 'Play the raw recording here',
   'Am Rider abspielen': 'Play on the Rider', 'Löschen': 'Delete', 'Probe {n} löschen?': 'Delete sample {n}?',
   'nicht lesbar': 'not readable', 'Hier anhören': 'Play here',
+  'Hochladen': 'Upload', 'erst eine Datei wählen': 'choose a file first', 'wandle …': 'converting …', 'lade hoch …': 'uploading …',
+  'Datei nicht lesbar: {e}': 'file not readable: {e}', 'als {n} eingereiht': 'queued as {n}', ' (ersetzt die am seltensten gehörte)': ' (replaces the least heard one)',
+  ', auf {s} s gekürzt': ', cut to {s} s', 'fertig bearbeitet': 'already edited',
+  'Ist schon fertig bearbeitet: unverändert abspielen (48 kHz, höchstens 8 s), kein Sittich-Filter': 'Already edited: played unchanged (48 kHz, at most 8 s), no parrot filter', 'Geschützt: fällt nie raus (klicken zum Lösen)': 'Protected: never replaced (click to release)',
+  'Schützen: fällt dann nie raus': 'Protect: will never be replaced',
+  'Wird im Browser in 16 kHz mono gewandelt (höchstens 3 s) und am Rider wie eine gelernte Stimme gefiltert; hochgeladene fallen nie raus':
+    'Converted to 16 kHz mono in the browser (at most 3 s) and filtered on the Rider like a learned voice; uploaded ones are never replaced',
   'Kamera senden': 'Send camera', 'hier': 'here', 'Lautstärke hier': 'Volume here', 'Lautstärke am Rider': 'Volume on the Rider',
   'Verstärkung der eigenen Stimme zum Rider (mit weichem Begrenzer, kein Übersteuern)': 'Gain of your voice to the Rider (soft limiter, no clipping)', 'Telefon': 'Phone', 'bereit': 'ready', 'Bilder je Sekunde': 'Frames per second',
   'Eigenes Kamerabild aufs Display des Riders (320×240, im Browser umgerechnet; 0,75 MB/s bei 5 Bildern/s, am Rider ~9 % eines Kerns, bei 10/s doppelt). Nur während eines Gesprächs.':
@@ -932,7 +955,11 @@ const EN_HTML = {
       <p>Voice samples of pet mode (<code>[stimme]</code>, stored in <code>/opt/xgonav/stimmen</code>): heard twice within
         one minute = learned, then the Rider parrots it back. ▶ plays the parrot version in the browser, “raw” the
         recording, 🔊 the parrot version on the Rider's speaker (sound location ignores it). Candidates were heard once
-        (16 kHz raw). The list is read only when opened and on “Reload”, no polling.</p>`,
+        (16 kHz raw). “Upload”: any audio file, the browser converts it to 16 kHz mono (at most 3 s), the Rider
+        filters it like a learned one and queues it without checks (“already edited”: 48 kHz, at most 8 s, unchanged,
+        no filter). 📌 protects a voice: it is never replaced (only ✕ deletes it), click again to release;
+        uploaded ones start protected.
+        The list is read only when opened and on “Reload”, no polling.</p>`,
   'hilfe-lage': `<summary>Camera height, roll, stand up and sit down</summary>
       <p>Camera height: value of the floor geometry from <code>cam_h_u8</code> (lens centre above floor, setpoint u8
         in the tooltip); the legs need about 1 s afterwards. The value matches the folding-rule measurement
@@ -3135,7 +3162,10 @@ async function samplesLaden() {
   const knopf = (txt, tip, f) => '<button title="' + esc(tr(tip)) + '" onclick="' + f + '">' + txt + '</button>';
   $('samples-best').innerHTML = d.bestaetigt.length ? d.bestaetigt.map(p => {
     const n = esc(p.name);
-    return '<tr data-name="' + n + '"><td><b>' + n + '</b></td><td>' + dauer(p.s) + '</td><td>' +
+    return '<tr data-name="' + n + '"><td><b>' + n + '</b>' +
+      '<button class="pin' + (p.fest ? ' aktiv' : '') + '" title="' +
+      esc(tr(p.fest ? 'Geschützt: fällt nie raus (klicken zum Lösen)' : 'Schützen: fällt dann nie raus')) +
+      `" onclick="sampleSchutz('${n}', ${p.fest ? 0 : 1})">📌</button>` + '</td><td>' + dauer(p.s) + '</td><td>' +
       (p.n != null ? esc(tr('{n}-mal gehört', {n: p.n})) : '') + '</td><td class="leise">' + esc(tr('zuletzt {t}', {t: zeit(p.zuletzt)})) +
       '</td><td class="knoepfe">' +
       (p.sittich ? knopf('▶', 'Sittich-Fassung hier anhören', `sampleHoeren('${n}', 0)`) : '') +
@@ -3159,6 +3189,52 @@ function sampleHoeren(name, roh) {
   a.onended = () => document.querySelectorAll('.samples tr.spielt').forEach(z => z.classList.remove('spielt'));
 }
 function sampleRider(name) { befehl('stimme_spielen', {name}, true); }
+async function sampleSchutz(name, an) {
+  await befehl('stimme_fest', {name, an}, true);
+  samplesLaden();
+}
+// Hochladen: Dekodieren, mono, 16 kHz und Kürzen im Browser (am Rider nur Tor, Filter, Merkmale)
+const samplesRate = 16000, samplesMaxS = 3;             // stimme.RATE, [stimme] max_s
+const samplesRateFertig = 48000, samplesMaxFertigS = 8;  // stimme.RATE_OUT; fertig bearbeitet: ohne Filter
+function samplesWav(x, rate) {
+  const n = x.length, b = new ArrayBuffer(44 + 2 * n), v = new DataView(b);
+  const txt = (o, t) => { for (let i = 0; i < t.length; i++) v.setUint8(o + i, t.charCodeAt(i)); };
+  txt(0, 'RIFF'); v.setUint32(4, 36 + 2 * n, true); txt(8, 'WAVE'); txt(12, 'fmt ');
+  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, rate, true); v.setUint32(28, 2 * rate, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+  txt(36, 'data'); v.setUint32(40, 2 * n, true);
+  for (let i = 0; i < n; i++) v.setInt16(44 + 2 * i, Math.max(-32768, Math.min(32767, Math.round(x[i] * 32767))), true);
+  return b;
+}
+async function sampleHochladen() {
+  const f = $('samples-datei').files[0], z = $('samples-hoch-zustand');
+  if (!f) { z.textContent = tr('erst eine Datei wählen'); return; }
+  const fertig = $('samples-fertig').checked;
+  const rate = fertig ? samplesRateFertig : samplesRate, maxS = fertig ? samplesMaxFertigS : samplesMaxS;
+  z.textContent = tr('wandle …');
+  let x, gekuerzt;
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext, ac = new AC();
+    let buf;
+    try { buf = await ac.decodeAudioData(await f.arrayBuffer()); } finally { ac.close(); }
+    gekuerzt = buf.duration > maxS;
+    const n = Math.max(1, Math.ceil(Math.min(buf.duration, maxS) * rate));
+    const oc = new OfflineAudioContext(1, n, rate);         // mischt auf mono und tastet um
+    const src = oc.createBufferSource(); src.buffer = buf; src.connect(oc.destination); src.start();
+    x = (await oc.startRendering()).getChannelData(0);
+  } catch (e) { z.textContent = tr('Datei nicht lesbar: {e}', {e: e.message || e}); return; }
+  z.textContent = tr('lade hoch …');
+  try {
+    const r = await fetch('api.php?' + new URLSearchParams({a: 'stimme_hochladen', fertig: fertig ? '1' : '0'}),
+                          {method: 'POST', headers: {'Content-Type': 'audio/wav'}, body: samplesWav(x, rate)});
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) { z.textContent = j.error || (tr('Fehler ') + r.status); return; }
+    z.textContent = tr('als {n} eingereiht', {n: j.name}) + (j.ersetzt ? tr(' (ersetzt die am seltensten gehörte)') : '') +
+      (gekuerzt ? tr(', auf {s} s gekürzt', {s: maxS}) : '');
+    $('samples-datei').value = '';
+  } catch (e) { z.textContent = tr('keine Verbindung'); return; }
+  samplesLaden();
+}
 async function sampleLoeschen(name) {
   if (!confirm(tr('Probe {n} löschen?', {n: name}))) return;
   await befehl('stimme_loeschen', {name}, true);

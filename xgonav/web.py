@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import io
 import json
 import logging
 import math
@@ -22,6 +23,7 @@ from urllib.parse import parse_qs, urlparse
 
 import cv2
 
+from . import stimme
 from .affinity import pin_thread
 from .app import App, ModeNotAllowed, render
 from .jpeg import Jpeg
@@ -81,9 +83,13 @@ API = {"GET": ["/status", "/ws?nick=2|3 (WebSocket: Bilder, Bestätigung je Bild
                 "/exposure?us=0|100..max (0 = Automatik)", "/gain?g=0|1..63.9 (0 = Automatik)",
                 "/bild?k=0.5..4&s=0.5..4&b=-0.5..0.5 (Kontrast/Sättigung/Helligkeit im ISP)",
                 "/map/reset (Raumkarte leeren, Pose auf 0)", "/map/pose?aktion=start|hier|verwerfen (Standort bestätigen)", "/level (Beine neu ausrichten, 3 s)",
-                "/floornet?name=<datei>.bin (Bodenmodell wechseln: laden, prüfen, Symlink [freespace] net umstellen; nur idle/manual)"]}
+                "/floornet?name=<datei>.bin (Bodenmodell wechseln: laden, prüfen, Symlink [freespace] net umstellen; nur idle/manual)",
+                "/stimme/spielen?name=NN", "/stimme/loeschen?name=NN|<Zeit>",
+                "/stimme/fest?name=NN&an=0|1 (schützen: fällt nie raus)",
+                "/stimme/hochladen?fertig=0|1 (Body: WAV mono int16, 16 kHz bzw. fertig 48 kHz ohne Filter, höchstens 1000 KB; reiht als feste bestätigte Probe ein)"]}
 
 
+STIMME_UPLOAD_MAX = 1000 * 1024  # fertig: 8 s bei 48 kHz mono int16 sind 750 KB (nginx: 1 MB)
 WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 WS_ACK_TIMEOUT_S = 10.0     # ohne Bestätigung so lange: Verbindung gilt als tot
 
@@ -267,14 +273,44 @@ def serve(app: App, host: str, port: int, fps: int, render_cpus=None) -> Threadi
                 except OSError as e:
                     return self._send(500, json.dumps({"error": f"Symlink nicht umstellbar: {e}"}).encode())
                 return self._send(200, json.dumps({"ok": True, "geladen": name}).encode())
-            if u.path in ("/stimme/spielen", "/stimme/loeschen"):
+            if u.path == "/stimme/hochladen":
+                # Kachel „Samples“: der Browser hat schon in 16 kHz mono gewandelt; hier nur Tor, Filter, Merkmale
+                st = getattr(app, "stimmen", None)
+                if st is None:
+                    return self._send(404, b'{"error":"keine Stimmproben (Ortung/Stimme aus)"}')
+                try:
+                    n = int(self.headers.get("Content-Length", "0"))
+                except ValueError:
+                    n = -1
+                if n <= 0 or n > STIMME_UPLOAD_MAX:
+                    return self._send(413, b'{"error":"WAV fehlt oder zu gross (max. 1000 KB)"}')
+                body = self.rfile.read(n)
+                fertig = q.get("fertig", ["0"])[0] == "1"     # schon bearbeitet: 48 kHz, ohne Sittich-Filter
+                soll = stimme.RATE_OUT if fertig else stimme.RATE
+                try:
+                    x, rate = stimme.read_wav(io.BytesIO(body))
+                    if rate != soll:
+                        raise ValueError(f"{rate} Hz, nötig sind {soll}")
+                except Exception as e:          # wave wirft bei kaputten Köpfen auch RuntimeError/struct.error
+                    return self._send(400, json.dumps({"error": f"WAV ungültig: {str(e) or type(e).__name__}"}).encode())
+                try:
+                    nn, ersetzt = st.hochladen(x, fertig)
+                except stimme.VollFehler as e:
+                    return self._send(409, json.dumps({"error": str(e)}).encode())
+                except ValueError as e:
+                    return self._send(400, json.dumps({"error": str(e)}).encode())
+                return self._send(200, json.dumps({"ok": True, "name": nn, "ersetzt": ersetzt}).encode())
+            if u.path in ("/stimme/spielen", "/stimme/loeschen", "/stimme/fest"):
                 # Stimmproben aus der Kachel „Samples“: Abspielen über Emotions.sound (die Ortung hört dann weg)
                 st = getattr(app, "stimmen", None)
                 if st is None:
                     return self._send(404, b'{"error":"keine Stimmproben (Ortung/Stimme aus)"}')
                 name = q.get("name", [""])[0]
                 try:
-                    if u.path == "/stimme/loeschen":
+                    if u.path == "/stimme/fest":
+                        if not st.festsetzen(name, q.get("an", ["1"])[0] == "1"):
+                            return self._send(404, b'{"error":"Probe nicht vorhanden"}')
+                    elif u.path == "/stimme/loeschen":
                         if not st.loeschen(name):
                             return self._send(404, b'{"error":"Probe nicht vorhanden"}')
                     else:

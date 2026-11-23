@@ -1519,7 +1519,11 @@ Intercom with the browser (mode manual, 8 kHz mono both ways, <code>plughw:0,0</
 </tr>
 <tr>
 <td>Learning</td>
-<td>no match → candidate (≤ <code>pool_n</code> 30); a candidate not confirmed within <code>kandidat_max_min</code> 1 min is deleted (thread checks every 5 s); match with a candidate → confirmed (louder take kept), filtered, parroted after <code>parrot_delay_s</code> 0.2 s (after the 0.6 s hang-over: ≈ 0.9 s after the end of speech); match with a confirmed one → parroted again, every time. At <code>max_confirmed</code> 10 a new confirmation replaces the confirmed sample heard least often (tie: longest not heard); counts in <code>bestaetigt/zaehler.json</code></td>
+<td>no match → candidate (≤ <code>pool_n</code> 30); a candidate not confirmed within <code>kandidat_max_min</code> 1 min is deleted (thread checks every 5 s); match with a candidate → confirmed (louder take kept), filtered, parroted after <code>parrot_delay_s</code> 0.2 s (after the 0.6 s hang-over: ≈ 0.9 s after the end of speech); match with a confirmed one → parroted again, every time. At <code>max_confirmed</code> 10 a new confirmation replaces the confirmed sample heard least often (tie: longest not heard), never an uploaded one; all 10 uploaded → nothing is confirmed (<code>lerne</code> → <code>voll</code>); counts in <code>bestaetigt/zaehler.json</code></td>
+</tr>
+<tr>
+<td>Upload</td>
+<td>card <strong>Samples</strong>: any audio file, the browser decodes it, mixes to mono, resamples to 16 kHz and cuts to <code>max_s</code> 3 s (<code>OfflineAudioContext</code>), sends WAV int16; <code>Stimmen.hochladen</code> queues it as confirmed without the voiced check (gate, budgie filter, features like a learned one), not parroted right away. Option <em>already edited</em> (<code>fertig=1</code>): 48 kHz, ≤ 8 s, stored unchanged as <code>NN.wav</code>, <code>NN_roh.wav</code> = downsampled to 16 kHz (list, features). Uploaded samples are fixed (<code>bestaetigt/fest.json</code>, user 2026-11-23): never replaced, only ✕ deletes them; any confirmed sample can be fixed or released with 📌 (<code>POST a=stimme_fest&amp;name=NN&amp;an=0|1</code> → xgonav <code>POST /stimme/fest</code>, <code>Stimmen.festsetzen</code>); with a free slot it takes that, else it replaces the learned one heard least often, all fixed → 409</td>
 </tr>
 <tr>
 <td>Budgie filter</td>
@@ -1531,15 +1535,15 @@ Intercom with the browser (mode manual, 8 kHz mono both ways, <code>plughw:0,0</
 </tr>
 <tr>
 <td>Files</td>
-<td><code>[stimme] dir</code> (<code>/opt/xgonav/stimmen</code>): <code>kandidaten/&lt;time&gt;.wav</code> (16 kHz raw), <code>bestaetigt/NN_roh.wav</code>, <code>NN.wav</code> (48 kHz filtered); delete the directory to forget everything</td>
+<td><code>[stimme] dir</code> (<code>/opt/xgonav/stimmen</code>): <code>kandidaten/&lt;time&gt;.wav</code> (16 kHz raw), <code>bestaetigt/NN_roh.wav</code>, <code>NN.wav</code> (48 kHz filtered), <code>fest.json</code> (uploaded or protected NN); delete the directory to forget everything</td>
 </tr>
 <tr>
 <td>Web</td>
-<td>card <strong>Samples</strong>: <code>api.php?a=stimmen</code> lists the files (disk only, works without xgonav), <code>a=stimme_wav&amp;name=NN\|&lt;time&gt;&amp;roh=0\|1</code> serves one WAV for the browser; <code>POST a=stimme_spielen&amp;name=NN</code> → xgonav <code>POST /stimme/spielen</code> (sound <code>stimme:NN</code>, sound location ignores it), <code>POST a=stimme_loeschen&amp;name=…</code> → xgonav <code>POST /stimme/loeschen</code> (<code>Stimmen.loeschen</code>: files + memory + counts; 400 bad name, 404 missing). Cost on the Pi only on request</td>
+<td>card <strong>Samples</strong>: <code>api.php?a=stimmen</code> lists the files (disk only, works without xgonav), <code>a=stimme_wav&amp;name=NN\|&lt;time&gt;&amp;roh=0\|1</code> serves one WAV for the browser; <code>POST a=stimme_spielen&amp;name=NN</code> → xgonav <code>POST /stimme/spielen</code> (sound <code>stimme:NN</code>, sound location ignores it), <code>POST a=stimme_loeschen&amp;name=…</code> → xgonav <code>POST /stimme/loeschen</code> (<code>Stimmen.loeschen</code>: files + memory + counts; 400 bad name, 404 missing), <code>POST a=stimme_hochladen&amp;fertig=0|1</code> (body WAV, ≤ 1000 KB) → xgonav <code>POST /stimme/hochladen</code>; list field <code>fest</code>. Cost on the Pi only on request (upload: gate + filter + features of ≤ 3 s once, C++ core, web thread)</td>
 </tr>
 <tr>
 <td>Status</td>
-<td><code>GET /status</code> → <code>ortung.stimme</code> (<code>aufnahme</code>, <code>bestaetigt</code>, <code>kandidaten</code>, <code>voll</code>, <code>segmente</code>, <code>verworfen</code>, <code>wieder</code>); pet info <code>nachgeplappert</code>, <code>proben</code></td>
+<td><code>GET /status</code> → <code>ortung.stimme</code> (<code>aufnahme</code>, <code>bestaetigt</code>, <code>kandidaten</code>, <code>voll</code>, <code>fest</code>, <code>segmente</code>, <code>verworfen</code>, <code>wieder</code>); pet info <code>nachgeplappert</code>, <code>proben</code></td>
 </tr>
 <tr>
 <td>Cost</td>

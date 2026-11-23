@@ -113,14 +113,19 @@ function zahl(string $name, float $min, float $max): float
     return (float)$v;
 }
 
-function xgonav(string $method, string $path, int $timeout = 3): never
+function xgonav(string $method, string $path, int $timeout = 3, ?string $body = null, string $ctype = ''): never
 {
-    $ctx = stream_context_create(['http' => [
+    $http = [
         'method' => $method,
         'timeout' => $timeout,
         'ignore_errors' => true,          // auch 4xx/5xx-Antworten von xgonav durchreichen
         'header' => "Content-Length: 0\r\n",
-    ]]);
+    ];
+    if ($body !== null) {                 // Body weiterreichen (Stimme hochladen)
+        $http['header'] = 'Content-Length: ' . strlen($body) . "\r\n" . ($ctype !== '' ? "Content-Type: $ctype\r\n" : '');
+        $http['content'] = $body;
+    }
+    $ctx = stream_context_create(['http' => $http]);
     $body = @file_get_contents(XGONAV . $path, false, $ctx);
     if ($body === false) {
         antwort(502, json_encode(['error' => 'xgonav nicht erreichbar (läuft der Dienst?)']));
@@ -329,13 +334,15 @@ if ($a === 'floornet' && !$post) {
 if ($a === 'stimmen' && !$post) {
     // Kachel „Samples“: direkt von der Platte, auch ohne xgonav (kostet nur beim Aufklappen)
     $zaehler = json_decode((string)@file_get_contents(STIMMEN . '/bestaetigt/zaehler.json'), true) ?: [];
+    $fest = json_decode((string)@file_get_contents(STIMMEN . '/bestaetigt/fest.json'), true) ?: [];   // hochgeladene
     $best = [];
     foreach (glob(STIMMEN . '/bestaetigt/[0-9][0-9]_roh.wav') ?: [] as $f) {
         $nn = substr(basename($f), 0, 2);
         $sittich = STIMMEN . "/bestaetigt/$nn.wav";
         [$n, $t] = $zaehler[$nn] ?? [null, filemtime($f)];
         $best[] = ['name' => $nn, 'n' => $n, 'zuletzt' => $t, 'angelegt' => filemtime($f), 's' => wav_dauer($f),
-                   'sittich' => is_file($sittich), 's_sittich' => is_file($sittich) ? wav_dauer($sittich) : null];
+                   'sittich' => is_file($sittich), 's_sittich' => is_file($sittich) ? wav_dauer($sittich) : null,
+                   'fest' => in_array($nn, $fest, true)];
     }
     $kand = [];
     foreach (glob(STIMMEN . '/kandidaten/*.wav') ?: [] as $f) {
@@ -431,6 +438,21 @@ switch ($a) {
         $name = $_GET['name'] ?? '';
         stimme_pfad($name, false);                                   // nur prüfen
         xgonav('POST', '/stimme/' . ($a === 'stimme_spielen' ? 'spielen' : 'loeschen') . '?name=' . rawurlencode($name));
+    case 'stimme_fest':
+        // 📌 in der Kachel „Samples“: schützen (fällt nie raus) oder lösen
+        $name = $_GET['name'] ?? '';
+        if (!preg_match('/^\d\d$/', $name)) {
+            antwort(400, json_encode(['error' => 'Probe ungültig']));
+        }
+        xgonav('POST', '/stimme/fest?name=' . $name . '&an=' . (($_GET['an'] ?? '') === '1' ? '1' : '0'));
+    case 'stimme_hochladen':
+        // Browser hat schon in WAV 16 kHz mono gewandelt (Kachel „Samples“); xgonav filtert und reiht ein
+        $wav = (string)file_get_contents('php://input');
+        // fertig=1: schon bearbeitet (48 kHz), ohne Sittich-Filter
+        if (strlen($wav) < 44 || strlen($wav) > 1000 * 1024 || substr($wav, 0, 4) !== 'RIFF' || substr($wav, 8, 4) !== 'WAVE') {
+            antwort(400, json_encode(['error' => 'keine WAV-Datei oder größer als 1000 KB']));
+        }
+        xgonav('POST', '/stimme/hochladen?fertig=' . (($_GET['fertig'] ?? '') === '1' ? '1' : '0'), 10, $wav, 'audio/wav');
     case 'stop':
         xgonav('POST', '/stop');
     case 'ausrichten':

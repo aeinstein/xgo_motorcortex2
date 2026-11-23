@@ -64,7 +64,7 @@ Direction of sound from the two microphones (modes `idle`, `pet`): ray = sound, 
 
 ## Samples
 
-Voice samples learned in mode `pet` ([Audio](../audio.md#voice-samples-xgonavstimmepy-mode-pet)), read from disk only when the card is opened or on Reload. Learned: number, length, times heard, last heard; ▶ parrot version in the browser, raw recording in the browser, 🔊 parrot version on the Rider's speaker, ✕ delete. Candidates (heard once): ▶, ✕. Collapsed by default.
+Voice samples learned in mode `pet` ([Audio](../audio.md#voice-samples-xgonavstimmepy-mode-pet)), read from disk only when the card is opened or on Reload. Learned: number, length, times heard, last heard; ▶ parrot version in the browser, raw recording in the browser, 🔊 parrot version on the Rider's speaker, ✕ delete. Upload: choose any audio file and press Upload; the browser converts it (16 kHz mono, at most 3 s), the Rider filters it like a learned voice. Tick *already edited* for a finished sample: 48 kHz, at most 8 s, played unchanged. 📌 protects a voice from being replaced (click again to release); uploaded ones start protected, only ✕ deletes a protected one. Candidates (heard once): ▶, ✕. Collapsed by default.
 
 ## Extras
 

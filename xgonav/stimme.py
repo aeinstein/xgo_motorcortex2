@@ -11,6 +11,11 @@ Nachlauf). Eine fertige Äußerung geht an den eigenen Thread `stimme`:
                           kein Treffer -> neue unbestätigte Probe (höchstens pool_n, die älteste fliegt raus)
 Ab max_confirmed bestätigten ersetzt eine neue Bestätigung die am seltensten gehörte (bei Gleichstand die am längsten
 nicht gehörte); Zähler in bestaetigt/zaehler.json.
+Hochladen (Web, Kachel „Samples“): der Browser wandelt in 16 kHz mono, hochladen() reiht die Probe ohne Prüfung als
+bestätigt ein (Tor, Sittich-Filter, Merkmale wie gelernte); „fertig“: 48 kHz mono, unverändert als NN.wav, roh = auf
+16 kHz heruntergerechnet (nur für Liste und Merkmale). Hochgeladene und im Web per 📌 geschützte sind fest
+(bestaetigt/fest.json, Nutzer 2026-11-23): nie ersetzt, nur von Hand gelöscht; sind alle Plätze fest, wird nichts
+mehr bestätigt.
 
 Dateien unter [stimme] dir: kandidaten/<Zeit>.wav (16 kHz roh, nach kandidat_max_min gelöscht), bestaetigt/NN_roh.wav und NN.wav (gefiltert, 48 kHz,
 spielt emotion.Emotions.sound("stimme:NN")). Löschen = Verzeichnis leeren.
@@ -404,6 +409,10 @@ class Probe:
     n: int = 0                       # bestätigt: so oft gehört (Bestätigung + jedes Wiedererkennen)
 
 
+class VollFehler(RuntimeError):
+    """Alle Plätze sind mit hochgeladenen (festen) Proben belegt."""
+
+
 class Stimmen:
     """Mitschnitt (block, im Ortungs-Thread), Lernen (eigener Thread) und Ablage."""
 
@@ -418,6 +427,7 @@ class Stimmen:
         self.d_kand = os.path.join(cfg.dir, "kandidaten")
         self.d_best = os.path.join(cfg.dir, "bestaetigt")
         self._ids: tuple[str, ...] = tuple(self._ids_auf_platte())
+        self._fest: set[str] = self._fest_lesen() & set(self._ids)    # hochgeladene: fallen nie raus
         self.kandidaten: list[Probe] = []
         self.bestaetigt: list[Probe] = []
         self._geladen = False
@@ -465,8 +475,8 @@ class Stimmen:
     def status(self) -> dict:
         return {"aufnahme": self._aufnahme, "kern": self.kern.name, "bestaetigt": len(self._ids),
                 "kandidaten": len(self.kandidaten) if self._geladen else None, "voll": self.voll,
-                "segmente": self.n_segmente, "verworfen": self.n_verworfen, "wieder": self.n_wieder,
-                "fehler": self.fehler}
+                "fest": len(self._fest), "segmente": self.n_segmente, "verworfen": self.n_verworfen,
+                "wieder": self.n_wieder, "fehler": self.fehler}
 
     def close(self) -> None:
         self._ende = True
@@ -487,6 +497,9 @@ class Stimmen:
                 self.bestaetigt = [p for p in self.bestaetigt if p.name != name]
                 _rm(os.path.join(self.d_best, name + "_roh.wav"))
                 _rm(self.datei(name))
+                if name in self._fest:
+                    self._fest.discard(name)
+                    self._fest_speichern()
                 if da and self._geladen:
                     self._zaehler_speichern()
             else:
@@ -591,8 +604,7 @@ class Stimmen:
             return "wieder"
         rms = float(np.sqrt(np.mean(x * x))) if len(x) else 0.0
         if art == "kandidat":
-            self._bestaetige(probe, Probe("", x, feat, rms), d)
-            return "bestaetigt"
+            return "bestaetigt" if self._bestaetige(probe, Probe("", x, feat, rms), d) else "voll"
         jetzt = self.clock()
         name = time.strftime("%Y%m%d-%H%M%S", time.localtime(jetzt)) + "-%03d" % (int(jetzt * 1000) % 1000)
         while any(p.name == name for p in self.kandidaten) or os.path.exists(os.path.join(self.d_kand, name + ".wav")):
@@ -620,31 +632,112 @@ class Stimmen:
             return best
         return None, None, best[2]
 
-    def _bestaetige(self, kand: Probe, neu: Probe, d: float) -> None:
+    def _einreihen(self, x: np.ndarray, feat: np.ndarray, rms: float,
+                   fertig: np.ndarray | None = None) -> tuple[str, Probe | None]:
+        """Probe (16 kHz, Einheit int16) auf einen freien Platz NN, sonst statt der am seltensten gehörten nicht
+        festen (Nutzer 2026-11-19); roh + gefiltert schreiben. Rückgabe (NN, ersetzte Probe oder None).
+        fertig: abspielfertige Fassung (48 kHz, Einheit int16) statt des Sittich-Filters.
+        VollFehler, wenn alle Plätze fest sind."""
         c = self.cfg
-        keep = neu if neu.rms > kand.rms else kand
         frei = [f"{i:02d}" for i in range(1, c.max_confirmed + 1) if f"{i:02d}" not in self._ids]
-        raus = ""
-        if not frei:                                    # voll: die am seltensten gehörte fliegt raus (Nutzer 2026-11-19)
-            alt = min(self.bestaetigt, key=lambda p: (p.n, p.t))
-            raus = " statt %s (%d-mal gehört)" % (alt.name, alt.n)
+        alt = None
+        if not frei:
+            los = [p for p in self.bestaetigt if p.name not in self._fest]
+            if not los:
+                raise VollFehler("alle %d Plätze mit hochgeladenen Stimmen belegt, erst eine löschen" % c.max_confirmed)
+            alt = min(los, key=lambda p: (p.n, p.t))
             self.bestaetigt.remove(alt)
-            self._ids = tuple(x for x in self._ids if x != alt.name)
+            self._ids = tuple(i for i in self._ids if i != alt.name)
             _rm(os.path.join(self.d_best, alt.name + "_roh.wav"))
             _rm(self.datei(alt.name))
             frei = [alt.name]
         nn = frei[0]
-        x = keep.x.astype(np.float64)
+        x = np.asarray(x, dtype=np.float64)
         write_wav(os.path.join(self.d_best, nn + "_roh.wav"), x, RATE)
-        self._filter(nn, x)
+        if fertig is None:
+            self._filter(nn, x)
+        else:
+            write_wav(self.datei(nn), fertig, RATE_OUT)
+        self.bestaetigt.append(Probe(nn, x.astype(np.int16), feat, rms, self.clock(), 1))
+        self._ids = tuple(sorted(self._ids + (nn,)))
+        return nn, alt
+
+    @staticmethod
+    def _statt(alt: Probe | None) -> str:
+        return " statt %s (%d-mal gehört)" % (alt.name, alt.n) if alt is not None else ""
+
+    def _bestaetige(self, kand: Probe, neu: Probe, d: float) -> bool:
+        """False: alle Plätze fest, nichts bestätigt (der Kandidat ist dann weg)."""
+        c = self.cfg
+        keep = neu if neu.rms > kand.rms else kand
         self.kandidaten.remove(kand)
         _rm(os.path.join(self.d_kand, kand.name + ".wav"))
-        self.bestaetigt.append(Probe(nn, keep.x.astype(np.int16), keep.feat, keep.rms, self.clock(), 1))
-        self._ids = tuple(sorted(self._ids + (nn,)))
+        try:
+            nn, alt = self._einreihen(keep.x, keep.feat, keep.rms)
+        except VollFehler:
+            log.info("Stimmen: nicht bestätigt, alle Plätze mit hochgeladenen Stimmen belegt")
+            return False
         self._zaehler_speichern()
         self._neu.append(nn)
-        log.info("Stimmen: Probe %s bestätigt%s (Abstand %.1f, %d von %d)", nn, raus, d, len(self._ids),
+        log.info("Stimmen: Probe %s bestätigt%s (Abstand %.1f, %d von %d)", nn, self._statt(alt), d, len(self._ids),
                  c.max_confirmed)
+        return True
+
+    def hochladen(self, x: np.ndarray, fertig: bool = False) -> tuple[str, str | None]:
+        """Hochgeladene Probe (Web; mono, Einheit int16, vom Browser gewandelt) ohne Prüfung als bestätigt und fest
+        einreihen. fertig=False: 16 kHz, wird gefiltert wie eine gelernte; fertig=True: 48 kHz, schon bearbeitet,
+        unverändert abgespielt. Rückgabe (NN, ersetzte NN oder None). ValueError ohne Inhalt, VollFehler bei allen fest."""
+        x = np.asarray(x, dtype=np.float64)
+        x48 = None
+        if fertig:
+            x48 = x
+            x = self.kern.mono16k(np.stack([np.clip(np.round(x48), -32768, 32767)] * 2, 1).astype(np.int16))
+        with self._lock:
+            self.laden()
+            feat, _ = self.kern.mfcc(x)
+            if len(feat) == 0:
+                raise ValueError("Aufnahme zu kurz oder still")
+            nn, alt = self._einreihen(x, feat, float(np.sqrt(np.mean(x * x))), x48)
+            self._fest.add(nn)
+            self._fest_speichern()
+            self._zaehler_speichern()
+        log.info("Stimmen: Probe %s hochgeladen%s%s (%.1f s, %d von %d, %d fest)", nn, " (fertig)" if fertig else "",
+                 self._statt(alt), len(x) / RATE,
+                 len(self._ids), self.cfg.max_confirmed, len(self._fest))
+        return nn, alt.name if alt is not None else None
+
+    def festsetzen(self, nn: str, an: bool) -> bool:
+        """Bestätigte Probe NN schützen (fällt nie raus) oder den Schutz lösen (Web, 📌). False = nicht da."""
+        if not re.fullmatch(r"\d\d", nn):
+            raise ValueError(f"Probe {nn!r} ungültig")
+        with self._lock:
+            if nn not in self._ids:
+                return False
+            if an:
+                self._fest.add(nn)
+            else:
+                self._fest.discard(nn)
+            self._fest_speichern()
+        log.info("Stimmen: %s %s (%d fest)", nn, "geschützt" if an else "Schutz gelöst", len(self._fest))
+        return True
+
+    def _fest_lesen(self) -> set[str]:
+        try:
+            with open(os.path.join(self.d_best, "fest.json")) as f:
+                return {str(n) for n in json.load(f)}
+        except (OSError, ValueError, TypeError):
+            return set()
+
+    def _fest_speichern(self) -> None:
+        """Hochgeladene Proben (bestaetigt/fest.json): fallen nie raus."""
+        try:
+            os.makedirs(self.d_best, exist_ok=True)
+            tmp = os.path.join(self.d_best, "fest.json.tmp")
+            with open(tmp, "w") as f:
+                json.dump(sorted(self._fest), f)
+            os.replace(tmp, os.path.join(self.d_best, "fest.json"))
+        except OSError as e:
+            log.warning("Stimmen: fest.json nicht gespeichert: %s", e)
 
     def _zaehler_speichern(self) -> None:
         """Wie oft und wann zuletzt je bestätigte Probe gehört (bestaetigt/zaehler.json), für das Ersetzen."""

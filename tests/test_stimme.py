@@ -1,5 +1,6 @@
 """Stimmproben (xgonav/stimme.py): Mitschnitt, Vergleich, Ablage, Sittich-Filter, C++ gegen numpy."""
 import dataclasses
+import json
 import os
 import sys
 import time
@@ -281,3 +282,125 @@ def test_loeschen_aus_dem_web(tmp_path):
     assert st.lerne(aeusserung(WORT_B, seed=64)) == "bestaetigt" and st.ids == ("01",)
     neu = stimmen(tmp_path, max_confirmed=2)                             # ungeladen: nur Platte und ids
     assert neu.loeschen("01") is True and neu.ids == () and not (tmp_path / "bestaetigt" / "01.wav").exists()
+
+
+# ---- Hochladen (Web) -----------------------------------------------------------
+def hoch(f0s, seed=0, dur=1.0):
+    """Wie der Browser liefert: 16 kHz mono, Einheit int16."""
+    k = stimme.make_kern(0.3, native=False)
+    return k.mono16k(aeusserung(f0s, dur, seed=seed))
+
+
+def test_hochladen_fest_und_neustart(tmp_path):
+    st = stimmen(tmp_path)
+    assert st.hochladen(hoch(WORT_A)) == ("01", None)
+    assert st.ids == ("01",) and st.drain_neu() == []                  # nicht gleich nachplappern
+    d = tmp_path / "bestaetigt"
+    assert (d / "01.wav").is_file() and (d / "01_roh.wav").is_file()
+    assert (d / "fest.json").read_text() == '["01"]' and st.status()["fest"] == 1
+    neu = stimmen(tmp_path)
+    assert neu.status()["fest"] == 1
+    assert neu.lerne(aeusserung(WORT_A, seed=7)) == "wieder"           # wird beim Mitschnitt wiedererkannt
+
+
+def test_hochladen_ohne_pruefung(tmp_path):
+    st = stimmen(tmp_path)
+    x = np.random.default_rng(5).normal(0, 3000, int(1.2 * stimme.RATE))   # Rauschen: beim Mitschnitt verworfen
+    assert st.hochladen(x)[0] == "01"
+    with pytest.raises(ValueError):
+        st.hochladen(np.zeros(100))
+
+
+def test_hochgeladene_fallen_nie_raus(tmp_path):
+    worte = [[100, 300], [300, 100], [120, 280, 120]]
+    st = stimmen(tmp_path, max_confirmed=2)
+    st.lerne(aeusserung(worte[0], seed=20))
+    assert st.lerne(aeusserung(worte[0], seed=21)) == "bestaetigt"     # 01 gelernt
+    assert st.hochladen(hoch(worte[1], seed=22)) == ("02", None)       # 02 fest
+    st.lerne(aeusserung(worte[2], seed=23))
+    assert st.lerne(aeusserung(worte[2], seed=24)) == "bestaetigt"     # voll: ersetzt 01, nie die feste 02
+    assert st.ids == ("01", "02") and st._fest == {"02"}
+    assert st.hochladen(hoch(worte[0], seed=25)) == ("01", "01")       # Upload ersetzt die gelernte
+    assert st._fest == {"01", "02"}
+    with pytest.raises(stimme.VollFehler):                              # alle fest
+        st.hochladen(hoch(worte[2], seed=26))
+    st.lerne(aeusserung([200, 90, 200], seed=27))
+    assert st.lerne(aeusserung([200, 90, 200], seed=28)) == "voll"      # alle fest: nichts bestätigt
+    assert st.ids == ("01", "02") and st.kandidaten == []
+    assert st.loeschen("02") is True and st._fest == {"01"}
+    assert (tmp_path / "bestaetigt" / "fest.json").read_text() == '["01"]'
+
+
+def test_hochladen_ueber_die_schnittstelle(tmp_path):
+    import io
+    import types
+    import urllib.error
+    import urllib.request
+    import wave
+    from xgonav.web import serve
+    st = stimmen(tmp_path)
+    srv = serve(types.SimpleNamespace(cfg=None, stimmen=st), "127.0.0.1", 0, 5)
+    url = "http://127.0.0.1:%d/stimme/hochladen" % srv.server_address[1]
+
+    def post(body):
+        try:
+            with urllib.request.urlopen(urllib.request.Request(url, data=body, method="POST"), timeout=5) as r:
+                return r.status, json.loads(r.read())
+        except urllib.error.HTTPError as e:
+            return e.code, json.loads(e.read())
+
+    def wav(x, rate):
+        b = io.BytesIO()
+        with wave.open(b, "wb") as w:
+            w.setnchannels(1), w.setsampwidth(2), w.setframerate(rate)
+            w.writeframes(np.clip(x, -32768, 32767).astype("<i2").tobytes())
+        return b.getvalue()
+    try:
+        assert post(wav(hoch(WORT_A), stimme.RATE)) == (200, {"ok": True, "name": "01", "ersetzt": None})
+        assert post(wav(hoch(WORT_B), 48000))[0] == 400
+        assert post(b"RIFF....WAVEkaputt")[0] == 400
+        assert post(b"RIFF\x24\x00\x00\x00WAVE" + b"kaputt" * 6)[0] == 400   # wave: RuntimeError beim Überspringen
+        assert post(b"")[0] == 413                                       # leer; zu groß liest der Server gar nicht erst
+        assert st.ids == ("01",)
+        fest = "http://127.0.0.1:%d/stimme/fest?" % srv.server_address[1]
+        for q, code in (("name=01&an=0", 200), ("name=05&an=1", 404), ("name=x1&an=1", 400)):
+            try:
+                with urllib.request.urlopen(urllib.request.Request(fest + q, data=b"", method="POST"), timeout=5) as r:
+                    assert r.status == code
+            except urllib.error.HTTPError as e:
+                assert e.code == code
+        assert st._fest == set()
+    finally:
+        srv.shutdown()
+
+
+def test_hochladen_fertig_ohne_filter(tmp_path):
+    st = stimmen(tmp_path)
+    x48 = aeusserung(WORT_A, 2.0)[:, 0].astype(np.float64)              # 48 kHz mono, schon bearbeitet
+    assert st.hochladen(x48, fertig=True) == ("01", None)
+    y, rate = stimme.read_wav(str(tmp_path / "bestaetigt" / "01.wav"))
+    assert rate == stimme.RATE_OUT and np.array_equal(y, np.round(x48))  # unverändert
+    roh, rate = stimme.read_wav(str(tmp_path / "bestaetigt" / "01_roh.wav"))
+    assert rate == stimme.RATE and abs(len(roh) / rate - 2.0) < 0.01
+    assert st._fest == {"01"}
+
+
+def test_schuetzen_und_loesen(tmp_path):
+    worte = [[100, 300], [300, 100], [120, 280, 120], [280, 110, 280]]
+    uhr = [1000.0]
+    st = stimme.Stimmen(cfg(tmp_path, max_confirmed=2), native=False, clock=lambda: uhr[0])
+    for k in (0, 1):
+        st.lerne(aeusserung(worte[k], seed=70 + k))
+        assert st.lerne(aeusserung(worte[k], seed=80 + k)) == "bestaetigt"
+        uhr[0] += 1
+    assert st.lerne(aeusserung(worte[1], seed=90)) == "wieder"          # 02 öfter gehört, 01 wäre dran
+    assert st.festsetzen("01", True) is True
+    assert (tmp_path / "bestaetigt" / "fest.json").read_text() == '["01"]'
+    assert stimme.Stimmen(cfg(tmp_path, max_confirmed=2), native=False)._fest == {"01"}   # Neustart kennt ihn
+    st.lerne(aeusserung(worte[2], seed=91))
+    assert st.lerne(aeusserung(worte[2], seed=92)) == "bestaetigt"     # ersetzt 02, nie das geschützte 01
+    assert st.lerne(aeusserung(worte[0], seed=93)) == "wieder"
+    assert st.festsetzen("01", False) is True and st._fest == set()
+    assert st.festsetzen("05", True) is False
+    with pytest.raises(ValueError):
+        st.festsetzen("../01", True)
