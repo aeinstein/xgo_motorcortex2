@@ -1393,7 +1393,7 @@
 </tr>
 <tr>
 <td>Tested</td>
-<td>on the Rider 2026-11-20 (lying, sleep mode, level <code>schauen</code>): <code>initialize</code>, <code>tools/list</code>, <code>status</code>, <code>karte</code>, <code>erkennung</code>, <code>emotion</code>, <code>kamera</code>, refusals of <code>bild</code> (pipeline off) and of the movement tools. <code>tests/test_mcp.py</code> (fake xgonav, needs <code>php</code>) <strong>has not run yet</strong>; no image fetched, no tool has moved the Rider. <code>fahren</code> refuses until xgonav has been restarted with <code>sicher=1</code></td>
+<td>on the Rider 2026-11-20 (lying, sleep mode, level <code>schauen</code>): <code>initialize</code>, <code>tools/list</code>, <code>status</code>, <code>karte</code>, <code>erkennung</code>, <code>emotion</code>, <code>kamera</code>, refusals of <code>bild</code> (pipeline off) and of the movement tools. <code>tests/test_mcp.py</code> (fake xgonav, needs <code>php</code>): 10 passed on the Rider 2026-11-23 (PHP 8.2, temporary venv with pytest); no tool has moved the Rider yet. <code>fahren</code> refuses until xgonav has been restarted with <code>sicher=1</code></td>
 </tr>
 </tbody>
 </table>
@@ -1513,8 +1513,8 @@
 <tr>
 <td><code>drehen</code></td>
 <td>drehen</td>
-<td><code>grad</code>, <code>bild</code></td>
-<td>turn on the spot (+ = left), closed loop on <code>yaw_deg</code> (±3°), then image</td>
+<td><code>grad</code> −1080..1080, <code>w</code> 0.08..0.5 (default 0.25), <code>tol</code> 1..10° (default 3), <code>bild</code></td>
+<td>turn on the spot (+ = left), closed loop on <code>yaw_deg</code>, then image</td>
 </tr>
 <tr>
 <td><code>rundblick</code></td>
@@ -1543,8 +1543,14 @@
 <tr>
 <td><code>fahren</code></td>
 <td>fahren</td>
-<td><code>v</code> ±0.15, <code>w</code> ±0.30, <code>sekunden</code> 0.2..5, <code>bild</code></td>
-<td><code>/drive?sicher=1</code> at 10 Hz, then standstill + idle; returns distance, pose before/after, braking messages, image</td>
+<td><code>v</code>, <code>w</code>, <code>sekunden</code> 0.2..5, <code>geprueft</code> (default true), <code>bild</code></td>
+<td>checked: <code>/drive?sicher=1</code>, <code>v</code> ±0.15, <code>w</code> ±0.30; <code>geprueft: false</code>: <code>/drive</code> like the web D-pad / <code>rider_nav.py fahr</code>, <code>v</code>, <code>w</code> ±0.5; 10 Hz, then standstill + idle; returns distance, pose before/after, braking messages, image</td>
+</tr>
+<tr>
+<td><code>folge</code></td>
+<td>fahren</td>
+<td><code>abschnitte</code> [[v, w, s], …] (1..10, each 0..5 s, ≤ 30 s total), <code>geprueft</code>, <code>bild</code></td>
+<td>sections back to back without a stop in between (like <code>rider_nav.py folge</code>), limits as <code>fahren</code>; then standstill + idle</td>
 </tr>
 <tr>
 <td><code>modus</code></td>
@@ -1601,12 +1607,12 @@
 <td><code>/drive?v=0&amp;w=0</code>, then <code>/stop</code> (mode idle), also on error, timeout (120 s) or client disconnect; xgonav stops by itself 0.5 s after the last setpoint</td>
 </tr>
 <tr>
-<td><code>fahren</code> is always checked</td>
-<td><code>sicher=1</code>: the setpoint passes <code>safety()</code> (fallen, blind, free space, TTC) and the arc check like the autonomous modes; <code>manual_forward_gain</code> is not applied, nominal speed ≈ v · <code>robot.vx_limit</code>; refused while blind or with the pipeline stopped</td>
+<td><code>fahren</code>/<code>folge</code> checked by default</td>
+<td><code>sicher=1</code>: the setpoint passes <code>safety()</code> (fallen, blind, free space, TTC) and the arc check like the autonomous modes; <code>manual_forward_gain</code> is not applied, nominal speed ≈ v · <code>robot.vx_limit</code>; refused while blind or with the pipeline stopped. <code>geprueft: false</code>: hand control as the web D-pad (no floor boundary, no arc check; fall detection and watchdogs stay), with <code>manual_forward_gain</code>, no pipeline needed; only on the owner's request</td>
 </tr>
 <tr>
 <td><code>drehen</code>, <code>rundblick</code></td>
-<td>unchecked turn on the spot (v = 0), ≤ 0.25</td>
+<td>unchecked turn on the spot (v = 0); <code>drehen</code> ≤ <code>w</code> (0.5), <code>rundblick</code> ≤ 0.25</td>
 </tr>
 <tr>
 <td>Limits</td>
