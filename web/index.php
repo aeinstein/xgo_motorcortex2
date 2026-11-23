@@ -50,9 +50,9 @@ header{position:fixed;top:0;left:0;right:0;z-index:10;display:flex;align-items:c
 body{padding-top:var(--kopf-h,52px)}
 html{scroll-padding-top:var(--kopf-h,52px)}
 .kopf-knoepfe{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
-.kopf-check{display:inline-flex;align-items:center;gap:5px;font-size:13px;color:var(--text);cursor:pointer;white-space:nowrap;
-  padding:5px 9px;border:1px solid var(--rand2);border-radius:6px;background:var(--karte2)}
-.kopf-check input{width:16px;height:16px;margin:0;accent-color:var(--gefahr);cursor:pointer}
+.kopf-check{display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--text);cursor:pointer;white-space:nowrap;
+  padding:3px 8px;border:1px solid var(--rand2);border-radius:6px;background:var(--karte2)}
+.kopf-check input{width:13px;height:13px;margin:0;accent-color:var(--gefahr);cursor:pointer}
 .kopf-check[hidden]{display:none}
 header h1{font-size:15px;font-weight:600;margin:0 4px 0 0;white-space:nowrap}
 header h1 span{color:var(--leise);font-weight:400}
@@ -67,7 +67,7 @@ header h1 span{color:var(--leise);font-weight:400}
 header .symbol .ic{display:none}
 @media (max-width:1000px){header .symbol .txt{display:none}header .symbol .ic{display:inline-block}header .symbol{padding:6px 10px}}
 .sprache{display:inline-flex;border:1px solid var(--rand2);border-radius:6px;overflow:hidden}
-.sprache button{border:0;border-radius:0;padding:5px 7px;font-size:12px;background:var(--karte2);color:var(--leise)}
+.sprache button{border:0;border-radius:0;padding:3px 8px;font-size:12px;background:var(--karte2);color:var(--leise)}
 .sprache button.aktiv{background:var(--akzent);color:#04121f;font-weight:600}
 .pillen{display:flex;gap:6px;flex-wrap:wrap;flex:1;min-width:0}
 .pille{display:inline-flex;align-items:center;gap:5px;padding:2px 9px;border-radius:999px;font-size:12px;
@@ -82,7 +82,8 @@ header .symbol .ic{display:none}
 #meldung:empty{display:none}
 
 /* --- Knöpfe */
-button{font:inherit;font-size:14px;padding:6px 11px;border-radius:6px;border:1px solid var(--rand2);background:var(--karte2);
+/* Einheitsgröße aller Textknöpfe (wie „ESP-Neustart“); Ausnahmen: STOPP, Wecken, Steuerkreuz, Einstellungs-Navigation */
+button{font:inherit;font-size:12px;padding:3px 8px;border-radius:6px;border:1px solid var(--rand2);background:var(--karte2);
   color:var(--text);touch-action:manipulation;cursor:pointer;transition:background-color .12s,border-color .12s,transform .05s}
 /* Hover nur bei echter Maus: auf Touch-Geräten bliebe der Effekt sonst nach dem Tippen hängen */
 @media (hover:hover){
@@ -98,7 +99,6 @@ button.aktiv{border-color:var(--akzent);background:#18324f;color:#fff}
 #stop{background:var(--gefahr);border-color:var(--gefahr);color:#fff;font-weight:700;letter-spacing:.06em;padding:8px 22px;font-size:15px}
 #stop:active{background:#b82e33}
 /* --- Ruhemodus: deckt die Seite ab, nur Wecken; die Seite fragt dann nur noch alle 5 s den Status ab */
-#ruhe-knopf{padding:8px 12px;font-size:13px}
 #ruhe-decke{position:fixed;inset:0;z-index:50;display:none;flex-direction:column;align-items:center;justify-content:center;
   gap:14px;background:rgba(10,11,13,.94);text-align:center;padding:16px}
 #ruhe-decke.an{display:flex}
@@ -193,7 +193,7 @@ details.hilfe p{margin:4px 0 0}
 .ziel-gruppe #ziel{border:0;border-radius:0;margin:0}
 @media (max-width:640px){
   .segment{display:grid;grid-template-columns:repeat(3,1fr);width:100%}
-  .segment button{padding:7px 2px;font-size:13px}
+  .segment button{padding:3px 2px}
   .segment.ziel-gruppe{display:flex}
   .ziel-gruppe button{flex:1}
   #ziel{flex:2;max-width:none}
@@ -212,7 +212,7 @@ pre{background:#0b0d10;border-radius:6px;padding:8px;overflow:auto;max-height:40
 /* --- Fahren */
 /* Aktionen klein in der Lage-Kachel */
 .aktionen{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
-.aktionen button{margin:0;padding:3px 8px;font-size:12px}
+.aktionen button{margin:0}
 /* Steuerkreuz als Auflage unten rechts im Kamerabild; nur die Knöpfe fangen Zeiger */
 .pad{position:absolute;right:8px;bottom:8px;z-index:3;display:grid;grid-template-columns:repeat(3,42px);
   grid-template-rows:repeat(3,38px);gap:4px;user-select:none;-webkit-user-select:none;pointer-events:none}
@@ -225,7 +225,6 @@ pre{background:#0b0d10;border-radius:6px;padding:8px;overflow:auto;max-height:40
 .regler{display:grid;grid-template-columns:auto 1fr 3.6em auto;gap:6px 8px;align-items:center}
 .regler label{color:var(--leise);font-size:13px}
 .regler .w{font-variant-numeric:tabular-nums;text-align:right;font-size:13px}
-.regler button{padding:3px 8px;font-size:12px}
 .regler .leer{width:0}
 .fn-wahl{margin-top:8px}
 .fn-wahl select{min-width:0}
@@ -245,13 +244,11 @@ pre{background:#0b0d10;border-radius:6px;padding:8px;overflow:auto;max-height:40
 #karte-gruppen{border:0;margin:8px 0 0;padding:0;min-width:0;display:grid;gap:5px}
 .gruppe{display:grid;grid-template-columns:7.5em 1fr;gap:8px;align-items:center}
 .gruppe .g-name{font-size:12px;color:var(--leise)}
-.gruppe button{padding:4px 9px;font-size:13px}
 @media (max-width:420px){.gruppe{grid-template-columns:1fr;gap:3px}}
 /* Auflagen im Kartenrahmen: Bearbeiten oben, Pose-Warnung unten – die Karte verrutscht dadurch nicht */
 .karte-auflage{position:absolute;left:0;right:0;z-index:2;display:flex;flex-wrap:wrap;gap:5px;align-items:center;
   padding:6px 8px;font-size:12px;cursor:default;background:rgba(15,17,20,.88)}
 .karte-auflage[hidden]{display:none}
-.karte-auflage button{padding:3px 8px;font-size:12px}
 #route-edit{top:0;border-bottom:1px solid var(--rand2)}
 #route-hinweis{flex:1 1 100%;color:var(--text)}
 #karte-pose-warn{bottom:0;margin:0;background:rgba(58,21,23,.94);color:#ffb3b5;border-top:1px solid #6b2427}
@@ -287,7 +284,7 @@ details.extras[open]>summary{margin-bottom:8px}
 .lage3d.zieht{cursor:grabbing}
 .lage3d-rahmen{position:relative;user-select:none;-webkit-user-select:none}
 .lage3d-gl{position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none}
-.unter button{padding:1px 7px;font-size:12px;margin-left:6px}
+.unter button{margin-left:6px}
 .radar{display:block;width:100%;max-width:340px;margin:0 auto;touch-action:pan-y}
 .lage-flaeche{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px}
 .kamhoehe{display:flex;flex-direction:column;align-items:center;gap:4px;height:230px;font-size:12px;color:var(--leise)}
@@ -335,7 +332,6 @@ details.extras[open]>summary{margin-bottom:8px}
 #ei-sich summary{cursor:pointer;color:var(--leise)}
 #ei-sich ul{list-style:none;margin:6px 0 0;padding:0;max-height:22vh;overflow:auto}
 #ei-sich li{display:flex;gap:8px;align-items:center;padding:3px 0;font-variant-numeric:tabular-nums}
-#ei-sich li button{padding:1px 8px;font-size:12px}
 @media (max-width:700px){
   .ei-rumpf{grid-template-columns:1fr;grid-template-rows:auto 1fr}
   #ei-nav{display:flex;overflow-x:auto;border-right:0;border-bottom:1px solid var(--rand);padding:0}
