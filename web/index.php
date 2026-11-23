@@ -348,7 +348,6 @@ details.extras[open]>summary{margin-bottom:8px}
     <span class="pille" id="p-modus"><span class="lang">Modus </span><b>-</b></span>
     <span class="pille" id="p-zustand"><span class="lang">Zustand </span><b>-</b></span>
     <span class="pille" id="p-akku"><span class="lang">Akku </span><b>-</b></span>
-    <span class="pille" id="p-pip"><span class="lang">Bildverarb. </span><b>-</b></span>
     <span class="pille" id="p-rec" style="display:none" title="Rohaufzeichnung: schreibt nur, solange der Rider balanciert"><span class="lang">Aufzeichnung </span><b>-</b></span>
     <span class="pille" id="p-wlan" title="WLAN-Empfang (Pegel) und Durchsatz des Riders: ↓ empfangen, ↑ gesendet"><span class="lang">WLAN </span><b>-</b></span>
   </div>
@@ -977,7 +976,7 @@ function sprache(l) {
   verlaufZeichnen();
 }
 
-// Kennzahlen-Kacheln; Modus, Bildverarbeitung, Akku und Zustand stehen in der Kopfleiste
+// Kennzahlen-Kacheln; Modus, Akku und Zustand stehen in der Kopfleiste, Bildverarbeitung als Knopf ▶/■
 const felder = [
   ['Status', s => s.status, true],
   ['Befehl v / w', s => s.cmd ? s.cmd.v.toFixed(2) + ' / ' + s.cmd.w.toFixed(2) : '-'],
@@ -1442,7 +1441,6 @@ function statusZeigen(s, fehler) {
     akkuMerken(s.battery);
     pille('p-akku', s.battery != null ? s.battery + ' %' : '-',
           s.battery == null ? '' : (s.battery < 20 ? 'schlecht' : s.battery < 40 ? 'warn' : 'gut'));
-    pille('p-pip', tr(s.pipeline ?? '-'), s.pipeline === 'läuft' ? 'gut' : (s.pipeline ? 'warn' : ''));
     const laeuft = s.pipeline === 'läuft';
     const pt = tr(laeuft ? 'Bildverarbeitung stoppen' : 'Bildverarbeitung starten');
     $('pip-ic').textContent = laeuft ? '■' : '▶';

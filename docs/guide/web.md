@@ -10,7 +10,7 @@
 
 | Item | Meaning |
 |---|---|
-| Pills | connection, mode, state (balancing / lying), battery (green ≥ 40 %, yellow ≥ 20 %, red below), vision (pipeline), recording, Wi-Fi (dBm, ↓/↑ kB/s) |
+| Pills | connection, mode, state (balancing / lying), battery (green ≥ 40 %, yellow ≥ 20 %, red below), recording, Wi-Fi (dBm, ↓/↑ kB/s) |
 | DE / EN | UI language (browser only) |
 | ⤓ Sit down (Absetzen) | set down (254); shown only while balancing |
 | ⤒ Jump up (Aufspringen) | action 253 (confirm); shown only while lying |
