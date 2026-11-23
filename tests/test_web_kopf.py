@@ -57,3 +57,19 @@ def test_ws_kopf_imu_je_bild():
     assert ohne[10] == 0.0 and math.isnan(ohne[5]) and math.isnan(ohne[2])
     keine = struct.unpack("!I10f", ws_kopf(Snapshot(idx=9), geo, (250.0, 0.0, 320.0)))
     assert math.isnan(keine[10])
+
+
+def test_ws_kopf_mit_pose():
+    """/ws?nick=3: dieselben 10 Werte, dazu Horizontzeile bei cx und Kartenpose (Planerbahn im Browser); ohne Karte NaN."""
+    import struct
+    from xgonav.app import Snapshot
+    from xgonav.web import ws_kopf
+    geo = CamGeometry(640, 480, 91.8, 0.0, 43.0, 85.0)
+    k = ws_kopf(Snapshot(idx=3), geo, (251.5, 1.0, 320.0), (1.5, -0.25, 0.5))
+    assert len(k) == 60
+    v = struct.unpack("!I14f", k)
+    alt = struct.unpack("!I10f", ws_kopf(Snapshot(idx=3), geo, (251.5, 1.0, 320.0)))
+    assert all(a == b or (math.isnan(a) and math.isnan(b)) for a, b in zip(v[:11], alt))
+    assert v[11:] == (251.5, 1.5, -0.25, 0.5)
+    ohne = struct.unpack("!I14f", ws_kopf(Snapshot(idx=3), geo, (251.5, 1.0, 320.0), None))
+    assert ohne[11] == 251.5 and all(math.isnan(x) for x in ohne[12:])

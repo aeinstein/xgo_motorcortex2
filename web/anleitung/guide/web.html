@@ -1485,20 +1485,28 @@
 <td>UI language (browser only)</td>
 </tr>
 <tr>
-<td>Manual (Anleitung)</td>
-<td>this manual</td>
+<td>Sit down (Absetzen)</td>
+<td>set down (254)</td>
 </tr>
 <tr>
-<td>Diagram (Schaubild)</td>
-<td>diagram of the image pipeline</td>
+<td>Jump up (Aufspringen)</td>
+<td>action 253 (confirm)</td>
+</tr>
+<tr>
+<td>Stand up (Aufstehen)</td>
+<td>action 255</td>
+</tr>
+<tr>
+<td>Start / stop vision</td>
+<td>camera and image processing on / off</td>
+</tr>
+<tr>
+<td>Record (Aufzeichnen)</td>
+<td>checkbox: raw recording (JPEG + <code>meta.jsonl</code>) while balancing, input for <a href="advanced/floornet-training.html">FloorNet training</a></td>
 </tr>
 <tr>
 <td>Settings (Einstellungen)</td>
 <td>all parameters of <code>config.toml</code>, with backup and restart</td>
-</tr>
-<tr>
-<td>Shut down (Herunterfahren)</td>
-<td>shut the Pi down (confirm)</td>
 </tr>
 <tr>
 <td>Rest (Ruhe)</td>
@@ -1534,7 +1542,7 @@
 </tr>
 <tr>
 <td>Checkboxes</td>
-<td><em>Pin image to IMU pitch</em>, <em>Level roll</em>, <em>Image centre</em>: done in the browser by CSS, no cost on the Pi</td>
+<td><em>Pin image to IMU pitch</em>, <em>Level roll</em>, <em>Planner path</em> (orange: planned path from the room map projected onto the floor in the image), <em>Image centre</em>: done in the browser, no cost on the Pi</td>
 </tr>
 <tr>
 <td>Speed</td>
@@ -1570,11 +1578,7 @@
 </tr>
 <tr>
 <td>Vision (Bildverarbeitung)</td>
-<td>start / stop camera and image processing; free space for recordings; status tiles (fps, loop time, FloorNet ms)</td>
-</tr>
-<tr>
-<td>Record (Aufzeichnen)</td>
-<td>raw recording (JPEG + <code>meta.jsonl</code>) while balancing, input for <a href="advanced/floornet-training.html">FloorNet training</a></td>
+<td>recording status, free space for recordings; status tiles (fps, loop time, FloorNet ms)</td>
 </tr>
 </tbody>
 </table>
@@ -1601,16 +1605,8 @@
 <td>roll setpoint −20..20°</td>
 </tr>
 <tr>
-<td>Stand up / Jump up</td>
-<td>action 255 / 253</td>
-</tr>
-<tr>
 <td>Re-level</td>
 <td>levelling pulse after standing up</td>
-</tr>
-<tr>
-<td>Sit down</td>
-<td>set down (254)</td>
 </tr>
 <tr>
 <td>ESP restart</td>
@@ -1623,7 +1619,7 @@
 <p>Direction of sound from the two microphones (modes <code>idle</code>, <code>pet</code>): ray = sound, length = loudness, fades in 12 s. Rays turn with the Rider (IMU yaw), so they keep pointing at the source. Front and back cannot be told apart. Reference: <a href="../audio.html">Audio</a>.</p>
 <h2 id="extras">Extras<a class="headerlink" href="#extras" title="Permanent link">&para;</a></h2>
 <p><img alt="Extras" src="../screenshots/web-drive.png" /></p>
-<p>Firmware actions 1–6, the four LEDs (colour pickers, all off, strobe), LED brightness (persistent), display emotions.</p>
+<p>Manual (Anleitung), Diagram (Schaubild), Shut down (Herunterfahren, confirm); firmware actions 1–6, the four LEDs (colour pickers, all off, strobe), LED brightness (persistent), display emotions.</p>
 <h2 id="room-map-raumkarte">Room map (Raumkarte)<a class="headerlink" href="#room-map-raumkarte" title="Permanent link">&para;</a></h2>
 <p><img alt="Room map" src="../screenshots/web-map.png" /></p>
 <table>

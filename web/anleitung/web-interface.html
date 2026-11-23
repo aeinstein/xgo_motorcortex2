@@ -1601,12 +1601,12 @@
 </thead>
 <tbody>
 <tr>
-<td>Header (sticky)</td>
-<td>host, connection, mode, state (firmware <code>state</code>: balancing / lying = set down (254) / fallen (0) / ready (253) / battery low / actuator fault / fault; mapped in the browser), battery (green ≥ 40 %, yellow ≥ 20 %, red &lt; 20 %), pipeline, recording (only while switched on), WLAN (signal dBm: green ≥ −60, yellow ≥ −70, red below; ↓/↑ kB/s of <code>wlan0</code>), language DE/EN, <strong>Anleitung</strong> (opens <code>anleitung/index.html</code>: this manual, static), <strong>Schaubild</strong> (opens <code>schaubild.html</code>: static diagram of the image pipeline, no cost on the Pi), <strong>Einstellungen</strong> (modal, see below), <strong>Herunterfahren</strong> (confirm dialog), <strong>Ruhe</strong>, <strong>STOPP</strong>; below 1000 px the two buttons show only ⚙/⏻</td>
+<td>Header (fixed, page padded by its measured height)</td>
+<td>host, connection, mode, state (firmware <code>state</code>: balancing / lying = set down (254) / fallen (0) / ready (253) / battery low / actuator fault / fault; mapped in the browser), battery (green ≥ 40 %, yellow ≥ 20 %, red &lt; 20 %), pipeline, recording (only while switched on), WLAN (signal dBm: green ≥ −60, yellow ≥ −70, red below; ↓/↑ kB/s of <code>wlan0</code>), language DE/EN, <strong>Absetzen</strong> (254), <strong>Aufspringen</strong> (253, confirm), <strong>Aufstehen</strong> (arm, 255), pipeline start/stop, checkbox <strong>Aufzeichnen</strong> (raw recording, only shown with <code>rawrec</code>), <strong>Einstellungen</strong> (modal, see below), <strong>Ruhe</strong>, <strong>STOPP</strong>; below 1000 px the buttons show only symbols (⤓ ⤒ ↑ ▶/■ ⚙)</td>
 </tr>
 <tr>
 <td>Left</td>
-<td>camera image (WebSocket) with camera bar below it: exposure (ms, auto), gain (1–63.9×, auto), checkbox <em>Bild am IMU-Nick festhalten</em> (browser shifts the <code>&lt;img&gt;</code> by <code>row_stand − row_imu</code> via CSS, no pipeline cost; stored in <code>localStorage</code>; normal pose against the pure IMU pitch without image share); checkbox <em>Roll ausgleichen</em> (browser rotates the <code>&lt;img&gt;</code> by the IMU roll about the horizon point at <code>cx</code>; vertical edges stand vertical if the roll is right; <code>localStorage</code> <code>xgonav.roll</code>), checkbox <em>Bildmitte</em> (browser draws the configured image centre over the <code>&lt;img&gt;</code> as SVG: dashed column <code>cx</code> = W/2 (driving direction, mounting yaw is in the lens table) from the frame header, circle at row H/2; follows both CSS transforms; default on, <code>localStorage</code> <code>xgonav.mitte</code>; no pipeline cost), actual values (help in the ⓘ tooltip); mode selector (Idle · Hand · Follow · Explore · Approach · Zum Start) + target class dropdown (classes from <code>?a=detector</code>, reloaded after an xgonav restart, last choice in <code>localStorage</code>; disabled when YOLO is off), pipeline card with start/stop, Aufzeichnen button and status tiles, <em>Bodenmodell</em> dropdown + <em>Aktivieren</em> (nets from <code>?a=floornet</code>, loaded once per page and after a restart or switch; disabled while <code>net</code> is not a symlink), raw status JSON</td>
+<td>camera image (WebSocket) with camera bar below it: exposure (ms, auto), gain (1–63.9×, auto), checkbox <em>Bild am IMU-Nick festhalten</em> (browser shifts the <code>&lt;img&gt;</code> by <code>row_stand − row_imu</code> via CSS, no pipeline cost; stored in <code>localStorage</code>; normal pose against the pure IMU pitch without image share); checkbox <em>Roll ausgleichen</em> (browser rotates the <code>&lt;img&gt;</code> by the IMU roll about the horizon point at <code>cx</code>; vertical edges stand vertical if the roll is right; <code>localStorage</code> <code>xgonav.roll</code>), checkbox <em>Planerbahn</em> (browser projects the planner path <code>/status</code> → <code>plan</code> (map coordinates) onto the image: pinhole over the floor plane with <code>kamera</code> (f, <code>cam_h_m</code>, <code>cam_fwd_m</code>) from <code>/status</code>, pose and horizon row from the <code>nick=3</code> header, roll about (<code>cx</code>, horizon row) like <code>freespace.roll_columns</code>; segments behind the camera are clipped, end point as dot; orange; default on, <code>localStorage</code> <code>xgonav.plan</code>; no pipeline cost, <code>/status</code> +plan points at 1 Hz, <code>/ws</code> +16 bytes and one lock per frame), checkbox <em>Bildmitte</em> (browser draws the configured image centre over the <code>&lt;img&gt;</code> as SVG: dashed column <code>cx</code> = W/2 (driving direction, mounting yaw is in the lens table) from the frame header, circle at row H/2; follows both CSS transforms; default on, <code>localStorage</code> <code>xgonav.mitte</code>; no pipeline cost), actual values (help in the ⓘ tooltip); mode selector (Idle · Hand · Follow · Explore · Approach · Zum Start) + target class dropdown (classes from <code>?a=detector</code>, reloaded after an xgonav restart, last choice in <code>localStorage</code>; disabled when YOLO is off), pipeline card with recording status, free space and status tiles, <em>Bodenmodell</em> dropdown + <em>Aktivieren</em> (nets from <code>?a=floornet</code>, loaded once per page and after a restart or switch; disabled while <code>net</code> is not a symlink), raw status JSON</td>
 </tr>
 <tr>
 <td>Lage (open by default, right column top)</td>
@@ -1614,7 +1614,7 @@
 </tr>
 <tr>
 <td>Fahren</td>
-<td>D-pad, speed 5–100 %, Aufstehen (arm, 255), Neu ausrichten (leveling pulse), Absetzen (disarm, 254), ESP-Neustart (237, firmware patch 0018, only while not balancing); <em>Extras</em> sub-section (collapsed, open/closed in <code>localStorage</code> <code>xgonav.extras</code>): actions 1–6, 4 LEDs + all off + strobe, brightness slider (persistent), display emotions</td>
+<td>D-pad, speed 5–100 %, Neu ausrichten (leveling pulse), ESP-Neustart (237, firmware patch 0018, only while not balancing); <em>Extras</em> card (collapsed, open/closed in <code>localStorage</code> <code>xgonav.extras</code>): <strong>Anleitung</strong> (opens <code>anleitung/index.html</code>, static), <strong>Schaubild</strong> (opens <code>schaubild.html</code>, static, no cost on the Pi), <strong>Herunterfahren</strong> (confirm dialog), actions 1–6, 4 LEDs + all off + strobe, brightness slider (persistent), display emotions</td>
 </tr>
 <tr>
 <td>Raumkarte</td>
@@ -1921,7 +1921,7 @@ works without xgonav.</p>
 <tr>
 <td>GET</td>
 <td><code>/ws</code></td>
-<td>WebSocket, overlay JPEGs; <code>?nick=2</code>: per-frame IMU values in the header (<code>ws_kopf</code>, see Image transport)</td>
+<td>WebSocket, overlay JPEGs; <code>?nick=2</code>: per-frame IMU values in the header (<code>ws_kopf</code>, see Image transport); <code>?nick=3</code> (used by <code>index.php</code>): plus horizon row and map pose</td>
 </tr>
 <tr>
 <td>GET</td>
@@ -2052,7 +2052,7 @@ works without xgonav.</p>
 </tr>
 <tr>
 <td>Message</td>
-<td>binary: 4-byte frame index + JPEG; with <code>?nick=2</code> (used by <code>index.php</code>, header from <code>web.ws_kopf</code>): index, then 10 × float32 BE: <code>row_stand</code>, <code>row_imu</code> (<code>horizon_row(0)</code> / <code>horizon_row(pure IMU pitch)</code>; NaN = no IMU), roll (deg, + = right side low, as the cyan line), <code>cx</code>, IMU pitch (deg), IMU heading (deg), age of the IMU sample (ms), pitch rate from image and from IMU (°/s), state (1 = IMU valid, 0 = pitch from the image only, NaN = no IMU); then the JPEG. All from the snapshot, nothing computed anew</td>
+<td>binary: 4-byte frame index + JPEG; with <code>?nick=2</code> (header from <code>web.ws_kopf</code>): index, then 10 × float32 BE: <code>row_stand</code>, <code>row_imu</code> (<code>horizon_row(0)</code> / <code>horizon_row(pure IMU pitch)</code>; NaN = no IMU), roll (deg, + = right side low, as the cyan line), <code>cx</code>, IMU pitch (deg), IMU heading (deg), age of the IMU sample (ms), pitch rate from image and from IMU (°/s), state (1 = IMU valid, 0 = pitch from the image only, NaN = no IMU); then the JPEG. All from the snapshot, nothing computed anew. <code>?nick=3</code>: the same 10 values, then 4 × float32: horizon row at <code>cx</code> (as the cyan line), map pose x, y (m), th (rad) read at send time (NaN without room map)</td>
 </tr>
 <tr>
 <td>Flow control</td>

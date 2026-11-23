@@ -1,12 +1,13 @@
 <?php
 /*
- * xgonav – Bedienoberfläche. Bild: WebSocket ws?nick=2 (nginx -> xgonav /ws, Bestätigung je Bild),
+ * xgonav – Bedienoberfläche. Bild: WebSocket ws?nick=3 (nginx -> xgonav /ws, Bestätigung je Bild),
  * Raumkarte: map.png, Status und Befehle: api.php. Dazu Handsteuerung, Höhe, Aktionen, LEDs,
  * Emotionen, Herunterfahren. Keine Authentifizierung.
  *
- * Aufbau: Kopfleiste (immer sichtbar: Sprache, Einstellungen, Herunterfahren, Ruhe, STOPP) – links Bild mit
- * Steuerkreuz als Auflage und Kameraleiste, Modus, Kennzahlen, Verlauf (eingeklappt) – rechts Lage (mit Aufstehen/
- * Absetzen), Schallradar, Extras, Raumkarte; Tempo in der Kameraleiste.
+ * Aufbau: Kopfleiste (fest oben: Sprache, Absetzen, Aufspringen, Aufstehen, Bildverarbeitung an/aus, Aufzeichnen,
+ * Einstellungen, Ruhe, STOPP) – links Bild mit Steuerkreuz als Auflage und Kameraleiste, Modus, Kennzahlen, Verlauf
+ * (eingeklappt) – rechts Lage, Schallradar, Extras (Anleitung, Schaubild, Herunterfahren, Aktionen, LEDs, Emotionen),
+ * Raumkarte; Tempo in der Kameraleiste.
  * Sprache: Deutsch steht im HTML, Englisch im Wörterbuch EN (nur im Browser umgeschaltet).
  */
 declare(strict_types=1);
@@ -42,9 +43,17 @@ html{background:var(--bg)}
 body{font:14px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--text);margin:0}
 code{font-size:12px;color:#c7cdd6}
 
-/* --- Kopfleiste: bleibt oben, damit STOPP ohne Scrollen erreichbar ist */
-header{position:sticky;top:0;z-index:10;display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+/* --- Kopfleiste: fest oben, damit STOPP ohne Scrollen erreichbar ist; die Höhe (bricht um) misst
+   kopfHoehe() im Browser und schiebt den Inhalt per --kopf-h darunter */
+header{position:fixed;top:0;left:0;right:0;z-index:10;display:flex;align-items:center;gap:10px;flex-wrap:wrap;
   padding:8px 12px;background:rgba(15,17,20,.92);backdrop-filter:blur(6px);border-bottom:1px solid var(--rand)}
+body{padding-top:var(--kopf-h,52px)}
+html{scroll-padding-top:var(--kopf-h,52px)}
+.kopf-knoepfe{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.kopf-check{display:inline-flex;align-items:center;gap:5px;font-size:13px;color:var(--text);cursor:pointer;white-space:nowrap;
+  padding:5px 9px;border:1px solid var(--rand2);border-radius:6px;background:var(--karte2)}
+.kopf-check input{width:16px;height:16px;margin:0;accent-color:var(--gefahr);cursor:pointer}
+.kopf-check[hidden]{display:none}
 header h1{font-size:15px;font-weight:600;margin:0 4px 0 0;white-space:nowrap}
 header h1 span{color:var(--leise);font-weight:400}
 @media (max-width:640px){
@@ -168,6 +177,12 @@ details.hilfe p{margin:4px 0 0}
 #bild-mitte .strich{stroke:#fff;stroke-width:1}
 #bild-mitte .lot{stroke-dasharray:6 6}
 #bild-mitte.aus{display:none}
+/* Planerbahn im Kamerabild: projiziert im Browser (planImBild), gleiche CSS-Verschiebung/Drehung wie das <img> */
+#bild-plan{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible}
+#bild-plan polyline{fill:none;vector-effect:non-scaling-stroke;stroke-linejoin:round;stroke-linecap:round}
+#bild-plan .halo{stroke:#000;stroke-width:5;opacity:.55}
+#bild-plan .strich{stroke:#ffa53a;stroke-width:2.5}
+#bild-plan circle{fill:#ffa53a;stroke:#000;stroke-width:1;vector-effect:non-scaling-stroke}
 .modus{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .segment{display:inline-flex;border:1px solid var(--rand2);border-radius:7px;overflow:hidden;flex-wrap:wrap}
 .segment button{border:0;border-radius:0;border-right:1px solid var(--rand2);margin:0}
@@ -348,10 +363,14 @@ details.extras[open]>summary{margin-bottom:8px}
   </div>
   <!-- Kalibrier-Knöpfe gesperrt (2026-11-02): Speichern bei schlaffen Beinen hat die
        Beinnullpunkte im ESP32-Flash überschrieben. Erst mit geführtem Ablauf wieder freigeben. -->
-  <button class="symbol" onclick="window.open('anleitung/index.html', '_blank')" aria-label="Anleitung" title="Anleitung: Installation, erste Schritte, Oberfläche, Verhalten, FloorNet-Training (englisch, statisch, kostet am Pi nichts)"><span class="ic" aria-hidden="true">?</span><span class="txt">Anleitung</span></button>
-  <button class="symbol" onclick="window.open('schaubild.html', '_blank')" aria-label="Schaubild" title="Schaubild der Bildpipeline: Stufen, Korrekturen, Threads, Eingänge und Abnehmer (statisch, kostet am Pi nichts)"><span class="ic" aria-hidden="true">⇄</span><span class="txt">Schaubild</span></button>
+  <div class="kopf-knoepfe">
+    <button class="gefahr symbol" onclick="befehl('action', {n: 254})" aria-label="Absetzen" title="Aktion 254, Not-Stopp"><span class="ic" aria-hidden="true">⤓</span><span class="txt">Absetzen</span></button>
+    <button class="symbol" onclick="aufspringen()" aria-label="Aufspringen" title="Aktion 253 (!standup): Rider muss stehen und Platz haben"><span class="ic" aria-hidden="true">⤒</span><span class="txt">Aufspringen</span></button>
+    <button class="symbol" onclick="arm()" aria-label="Aufstehen" title="Aktion 255"><span class="ic" aria-hidden="true">↑</span><span class="txt">Aufstehen</span></button>
+    <button id="pip" class="symbol" onclick="pipelineUmschalten()" aria-label="Bildverarbeitung" title="Bildverarbeitung (Kamera und Auswertung) starten oder stoppen"><span class="ic" aria-hidden="true" id="pip-ic">▶</span><span class="txt" id="pip-txt">…</span></button>
+    <label id="rec-l" class="kopf-check" hidden title="Rohbilder und Metadaten am Rider speichern. Schreibt nur, solange er balanciert; Absetzen beendet die Aufnahme, jedes Aufstehen beginnt eine neue."><input type="checkbox" id="rec" onchange="aufzeichnungSetzen(this.checked)"> Aufzeichnen</label>
+  </div>
   <button class="symbol" onclick="einstOeffnen()" aria-label="Einstellungen" title="Alle Einstellungen aus config.toml ändern (mit Sicherung), xgonav neu starten"><span class="ic" aria-hidden="true">⚙</span><span class="txt">Einstellungen</span></button>
-  <button id="aus" class="gefahr symbol" onclick="herunterfahren()" aria-label="Herunterfahren" title="Rider herunterfahren"><svg class="ic" aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" style="vertical-align:-2px"><path d="M12 3v9"/><path d="M6.3 6.8a8 8 0 1 0 11.4 0"/></svg><span class="txt">Herunterfahren</span></button>
   <button id="ruhe-knopf" onclick="ruheSchalten(true)" title="Ruhemodus: absetzen, Bildverarbeitung aus, Abfragen aus, CPU-Takt runter, Schlafaugen am Display">Ruhe</button>
   <button id="stop" onclick="befehl('stop')" title="Stillstand, Modus idle">STOPP</button>
 </header>
@@ -367,7 +386,7 @@ details.extras[open]>summary{margin-bottom:8px}
 <div class="spalte">
   <div id="bild-rahmen">
     <svg width="0" height="0" style="position:absolute" aria-hidden="true"><filter id="bild-filter" color-interpolation-filters="sRGB"><feComponentTransfer><feFuncR id="bf-r" type="linear" slope="1" intercept="0"/><feFuncG id="bf-g" type="linear" slope="1" intercept="0"/><feFuncB id="bf-b" type="linear" slope="1" intercept="0"/></feComponentTransfer><feColorMatrix id="bf-satt" type="saturate" values="1"/><feColorMatrix id="bf-ton" type="hueRotate" values="0"/></filter></svg>
-    <div class="bild-fenster"><img id="bild" alt="" aria-label="Kamerabild" width="640" height="480"><svg id="bild-mitte" viewBox="0 0 640 480" preserveAspectRatio="xMidYMid meet" aria-hidden="true"><g class="halo"><line class="lot" x1="320" y1="0" x2="320" y2="480"/><line class="qx" x1="305" y1="240" x2="335" y2="240"/><circle cx="320" cy="240" r="8"/></g><g class="strich"><line class="lot" x1="320" y1="0" x2="320" y2="480"/><line class="qx" x1="305" y1="240" x2="335" y2="240"/><circle cx="320" cy="240" r="8"/></g></svg>
+    <div class="bild-fenster"><img id="bild" alt="" aria-label="Kamerabild" width="640" height="480"><svg id="bild-mitte" viewBox="0 0 640 480" preserveAspectRatio="xMidYMid meet" aria-hidden="true"><g class="halo"><line class="lot" x1="320" y1="0" x2="320" y2="480"/><line class="qx" x1="305" y1="240" x2="335" y2="240"/><circle cx="320" cy="240" r="8"/></g><g class="strich"><line class="lot" x1="320" y1="0" x2="320" y2="480"/><line class="qx" x1="305" y1="240" x2="335" y2="240"/><circle cx="320" cy="240" r="8"/></g></svg><svg id="bild-plan" viewBox="0 0 640 480" preserveAspectRatio="xMidYMid meet" aria-hidden="true"></svg>
       <div class="pad" title="Gedrückt halten: Maus, Touch, Pfeiltasten/WASD">
         <span></span><button data-fahrt="vor" aria-label="vor">▲</button><span></span>
         <button data-fahrt="links" aria-label="links">◀</button><span></span><button data-fahrt="rechts" aria-label="rechts">▶</button>
@@ -421,7 +440,7 @@ details.extras[open]>summary{margin-bottom:8px}
           <span class="ausgleich"><label title="Helligkeit/Kontrast/Sättigung wirken an der Quelle (ISP) und damit auch auf FloorNet und die Aufnahmen. Für die Anzeige hier per Filter wieder herunterziehen (Näherung; abgeschnittene Lichter und Schatten bleiben weg)."><input type="checkbox" id="bild-ausgleich" onchange="bildAusgleich(this.checked)"> Im Browser ausgleichen</label><span class="info" tabindex="0" title="Gilt bis zum Neustart von xgonav. Kürzere Belichtung = weniger Bewegungsunschärfe, aber dunkler; mehr Verstärkung = heller, aber mehr Rauschen (Automatik nur bis 8; über ~8× wird der Rauschabstand nicht besser, nur das Bild heller). Dauerhaft über [camera] exposure_us / analogue_gain in config.toml.">i</span></span>
         </div>
       </details>
-      <span class="ist"><label title="Bild senkrecht so verschieben, dass der IMU-Nick fest steht: stimmt die IMU, steht die Szene still"><input type="checkbox" id="hz-stabil" onchange="hzStabil(this.checked)"> Bild am IMU-Nick festhalten</label><label title="Bild um den IMU-Roll drehen: stimmt der Roll, stehen senkrechte Kanten senkrecht und die cyan Linie waagerecht"><input type="checkbox" id="hz-roll" onchange="hzRoll(this.checked)"> Roll ausgleichen</label><label title="Konfigurierte Bildmitte einblenden: gestrichelt die Spalte der Fahrtrichtung (W/2), Kreis bei Zeile H/2"><input type="checkbox" id="hz-mitte" onchange="hzMitte(this.checked)"> Bildmitte</label></span>
+      <span class="ist"><label title="Bild senkrecht so verschieben, dass der IMU-Nick fest steht: stimmt die IMU, steht die Szene still"><input type="checkbox" id="hz-stabil" onchange="hzStabil(this.checked)"> Bild am IMU-Nick festhalten</label><label title="Bild um den IMU-Roll drehen: stimmt der Roll, stehen senkrechte Kanten senkrecht und die cyan Linie waagerecht"><input type="checkbox" id="hz-roll" onchange="hzRoll(this.checked)"> Roll ausgleichen</label><label title="Geplanten Weg des Planers (Zum Start, Streife, Haustier-Suche) aus der Raumkarte ins Bild legen; im Browser gerechnet aus Kartenpose, Nick, Roll und Kamerahöhe"><input type="checkbox" id="hz-plan" onchange="hzPlan(this.checked)"> Planerbahn</label><label title="Konfigurierte Bildmitte einblenden: gestrichelt die Spalte der Fahrtrichtung (W/2), Kreis bei Zeile H/2"><input type="checkbox" id="hz-mitte" onchange="hzMitte(this.checked)"> Bildmitte</label></span>
       <div class="tempo-zeile">
         <label for="tempo">Tempo</label>
         <input type="range" id="tempo" min="5" max="100" value="60">
@@ -475,8 +494,7 @@ details.extras[open]>summary{margin-bottom:8px}
   <div class="karte">
     <div class="kopf"><h2>Bildverarbeitung</h2><span class="leise" id="rec-text"></span>
       <span class="leise" id="rec-platz" hidden title="Frei am Rider bis zur Abbruchgrenze (output.record_min_free_mb); Minuten aus der Schreibrate der letzten Aufnahme (~ = geschätzt)"></span>
-      <button id="rec" onclick="aufzeichnungUmschalten()" title="Rohbilder und Metadaten am Rider speichern. Schreibt nur, solange er balanciert; Absetzen beendet die Aufnahme, jedes Aufstehen beginnt eine neue.">Aufzeichnen</button>
-      <button id="pip" onclick="pipelineUmschalten()">…</button></div>
+</div>
     <div class="kacheln" id="kurz"></div>
     <details class="roh"><summary>Status (roh)</summary><pre id="roh"></pre></details>
   </div>
@@ -520,10 +538,7 @@ details.extras[open]>summary{margin-bottom:8px}
     </div>
     <div class="legende" id="l-lage" title="Gier 0° = Kurs beim Start des ESP32; + = links. Roll + = rechts tief, Nick + = vorn tief"></div>
     <div class="aktionen">
-      <button onclick="arm()" title="Aktion 255">Aufstehen</button>
-      <button onclick="aufspringen()" title="Aktion 253 (!standup): Rider muss stehen und Platz haben">Aufspringen</button>
       <button onclick="ausrichten()" title="Roll auf 0° und die Beine 3 s nivellieren (nur wenn er steht)">Neu ausrichten</button>
-      <button class="gefahr" onclick="befehl('action', {n: 254})" title="Aktion 254, Not-Stopp">Absetzen</button>
       <button onclick="espNeustart()" title="Aktion 237: ESP32 neu starten, nur wenn er nicht balanciert">ESP-Neustart</button>
     </div>
     <details class="hilfe" data-i18n-html="hilfe-lage"><summary>Kamerahöhe, Roll, Aufstehen und Absetzen</summary>
@@ -555,7 +570,13 @@ details.extras[open]>summary{margin-bottom:8px}
     </details>
   </details>
   <details class="karte extras" id="extras" ontoggle="extrasUmschalten()">
-    <summary><h2>Extras</h2><span class="leise">Aktionen · LEDs · Emotionen</span></summary>
+    <summary><h2>Extras</h2><span class="leise">System · Aktionen · LEDs · Emotionen</span></summary>
+    <div class="unter">System</div>
+    <div class="knoepfe">
+      <button onclick="window.open('anleitung/index.html', '_blank')" title="Anleitung: Installation, erste Schritte, Oberfläche, Verhalten, FloorNet-Training (englisch, statisch, kostet am Pi nichts)">Anleitung</button>
+      <button onclick="window.open('schaubild.html', '_blank')" title="Schaubild der Bildpipeline: Stufen, Korrekturen, Threads, Eingänge und Abnehmer (statisch, kostet am Pi nichts)">Schaubild</button>
+      <button id="aus" class="gefahr" onclick="herunterfahren()" title="Rider herunterfahren">Herunterfahren</button>
+    </div>
     <div class="unter">Aktionen</div>
     <div class="knoepfe">
       <?php for ($i = 1; $i <= 6; $i++): ?><button onclick="befehl('action', {n: <?= $i ?>})"<?= $i >= 3 && $i <= 5 ? ' title="Fährt bzw. dreht selbst: nur im Modus idle, braucht Platz"' : '' ?>><?= $i ?></button><?php endfor; ?>
@@ -730,10 +751,16 @@ const EN = {
   'Aktion 253 (!standup): Rider muss stehen und Platz haben': 'Action 253 (!standup): Rider must be upright and have room',
   'Aufspringen': 'Jump up', 'Roll auf 0° und die Beine 3 s nivellieren (nur wenn er steht)': 'Roll to 0° and level the legs for 3 s (only while standing)',
   'Neu ausrichten': 'Re-level', 'Aktion 254, Not-Stopp': 'Action 254, emergency stop', 'Absetzen': 'Sit down',
-  'Extras': 'Extras', 'Aktionen · LEDs · Emotionen': 'Actions · LEDs · Emotions', 'Aktionen': 'Actions', 'LEDs': 'LEDs',
+  'Extras': 'Extras', 'Aktionen · LEDs · Emotionen': 'Actions · LEDs · Emotions',
+  'System · Aktionen · LEDs · Emotionen': 'System · Actions · LEDs · Emotions', 'System': 'System',
+  'Bildverarb. starten': 'Start vision', 'Bildverarb. stoppen': 'Stop vision',
+  'Bildverarbeitung (Kamera und Auswertung) starten oder stoppen': 'Start or stop vision (camera and processing)', 'Aktionen': 'Actions', 'LEDs': 'LEDs',
   'Fährt bzw. dreht selbst: nur im Modus idle, braucht Platz': 'Drives or turns by itself: mode idle only, needs room',
   'Alle aus': 'All off', 'Strobe': 'Strobe', 'Gilt für alle LEDs, bleibt über Neustarts gespeichert': 'Applies to all LEDs, kept across restarts',
   'Helligkeit': 'Brightness', 'Emotionen (Display)': 'Emotions (display)', 'keine gefunden in': 'none found in',
+  'Geplanten Weg des Planers (Zum Start, Streife, Haustier-Suche) aus der Raumkarte ins Bild legen; im Browser gerechnet aus Kartenpose, Nick, Roll und Kamerahöhe':
+    'Overlay the planner path from the room map on the image (Home, Patrol, Pet search); computed in the browser from map pose, pitch, roll and camera height',
+  'Planerbahn': 'Planner path',
   'Bild senkrecht so verschieben, dass der IMU-Nick fest steht: stimmt die IMU, steht die Szene still': 'Shift the image vertically so the IMU pitch stays fixed: if the IMU is right, the scene stands still',
   'Bild am IMU-Nick festhalten': 'Pin image to IMU pitch', 'Roll ausgleichen': 'Level roll', 'Bildmitte': 'Image centre',
   'Konfigurierte Bildmitte einblenden: gestrichelt die Spalte der Fahrtrichtung (W/2), Kreis bei Zeile H/2':
@@ -998,8 +1025,9 @@ function verbindungOk() {
 function verbindungWeg() { pille('p-verb', tr('getrennt'), 'schlecht'); }
 // Kamerabild über eine WebSocket-Verbindung. Jedes Bild wird sofort bestätigt, erst dann
 // schickt xgonav das nächste (neueste): kein Rückstau wie beim MJPEG-Stream über schwaches
-// WLAN (bis 20 s). Nachricht (nick=2, xgonav/web.py ws_kopf): 4 Byte Bildnummer, 10 x float32 row_stand,
-// row_imu, Roll, cx, IMU-Nick, IMU-Kurs, Alter der IMU-Probe, Nickrate Bild, Nickrate IMU, Zustand; JPEG.
+// WLAN (bis 20 s). Nachricht (nick=3, xgonav/web.py ws_kopf): 4 Byte Bildnummer, 10 x float32 row_stand,
+// row_imu, Roll, cx, IMU-Nick, IMU-Kurs, Alter der IMU-Probe, Nickrate Bild, Nickrate IMU, Zustand, dann
+// 4 x float32 Horizontzeile bei cx, Kartenpose x, y, th (Planerbahn); JPEG. Ein älteres xgonav schickt nur nick=2.
 // Bei Abbruch nach 1 s neu verbinden.
 // „Bild am IMU-Nick festhalten“ (Kameraleiste): Das Bild wird hier im Browser per CSS um row_stand − row_imu
 // verschoben, sodass der IMU-Nick fest steht; die Bildpipeline rechnet dafür nichts: Normallage gegen den
@@ -1042,6 +1070,63 @@ function bildVerschieben() {
   }
   b.style.transform = t.join(' ');
   bildMitte(W, H, b.style.transform, b.style.transformOrigin);
+  planImBild(W, H, b.style.transform, b.style.transformOrigin);
+}
+// Planerbahn im Kamerabild. xgonav schickt nur Rohdaten: je Bild (nick=3) Horizontzeile bei cx und Kartenpose,
+// 1×/s im Status Planpunkte (Karten-KS, m) und Kameradaten (f, Kamerahöhe, Linse vor der Achse). Gerechnet wird
+// hier: Lochkamera über der Bodenebene (das Bild ist schon entzerrt), Nick aus der Horizontzeile wie die cyan
+// Linie, Roll um (cx, Horizontzeile) wie freespace.roll_columns. Gerade Bodenstrecken bleiben im Bild gerade,
+// deshalb genügt es, die Strecken vor der Kamera (z > Z_MIN) abzuschneiden. Am Pi kostet das nichts.
+let bildPose = null, planAn = true;
+try { planAn = localStorage.getItem('xgonav.plan') !== '0'; } catch (e) {}
+$('hz-plan').checked = planAn;
+function hzPlan(an) {
+  planAn = an;
+  try { localStorage.setItem('xgonav.plan', an ? '1' : '0'); } catch (e) {}
+  bildVerschieben();
+}
+function planImBild(W, H, transform, origin) {
+  const svg = $('bild-plan'), s = window.letzterStatus, k = s && s.kamera, plan = s && s.plan, p = bildPose;
+  const leer = () => { svg.innerHTML = ''; };
+  if (!planAn || !k || !plan || plan.length < 2 || !p || ![p.row, p.x, p.y, p.th].every(Number.isFinite)) return leer();
+  const Z_MIN = 0.05, f = k.f, h = k.cam_h_m, cx = Number.isFinite(bildCx) ? bildCx : W / 2;
+  const e = Math.atan((p.row - k.H / 2) / f), ce = Math.cos(e), se = Math.sin(e);
+  const ct = Math.cos(p.th), st = Math.sin(p.th);
+  const r = Number.isFinite(bildRoll) ? bildRoll * Math.PI / 180 : 0, cr = Math.cos(r), sr = Math.sin(r);
+  // Kartenpunkt -> Kamera: X vor dem Kamerafußpunkt, Y links, z entlang der optischen Achse
+  const kam = ([wx, wy]) => {
+    const dx = wx - p.x, dy = wy - p.y, X = ct * dx + st * dy - k.cam_fwd_m, Y = -st * dx + ct * dy;
+    return {X, Y, z: X * ce - h * se};
+  };
+  const bild = q => {
+    const u = cx - f * q.Y / q.z, v = k.H / 2 + f * (q.X * se + h * ce) / q.z;
+    const du = u - cx, dv = v - p.row;
+    return [cx + du * cr + dv * sr, p.row - du * sr + dv * cr];
+  };
+  const zuege = [];
+  let zug = [];
+  for (let i = 0; i + 1 < plan.length; i++) {
+    let a = kam(plan[i]), b = kam(plan[i + 1]);
+    if (a.z < Z_MIN && b.z < Z_MIN) { if (zug.length) { zuege.push(zug); zug = []; } continue; }
+    const schnitt = (a, b) => { const t = (Z_MIN - a.z) / (b.z - a.z);
+      return {X: a.X + t * (b.X - a.X), Y: a.Y + t * (b.Y - a.Y), z: Z_MIN}; };
+    const ab = a.z < Z_MIN, bb = b.z < Z_MIN;
+    if (ab) a = schnitt(a, b);
+    if (bb) b = schnitt(a, b);
+    if (ab || !zug.length) { if (zug.length) zuege.push(zug); zug = [bild(a)]; }
+    zug.push(bild(b));
+    if (bb) { zuege.push(zug); zug = []; }
+  }
+  if (zug.length) zuege.push(zug);
+  const pkt = z => z.map(([x, y]) => x.toFixed(1) + ',' + y.toFixed(1)).join(' ');
+  const ziel = kam(plan[plan.length - 1]);
+  let html = zuege.map(z => '<polyline class="halo" points="' + pkt(z) + '"/>').join('')
+           + zuege.map(z => '<polyline class="strich" points="' + pkt(z) + '"/>').join('');
+  if (ziel.z >= Z_MIN) { const [x, y] = bild(ziel); html += '<circle cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="5"/>'; }
+  svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+  svg.style.transformOrigin = origin;
+  svg.style.transform = transform;
+  svg.innerHTML = html;
 }
 // IMU-Wert des gezeigten Bildes (aus dem Bild-Kopf, nicht aus live.php): damit rechnet xgonav dieses Bild.
 // Zählt Bilder ohne gültige IMU seit dem Laden (dann Nick nur aus dem Bild, rot).
@@ -1097,7 +1182,7 @@ function bildSoll(an) {
 function bildVerbinden() {
   if (!bildAn) return;
   const ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host +
-                           location.pathname.replace(/[^/]*$/, '') + 'ws?nick=2');
+                           location.pathname.replace(/[^/]*$/, '') + 'ws?nick=3');
   ws.binaryType = 'arraybuffer';
   // Bild erst dekodieren, dann Bild und Verschiebung/Drehung im selben Schritt setzen: sonst zeichnet der
   // Browser das neue Bild einmal mit der alten Lage (beim ersten Bild ohne, im Liegen bis 160 px Sprung).
@@ -1108,7 +1193,10 @@ function bildVerbinden() {
     const cx = d.getFloat32(16), nr = ++neuestes;
     const w = {nick: d.getFloat32(20), kurs: d.getFloat32(24), alter: d.getFloat32(28),
                rateBild: d.getFloat32(32), rateImu: d.getFloat32(36), ok: d.getFloat32(40), roll: r};
-    const url = URL.createObjectURL(new Blob([new Uint8Array(ev.data, 44)], {type: 'image/jpeg'}));
+    // nick=3: 14 Werte; ein älteres xgonav (nick=2) schickt das JPEG schon ab Byte 44 (FF D8)
+    const mitPose = ev.data.byteLength > 60 && !(d.getUint8(44) === 0xFF && d.getUint8(45) === 0xD8);
+    const pz = mitPose ? {row: d.getFloat32(44), x: d.getFloat32(48), y: d.getFloat32(52), th: d.getFloat32(56)} : null;
+    const url = URL.createObjectURL(new Blob([new Uint8Array(ev.data, mitPose ? 60 : 44)], {type: 'image/jpeg'}));
     const vor = new Image();
     vor.src = url;
     vor.decode().then(() => {
@@ -1117,6 +1205,7 @@ function bildVerbinden() {
       bildRoll = Number.isFinite(r) ? r : 0;
       bildCx = cx;
       bildRowImu = imu;
+      bildPose = pz;
       $('bild').src = url;
       bildVerschieben();
       imuBildZeigen(w);
@@ -1231,8 +1320,13 @@ function poseBestaetigen(aktion) {
   return befehl('map_pose', {aktion});
 }
 function pipelineUmschalten() { return befehl('pipeline', {on: aktPipeline === 'läuft' ? 0 : 1}); }
-let aktAufzeichnung = false;
-function aufzeichnungUmschalten() { return befehl('record', {on: aktAufzeichnung ? 0 : 1}); }
+// Feste Kopfleiste: ihre Höhe (je nach Breite ein- oder mehrzeilig) als --kopf-h, damit nichts darunter verschwindet
+function kopfHoehe() {
+  document.documentElement.style.setProperty('--kopf-h', document.querySelector('header').offsetHeight + 'px');
+}
+if (window.ResizeObserver) new ResizeObserver(kopfHoehe).observe(document.querySelector('header'));
+kopfHoehe();
+function aufzeichnungSetzen(an) { return befehl('record', {on: an ? 1 : 0}); }
 // Freier Platz mit 3 Stellen und Komma (987 MB, 1,23 GB, 12,3 GB), gerechnet im Browser
 function platzText(mb) {
   const [w, e] = mb >= 1000 ? [mb / 1024, ' GB'] : [mb, ' MB'];
@@ -1248,13 +1342,10 @@ function platzZeigen(a) {
 }
 function aufzeichnungZeigen(s) {
   const a = s.aufzeichnung;
-  $('rec').hidden = !a;
+  $('rec-l').hidden = !a;
   platzZeigen(a);
   if (!a) return;
-  aktAufzeichnung = a.an;
-  const rec = $('rec');
-  rec.textContent = tr(a.an ? 'Aufzeichnung aus' : 'Aufzeichnen');
-  rec.classList.toggle('aktiv', a.an);
+  $('rec').checked = !!a.an;
   const ordner = a.ordner ? a.ordner.split('/').pop() : '';
   let text = '', art = 'warn';
   if (a.laeuft) { text = a.bilder + ' ' + tr('Bilder'); art = 'schlecht'; }
@@ -1347,9 +1438,11 @@ function statusZeigen(s, fehler) {
     pille('p-akku', s.battery != null ? s.battery + ' %' : '-',
           s.battery == null ? '' : (s.battery < 20 ? 'schlecht' : s.battery < 40 ? 'warn' : 'gut'));
     pille('p-pip', tr(s.pipeline ?? '-'), s.pipeline === 'läuft' ? 'gut' : (s.pipeline ? 'warn' : ''));
-    const pip = $('pip');
-    pip.textContent = tr(s.pipeline === 'läuft' ? 'Stoppen' : 'Starten');
-    pip.classList.toggle('aktiv', s.pipeline !== 'läuft');
+    const laeuft = s.pipeline === 'läuft';
+    $('pip-txt').textContent = tr(laeuft ? 'Bildverarb. stoppen' : 'Bildverarb. starten');
+    $('pip-ic').textContent = laeuft ? '■' : '▶';
+    $('pip').setAttribute('aria-label', $('pip-txt').textContent);
+    $('pip').classList.toggle('aktiv', !laeuft);
     aufzeichnungZeigen(s);
     if (s.grid) $('karte-pose').textContent =
       'x ' + s.grid.pose[0].toFixed(2) + ' m · y ' + s.grid.pose[1].toFixed(2) + ' m · ' + s.grid.pose[2].toFixed(0) + '° · ' + tr('Start ') + s.grid.zum_start_m.toFixed(2) + ' m · ' + tr('belegt ') + s.grid.belegt_m2 + ' m²';

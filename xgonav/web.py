@@ -48,11 +48,13 @@ def _hz_rows(snap, geo) -> tuple[float, float]:
 NAN = float("nan")
 
 
-def ws_kopf(snap, geo, hl) -> bytes:
+def ws_kopf(snap, geo, hl, pose=False) -> bytes:
     """Kopf je Bild (/ws?nick=2), big endian: Bildnummer u32, dann 10 float32: row_stand, row_imu, Roll (Grad,
     + = rechts tief), cx, IMU-Nick (Grad, wie pitch_dev), IMU-Kurs (Grad), Alter der IMU-Probe (ms), Nickrate aus
     dem Bild und aus der IMU (°/s), Zustand (1 = IMU gültig, 0 = ohne IMU: Nick nur aus dem Bild, NaN = keine IMU).
-    Alles aus dem Snapshot, nichts neu gerechnet."""
+    Alles aus dem Snapshot, nichts neu gerechnet.
+    pose (/ws?nick=3): dazu 4 float32 Horizontzeile bei cx (wie die cyan Linie) und Pose x, y (m), th (rad) der
+    Raumkarte (Tupel; None = ohne Karte, NaN). Damit legt der Browser die Planerbahn ins Bild."""
     fr, nr = snap.imu, snap.nickrate
     w = (*_hz_rows(snap, geo), hl[1], hl[2],
          NAN if fr is None or fr.pitch is None else math.degrees(fr.pitch),
@@ -60,10 +62,13 @@ def ws_kopf(snap, geo, hl) -> bytes:
          NAN if fr is None or fr.alter_ms is None else fr.alter_ms,
          NAN if nr is None else nr[0], NAN if nr is None else nr[1],
          NAN if fr is None else float(fr.ok))
-    return struct.pack("!I10f", snap.idx & 0xFFFFFFFF, *w)
+    if pose is False:
+        return struct.pack("!I10f", snap.idx & 0xFFFFFFFF, *w)
+    p = (NAN, NAN, NAN) if pose is None else pose
+    return struct.pack("!I14f", snap.idx & 0xFFFFFFFF, *w, hl[0], *p)
 
 
-API = {"GET": ["/status", "/ws?nick=2 (WebSocket: Bilder, Bestätigung je Bild; nick=2: IMU-Wert des Bildes im Kopf, ws_kopf)",
+API = {"GET": ["/status", "/ws?nick=2|3 (WebSocket: Bilder, Bestätigung je Bild; nick=2: IMU-Wert des Bildes im Kopf, nick=3: dazu Horizontzeile und Kartenpose, ws_kopf)",
                "/frame?after=<idx>&raw=1",
                "/map.png?px=480&view=6 (Raumkarte)",
                "/startbild.jpg (Bild am Startpunkt, Anker des Abgleichs; 404 ohne, z. B. nach dem Absetzen)",
@@ -185,6 +190,13 @@ def serve(app: App, host: str, port: int, fps: int, render_cpus=None) -> Threadi
                 body["cam_h_gerade"] = [round(x, 4) for x in app.geo.cam_h_line()]
                 body["height_u8"] = None if h is None else app.geo.body_to_u8(h)
                 body["cam_h_mm"] = None if h is None else round(app.geo.cam_h_at(h), 1)
+                # Planerbahn fürs Kamerabild: Punkte der Raumkarte (m) und die Kameradaten der Bodengeometrie; die
+                # Projektion rechnet der Browser (nur zur Anfragezeit, live.php fragt 1×/s)
+                g = app.geo
+                body["kamera"] = {"W": g.W, "H": g.H, "f": round(g.f, 3), "cam_h_m": round(g.cam_h, 4),
+                                  "cam_fwd_m": round(g.cam_fwd, 4)}
+                gm = app.gridmap
+                body["plan"] = [] if gm is None else [[round(a, 3), round(b, 3)] for a, b in list(gm.plan)]
                 body["aufzeichnung"] = None if app.rawrec is None else app.rawrec.status()
                 # Startbild live statt aus dem Snapshot: nach dem Absetzen (Bildverarbeitung oft aus) sofort weg
                 sb = getattr(app, "startbild", None)
@@ -415,7 +427,8 @@ def serve(app: App, host: str, port: int, fps: int, render_cpus=None) -> Threadi
             nick=2: Kopf aus ws_kopf (IMU-Wert des Bildes: Zeilen, Roll, cx, Nick, Kurs, Alter, Nickraten, Zustand);
             der Browser verschiebt/dreht damit und zeigt die Werte je Bild an."""
             pin_thread(render_cpus, "Bild-Thread", quiet=True)
-            nick = q.get("nick", ["0"])[0] == "2"
+            stufe = q.get("nick", ["0"])[0]
+            nick, mit_pose = stufe in ("2", "3"), stufe == "3"
             key = self.headers.get("Sec-WebSocket-Key")
             if not key or "websocket" not in self.headers.get("Upgrade", "").lower():
                 return self._send(400, b'{"error":"WebSocket erwartet"}')
@@ -448,7 +461,11 @@ def serve(app: App, host: str, port: int, fps: int, render_cpus=None) -> Threadi
                     if jpg is None:
                         continue
                     last = snap.idx
-                    kopf = ws_kopf(snap, app.geo, hl) if nick else struct.pack("!I", snap.idx & 0xFFFFFFFF)
+                    if mit_pose:            # Pose zur Sendezeit (ein Lock), höchstens ein Bild neuer als das Bild
+                        gm = app.gridmap
+                        kopf = ws_kopf(snap, app.geo, hl, gm.pose() if gm is not None else None)
+                    else:
+                        kopf = ws_kopf(snap, app.geo, hl) if nick else struct.pack("!I", snap.idx & 0xFFFFFFFF)
                     self.wfile.write(ws_frame(0x2, kopf + jpg))
                     # auf Bestätigung warten; Ping beantworten, Close beenden
                     while True:

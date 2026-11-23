@@ -12,10 +12,12 @@
 |---|---|
 | Pills | connection, mode, state (balancing / lying), battery (green ≥ 40 %, yellow ≥ 20 %, red below), vision (pipeline), recording, Wi-Fi (dBm, ↓/↑ kB/s) |
 | DE / EN | UI language (browser only) |
-| Manual (Anleitung) | this manual |
-| Diagram (Schaubild) | diagram of the image pipeline |
+| Sit down (Absetzen) | set down (254) |
+| Jump up (Aufspringen) | action 253 (confirm) |
+| Stand up (Aufstehen) | action 255 |
+| Start / stop vision | camera and image processing on / off |
+| Record (Aufzeichnen) | checkbox: raw recording (JPEG + `meta.jsonl`) while balancing, input for [FloorNet training](advanced/floornet-training.md) |
 | Settings (Einstellungen) | all parameters of `config.toml`, with backup and restart |
-| Shut down (Herunterfahren) | shut the Pi down (confirm) |
 | Rest (Ruhe) | sleep mode: set down, pipeline off, CPU clock down, sleeping eyes; only **Wake** (Wecken) ends it |
 | **STOP** | standstill, mode `idle` |
 
@@ -28,7 +30,7 @@
 | Image | live camera with overlay: magenta = floor boundary (FloorNet), cyan = horizon from IMU pitch, bars at the bottom = free space per sector, blue = drive command, dashed line = image centre |
 | D-pad | hold to drive by hand (also arrow keys / WASD); switches to **Manual** |
 | Camera bar | exposure, gain (auto or fixed), brightness / contrast / saturation (ISP: also affects FloorNet and recordings), hue (browser only) |
-| Checkboxes | *Pin image to IMU pitch*, *Level roll*, *Image centre*: done in the browser by CSS, no cost on the Pi |
+| Checkboxes | *Pin image to IMU pitch*, *Level roll*, *Planner path* (orange: planned path from the room map projected onto the floor in the image), *Image centre*: done in the browser, no cost on the Pi |
 | Speed | scales every drive command of all modes |
 | IMU line | IMU values of the shown frame (pitch, roll, heading, age) |
 
@@ -41,8 +43,7 @@
 | Mode bar | Idle · Manual · Follow · Explore · Home · Patrol · Pet · Approach, see [Behaviours](behaviours.md) |
 | Target | class for Follow / Approach (from the YOLO model) |
 | Floor model (Bodenmodell) | pick a FloorNet from `models/floornet/`, **Activate** switches without restart (idle / manual only) |
-| Vision (Bildverarbeitung) | start / stop camera and image processing; free space for recordings; status tiles (fps, loop time, FloorNet ms) |
-| Record (Aufzeichnen) | raw recording (JPEG + `meta.jsonl`) while balancing, input for [FloorNet training](advanced/floornet-training.md) |
+| Vision (Bildverarbeitung) | recording status, free space for recordings; status tiles (fps, loop time, FloorNet ms) |
 
 ## Attitude (Lage)
 
@@ -53,9 +54,7 @@
 | 3D model | CAD model rotated by IMU roll, pitch, yaw; wheels turn with the encoders; drag to orbit, double-click resets |
 | Camera height | vertical slider: body height, shown as camera height in mm |
 | Roll | roll setpoint −20..20° |
-| Stand up / Jump up | action 255 / 253 |
 | Re-level | levelling pulse after standing up |
-| Sit down | set down (254) |
 | ESP restart | restart the ESP32 (only while lying) |
 
 ## Sound radar (Schallradar)
@@ -68,7 +67,7 @@ Direction of sound from the two microphones (modes `idle`, `pet`): ray = sound, 
 
 ![Extras](../screenshots/web-drive.png)
 
-Firmware actions 1–6, the four LEDs (colour pickers, all off, strobe), LED brightness (persistent), display emotions.
+Manual (Anleitung), Diagram (Schaubild), Shut down (Herunterfahren, confirm); firmware actions 1–6, the four LEDs (colour pickers, all off, strobe), LED brightness (persistent), display emotions.
 
 ## Room map (Raumkarte)
 
