@@ -228,7 +228,7 @@ pre{background:#0b0d10;border-radius:6px;padding:8px;overflow:auto;max-height:40
 .knopfpaar .ausrichten{font-size:14px;line-height:1;padding:3px 6px}
 /* zweite Kopfzeile: Modi, Ziel, Bodenmodell */
 .kopf-zeile2{flex:0 0 100%;display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;padding-top:6px;border-top:1px solid var(--rand)}
-.fn-wahl{display:flex;gap:6px;align-items:center}
+.fn-wahl{display:flex;gap:6px;align-items:center;margin-left:auto}   /* rechtsbündig */
 .fn-wahl label{color:var(--leise);font-size:12px}
 .fn-wahl select{min-width:0;max-width:220px}
 #fn-text{font-size:12px}
