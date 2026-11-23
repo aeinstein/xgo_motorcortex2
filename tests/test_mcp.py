@@ -120,8 +120,8 @@ class Mcp:
         assert d["id"] == self.n
         return d
 
-    def call(self, name: str, **arg) -> dict:
-        return self.rpc("tools/call", {"name": name, "arguments": arg})["result"]
+    def call(self, werkzeug: str, /, **arg) -> dict:           # positional: „modus“ hat selbst ein Argument name
+        return self.rpc("tools/call", {"name": werkzeug, "arguments": arg})["result"]
 
 
 @pytest.fixture
@@ -267,3 +267,35 @@ def test_token(mcp):
     assert m.roh(body)[0] == 401
     assert m.roh(body, kopf={"Authorization": "Bearer falsch"})[0] == 401
     assert m.roh(body, kopf={"Authorization": "Bearer geheim"})[0] == 200
+
+
+def test_fahren_ungeprueft_und_folge(mcp):
+    """geprueft = false: wie das Steuerkreuz (ohne sicher=1, bis 0,5); folge: Abschnitte ohne /stop dazwischen."""
+    m, x, _ = mcp()
+    r = m.call("fahren", v=0.3, sekunden=1, geprueft=False, bild=False)
+    assert not r["isError"], r
+    fahrt = [c for c in x.calls if c.startswith("POST /drive") and "v=0.300" in c]
+    assert fahrt and not any("sicher" in c for c in fahrt) and x.mode == "idle"
+    assert json.loads(r["content"][0]["text"])["geprueft"] is False
+    assert m.call("fahren", v=0.3, sekunden=1)["isError"]                       # geprüft nur bis 0,15
+    assert m.call("fahren", v=0.6, sekunden=1, geprueft=False)["isError"]
+    n = len(x.calls)
+    r = m.call("folge", abschnitte=[[0.1, 0, 1], [0, 0.2, 1]], bild=False)
+    assert not r["isError"], r
+    neu = x.calls[n:]
+    i_v = max(i for i, c in enumerate(neu) if "v=0.100" in c)
+    i_w = min(i for i, c in enumerate(neu) if "w=0.200" in c)
+    assert i_v < i_w and "POST /stop" not in neu[i_v:i_w]                       # kein Halt zwischen den Abschnitten
+    assert all("sicher=1" in c for c in neu if c.startswith("POST /drive") and ("v=0.100" in c or "w=0.200" in c))
+    assert neu[-1] != "POST /stop" or x.mode == "idle"
+    assert m.call("folge", abschnitte=[[0.1, 0, 5]] * 7)["isError"]             # über 30 s zusammen
+    assert m.call("folge", abschnitte=[[0.1, 0]])["isError"]
+
+
+def test_drehen_weit_und_rate(mcp):
+    m, x, _ = mcp()
+    r = m.call("drehen", grad=720, w=0.4, tol=5, bild=False)
+    assert not r["isError"], r
+    assert abs(x.yaw - 720) <= 30
+    assert any("w=0.400" in c for c in x.calls)
+    assert m.call("drehen", grad=1200)["isError"] and m.call("drehen", grad=30, w=0.9)["isError"]

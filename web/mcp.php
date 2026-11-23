@@ -42,6 +42,10 @@ const HZ = 10.0;                                        // Sollwerte für manual
 const V_MAX = 0.15;                                     // normiert, geprüft ohne manual_forward_gain: Nennwert v · vx_limit (1,8) m/s
 const W_MAX = 0.30;
 const FAHR_S_MAX = 5.0;                                 // längste Fahrt je Aufruf
+const HAND_MAX = 0.5;                                   // ungeprüft (wie Web-Steuerkreuz/rider_nav.py): max_v/max_w am Rider
+const FOLGE_S_MAX = 30.0;                               // „folge“: Summe der Abschnitte (php 120 s, nginx 150 s)
+const FOLGE_N_MAX = 10;
+const DREH_MAX = 1080.0;
 
 class Fehler extends Exception
 {
@@ -403,7 +407,9 @@ function werkzeuge(): array
             . '„bildverarbeitung“ aus.', schema(), false],
         'drehen' => ['drehen', 'Auf der Stelle drehen, um woanders hinzuschauen: grad > 0 = nach links, < 0 = nach rechts. Geregelt über den '
             . 'IMU-Kurs (±3°, er dreht bis ~5° nach). Liefert danach das neue Kamerabild. Nur balancierend.',
-            schema(['grad' => $zahl('Drehwinkel in Grad, + = links', -360, 360),
+            schema(['grad' => $zahl('Drehwinkel in Grad, + = links', -DREH_MAX, DREH_MAX),
+                    'w' => $zahl('Höchste Drehrate, normiert (Standard 0.25)', 0.08, HAND_MAX),
+                    'tol' => $zahl('Toleranz in Grad (Standard 3)', 1, 10),
                     'bild' => $ja('Danach das Kamerabild mitliefern (Standard true)')], ['grad']), false],
         'rundblick' => ['drehen', 'Einmal im Kreis drehen und in gleichmäßigen Schritten je ein Kamerabild liefern (Standard 4 Bilder im '
             . 'Abstand von 90°, das deckt mit 91,8° Öffnungswinkel alles ab). Das erste Bild ist die Blickrichtung vor dem Drehen; am Ende '
@@ -420,12 +426,22 @@ function werkzeuge(): array
         'fahren' => ['fahren', 'Ein Stück fahren: v > 0 vorwärts, v < 0 rückwärts (dahin sieht die Kamera nicht!), w > 0 Linkskurve; normiert. '
             . 'Nenntempo ≈ v · 1,8 m/s (v 0,10 ≈ 18 cm/s; sehr kleine v bewegen ihn evtl. nicht). Höchstens ' . FAHR_S_MAX . ' s je Aufruf, also in kleinen Schritten fahren und '
             . 'zwischendurch schauen. xgonav prüft jeden Schritt gegen Bodengrenze und Hinderniskarte und bremst selbst (Meldung „Freiraum!“ '
-            . 'oder „Bahn“). '
+            . 'oder „Bahn“); dann gilt |v| ≤ ' . V_MAX . ', |w| ≤ ' . W_MAX . '. geprueft = false fährt wie das Steuerkreuz im Web von Hand: '
+            . 'OHNE Bodengrenze und Bahnprüfung (Sturz-Erkennung und Watchdogs bleiben), |v|, |w| ≤ ' . HAND_MAX . ', mit manual_forward_gain; '
+            . 'nur wenn der Mensch das ausdrücklich will (z. B. an Engstellen, an denen die Prüfung bremst). '
             . 'Liefert Strecke, Meldungen und das Kamerabild danach.',
-            schema(['v' => $zahl('Vorwärtsgeschwindigkeit, normiert', -V_MAX, V_MAX),
-                    'w' => $zahl('Drehrate, normiert, + = links (Standard 0)', -W_MAX, W_MAX),
+            schema(['v' => $zahl('Vorwärtsgeschwindigkeit, normiert', -HAND_MAX, HAND_MAX),
+                    'w' => $zahl('Drehrate, normiert, + = links (Standard 0)', -HAND_MAX, HAND_MAX),
                     'sekunden' => $zahl('Dauer', 0.2, FAHR_S_MAX),
+                    'geprueft' => $ja('Mit Bodengrenze und Bahnprüfung (Standard true); false = Handsteuerung ohne Prüfung'),
                     'bild' => $ja('Danach das Kamerabild mitliefern (Standard true)')], ['v', 'sekunden']), false],
+        'folge' => ['fahren', 'Mehrere Fahrabschnitte [v, w, sekunden] nacheinander OHNE Halt dazwischen, z. B. fahren und direkt aus der '
+            . 'Fahrt drehen: [[0.13, 0, 3], [0, 0.25, 1]]. Grenzen je Abschnitt wie „fahren“ (auch geprueft), Abschnitte 0..5 s, '
+            . 'höchstens ' . FOLGE_N_MAX . ' Abschnitte und ' . FOLGE_S_MAX . ' s zusammen. Am Ende Stillstand + idle, Strecke, Meldungen, Bild.',
+            schema(['abschnitte' => ['type' => 'array', 'description' => 'Liste [v, w, sekunden]', 'minItems' => 1, 'maxItems' => FOLGE_N_MAX,
+                                     'items' => ['type' => 'array', 'items' => ['type' => 'number'], 'minItems' => 3, 'maxItems' => 3]],
+                    'geprueft' => $ja('Mit Bodengrenze und Bahnprüfung (Standard true); false = Handsteuerung ohne Prüfung'),
+                    'bild' => $ja('Danach das Kamerabild mitliefern (Standard true)')], ['abschnitte']), false],
         'modus' => ['fahren', 'Verhalten von xgonav wählen: idle (steht), follow (einem Ziel folgen), approach (Ziel suchen und anfahren), '
             . 'explore (Raum selbstständig erkunden und kartieren), home (zurück zum Start), patrol (Route abfahren, braucht bestaetigt), '
             . 'pet (Haustier: reagiert auf Menschen und Geräusche). Autonome Modi fahren von selbst weiter, bis du „stopp“ rufst: '
@@ -655,13 +671,15 @@ function w_absetzen(array $a): array
 function w_drehen(array $a): array
 {
     $grad = (float)($a['grad'] ?? 0);
-    if (abs($grad) > 360) {
-        throw new Fehler('grad: -360 .. 360.');
+    $w = (float)($a['w'] ?? 0.25);
+    $tol = (float)($a['tol'] ?? 3.0);
+    if (abs($grad) > DREH_MAX || $w < 0.08 || $w > HAND_MAX || $tol < 1 || $tol > 10) {
+        throw new Fehler(sprintf('Grenzen: grad -%1$.0f .. %1$.0f, w 0.08 .. %2$.2f, tol 1 .. 10.', DREH_MAX, HAND_MAX));
     }
     $fp = sperre();
     fahrbereit(false);
     try {
-        $ist = drehe($grad);
+        $ist = drehe($grad, $w, $tol);
     } finally {
         halt();
     }
@@ -731,44 +749,80 @@ function w_ausrichten(array $a): array
 
 function w_fahren(array $a): array
 {
-    $v = (float)($a['v'] ?? 0);
-    $w = (float)($a['w'] ?? 0);
     $sek = (float)($a['sekunden'] ?? 0);
-    if (abs($v) > V_MAX || abs($w) > W_MAX || $sek < 0.2 || $sek > FAHR_S_MAX) {
-        throw new Fehler(sprintf('Grenzen: |v| ≤ %.2f, |w| ≤ %.2f, sekunden 0.2 .. %.0f.', V_MAX, W_MAX, FAHR_S_MAX));
+    if ($sek < 0.2 || $sek > FAHR_S_MAX) {
+        throw new Fehler(sprintf('sekunden: 0.2 .. %.0f.', FAHR_S_MAX));
+    }
+    return fahrt([[(float)($a['v'] ?? 0), (float)($a['w'] ?? 0), $sek]], $a);
+}
+
+function w_folge(array $a): array
+{
+    $ab = $a['abschnitte'] ?? null;
+    if (!is_array($ab) || !$ab || count($ab) > FOLGE_N_MAX) {
+        throw new Fehler('abschnitte: 1 .. ' . FOLGE_N_MAX . ' Einträge [v, w, sekunden].');
+    }
+    $liste = [];
+    $summe = 0.0;
+    foreach ($ab as $t) {
+        if (!is_array($t) || count($t) !== 3 || !is_numeric($t[0]) || !is_numeric($t[1]) || !is_numeric($t[2])
+            || $t[2] < 0 || $t[2] > FAHR_S_MAX) {
+            throw new Fehler('Jeder Abschnitt ist [v, w, sekunden] mit sekunden 0 .. ' . FAHR_S_MAX . '.');
+        }
+        $liste[] = [(float)$t[0], (float)$t[1], (float)$t[2]];
+        $summe += (float)$t[2];
+    }
+    if ($summe < 0.2 || $summe > FOLGE_S_MAX) {
+        throw new Fehler(sprintf('Summe der Abschnitte: 0.2 .. %.0f s.', FOLGE_S_MAX));
+    }
+    return fahrt($liste, $a);
+}
+
+/** Abschnitte [v, w, sek] ohne Halt dazwischen mit 10 Hz; geprüft (sicher=1) oder wie das Steuerkreuz. Am Ende halt(). */
+function fahrt(array $abschnitte, array $a): array
+{
+    $geprueft = $a['geprueft'] ?? true;
+    [$vmax, $wmax] = $geprueft ? [V_MAX, W_MAX] : [HAND_MAX, HAND_MAX];
+    foreach ($abschnitte as [$v, $w]) {
+        if (abs($v) > $vmax || abs($w) > $wmax) {
+            throw new Fehler(sprintf('Grenzen%s: |v| ≤ %.2f, |w| ≤ %.2f.', $geprueft ? ' (geprüft)' : ' (ungeprüft)', $vmax, $wmax));
+        }
     }
     // Ein xgonav vor 2026-11-20 kennt sicher=1 nicht und führe ungeprüft (und mit manual_forward_gain)
-    if (strpos(http('GET', '/')[1], 'sicher=') === false) {
+    if ($geprueft && strpos(http('GET', '/')[1], 'sicher=') === false) {
         throw new Fehler('Das laufende xgonav kennt das geprüfte Fahren noch nicht (Neustart des Dienstes nötig). Dem Besitzer sagen.');
     }
     $fp = sperre();
-    $s0 = fahrbereit(true);
-    if (($s0['fs_src'] ?? null) === 'blind') {
-        throw new Fehler('Keine Bodengrenze (FloorNet fehlt oder ist ausgefallen): Der Rider ist blind und fährt nicht.');
+    $s0 = fahrbereit($geprueft);
+    if ($geprueft && ($s0['fs_src'] ?? null) === 'blind') {
+        throw new Fehler('Keine Bodengrenze (FloorNet fehlt oder ist ausgefallen): Der Rider ist blind und fährt nicht geprüft.');
     }
     $meldungen = [];
     $GLOBALS['faehrt'] = true;
     try {
-        $ende = microtime(true) + $sek / SCHNELL;
-        while (microtime(true) < $ende) {
-            if (!balanciert()) {
-                throw new Fehler('Abbruch: Der Rider liegt.');
-            }
-            post(sprintf('/drive?v=%.3f&w=%.3f&sicher=1', $v, $w));    // 409, sobald jemand „stopp“ ruft
-            $m = (string)(status()['status'] ?? '');
-            foreach (['Freiraum!', 'Bahn', 'TTC', 'Sperrzone', 'BLIND', 'GEFALLEN', 'LIEGT'] as $wort) {
-                if (strpos($m, $wort) !== false) {
-                    $meldungen[$wort] = $m;
+        foreach ($abschnitte as [$v, $w, $sek]) {
+            $ende = microtime(true) + $sek / SCHNELL;
+            while (microtime(true) < $ende) {
+                if (!balanciert()) {
+                    throw new Fehler('Abbruch: Der Rider liegt.');
                 }
+                post(sprintf('/drive?v=%.3f&w=%.3f', $v, $w) . ($geprueft ? '&sicher=1' : ''));   // 409, sobald jemand „stopp“ ruft
+                $m = (string)(status()['status'] ?? '');
+                foreach (['Freiraum!', 'Bahn', 'TTC', 'Sperrzone', 'BLIND', 'GEFALLEN', 'LIEGT'] as $wort) {
+                    if (strpos($m, $wort) !== false) {
+                        $meldungen[$wort] = $m;
+                    }
+                }
+                schlafen(1.0 / HZ);
             }
-            schlafen(1.0 / HZ);
         }
     } finally {
         halt();
     }
     schlafen(0.5);
     $s1 = status();
-    $info = ['strecke_m' => isset($s0['odom']['m'], $s1['odom']['m']) ? round($s1['odom']['m'] - $s0['odom']['m'], 2) : null,
+    $info = ['geprueft' => (bool)$geprueft,
+             'strecke_m' => isset($s0['odom']['m'], $s1['odom']['m']) ? round($s1['odom']['m'] - $s0['odom']['m'], 2) : null,
              'kurs_vorher_grad' => kurs($s0), 'kurs_nachher_grad' => kurs($s1),
              'pose_vorher' => $s0['grid']['pose'] ?? null, 'pose_nachher' => $s1['grid']['pose'] ?? null,
              'gebremst' => array_values($meldungen)];

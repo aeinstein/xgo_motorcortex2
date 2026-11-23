@@ -11,7 +11,7 @@ Lets a multimodal LLM look at the world through the Rider: camera image, room ma
 | Stack | nginx → php-fpm pool `xgonav` → `web/mcp.php` → xgonav local API `127.0.0.1:8088` and `/proc/XGORider` |
 | Auth | none by default (LAN only); optional bearer token. `Content-Type: application/json` required (415 otherwise: blocks form posts from foreign web pages) |
 | Language | tool names, descriptions and results are German |
-| Tested | on the Rider 2026-11-20 (lying, sleep mode, level `schauen`): `initialize`, `tools/list`, `status`, `karte`, `erkennung`, `emotion`, `kamera`, refusals of `bild` (pipeline off) and of the movement tools. `tests/test_mcp.py` (fake xgonav, needs `php`) **has not run yet**; no image fetched, no tool has moved the Rider. `fahren` refuses until xgonav has been restarted with `sicher=1` |
+| Tested | on the Rider 2026-11-20 (lying, sleep mode, level `schauen`): `initialize`, `tools/list`, `status`, `karte`, `erkennung`, `emotion`, `kamera`, refusals of `bild` (pipeline off) and of the movement tools. `tests/test_mcp.py` (fake xgonav, needs `php`): 10 passed on the Rider 2026-11-23 (PHP 8.2, temporary venv with pytest); no tool has moved the Rider yet. `fahren` refuses until xgonav has been restarted with `sicher=1` |
 
 ## Permission (`/etc/xgonav/mcp.json`)
 
@@ -45,12 +45,13 @@ Lets a multimodal LLM look at the world through the Rider: camera image, room ma
 | `stopp` | schauen | | xgonav `/stop`: standstill, mode idle; aborts a running MCP movement |
 | `aufstehen` | drehen | | `/stop`, action 253, waits for balancing (≤ 8 s) + 6 s; needs pipeline, battery ≥ 20 % |
 | `absetzen` | drehen | | `/stop`, action 254, waits until lying |
-| `drehen` | drehen | `grad`, `bild` | turn on the spot (+ = left), closed loop on `yaw_deg` (±3°), then image |
+| `drehen` | drehen | `grad` −1080..1080, `w` 0.08..0.5 (default 0.25), `tol` 1..10° (default 3), `bild` | turn on the spot (+ = left), closed loop on `yaw_deg`, then image |
 | `rundblick` | drehen | `bilder` (2..8, default 4), `overlay` | full turn in equal steps, one image per step, ends at the starting heading |
 | `hoehe` | drehen | `u8` 61..200 | body height → `/proc/XGORider/height`, waits 4 s |
 | `neigen` | drehen | `grad` −20..20 | roll → `/proc/XGORider/roll` |
 | `ausrichten` | drehen | | xgonav `/level` |
-| `fahren` | fahren | `v` ±0.15, `w` ±0.30, `sekunden` 0.2..5, `bild` | `/drive?sicher=1` at 10 Hz, then standstill + idle; returns distance, pose before/after, braking messages, image |
+| `fahren` | fahren | `v`, `w`, `sekunden` 0.2..5, `geprueft` (default true), `bild` | checked: `/drive?sicher=1`, `v` ±0.15, `w` ±0.30; `geprueft: false`: `/drive` like the web D-pad / `rider_nav.py fahr`, `v`, `w` ±0.5; 10 Hz, then standstill + idle; returns distance, pose before/after, braking messages, image |
+| `folge` | fahren | `abschnitte` [[v, w, s], …] (1..10, each 0..5 s, ≤ 30 s total), `geprueft`, `bild` | sections back to back without a stop in between (like `rider_nav.py folge`), limits as `fahren`; then standstill + idle |
 | `modus` | fahren | `name`, `ziel`, `bestaetigt` | xgonav `/mode` (all modes; rules as in the web UI) |
 | `tempo` | fahren | `anteil` 0.05..1 | xgonav `/tempo` |
 | `karte_aendern` | fahren | `aktion` | `leeren`, `start_hier`, `speichern`, `sperren`, `entsperren`, `pose_start`, `pose_hier`, `pose_verwerfen` |
@@ -66,8 +67,8 @@ Not offered: shutdown, restart, settings, Wi-Fi, calibration, floor model switch
 | Preconditions | balancing, battery ≥ 20 %, not sleep mode (wake with `ruhemodus`), mode `idle` or `manual` (another mode is never interrupted; only `stopp` ends it) |
 | One movement at a time | `flock` on `/tmp/xgonav-mcp.lock`; a second call fails at once |
 | End of every movement | `/drive?v=0&w=0`, then `/stop` (mode idle), also on error, timeout (120 s) or client disconnect; xgonav stops by itself 0.5 s after the last setpoint |
-| `fahren` is always checked | `sicher=1`: the setpoint passes `safety()` (fallen, blind, free space, TTC) and the arc check like the autonomous modes; `manual_forward_gain` is not applied, nominal speed ≈ v · `robot.vx_limit`; refused while blind or with the pipeline stopped |
-| `drehen`, `rundblick` | unchecked turn on the spot (v = 0), ≤ 0.25 |
+| `fahren`/`folge` checked by default | `sicher=1`: the setpoint passes `safety()` (fallen, blind, free space, TTC) and the arc check like the autonomous modes; `manual_forward_gain` is not applied, nominal speed ≈ v · `robot.vx_limit`; refused while blind or with the pipeline stopped. `geprueft: false`: hand control as the web D-pad (no floor boundary, no arc check; fall detection and watchdogs stay), with `manual_forward_gain`, no pipeline needed; only on the owner's request |
+| `drehen`, `rundblick` | unchecked turn on the spot (v = 0); `drehen` ≤ `w` (0.5), `rundblick` ≤ 0.25 |
 | Limits | `v`, `w`, duration and height are clamped in `mcp.php`; xgonav clamps to `max_v`/`max_w` and the speed slider on top |
 
 ## Cost on the Pi
