@@ -212,8 +212,6 @@ pre{background:#0b0d10;border-radius:6px;padding:8px;overflow:auto;max-height:40
 
 /* --- Fahren */
 /* Aktionen klein in der Lage-Kachel */
-.aktionen{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
-.aktionen button{margin:0}
 /* Steuerkreuz als Auflage unten rechts im Kamerabild; nur die Knöpfe fangen Zeiger */
 .pad{position:absolute;right:8px;bottom:8px;z-index:3;display:grid;grid-template-columns:repeat(3,42px);
   grid-template-rows:repeat(3,38px);gap:4px;user-select:none;-webkit-user-select:none;pointer-events:none}
@@ -227,6 +225,8 @@ pre{background:#0b0d10;border-radius:6px;padding:8px;overflow:auto;max-height:40
 .regler label{color:var(--leise);font-size:13px}
 .regler .w{font-variant-numeric:tabular-nums;text-align:right;font-size:13px}
 .regler .leer{width:0}
+.knopfpaar{display:inline-flex;gap:4px}
+.knopfpaar .ausrichten{font-size:14px;line-height:1;padding:3px 6px}
 .fn-wahl{margin-top:8px}
 .fn-wahl select{min-width:0}
 .trenner{border:0;border-top:1px solid var(--rand);margin:10px 0}
@@ -531,13 +531,9 @@ details.extras[open]>summary{margin-bottom:8px}
       <input type="range" id="roll" min="-20" max="20" value="0" step="1"
         oninput="document.getElementById('roll-w').textContent = this.value + '°'"
         onchange="befehl('roll', {deg: this.value})">
-      <span class="w" id="roll-w">0°</span><button onclick="rollNull()" title="Roll auf 0°">0</button>
+      <span class="w" id="roll-w">0°</span><span class="knopfpaar"><button onclick="rollNull()" title="Roll auf 0°">0</button><button class="ausrichten" onclick="ausrichten()" aria-label="Neu ausrichten" title="Neu ausrichten: Roll auf 0° und die Beine 3 s nivellieren (nur wenn er steht)">⚖</button></span>
     </div>
     <div class="legende" id="l-lage" title="Gier 0° = Kurs beim Start des ESP32; + = links. Roll + = rechts tief, Nick + = vorn tief"></div>
-    <div class="aktionen">
-      <button onclick="ausrichten()" title="Roll auf 0° und die Beine 3 s nivellieren (nur wenn er steht)">Neu ausrichten</button>
-      <button onclick="espNeustart()" title="Aktion 237: ESP32 neu starten, nur wenn er nicht balanciert">ESP-Neustart</button>
-    </div>
     <details class="hilfe" data-i18n-html="hilfe-lage"><summary>Kamerahöhe, Roll, Aufstehen und Absetzen</summary>
       <p>Kamerahöhe: Rechenwert der Bodengeometrie aus <code>cam_h_u8</code> (Linsenmitte über Boden, Sollwert u8
         im Tooltip), die Beine brauchen danach etwa 1 s. Der Wert entspricht der Messung mit dem Zollstock
@@ -549,7 +545,7 @@ details.extras[open]>summary{margin-bottom:8px}
         „Aufspringen“ (Aktion 253, wie <code>!standup</code>) lässt ihn aufspringen – <b>Rider muss stehen und Platz haben</b>.
         „Absetzen“ ist ein Not-Stopp (Aktion 254, wie <code>!stop</code>): er setzt sich kontrolliert ab und
         bleibt aus bis zum nächsten Aufstehen.</p>
-      <p>„Neu ausrichten“: Die Beine haben eine Totzone, bei gleichem Befehl steht er bis zu 2,6° unterschiedlich
+      <p>„Neu ausrichten“ (⚖ neben dem Roll-Regler): Die Beine haben eine Totzone, bei gleichem Befehl steht er bis zu 2,6° unterschiedlich
         schief. Der Knopf setzt Roll auf 0° und lässt die Firmware 3 s nivellieren; danach bleibt er so stehen. Das
         passiert auch einmal nach jedem Aufstehen. Beim Fahren kann er langsam wieder schief werden.</p>
     </details>
@@ -572,6 +568,7 @@ details.extras[open]>summary{margin-bottom:8px}
     <div class="knoepfe">
       <button onclick="window.open('anleitung/index.html', '_blank')" title="Anleitung: Installation, erste Schritte, Oberfläche, Verhalten, FloorNet-Training (englisch, statisch, kostet am Pi nichts)">Anleitung</button>
       <button onclick="window.open('schaubild.html', '_blank')" title="Schaubild der Bildpipeline: Stufen, Korrekturen, Threads, Eingänge und Abnehmer (statisch, kostet am Pi nichts)">Schaubild</button>
+      <button onclick="espNeustart()" title="Aktion 237: ESP32 neu starten, nur wenn er nicht balanciert">ESP-Neustart</button>
       <button id="aus" class="gefahr" onclick="herunterfahren()" title="Rider herunterfahren">Herunterfahren</button>
     </div>
     <div class="unter">Aktionen</div>
@@ -747,7 +744,8 @@ const EN = {
   'Steuerkreuz im Bild gedrückt halten, oder Pfeiltasten/WASD. Fahren schaltet auf „Hand“ und ist auf max_v/max_w der Konfiguration begrenzt. Ohne Bodenmodell und Bahnprüfung; Sturz-Erkennung und Watchdogs bleiben aktiv.': 'Hold the arrow pad on the image, or arrow keys/WASD. Driving switches to “Manual” and is limited to max_v/max_w from the configuration. No floor model and no path check; fall detection and watchdogs stay active.',
   'Aktion 253 (!standup): Rider muss stehen und Platz haben': 'Action 253 (!standup): Rider must be upright and have room',
   'Aufspringen': 'Jump up', 'Roll auf 0° und die Beine 3 s nivellieren (nur wenn er steht)': 'Roll to 0° and level the legs for 3 s (only while standing)',
-  'Neu ausrichten': 'Re-level', 'Aktion 254, Not-Stopp': 'Action 254, emergency stop', 'Absetzen': 'Sit down',
+  'Neu ausrichten': 'Re-level',
+  'Neu ausrichten: Roll auf 0° und die Beine 3 s nivellieren (nur wenn er steht)': 'Re-level: roll to 0° and level the legs for 3 s (only while standing)', 'Aktion 254, Not-Stopp': 'Action 254, emergency stop', 'Absetzen': 'Sit down',
   'Extras': 'Extras', 'Aktionen · LEDs · Emotionen': 'Actions · LEDs · Emotions',
   'System · Aktionen · LEDs · Emotionen': 'System · Actions · LEDs · Emotions', 'System': 'System',
   'Bildverarb. starten': 'Start vision', 'Bildverarb. stoppen': 'Stop vision',
@@ -894,7 +892,7 @@ const EN_HTML = {
         “Jump up” (action 253, like <code>!standup</code>) makes it jump up – <b>Rider must be upright and have room</b>.
         “Sit down” is an emergency stop (action 254, like <code>!stop</code>): it sits down in a controlled way and
         stays off until the next stand-up.</p>
-      <p>“Re-level”: the legs have a dead band; with the same command it stands up to 2.6° differently
+      <p>“Re-level” (⚖ next to the roll slider): the legs have a dead band; with the same command it stands up to 2.6° differently
         tilted. The button sets roll to 0° and lets the firmware level for 3 s; it then stays like that. This
         also happens once after every stand-up. While driving it can slowly tilt again.</p>`,
   'hilfe-karte': `<summary>grey unknown · light free · dark occupied · green path · cyan plan · blue start · red Rider</summary>

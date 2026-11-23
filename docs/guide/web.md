@@ -54,8 +54,7 @@
 | 3D model | CAD model rotated by IMU roll, pitch, yaw; wheels turn with the encoders; drag to orbit, double-click resets |
 | Camera height | vertical slider: body height, shown as camera height in mm |
 | Roll | roll setpoint −20..20° |
-| Re-level | levelling pulse after standing up |
-| ESP restart | restart the ESP32 (only while lying) |
+| ⚖ Re-level | levelling pulse after standing up (icon next to the roll 0 button) |
 
 ## Sound radar (Schallradar)
 
@@ -67,7 +66,7 @@ Direction of sound from the two microphones (modes `idle`, `pet`): ray = sound, 
 
 ![Extras](../screenshots/web-drive.png)
 
-Manual (Anleitung), Diagram (Schaubild), Shut down (Herunterfahren, confirm); firmware actions 1–6, the four LEDs (colour pickers, all off, strobe), LED brightness (persistent), display emotions.
+Manual (Anleitung), Diagram (Schaubild), ESP restart (only while lying), Shut down (Herunterfahren, confirm); firmware actions 1–6, the four LEDs (colour pickers, all off, strobe), LED brightness (persistent), display emotions.
 
 ## Room map (Raumkarte)
 
