@@ -130,7 +130,8 @@ def test_robot_led_start_flash(tmp_path):
     (tmp_path / "settings").mkdir()
     (tmp_path / "settings" / "led_brightness").write_text("-1")
     gespeichert = tmp_path / "led_gespeichert"
-    for datei, erwartet in ((None, "51"), ("77\n", "77"), ("kaputt", "51")):
+    d = str(Config.neutral().robot.led_default)
+    for datei, erwartet in ((None, d), ("77\n", "77"), ("kaputt", d)):
         if datei is not None:
             gespeichert.write_text(datei)
         r = ProcRobot(dataclasses.replace(Config.neutral().robot, proc_dir=str(tmp_path), led_file=str(gespeichert),
@@ -925,36 +926,31 @@ def test_paused_pipeline_keeps_pose_from_wheels():
     assert app.gridmap.pose()[0] == pytest.approx(0.5, abs=0.005)
 
 
-def test_drive_gains():
-    """reverse_gain gilt immer, der Vorwärtsfaktor nur in der Handsteuerung."""
+def test_drive_faktor_mal_tempo_mal_max_v():
+    """Seit 2026-11-23: Fahrwerte der Modi und die Handsteuerung sind Anteile von max_v/max_w, gesendet wird
+    Faktor x tempo x max_v, rückwärts wie vorwärts, explore ohne Ausnahme; keine Gerätefaktoren mehr."""
     from types import SimpleNamespace as NS
     from xgonav.app import App
-    from xgonav.behaviors import Command
-    cfg = Config.neutral(); cfg.robot.reverse_gain = 2.0; cfg.robot.manual_forward_gain = 2.0; cfg.robot.max_v = 0.15
-    r = SimRobot(cfg.robot)
+    from xgonav.behaviors import Command, Manual
+    cfg = Config.neutral()
+    rc = cfg.robot
+    assert rc.v_of(0.5) == pytest.approx(0.5 * rc.max_v) and rc.w_of(1.0) == pytest.approx(rc.max_w)
+    r = SimRobot(rc)
+    m = Manual(cfg.behavior, rc)
+    m.set(1.0, -1.0, time.monotonic())
+    c = m.step(None)
+    assert c.v == pytest.approx(rc.max_v) and c.w == pytest.approx(-rc.max_w)      # Vollausschlag = max_v
+    for name in ("manual", "explore", "follow"):
+        app = NS(cfg=cfg, robot=r, behavior=NS(name=name))
+        App._drive(app, Command(1.0, 0.0))
+        assert r._target[0] == pytest.approx(rc.max_v)                             # max_v ist das Maximum
+        App._drive(app, Command(-1.0, 0.0))
+        assert r._target[0] == pytest.approx(-rc.max_v)
+    r.tempo = 0.5
+    App._drive(app, Command(rc.v_of(0.4), rc.w_of(0.2)))
+    assert r._target == pytest.approx((0.4 * 0.5 * rc.max_v, 0.2 * 0.5 * rc.max_w))
     r._cur = (-0.15, 0.0); r._send(time.monotonic() + 10)
-    assert r._sent[0] == 128 - round(0.30 * 127)          # 90
-    app = NS(cfg=cfg, robot=r, behavior=NS(name="explore"))
-    App._drive(app, Command(0.15, 0.0))
-    r._cur = (0.15, 0.0); r._send(time.monotonic() + 20)
-    assert r._sent[0] == 128 + round(0.15 * 127)          # 147: autonom ohne Faktor
-    app.behavior.name = "manual"
-    App._drive(app, Command(0.15, 0.0))
-    r._cur = (0.15, 0.0); r._send(time.monotonic() + 30)
-    assert r._sent[0] == 128 + round(0.30 * 127)          # 166: Handsteuerung wie rückwärts
-    assert r._target[0] == pytest.approx(0.15)            # max_v begrenzt den Sollwert davor
-    # explore darf vorwärts bis explore.v über max_v hinaus, rückwärts und andere Modi nicht
-    App._drive(app, Command(1.0, 0.0))
-    assert r._target[0] == pytest.approx(0.15)
-    app.behavior.name = "explore"
-    App._drive(app, Command(1.0, 0.0))
-    assert r._target[0] == pytest.approx(cfg.explore.v) and cfg.explore.v > cfg.robot.max_v
-    App._drive(app, Command(-1.0, 0.0))
-    assert r._target[0] == pytest.approx(-0.15)
-    app.behavior.name = "follow"
-    App._drive(app, Command(1.0, 0.0))
-    assert r._target[0] == pytest.approx(0.15)
-
+    assert r._sent[0] == norm_to_u8(-0.15)                                         # rückwärts ohne Faktor
 
 def test_level_pulse():
     """Impuls einmal je Aufstehen, nach dem Aufschwung und auf Knopfdruck; liegend nicht."""
@@ -1420,13 +1416,12 @@ def test_speed_ctrl_rules():
         sc.step(t, 0.2, 0.6)
     assert sc.trim == pytest.approx(-cfg.speed_ctrl_max)
     # Senden: Korrektur nach den Faktoren, nie über den Stillstand hinweg, Stopp exakt 128
-    cfg.reverse_gain = 2.0
     r = SimRobot(cfg)
     r.v_trim = 0.05
     r._cur = (0.15, 0.0); r._send(100.0)
     assert r._sent[0] == norm_to_u8(0.20)
     r._cur = (-0.10, 0.0); r._send(200.0)
-    assert r._sent[0] == norm_to_u8(-0.15)               # -0,10 x 2 + 0,05
+    assert r._sent[0] == norm_to_u8(-0.05)               # -0,10 + 0,05 (ohne reverse_gain seit 2026-11-23)
     r._cur = (0.0, 0.0); r._send(300.0)
     assert r._sent[0] == 128
     r.v_trim = -0.10
@@ -1490,6 +1485,7 @@ def test_gridmap_wall_and_turn():
     from xgonav.gridmap import GridMap
     cfg = Config.neutral()
     cfg.grid.max_range_m = 1.5                                  # entlang des Strahls: Wand 1 m am Rand ~1,44 m
+    cfg.grid.hit_band_quad = 0.0                                # ohne Trefferband: Wand genau eine Zelle
     g = CamGeometry(640, 480, 91.0, 1.39, 43.0, 85.0)
     m = GridMap(cfg.grid, g, 160, 120)
     hz = g.horizon_row(0) / 4
@@ -1719,7 +1715,7 @@ def test_proc_imu_idle_rate(tmp_path):
     sp.write_text("0\n")
     cfg = Config.neutral()
     cfg.imu.proc_dir = str(tmp_path)
-    cfg.imu.stream_hz = 100
+    cfg.imu.stream_hz, cfg.imu.idle_hz = 100, 5          # am Rider idle_hz 0
     imu = ProcImu(cfg.imu)
     assert imu._open() and sp.read_text() == "100" and imu._wait_s() == cfg.imu.poll_s
     imu.set_idle(True)
@@ -2287,10 +2283,10 @@ def test_pathfollower_align_turn_limit():
     from dataclasses import replace
     from xgonav.behaviors import PathFollower
     cfg = Config.neutral()
-    f = PathFollower(cfg.behavior, cfg.robot, replace(cfg.home, turn_w_max=0.25))
-    assert f.align(math.radians(170), "x").w == pytest.approx(0.25)
+    f = PathFollower(cfg.behavior, cfg.robot, cfg.home)             # Faktor 0,5 von max_w 0,5: absolut 0,25
+    assert f.align(math.radians(170), "x").w == pytest.approx(cfg.robot.w_of(cfg.home.turn_w_max)) == pytest.approx(0.25)
     assert f.align(math.radians(-170), "x").w == pytest.approx(-0.25)
-    f = PathFollower(cfg.behavior, cfg.robot, cfg.home)
+    f = PathFollower(cfg.behavior, cfg.robot, replace(cfg.home, turn_w_max=1.0))
     assert abs(f.align(math.radians(170), "x").w) > 0.25
 
 
@@ -2370,8 +2366,8 @@ def test_pathfollower_small_error_still_steers():
     def w(deg):
         return World(t=0.0, dt=0.05, W=640, H=480, hfov=1.6, ego=EgoResult(0, 0.0, 0.05), tracks=[], free=None,
                      balancing=True, yaw=0.0, cmd_v=0.0, pose=(0.0, 0.0, -math.radians(deg)))
-    assert f.drive(w(8), "T").w >= cfg.home.min_w
-    assert f.drive(w(-8), "T").w <= -cfg.home.min_w
+    assert f.drive(w(8), "T").w >= cfg.robot.w_of(cfg.home.min_w)
+    assert f.drive(w(-8), "T").w <= -cfg.robot.w_of(cfg.home.min_w)
     assert f.drive(w(0.5), "T").w == pytest.approx(0.0, abs=0.01)
 
 
@@ -2839,7 +2835,7 @@ def test_home_startbild_phases():
     assert b.phase == "dreh" and c.v == 0 and c.w < 0
     assert not b.want_plan(1.1)                                            # keine Planung mehr
     c = b.step(w(1.2, (-0.38, 0.0, math.radians(1))))
-    assert b.phase == "gerade" and c.v == pytest.approx(cfg.startbild.gerade_v)
+    assert b.phase == "gerade" and c.v == pytest.approx(cfg.robot.v_of(cfg.startbild.gerade_v))
     c = b.step(w(3.0, (-0.2, 0.01, 0.0)))
     assert c.v > 0 and c.w < 0                                             # zielt auf den Start (rechts)
     c = b.step(w(5.0, (-0.005, 0.0, 0.0)))
@@ -3147,7 +3143,7 @@ def test_pathfollower_anschub_bei_rille():
     while t < 12 and not f.pressing:
         c = f.drive(_press_world(t, 0.3, 0.15, 0.71), "x")
         if "Anschub" in c.status:
-            assert c.v == cfg.behavior.push_v and c.w == 0
+            assert c.v == cfg.robot.v_of(cfg.behavior.push_v) and c.w == 0
             pushes.append(round(t, 1))
         t += 0.05
     assert f.pressing and f.stuck
@@ -3201,11 +3197,12 @@ def test_pathfollower_schneller_anschub_an_fuge():
     push = [(tt, c) for tt, c in st if "Anschub" in c.status]
     assert push and 1.45 <= push[0][0] <= 1.6, push[:1]
     c = push[0][1]
-    assert c.v == b.push_v and c.extra.get("anschub")
+    assert c.v == cfg.robot.v_of(b.push_v) and c.extra.get("anschub")
     assert abs(f._push_budget - (0.12 - b.push_rest_m)) < 1e-9
     # safety() lässt den Anschub trotz „Freiraum!“ durch (Bodenmodell sieht die Stufe)
     w = dataclasses.replace(_press_world(t, x, 0.2, 0.05), v_rad=0.0)
-    assert safety(Command(b.push_v, 0.0, extra={"anschub": True}), w, b).v == b.push_v
+    vp = cfg.robot.v_of(b.push_v)
+    assert safety(Command(vp, 0.0, extra={"anschub": True}), w, b).v == vp
     assert safety(Command(b.push_v, 0.0), w, b).v == 0.0
     # Er kommt frei und rollt: Bremsweg eingerechnet, Ende mit Vollbremsung vor der Stufe
     x0, last = x, None
@@ -3758,26 +3755,20 @@ def test_config_schema_aktuell():
         "web/config-schema.json veraltet: python tools/config_schema.py"
 
 
-def test_max_sent_deckelt_nach_faktoren():
-    """max_v 0,5 mit Faktor 2 (Handsteuerung vorwärts, rückwärts) und Geschwindigkeitsregelung: gesendet wird
-    höchstens max_sent, auch beim Drehen."""
+def test_gesendet_hoechstens_vollausschlag():
+    """robot.max_sent ist weg (2026-11-23): Gesendet wird nur auf ±1 begrenzt, auch mit Korrektur der
+    Geschwindigkeitsregelung; der alte Schlüssel in einer config.toml ergibt nur eine Warnung."""
+    from xgonav.config import ENTFERNT
     from xgonav.robot import SimRobot
+    assert {"robot.max_sent", "robot.manual_forward_gain", "robot.reverse_gain"} <= set(ENTFERNT)
     cfg = Config.neutral()
-    cfg.robot.reverse_gain = cfg.robot.manual_forward_gain = 2.0
-    cfg.robot.max_v = cfg.robot.max_w = cfg.robot.max_sent = 0.5
     r = SimRobot(cfg.robot)
-    r.forward_gain = 2.0
     r.v_trim = 0.1
-    for cur, soll in (((0.5, 0.0), 128 + round(0.5 * 127)), ((-0.5, 0.0), 128 - round(0.5 * 127)), ((0.1, 0.0), 128 + round(0.3 * 127))):
+    for cur, soll in (((0.5, 0.0), norm_to_u8(0.6)), ((0.95, 0.0), norm_to_u8(1.0)), ((-0.5, 0.0), norm_to_u8(-0.4))):
         r._cur = cur
         r._sent = None
         r._send(time.monotonic() + 10)
         assert abs(r._sent[0] - soll) <= 1, (cur, r._sent)
-    r._cur = (0.0, 0.9)
-    r._sent = None
-    r._send(time.monotonic() + 10)
-    assert abs(r._sent[1] - (128 + round(0.5 * 127))) <= 1
-
 
 def test_frontier_engstelle_voraus_mit_zuschlag(monkeypatch):
     """Engstellen-Ziele konkurrieren mit Zuschlag tight_penalty_s; -1 = alte Regel (nur, wenn kein Ziel mit Abstand)."""

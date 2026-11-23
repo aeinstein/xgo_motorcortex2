@@ -808,7 +808,7 @@ class PetBrain:
         log.info("pet: Rufsuche: Öffnung %d, %.1f m (Weg %.1f m)", self._ruf["n"], luft, weg_m or luft)
         self._phase_set("fahren", t)
         if weg_m is not None:                                # Zeit nach dem Weg, nicht nach der Luftlinie
-            v = max(self.cfg.drive_v * self.rcfg.vx_limit, 1e-3)
+            v = max(self.rcfg.v_of(self.cfg.drive_v) * self.rcfg.vx_limit, 1e-3)
             self._drive_t_max = max(self._drive_t_max, t + 8.0 + 2.5 * weg_m / v)
 
     def _ruf_umgeschaut(self, s: Sense) -> None:
@@ -942,13 +942,13 @@ class PetBrain:
         if self.retreat_m > 0 and s.ds_measured and c.gestures and t - self._retreat_t >= c.retreat_cooldown_s:
             self._retreat_left = self.retreat_m
             self._retreat_t = t
-            self._retreat_until = t + self._pulse_s(self.retreat_m, c.retreat_v, self.rcfg.reverse_gain)
+            self._retreat_until = t + self._pulse_s(self.retreat_m, c.retreat_v)
             self.n_retreat += 1
         self._set_state("schreck", t)
 
-    def _pulse_s(self, budget_m: float, v: float, gain: float = 1.0) -> float:
-        """So lange darf v anliegen, damit der gesamte Weg samt Nachlauf im Budget bleibt."""
-        return self.cfg.pulse_margin * budget_m / max(abs(v) * gain * self.rcfg.vx_limit, 1e-3)
+    def _pulse_s(self, budget_m: float, v: float) -> float:
+        """So lange darf v (Faktor) anliegen, damit der gesamte Weg samt Nachlauf im Budget bleibt."""
+        return self.cfg.pulse_margin * budget_m / max(abs(self.rcfg.v_of(v)) * self.rcfg.vx_limit, 1e-3)
 
     def _schreck_act(self) -> Act:
         """Erster Schritt der Reaktion: gleich abducken, gefahren wird ab dem nächsten."""
@@ -977,7 +977,7 @@ class PetBrain:
                 if self._retreat_left <= 0.0 or t >= min(self._retreat_until, self._state_t + c.retreat_max_s):
                     self._retreat_left = 0.0
                 else:
-                    act.v = -c.retreat_v
+                    act.v = -self.rcfg.v_of(c.retreat_v)
         if t >= self._until:
             self._set_state("wach", t)
         return act
@@ -1009,7 +1009,7 @@ class PetBrain:
         if (self._creep_left > 0 and self._creep_s > 0 and c.gestures and s.floor_ok and s.ds_measured
                 and tg.dist is not None and tg.dist > c.cat_stop_m and abs(tg.bearing) < math.radians(15.0)):
             self._creep_s -= s.dt
-            act.v = c.creep_v
+            act.v = self.rcfg.v_of(c.creep_v)
 
     # ---- Person -----------------------------------------------------------
     def _zone_of(self, tg: Seen) -> str | None:
@@ -1122,7 +1122,7 @@ class PetBrain:
         return self.x + dx / d * go, self.y + dy / d * go
 
     def _stop_m(self) -> float:
-        return NACHLAUF_S * self.cfg.drive_v * self.rcfg.vx_limit
+        return NACHLAUF_S * self.rcfg.v_of(self.cfg.drive_v) * self.rcfg.vx_limit
 
     def _no_drive(self, s: Sense, budget: float) -> str | None:
         """Grund, nicht zu fahren, oder None."""
@@ -1165,7 +1165,7 @@ class PetBrain:
         self._yaw_goal = None
         if name == "fahren":
             rest = math.hypot(self._goal[0] - self.x, self._goal[1] - self.y)
-            self._drive_t_max = t + 4.0 + 2.0 * rest / max(self.cfg.drive_v * self.rcfg.vx_limit, 1e-3)
+            self._drive_t_max = t + 4.0 + 2.0 * rest / max(self.rcfg.v_of(self.cfg.drive_v) * self.rcfg.vx_limit, 1e-3)
 
     def _task_reset(self, t: float) -> None:
         self._seek_ear = self._ear_again = False
@@ -1307,7 +1307,7 @@ class PetBrain:
         if why is not None:
             self._halt(s, why, rest)
             return
-        act.v = c.drive_v
+        act.v = self.rcfg.v_of(c.drive_v)
         act.w = self._turn_to(err)
 
     def _out_of_radius(self) -> bool:
@@ -1432,7 +1432,7 @@ class PetBrain:
             period = 0.2 if g[0] == "wackeln" else 0.6
             if g[0] != "kopf":
                 sign = 1.0 if int((t - g[1]) / period) % 2 == 0 else -1.0
-                act.w = sign * (c.wiggle_w if g[0] == "wackeln" else self.rcfg.turn_min_w)
+                act.w = sign * (self.rcfg.w_of(c.wiggle_w) if g[0] == "wackeln" else self.rcfg.turn_min_w)
             return
         if tg is not None:
             act.w = self._turn_to(tg.bearing)

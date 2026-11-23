@@ -147,9 +147,7 @@ class Robot:
 
     def __init__(self, cfg: RobotCfg):
         self.cfg = cfg
-        self.forward_gain = 1.0              # App: manual_forward_gain in der Handsteuerung, sonst 1
         self.v_trim = 0.0                    # App: Korrektur der Geschwindigkeitsregelung (SpeedCtrl), sonst 0
-        self.max_v_fwd: float | None = None  # App: Grenze vorwärts statt cfg.max_v (Modus explore), sonst None
         self._tempo = 1.0
         self.tempo = getattr(cfg, "tempo", 1.0)
         self._lock = threading.Lock()
@@ -210,9 +208,9 @@ class Robot:
     def drive(self, v: float, w: float, brake: bool = False) -> None:
         """brake (nur mit v = 0): Fahrwert sofort auf 0 statt über die Rampe; der Rider bremst nur auf 0 schnell,
         Zwischenwerte der Rampe setzt er erst nach ~1-2 s um (Bahnprüfung, Fahrt 2026-11-23)."""
-        # Erst begrenzen, dann Tempo: 100 % = bisheriges Verhalten, darunter alle Modi gleichmäßig langsamer
-        # (Fahren und Drehen, Verhältnis v/w und damit die geprüfte Bahn bleiben gleich).
-        v = max(-self.cfg.max_v, min(self.max_v_fwd or self.cfg.max_v, v)) * self._tempo
+        # Erst begrenzen, dann Tempo: v/w der Modi sind Faktor x max_v (RobotCfg.v_of), gesendet wird
+        # Faktor x tempo x max_v; Verhältnis v/w und damit die geprüfte Bahn bleiben gleich.
+        v = max(-self.cfg.max_v, min(self.cfg.max_v, v)) * self._tempo
         w = max(-self.cfg.max_w, min(self.cfg.max_w, w)) * self._tempo
         with self._lock:
             self._target = (v, w)
@@ -356,10 +354,9 @@ class Robot:
 
     @property
     def v_nominal(self) -> float:
-        """Fahrwert nach Rampe und Faktoren (reverse_gain, forward_gain), ohne die Korrektur der
-        Geschwindigkeitsregelung. Mal vx_limit ist das die verlangte Geschwindigkeit."""
-        v = self._cur[0]
-        return v * (self.cfg.reverse_gain if v < 0 else self.forward_gain)
+        """Fahrwert nach der Rampe, ohne die Korrektur der Geschwindigkeitsregelung. Mal vx_limit ist das die
+        verlangte Geschwindigkeit."""
+        return self._cur[0]
 
     def with_trim(self, v: float) -> float:
         """v plus Korrektur der Geschwindigkeitsregelung. Unter dem Totband der Firmware bleibt v, wie es
@@ -459,9 +456,9 @@ class Robot:
         self._cur = (v + dv, w + dw)
 
     def _send(self, now: float) -> None:
-        # Harte Obergrenze für alles, was an die Firmware geht: Faktoren (reverse_gain, manual_forward_gain) und
-        # die Geschwindigkeitsregelung wirken nach max_v und höben sonst darüber hinaus
-        m = self.cfg.max_sent
+        # die Geschwindigkeitsregelung wirkt nach max_v;
+        # begrenzt wird nur noch auf den Bereich der Firmware (robot.max_sent entfiel 2026-11-23, Nutzer)
+        m = 1.0
         v = max(-m, min(m, self.with_trim(self.v_nominal)))
         u = (norm_to_u8(v), norm_to_u8(max(-m, min(m, self._cur[1]))))
         keepalive = now - self._last_send_t > self.cfg.keepalive_s

@@ -39,10 +39,11 @@ const MIN_AKKU = 20;                                    // darunter keine Bewegu
 const HEIGHT_MIN = 61;                                  // u8 wie api.php: Minimum + 10 mm (+ Ausrichten)
 const HEIGHT_MAX = 200;                                 // xgonav fährt 55..200
 const HZ = 10.0;                                        // Sollwerte für manual (hält 0,5 s)
-const V_MAX = 0.15;                                     // normiert, geprüft ohne manual_forward_gain: Nennwert v · vx_limit (1,8) m/s
-const W_MAX = 0.30;
+// v, w seit 2026-11-23 Anteile von robot.max_v/max_w (am Rider 0,5): gesendet v · tempo · max_v, Nenntempo · vx_limit (1,8) m/s
+const V_MAX = 0.30;                                     // geprüft (absolut wie früher 0,15)
+const W_MAX = 0.60;
 const FAHR_S_MAX = 5.0;                                 // längste Fahrt je Aufruf
-const HAND_MAX = 0.5;                                   // ungeprüft (wie Web-Steuerkreuz/rider_nav.py): max_v/max_w am Rider
+const HAND_MAX = 1.0;                                   // ungeprüft (wie Web-Steuerkreuz/rider_nav.py): bis max_v/max_w
 const FOLGE_S_MAX = 30.0;                               // „folge“: Summe der Abschnitte (php 120 s, nginx 150 s)
 const FOLGE_N_MAX = 10;
 const DREH_MAX = 1080.0;
@@ -225,7 +226,7 @@ function kurs(array $s): ?float
 }
 
 /** Auf der Stelle drehen (+ = links), Kurs aus /status; gibt den gedrehten Winkel zurück. Vorher fahrbereit(). */
-function drehe(float $grad, float $w_max = 0.25, float $tol = 3.0): float
+function drehe(float $grad, float $w_max = 0.5, float $tol = 3.0): float
 {
     $y_alt = kurs(status());
     if ($y_alt === null) {
@@ -252,7 +253,7 @@ function drehe(float $grad, float $w_max = 0.25, float $tol = 3.0): float
             if (abs($err) <= $tol) {
                 break;
             }
-            $w = min($w_max, max(0.08, 0.01 * abs($err))) * ($err < 0 ? -1 : 1);
+            $w = min($w_max, max(0.16, 0.02 * abs($err))) * ($err < 0 ? -1 : 1);   // Anteil von max_w
             post(sprintf('/drive?v=0&w=%.3f', $w));       // 409, sobald jemand „stopp“ ruft: Abbruch
             schlafen(1.0 / HZ);
         }
@@ -408,7 +409,7 @@ function werkzeuge(): array
         'drehen' => ['drehen', 'Auf der Stelle drehen, um woanders hinzuschauen: grad > 0 = nach links, < 0 = nach rechts. Geregelt über den '
             . 'IMU-Kurs (±3°, er dreht bis ~5° nach). Liefert danach das neue Kamerabild. Nur balancierend.',
             schema(['grad' => $zahl('Drehwinkel in Grad, + = links', -DREH_MAX, DREH_MAX),
-                    'w' => $zahl('Höchste Drehrate, normiert (Standard 0.25)', 0.08, HAND_MAX),
+                    'w' => $zahl('Höchste Drehrate, Anteil von max_w (Standard 0.5)', 0.16, HAND_MAX),
                     'tol' => $zahl('Toleranz in Grad (Standard 3)', 1, 10),
                     'bild' => $ja('Danach das Kamerabild mitliefern (Standard true)')], ['grad']), false],
         'rundblick' => ['drehen', 'Einmal im Kreis drehen und in gleichmäßigen Schritten je ein Kamerabild liefern (Standard 4 Bilder im '
@@ -424,19 +425,19 @@ function werkzeuge(): array
         'ausrichten' => ['drehen', 'Beine neu ausrichten (3 s), wenn er im Stand schief steht. Nur balancierend.', schema(), false],
 
         'fahren' => ['fahren', 'Ein Stück fahren: v > 0 vorwärts, v < 0 rückwärts (dahin sieht die Kamera nicht!), w > 0 Linkskurve; normiert. '
-            . 'Nenntempo ≈ v · 1,8 m/s (v 0,10 ≈ 18 cm/s; sehr kleine v bewegen ihn evtl. nicht). Höchstens ' . FAHR_S_MAX . ' s je Aufruf, also in kleinen Schritten fahren und '
+            . 'v, w sind Anteile der Höchstwerte (1 = max_v ≈ 0,9 m/s bzw. max_w), mal Tempo; v 0,20 ≈ 18 cm/s (sehr kleine v bewegen ihn evtl. nicht). Höchstens ' . FAHR_S_MAX . ' s je Aufruf, also in kleinen Schritten fahren und '
             . 'zwischendurch schauen. xgonav prüft jeden Schritt gegen Bodengrenze und Hinderniskarte und bremst selbst (Meldung „Freiraum!“ '
             . 'oder „Bahn“); dann gilt |v| ≤ ' . V_MAX . ', |w| ≤ ' . W_MAX . '. geprueft = false fährt wie das Steuerkreuz im Web von Hand: '
-            . 'OHNE Bodengrenze und Bahnprüfung (Sturz-Erkennung und Watchdogs bleiben), |v|, |w| ≤ ' . HAND_MAX . ', mit manual_forward_gain; '
+            . 'OHNE Bodengrenze und Bahnprüfung (Sturz-Erkennung und Watchdogs bleiben), |v|, |w| ≤ ' . HAND_MAX . '; '
             . 'nur wenn der Mensch das ausdrücklich will (z. B. an Engstellen, an denen die Prüfung bremst). '
             . 'Liefert Strecke, Meldungen und das Kamerabild danach.',
-            schema(['v' => $zahl('Vorwärtsgeschwindigkeit, normiert', -HAND_MAX, HAND_MAX),
-                    'w' => $zahl('Drehrate, normiert, + = links (Standard 0)', -HAND_MAX, HAND_MAX),
+            schema(['v' => $zahl('Vorwärtsgeschwindigkeit, Anteil von max_v', -HAND_MAX, HAND_MAX),
+                    'w' => $zahl('Drehrate, Anteil von max_w, + = links (Standard 0)', -HAND_MAX, HAND_MAX),
                     'sekunden' => $zahl('Dauer', 0.2, FAHR_S_MAX),
                     'geprueft' => $ja('Mit Bodengrenze und Bahnprüfung (Standard true); false = Handsteuerung ohne Prüfung'),
                     'bild' => $ja('Danach das Kamerabild mitliefern (Standard true)')], ['v', 'sekunden']), false],
         'folge' => ['fahren', 'Mehrere Fahrabschnitte [v, w, sekunden] nacheinander OHNE Halt dazwischen, z. B. fahren und direkt aus der '
-            . 'Fahrt drehen: [[0.13, 0, 3], [0, 0.25, 1]]. Grenzen je Abschnitt wie „fahren“ (auch geprueft), Abschnitte 0..5 s, '
+            . 'Fahrt drehen: [[0.26, 0, 3], [0, 0.5, 1]]. Grenzen je Abschnitt wie „fahren“ (auch geprueft), Abschnitte 0..5 s, '
             . 'höchstens ' . FOLGE_N_MAX . ' Abschnitte und ' . FOLGE_S_MAX . ' s zusammen. Am Ende Stillstand + idle, Strecke, Meldungen, Bild.',
             schema(['abschnitte' => ['type' => 'array', 'description' => 'Liste [v, w, sekunden]', 'minItems' => 1, 'maxItems' => FOLGE_N_MAX,
                                      'items' => ['type' => 'array', 'items' => ['type' => 'number'], 'minItems' => 3, 'maxItems' => 3]],
@@ -671,10 +672,10 @@ function w_absetzen(array $a): array
 function w_drehen(array $a): array
 {
     $grad = (float)($a['grad'] ?? 0);
-    $w = (float)($a['w'] ?? 0.25);
+    $w = (float)($a['w'] ?? 0.5);
     $tol = (float)($a['tol'] ?? 3.0);
-    if (abs($grad) > DREH_MAX || $w < 0.08 || $w > HAND_MAX || $tol < 1 || $tol > 10) {
-        throw new Fehler(sprintf('Grenzen: grad -%1$.0f .. %1$.0f, w 0.08 .. %2$.2f, tol 1 .. 10.', DREH_MAX, HAND_MAX));
+    if (abs($grad) > DREH_MAX || $w < 0.16 || $w > HAND_MAX || $tol < 1 || $tol > 10) {
+        throw new Fehler(sprintf('Grenzen: grad -%1$.0f .. %1$.0f, w 0.16 .. %2$.2f, tol 1 .. 10.', DREH_MAX, HAND_MAX));
     }
     $fp = sperre();
     fahrbereit(false);
@@ -788,7 +789,7 @@ function fahrt(array $abschnitte, array $a): array
             throw new Fehler(sprintf('Grenzen%s: |v| ≤ %.2f, |w| ≤ %.2f.', $geprueft ? ' (geprüft)' : ' (ungeprüft)', $vmax, $wmax));
         }
     }
-    // Ein xgonav vor 2026-11-20 kennt sicher=1 nicht und führe ungeprüft (und mit manual_forward_gain)
+    // Ein xgonav vor 2026-11-20 kennt sicher=1 nicht und führe ungeprüft
     if ($geprueft && strpos(http('GET', '/')[1], 'sicher=') === false) {
         throw new Fehler('Das laufende xgonav kennt das geprüfte Fahren noch nicht (Neustart des Dienstes nötig). Dem Besitzer sagen.');
     }

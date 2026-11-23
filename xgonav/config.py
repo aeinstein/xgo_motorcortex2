@@ -14,9 +14,11 @@ class RobotCfg:
     # Mapping laut XGO-Lib: u8 = 255/(2*L) * (v + L); 128 ~ Stillstand
     vx_limit: float = 1.8          # Einheit der Firmware bei u8=0/255
     vyaw_limit_dps: float = 360.0  # Grad/s bei u8=0/255
-    # Sicherheitsgrenzen für den Autonomiebetrieb (Anteil des Vollausschlags)
-    # Nutzer 2026-11-13: beide auf 50 % des Firmware-Bereichs (vorher 0,15 / 0,30). 0,5 sind rechnerisch
-    # ~0,9 m/s und 180 °/s; über 0,24 (50 cm/s) ist nie gefahren worden.
+    # Höchstwerte (Anteil des Firmware-Vollausschlags). Seit 2026-11-23 sind alle Fahr- und Drehwerte der Modi
+    # (home.v, explore.v, pet.drive_v, behavior.search_w, …) und die Handsteuerung Anteile davon:
+    # gesendet = Faktor x tempo x max_v (bzw. max_w), dazu nur die Korrektur von speed_ctrl; Handsteuerung =
+    # max_v x tempo x 1 (Nutzer 2026-11-23: reverse_gain/manual_forward_gain waren Notlösungen für die alte Firmware). Nutzer 2026-11-13: beide 0,5 (vorher 0,15 / 0,30); 0,5 sind rechnerisch ~0,9 m/s und 180 °/s,
+    # über 0,24 (50 cm/s) ist nie gefahren worden.
     max_v: float = 0.5
     max_w: float = 0.5
     # Kleinere Drehbefehle setzt die Firmware nicht um (Totband ~5 %): Untergrenze des gemeinsamen Drehreglers
@@ -26,18 +28,6 @@ class RobotCfg:
     # damit malgenommen (Robot.drive). Startwert; zur Laufzeit über den Temporegler im Web (POST /tempo),
     # gilt bis zum Neustart. Firmware-Aktionen (POST /action) fahren mit eigener Geschwindigkeit.
     tempo: float = 1.0
-    # Harte Obergrenze für den gesendeten Fahr- und Drehwert, nach allen Faktoren (reverse_gain,
-    # manual_forward_gain) und der Geschwindigkeitsregelung: nie mehr als dieser Anteil des Vollausschlags
-    max_sent: float = 0.5
-    # Rückwärts war 2026-11-02 viel schwächer (2 s mit u8 109 ~4 cm, mit 147 vorwärts 86 cm), daher
-    # werden negative v beim Senden mit reverse_gain multipliziert; max_v begrenzt davor den
-    # Sollwert. 1.0 = symmetrisch. Mit den Firmware-Patches vom 2026-11-05 setzt die Firmware beide
-    # Richtungen gleich um (Sollwert -> Raddrehzahl 2,67 vorwärts, 2,65 rückwärts).
-    reverse_gain: float = 2.0
-    # Derselbe Faktor vorwärts, nur in der Handsteuerung. Die autonomen Modi bleiben bei 1: im
-    # Simulator (--dyn, 2026-11-05) gab Faktor 2 dort 1 Kollision in 8 Läufen und Zum Start kam nur
-    # noch 1 von 4 Mal an (Faktor 1: 0 Kollisionen, 4 von 4); die Freiraum-Schwellen passen nicht dazu.
-    manual_forward_gain: float = 2.0
     # Geschwindigkeitsregelung: Die Firmware regelt die Fahrgeschwindigkeit praktisch nur proportional, auf
     # Teppich bleibt der Rider deshalb unter dem Soll. Mit speed_ctrl vergleicht xgonav im Regelschritt Soll
     # (gesendeter Wert x vx_limit) und Ist (Räder), beide über speed_ctrl_window_s gemittelt, und stellt den
@@ -50,7 +40,7 @@ class RobotCfg:
     # Fehlbetrag von 0,04 ist dann nach ~3 s zu 95 % ausgeglichen. Seit 2026-11-23 1,2 s wie die Trägheit des
     # Riders (Fahrt vor dem Stuhl: Räder folgen dem Fahrwert mit ~1,2 s; mit 0,8 s lief er schneller als verlangt
     # und die Korrektur stand trotzdem bei +0,07); Simulator damit 8 % Überschwingen statt 19 %.
-    speed_ctrl: bool = False
+    speed_ctrl: bool = True       # am RiderPi seit 2026-11-13 an
     speed_ctrl_window_s: float = 0.3
     speed_ctrl_ti_s: float = 2.0
     speed_ctrl_lag_s: float = 1.2
@@ -76,8 +66,16 @@ class RobotCfg:
     # rc.local setzt sie beim Booten. Beim Start blitzt xgonav led_start_s lang mit 255 (Zeichen „läuft“),
     # danach wieder der gespeicherte Wert; 0 = ohne Blitz, nur setzen.
     led_file: str = "/var/lib/xgonav/led_brightness"
-    led_default: int = 51          # 20 %, solange nichts gespeichert ist
+    led_default: int = 20          # wie am RiderPi (Web 2026-11-19), solange nichts gespeichert ist
     led_start_s: float = 0.2
+
+    def v_of(self, f: float) -> float:
+        """Fahrwert eines Faktors (Konfigwert eines Modus, Handsteuerung): Anteil von max_v."""
+        return f * self.max_v
+
+    def w_of(self, f: float) -> float:
+        """Drehwert eines Faktors: Anteil von max_w."""
+        return f * self.max_w
 
 
 @dataclass
@@ -162,7 +160,7 @@ class ImuCfg:
     stream_hz: int = 100
     # Abgesetzt (Rider balanciert nicht) braucht niemand 100 Hz: Strom und Lesen auf diese Rate, beim Aufstehen wieder
     # stream_hz und poll_s. Spart am CM4 ~6 % eines Kerns (2026-11-10). 0 = nie umschalten.
-    idle_hz: int = 5
+    idle_hz: int = 0                # wie am RiderPi (2026-11-17)
     # Vorzeichen und Zeitversatz fest (RiderPi, gemessen 2026-11-17 mit tools/imu_versatz.py). 0 bzw. None =
     # automatisch aus der Bild-Korrelation (ImuSync, Simulator): rechnet dann einmal je Sekunde, gilt erst nach der
     # ersten Bewegung und fällt bei schwacher Korrelation auf den Bildnick zurück.
@@ -309,10 +307,11 @@ class BehaviorCfg:
     kp_dist: float = 0.35          # normiertes v pro Meter Abstandsfehler
     dist_deadband: float = 0.10    # m
     ff_dist: float = 0.8           # Vorsteuerung mit geschätzter Zielgeschwindigkeit
-    cruise_v: float = 0.15
-    backup_v: float = 0.10
-    search_w: float = 0.07
-    turn_w: float = 0.21           # Erkunden: Drehrate beim Wegdrehen (früher fest 1,5 x search_w)
+    # Tempo und Drehraten: Anteil von robot.max_v bzw. robot.max_w (seit 2026-11-23; vorher absolut 0,15 / 0,10 / 0,07 / 0,21)
+    cruise_v: float = 0.30
+    backup_v: float = 0.20
+    search_w: float = 0.14
+    turn_w: float = 0.42           # Erkunden: Drehrate beim Wegdrehen (früher fest 1,5 x search_w)
     lost_search_s: float = 1.0
     search_timeout_s: float = 10.0     # Suche ohne Raumkarte (auf der Stelle drehen): danach warten
     # follow, Ziel verloren: mit Raumkarte und bestätigter Pose zur letzten bekannten Stelle fahren (Planer wie home),
@@ -322,7 +321,7 @@ class BehaviorCfg:
     lost_seek_max_m: float = 4.0
     lost_arrive_m: float = 0.25
     lost_look_deg: float = 360.0
-    lost_look_w: float = 0.10
+    lost_look_w: float = 0.20          # Anteil von robot.max_w
     blocked_free: float = 0.22     # Freiraum im Zentrum darunter = blockiert
     slow_free: float = 0.55        # darunter proportional abbremsen
     ttc_avoid_s: float = 1.2       # Erkunden: Time-to-contact darunter -> ausweichen
@@ -331,7 +330,7 @@ class BehaviorCfg:
     # vorn noch push_free_m frei, fährt er push_s lang mit push_v statt gleich zurückzusetzen. Höchstens
     # push_n Mal, bis er wieder 0,3 m weitergekommen ist. Anlass: RiderPi 2026-11-17, Rille im Teppich
     # vor der Heizung, 15 s mit 0,25 gedrückt, Räder standen. Am Rider nicht gefahren. push_n 0 = aus.
-    push_v: float = 0.45
+    push_v: float = 0.90           # Anteil von robot.max_v (vorher absolut 0,45)
     # Bis 2026-11-23 0,6 s: Der Rider setzt einen Fahrwert erst nach ~0,7-1 s an den Rädern um (Fahrt 2026-11-23),
     # im Simulator (--dyn, Szene fuge) kam er damit nie über die Fuge; die Strecke begrenzt push_max_m
     push_s: float = 1.2
@@ -522,7 +521,7 @@ class StartbildCfg:
     enabled: bool = True
     vor_m: float = 0.40                # Vorpunkt so weit vor dem Start (gerade Schlussfahrt); Tiefenbilder bis basen[-1]
     vor_tol_m: float = 0.08            # am Vorpunkt angekommen
-    gerade_v: float = 0.08             # normiertes Tempo der Schlussfahrt (~10 cm/s)
+    gerade_v: float = 0.16             # Tempo der Schlussfahrt, Anteil von robot.max_v (~10 cm/s; vorher absolut 0,08)
     tiefe_schritt_m: float = 0.04      # während der Schlussfahrt je so viel Weg ein Graubild merken
     basen: list = field(default_factory=lambda: [0.1, 0.15, 0.2, 0.25, 0.3])   # Abstände der Tiefenbilder (m)
     features: int = 3000               # SIFT-Merkmale je Bild
@@ -583,8 +582,8 @@ class HomeCfg:
     keep_factor: float = 1.2           # alter Weg bleibt, solange frei und <= Faktor x neuer + 0,3 m
     use_localmap: bool = True          # Hindernisse der Bahnprüfung (Merkkarte) mit einplanen
     localmap_reach_m: float = 1.0      # nur so nahe: weiter weg misst die Merkkarte zu ungenau
-    v: float = 0.15                    # normiert, wie behavior.cruise_v
-    start_v: float = 0.225             # „Zum Start“ (home, Heimfahrt in pet): +50 % (Nutzer 2026-11-22); Schlussfahrt startbild.gerade_v
+    v: float = 0.30                    # Anteil von robot.max_v, wie behavior.cruise_v (vorher absolut 0,15)
+    start_v: float = 0.45              # „Zum Start“ (home, Heimfahrt in pet): +50 % (Nutzer 2026-11-22); Schlussfahrt startbild.gerade_v
     # Lenkung: am RiderPi rollt der Rider bei jedem Anfahren erst zurück und eine Drehung läuft
     # ~15° nach; ständiges Wechseln zwischen Drehen und Fahren brachte ihn nicht vom Fleck
     # (2026-11-05). Deshalb in Kurven weiterfahren, auf der Stelle nur bei großem Fehler drehen.
@@ -593,12 +592,12 @@ class HomeCfg:
     turn_exit_deg: float = 25.0        # ... bis er darunter ist
     # Kleine Lenkbefehle ignoriert die Firmware (u8 128 ± 6): darunter sonst keine Korrektur
     # unter ~11° Fehler. Ab min_w_err_deg Fehler deshalb mindestens min_w.
-    min_w: float = 0.055
+    min_w: float = 0.11                # Anteil von robot.max_w (vorher absolut 0,055)
     min_w_err_deg: float = 4.0
     # Drehen auf der Stelle (Wegfolger, Ausrichten am Ziel) höchstens so schnell (normiert). 0,25 seit
     # 2026-11-17: mit robot.max_w 0,5 wendete er mit 0,5, kippte dabei 7° zur Seite und die IMU-Neigung
-    # brauchte danach 3-4 s (Fahrt 20261117-144500). 1.0 = nur robot.max_w begrenzt (Simulator).
-    turn_w_max: float = 0.25
+    # brauchte danach 3-4 s (Fahrt 20261117-144500). Anteil von robot.max_w: 0,5 = absolut 0,25, 1.0 = robot.max_w.
+    turn_w_max: float = 0.50
     align_heading: bool = True         # am Ziel auf den Startkurs drehen
     align_tol_deg: float = 10.0
     max_fail: int = 3                  # so oft kein Weg -> aufgeben
@@ -614,11 +613,11 @@ class HomeCfg:
 class ExploreCfg:
     # Modus explore: Frontiers der Raumkarte anfahren (frontier.py), bis nichts Unbekanntes mehr
     # erreichbar ist. Weg und Lenkung wie home ([home]).
-    scan_w: float = 0.07               # Rundumblick am Anfang (langsam: unter grid.max_turn_dps)
+    scan_w: float = 0.14               # Rundumblick am Anfang (langsam: unter grid.max_turn_dps), Anteil von robot.max_w
     # Tempo auf dem Weg zur nächsten Stelle und zurück zum Start (normiert, statt home.v 0,15; Nutzer 2026-11-11:
-    # erst 0,30, nach zwei Fahrten am RiderPi 0,20). Gilt über robot.max_v hinaus, nur im Modus explore; in
+    # erst 0,30, nach zwei Fahrten am RiderPi 0,20, im Web 2026-11-20 0,4). Anteil von robot.max_v (0,8 = absolut 0,4); in
     # Engstellen weiter mal home.tight_v, das reaktive Befreien bleibt bei behavior.cruise_v.
-    v: float = 0.20
+    v: float = 0.80
     min_cluster_m: float = 0.4         # kleinere Frontier-Gruppen zählen nicht
     # Erst wenn sonst kein Ziel mehr bleibt, zählen auch Gruppen dicht an Hindernissen (näher als home.inflate_m,
     # z. B. die Öffnung einer 25-cm-Lücke: in der Karte nur 3–5 Zellen breit) ab dieser Größe, wenn dahinter
@@ -718,15 +717,15 @@ class PetCfg:
     duck_mm: float = 75.0              # wird auf Minimum + 10 mm angehoben (robot.height_min_mm)
     roll_deg: float = 8.0              # Kopf schief; höchstens 12
     tilt_s: float = 1.2
-    wiggle_w: float = 0.10
+    wiggle_w: float = 0.20             # Anteil von robot.max_w
     wiggle_s: float = 1.2
     turn_kp: float = 1.5               # 1/s
     turn_deadband_deg: float = 8.0
-    turn_w: float = 0.40               # Nutzer 2026-11-13: Drehen x2 (vorher 0,20); Untergrenze robot.turn_min_w
+    turn_w: float = 0.80               # Anteil von robot.max_w (absolut 0,40; Nutzer 2026-11-13: Drehen x2); Untergrenze robot.turn_min_w
     # Budgets, 0 = aus. Rückwärts ist blind und vorwärts sieht das Bodenmodell Stufen zu spät: nur mit
     # Beobachtung und nur, wo keine Treppe ist. Ohne Räder fährt er nie, Obergrenzen 0,30 m / 1,0 m.
     retreat_m: float = 0.0             # je Ereignis (RiderPi-Test: 0.12)
-    retreat_v: float = 0.10
+    retreat_v: float = 0.20            # Anteil von robot.max_v
     retreat_max_s: float = 1.5
     retreat_cooldown_s: float = 10.0
     # Beide Budgets als Zeitimpuls (Budget / Tempo x pulse_margin), die Räder nur als Obergrenze: Beim Stoppbefehl
@@ -734,7 +733,7 @@ class PetCfg:
     # ganze Budget. Über den ganzen Impuls entspricht der Weg dem Integral des Befehls.
     pulse_margin: float = 0.85
     creep_m: float = 0.0               # zur Katze, je Begegnung (RiderPi-Test: 0.4); braucht Bodenmodell + Merkkarte
-    creep_v: float = 0.06
+    creep_v: float = 0.12              # Anteil von robot.max_v
     # Tiere
     animal_conf: float = 0.5
     animal_hits: int = 4
@@ -861,8 +860,8 @@ class PetCfg:
     roam_repeat_s: float = 45.0        # danach wieder
     roam_free_min: float = 0.55        # Freiraum im Zentrum (wie behavior.slow_free), sonst fährt er dort nicht hin
     roam_battery: int = 40             # %: darunter weder suchen noch streifen
-    drive_v: float = 0.12              # normiert; gemessen 0,08 -> ~12,5 cm/s, 0,12 -> ~26 cm/s. Nutzer 2026-11-13: schneller (vorher 0,08)
-    look_w: float = 0.24               # Drehrate beim Umschauen und Horchen, normiert. Nutzer 2026-11-13: x2 (vorher 0,12)
+    drive_v: float = 0.24              # Anteil von robot.max_v; absolut 0,08 -> ~12,5 cm/s, 0,12 -> ~26 cm/s. Nutzer 2026-11-13: schneller
+    look_w: float = 0.48               # Drehrate beim Umschauen und Horchen, Anteil von robot.max_w. Nutzer 2026-11-13: x2
     look_step_deg: float = 90.0        # in Schritten drehen, dazwischen still stehen: Detektor und Bodenmodell
     look_steps: int = 4                # so viele Blicke (4 x 90° = einmal rundum)
     look_pause_s: float = 1.5          # je Blick stillstehen
@@ -897,7 +896,7 @@ class DunkelCfg:
     fright_s: float = 1.5              # Angst: so lange stehen (Emotion, Ton)
     settle_s: float = 1.5              # nach dem Drehen warten, bis die Belichtung nachgeregelt hat
     turn_kp: float = 1.5               # 1/s, wie pet
-    turn_w: float = 0.20               # Untergrenze robot.turn_min_w
+    turn_w: float = 0.40               # Anteil von robot.max_w; Untergrenze robot.turn_min_w
     tol_deg: float = 8.0
     turn_timeout_s: float = 10.0
     max_events: int = 3                # so oft in events_window_s ins Dunkle: gleich aufgeben
@@ -1045,8 +1044,8 @@ class CpuCfg:
 class RelocCfg:
     # Kartenabgleich (reloc.py): Pose in der Raumkarte aus der Bodengrenze der letzten Sekunden.
     # Rechnet im eigenen Thread, nichts in der Bildschleife. Aus = alles wie bisher.
-    enabled: bool = True               # Zustand "Pose unbekannt", Kartensperre, Modus locate
-    track: bool = True                 # laufender Abgleich während der Fahrt
+    enabled: bool = False              # Zustand "Pose unbekannt", Kartensperre, Modus locate
+    track: bool = False                # laufender Abgleich während der Fahrt
     # Puffer der Bodengrenze (Punkte im Roboter-KS): so viele Sekunden und so viel Weg zurück
     window_s: float = 8.0
     window_m: float = 3.0
@@ -1110,27 +1109,30 @@ ENTFERNT.update({k: "Hotspot öffnet seit 2026-11-21 xgo-wlan-auto.service von s
 ENTFERNT.update({f"pet.{k}": "pet folgt seit 2026-11-22 mit der Routine des Modus follow ([behavior] follow_dist_m)"
                  for k in ("follow_trust", "follow_dist_m", "follow_start_m", "follow_hold_s", "follow_lost_s",
                            "follow_settle_s", "follow_block_s")})
+ENTFERNT.update({"robot.max_sent": "seit 2026-11-23: Grenze ist robot.max_v/max_w, gesendet wird höchstens ±1",
+                 "robot.manual_forward_gain": "seit 2026-11-23: Handsteuerung = max_v x tempo x 1",
+                 "robot.reverse_gain": "seit 2026-11-23: Firmware fährt seit 2026-11-05 symmetrisch"})
 ENTFERNT.update({k: "eine Untergrenze für alle Drehungen seit 2026-11-23 ([robot] turn_min_w)"
                  for k in ("pet.turn_min_w", "dunkel.turn_min_w")})
 UMBENANNT = {"freespace.shadow_net": "freespace.net"}
 
-# Die Defaults oben sind seit 2026-11-12 die Werte des RiderPi (/opt/xgonav/config.toml ohne Testbetrieb und
-# ohne Pfade unter /opt). Simulator und Tests rechnen mit dem früheren neutralen Stand: Config.neutral().
-NEUTRAL = {"home.start_v": 0.15, "pet.call_m": 0.0, "pet.come_m": 0.0, "pet.follow_m": 0.0, "pet.drive_v": 0.08, "pet.look_w": 0.12, "pet.turn_w": 0.20, "pet.faint": False, "pet.faint_level": 1.0, "pet.seek_m": 0.0, "pet.roam_m": 0.0, "pet.roam_radius_m": 1.0,
-           "robot.vx_limit": 1.5, "robot.max_v": 0.25, "robot.max_w": 0.25, "robot.reverse_gain": 1.0,
-           "robot.manual_forward_gain": 1.0, "robot.level_after_standup": False, "camera.sensor_mode": "",
-           "camera.scaler_crop": [], "camera.lens_knots_px": [], "camera.lens_g_px": [], "camera.lens_center": [], "camera.lens_roll_deg": 0.0, "camera.lens_yaw_deg": 0.0, "camera.exposure_us": 4000, "camera.analogue_gain": 0.0,
-           "camera.mount_offset_mm": 45.0, "camera.cam_h_u8": [], "camera.cam_fwd_mm": 0.0,
-           "camera.tilt_deg": 0.0, "imu.stream_hz": 0, "imu.pitch_sign": 0, "imu.yaw_scale_left": 1.0, "imu.yaw_scale_right": 1.0, "imu.time_offset_ms": None, "imu.pitch_ref_deg": 0.0, "imu.use_roll": False,
-           "detector.max_hz": 0.0, "detector.classes": [], "freespace.threaded": False,
-           "freespace.net": "", "freespace.net_smooth_n": 0, "map.confirm": 1,
-           "behavior.follow_dist_m": 1.2, "behavior.dist_deadband": 0.15, "behavior.search_w": 0.12,
-           "behavior.turn_w": 0.18, "behavior.search_timeout_s": 20.0, "behavior.height_search_mm": 115.0,
-           "behavior.height_fast_mm": 70.0, "output.lcd_fifo": "/tmp/lcd0", "cpu.main_cpus": [],
-           "cpu.detector_cpus": [], "cpu.render_cpus": [], "cpu.freespace_cpus": [], "odom.scale_left": 1.0,
-           "odom.scale_right": 1.0, "explore.turn_dps": 40.0, "explore.tight_max": 3, "explore.tight_penalty_s": -1.0, "grid.confirm_dr_m": 0.0, "grid.hit_band_quad": 0.0, "grid.max_range_m": 1.25, "grid.free_range_m": 1.5, "grid.size_m": 16.0, "home.turn_w_max": 1.0,
-           "reloc.enabled": False, "reloc.track": False, "startbild.enabled": False,
-           "control_hz": 20.0}
+# Die Defaults oben sind die Werte des RiderPi (/opt/xgonav/config.toml ohne Pfade unter /opt). Simulator und Tests
+# rechnen mit Config.neutral(): seit 2026-11-23 (Nutzer: „immer die gleichen Werte wie am Rider“) dieselben Werte,
+# nur was der Simulator physikalisch nicht nachbildet, ist neutral: Kamera (Linse, Ausschnitt, Belichtung, Einbau),
+# IMU (Vorzeichen/Versatz erst die Automatik, SimImu), Radmaßstab, Nivellieren der Firmware,
+# Detektor-Takt (FakeDetector), FloorNet (SimFloorNet), Display, CPU-Pinning. Fahr-, Dreh-, Verhaltens-, Karten- und
+# Taktwerte gehören NIE hierher.
+NEUTRAL = {"robot.level_after_standup": False,
+           "camera.sensor_mode": "", "camera.scaler_crop": [], "camera.lens_knots_px": [], "camera.lens_g_px": [],
+           "camera.lens_center": [], "camera.lens_roll_deg": 0.0, "camera.lens_yaw_deg": 0.0,
+           "camera.exposure_us": 4000, "camera.analogue_gain": 0.0, "camera.mount_offset_mm": 45.0,
+           "camera.cam_h_u8": [], "camera.cam_fwd_mm": 0.0, "camera.tilt_deg": 0.0,
+           "imu.stream_hz": 0, "imu.pitch_sign": 0, "imu.yaw_scale_left": 1.0, "imu.yaw_scale_right": 1.0,
+           "imu.time_offset_ms": None, "imu.pitch_ref_deg": 0.0, "imu.use_roll": False,
+           "odom.scale_left": 1.0, "odom.scale_right": 1.0,
+           "detector.max_hz": 0.0, "detector.classes": [], "freespace.threaded": False, "freespace.net": "",
+           "output.lcd_fifo": "/tmp/lcd0",
+           "cpu.main_cpus": [], "cpu.detector_cpus": [], "cpu.render_cpus": [], "cpu.freespace_cpus": []}
 
 
 @dataclass
@@ -1167,8 +1169,8 @@ class Config:
 
     @classmethod
     def neutral(cls) -> "Config":
-        """Stand vor den RiderPi-Defaults (NEUTRAL): Kamera ohne Neigung und Kalibrierung, kein FloorNet (der
-        Simulator gibt sim.SimFloorNet mit), keine CPU-Bindung, Kartenabgleich aus. Für Simulator und Tests; tests/sim_run.py --rider setzt Rider-Werte darauf."""
+        """Rider-Werte, nur Sensorik/Umgebung neutral (NEUTRAL): Kamera ohne Neigung und Kalibrierung, IMU-Automatik,
+        kein FloorNet (der Simulator gibt sim.SimFloorNet mit), keine CPU-Bindung. Für Simulator und Tests."""
         cfg = cls()
         for name, wert in NEUTRAL.items():
             ziel, _, key = name.rpartition(".")           # ohne Punkt: Schlüssel auf oberster Ebene

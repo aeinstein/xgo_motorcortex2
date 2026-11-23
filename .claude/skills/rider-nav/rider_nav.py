@@ -5,7 +5,7 @@
   python3 /root/rider_nav.py start                # Bildverarbeitung an (falls aus) und auf Bilder warten
   python3 /root/rider_nav.py bild /tmp/rn.jpg     # Rohbild speichern (--overlay: mit Overlay)
   python3 /root/rider_nav.py aufstehen            # nur wenn er liegt: 253, warten bis er balanciert + Kalibrierung
-  python3 /root/rider_nav.py fahr 0.10 0 2.0      # Handsteuerung: v w Sekunden (normiert, v>0 vor, w>0 links)
+  python3 /root/rider_nav.py fahr 0.20 0 2.0      # Handsteuerung: v w Sekunden (Anteil von max_v/max_w, v>0 vor, w>0 links)
   python3 /root/rider_nav.py dreh 90              # um Grad drehen (+ = links), Kurs aus /status yaw_deg
   python3 /root/rider_nav.py hoehe 150            # Körperhöhe (u8 61..200, nur balancierend), dann ruhig stehen lassen
   python3 /root/rider_nav.py absetzen             # idle, 254, warten bis er liegt (beendet record_status.py)
@@ -277,7 +277,7 @@ def cmd_dreh(a) -> int:
             err = a.grad - gedreht
             if abs(err) <= a.tol:
                 break
-            w = math.copysign(min(a.w, max(0.08, 0.01 * abs(err))), err)
+            w = math.copysign(min(a.w, max(0.16, 0.02 * abs(err))), err)     # Anteil von max_w
             post("/drive?v=0&w=%.3f" % w)
             time.sleep(1.0 / HZ)
     except (RuntimeError, KeyboardInterrupt) as e:
@@ -362,7 +362,7 @@ def main() -> int:
     p = sp.add_parser("folge"); p.add_argument("abschnitte", nargs="+", metavar="V,W,SEK")
     p.set_defaults(f=cmd_folge)
     p = sp.add_parser("dreh"); p.add_argument("grad", type=float)
-    p.add_argument("--w", type=float, default=0.20, help="höchste Drehrate (normiert)")
+    p.add_argument("--w", type=float, default=0.40, help="höchste Drehrate (Anteil von max_w)")
     p.add_argument("--tol", type=float, default=3.0)
     p.add_argument("--timeout", type=float, default=None, help="Standard: 10 s + 1 s je 20°")
     p.set_defaults(f=cmd_dreh)

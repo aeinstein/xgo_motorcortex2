@@ -98,8 +98,8 @@ Every mode ends in `Command(v, w)` → `safety()` → `_arc_check()` → `Robot.
 - `drive(v, w)`: normalised [-1, 1]; v > 0 forward, w > 0 turn left.
 - `robot.norm_to_u8`: `u8 = 255/(2L)·(v + L)`, 128 = standstill.
 - Firmware **holds** setpoints; stops must be written explicitly.
-- `robot.reverse_gain` multiplies negative v before sending, `robot.manual_forward_gain` positive v in manual mode only (RiderPi: 2.0 each).
-- `robot.speed_ctrl`: `App._speed_tick` (control step) compares wheel speed with the target, `robot.SpeedCtrl` integrates the difference, `Robot._send` adds it after the gains. Firmware speed loop is P only, so the Rider runs slower on carpet without it.
+- Speeds of all modes and the hand control are factors of `robot.max_v`/`max_w` (`RobotCfg.v_of`/`w_of`); `Robot.drive` clamps to `max_v`/`max_w` and multiplies by `tempo`. Sent at most ±1; no direction or mode gains (removed 2026-11-23).
+- `robot.speed_ctrl`: `App._speed_tick` (control step) compares wheel speed with the target, `robot.SpeedCtrl` integrates the difference, `Robot._send` adds it. Firmware speed loop is P only, so the Rider runs slower on carpet without it.
 
 ## CPU (RiderPi config, `[cpu]`)
 

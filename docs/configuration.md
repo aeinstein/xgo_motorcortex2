@@ -29,27 +29,28 @@ Unknown section or key in TOML → `KeyError` at load. New parameters go into th
 
 ## Parameters
 
-Default = `config.py`; since 2026-11-12 these are the RiderPi values (`/opt/xgonav/config.toml` without `/opt` paths). (sim: …) = `Config.neutral()` (`NEUTRAL` in `config.py`), used by `tests/sim_run.py` and the tests. RiderPi = `deploy/config.example.toml` where it still differs (blank = default). [K] = device-specific, calibrate.
+Default = `config.py` = the RiderPi values (`/opt/xgonav/config.toml` without `/opt` paths). (sim: …) = `Config.neutral()` (`NEUTRAL` in `config.py`), used by `tests/sim_run.py` and the tests; since 2026-11-23 it differs only where the simulator cannot model the hardware (camera, IMU auto sync, wheel scale, levelling, detector rate, FloorNet, display, CPU pinning) — all drive, turn, behaviour, map and timing values are the Rider's.
+
+**Speeds (since 2026-11-23):** every drive and turn value of a mode (`home.v`, `explore.v`, `pet.drive_v`, `behavior.search_w`, …) and the hand control are **factors 0..1 of `robot.max_v` / `robot.max_w`**. Sent = factor × `tempo` × `max_v` (hand control: stick × `tempo` × `max_v`), plus only the `speed_ctrl` correction; capped at ±1 (firmware range). Values below are factors; absolute = factor × 0.5 on the RiderPi.
+
+RiderPi = `deploy/config.example.toml` where it still differs (blank = default). [K] = device-specific, calibrate.
 
 ### top level
 | Key | Default | RiderPi | Note |
 |---|---|---|---|
-| `control_hz` | 24.0 (sim: 20) | | control steps per second, at the frame nearest to the beat (threshold `1/control_hz − 0.5/fps`), so at most the frame rate: 24 = every frame. Without image processing (`manual`) by the clock. Until 2026-11-17: 20, which gave only every 2nd frame (~12 Hz) on the Rider and ~20 Hz in the simulator (20 fps). 24 Hz **not installed, not driven** |
+| `control_hz` | 24.0 | | control steps per second, at the frame nearest to the beat (threshold `1/control_hz − 0.5/fps`), so at most the frame rate: 24 = every frame. Without image processing (`manual`) by the clock. Until 2026-11-17: 20, which gave only every 2nd frame (~12 Hz) on the Rider and ~20 Hz in the simulator (20 fps). 24 Hz **not installed, not driven** |
 
 ### `[robot]`
 | Key | Default | RiderPi | Unit / note |
 |---|---|---|---|
-| `max_v` | 0.5 (sim: 0.25) | | normalised; RiderPi 0.15 → 0.5 on 2026-11-13 (user), **never driven above 0.24**. Sent 0.12 ≈ 26 cm/s, 0.24 ≈ 50 cm/s. |
-| `max_sent` | 0.5 | | hard cap on the sent drive and turn value, after the gains below and `speed_ctrl` |
-| `max_w` | 0.5 (sim: 0.25) | | normalised; 0.25 ≈ 90 °/s (firmware scale assumed); RiderPi 0.30 → 0.5 on 2026-11-13 (user) |
+| `max_v` | 0.5 | | maximum drive value (share of the firmware range); all speeds are factors of it. RiderPi 0.15 → 0.5 on 2026-11-13 (user), **never driven above 0.24 absolute**. Sent 0.12 ≈ 26 cm/s, 0.24 ≈ 50 cm/s |
+| `max_w` | 0.5 | | maximum turn value; 0.25 ≈ 90 °/s (firmware scale assumed); RiderPi 0.30 → 0.5 on 2026-11-13 (user) |
 | `turn_min_w` | 0.06 | | lower bound of the shared turn controller `behaviors.dreh_w` (firmware ignores smaller turn values): path follower turning in place and final alignment, `pet` turns, fear of the dark. Since 2026-11-23; replaces `pet.turn_min_w`, `dunkel.turn_min_w` and `behavior.search_w` as the path follower's minimum |
 | `tempo` | 1.0 | | start value of the speed slider: every drive and turn command of every mode is multiplied by it after the `max_v`/`max_w` clamp (`Robot.drive`); at runtime `POST /tempo?f=0.05..1` (web slider), until restart. Firmware actions run at their own speed |
-| `manual_forward_gain` | 2.0 (sim: 1.0) | | multiplier for positive v, manual mode only (applied after `max_v`, capped by `max_sent`) |
-| `reverse_gain` | 2.0 (sim: 1.0) | | multiplier for negative v (applied after `max_v`, capped by `max_sent`) |
 | `level_pulse_s` | 3.0 | | length of one leveling pulse (roll command 0, firmware `roll_balance` on, then off) |
 | `level_after_standup` | true (sim: false) | | one pulse after each stand-up, 2.5 s after it; web button „Neu ausrichten“ triggers the same pulse |
-| `vx_limit` | 1.8 (sim: 1.5) | | m/s per firmware unit (measured 2026-11-05: command 0.15 → ~27 cm/s); path check, follow prediction, odometry fallback |
-| `speed_ctrl` | false | | speed control on the wheels: sent value += ∫(target − wheel speed); target = sent value × `vx_limit`. Needs wheel odometry. Zero without fresh wheel data, at standstill, below the firmware dead band (0.05) and on a direction change. Not driven on the RiderPi |
+| `vx_limit` | 1.8 | | m/s per firmware unit (measured 2026-11-05: command 0.15 → ~27 cm/s); path check, follow prediction, odometry fallback |
+| `speed_ctrl` | true | | speed control on the wheels: sent value += ∫(target − wheel speed); target = sent value × `vx_limit`. Needs wheel odometry. Zero without fresh wheel data, at standstill, below the firmware dead band (0.05) and on a direction change. On at the RiderPi since 2026-11-13 |
 | `speed_ctrl_window_s` | 0.3 | | s, averaging window for wheel speed and target |
 | `speed_ctrl_ti_s` | 2.0 | | s, integral time |
 | `speed_ctrl_lag_s` | 1.2 | | s, lag of the target behind the sent value (Rider inertia, wheels vs. command 2026-11-23); without it the correction winds up at every start. Simulator (`sim._dyn`): 8 % overshoot (0.8 s: 19 %) |
@@ -62,7 +63,7 @@ Default = `config.py`; since 2026-11-12 these are the RiderPi values (`/opt/xgon
 | `height_min_mm` / `height_max_mm` | 60 / 120 | | scale mm → u8 (0..255) |
 | `height_limit_u8` | 205 | | highest setpoint (≈ 108 mm; firmware clamps at 200 ≈ 107 mm); see `limitations.md` |
 | `led_file` | `/var/lib/xgonav/led_brightness` | | LED brightness n/256 stored by the web UI; `deploy/rc.local` writes it at boot |
-| `led_default` | 51 | | used while `led_file` is missing (20 %) |
+| `led_default` | 20 | | used while `led_file` is missing |
 | `led_start_s` | 0.2 | | on start: 255 for this long (sign that xgonav runs), then `led_file`; 0 = set only. One-off, no per-frame cost |
 
 ### `[camera]`
@@ -94,7 +95,7 @@ Default = `config.py`; since 2026-11-12 these are the RiderPi values (`/opt/xgon
 | `enabled` | true | true | needs `imu_log` |
 | `imu_hz` | 50 | 50 | written to `settings/imu_hz` |
 | `stream_hz` | 100 (sim: 0) | | > 0: written to `settings/imu_stream_hz` → firmware stream (patch 0014) with the firmware's sample time; driver without it: warning, polling |
-| `idle_hz` | 5 | 5 | While the Rider is set down (not balancing): stream rate and read rate of the IMU thread; back to `stream_hz` and `poll_s` on stand-up. Saves ~6 % of one core on the CM4. `0` = never switch. Sleep mode still turns the stream off |
+| `idle_hz` | 0 | 0 | While the Rider is set down (not balancing): stream rate and read rate of the IMU thread; back to `stream_hz` and `poll_s` on stand-up. Saves ~6 % of one core on the CM4. `0` = never switch. Sleep mode still turns the stream off |
 | `pitch_sign` | -1 (sim: 0) | | +1/-1 fixed; 0 = auto from image correlation (`ImuSync`: once per second, valid only after the first motion). Fixed since 2026-11-17: the online estimate no longer runs; no IMU pitch for a frame → log warning, `pitch_src` = `"bild"` |
 | `yaw_scale_left`, `yaw_scale_right` | 1.0021, 1.0025 (sim: 1.0) | | Factor on heading changes of the firmware yaw (gyro scale error), separate for left (+) and right turns. Measured 2026-11-18 on the spot against a floor mark: 10 × 360° right 3560° real vs. 3551.3° IMU, 10 × left 3556° vs. 3548.4°. Recorded IMU samples are already corrected |
 | `yaw_jump_dps` | 500 | | heading change faster than this, or across a gap > 0.5 s (ESP restart starts at 0), is discarded; count in status `odom.imu_spruenge` |
@@ -107,7 +108,7 @@ Default = `config.py`; since 2026-11-12 these are the RiderPi values (`/opt/xgon
 
 ### Removed 2026-11-23
 
-Ignored with a warning: `pet.turn_min_w`, `dunkel.turn_min_w` → `robot.turn_min_w`.
+Ignored with a warning: `pet.turn_min_w`, `dunkel.turn_min_w` → `robot.turn_min_w`; `robot.max_sent` (cap is `max_v`/`max_w`, sent at most ±1); `robot.manual_forward_gain`, `robot.reverse_gain` (workarounds for the old firmware; hand control = `max_v` × `tempo` × 1).
 
 ### Removed 2026-11-17
 
@@ -159,34 +160,34 @@ Floor boundary from FloorNet only (`xgonav/freespace.py`, `docs/floornet.md`). T
 | `net_outlier_px` | `25.0` | `25.0` | FloorNet decoder, spike removal: a column further than this many full-frame rows from the median of the 7 columns around it takes the best bin at that median, if enough probability mass lies there. `0` = plain best bin. See `docs/floornet.md` |
 | `net_outlier_ratio` | `0.3` | `0.3` | Mass (5 bins) required at the median, relative to the mass at the column's own peak |
 | `net_dir` | `models/floornet` | | folder of selectable FloorNet weights (`*.bin`); web *Bodenmodell* switches by repointing the symlink `net` and reloading the net in-process (`POST /floornet`). `deploy/install.sh` creates folder and symlink (repo net as `p11a.bin`). `""` = not selectable |
-| `net_smooth_n` | 3 (sim: 0) | | boundary smoothed over time: the last n outputs are mapped onto the current frame (map pose, pitch) and the median per column counts; never averaged. `3` removes a spike seen in one frame, a new obstacle appears one network frame (83 ms) later. `0`/`1` = off; without a map pose the output passes unchanged |
+| `net_smooth_n` | 3 | | boundary smoothed over time: the last n outputs are mapped onto the current frame (map pose, pitch) and the median per column counts; never averaged. `3` removes a spike seen in one frame, a new obstacle appears one network frame (83 ms) later. `0`/`1` = off; without a map pose the output passes unchanged |
 
 ### `[map]` (short-term local map)
-`max_age_s` 4.0, `confirm` 3 (sim: 1), `confirm_radius_m` 0.08, `radius_m` 0.18 (path check: a confirmed point closer than this to the arc brakes), `radius_tight_m` 0.08 (same while the path follower drives a tight spot, `home.tight_m`; Rider half width 5.8 cm per CAD); moves with the dead-reckoning step (`[odom]`). `native` true: moving, entering (ground geometry, clear seen floor, thin, forget), confirming and the arc check in the C++ core (`xgonav/native/navfast.cpp`) if built; same result as numpy (CM4, 2000 points: arc check after a new observation 5.8 → 0.4 ms, confirmed points for the planner 94 → 0.6 ms).
+`max_age_s` 4.0, `confirm` 3, `confirm_radius_m` 0.08, `radius_m` 0.18 (path check: a confirmed point closer than this to the arc brakes), `radius_tight_m` 0.08 (same while the path follower drives a tight spot, `home.tight_m`; Rider half width 5.8 cm per CAD); moves with the dead-reckoning step (`[odom]`). `native` true: moving, entering (ground geometry, clear seen floor, thin, forget), confirming and the arc check in the C++ core (`xgonav/native/navfast.cpp`) if built; same result as numpy (CM4, 2000 points: arc check after a new observation 5.8 → 0.4 ms, confirmed points for the planner 94 → 0.6 ms).
 
 ### `[behavior]`
 | Key | Default | RiderPi |
 |---|---|---|
 | `mode` | idle | idle |
 | `target_class` | person | person |
-| `follow_dist_m` | 0.9 (sim: 1.2) | |
+| `follow_dist_m` | 0.9 | |
 | `approach_dist_m` | 0.5 | 0.5 |
-| `dist_deadband` | 0.1 (sim: 0.15) | |
+| `dist_deadband` | 0.1 | |
 | `kp_turn` / `kd_turn` | 2.5 / 0.25 | |
 | `kp_dist` / `ff_dist` | 0.35 / 0.8 | |
-| `cruise_v` / `backup_v` | 0.15 / 0.10 | 0.15 / |
-| `search_w` | 0.07 (sim: 0.12) | |
-| `turn_w` (explore: turn away) | 0.21 (sim: 0.18) | |
-| `search_timeout_s` | 10.0 (sim: 20.0) | | search without room map (turning in place), then wait |
+| `cruise_v` / `backup_v` | 0.30 / 0.20 | | factors of `max_v` (absolute 0.15 / 0.10) |
+| `search_w` | 0.14 | | factor of `max_w` (absolute 0.07) |
+| `turn_w` (explore: turn away) | 0.42 | | factor of `max_w` (absolute 0.21) |
+| `search_timeout_s` | 10.0 | | search without room map (turning in place), then wait |
 | `lost_seek` | true | | follow, target lost: drive to its last known position via the planner, then look around; needs room map + confirmed pose |
 | `lost_seek_max_m` / `lost_arrive_m` | 4.0 / 0.25 | | cap of the distance used for the last position / arrived there |
-| `lost_look_deg` / `lost_look_w` | 360 / 0.10 | | look around at the last position: angle, turn rate |
+| `lost_look_deg` / `lost_look_w` | 360 / 0.20 | | look around at the last position: angle, turn rate (factor of `max_w`) |
 | `blocked_free` / `slow_free` | 0.22 / 0.55 | |
 | `ttc_avoid_s` / `ttc_stop_s` | 1.2 / 0.8 | |
-| `push_v` / `push_s` / `push_n` / `push_free_m` | 0.45 / 1.2 / 2 / 0.4 | push: forward commanded, < 2 cm progress for 2.5 s (1 s after a push) and FloorNet ≥ `push_free_m` free ahead → drive `push_v` for `push_s`; at most `push_n` times until 0.3 m progress, then back up as before. Path following, `home`, `patrol`, and the reactive escape of `explore`. 0 = off. Not driven (carpet groove 2026-11-17) |
+| `push_v` / `push_s` / `push_n` / `push_free_m` | 0.90 (factor, absolute 0.45) / 1.2 / 2 / 0.4 | push: forward commanded, < 2 cm progress for 2.5 s (1 s after a push) and FloorNet ≥ `push_free_m` free ahead → drive `push_v` for `push_s`; at most `push_n` times until 0.3 m progress, then back up as before. Path following, `home`, `patrol`, and the reactive escape of `explore`. 0 = off. Not driven (carpet groove 2026-11-17) |
 | `kante_v` / `kante_fenster_s` / `kante_s` | 0.15 / 0.5 / 0.5 | | fast push (2026-11-23): wheels ≥ `kante_v` m/s within `kante_fenster_s`, then < 0.03 m/s while forward was commanded (joint, edge) and < 2 cm progress for `kante_s` → push, even if `safety()`/arc check have lowered the command meanwhile (joint in front of a step: free space and arc check cut v, the 2.5 s rule never fired). `kante_v` 0 = off. Simulator only (scene `fuge`) |
 | `push_rest_m` / `push_min_m` / `push_max_m` / `push_brake_s` | 0.05 / 0.03 / 0.15 / 0.25 | | every push drives at most min(FloorNet free ahead, local-map clearance) − `push_rest_m`, capped at `push_max_m`; no push below `push_min_m`; ends with a full brake once distance + wheel speed × `push_brake_s` reaches it. A push skips free space/TTC in `safety()` and the arc-check distance (keep-out zones still apply) |
-| `height_cruise_mm` / `height_search_mm` / `height_fast_mm` | 85 / 100 / 80 (sim: 85 / 115 / 70) | |
+| `height_cruise_mm` / `height_search_mm` / `height_fast_mm` | 85 / 100 / 80 | |
 
 ### `[output]`
 `web_host` 127.0.0.1, `web_port` 8088 (0 = off), `web_fps` 10, `jpeg_native` true (browser JPEG in the hardware encoder `jpeg_dev` = `/dev/video31`, fallback `cv2.imencode`), `lcd_fifo` `""` = off (sim: `/tmp/lcd0`), `lcd_fps` 15, `record_dir` `~/fahrt` (raw recording), `record_min_free_mb` 500 (below: recording switches itself off), `record_jpeg_q_hw` 95 (raw-recording JPEG in the hardware encoder; RiderPi: 4.6 instead of 8.6 ms CPU per image, mean deviation 0.70 vs 0.63, 51 vs 41 KB; above 95 only larger), `record_jpeg_q_cv` 92 (libjpeg fallback). `meta.jsonl` names the encoder per image (`"jpeg": "hw95"`/`"cv92"`; missing before 2026-11-19 = libjpeg q92).
@@ -202,27 +203,27 @@ All keys with comments: `PetCfg` in `xgonav/config.py`.
 |---|---|---|
 | `retreat_m` | 0 (off) | jerk backwards per scare, cap 0.30 m, RiderPi test 0.12. Blind, needs wheels |
 | `creep_m` | 0 (off) | toward a cat per encounter, cap 1.0 m, test 0.4. Needs wheels, floor model, local map |
-| `seek_m` | −1 = no limit (sim: 0 = off) | person gone: drive toward the last position, per loss. Needs wheels, floor model, local map |
-| `roam_m`, `roam_radius_m` | −1, −1 = no limit (sim: 0, 1.0) | nobody around: roam in legs per phase without encounter (ends at `doze_s`); radius around the stand-up spot |
+| `seek_m` | −1 = no limit | person gone: drive toward the last position, per loss. Needs wheels, floor model, local map |
+| `roam_m`, `roam_radius_m` | −1, −1 = no limit | nobody around: roam in legs per phase without encounter (ends at `doze_s`); radius around the stand-up spot |
 | `look` | true | look around (turning only) after a person is gone and when idle |
 | `roam_after_s`, `roam_repeat_s`, `roam_leg_m`, `roam_free_min`, `roam_battery` | 30, 45, 0.4, 0.55, 40 % | |
-| `seek_stop_m`, `drive_v`, `look_w`, `look_step_deg`, `look_steps`, `look_pause_s` | 0.4, 0.12 (sim: 0.08), 0.24 (sim: 0.12), 90, 4, 1.5 | RiderPi faster since 2026-11-13 (user); `turn_w` 0.40 (sim: 0.20) |
+| `seek_stop_m`, `drive_v`, `look_w`, `look_step_deg`, `look_steps`, `look_pause_s` | 0.4, 0.24, 0.48, 90, 4, 1.5 | factors (absolute 0.12 / 0.24); faster since 2026-11-13 (user); `turn_w` 0.80, `wiggle_w` 0.20, `creep_v` 0.12, `retreat_v` 0.20 (factors) |
 | `hear`, `hear_min_db`, `hear_front_deg`, `hear_turns`, `hear_listen_s`, `hear_repeat_s`, `hear_side_deg` | true, 8, 20, 3, 3.5, 6, 45 | hearing ([display-emotions.md](display-emotions.md#hearing-sound-direction-audiomd)); needs `[ortung]` with `pet` in `modes` |
 | `hear_startle_db`, `hear_quiet_s` | 20, 8 | sudden loud sound after silence |
-| `call_events`, `call_m`, `call_repeat_s` | 3, −1 = no limit, 3 m per call (sim: 0), 45 | calling: drive toward a voice from the front, never more than `seek_m` |
+| `call_events`, `call_m`, `call_repeat_s` | 3, −1 = no limit, 3 m per call, 45 | calling: drive toward a voice from the front, never more than `seek_m` |
 | `hear_seek` | true | heard, nobody in view: search instead of giving up (direction known: drive there like calling; unknown: look around once, listening `hear_listen_s` per view); lockout `call_repeat_s` |
 | `seek_home` | false (2026-11-22) | search after hearing over, nobody found: back to the map start like `home` (start image check), only with an anchor there; false: stays and listens |
 | `call_openings`, `call_louder_db` | 4, 3.0 | call search via the openings of the room map (needs map + confirmed pose); 0 = old straight search (calling goals with a wall ahead go the other way) |
 | `call_dir_s_per_deg`, `call_min_m` | 0.1, 0.3 | call search after he turned toward the sound: openings off the heard direction cost this much s per degree (90° = 9 s); openings with a shorter path than `call_min_m` do not count (2026-11-22) |
 | `lost_home` | false | the same after the search for a vanished person; false: stays there and listens |
-| `follow`, `follow_m`, `follow_repeat_s` | true, −1 = no limit (sim: 0), 3 | any person in view (not lying/sitting) → exactly the routine of mode `follow` (`behaviors.Follow`: `behavior.follow_dist_m`, speed, backwards up to `backup_v`, heights, search at the last place); follow waits → pet again; lockout from the end (2026-11-22; `follow_trust`, `follow_dist_m`, `follow_start_m`, `follow_hold_s`, `follow_settle_s`, `follow_block_s`, `follow_lost_s` removed, warning) |
+| `follow`, `follow_m`, `follow_repeat_s` | true, −1 = no limit, 3 | any person in view (not lying/sitting) → exactly the routine of mode `follow` (`behaviors.Follow`: `behavior.follow_dist_m`, speed, backwards up to `backup_v`, heights, search at the last place); follow waits → pet again; lockout from the end (2026-11-22; `follow_trust`, `follow_dist_m`, `follow_start_m`, `follow_hold_s`, `follow_settle_s`, `follow_block_s`, `follow_lost_s` removed, warning) |
 | `wide_babble_s` | 6 | person box wider than tall (lying/sitting): no following, turns toward her, trust grows, babbles every 6 s with head tilt |
 | `eyes_fix_s`, `eyes_fix_lid` | 1.5, 2 | eyes narrow to slits once a person is fixated (0 s = off) |
-| `come_events`, `come_m`, `come_stop_m`, `come_repeat_s` | 1, −1 = no limit (sim: 0), 0.4 (2026-11-22, was 0.8), 8 | come here: drive toward a visible person who speaks (also after a call search found someone); no planner path → straight toward her; at most 30 s |
+| `come_events`, `come_m`, `come_stop_m`, `come_repeat_s` | 1, −1 = no limit, 0.4 (2026-11-22, was 0.8), 8 | come here: drive toward a visible person who speaks (also after a call search found someone); no planner path → straight toward her; at most 30 s |
 | `talk`, `talk_min_events`, `talk_pause_s`, `talk_repeat_s` | true, 2, 1.6, 7 | talking back |
 | `parrot`, `parrot_p`, `parrot_repeat_s`, `parrot_delay_s`, `parrot_listen_s` | true, 0.5, 30, 0.2, 3 | voice samples: play instead of babbling, min. gap, delay before parroting a confirmed/recognized sample, capture while person gone ≤ s ([audio.md](audio.md#voice-samples-xgonavstimmepy-mode-pet)) |
-| `faint` | true (sim: false) | hard scare: set down, wake up, stand up by itself; on at the RiderPi since 2026-11-13 |
-| `faint_level` | 0.8 (sim: 1.0) | scare level that triggers a faint |
+| `faint` | true | hard scare: set down, wake up, stand up by itself; on at the RiderPi since 2026-11-13 |
+| `faint_level` | 0.8 | scare level that triggers a faint |
 | `gestures` | true | false: only eyes and sounds |
 | `zone_far_m`, `zone_mid_m`, `zone_close_m`, `kneel_max_m` | 3.0, 1.5, 0.5, 1.9 | person zones |
 | `startle_mps`, `startle_heavy_mps`, `startle_max_m` | 1.0, 1.8, 1.6 | approach speed = min(foot-point line fit, measured box-width growth × distance / `startle_vs`); widths of boxes cut at the left/right image edge are ignored; **not tuned on real footage** |
@@ -293,7 +294,7 @@ All keys with comments: `PetCfg` in `xgonav/config.py`.
 | `l_free` / `l_occ` | -0.4 / 0.5 (two hits to `l_show`) |
 | `l_min` / `l_max` / `l_show` | -3.0 / 3.5 / 0.7 |
 | `free_margin_m` / `occ_free_factor` | 0.10 / 0.5 |
-| `hit_band_quad` | 0.05 (sim 0): a hit is entered as a band ± this × d² along the ray (1 m ±5 cm, 1.5 m ±11 cm), not one cell. Ranges from the image scatter ±0.3 m at 1–1.5 m (drive 20261118-135118, wall behind chairs): single cells rarely got two hits and free rays of other frames removed them. 0.08 merged chair and table legs. Since 2026-11-18, not driven |
+| `hit_band_quad` | 0.05: a hit is entered as a band ± this × d² along the ray (1 m ±5 cm, 1.5 m ±11 cm), not one cell. Ranges from the image scatter ±0.3 m at 1–1.5 m (drive 20261118-135118, wall behind chairs): single cells rarely got two hits and free rays of other frames removed them. 0.08 merged chair and table legs. Since 2026-11-18, not driven |
 | `view_m` | 6.0 |
 | `threaded` | true |
 | `native` | true: one observation in one call in the C++ core (`xgonav/native/gridfast.cpp`) if built: rays from the floor boundary, free rays, hits with `confirm_dr_m`; same map as numpy (CM4 1.64 → 0.18 ms per observation). Also `wall_dist` (`navfast.cpp`) |
@@ -304,9 +305,9 @@ All keys with comments: `PetCfg` in `xgonav/config.py`.
 
 | Key | Default | Meaning |
 |---|---|---|
-| `enabled` | `true` (sim: `false`) | pose state: unknown after set-down, fall, restart; map locked until confirmed in the web UI (`docs/mapping.md`) |
+| `enabled` | `false` | pose state: unknown after set-down, fall, restart; map locked until confirmed in the web UI (`docs/mapping.md`) |
 | `blind_s` | 2.0 | balancing this long without fresh wheel data: pose unknown |
-| `track` | `true` (sim: `false`) | running map matching while driving: map pose follows the room map (`docs/mapping.md`, Map matching). Independent of `enabled` |
+| `track` | `false` | running map matching while driving: map pose follows the room map (`docs/mapping.md`, Map matching). Independent of `enabled` |
 | `every_s` / `min_move_m` / `min_turn_deg` | 2.0 / 0.2 / 20 | match at most this often and only after this much travel or turn |
 | `max_step_m` / `max_step_deg` / `gain` | 0.08 / 3 / 0.6 | correction per match |
 | `hold_m` / `hold_deg` | 0.10 / 3 | remaining correction above this: nothing is entered into the map |
@@ -317,9 +318,9 @@ All keys with comments: `PetCfg` in `xgonav/config.py`.
 
 | Key | Default | Meaning |
 |---|---|---|
-| `enabled` | `true` (sim: `false`) | `home` ends via a pre-point, a straight run onto the start and a measurement against the image taken at the start; the room-map pose is corrected. Driven once on the Rider (2026-11-19) |
+| `enabled` | `true` | `home` ends via a pre-point, a straight run onto the start and a measurement against the image taken at the start; the room-map pose is corrected. Driven once on the Rider (2026-11-19) |
 | `vor_m` / `vor_tol_m` | 0.40 / 0.08 | pre-point this far before the start on the start heading; arrival tolerance there |
-| `gerade_v` | 0.08 | normalised speed of the straight run (~10 cm/s) |
+| `gerade_v` | 0.16 | speed of the straight run, factor of `max_v` (~10 cm/s) |
 | `tiefe_schritt_m` / `basen` | 0.04 / 0.1…0.3 | keep a grey image every 4 cm of the straight run; depth images at these distances before the end |
 | `features` | 3000 | SIFT features per image |
 | `min_inl` | 30 | fewer consistent matches: no correction (offline outliers all < 27) |
@@ -347,10 +348,10 @@ All keys with comments: `PetCfg` in `xgonav/config.py`.
 | `replan_s` | 2.0 | replan interval (also after 3 s without progress) |
 | `keep_factor` | 1.2 | keep the current path while free and ≤ factor × new path + 0.3 m (not after getting stuck) |
 | `use_localmap` | true | confirmed `LocalMap` points (same as the path check) are obstacles for planning |
-| `v` | 0.15 | normalised speed (`patrol`, path following in the `follow` search; `explore` uses `explore.v`, every planned path in `pet` uses `pet.drive_v`) |
-| `start_v` | 0.225 (sim: 0.15) | "Zum Start": mode `home` and the drive home in `pet`, +50 % (2026-11-22); final straight run `startbild.gerade_v` |
+| `v` | 0.30 | speed, factor of `max_v` (`patrol`, path following in the `follow` search; `explore` uses `explore.v`, every planned path in `pet` uses `pet.drive_v`) |
+| `start_v` | 0.45 | "Zum Start": mode `home` and the drive home in `pet`, +50 % (2026-11-22); final straight run `startbild.gerade_v` |
 | `kp_turn` | 1.5 | 1/s, turn rate per heading error (follow uses `behavior.kp_turn`) |
-| `turn_w_max` | 0.25 | cap for turning in place (path follower, final alignment); 1.0 = only `robot.max_w` (sim). Turning at 0.5 rolled the Rider 7° and upset IMU pitch and pose (2026-11-17) |
+| `turn_w_max` | 0.50 | cap for turning in place (path follower, final alignment), factor of `max_w` (absolute 0.25); 1.0 = `robot.max_w`. Turning at 0.5 rolled the Rider 7° and upset IMU pitch and pose (2026-11-17) |
 | `turn_enter_deg` / `turn_exit_deg` | 75 / 25 | turn in place above enter until below exit; otherwise drive the curve (speed ≥ 30 %) |
 | `align_heading` / `align_tol_deg` | true / 10 | turn to start heading at goal |
 | `max_fail` | 3 | consecutive failed plans → stop |

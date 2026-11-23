@@ -30,7 +30,7 @@
        "key": "max_v",
        "typ": "float",
        "default": 0.5,
-       "hilfe": "Sicherheitsgrenzen für den Autonomiebetrieb (Anteil des Vollausschlags) Nutzer 2026-11-13: beide auf 50 % des Firmware-Bereichs (vorher 0,15 / 0,30). 0,5 sind rechnerisch ~0,9 m/s und 180 °/s; über 0,24 (50 cm/s) ist nie gefahren worden."
+       "hilfe": "Höchstwerte (Anteil des Firmware-Vollausschlags). Seit 2026-11-23 sind alle Fahr- und Drehwerte der Modi (home.v, explore.v, pet.drive_v, behavior.search_w, …) und die Handsteuerung Anteile davon: gesendet = Faktor x tempo x max_v (bzw. max_w), dazu nur die Korrektur von speed_ctrl; Handsteuerung = max_v x tempo x 1 (Nutzer 2026-11-23: reverse_gain/manual_forward_gain waren Notlösungen für die alte Firmware). Nutzer 2026-11-13: beide 0,5 (vorher 0,15 / 0,30); 0,5 sind rechnerisch ~0,9 m/s und 180 °/s, über 0,24 (50 cm/s) ist nie gefahren worden."
       },
       {
        "key": "max_w",
@@ -51,28 +51,10 @@
        "hilfe": "Tempo (Anteil, 0,05..1): jeder Fahr- und Drehbefehl aller Modi wird nach der Begrenzung auf max_v/max_w damit malgenommen (Robot.drive). Startwert; zur Laufzeit über den Temporegler im Web (POST /tempo), gilt bis zum Neustart. Firmware-Aktionen (POST /action) fahren mit eigener Geschwindigkeit."
       },
       {
-       "key": "max_sent",
-       "typ": "float",
-       "default": 0.5,
-       "hilfe": "Harte Obergrenze für den gesendeten Fahr- und Drehwert, nach allen Faktoren (reverse_gain, manual_forward_gain) und der Geschwindigkeitsregelung: nie mehr als dieser Anteil des Vollausschlags"
-      },
-      {
-       "key": "reverse_gain",
-       "typ": "float",
-       "default": 2.0,
-       "hilfe": "Rückwärts war 2026-11-02 viel schwächer (2 s mit u8 109 ~4 cm, mit 147 vorwärts 86 cm), daher werden negative v beim Senden mit reverse_gain multipliziert; max_v begrenzt davor den Sollwert. 1.0 = symmetrisch. Mit den Firmware-Patches vom 2026-11-05 setzt die Firmware beide Richtungen gleich um (Sollwert -> Raddrehzahl 2,67 vorwärts, 2,65 rückwärts)."
-      },
-      {
-       "key": "manual_forward_gain",
-       "typ": "float",
-       "default": 2.0,
-       "hilfe": "Derselbe Faktor vorwärts, nur in der Handsteuerung. Die autonomen Modi bleiben bei 1: im Simulator (--dyn, 2026-11-05) gab Faktor 2 dort 1 Kollision in 8 Läufen und Zum Start kam nur noch 1 von 4 Mal an (Faktor 1: 0 Kollisionen, 4 von 4); die Freiraum-Schwellen passen nicht dazu."
-      },
-      {
        "key": "speed_ctrl",
        "typ": "bool",
-       "default": false,
-       "hilfe": "Geschwindigkeitsregelung: Die Firmware regelt die Fahrgeschwindigkeit praktisch nur proportional, auf Teppich bleibt der Rider deshalb unter dem Soll. Mit speed_ctrl vergleicht xgonav im Regelschritt Soll (gesendeter Wert x vx_limit) und Ist (Räder), beide über speed_ctrl_window_s gemittelt, und stellt den gesendeten Wert nach: Korrektur += (Soll - Ist) / vx_limit x dt / speed_ctrl_ti_s, höchstens +-speed_ctrl_max (normiert). Ohne frische Raddaten, im Stand, unter dem Totband der Firmware und bei Richtungswechsel ist die Korrektur 0. Steht er an einem Hindernis an, drückt er um speed_ctrl_max stärker. speed_ctrl_lag_s: So träge folgt das Soll dem Fahrwert (Anlaufen des Riders), sonst lädt sich die Korrektur bei jedem Anfahren auf. Abgestimmt am Trägheitsmodell des Simulators (sim._dyn, 2026-11-12): ohne Modell 31-46 % Überschwingen beim Anfahren auf ebenem Boden, mit 0,8 s und ti 2 s 5 %; ein Fehlbetrag von 0,04 ist dann nach ~3 s zu 95 % ausgeglichen. Seit 2026-11-23 1,2 s wie die Trägheit des Riders (Fahrt vor dem Stuhl: Räder folgen dem Fahrwert mit ~1,2 s; mit 0,8 s lief er schneller als verlangt und die Korrektur stand trotzdem bei +0,07); Simulator damit 8 % Überschwingen statt 19 %."
+       "default": true,
+       "hilfe": "Geschwindigkeitsregelung: Die Firmware regelt die Fahrgeschwindigkeit praktisch nur proportional, auf Teppich bleibt der Rider deshalb unter dem Soll. Mit speed_ctrl vergleicht xgonav im Regelschritt Soll (gesendeter Wert x vx_limit) und Ist (Räder), beide über speed_ctrl_window_s gemittelt, und stellt den gesendeten Wert nach: Korrektur += (Soll - Ist) / vx_limit x dt / speed_ctrl_ti_s, höchstens +-speed_ctrl_max (normiert). Ohne frische Raddaten, im Stand, unter dem Totband der Firmware und bei Richtungswechsel ist die Korrektur 0. Steht er an einem Hindernis an, drückt er um speed_ctrl_max stärker. speed_ctrl_lag_s: So träge folgt das Soll dem Fahrwert (Anlaufen des Riders), sonst lädt sich die Korrektur bei jedem Anfahren auf. Abgestimmt am Trägheitsmodell des Simulators (sim._dyn, 2026-11-12): ohne Modell 31-46 % Überschwingen beim Anfahren auf ebenem Boden, mit 0,8 s und ti 2 s 5 %; ein Fehlbetrag von 0,04 ist dann nach ~3 s zu 95 % ausgeglichen. Seit 2026-11-23 1,2 s wie die Trägheit des Riders (Fahrt vor dem Stuhl: Räder folgen dem Fahrwert mit ~1,2 s; mit 0,8 s lief er schneller als verlangt und die Korrektur stand trotzdem bei +0,07); Simulator damit 8 % Überschwingen statt 19 %. am RiderPi seit 2026-11-13 an"
       },
       {
        "key": "speed_ctrl_window_s",
@@ -173,8 +155,8 @@
       {
        "key": "led_default",
        "typ": "int",
-       "default": 51,
-       "hilfe": "20 %, solange nichts gespeichert ist"
+       "default": 20,
+       "hilfe": "wie am RiderPi (Web 2026-11-19), solange nichts gespeichert ist"
       },
       {
        "key": "led_start_s",
@@ -431,8 +413,8 @@
       {
        "key": "idle_hz",
        "typ": "int",
-       "default": 5,
-       "hilfe": "Abgesetzt (Rider balanciert nicht) braucht niemand 100 Hz: Strom und Lesen auf diese Rate, beim Aufstehen wieder stream_hz und poll_s. Spart am CM4 ~6 % eines Kerns (2026-11-10). 0 = nie umschalten."
+       "default": 0,
+       "hilfe": "Abgesetzt (Rider balanciert nicht) braucht niemand 100 Hz: Strom und Lesen auf diese Rate, beim Aufstehen wieder stream_hz und poll_s. Spart am CM4 ~6 % eines Kerns (2026-11-10). 0 = nie umschalten. wie am RiderPi (2026-11-17)"
       },
       {
        "key": "pitch_sign",
@@ -1226,13 +1208,13 @@
       {
        "key": "enabled",
        "typ": "bool",
-       "default": true,
+       "default": false,
        "hilfe": "Kartenabgleich (reloc.py): Pose in der Raumkarte aus der Bodengrenze der letzten Sekunden. Rechnet im eigenen Thread, nichts in der Bildschleife. Aus = alles wie bisher. Zustand \"Pose unbekannt\", Kartensperre, Modus locate"
       },
       {
        "key": "track",
        "typ": "bool",
-       "default": true,
+       "default": false,
        "hilfe": "laufender Abgleich während der Fahrt"
       },
       {
@@ -1466,8 +1448,8 @@
       {
        "key": "gerade_v",
        "typ": "float",
-       "default": 0.08,
-       "hilfe": "normiertes Tempo der Schlussfahrt (~10 cm/s)"
+       "default": 0.16,
+       "hilfe": "Tempo der Schlussfahrt, Anteil von robot.max_v (~10 cm/s; vorher absolut 0,08)"
       },
       {
        "key": "tiefe_schritt_m",
@@ -1628,25 +1610,25 @@
       {
        "key": "cruise_v",
        "typ": "float",
-       "default": 0.15,
-       "hilfe": ""
+       "default": 0.3,
+       "hilfe": "Tempo und Drehraten: Anteil von robot.max_v bzw. robot.max_w (seit 2026-11-23; vorher absolut 0,15 / 0,10 / 0,07 / 0,21)"
       },
       {
        "key": "backup_v",
        "typ": "float",
-       "default": 0.1,
+       "default": 0.2,
        "hilfe": ""
       },
       {
        "key": "search_w",
        "typ": "float",
-       "default": 0.07,
+       "default": 0.14,
        "hilfe": ""
       },
       {
        "key": "turn_w",
        "typ": "float",
-       "default": 0.21,
+       "default": 0.42,
        "hilfe": "Erkunden: Drehrate beim Wegdrehen (früher fest 1,5 x search_w)"
       },
       {
@@ -1688,8 +1670,8 @@
       {
        "key": "lost_look_w",
        "typ": "float",
-       "default": 0.1,
-       "hilfe": ""
+       "default": 0.2,
+       "hilfe": "Anteil von robot.max_w"
       },
       {
        "key": "blocked_free",
@@ -1718,8 +1700,8 @@
       {
        "key": "push_v",
        "typ": "float",
-       "default": 0.45,
-       "hilfe": "Anschub: Drückt er vorwärts, ohne voranzukommen (PathFollower.PRESS_S), und zeigt das Bodenmodell vorn noch push_free_m frei, fährt er push_s lang mit push_v statt gleich zurückzusetzen. Höchstens push_n Mal, bis er wieder 0,3 m weitergekommen ist. Anlass: RiderPi 2026-11-17, Rille im Teppich vor der Heizung, 15 s mit 0,25 gedrückt, Räder standen. Am Rider nicht gefahren. push_n 0 = aus."
+       "default": 0.9,
+       "hilfe": "Anschub: Drückt er vorwärts, ohne voranzukommen (PathFollower.PRESS_S), und zeigt das Bodenmodell vorn noch push_free_m frei, fährt er push_s lang mit push_v statt gleich zurückzusetzen. Höchstens push_n Mal, bis er wieder 0,3 m weitergekommen ist. Anlass: RiderPi 2026-11-17, Rille im Teppich vor der Heizung, 15 s mit 0,25 gedrückt, Räder standen. Am Rider nicht gefahren. push_n 0 = aus. Anteil von robot.max_v (vorher absolut 0,45)"
       },
       {
        "key": "push_s",
@@ -1808,14 +1790,14 @@
       {
        "key": "scan_w",
        "typ": "float",
-       "default": 0.07,
-       "hilfe": "Modus explore: Frontiers der Raumkarte anfahren (frontier.py), bis nichts Unbekanntes mehr erreichbar ist. Weg und Lenkung wie home ([home]). Rundumblick am Anfang (langsam: unter grid.max_turn_dps)"
+       "default": 0.14,
+       "hilfe": "Modus explore: Frontiers der Raumkarte anfahren (frontier.py), bis nichts Unbekanntes mehr erreichbar ist. Weg und Lenkung wie home ([home]). Rundumblick am Anfang (langsam: unter grid.max_turn_dps), Anteil von robot.max_w"
       },
       {
        "key": "v",
        "typ": "float",
-       "default": 0.2,
-       "hilfe": "Tempo auf dem Weg zur nächsten Stelle und zurück zum Start (normiert, statt home.v 0,15; Nutzer 2026-11-11: erst 0,30, nach zwei Fahrten am RiderPi 0,20). Gilt über robot.max_v hinaus, nur im Modus explore; in Engstellen weiter mal home.tight_v, das reaktive Befreien bleibt bei behavior.cruise_v."
+       "default": 0.8,
+       "hilfe": "Tempo auf dem Weg zur nächsten Stelle und zurück zum Start (normiert, statt home.v 0,15; Nutzer 2026-11-11: erst 0,30, nach zwei Fahrten am RiderPi 0,20, im Web 2026-11-20 0,4). Anteil von robot.max_v (0,8 = absolut 0,4); in Engstellen weiter mal home.tight_v, das reaktive Befreien bleibt bei behavior.cruise_v."
       },
       {
        "key": "min_cluster_m",
@@ -2132,13 +2114,13 @@
       {
        "key": "v",
        "typ": "float",
-       "default": 0.15,
-       "hilfe": "normiert, wie behavior.cruise_v"
+       "default": 0.3,
+       "hilfe": "Anteil von robot.max_v, wie behavior.cruise_v (vorher absolut 0,15)"
       },
       {
        "key": "start_v",
        "typ": "float",
-       "default": 0.225,
+       "default": 0.45,
        "hilfe": "„Zum Start“ (home, Heimfahrt in pet): +50 % (Nutzer 2026-11-22); Schlussfahrt startbild.gerade_v"
       },
       {
@@ -2162,8 +2144,8 @@
       {
        "key": "min_w",
        "typ": "float",
-       "default": 0.055,
-       "hilfe": "Kleine Lenkbefehle ignoriert die Firmware (u8 128 ± 6): darunter sonst keine Korrektur unter ~11° Fehler. Ab min_w_err_deg Fehler deshalb mindestens min_w."
+       "default": 0.11,
+       "hilfe": "Kleine Lenkbefehle ignoriert die Firmware (u8 128 ± 6): darunter sonst keine Korrektur unter ~11° Fehler. Ab min_w_err_deg Fehler deshalb mindestens min_w. Anteil von robot.max_w (vorher absolut 0,055)"
       },
       {
        "key": "min_w_err_deg",
@@ -2174,8 +2156,8 @@
       {
        "key": "turn_w_max",
        "typ": "float",
-       "default": 0.25,
-       "hilfe": "Drehen auf der Stelle (Wegfolger, Ausrichten am Ziel) höchstens so schnell (normiert). 0,25 seit 2026-11-17: mit robot.max_w 0,5 wendete er mit 0,5, kippte dabei 7° zur Seite und die IMU-Neigung brauchte danach 3-4 s (Fahrt 20261117-144500). 1.0 = nur robot.max_w begrenzt (Simulator)."
+       "default": 0.5,
+       "hilfe": "Drehen auf der Stelle (Wegfolger, Ausrichten am Ziel) höchstens so schnell (normiert). 0,25 seit 2026-11-17: mit robot.max_w 0,5 wendete er mit 0,5, kippte dabei 7° zur Seite und die IMU-Neigung brauchte danach 3-4 s (Fahrt 20261117-144500). Anteil von robot.max_w: 0,5 = absolut 0,25, 1.0 = robot.max_w."
       },
       {
        "key": "align_heading",
@@ -2378,8 +2360,8 @@
       {
        "key": "wiggle_w",
        "typ": "float",
-       "default": 0.1,
-       "hilfe": ""
+       "default": 0.2,
+       "hilfe": "Anteil von robot.max_w"
       },
       {
        "key": "wiggle_s",
@@ -2402,8 +2384,8 @@
       {
        "key": "turn_w",
        "typ": "float",
-       "default": 0.4,
-       "hilfe": "Nutzer 2026-11-13: Drehen x2 (vorher 0,20); Untergrenze robot.turn_min_w"
+       "default": 0.8,
+       "hilfe": "Anteil von robot.max_w (absolut 0,40; Nutzer 2026-11-13: Drehen x2); Untergrenze robot.turn_min_w"
       },
       {
        "key": "retreat_m",
@@ -2414,8 +2396,8 @@
       {
        "key": "retreat_v",
        "typ": "float",
-       "default": 0.1,
-       "hilfe": ""
+       "default": 0.2,
+       "hilfe": "Anteil von robot.max_v"
       },
       {
        "key": "retreat_max_s",
@@ -2444,8 +2426,8 @@
       {
        "key": "creep_v",
        "typ": "float",
-       "default": 0.06,
-       "hilfe": ""
+       "default": 0.12,
+       "hilfe": "Anteil von robot.max_v"
       },
       {
        "key": "animal_conf",
@@ -2912,14 +2894,14 @@
       {
        "key": "drive_v",
        "typ": "float",
-       "default": 0.12,
-       "hilfe": "normiert; gemessen 0,08 -> ~12,5 cm/s, 0,12 -> ~26 cm/s. Nutzer 2026-11-13: schneller (vorher 0,08)"
+       "default": 0.24,
+       "hilfe": "Anteil von robot.max_v; absolut 0,08 -> ~12,5 cm/s, 0,12 -> ~26 cm/s. Nutzer 2026-11-13: schneller"
       },
       {
        "key": "look_w",
        "typ": "float",
-       "default": 0.24,
-       "hilfe": "Drehrate beim Umschauen und Horchen, normiert. Nutzer 2026-11-13: x2 (vorher 0,12)"
+       "default": 0.48,
+       "hilfe": "Drehrate beim Umschauen und Horchen, Anteil von robot.max_w. Nutzer 2026-11-13: x2"
       },
       {
        "key": "look_step_deg",
@@ -3177,8 +3159,8 @@
       {
        "key": "turn_w",
        "typ": "float",
-       "default": 0.2,
-       "hilfe": "Untergrenze robot.turn_min_w"
+       "default": 0.4,
+       "hilfe": "Anteil von robot.max_w; Untergrenze robot.turn_min_w"
       },
       {
        "key": "tol_deg",

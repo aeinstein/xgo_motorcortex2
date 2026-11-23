@@ -230,7 +230,6 @@ def test_glaetter_setzt_bei_posensprung_luecke_und_fehlender_pose_zurueck():
         g.glaetten(a, (0.0, 0.0, 0.0), 0.0, 0.0, geo)
         g.glaetten(a, (0.0, 0.0, 0.0), 0.0, 0.083, geo)
         assert np.array_equal(g.glaetten(b, pose, 0.0, t, geo), b)
-    assert Config.neutral().freespace.net_smooth_n == 0                                  # ab Werk aus
     g = ZeilenGlaetter(1)                                                        # n = 1: aus
     g.glaetten(a, (0.0, 0.0, 0.0), 0.0, 0.0, geo)
     assert np.array_equal(g.glaetten(b, (0.0, 0.0, 0.0), 0.0, 0.083, geo), b)

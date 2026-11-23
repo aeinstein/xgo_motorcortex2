@@ -2,8 +2,8 @@
 
 home: erste Hälfte explore, dann Modus home (zurück zum Startpunkt der Raumkarte).
 --dyn: Trägheit wie am RiderPi (Totzone, Nachlaufen der Drehung, Rückrollen beim Anfahren).
---rider: Einstellungen des RiderPi statt der Defaults (RIDER), Tempo wie gemessen, mit IMU (Vorzeichen und Zeitversatz
-bekannt wie am Rider). Ohne IMU bleibt die langsame Neigung beim Beschleunigen (sim.ACC_DEG) unbemerkt und die
+--rider: mit IMU, Vorzeichen und Zeitversatz fest wie am Rider (RIDER); Fahr- und Verhaltenswerte sind immer die des
+Riders (Config.neutral()). Ohne IMU bleibt die langsame Neigung beim Beschleunigen (sim.ACC_DEG) unbemerkt und die
 Raumkarte zeichnet Wände dicker: eine 25-cm-Lücke blieb so in 4 von 5 Läufen zu (2026-11-11).
 --vx-true: echte m/s je Firmware-Einheit, abweichend von robot.vx_limit (z. B. 1.3 = rollt schwerer, wie auf Teppich).
 Die Bodengrenze kommt aus der Ground Truth (sim.SimFloorNet statt FloorNet); --phantoms n täuscht Fehlalarme vor."""
@@ -17,10 +17,9 @@ from xgonav.sim import FakeDetector, Person, Phantoms, SCENES, SimFloorNet, SimI
 
 # Fahrrelevante Abweichungen in deploy/config.example.toml; echtes Tempo 1,8 m/s je Firmware-Einheit
 # (gemessen 2026-11-05: ~27 cm/s bei 0,15)
-RIDER = {"robot.vx_limit": 1.8, "robot.max_v": 0.15, "robot.max_w": 0.30, "robot.reverse_gain": 2.0, "behavior.turn_w": 0.21,
-         "behavior.search_w": 0.07, "behavior.search_timeout_s": 10.0, "behavior.height_fast_mm": 80.0,
-         "behavior.height_search_mm": 100.0, "map.confirm": 3,
-         "imu.pitch_sign": -1, "imu.time_offset_ms": -8.0}     # wie SimImu: Vorzeichen -1, Stempel 8 ms früh
+# Fahr- und Verhaltenswerte sind seit 2026-11-23 ohnehin die des Riders (Config.neutral()); --rider gibt nur noch
+# die IMU-Zuordnung fest vor wie am Rider statt der Automatik
+RIDER = {"imu.pitch_sign": -1, "imu.time_offset_ms": -8.0}     # wie SimImu: Vorzeichen -1, Stempel 8 ms früh
 RIDER_VX = 1.8
 
 

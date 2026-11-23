@@ -74,7 +74,7 @@ def test_grenzen_aus_der_konfiguration_nicht_aufhebbar():
 def test_standard_ruckt_nicht_und_faellt_am_rider_um():
     d = PetCfg()
     assert d.retreat_m == 0 and d.creep_m == 0 and d.faint          # RiderPi: Ohnmacht an
-    assert not Config.neutral().pet.faint                             # Simulator: aus
+    assert Config.neutral().pet.faint                                 # Simulator: wie am Rider (seit 2026-11-23)
 
 
 def test_ruck_zurueck_bleibt_im_budget():
@@ -114,7 +114,7 @@ def creep_run(**kw):
     t, moved, ds = 0.0, 0.0, 0.0
     while t < 10.0:
         a = b.update(Sense(t=t, seen=[seen("cat", 2.0, t, vs=0.0)], ds=ds, **kw))
-        ds = a.v * 1.5 * 0.05
+        ds = a.v * b.rcfg.vx_limit * 0.05
         moved += abs(ds)
         t += 0.05
     return moved
@@ -797,7 +797,7 @@ def test_such_grenzen_negativ_ohne_grenze():
     d = PetCfg()
     assert d.seek_m < 0 and d.roam_m < 0 and d.roam_radius_m < 0   # RiderPi: ohne Grenze
     n = Config.neutral().pet
-    assert n.seek_m == 0 and n.roam_m == 0                        # Simulator: wie früher
+    assert n.seek_m == d.seek_m and n.roam_m == d.roam_m          # Simulator: wie am Rider (seit 2026-11-23)
 
 
 def test_ohne_grenze_sucht_bis_zur_stelle_und_streift_bis_doesen():
@@ -942,7 +942,7 @@ def test_geraeusch_schreck():
     _, yaw, _, acts, evs = hoeren(b, 0.0, 12.0, -80.0, db=26.0, ab=3.0)
     assert ("sound", "quiek", True) in evs and ("emotion", "surprised", True) in evs
     assert any(a.height_mm == b.duck_mm for a in acts)
-    assert max(abs(a.w) for a in acts) > b.cfg.look_w
+    assert max(abs(a.w) for a in acts) > b.rcfg.w_of(b.cfg.look_w)
     assert wdiff(yaw, -80.0) < 25.0
     assert b.n_startle == 0 and b.state == "wach"                # kein Ruck zurück, keine Ohnmacht
 
@@ -1098,24 +1098,24 @@ def test_planer_kein_weg_rufziel_gegenrichtung():
     """Rufen: Findet der Planer vorn keinen Weg, gilt das Ziel hinten (vorn und hinten klingen gleich); findet er
     auch dort keinen, hält er und schaut sich um."""
     b = brain(seek_m=-1.0, call_m=1.0)
-    hoeren(b, 0.0, 6.0, 0.0, fahrbar=True)                       # Stimme von vorn -> Rufen
+    hoeren(b, 0.0, 5.0, 0.0, fahrbar=True)                       # Stimme von vorn -> Rufen
     assert b.task == "suchen" and b.phase == "fahren" and b._goal[0] > 0.3, b._goal
     x0 = b.x
     fahr = dict(floor_ok=True, free_center=1.5, yaw=b.yaw)
-    b.update(Sense(t=6.05, nav_fail=True, **fahr))
+    b.update(Sense(t=5.05, nav_fail=True, **fahr))
     assert b.phase == "fahren" and b._goal[0] < x0 - 0.3, b._goal
-    b.update(Sense(t=6.10, nav_fail=True, **fahr))
+    b.update(Sense(t=5.10, nav_fail=True, **fahr))
     assert b.phase == "schauen"
 
 
 def test_planer_wegpunkt_lenkt():
     """Mit Planer lenkt er auf den Wegpunkt, nicht auf das Ziel; solange der Weg gerechnet wird, steht er."""
     b = brain(seek_m=-1.0, call_m=1.0)
-    hoeren(b, 0.0, 6.0, 0.0, fahrbar=True)
+    hoeren(b, 0.0, 5.0, 0.0, fahrbar=True)
     fahr = dict(floor_ok=True, free_center=1.5, yaw=b.yaw)
-    a = b.update(Sense(t=6.05, nav_pending=True, **fahr))
+    a = b.update(Sense(t=5.05, nav_pending=True, **fahr))
     assert a.v == 0.0 and a.w == 0.0
-    a = b.update(Sense(t=6.10, nav=(b.x, b.y + 1.0), **fahr))    # Weg biegt links ab
+    a = b.update(Sense(t=5.10, nav=(b.x, b.y + 1.0), **fahr))    # Weg biegt links ab
     assert a.v == 0.0 and a.w > 0.0                               # erst ausrichten, nach links
 
 
@@ -1260,7 +1260,7 @@ def test_pet_folgt_mit_follow_routine_auch_rueckwaerts():
         c = p._folgen(w)
         vs.append(c.v)
     assert isinstance(p.follow_drive, Follow) and c.status.startswith("verfolge")
-    assert min(vs) == pytest.approx(-cfg.behavior.backup_v)   # zu nah: setzt zurück wie follow
+    assert min(vs) == pytest.approx(-cfg.robot.v_of(cfg.behavior.backup_v))   # zu nah: setzt zurück wie follow
     breit = Track("person", 320, 400, 300, 120, 0.9, 1.0)
     w = World(t=1.0, dt=0.05, W=640, H=480, hfov=1.6, ego=None, tracks=[breit], free=None, balancing=True,
               yaw=0.0, cmd_v=0.0, geo=geo)
@@ -1433,14 +1433,14 @@ def test_pet_streifen_faehrt_geplanten_weg_mit_wegfolger():
     p._nav_goal = p._to_grid(w, b._goal)
     p.f.set_path([(0.0, 0.0), (0.4, 0.0), (0.8, 0.0)])
     c = p.step(w)
-    assert "streifen (" in c.status and 0 < c.v <= cfg.pet.drive_v + 1e-9
+    assert "streifen (" in c.status and 0 < c.v <= cfg.robot.v_of(cfg.pet.drive_v) + 1e-9
     # Weg hinter ihm: dreht auf der Stelle mit dem Drehregler von home (höchstens home.turn_w_max)
     p.f.set_path([(0.0, 0.0), (-0.4, 0.0), (-0.8, 0.0)])
     b._goal = (-0.8, 0.0)
     p._nav_goal = p._to_grid(w, b._goal)
     c = p.step(w)
     assert c.v == 0.0 and "drehe" in c.status
-    assert cfg.robot.turn_min_w <= abs(c.w) <= cfg.home.turn_w_max + 1e-9
+    assert cfg.robot.turn_min_w <= abs(c.w) <= cfg.robot.w_of(cfg.home.turn_w_max) + 1e-9
 
 
 def test_pet_gehirn_haelt_bei_festgefahren_nicht_bei_bahnpruefung():
@@ -1462,7 +1462,7 @@ def test_pet_gehirn_haelt_bei_festgefahren_nicht_bei_bahnpruefung():
 def test_pet_ohne_karte_faehrt_das_gehirn():
     cfg, p, b, w = _pet_mit_karte(pose=None)
     c = p.step(w)
-    assert abs(c.v - cfg.pet.drive_v) < 1e-9 and "streifen (" not in c.status
+    assert abs(c.v - cfg.robot.v_of(cfg.pet.drive_v)) < 1e-9 and "streifen (" not in c.status
 
 
 def test_dreh_w_gemeinsamer_drehregler():
@@ -1472,6 +1472,6 @@ def test_dreh_w_gemeinsamer_drehregler():
     assert dreh_w(math.radians(5), 1.5, 0.4, r, deadband_deg=8.0) == 0.0
     assert dreh_w(math.radians(2), 1.5, 0.4, r) == pytest.approx(r.turn_min_w)       # Untergrenze Firmware
     assert dreh_w(-math.radians(2), 1.5, 0.4, r) == pytest.approx(-r.turn_min_w)
-    assert dreh_w(math.radians(170), 1.5, 0.4, r) == pytest.approx(0.4)               # Obergrenze je Modus
-    assert dreh_w(math.radians(40), 1.5, 0.4, r) == pytest.approx(math.degrees(1.5 * math.radians(40)) / r.vyaw_limit_dps)
+    assert dreh_w(math.radians(170), 1.5, 0.4, r) == pytest.approx(r.w_of(0.4))       # Obergrenze je Modus (Faktor)
+    assert dreh_w(math.radians(40), 1.5, 0.8, r) == pytest.approx(math.degrees(1.5 * math.radians(40)) / r.vyaw_limit_dps)
     assert dreh_w(math.radians(2), 1.5, 0.4, r, w_min=0.0) == pytest.approx(math.degrees(1.5 * math.radians(2)) / r.vyaw_limit_dps)

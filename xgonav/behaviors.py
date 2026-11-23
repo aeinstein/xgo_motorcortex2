@@ -97,12 +97,13 @@ def clamp(x, lo, hi):
 def dreh_w(err: float, kp: float, w_max: float, rcfg: RobotCfg, deadband_deg: float = 0.0,
            w_min: float | None = None) -> float:
     """Gemeinsamer Drehregler für alle Drehungen (PathFollower, Servo, pet, Dunkelangst; seit 2026-11-23):
-    Soll-Drehrate kp * err (rad/s) als normierter Drehwert, Betrag zwischen w_min (Standard robot.turn_min_w:
-    kleinere Werte setzt die Firmware nicht um) und w_max, im Totband (Grad) 0."""
+    Soll-Drehrate kp * err (rad/s) als normierter Drehwert, Betrag zwischen w_min (absolut, Standard
+    robot.turn_min_w: kleinere Werte setzt die Firmware nicht um) und w_max (Faktor: Anteil von robot.max_w),
+    im Totband (Grad) 0."""
     if err == 0.0 or abs(err) < math.radians(deadband_deg):
         return 0.0
     lo = rcfg.turn_min_w if w_min is None else w_min
-    return math.copysign(clamp(yaw_rate_to_w(kp * abs(err), rcfg), lo, max(w_max, lo)), err)
+    return math.copysign(clamp(yaw_rate_to_w(kp * abs(err), rcfg), lo, max(rcfg.w_of(w_max), lo)), err)
 
 
 # ---------------------------------------------------------------------------
@@ -139,6 +140,7 @@ class Manual(Behavior):
         self.checked = False      # letzter Sollwert verlangt Bodengrenze + Bahnprüfung (/drive?sicher=1, MCP)
 
     def set(self, v: float, w: float, now: float, checked: bool = False) -> None:
+        """v, w: Faktoren -1..1 (Anteil von robot.max_v/max_w), seit 2026-11-23."""
         self._v, self._w, self._t = clamp(v, -1.0, 1.0), clamp(w, -1.0, 1.0), now
         self.checked = checked
 
@@ -146,7 +148,8 @@ class Manual(Behavior):
         import time as _time
         if _time.monotonic() - self._t > self.HOLD_S:
             return Command(0.0, 0.0, None, "Handsteuerung – steht")
-        return Command(self._v, self._w, None, "Handsteuerung v=%+.2f w=%+.2f" % (self._v, self._w))
+        return Command(self.rcfg.v_of(self._v), self.rcfg.w_of(self._w), None,
+                       "Handsteuerung v=%+.2f w=%+.2f" % (self._v, self._w))
 
 
 class Servo:
@@ -212,7 +215,7 @@ class Servo:
             self._derr = 0.7 * self._derr + 0.3 * d
         self._prev_err = err
         rate = self.cfg.kp_turn * err + self.cfg.kd_turn * self._derr
-        w_cmd = dreh_w(rate, 1.0, self.rcfg.max_w, self.rcfg, w_min=0.0)   # PD: dem bewegten Ziel nach, ohne Untergrenze
+        w_cmd = dreh_w(rate, 1.0, 1.0, self.rcfg, w_min=0.0)   # PD: dem bewegten Ziel nach, ohne Untergrenze
 
         z = None
         if wd.geo and tr.t_seen != self._t_meas:      # nur neue Detektionen messen
@@ -227,7 +230,7 @@ class Servo:
             # Vorsteuerung: mit der Geschwindigkeit des Ziels mitfahren (nur wenn nicht zu nah)
             if e > -self.cfg.dist_deadband:
                 v += self.cfg.ff_dist * max(0.0, self._ddot) / self.rcfg.vx_limit
-        v = clamp(v, -self.cfg.backup_v, self.rcfg.max_v)
+        v = clamp(v, -self.rcfg.v_of(self.cfg.backup_v), self.rcfg.max_v)
         # erst ausrichten, dann fahren
         if v > 0:
             v *= clamp(1.0 - abs(err) / math.radians(25), 0.0, 1.0)
@@ -324,7 +327,7 @@ class Follow(Behavior):
                 self.n_seek += 1
                 self._fails = self._stucks = 0
                 self._t_plan = -1e9
-                v_ms = max(self.f.v * self.rcfg.vx_limit, 0.02)
+                v_ms = max(self.rcfg.v_of(self.f.v) * self.rcfg.vx_limit, 0.02)
                 self._drive_until = w.t + 4.0 + 2.0 * d / v_ms
                 log.info("follow: %s verloren, fahre zur letzten Stelle (%.2f, %.2f), %.2f m", self.cls, lx, ly, d)
         if self.phase == "fahren":
@@ -345,7 +348,7 @@ class Follow(Behavior):
                 self._look_sum += abs(_wrap(th - self._look_th))
             self._look_th = th
             if self._look_sum < math.radians(c.lost_look_deg):
-                return Command(0.0, self.last_side * c.lost_look_w, c.height_search_mm,
+                return Command(0.0, self.last_side * self.rcfg.w_of(c.lost_look_w), c.height_search_mm,
                                "suche %s: schaue mich um %.0f°" % (self.cls, math.degrees(self._look_sum)))
             log.info("follow: %s nicht wiedergefunden, warte", self.cls)
             self.phase = "warten"
@@ -394,7 +397,7 @@ class Follow(Behavior):
             return c
         if w.t - self.search_start > self.cfg.search_timeout_s:
             return Command(0, 0, self.cfg.height_cruise_mm, "Ziel verloren – warte")
-        return Command(0.0, self.last_side * self.cfg.search_w, self.cfg.height_search_mm,
+        return Command(0.0, self.last_side * self.rcfg.w_of(self.cfg.search_w), self.cfg.height_search_mm,
                        "suche %s (%s)" % (self.cls, "links" if self.last_side > 0 else "rechts"))
 
 
@@ -426,7 +429,7 @@ class Explore(Behavior):
             if blocked:
                 self._enter("brake", w.t)
                 return Command(0, 0, hmm, "Hindernis – stopp")
-            v = self.cfg.cruise_v * clamp(center / self.cfg.slow_free, 0.3, 1.0)
+            v = self.rcfg.v_of(self.cfg.cruise_v) * clamp(center / self.cfg.slow_free, 0.3, 1.0)
             wc = 0.0
             if fs and fs.valid:
                 n = len(fs.sectors)
@@ -447,7 +450,7 @@ class Explore(Behavior):
 
         if self.state == "backup":
             if w.t - self.t_state < 0.8:
-                return Command(-self.cfg.backup_v, 0, hmm, "zurücksetzen")
+                return Command(-self.rcfg.v_of(self.cfg.backup_v), 0, hmm, "zurücksetzen")
             if fs and fs.valid:
                 n = len(fs.sectors)
                 left, right = sum(fs.sectors[: n // 2]), sum(fs.sectors[(n + 1) // 2:])
@@ -462,7 +465,7 @@ class Explore(Behavior):
             if (rem <= 0 and center > self.cfg.slow_free and not w.path_blocked) or w.t - self.t_state > 6.0:
                 self._enter("cruise", w.t)
                 return Command(0, 0, hmm, "weiter")
-            return Command(0.0, self.turn_dir * self.cfg.turn_w, hmm,
+            return Command(0.0, self.turn_dir * self.rcfg.w_of(self.cfg.turn_w), hmm,
                            "drehe weg (%+.0f° offen)" % math.degrees(rem * self.turn_dir))
         return Command(0, 0, hmm, self.state)
 
@@ -547,7 +550,7 @@ class PathFollower:
 
     def __init__(self, cfg: BehaviorCfg, rcfg: RobotCfg, hcfg: HomeCfg, v: float | None = None):
         self.cfg, self.rcfg, self.h = cfg, rcfg, hcfg
-        self.v = hcfg.v if v is None else v      # Tempo auf freier Strecke (explore: explore.v)
+        self.v = hcfg.v if v is None else v      # Tempo auf freier Strecke (explore: explore.v), Anteil von max_v
         self.path: list[tuple[float, float]] | None = None
         self._pa, self._pa_of = None, None       # self.path als Feld für den C++-Kern
         self.stuck = False
@@ -695,7 +698,7 @@ class PathFollower:
             moved = max(0.0, (w.pose[0] - self._push_from[0]) * math.cos(th) + (w.pose[1] - self._push_from[1]) * math.sin(th))
             ahead = moved + max(0.0, w.v_rad or 0.0) * c.push_brake_s
             if w.t < self._push_until and ahead < self._push_budget:
-                return Command(c.push_v, 0.0, c.height_cruise_mm, "%s – Anschub %d" % (label, self._push_n),
+                return Command(self.rcfg.v_of(c.push_v), 0.0, c.height_cruise_mm, "%s – Anschub %d" % (label, self._push_n),
                                extra={"anschub": True})
             # Danach genügt 1 s ohne Fortschritt für den nächsten Schritt: Anfahren ist dann vorbei
             self._push_until = None
@@ -750,14 +753,14 @@ class PathFollower:
             wc = dreh_w(err, self.h.kp_turn, self.h.turn_w_max, self.rcfg)
             return Command(0.0, wc, hmm, "%s – drehe (%+.0f°)" % (label, math.degrees(err)), extra={"tight": tight})
         wc = clamp(yaw_rate_to_w(self.h.kp_turn * err, self.rcfg), -1.0, 1.0)     # Kurve: Lenken beim Fahren
-        if abs(wc) < self.h.min_w and abs(err) > math.radians(self.h.min_w_err_deg):
-            wc = math.copysign(self.h.min_w, err)
-        v = self.v * clamp(1.0 - abs(err) / math.radians(90), 0.3, 1.0)
+        if abs(wc) < self.rcfg.w_of(self.h.min_w) and abs(err) > math.radians(self.h.min_w_err_deg):
+            wc = math.copysign(self.rcfg.w_of(self.h.min_w), err)
+        v = self.rcfg.v_of(self.v) * clamp(1.0 - abs(err) / math.radians(90), 0.3, 1.0)
         if tight:
             v *= self.h.tight_v
         if slow_end:
             rest = math.hypot(self.path[-1][0] - x, self.path[-1][1] - y)
-            v = min(v, max(0.5 * self.h.v, self.END_K * rest))
+            v = min(v, max(0.5 * self.rcfg.v_of(self.h.v), self.END_K * rest))
         return Command(v, wc, hmm, "%s (%+.0f°%s)" % (label, math.degrees(err), ", Lücke" if mitte else ", eng" if tight else ""),
                        extra={"tight": tight})
 
@@ -909,7 +912,7 @@ class Home(Behavior):
             if rest <= 0.01:
                 self._setze("messen", w)
                 return Command(0, 0, hmm, "Startbild: stehe")
-            v_ms = max(sb.gerade_v * self.rcfg.vx_limit, 0.02)
+            v_ms = max(self.rcfg.v_of(sb.gerade_v) * self.rcfg.vx_limit, 0.02)
             if w.t - self.t_phase > 3.0 * (sb.vor_m + 0.2) / v_ms + 5.0:
                 # kommt nicht voran (Bahnprüfung, Hindernis am Start): ohne Startbild zu Ende
                 log.info("Startbild: Schlussfahrt hängt, weiter ohne Abgleich")
@@ -918,8 +921,9 @@ class Home(Behavior):
                 return Command(0, 0, hmm, "Startbild: Schlussfahrt hängt")
             soll = math.atan2(gy - y, gx - x) if rest > 0.10 else gth   # auf den Start zielen, zuletzt Kurs halten
             err = _wrap(soll - th)
-            wc = clamp(yaw_rate_to_w(self.h.kp_turn * err, self.rcfg), -self.h.turn_w_max, self.h.turn_w_max)
-            return Command(sb.gerade_v, wc, hmm, "Startbild: gerade zum Start %.2f m" % rest)
+            wm = self.rcfg.w_of(self.h.turn_w_max)
+            wc = clamp(yaw_rate_to_w(self.h.kp_turn * err, self.rcfg), -wm, wm)
+            return Command(self.rcfg.v_of(sb.gerade_v), wc, hmm, "Startbild: gerade zum Start %.2f m" % rest)
         if self.phase == "messen":
             if self.messung is None:
                 if not self._gemessen and w.t - self.t_phase >= self.SB_RUHE_S:
@@ -947,11 +951,12 @@ class Home(Behavior):
                     return self.f.align(err, "Startbild: drehe zum Start")
                 self._fein_fahrt = True
                 self._fein_d = dist if self._fein_d is None else min(self._fein_d, dist)
-                wc = clamp(yaw_rate_to_w(self.h.kp_turn * err, self.rcfg), -self.h.turn_w_max, self.h.turn_w_max)
+                wm = self.rcfg.w_of(self.h.turn_w_max)
+                wc = clamp(yaw_rate_to_w(self.h.kp_turn * err, self.rcfg), -wm, wm)
                 if w.t - self.t_phase > 20.0:
                     self._setze("ende", w)
                 else:
-                    return Command(0.75 * sb.gerade_v, wc, hmm, "Startbild: nachfahren %.2f m" % dist)
+                    return Command(0.75 * self.rcfg.v_of(sb.gerade_v), wc, hmm, "Startbild: nachfahren %.2f m" % dist)
         # ende: auf den Startkurs drehen (enger als sonst, sb.end_deg), fertig; über den Kurs hinaus gedreht oder
         # nach end_s: stehen bleiben statt pendeln
         err = _wrap(gth - th)
@@ -1175,7 +1180,7 @@ class MapExplore(Behavior):
             if self._scan_sum >= 2 * math.pi:
                 self.state = "ziel"
                 return Command(0, 0, hmm, "Rundumblick fertig")
-            return Command(0.0, e.scan_w, hmm, "Rundumblick %.0f°" % math.degrees(self._scan_sum))
+            return Command(0.0, self.rcfg.w_of(e.scan_w), hmm, "Rundumblick %.0f°" % math.degrees(self._scan_sum))
         if self.state == "face":
             # Zur Frontier drehen: sie kann seitlich oder hinter ihm liegen, das Bild zeigt nur ±44°
             fx, fy = self._face
@@ -1192,7 +1197,7 @@ class MapExplore(Behavior):
             if w.t >= self.until:
                 self.state = "ziel"
                 return Command(0, 0, hmm, "weiter")
-            return Command(-self.cfg.backup_v, 0.0, hmm, "setze zurück")
+            return Command(-self.rcfg.v_of(self.cfg.backup_v), 0.0, hmm, "setze zurück")
         if self.state == "wander":
             if w.t >= self.until:
                 self.state = "ziel"
@@ -1449,7 +1454,7 @@ class Patrol(Behavior):
             return Command(0, 0, hmm, "Streife: schaue")
         if self.state == "backup":
             if w.t < self.until:
-                return Command(-self.cfg.backup_v, 0.0, hmm, "setze zurück")
+                return Command(-self.rcfg.v_of(self.cfg.backup_v), 0.0, hmm, "setze zurück")
             self.state = "fahrt"
             self._next(w)
             return Command(0, 0, hmm, "weiter")

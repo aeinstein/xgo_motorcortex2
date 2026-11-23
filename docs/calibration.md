@@ -117,9 +117,9 @@ python3 tools/calibrate_odom.py rechne [--ref gerade|kamera|imu|mittel] [--dist-
 `robot.vx_limit`: 1.8 m/s per firmware unit on the RiderPi (2026-11-05). Used by the path check and follow prediction, and for the map only when wheel odometry is unavailable.
 RiderPi at v = 0.08: ~12.5 cm/s (assumption: 12 cm/s).
 
-## 6. Drive gains — `[robot] reverse_gain`, `manual_forward_gain`
+## 6. Drive gains (removed 2026-11-23)
 
-With firmware patches up to 0010 both directions respond alike (register 0x0e, 2026-11-05: wheel speed per target 2.67 forward, 2.65 reverse). Sent 0.12: 26 cm/s, sent 0.24: 50 cm/s. RiderPi uses 2.0 for both; forward only in manual mode. Table below: 2026-11-02.
+With firmware patches up to 0010 both directions respond alike (register 0x0e, 2026-11-05: wheel speed per target 2.67 forward, 2.65 reverse). Sent 0.12: 26 cm/s, sent 0.24: 50 cm/s. `reverse_gain` and `manual_forward_gain` were workarounds for the old firmware and are gone (keys ignored with a warning). History, 2026-11-02, old firmware:
 
 | Command (2 s) | Distance |
 |---|---|

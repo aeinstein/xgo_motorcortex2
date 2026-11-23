@@ -1663,7 +1663,7 @@
 </tr>
 <tr>
 <td>Reverse</td>
-<td>2026-11-02 much weaker than forward (u8 109: 4 cm vs u8 147: 86 cm in 2 s). 2026-11-05 with patches up to 0010: symmetric (sent 0.12 forward 0.70 m in 3 s, sent 0.24 reverse 1.30 m in 3 s). <code>reverse_gain = 2.0</code> always, <code>manual_forward_gain = 2.0</code> manual only. Sent 0.24, 3 s (2026-11-05 21:50): forward 1.09 m, peak 0.49 m/s, reverse 1.39 m, peak 0.53 m/s; same top speed, forward needs ~1 s longer to reach it (cause not examined); heading within 1° forward, 3° reverse; stops in ~0.6 s, pitch ±8°. Sent 0.30 (full stick) not driven yet. Autonomous modes stay at factor 1 forward: simulator (<code>--dyn</code>, ~54 cm/s, 8 runs each) 1 collision and home arrived 1 of 4, factor 1: 0 collisions, 4 of 4; free-space thresholds would need retuning</td>
+<td>2026-11-02 much weaker than forward (u8 109: 4 cm vs u8 147: 86 cm in 2 s). 2026-11-05 with patches up to 0010: symmetric (sent 0.12 forward 0.70 m in 3 s, sent 0.24 reverse 1.30 m in 3 s). <code>reverse_gain</code>/<code>manual_forward_gain</code> (both 2.0 then) removed 2026-11-23. Sent 0.24, 3 s (2026-11-05 21:50): forward 1.09 m, peak 0.49 m/s, reverse 1.39 m, peak 0.53 m/s; same top speed, forward needs ~1 s longer to reach it (cause not examined); heading within 1° forward, 3° reverse; stops in ~0.6 s, pitch ±8°. Sent 0.30 (full stick) not driven yet. Autonomous modes stay at factor 1 forward: simulator (<code>--dyn</code>, ~54 cm/s, 8 runs each) 1 collision and home arrived 1 of 4, factor 1: 0 collisions, 4 of 4; free-space thresholds would need retuning</td>
 </tr>
 <tr>
 <td>Balancing drift</td>

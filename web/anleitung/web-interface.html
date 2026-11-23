@@ -1981,7 +1981,7 @@ works without xgonav.</p>
 <tr>
 <td>POST</td>
 <td><code>/drive?v=..&amp;w=..[&amp;sicher=1]</code></td>
-<td>409 if not mode <code>manual</code>; <code>sicher=1</code> (used by the <a href="mcp.html">MCP server</a>): this setpoint passes <code>safety()</code> and the arc check like the autonomous modes, without <code>manual_forward_gain</code>; with the pipeline stopped it only turns</td>
+<td>409 if not mode <code>manual</code>; <code>v</code>, <code>w</code> −1..1 are factors of <code>robot.max_v</code>/<code>max_w</code> (sent v · <code>tempo</code> · <code>max_v</code>; D-pad sends ±1); <code>sicher=1</code> (used by the <a href="mcp.html">MCP server</a>): this setpoint passes <code>safety()</code> and the arc check like the autonomous modes; with the pipeline stopped it only turns</td>
 </tr>
 <tr>
 <td>POST</td>

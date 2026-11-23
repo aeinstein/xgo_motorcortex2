@@ -883,12 +883,7 @@ class App:
                 log.info("Modus -> %s %s", name, target or "")
 
     def _drive(self, cmd: Command) -> None:
-        """Fahrbefehl an den Roboter; der Vorwärtsfaktor gilt nur in der Handsteuerung, dort nicht für geprüfte
-        Sollwerte (Manual.checked): safety() und Bahnprüfung rechnen wie in den anderen Modi mit Faktor 1."""
-        manual = self.behavior.name == "manual" and not getattr(self.behavior, "checked", False)
-        self.robot.forward_gain = self.cfg.robot.manual_forward_gain if manual else 1.0
-        # explore fährt mit explore.v, auch wenn robot.max_v darunter liegt (dort für follow und Handsteuerung)
-        self.robot.max_v_fwd = max(self.cfg.robot.max_v, self.cfg.explore.v) if self.behavior.name == "explore" else None
+        """Fahrbefehl an den Roboter (alle Modi gleich, auch die Handsteuerung: Faktor x tempo x max_v)."""
         self.robot.drive(cmd.v, cmd.w, brake=bool(cmd.extra.get("bremsen")))
 
     def _manual_cmd(self, w: World | None = None) -> Command:
@@ -1079,11 +1074,11 @@ class App:
                     self._plan_tick(w)
             # approach erkundet mit derselben Logik, bis das Ziel in Sicht ist
             if self.lmap is not None and self.behavior.name in ("explore", "approach"):
-                vg = self.cfg.behavior.cruise_v * self.cfg.robot.vx_limit
+                vg = self.cfg.robot.v_of(self.cfg.behavior.cruise_v) * self.cfg.robot.vx_limit
                 w.path_blocked = self.lmap.arc_clearance(vg, 0.0, horizon_s=1.2) < 0.6 * vg + 0.08
             elif self.lmap is not None and self.behavior.name == "pet" and self.behavior.drives:
                 # pet sucht oder streift: eine Bahnprüfung je Regelschritt, nur solange er fährt
-                vg = self.cfg.pet.drive_v * self.cfg.robot.vx_limit
+                vg = self.cfg.robot.v_of(self.cfg.pet.drive_v) * self.cfg.robot.vx_limit
                 w.path_blocked = self.lmap.arc_clearance(vg, 0.0, horizon_s=1.2) < 0.6 * vg + 0.08
             if getattr(self.behavior, "want_set_down", False):
                 self.behavior.want_set_down = False

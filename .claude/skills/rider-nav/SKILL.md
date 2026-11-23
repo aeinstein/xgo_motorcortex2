@@ -51,20 +51,21 @@ $R python3 /root/rider_nav.py zustand
    - Körperhöhe steht danach auf Firmware-Mitte 128 (≈ 90 mm); Höhe nur auf Ansage (`mcp__rider__hoehe`, u8
      61..200), nie unter Minimum + 10 mm. Kamerahöhe ≈ 109,4 + 0,1126·u8 mm.
 4. **Bewegen** (je einzeln, Ergebnis mit Bild dem Nutzer melden):
-   - `mcp__rider__drehen` `grad` −1080..1080 (+ = links), `w` Drehrate 0,08..0,5 (Standard 0,25), `tol` 1..10°
+   - `mcp__rider__drehen` `grad` −1080..1080 (+ = links), `w` Drehrate 0,16..1 (Anteil von max_w, Standard 0,5), `tol` 1..10°
      (Standard 3), geregelt auf `yaw_deg`, danach Bild. Er dreht nach dem Stopp etwas nach (bis ~5°); für „wieder
      auf Startkurs“ mit kleinem `drehen` korrigieren.
    - `mcp__rider__rundblick` `bilder` 2..8: volle Drehung, je Schritt ein Bild, endet auf dem Startkurs.
    - `mcp__rider__fahren` `v`, `w`, `sekunden` 0,2..5: Standard **geprüft** (`/drive?sicher=1`: Bodengrenze,
-     `safety()`, Bahnprüfung; ohne `manual_forward_gain`; |v| ≤ 0,15, |w| ≤ 0,30, braucht Bildverarbeitung und
+     `safety()`, Bahnprüfung; |v| ≤ 0,30, |w| ≤ 0,60 (Anteile von max_v/max_w), braucht Bildverarbeitung und
      FloorNet). `geprueft: false` = Handsteuerung wie das Steuerkreuz im Web und früher `rider_nav.py fahr`
-     (ohne Bodengrenze und Bahnprüfung, mit `manual_forward_gain`, |v|, |w| ≤ 0,5): nur, wenn der Nutzer es so
+     (ohne Bodengrenze und Bahnprüfung, |v|, |w| ≤ 1 = max_v/max_w): nur, wenn der Nutzer es so
      will oder die Prüfung an einer Engstelle bremst und er zustimmt; Richtung vorher ansagen, Strecken klein.
-     Richtwerte ungeprüft bei Tempo 100 %: v 0,08 ≈ 10 cm/s, v 0,12 ≈ 26 cm/s (nichtlinear); geprüft ≈ v · 1,8 m/s.
+     Seit 2026-11-23 sind v, w Anteile von max_v/max_w (0,5), gesendet v · tempo · max_v. Richtwerte bei Tempo 100 %:
+     v 0,16 ≈ 10 cm/s, v 0,24 ≈ 26 cm/s (nichtlinear); Nenntempo ≈ v · 0,5 · 1,8 m/s.
      Endet mit Stillstand + idle, liefert Strecke, Pose vorher/nachher, Bremsmeldungen, Bild. Kleine Schritte,
      nach jedem das Bild ansehen, nicht rückwärts ins Ungesehene. Der Temporegler (`mcp__rider__tempo`) gilt auch hier.
    - `mcp__rider__folge` `abschnitte` [[v, w, s], …] (1..10, je 0..5 s, zusammen ≤ 30 s), `geprueft` wie oben:
-     Abschnitte ohne Halt dazwischen (z. B. `[[0.13, 0, 3], [0, 0.25, 1]]`: fahren und direkt aus der Fahrt drehen).
+     Abschnitte ohne Halt dazwischen (z. B. `[[0.26, 0, 3], [0, 0.5, 1]]`: fahren und direkt aus der Fahrt drehen).
    - `mcp__rider__ausrichten`: Roll auf 0° nivellieren (nur balancierend); `mcp__rider__neigen` Roll −20..20°.
    - Abbruch des Nutzers („stopp“, Tool abgelehnt): sofort `mcp__rider__stopp`, danach `mcp__rider__absetzen`.
 5. **Danach immer:** `mcp__rider__absetzen` (wartet bis er liegt), dann `mcp__rider__bildverarbeitung` mit
@@ -75,8 +76,8 @@ $R python3 /root/rider_nav.py zustand
 `$R python3 /root/rider_nav.py zustand|start|bild|aufstehen|fahr V W SEK|folge V,W,SEK …|dreh GRAD|hoehe U8|absetzen|ende`
 – dieselben Abläufe wie oben; `fahr`/`folge` fahren dort immer **ungeprüft**.
 
-- Beginnt ein Wert mit Minus, `--` davorsetzen (`folge -- -0.13,0,2.5`, `dreh -- -90`), sonst liest der Aufruf
-  ihn als Option und bricht ohne Bewegung ab. Optionen gehören vor das `--` (`dreh --w 0.25 -- -90`).
+- Beginnt ein Wert mit Minus, `--` davorsetzen (`folge -- -0.26,0,2.5`, `dreh -- -90`), sonst liest der Aufruf
+  ihn als Option und bricht ohne Bewegung ab. Optionen gehören vor das `--` (`dreh --w 0.5 -- -90`).
 - `ende` = idle, 254, warten bis er liegt, Bildverarbeitung aus.
 - Abgebrochenes SSH: prüfen, ob `rider_nav.py` am Rider noch läuft (`pkill -f "[r]ider_nav.py"`), danach
   `mcp__rider__stopp`.

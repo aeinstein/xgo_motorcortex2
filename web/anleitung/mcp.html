@@ -1513,7 +1513,7 @@
 <tr>
 <td><code>drehen</code></td>
 <td>drehen</td>
-<td><code>grad</code> −1080..1080, <code>w</code> 0.08..0.5 (default 0.25), <code>tol</code> 1..10° (default 3), <code>bild</code></td>
+<td><code>grad</code> −1080..1080, <code>w</code> 0.16..1 (factor of <code>max_w</code>, default 0.5), <code>tol</code> 1..10° (default 3), <code>bild</code></td>
 <td>turn on the spot (+ = left), closed loop on <code>yaw_deg</code>, then image</td>
 </tr>
 <tr>
@@ -1544,7 +1544,7 @@
 <td><code>fahren</code></td>
 <td>fahren</td>
 <td><code>v</code>, <code>w</code>, <code>sekunden</code> 0.2..5, <code>geprueft</code> (default true), <code>bild</code></td>
-<td>checked: <code>/drive?sicher=1</code>, <code>v</code> ±0.15, <code>w</code> ±0.30; <code>geprueft: false</code>: <code>/drive</code> like the web D-pad / <code>rider_nav.py fahr</code>, <code>v</code>, <code>w</code> ±0.5; 10 Hz, then standstill + idle; returns distance, pose before/after, braking messages, image</td>
+<td><code>v</code>, <code>w</code> are factors of <code>robot.max_v</code>/<code>max_w</code> (since 2026-11-23). Checked: <code>/drive?sicher=1</code>, <code>v</code> ±0.30, <code>w</code> ±0.60; <code>geprueft: false</code>: <code>/drive</code> like the web D-pad / <code>rider_nav.py fahr</code>, <code>v</code>, <code>w</code> ±1; 10 Hz, then standstill + idle; returns distance, pose before/after, braking messages, image</td>
 </tr>
 <tr>
 <td><code>folge</code></td>
@@ -1608,11 +1608,11 @@
 </tr>
 <tr>
 <td><code>fahren</code>/<code>folge</code> checked by default</td>
-<td><code>sicher=1</code>: the setpoint passes <code>safety()</code> (fallen, blind, free space, TTC) and the arc check like the autonomous modes; <code>manual_forward_gain</code> is not applied, nominal speed ≈ v · <code>robot.vx_limit</code>; refused while blind or with the pipeline stopped. <code>geprueft: false</code>: hand control as the web D-pad (no floor boundary, no arc check; fall detection and watchdogs stay), with <code>manual_forward_gain</code>, no pipeline needed; only on the owner's request</td>
+<td><code>sicher=1</code>: the setpoint passes <code>safety()</code> (fallen, blind, free space, TTC) and the arc check like the autonomous modes; nominal speed ≈ v · <code>max_v</code> · <code>tempo</code> · <code>robot.vx_limit</code>; refused while blind or with the pipeline stopped. <code>geprueft: false</code>: hand control as the web D-pad (no floor boundary, no arc check; fall detection and watchdogs stay), no pipeline needed; only on the owner's request</td>
 </tr>
 <tr>
 <td><code>drehen</code>, <code>rundblick</code></td>
-<td>unchecked turn on the spot (v = 0); <code>drehen</code> ≤ <code>w</code> (0.5), <code>rundblick</code> ≤ 0.25</td>
+<td>unchecked turn on the spot (v = 0); <code>drehen</code> ≤ <code>w</code> (factor, default 0.5), <code>rundblick</code> ≤ 0.5 (factor)</td>
 </tr>
 <tr>
 <td>Limits</td>

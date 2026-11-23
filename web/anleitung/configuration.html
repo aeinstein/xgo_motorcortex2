@@ -1925,7 +1925,9 @@
 </tbody>
 </table>
 <h2 id="parameters">Parameters<a class="headerlink" href="#parameters" title="Permanent link">&para;</a></h2>
-<p>Default = <code>config.py</code>; since 2026-11-12 these are the RiderPi values (<code>/opt/xgonav/config.toml</code> without <code>/opt</code> paths). (sim: …) = <code>Config.neutral()</code> (<code>NEUTRAL</code> in <code>config.py</code>), used by <code>tests/sim_run.py</code> and the tests. RiderPi = <code>deploy/config.example.toml</code> where it still differs (blank = default). [K] = device-specific, calibrate.</p>
+<p>Default = <code>config.py</code> = the RiderPi values (<code>/opt/xgonav/config.toml</code> without <code>/opt</code> paths). (sim: …) = <code>Config.neutral()</code> (<code>NEUTRAL</code> in <code>config.py</code>), used by <code>tests/sim_run.py</code> and the tests; since 2026-11-23 it differs only where the simulator cannot model the hardware (camera, IMU auto sync, wheel scale, levelling, detector rate, FloorNet, display, CPU pinning) — all drive, turn, behaviour, map and timing values are the Rider's.</p>
+<p><strong>Speeds (since 2026-11-23):</strong> every drive and turn value of a mode (<code>home.v</code>, <code>explore.v</code>, <code>pet.drive_v</code>, <code>behavior.search_w</code>, …) and the hand control are <strong>factors 0..1 of <code>robot.max_v</code> / <code>robot.max_w</code></strong>. Sent = factor × <code>tempo</code> × <code>max_v</code> (hand control: stick × <code>tempo</code> × <code>max_v</code>), plus only the <code>speed_ctrl</code> correction; capped at ±1 (firmware range). Values below are factors; absolute = factor × 0.5 on the RiderPi.</p>
+<p>RiderPi = <code>deploy/config.example.toml</code> where it still differs (blank = default). [K] = device-specific, calibrate.</p>
 <h3 id="top-level">top level<a class="headerlink" href="#top-level" title="Permanent link">&para;</a></h3>
 <table>
 <thead>
@@ -1939,7 +1941,7 @@
 <tbody>
 <tr>
 <td><code>control_hz</code></td>
-<td>24.0 (sim: 20)</td>
+<td>24.0</td>
 <td></td>
 <td>control steps per second, at the frame nearest to the beat (threshold <code>1/control_hz − 0.5/fps</code>), so at most the frame rate: 24 = every frame. Without image processing (<code>manual</code>) by the clock. Until 2026-11-17: 20, which gave only every 2nd frame (~12 Hz) on the Rider and ~20 Hz in the simulator (20 fps). 24 Hz <strong>not installed, not driven</strong></td>
 </tr>
@@ -1958,21 +1960,15 @@
 <tbody>
 <tr>
 <td><code>max_v</code></td>
-<td>0.5 (sim: 0.25)</td>
-<td></td>
-<td>normalised; RiderPi 0.15 → 0.5 on 2026-11-13 (user), <strong>never driven above 0.24</strong>. Sent 0.12 ≈ 26 cm/s, 0.24 ≈ 50 cm/s.</td>
-</tr>
-<tr>
-<td><code>max_sent</code></td>
 <td>0.5</td>
 <td></td>
-<td>hard cap on the sent drive and turn value, after the gains below and <code>speed_ctrl</code></td>
+<td>maximum drive value (share of the firmware range); all speeds are factors of it. RiderPi 0.15 → 0.5 on 2026-11-13 (user), <strong>never driven above 0.24 absolute</strong>. Sent 0.12 ≈ 26 cm/s, 0.24 ≈ 50 cm/s</td>
 </tr>
 <tr>
 <td><code>max_w</code></td>
-<td>0.5 (sim: 0.25)</td>
+<td>0.5</td>
 <td></td>
-<td>normalised; 0.25 ≈ 90 °/s (firmware scale assumed); RiderPi 0.30 → 0.5 on 2026-11-13 (user)</td>
+<td>maximum turn value; 0.25 ≈ 90 °/s (firmware scale assumed); RiderPi 0.30 → 0.5 on 2026-11-13 (user)</td>
 </tr>
 <tr>
 <td><code>turn_min_w</code></td>
@@ -1985,18 +1981,6 @@
 <td>1.0</td>
 <td></td>
 <td>start value of the speed slider: every drive and turn command of every mode is multiplied by it after the <code>max_v</code>/<code>max_w</code> clamp (<code>Robot.drive</code>); at runtime <code>POST /tempo?f=0.05..1</code> (web slider), until restart. Firmware actions run at their own speed</td>
-</tr>
-<tr>
-<td><code>manual_forward_gain</code></td>
-<td>2.0 (sim: 1.0)</td>
-<td></td>
-<td>multiplier for positive v, manual mode only (applied after <code>max_v</code>, capped by <code>max_sent</code>)</td>
-</tr>
-<tr>
-<td><code>reverse_gain</code></td>
-<td>2.0 (sim: 1.0)</td>
-<td></td>
-<td>multiplier for negative v (applied after <code>max_v</code>, capped by <code>max_sent</code>)</td>
 </tr>
 <tr>
 <td><code>level_pulse_s</code></td>
@@ -2012,15 +1996,15 @@
 </tr>
 <tr>
 <td><code>vx_limit</code></td>
-<td>1.8 (sim: 1.5)</td>
+<td>1.8</td>
 <td></td>
 <td>m/s per firmware unit (measured 2026-11-05: command 0.15 → ~27 cm/s); path check, follow prediction, odometry fallback</td>
 </tr>
 <tr>
 <td><code>speed_ctrl</code></td>
-<td>false</td>
+<td>true</td>
 <td></td>
-<td>speed control on the wheels: sent value += ∫(target − wheel speed); target = sent value × <code>vx_limit</code>. Needs wheel odometry. Zero without fresh wheel data, at standstill, below the firmware dead band (0.05) and on a direction change. Not driven on the RiderPi</td>
+<td>speed control on the wheels: sent value += ∫(target − wheel speed); target = sent value × <code>vx_limit</code>. Needs wheel odometry. Zero without fresh wheel data, at standstill, below the firmware dead band (0.05) and on a direction change. On at the RiderPi since 2026-11-13</td>
 </tr>
 <tr>
 <td><code>speed_ctrl_window_s</code></td>
@@ -2096,9 +2080,9 @@
 </tr>
 <tr>
 <td><code>led_default</code></td>
-<td>51</td>
+<td>20</td>
 <td></td>
-<td>used while <code>led_file</code> is missing (20 %)</td>
+<td>used while <code>led_file</code> is missing</td>
 </tr>
 <tr>
 <td><code>led_start_s</code></td>
@@ -2266,8 +2250,8 @@
 </tr>
 <tr>
 <td><code>idle_hz</code></td>
-<td>5</td>
-<td>5</td>
+<td>0</td>
+<td>0</td>
 <td>While the Rider is set down (not balancing): stream rate and read rate of the IMU thread; back to <code>stream_hz</code> and <code>poll_s</code> on stand-up. Saves ~6 % of one core on the CM4. <code>0</code> = never switch. Sleep mode still turns the stream off</td>
 </tr>
 <tr>
@@ -2327,7 +2311,7 @@
 </tbody>
 </table>
 <h3 id="removed-2026-11-23">Removed 2026-11-23<a class="headerlink" href="#removed-2026-11-23" title="Permanent link">&para;</a></h3>
-<p>Ignored with a warning: <code>pet.turn_min_w</code>, <code>dunkel.turn_min_w</code> → <code>robot.turn_min_w</code>.</p>
+<p>Ignored with a warning: <code>pet.turn_min_w</code>, <code>dunkel.turn_min_w</code> → <code>robot.turn_min_w</code>; <code>robot.max_sent</code> (cap is <code>max_v</code>/<code>max_w</code>, sent at most ±1); <code>robot.manual_forward_gain</code>, <code>robot.reverse_gain</code> (workarounds for the old firmware; hand control = <code>max_v</code> × <code>tempo</code> × 1).</p>
 <h3 id="removed-2026-11-17">Removed 2026-11-17<a class="headerlink" href="#removed-2026-11-17" title="Permanent link">&para;</a></h3>
 <p>Must not be in <code>config.toml</code> any more (<code>KeyError</code> at load):</p>
 <table>
@@ -2513,14 +2497,14 @@
 </tr>
 <tr>
 <td><code>net_smooth_n</code></td>
-<td>3 (sim: 0)</td>
+<td>3</td>
 <td></td>
 <td>boundary smoothed over time: the last n outputs are mapped onto the current frame (map pose, pitch) and the median per column counts; never averaged. <code>3</code> removes a spike seen in one frame, a new obstacle appears one network frame (83 ms) later. <code>0</code>/<code>1</code> = off; without a map pose the output passes unchanged</td>
 </tr>
 </tbody>
 </table>
 <h3 id="map-short-term-local-map"><code>[map]</code> (short-term local map)<a class="headerlink" href="#map-short-term-local-map" title="Permanent link">&para;</a></h3>
-<p><code>max_age_s</code> 4.0, <code>confirm</code> 3 (sim: 1), <code>confirm_radius_m</code> 0.08, <code>radius_m</code> 0.18 (path check: a confirmed point closer than this to the arc brakes), <code>radius_tight_m</code> 0.08 (same while the path follower drives a tight spot, <code>home.tight_m</code>; Rider half width 5.8 cm per CAD); moves with the dead-reckoning step (<code>[odom]</code>). <code>native</code> true: moving, entering (ground geometry, clear seen floor, thin, forget), confirming and the arc check in the C++ core (<code>xgonav/native/navfast.cpp</code>) if built; same result as numpy (CM4, 2000 points: arc check after a new observation 5.8 → 0.4 ms, confirmed points for the planner 94 → 0.6 ms).</p>
+<p><code>max_age_s</code> 4.0, <code>confirm</code> 3, <code>confirm_radius_m</code> 0.08, <code>radius_m</code> 0.18 (path check: a confirmed point closer than this to the arc brakes), <code>radius_tight_m</code> 0.08 (same while the path follower drives a tight spot, <code>home.tight_m</code>; Rider half width 5.8 cm per CAD); moves with the dead-reckoning step (<code>[odom]</code>). <code>native</code> true: moving, entering (ground geometry, clear seen floor, thin, forget), confirming and the arc check in the C++ core (<code>xgonav/native/navfast.cpp</code>) if built; same result as numpy (CM4, 2000 points: arc check after a new observation 5.8 → 0.4 ms, confirmed points for the planner 94 → 0.6 ms).</p>
 <h3 id="behavior"><code>[behavior]</code><a class="headerlink" href="#behavior" title="Permanent link">&para;</a></h3>
 <table>
 <thead>
@@ -2543,7 +2527,7 @@
 </tr>
 <tr>
 <td><code>follow_dist_m</code></td>
-<td>0.9 (sim: 1.2)</td>
+<td>0.9</td>
 <td></td>
 </tr>
 <tr>
@@ -2553,7 +2537,7 @@
 </tr>
 <tr>
 <td><code>dist_deadband</code></td>
-<td>0.1 (sim: 0.15)</td>
+<td>0.1</td>
 <td></td>
 </tr>
 <tr>
@@ -2568,22 +2552,22 @@
 </tr>
 <tr>
 <td><code>cruise_v</code> / <code>backup_v</code></td>
-<td>0.15 / 0.10</td>
-<td>0.15 /</td>
+<td>0.30 / 0.20</td>
+<td></td>
 </tr>
 <tr>
 <td><code>search_w</code></td>
-<td>0.07 (sim: 0.12)</td>
+<td>0.14</td>
 <td></td>
 </tr>
 <tr>
 <td><code>turn_w</code> (explore: turn away)</td>
-<td>0.21 (sim: 0.18)</td>
+<td>0.42</td>
 <td></td>
 </tr>
 <tr>
 <td><code>search_timeout_s</code></td>
-<td>10.0 (sim: 20.0)</td>
+<td>10.0</td>
 <td></td>
 </tr>
 <tr>
@@ -2598,7 +2582,7 @@
 </tr>
 <tr>
 <td><code>lost_look_deg</code> / <code>lost_look_w</code></td>
-<td>360 / 0.10</td>
+<td>360 / 0.20</td>
 <td></td>
 </tr>
 <tr>
@@ -2613,7 +2597,7 @@
 </tr>
 <tr>
 <td><code>push_v</code> / <code>push_s</code> / <code>push_n</code> / <code>push_free_m</code></td>
-<td>0.45 / 1.2 / 2 / 0.4</td>
+<td>0.90 (factor, absolute 0.45) / 1.2 / 2 / 0.4</td>
 <td>push: forward commanded, &lt; 2 cm progress for 2.5 s (1 s after a push) and FloorNet ≥ <code>push_free_m</code> free ahead → drive <code>push_v</code> for <code>push_s</code>; at most <code>push_n</code> times until 0.3 m progress, then back up as before. Path following, <code>home</code>, <code>patrol</code>, and the reactive escape of <code>explore</code>. 0 = off. Not driven (carpet groove 2026-11-17)</td>
 </tr>
 <tr>
@@ -2628,7 +2612,7 @@
 </tr>
 <tr>
 <td><code>height_cruise_mm</code> / <code>height_search_mm</code> / <code>height_fast_mm</code></td>
-<td>85 / 100 / 80 (sim: 85 / 115 / 70)</td>
+<td>85 / 100 / 80</td>
 <td></td>
 </tr>
 </tbody>
@@ -2661,12 +2645,12 @@ Sounds: <code>sound</code> true, <code>sound_dir</code> <code>/opt/xgonav/sounds
 </tr>
 <tr>
 <td><code>seek_m</code></td>
-<td>−1 = no limit (sim: 0 = off)</td>
+<td>−1 = no limit</td>
 <td>person gone: drive toward the last position, per loss. Needs wheels, floor model, local map</td>
 </tr>
 <tr>
 <td><code>roam_m</code>, <code>roam_radius_m</code></td>
-<td>−1, −1 = no limit (sim: 0, 1.0)</td>
+<td>−1, −1 = no limit</td>
 <td>nobody around: roam in legs per phase without encounter (ends at <code>doze_s</code>); radius around the stand-up spot</td>
 </tr>
 <tr>
@@ -2681,8 +2665,8 @@ Sounds: <code>sound</code> true, <code>sound_dir</code> <code>/opt/xgonav/sounds
 </tr>
 <tr>
 <td><code>seek_stop_m</code>, <code>drive_v</code>, <code>look_w</code>, <code>look_step_deg</code>, <code>look_steps</code>, <code>look_pause_s</code></td>
-<td>0.4, 0.12 (sim: 0.08), 0.24 (sim: 0.12), 90, 4, 1.5</td>
-<td>RiderPi faster since 2026-11-13 (user); <code>turn_w</code> 0.40 (sim: 0.20)</td>
+<td>0.4, 0.24, 0.48, 90, 4, 1.5</td>
+<td>factors (absolute 0.12 / 0.24); faster since 2026-11-13 (user); <code>turn_w</code> 0.80, <code>wiggle_w</code> 0.20, <code>creep_v</code> 0.12, <code>retreat_v</code> 0.20 (factors)</td>
 </tr>
 <tr>
 <td><code>hear</code>, <code>hear_min_db</code>, <code>hear_front_deg</code>, <code>hear_turns</code>, <code>hear_listen_s</code>, <code>hear_repeat_s</code>, <code>hear_side_deg</code></td>
@@ -2696,7 +2680,7 @@ Sounds: <code>sound</code> true, <code>sound_dir</code> <code>/opt/xgonav/sounds
 </tr>
 <tr>
 <td><code>call_events</code>, <code>call_m</code>, <code>call_repeat_s</code></td>
-<td>3, −1 = no limit, 3 m per call (sim: 0), 45</td>
+<td>3, −1 = no limit, 3 m per call, 45</td>
 <td>calling: drive toward a voice from the front, never more than <code>seek_m</code></td>
 </tr>
 <tr>
@@ -2726,7 +2710,7 @@ Sounds: <code>sound</code> true, <code>sound_dir</code> <code>/opt/xgonav/sounds
 </tr>
 <tr>
 <td><code>follow</code>, <code>follow_m</code>, <code>follow_repeat_s</code></td>
-<td>true, −1 = no limit (sim: 0), 3</td>
+<td>true, −1 = no limit, 3</td>
 <td>any person in view (not lying/sitting) → exactly the routine of mode <code>follow</code> (<code>behaviors.Follow</code>: <code>behavior.follow_dist_m</code>, speed, backwards up to <code>backup_v</code>, heights, search at the last place); follow waits → pet again; lockout from the end (2026-11-22; <code>follow_trust</code>, <code>follow_dist_m</code>, <code>follow_start_m</code>, <code>follow_hold_s</code>, <code>follow_settle_s</code>, <code>follow_block_s</code>, <code>follow_lost_s</code> removed, warning)</td>
 </tr>
 <tr>
@@ -2741,7 +2725,7 @@ Sounds: <code>sound</code> true, <code>sound_dir</code> <code>/opt/xgonav/sounds
 </tr>
 <tr>
 <td><code>come_events</code>, <code>come_m</code>, <code>come_stop_m</code>, <code>come_repeat_s</code></td>
-<td>1, −1 = no limit (sim: 0), 0.4 (2026-11-22, was 0.8), 8</td>
+<td>1, −1 = no limit, 0.4 (2026-11-22, was 0.8), 8</td>
 <td>come here: drive toward a visible person who speaks (also after a call search found someone); no planner path → straight toward her; at most 30 s</td>
 </tr>
 <tr>
@@ -2756,12 +2740,12 @@ Sounds: <code>sound</code> true, <code>sound_dir</code> <code>/opt/xgonav/sounds
 </tr>
 <tr>
 <td><code>faint</code></td>
-<td>true (sim: false)</td>
+<td>true</td>
 <td>hard scare: set down, wake up, stand up by itself; on at the RiderPi since 2026-11-13</td>
 </tr>
 <tr>
 <td><code>faint_level</code></td>
-<td>0.8 (sim: 1.0)</td>
+<td>0.8</td>
 <td>scare level that triggers a faint</td>
 </tr>
 <tr>
@@ -3065,7 +3049,7 @@ Sounds: <code>sound</code> true, <code>sound_dir</code> <code>/opt/xgonav/sounds
 </tr>
 <tr>
 <td><code>hit_band_quad</code></td>
-<td>0.05 (sim 0): a hit is entered as a band ± this × d² along the ray (1 m ±5 cm, 1.5 m ±11 cm), not one cell. Ranges from the image scatter ±0.3 m at 1–1.5 m (drive 20261118-135118, wall behind chairs): single cells rarely got two hits and free rays of other frames removed them. 0.08 merged chair and table legs. Since 2026-11-18, not driven</td>
+<td>0.05: a hit is entered as a band ± this × d² along the ray (1 m ±5 cm, 1.5 m ±11 cm), not one cell. Ranges from the image scatter ±0.3 m at 1–1.5 m (drive 20261118-135118, wall behind chairs): single cells rarely got two hits and free rays of other frames removed them. 0.08 merged chair and table legs. Since 2026-11-18, not driven</td>
 </tr>
 <tr>
 <td><code>view_m</code></td>
@@ -3101,7 +3085,7 @@ Sounds: <code>sound</code> true, <code>sound_dir</code> <code>/opt/xgonav/sounds
 <tbody>
 <tr>
 <td><code>enabled</code></td>
-<td><code>true</code> (sim: <code>false</code>)</td>
+<td><code>false</code></td>
 <td>pose state: unknown after set-down, fall, restart; map locked until confirmed in the web UI (<code>docs/mapping.md</code>)</td>
 </tr>
 <tr>
@@ -3111,7 +3095,7 @@ Sounds: <code>sound</code> true, <code>sound_dir</code> <code>/opt/xgonav/sounds
 </tr>
 <tr>
 <td><code>track</code></td>
-<td><code>true</code> (sim: <code>false</code>)</td>
+<td><code>false</code></td>
 <td>running map matching while driving: map pose follows the room map (<code>docs/mapping.md</code>, Map matching). Independent of <code>enabled</code></td>
 </tr>
 <tr>
@@ -3153,7 +3137,7 @@ Sounds: <code>sound</code> true, <code>sound_dir</code> <code>/opt/xgonav/sounds
 <tbody>
 <tr>
 <td><code>enabled</code></td>
-<td><code>true</code> (sim: <code>false</code>)</td>
+<td><code>true</code></td>
 <td><code>home</code> ends via a pre-point, a straight run onto the start and a measurement against the image taken at the start; the room-map pose is corrected. Driven once on the Rider (2026-11-19)</td>
 </tr>
 <tr>
@@ -3163,8 +3147,8 @@ Sounds: <code>sound</code> true, <code>sound_dir</code> <code>/opt/xgonav/sounds
 </tr>
 <tr>
 <td><code>gerade_v</code></td>
-<td>0.08</td>
-<td>normalised speed of the straight run (~10 cm/s)</td>
+<td>0.16</td>
+<td>speed of the straight run, factor of <code>max_v</code> (~10 cm/s)</td>
 </tr>
 <tr>
 <td><code>tiefe_schritt_m</code> / <code>basen</code></td>
@@ -3295,12 +3279,12 @@ Sounds: <code>sound</code> true, <code>sound_dir</code> <code>/opt/xgonav/sounds
 </tr>
 <tr>
 <td><code>v</code></td>
-<td>0.15</td>
-<td>normalised speed (<code>patrol</code>, path following in the <code>follow</code> search; <code>explore</code> uses <code>explore.v</code>, every planned path in <code>pet</code> uses <code>pet.drive_v</code>)</td>
+<td>0.30</td>
+<td>speed, factor of <code>max_v</code> (<code>patrol</code>, path following in the <code>follow</code> search; <code>explore</code> uses <code>explore.v</code>, every planned path in <code>pet</code> uses <code>pet.drive_v</code>)</td>
 </tr>
 <tr>
 <td><code>start_v</code></td>
-<td>0.225 (sim: 0.15)</td>
+<td>0.45</td>
 <td>"Zum Start": mode <code>home</code> and the drive home in <code>pet</code>, +50 % (2026-11-22); final straight run <code>startbild.gerade_v</code></td>
 </tr>
 <tr>
@@ -3310,8 +3294,8 @@ Sounds: <code>sound</code> true, <code>sound_dir</code> <code>/opt/xgonav/sounds
 </tr>
 <tr>
 <td><code>turn_w_max</code></td>
-<td>0.25</td>
-<td>cap for turning in place (path follower, final alignment); 1.0 = only <code>robot.max_w</code> (sim). Turning at 0.5 rolled the Rider 7° and upset IMU pitch and pose (2026-11-17)</td>
+<td>0.50</td>
+<td>cap for turning in place (path follower, final alignment), factor of <code>max_w</code> (absolute 0.25); 1.0 = <code>robot.max_w</code>. Turning at 0.5 rolled the Rider 7° and upset IMU pitch and pose (2026-11-17)</td>
 </tr>
 <tr>
 <td><code>turn_enter_deg</code> / <code>turn_exit_deg</code></td>

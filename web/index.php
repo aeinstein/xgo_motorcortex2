@@ -1548,7 +1548,7 @@ function tempoStatus(t) {
   tempoRegler.value = Math.round(t * 100);                  // rastet auf 25/50/75/100
   $('tempo-w').textContent = Math.round(t * 100) + ' %';    // angezeigt wird der wirkliche Wert
 }
-// Handsteuerung schickt Vollausschlag, xgonav begrenzt auf max_v/max_w und nimmt mit dem Tempo mal
+// Handsteuerung schickt Vollausschlag 1 = max_v/max_w (Faktoren, seit 2026-11-23), xgonav nimmt mit dem Tempo mal
 function sollwert() {
   const v = (gedrueckt.has('vor') ? 1 : 0) - (gedrueckt.has('zurück') ? 1 : 0);
   const w = (gedrueckt.has('links') ? 1 : 0) - (gedrueckt.has('rechts') ? 1 : 0);
