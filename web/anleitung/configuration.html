@@ -2008,9 +2008,9 @@
 </tr>
 <tr>
 <td><code>speed_ctrl_lag_s</code></td>
-<td>0.8</td>
+<td>1.2</td>
 <td></td>
-<td>s, lag of the target behind the sent value (Rider inertia); without it the correction winds up at every start. Tuned on the simulator model (<code>sim._dyn</code>)</td>
+<td>s, lag of the target behind the sent value (Rider inertia, wheels vs. command 2026-11-23); without it the correction winds up at every start. Simulator (<code>sim._dyn</code>): 8 % overshoot (0.8 s: 19 %)</td>
 </tr>
 <tr>
 <td><code>speed_ctrl_max</code></td>

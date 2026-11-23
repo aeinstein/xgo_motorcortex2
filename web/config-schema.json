@@ -66,7 +66,7 @@
        "key": "speed_ctrl",
        "typ": "bool",
        "default": false,
-       "hilfe": "Geschwindigkeitsregelung: Die Firmware regelt die Fahrgeschwindigkeit praktisch nur proportional, auf Teppich bleibt der Rider deshalb unter dem Soll. Mit speed_ctrl vergleicht xgonav im Regelschritt Soll (gesendeter Wert x vx_limit) und Ist (Räder), beide über speed_ctrl_window_s gemittelt, und stellt den gesendeten Wert nach: Korrektur += (Soll - Ist) / vx_limit x dt / speed_ctrl_ti_s, höchstens +-speed_ctrl_max (normiert). Ohne frische Raddaten, im Stand, unter dem Totband der Firmware und bei Richtungswechsel ist die Korrektur 0. Steht er an einem Hindernis an, drückt er um speed_ctrl_max stärker. speed_ctrl_lag_s: So träge folgt das Soll dem Fahrwert (Anlaufen des Riders), sonst lädt sich die Korrektur bei jedem Anfahren auf. Abgestimmt am Trägheitsmodell des Simulators (sim._dyn, 2026-11-12): ohne Modell 31-46 % Überschwingen beim Anfahren auf ebenem Boden, mit 0,8 s und ti 2 s 5 %; ein Fehlbetrag von 0,04 ist dann nach ~3 s zu 95 % ausgeglichen. Am Rider nicht gefahren."
+       "hilfe": "Geschwindigkeitsregelung: Die Firmware regelt die Fahrgeschwindigkeit praktisch nur proportional, auf Teppich bleibt der Rider deshalb unter dem Soll. Mit speed_ctrl vergleicht xgonav im Regelschritt Soll (gesendeter Wert x vx_limit) und Ist (Räder), beide über speed_ctrl_window_s gemittelt, und stellt den gesendeten Wert nach: Korrektur += (Soll - Ist) / vx_limit x dt / speed_ctrl_ti_s, höchstens +-speed_ctrl_max (normiert). Ohne frische Raddaten, im Stand, unter dem Totband der Firmware und bei Richtungswechsel ist die Korrektur 0. Steht er an einem Hindernis an, drückt er um speed_ctrl_max stärker. speed_ctrl_lag_s: So träge folgt das Soll dem Fahrwert (Anlaufen des Riders), sonst lädt sich die Korrektur bei jedem Anfahren auf. Abgestimmt am Trägheitsmodell des Simulators (sim._dyn, 2026-11-12): ohne Modell 31-46 % Überschwingen beim Anfahren auf ebenem Boden, mit 0,8 s und ti 2 s 5 %; ein Fehlbetrag von 0,04 ist dann nach ~3 s zu 95 % ausgeglichen. Seit 2026-11-23 1,2 s wie die Trägheit des Riders (Fahrt vor dem Stuhl: Räder folgen dem Fahrwert mit ~1,2 s; mit 0,8 s lief er schneller als verlangt und die Korrektur stand trotzdem bei +0,07); Simulator damit 8 % Überschwingen statt 19 %."
       },
       {
        "key": "speed_ctrl_window_s",
@@ -83,7 +83,7 @@
       {
        "key": "speed_ctrl_lag_s",
        "typ": "float",
-       "default": 0.8,
+       "default": 1.2,
        "hilfe": ""
       },
       {

@@ -51,7 +51,7 @@ Default = `config.py`; since 2026-11-12 these are the RiderPi values (`/opt/xgon
 | `speed_ctrl` | false | | speed control on the wheels: sent value += ∫(target − wheel speed); target = sent value × `vx_limit`. Needs wheel odometry. Zero without fresh wheel data, at standstill, below the firmware dead band (0.05) and on a direction change. Not driven on the RiderPi |
 | `speed_ctrl_window_s` | 0.3 | | s, averaging window for wheel speed and target |
 | `speed_ctrl_ti_s` | 2.0 | | s, integral time |
-| `speed_ctrl_lag_s` | 0.8 | | s, lag of the target behind the sent value (Rider inertia); without it the correction winds up at every start. Tuned on the simulator model (`sim._dyn`) |
+| `speed_ctrl_lag_s` | 1.2 | | s, lag of the target behind the sent value (Rider inertia, wheels vs. command 2026-11-23); without it the correction winds up at every start. Simulator (`sim._dyn`): 8 % overshoot (0.8 s: 19 %) |
 | `speed_ctrl_max` | 0.10 | | normalised, limit of the correction (≈ 18 cm/s); blocked against an obstacle it pushes this much harder |
 | `vyaw_limit_dps` | 360 | | °/s at u8 0/255 |
 | `accel_v` / `accel_w` | 0.8 / 2.0 | | per second |

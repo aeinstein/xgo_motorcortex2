@@ -101,6 +101,10 @@ class _Marks:
 
 # Bahnprüfung: zusätzlicher Bremsabstand je m/s über ARC_FAST_MPS (siehe App._arc_check)
 ARC_FAST_MPS, ARC_FAST_K = 0.3, 0.8
+# Bahnprüfung mit Radgeschwindigkeit: Fenster (s) und wie viel schneller (m/s) als erlaubt er sein darf, bevor sie
+# voll bremst (Fahrwert 0). Kleinere Fahrwerte setzt der Rider erst nach ~1-2 s um, 0 bremst er in ~0,3 s
+# (Fahrt 2026-11-23 vor dem Stuhl: Fahrwert binnen 1 s von 0,33 auf 0,08, die Räder blieben bei 0,5 m/s).
+ARC_IST_WINDOW_S, ARC_BRAKE_TOL_MPS = 0.2, 0.05
 
 
 class App:
@@ -117,6 +121,7 @@ class App:
         self.odom_m = 0.0                  # gefahrene Strecke laut Odometrie (Betrag, seit Start)
         self.speed_ctrl = SpeedCtrl(cfg.robot)
         self._speed_stat: dict | None = None   # None = Regelung aus
+        self._v_rad: float | None = None       # Radgeschwindigkeit (m/s) im letzten Regelschritt, für die Bahnprüfung
         self.imu_sync = ImuSync(cfg.imu)
         self._imu_frame: ImuFrame | None = None   # IMU zur Bildzeit, je Bild (imu.imu_frame)
         self._nickrate: tuple[float, float] | None = None
@@ -884,7 +889,7 @@ class App:
         self.robot.forward_gain = self.cfg.robot.manual_forward_gain if manual else 1.0
         # explore fährt mit explore.v, auch wenn robot.max_v darunter liegt (dort für follow und Handsteuerung)
         self.robot.max_v_fwd = max(self.cfg.robot.max_v, self.cfg.explore.v) if self.behavior.name == "explore" else None
-        self.robot.drive(cmd.v, cmd.w)
+        self.robot.drive(cmd.v, cmd.w, brake=bool(cmd.extra.get("bremsen")))
 
     def _manual_cmd(self, w: World | None = None) -> Command:
         """Handsteuerung: nur Sturz-Erkennung, kein Bodenmodell/keine Bahnprüfung. Geprüfter Sollwert
@@ -1016,6 +1021,9 @@ class App:
             self._vis_gap = False
             ds, dyaw = st.ds, st.dyaw
             self._speed_tick(now)
+            wh = self.wheels
+            self._v_rad = (wh.speed(ARC_IST_WINDOW_S) if wh is not None and self.robot.state.balancing
+                           and wh.fresh(now) else None)
             self._pose_watch(now)
             self._start_tick(now)
             w = World(t=f.t, dt=dt, W=self.cfg.camera.width, H=self.cfg.camera.height, hfov=self.hfov,
@@ -1532,19 +1540,37 @@ class App:
             cmd.v = 0.0
             cmd.status += " | Sperrzone"
             return cmd
-        # auch rückwärts: die Karte kennt Hindernisse hinter dem Rider (vorher gesehen)
-        # Engstelle (Wegfolger): kleinerer Radius, sonst bremst die Bahnprüfung vor jeder Lücke unter ~0,36 m
-        hits: list = []
-        clear = self.lmap.arc_clearance(v, wr, horizon_s=1.2,
-                                        radius=self.cfg.map.radius_tight_m if cmd.extra.get("tight") else None,
-                                        hit_out=hits)
+        # Gerechnet wird mit dem, was schneller ist: Befehl oder Räder. Der Rider folgt einem kleineren Fahrwert
+        # erst nach ~1-2 s und fährt so lange schneller als befohlen; Bahn und Bremsabstand gelten dann für das
+        # echte Tempo, auf demselben Bogen (Drehrate mitskaliert).
+        ist = self._v_rad
+        lauf = abs(v)
+        if ist is not None and ist * v > 0 and abs(ist) > lauf:
+            wr *= abs(ist) / lauf
+            lauf = abs(ist)
+        vl = math.copysign(lauf, v)
         # Über 0,3 m/s (nur explore mit explore.v) mehr Abstand: Latenz und Nachlaufen kosten dann doppelt so
         # viel Weg; im Simulator berührte er sonst 1-2 Mal je 300 s ein Hindernis mit Resttempo (2026-11-11)
-        need = 0.6 * abs(v) + 0.08 + ARC_FAST_K * max(0.0, abs(v) - ARC_FAST_MPS)
+        need = 0.6 * lauf + 0.08 + ARC_FAST_K * max(0.0, lauf - ARC_FAST_MPS)
+        # auch rückwärts: die Karte kennt Hindernisse hinter dem Rider (vorher gesehen)
+        # Engstelle (Wegfolger): kleinerer Radius, sonst bremst die Bahnprüfung vor jeder Lücke unter ~0,36 m
+        # Vorschau mindestens 0,15 m über den Bremsabstand hinaus, sonst meldet sie ein Hindernis erst, wenn er
+        # schon bremsen müsste (bis 2026-11-23 1,2 s x Tempo, bei 0,6 m/s kaum mehr als need)
+        hits: list = []
+        clear = self.lmap.arc_clearance(vl, wr, horizon_s=max(1.2, (need + 0.15) / lauf),
+                                        radius=self.cfg.map.radius_tight_m if cmd.extra.get("tight") else None,
+                                        hit_out=hits)
         if clear < need:
             k = max(0.0, (clear - 0.05) / need)
-            cmd.v *= k
-            cmd.status += " | Bahn %.2fm" % clear
+            erlaubt = abs(cmd.v) * k * self.cfg.robot.vx_limit
+            if ist is not None and abs(ist) > erlaubt + ARC_BRAKE_TOL_MPS:
+                # schneller als die Bahn erlaubt: voll bremsen, nur 0 setzt der Rider schnell um
+                cmd.v = 0.0
+                cmd.extra["bremsen"] = True
+                cmd.status += " | Bahn %.2fm, bremse" % clear
+            else:
+                cmd.v *= k
+                cmd.status += " | Bahn %.2fm" % clear
             if gm is not None and hits and self.cfg.grid.mark_blocking:
                 # Wofür er bremst, kommt in die Raumkarte (wenige Punkte, einmal je Regelschritt beim Bremsen)
                 x, y, th = gm.pose()

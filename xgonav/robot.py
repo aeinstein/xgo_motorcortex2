@@ -154,6 +154,7 @@ class Robot:
         self.tempo = getattr(cfg, "tempo", 1.0)
         self._lock = threading.Lock()
         self._target = (0.0, 0.0)
+        self._brake = False                  # Vollbremsung verlangt: Fahrwert ohne Rampe auf 0
         self._cur = (0.0, 0.0)
         self._sent: tuple[int, int] | None = None
         self._last_cmd_t = 0.0
@@ -206,13 +207,16 @@ class Robot:
             raise ValueError(f"Tempo {f} außerhalb {self.TEMPO_MIN}..1")
         self._tempo = f
 
-    def drive(self, v: float, w: float) -> None:
+    def drive(self, v: float, w: float, brake: bool = False) -> None:
+        """brake (nur mit v = 0): Fahrwert sofort auf 0 statt über die Rampe; der Rider bremst nur auf 0 schnell,
+        Zwischenwerte der Rampe setzt er erst nach ~1-2 s um (Bahnprüfung, Fahrt 2026-11-23)."""
         # Erst begrenzen, dann Tempo: 100 % = bisheriges Verhalten, darunter alle Modi gleichmäßig langsamer
         # (Fahren und Drehen, Verhältnis v/w und damit die geprüfte Bahn bleiben gleich).
         v = max(-self.cfg.max_v, min(self.max_v_fwd or self.cfg.max_v, v)) * self._tempo
         w = max(-self.cfg.max_w, min(self.cfg.max_w, w)) * self._tempo
         with self._lock:
             self._target = (v, w)
+            self._brake = brake and v == 0.0
             self._last_cmd_t = time.monotonic()
 
     def stop(self) -> None:
@@ -445,6 +449,8 @@ class Robot:
         dt = max(1e-3, now - self._last_ramp_t)
         self._last_ramp_t = now
         v, w = self._cur
+        if self._brake and target[0] == 0.0:
+            v = 0.0                          # Vollbremsung (drive(brake=True)): ohne Rampe
         dv = max(-self.cfg.accel_v * dt, min(self.cfg.accel_v * dt, target[0] - v))
         dw = max(-self.cfg.accel_w * dt, min(self.cfg.accel_w * dt, target[1] - w))
         # Bremsen darf schneller gehen als Beschleunigen

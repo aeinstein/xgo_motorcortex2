@@ -44,11 +44,13 @@ class RobotCfg:
     # speed_ctrl_lag_s: So träge folgt das Soll dem Fahrwert (Anlaufen des Riders), sonst lädt sich die
     # Korrektur bei jedem Anfahren auf. Abgestimmt am Trägheitsmodell des Simulators (sim._dyn, 2026-11-12):
     # ohne Modell 31-46 % Überschwingen beim Anfahren auf ebenem Boden, mit 0,8 s und ti 2 s 5 %; ein
-    # Fehlbetrag von 0,04 ist dann nach ~3 s zu 95 % ausgeglichen. Am Rider nicht gefahren.
+    # Fehlbetrag von 0,04 ist dann nach ~3 s zu 95 % ausgeglichen. Seit 2026-11-23 1,2 s wie die Trägheit des
+    # Riders (Fahrt vor dem Stuhl: Räder folgen dem Fahrwert mit ~1,2 s; mit 0,8 s lief er schneller als verlangt
+    # und die Korrektur stand trotzdem bei +0,07); Simulator damit 8 % Überschwingen statt 19 %.
     speed_ctrl: bool = False
     speed_ctrl_window_s: float = 0.3
     speed_ctrl_ti_s: float = 2.0
-    speed_ctrl_lag_s: float = 0.8
+    speed_ctrl_lag_s: float = 1.2
     speed_ctrl_max: float = 0.10
     # Die Beine haben eine Totzone: bei gleichem Befehl steht der Rider je nach Vorgeschichte bei
     # +0,7..+3,4° Roll (2026-11-05). Ein kurzer Impuls der Nivellierung in der Firmware richtet ihn

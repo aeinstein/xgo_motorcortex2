@@ -19,7 +19,7 @@ import numpy as np
 from .camera import FrameSource
 from .config import CameraCfg
 from .detector import Detection, DetectionBatch
-from .robot import SimRobot
+from .robot import FW_DEADBAND, SimRobot
 
 SIM_NET_COLS = 80          # Spalten der Bodengrenze wie FloorNet (floornet.NCOLS)
 
@@ -301,16 +301,23 @@ class SimWorld(FrameSource):
 
     # Trägheit wie am RiderPi (dynamics=True; Messfahrt 2026-11-05, docs/limitations.md):
     # Drehbefehle unter 6/127,5 ignoriert die Firmware, die Drehung läuft ~0,3 s nach
-    # (10–17° Überschwingen nach dem Stopp), Fahrt folgt mit ~0,5 s, und beim Anfahren
-    # rollt der balancierende Rider erst kurz zurück (nichtminimalphasig).
-    DYN_TAU_V, DYN_TAU_W, DYN_NMP_S, DYN_W_DEAD = 0.5, 0.3, 0.4, 6 / 127.5
+    # (10–17° Überschwingen nach dem Stopp), und beim Anfahren rollt der balancierende Rider
+    # erst kurz zurück (nichtminimalphasig; nur wenn er schneller wird, beim Bremsen auf 0 lief er 2026-11-23
+    # nur so weit wie die Verzögerung allein ergibt).
+    # Fahrt 2026-11-23 (Räder gegen Fahrwert, 0,1-0,7 m/s): Anfahren und Langsamerwerden folgen mit ~1,2 s
+    # (angepasst 1,5-2 s, davon ~0,15 s Fenster der Radgeschwindigkeit), nur Fahrwert 0 (unter dem Totband)
+    # bremst in ~0,25 s.
+    DYN_TAU_V, DYN_TAU_STOP, DYN_TAU_W, DYN_NMP_S, DYN_W_DEAD = 1.2, 0.25, 0.3, 0.4, 6 / 127.5
 
     def _dyn(self, v: float, w: float, wn: float, dt: float) -> tuple[float, float]:
         if abs(wn) < self.DYN_W_DEAD:
             w = 0.0
         prev = self._vf
-        self._vf += (v - self._vf) * (1.0 - math.exp(-dt / self.DYN_TAU_V))
-        v_eff = self._vf - self.DYN_NMP_S * (self._vf - prev) / max(dt, 1e-3)
+        tau = self.DYN_TAU_STOP if abs(v) < FW_DEADBAND * self.vx_mps else self.DYN_TAU_V   # unter dem Totband = 0
+        self._vf += (v - self._vf) * (1.0 - math.exp(-dt / tau))
+        v_eff = self._vf
+        if abs(self._vf) > abs(prev):
+            v_eff -= self.DYN_NMP_S * (self._vf - prev) / max(dt, 1e-3)
         self._wf += (w - self._wf) * (1.0 - math.exp(-dt / self.DYN_TAU_W))
         return v_eff, self._wf
 

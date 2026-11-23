@@ -3522,6 +3522,58 @@ def test_arc_check_stops_at_zone():
     assert "Sperrzone" not in c.status
 
 
+def test_arc_check_bremst_voll_wenn_raeder_zu_schnell():
+    """Fahrt 2026-11-23 vor dem Stuhl: Der Rider setzt kleinere Fahrwerte erst nach ~1-2 s um. Die Bahnprüfung
+    rechnet deshalb mit der Radgeschwindigkeit, wenn sie höher ist (Vorschau weiter als der Bremsabstand, Bogen
+    gleich), und bremst voll (Fahrwert 0, ohne Rampe), wenn er schneller ist, als die Bahn erlaubt."""
+    from xgonav.behaviors import Command
+    app = _app(freespace=True)
+    app.cfg.robot.vx_limit = 1.8
+    rufe = []
+
+    class Merk:
+        radius = 0.2
+        frei = 0.5
+
+        def arc_clearance(self, v, w, horizon_s=1.0, radius=None, hit_out=None):
+            rufe.append((v, w, horizon_s))
+            return self.frei
+    app.lmap = Merk()
+    app._v_rad = None                                                   # ohne Räder: wie bisher anteilig
+    c = app._arc_check(Command(0.33, 0.0, None, "x"))
+    assert 0 < c.v < 0.33 and "bremsen" not in c.extra and "bremse" not in c.status
+    app._v_rad = 0.6                                                    # Räder 0,6 m/s, Befehl nur 0,18 m/s
+    c = app._arc_check(Command(0.1, 0.1, None, "x"))
+    v, w, h = rufe[-1]
+    assert v == pytest.approx(0.6) and w == pytest.approx(math.radians(0.1 * app.cfg.robot.vyaw_limit_dps) * 0.6 / 0.18)
+    need = 0.6 * 0.6 + 0.08 + 0.8 * 0.3
+    assert h == pytest.approx((need + 0.15) / 0.6) and h > 1.2
+    assert c.v == 0.0 and c.extra.get("bremsen") and "bremse" in c.status
+    app._v_rad = 0.1                                                    # langsam genug: anteilig wie bisher
+    Merk.frei = 0.15
+    c = app._arc_check(Command(0.1, 0.0, None, "x"))
+    assert 0 < c.v < 0.1 and "bremsen" not in c.extra
+    app._v_rad = -0.6                                                   # Räder rückwärts zählen vorwärts nicht
+    Merk.frei = 0.5
+    c = app._arc_check(Command(0.1, 0.0, None, "x"))
+    assert c.v == 0.1 and rufe[-1][0] == pytest.approx(0.18)
+
+
+def test_robot_vollbremsung_ohne_rampe():
+    """drive(brake=True) mit v = 0 setzt den Fahrwert im nächsten Rampenschritt auf 0; ohne brake über die Rampe."""
+    r = SimRobot(Config.neutral().robot)
+    r._cur, r._last_ramp_t = (0.3, 0.1), 0.0
+    r.drive(0.0, 0.1)
+    r._ramp(r._target, 0.02)
+    assert 0.2 < r._cur[0] < 0.3
+    r.drive(0.0, 0.1, brake=True)
+    r._ramp(r._target, 0.04)
+    assert r._cur[0] == 0.0 and r._cur[1] > 0
+    r.drive(0.2, 0.0, brake=True)                                       # brake gilt nur für v = 0
+    r._ramp(r._target, 0.06)
+    assert 0 < r._cur[0] < 0.2
+
+
 def test_dunkelzone_sperrt_wie_sperrzone_ohne_speichern(tmp_path):
     """Dunkelzonen (gridmap.dark_zones) wirken auf Planer und Zielsuche wie Sperrzonen, stehen aber nicht in
     der Route-Datei und sind nach dem Leeren wieder weg."""

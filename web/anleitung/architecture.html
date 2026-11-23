@@ -1631,11 +1631,11 @@
 </tr>
 <tr>
 <td><code>App._arc_check()</code></td>
-<td>planned arc (forward and reverse) checked against local map</td>
+<td>planned arc (forward and reverse) checked against local map; speed = max(command, wheels over 0.2 s), look-ahead ≥ braking distance + 0.15 m (min. 1.2 s); free length &lt; <code>0.6·v + 0.08 + 0.8·max(0, v − 0.3)</code> → v scaled, or v = 0 without ramp if the wheels are &gt; 0.05 m/s faster than the scaled value (Rider follows smaller commands only after ~1–2 s, brakes on 0 in ~0.3 s; 2026-11-23, simulator only)</td>
 </tr>
 <tr>
 <td><code>Robot</code></td>
-<td>clamp to <code>max_v</code>/<code>max_w</code>, ramp (<code>accel_v</code>, <code>accel_w</code>), keepalive 0.3 s, userspace watchdog <code>stall_timeout_s</code> 0.5 s</td>
+<td>clamp to <code>max_v</code>/<code>max_w</code>, ramp (<code>accel_v</code>, <code>accel_w</code>; skipped for a full brake from the arc check), keepalive 0.3 s, userspace watchdog <code>stall_timeout_s</code> 0.5 s</td>
 </tr>
 <tr>
 <td>Kernel</td>
