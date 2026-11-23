@@ -61,6 +61,7 @@ header h1 span{color:var(--leise);font-weight:400}
   header{gap:6px 8px;padding:6px 8px}
   header h1{flex:1}
   header .pillen{order:3;flex:0 0 100%;gap:4px}
+  .kopf-zeile2{order:4}
   header .pille{padding:1px 7px}
   .pille .lang{display:none}
 }
@@ -225,8 +226,13 @@ pre{background:#0b0d10;border-radius:6px;padding:8px;overflow:auto;max-height:40
 .regler .leer{width:0}
 .knopfpaar{display:inline-flex;gap:4px}
 .knopfpaar .ausrichten{font-size:14px;line-height:1;padding:3px 6px}
-.fn-wahl{margin-top:8px}
-.fn-wahl select{min-width:0}
+/* zweite Kopfzeile: Modi, Ziel, Bodenmodell */
+.kopf-zeile2{flex:0 0 100%;display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;padding-top:6px;border-top:1px solid var(--rand)}
+.fn-wahl{display:flex;gap:6px;align-items:center}
+.fn-wahl label{color:var(--leise);font-size:12px}
+.fn-wahl select{min-width:0;max-width:220px}
+#fn-text{font-size:12px}
+#fn-text:empty{display:none}
 .trenner{border:0;border-top:1px solid var(--rand);margin:10px 0}
 
 /* --- Raumkarte */
@@ -367,6 +373,29 @@ details.extras[open]>summary{margin-bottom:8px}
   <button id="einst-knopf" class="kopf-ic" onclick="einstOeffnen()" aria-label="Einstellungen" title="Alle Einstellungen aus config.toml ändern (mit Sicherung), xgonav neu starten"><span aria-hidden="true">⚙</span></button>
   <button id="ruhe-knopf" class="kopf-ic" onclick="ruheSchalten(true)" aria-label="Ruhe" title="Ruhemodus: absetzen, Bildverarbeitung aus, Abfragen aus, CPU-Takt runter, Schlafaugen am Display"><span aria-hidden="true">☾</span></button>
   <button id="stop" onclick="befehl('stop')" title="Stillstand, Modus idle">STOPP</button>
+  <div class="kopf-zeile2">
+      <div class="modus">
+        <div class="segment">
+          <button data-modus="idle" onclick="modus('idle')">Idle</button>
+          <button data-modus="manual" onclick="modus('manual')">Hand</button>
+          <button data-modus="follow" onclick="modus('follow')">Folgen</button>
+          <button data-modus="explore" onclick="modus('explore')">Erkunden</button>
+          <button data-modus="home" onclick="modus('home')" title="Weg über die Raumkarte zum Startpunkt">Zum Start</button>
+          <button data-modus="patrol" onclick="streife()" title="Route auf der Raumkarte abfahren">Streife</button>
+          <button data-modus="pet" onclick="modus('pet')" title="Reagiert auf Menschen, Katzen und Hunde">Haustier</button>
+        </div>
+        <div class="segment ziel-gruppe">
+          <button data-modus="approach" onclick="modus('approach')">Anfahren</button>
+          <select id="ziel" title="Ziel für Folgen/Anfahren (aktive YOLO-Klassen)" aria-label="Ziel"><option value="person">person</option></select>
+        </div>
+      </div>
+      <div class="fn-wahl">
+        <label for="fn-wahl">Bodenmodell</label>
+        <select id="fn-wahl" aria-label="Bodenmodell" title="FloorNet-Gewichte aus [freespace] net_dir"></select>
+        <button id="fn-an" onclick="bodenmodellAktivieren()" title="xgonav lädt und prüft das Netz, stellt den Symlink [freespace] net um und tauscht das Bodenmodell ohne Neustart (nur Idle/Hand)">Aktivieren</button>
+      </div>
+      <span class="leise" id="fn-text"></span>
+  </div>
 </header>
 <div id="ruhe-decke">
   <h2>Ruhemodus</h2>
@@ -461,30 +490,6 @@ details.extras[open]>summary{margin-bottom:8px}
       <span class="leise" id="bild-text"></span>
     </div>
   </details>
-  <div class="karte">
-    <div class="modus">
-      <div class="segment">
-        <button data-modus="idle" onclick="modus('idle')">Idle</button>
-        <button data-modus="manual" onclick="modus('manual')">Hand</button>
-        <button data-modus="follow" onclick="modus('follow')">Folgen</button>
-        <button data-modus="explore" onclick="modus('explore')">Erkunden</button>
-        <button data-modus="home" onclick="modus('home')" title="Weg über die Raumkarte zum Startpunkt">Zum Start</button>
-        <button data-modus="patrol" onclick="streife()" title="Route auf der Raumkarte abfahren">Streife</button>
-        <button data-modus="pet" onclick="modus('pet')" title="Reagiert auf Menschen, Katzen und Hunde">Haustier</button>
-      </div>
-      <div class="segment ziel-gruppe">
-        <button data-modus="approach" onclick="modus('approach')">Anfahren</button>
-        <select id="ziel" title="Ziel für Folgen/Anfahren (aktive YOLO-Klassen)" aria-label="Ziel"><option value="person">person</option></select>
-      </div>
-    </div>
-    <div class="regler fn-wahl">
-      <label for="fn-wahl">Bodenmodell</label>
-      <select id="fn-wahl" aria-label="Bodenmodell" title="FloorNet-Gewichte aus [freespace] net_dir"></select>
-      <span class="leer"></span>
-      <button id="fn-an" onclick="bodenmodellAktivieren()" title="xgonav lädt und prüft das Netz, stellt den Symlink [freespace] net um und tauscht das Bodenmodell ohne Neustart (nur Idle/Hand)">Aktivieren</button>
-    </div>
-    <div class="leise" id="fn-text"></div>
-  </div>
   <div class="karte">
     <div class="kopf"><h2>Bildverarbeitung</h2><span class="leise" id="rec-text"></span>
       <span class="leise" id="rec-platz" hidden title="Frei am Rider bis zur Abbruchgrenze (output.record_min_free_mb); Minuten aus der Schreibrate der letzten Aufnahme (~ = geschätzt)"></span>
