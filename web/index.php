@@ -49,6 +49,7 @@ header{position:fixed;top:0;left:0;right:0;z-index:10;display:flex;align-items:c
   padding:8px 12px;background:rgba(15,17,20,.92);backdrop-filter:blur(6px);border-bottom:1px solid var(--rand)}
 body{padding-top:var(--kopf-h,52px)}
 html{scroll-padding-top:var(--kopf-h,52px)}
+#einst-knopf{font-size:15px;line-height:1;padding:3px 7px}   /* immer nur Symbol, gleiche Höhe wie die Textknöpfe */
 .kopf-knoepfe{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
 .kopf-check{display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--text);cursor:pointer;white-space:nowrap;
   padding:3px 8px;border:1px solid var(--rand2);border-radius:6px;background:var(--karte2)}
@@ -366,7 +367,7 @@ details.extras[open]>summary{margin-bottom:8px}
     <button id="pip" class="symbol" onclick="pipelineUmschalten()" aria-label="Bildverarbeitung" title="Bildverarbeitung (Kamera und Auswertung) starten oder stoppen"><span class="ic" aria-hidden="true" id="pip-ic">▶</span><span class="txt" id="pip-txt">…</span></button>
     <label id="rec-l" class="kopf-check" hidden title="Rohbilder und Metadaten am Rider speichern. Schreibt nur, solange er balanciert; Absetzen beendet die Aufnahme, jedes Aufstehen beginnt eine neue."><input type="checkbox" id="rec" onchange="aufzeichnungSetzen(this.checked)"> Aufzeichnen</label>
   </div>
-  <button class="symbol" onclick="einstOeffnen()" aria-label="Einstellungen" title="Alle Einstellungen aus config.toml ändern (mit Sicherung), xgonav neu starten"><span class="ic" aria-hidden="true">⚙</span><span class="txt">Einstellungen</span></button>
+  <button id="einst-knopf" onclick="einstOeffnen()" aria-label="Einstellungen" title="Alle Einstellungen aus config.toml ändern (mit Sicherung), xgonav neu starten"><span aria-hidden="true">⚙</span></button>
   <button id="ruhe-knopf" onclick="ruheSchalten(true)" title="Ruhemodus: absetzen, Bildverarbeitung aus, Abfragen aus, CPU-Takt runter, Schlafaugen am Display">Ruhe</button>
   <button id="stop" onclick="befehl('stop')" title="Stillstand, Modus idle">STOPP</button>
 </header>
