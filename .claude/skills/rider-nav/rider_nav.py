@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
 import os
 import subprocess
 import sys
@@ -256,39 +255,32 @@ def cmd_folge(a) -> int:
 
 
 def cmd_dreh(a) -> int:
+    """Um a.grad drehen: xgonav regelt über den Kurs (POST /turn, seit 2026-11-23 wie MCP „drehen“), Nachlauf
+    mitgezählt; hier nur warten, bis /status turn fertig meldet."""
     try:
         _bereit_zum_fahren()
-        y0 = status().get("yaw_deg")
-        if y0 is None:
-            raise RuntimeError("kein yaw_deg in /status (Bildverarbeitung an?)")
-        print("vorher:", _pose(), "-> %+.1f° (Ziel %.1f°)" % (a.grad, y0 + a.grad))
-        # Gedrehten Winkel aufsummieren (je Schritt auf ±180° umgerechnet), damit auch ±360° und mehr gehen,
-        # egal ob yaw_deg durchläuft oder bei ±180° umspringt.
-        gedreht, y_alt = 0.0, y0
-        t_end = time.monotonic() + (a.timeout if a.timeout is not None else 10.0 + abs(a.grad) / 20.0)
+        print("vorher:", _pose(), "-> %+.1f°" % a.grad)
+        post("/turn?deg=%.2f&w=%.3f&tol=%.1f" % (a.grad, a.w, a.tol))
+        tempo = max(0.05, float(status().get("tempo") or 1.0))
+        t_end = time.monotonic() + (a.timeout if a.timeout is not None else (15.0 + abs(a.grad) / 20.0) / tempo)
         while True:
+            time.sleep(0.1)
             if not balanciert():
                 raise RuntimeError("liegt (state %s)" % proc("state"))
-            if time.monotonic() > t_end:
-                raise RuntimeError("Zeit abgelaufen")
-            y = status().get("yaw_deg")
-            gedreht += (y - y_alt + 180.0) % 360.0 - 180.0
-            y_alt = y
-            err = a.grad - gedreht
-            if abs(err) <= a.tol:
+            t = status().get("turn")
+            if not t:
+                raise RuntimeError("xgonav dreht nicht mehr (Modus gewechselt oder Stopp)")
+            if t.get("fertig"):
                 break
-            w = math.copysign(min(a.w, max(0.16, 0.02 * abs(err))), err)     # Anteil von max_w
-            post("/drive?v=0&w=%.3f" % w)
-            time.sleep(1.0 / HZ)
+            if time.monotonic() > t_end:
+                raise RuntimeError("Zeit abgelaufen nach %+.0f°" % (t.get("gedreht_deg") or 0.0))
     except (RuntimeError, KeyboardInterrupt) as e:
         print("Abbruch:", e or "Strg+C")
         _halt()
         return 1
     _halt()
-    time.sleep(1.0)                 # Rider dreht nach dem Stopp etwas nach
-    gedreht += (status().get("yaw_deg") - y_alt + 180.0) % 360.0 - 180.0
-    print("nachher:", _pose(), "| gedreht %+.1f° (Soll %+.1f°)" % (gedreht, a.grad))
-    return 0
+    print("nachher:", _pose(), "| gedreht %+.1f° (Soll %+.1f°, %s)" % (t.get("gedreht_deg") or 0.0, a.grad, t.get("grund")))
+    return 0 if t.get("grund") == "angekommen" else 1
 
 
 def cmd_hoehe(a) -> int:

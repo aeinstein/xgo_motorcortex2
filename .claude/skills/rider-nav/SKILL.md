@@ -52,7 +52,7 @@ $R python3 /root/rider_nav.py zustand
      61..200), nie unter Minimum + 10 mm. Kamerahöhe ≈ 109,4 + 0,1126·u8 mm.
 4. **Bewegen** (je einzeln, Ergebnis mit Bild dem Nutzer melden):
    - `mcp__rider__drehen` `grad` −1080..1080 (+ = links), `w` Drehrate 0,16..1 (Anteil von max_w, Standard 0,5), `tol` 1..10°
-     (Standard 3), geregelt auf `yaw_deg`, danach Bild. Er dreht nach dem Stopp etwas nach (bis ~5°); für „wieder
+     (Standard 3), geregelt in xgonav (`POST /turn`, seit 2026-11-23), danach Bild. Er dreht nach dem Stopp etwas nach (bis ~5°); für „wieder
      auf Startkurs“ mit kleinem `drehen` korrigieren.
    - `mcp__rider__rundblick` `bilder` 2..8: volle Drehung, je Schritt ein Bild, endet auf dem Startkurs.
    - `mcp__rider__fahren` `v`, `w`, `sekunden` 0,2..5: Standard **geprüft** (`/drive?sicher=1`: Bodengrenze,

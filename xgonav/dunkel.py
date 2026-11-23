@@ -20,15 +20,12 @@ import logging
 import math
 from dataclasses import dataclass
 
-from .behaviors import dreh_w
+from .behaviors import dreh_auf_kurs
+from .mathe import wrap as _wrap
 
 log = logging.getLogger(__name__)
 
 SCHRITTE_DEG = (180.0, 90.0, 180.0)      # relative Drehungen: nach hinten, dann rechts/links davon
-
-
-def _wrap(a: float) -> float:
-    return (a + math.pi) % (2 * math.pi) - math.pi
 
 
 def sperr_rechteck(x: float, y: float, th: float, cfg) -> list[tuple[float, float]]:
@@ -110,9 +107,10 @@ class Dunkelangst:
                 return self._aufgeben(now)
             return self._naechste_richtung(now, yaw)
         if st == "drehen":
-            err = _wrap(self._yaw_goal - yaw)
-            if abs(err) > math.radians(c.tol_deg) and now - self.t_state < c.turn_timeout_s:
-                return DunkelCmd(dreh_w(err, c.turn_kp, c.turn_w, self.rcfg), "Dunkel – dreht um")
+            w = dreh_auf_kurs(_wrap(self._yaw_goal - yaw), c.tol_deg, now - self.t_state, c.turn_timeout_s, c.turn_kp,
+                              c.turn_w, self.rcfg)
+            if w is not None:
+                return DunkelCmd(w, "Dunkel – dreht um")
             self._set("pruefen", now)
             return DunkelCmd(0.0, "Dunkel – schaut")
         if st == "pruefen":

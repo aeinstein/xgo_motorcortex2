@@ -35,6 +35,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from xgonav.config import Config  # noqa: E402
+from xgonav.mathe import wrap as wrap_rad, wrap32  # noqa: E402
 from xgonav.wheels import calibrate_odom  # noqa: E402
 
 API = "http://127.0.0.1:8088"
@@ -59,14 +60,6 @@ def status() -> dict:
 def read_log(name: str) -> list[list[int]]:
     with open(f"{PROC}/{name}") as f:
         return [[int(x) for x in ln.split()] for ln in f if ln.strip()]
-
-
-def wrap32(d: int) -> int:
-    return (d + 2 ** 31) % 2 ** 32 - 2 ** 31
-
-
-def wrap_rad(d: float) -> float:
-    return (d + math.pi) % (2 * math.pi) - math.pi
 
 
 class Recorder(threading.Thread):

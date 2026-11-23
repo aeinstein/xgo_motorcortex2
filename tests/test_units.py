@@ -2998,7 +2998,7 @@ def test_home_stuck_counter_resets_with_progress():
         assert b.want_plan(float(k + 1))
     b.pending = False
     b.step(_world_at(5.0, near))                                 # 1 m näher: Zähler von vorn
-    assert b.stuck_n == 0 and not b.gave_up
+    assert b.an.n == 0 and not b.gave_up
 
 
 def test_map_explore_home_stuck_finishes_with_message():
@@ -3405,7 +3405,7 @@ def test_home_stuck_near_goal_counts_as_arrived():
     c = h.step(_world_at(1.0, pose))
     assert h.done and c.v == 0 and "angekommen" in c.status
     m = MapExplore(cfg.behavior, cfg.robot, cfg.home, cfg.explore)
-    m.state, m.reason, m.home_stuck = "heim", "Karte fertig", 1
+    m.state, m.reason, m.home_an.n = "heim", "Karte fertig", 1
     c = m.step(_world_at(1.0, pose))
     assert m.done and c.v == 0 and "daneben" in m.reason
 
@@ -4154,3 +4154,47 @@ def test_fw_zustand_liegt_ist_kein_sturz():
     r = SimRobot(cfg.robot)
     r._write("action", 254)
     assert r.state.lage == "liegt" and not r.state.balancing
+
+
+def test_manual_turn_dreht_um_winkel_mit_nachlauf():
+    """POST /turn (Manual.turn): dreht mit dreh_auf_kurs bis tol, zählt turn_settle_s Nachlauf mit; ein Sollwert bricht ab."""
+    from xgonav.behaviors import Manual
+    cfg = Config.neutral()
+    m = Manual(cfg.behavior, cfg.robot)
+    yaw, t, dt = 3.0, 0.0, 0.05                                     # über ±pi hinweg
+    m.turn(90.0, 0.5, 3.0, t, yaw, 20.0)
+    ws = []
+    while not m.turn_info["fertig"] and t < 30.0:
+        c = m.step(None, yaw=yaw, now=t)
+        ws.append(c.w)
+        yaw = (yaw + math.radians(c.w * cfg.robot.vyaw_limit_dps) * dt + math.pi) % (2 * math.pi) - math.pi
+        t += dt
+    i = m.turn_info
+    assert i["grund"] == "angekommen" and abs(i["gedreht_deg"] - 90.0) <= 3.0 and m._turn is None
+    assert max(ws) <= cfg.robot.w_of(0.5) + 1e-9 and min(w for w in ws if w) >= cfg.robot.turn_min_w
+    m.turn(-45.0, 0.5, 3.0, t, yaw, 20.0)
+    m.step(None, yaw=yaw, now=t)
+    m.set(0.0, 0.0, t)
+    assert m.turn_info["fertig"] and m.turn_info["grund"] == "abgebrochen"
+
+
+def test_mathe_bausteine_wie_frueher():
+    """xgonav/mathe.py rechnet bitgleich wie die früheren Stellen (Wrap, Posen, Bogen)."""
+    import numpy as np
+    from xgonav import mathe
+    for a in (-7.0, -math.pi, 0.0, 3.2, 12.5):
+        assert mathe.wrap(a) == (a + math.pi) % (2 * math.pi) - math.pi
+    arr = np.linspace(-10, 10, 7)
+    assert np.array_equal(mathe.wrap(arr), (arr + np.pi) % (2 * np.pi) - np.pi)
+    k, p = (0.3, -0.2, 0.4), (1.1, 0.7, -2.0)
+    c, s = math.cos(k[2]), math.sin(k[2])
+    assert mathe.pose_compose(k, p) == (k[0] + c * p[0] - s * p[1], k[1] + s * p[0] + c * p[1], p[2] + k[2])
+    x, y, th = 0.0, 0.0, 0.0
+    xa, ya, tha = 0.0, 0.0, 0.0
+    for _ in range(10):
+        th += 0.7 * 0.12
+        x += 0.3 * math.cos(th) * 0.12
+        y += 0.3 * math.sin(th) * 0.12
+        xa, ya, tha = mathe.arc_step(xa, ya, tha, 0.3, 0.7, 0.12)
+    assert (xa, ya, tha) == (x, y, th)
+    assert mathe.wrap32(5 - (2 ** 32 - 3)) == 8

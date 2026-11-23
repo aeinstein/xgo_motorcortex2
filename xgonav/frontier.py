@@ -25,6 +25,7 @@ import numpy as np
 from . import navfast
 from .config import ExploreCfg, HomeCfg
 from .gridmap import GridMap
+from .mathe import wrap
 from .planner import cost_map, driven_mask, kept_path, known_area, path_length, route, squeeze_zone
 
 
@@ -179,7 +180,7 @@ def next_goal(grid: GridMap, pose: tuple, hcfg: HomeCfg, ecfg: ExploreCfg, obsta
             near = np.hypot(fx - x, fy - y) < ecfg.standoff_m + min_m
             cand, fx, fy = cand[~near], fx[~near], fy[~near]
         if prefer is not None and len(cand):
-            dev = np.abs((np.arctan2(fy - y, fx - x) - prefer[0] + math.pi) % (2 * math.pi) - math.pi)
+            dev = np.abs(wrap(np.arctan2(fy - y, fx - x) - prefer[0]))
             score = score.copy()
             score[cand] -= np.degrees(dev) * prefer[1]
     if not len(cand):
@@ -280,7 +281,7 @@ def _groups_py(lab: np.ndarray, nlab: int, zone: np.ndarray, behind: np.ndarray,
         dm = d * step * res if d >= 0 else 1.5 * _hyp(fx - x, fy - y)   # grobes Raster verfehlt die Zelle
         g = float(gain_cells[r, c]) * res * res
         drive_s = dm / ecfg.travel_mps
-        dth = abs((math.atan2(fy - y, fx - x) - th + math.pi) % (2 * math.pi) - math.pi)
+        dth = abs(wrap(math.atan2(fy - y, fx - x) - th))
         # Die nächste zuerst (Zeit bis dorthin); viel Unbekanntes wiegt höchstens gain_bonus_s auf. Mit Nutzen
         # je Zeit fuhr er am RiderPi viermal 3,5-9,6 m quer durch Bekanntes zu einer fernen großen Stelle und
         # später zu den liegengebliebenen zurück (2026-11-11)

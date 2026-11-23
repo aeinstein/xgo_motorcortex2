@@ -22,6 +22,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from .config import ImuCfg
+from .mathe import wrap
 
 log = logging.getLogger(__name__)
 
@@ -110,7 +111,7 @@ class ImuSource:
             elif self._y_last is None:
                 y = yaw
             else:
-                d = (yaw - self._y_last + math.pi) % (2 * math.pi) - math.pi
+                d = wrap(yaw - self._y_last)
                 lim = getattr(self.cfg, "yaw_jump_dps", 0.0)
                 gap = t - self._t_last
                 if lim > 0 and (gap > 0.5 or abs(d) > math.radians(lim) * max(gap, 0.02)):

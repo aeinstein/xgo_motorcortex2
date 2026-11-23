@@ -23,6 +23,7 @@ from .egomotion import EgoMotion, EgoResult, warp_box
 from .floornet import FloorNet
 from .freespace import FreeSpace, FreeSpaceEstimator, FreeSpaceWorker, column_runs
 from .gridmap import GridMap, GridWorker
+from .mathe import to_world, w_to_yaw_rate, wrap
 from .planner import PlannerWorker
 from .geometry import CamGeometry
 from .wheels import WheelOdom, make_wheels
@@ -616,6 +617,21 @@ class App:
             raise ModeNotAllowed("Handsteuerung nur im Modus manual")
         b.set(v, w, time.monotonic(), checked)
 
+    TURN_MAX_DEG = 1080.0
+
+    def set_turn(self, deg: float, w: float = 0.5, tol_deg: float = 3.0) -> None:
+        """Auf der Stelle um deg drehen (Modus manual, POST /turn): w Anteil von max_w, Zeitgrenze
+        (10 s + 1 s je 20°) / tempo. Fortschritt in /status turn."""
+        b = self.behavior
+        if b.name != "manual":
+            raise ModeNotAllowed("Drehen nur im Modus manual")
+        if not (abs(deg) <= self.TURN_MAX_DEG and 0.05 <= w <= 1.0 and 1.0 <= tol_deg <= 10.0):
+            raise ValueError("Grenzen: deg ±%.0f, w 0.05..1, tol 1..10" % self.TURN_MAX_DEG)
+        if not self.robot.state.balancing:
+            raise ModeNotAllowed("Drehen nur balancierend")
+        timeout = (10.0 + abs(deg) / 20.0) / max(self.robot.tempo, 0.05)
+        b.turn(deg, w, tol_deg, time.monotonic(), self.yaw, timeout)
+
     # Aktionen der Firmware, die vorwärts/rückwärts fahren (5 dreht nur auf der Stelle)
     FW_ACTION_DRIVES = {3, 4}
 
@@ -890,8 +906,10 @@ class App:
         """Handsteuerung: nur Sturz-Erkennung, kein Bodenmodell/keine Bahnprüfung. Geprüfter Sollwert
         (Manual.checked): safety() und Bahnprüfung wie in den anderen Modi; ohne Weltdaten (Bildverarbeitung
         aus) fährt er dann nicht, Drehen bleibt."""
-        cmd = self.behavior.step(None)
+        cmd = self.behavior.step(None, yaw=self.yaw)
         if not self.robot.state.balancing:
+            if getattr(self.behavior, "_turn", None) is not None:
+                self.behavior.turn_ende("liegt")
             return Command(0.0, 0.0, None, stopp_text(self.robot.state.mode))
         if getattr(self.behavior, "checked", False) and (cmd.v or cmd.w):
             if w is None:
@@ -1143,6 +1161,7 @@ class App:
                                         "imu_spruenge": self.imu.yaw_jumps if self.imu is not None else None},
                                "speed_ctrl": self._speed_stat,
                                "startbild": None if self.startbild is None else self.startbild.info(),
+                               "turn": getattr(self.behavior, "turn_info", None) if self.behavior.name == "manual" else None,
                                "mode": self.behavior.name, "yaw_vis_deg": round(math.degrees(self.vis_yaw), 1),
                                "yaw_deg": round(math.degrees(self.yaw), 1), "yaw_src": self.yaw_src,
                                "yaw_imu": self.kurs_deg(), "battery": self.robot.state.battery,
@@ -1188,7 +1207,7 @@ class App:
             sx, sy, sth = gm.start
             rate = abs(dyaw) / dt if dt > 0 else 0.0
             if (math.hypot(pose[0] - sx, pose[1] - sy) < c.anker_m
-                    and abs((pose[2] - sth + math.pi) % (2 * math.pi) - math.pi) < math.radians(c.anker_deg)
+                    and abs(wrap(pose[2] - sth)) < math.radians(c.anker_deg)
                     and rate < math.radians(2.0) and abs(self.robot.command[0]) < 0.01
                     and getattr(self.robot, "levelled", True)):           # Startbild erst nach der Roll-Kalibrierung
                 sb.anker_setzen(self._sb_ansicht(f, pose, pitch_dev), gm.start, f.bgr)
@@ -1360,7 +1379,7 @@ class App:
         cmd = self.robot.command
         ref = self._start_still
         if (abs(cmd[0]) > 0.01 or abs(cmd[1]) > 0.01 or ref is None or math.hypot(x - ref[1], y - ref[2]) > 0.01
-                or abs((th - ref[3] + math.pi) % (2 * math.pi) - math.pi) > math.radians(1.0)):
+                or abs(wrap(th - ref[3])) > math.radians(1.0)):
             self._start_still = (now, x, y, th)
         elif now - ref[0] >= self.START_RUHE_S and getattr(self.robot, "levelled", True):
             self._start_due = None                    # erst nach der Roll-Kalibrierung (Nivellier-Impuls)
@@ -1511,14 +1530,11 @@ class App:
         if self.lmap is None or not self.cfg.home.use_localmap:
             return None
         points = self.lmap.confirmed_later(self.cfg.home.localmap_reach_m)
-        x, y, th = pose
-        c, s = math.cos(th), math.sin(th)
-
         def world() -> np.ndarray | None:
             p = points()
             if not len(p):
                 return None
-            return np.column_stack([x + p[:, 0] * c - p[:, 1] * s, y + p[:, 0] * s + p[:, 1] * c])
+            return np.column_stack(to_world(pose, p[:, 0], p[:, 1]))
         return world
 
     def _map_view(self, free: FreeSpace, tracks) -> FreeSpace:
@@ -1533,7 +1549,7 @@ class App:
         if self.lmap is None or abs(cmd.v) < 1e-3:
             return cmd
         v = cmd.v * self.cfg.robot.vx_limit
-        wr = math.radians(cmd.w * self.cfg.robot.vyaw_limit_dps)
+        wr = w_to_yaw_rate(cmd.w, self.cfg.robot)
         gm = self.gridmap
         zonen = gm.all_zones() if gm is not None else None
         if zonen and arc_hits_zone(gm.pose(), v, wr, zonen, self.lmap.radius):
@@ -1575,10 +1591,8 @@ class App:
                 cmd.status += " | Bahn %.2fm" % clear
             if gm is not None and hits and self.cfg.grid.mark_blocking:
                 # Wofür er bremst, kommt in die Raumkarte (wenige Punkte, einmal je Regelschritt beim Bremsen)
-                x, y, th = gm.pose()
-                c, s = math.cos(th), math.sin(th)
                 p = hits[0]
-                gm.mark_blocking(np.column_stack([x + p[:, 0] * c - p[:, 1] * s, y + p[:, 0] * s + p[:, 1] * c]))
+                gm.mark_blocking(np.column_stack(to_world(gm.pose(), p[:, 0], p[:, 1])))
         return cmd
 
 

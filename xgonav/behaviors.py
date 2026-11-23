@@ -17,6 +17,7 @@ from . import navfast
 from .config import BehaviorCfg, ExploreCfg, HomeCfg, PatrolCfg, RobotCfg
 from .egomotion import EgoResult
 from .freespace import FreeSpace
+from .mathe import clamp, polar, wrap as _wrap, yaw_rate_to_w
 from .geometry import CamGeometry
 from .robot import stopp_text
 from .tracker import Track
@@ -86,14 +87,6 @@ class Command:
     extra: dict = field(default_factory=dict)
 
 
-def yaw_rate_to_w(rate_rad_s: float, rcfg: RobotCfg) -> float:
-    return math.degrees(rate_rad_s) / rcfg.vyaw_limit_dps
-
-
-def clamp(x, lo, hi):
-    return max(lo, min(hi, x))
-
-
 def dreh_w(err: float, kp: float, w_max: float, rcfg: RobotCfg, deadband_deg: float = 0.0,
            w_min: float | None = None) -> float:
     """Gemeinsamer Drehregler für alle Drehungen (PathFollower, Servo, pet, Dunkelangst; seit 2026-11-23):
@@ -117,6 +110,10 @@ class Behavior:
     def step(self, w: World) -> Command:
         raise NotImplementedError
 
+    def zurueck(self, hmm: float | None, status: str = "setze zurück") -> Command:
+        """Rückwärts mit behavior.backup_v (blind: nur kurz, Dauer bestimmt der Aufrufer)."""
+        return Command(-self.rcfg.v_of(self.cfg.backup_v), 0.0, hmm, status)
+
 
 class Idle(Behavior):
     name = "idle"
@@ -138,15 +135,56 @@ class Manual(Behavior):
         self._v = self._w = 0.0
         self._t = -1e9
         self.checked = False      # letzter Sollwert verlangt Bodengrenze + Bahnprüfung (/drive?sicher=1, MCP)
+        self._turn: dict | None = None
+        self.turn_info: dict | None = None   # /status turn: soll_deg, gedreht_deg, fertig, grund
 
     def set(self, v: float, w: float, now: float, checked: bool = False) -> None:
-        """v, w: Faktoren -1..1 (Anteil von robot.max_v/max_w), seit 2026-11-23."""
+        """v, w: Faktoren -1..1 (Anteil von robot.max_v/max_w), seit 2026-11-23. Bricht ein /turn ab."""
         self._v, self._w, self._t = clamp(v, -1.0, 1.0), clamp(w, -1.0, 1.0), now
         self.checked = checked
+        if self._turn is not None:
+            self.turn_ende("abgebrochen")
 
-    def step(self, wd: World | None) -> Command:      # braucht keine Weltdaten (auch ohne Kamera)
-        import time as _time
-        if _time.monotonic() - self._t > self.HOLD_S:
+    def turn(self, deg: float, w: float, tol_deg: float, now: float, yaw: float, timeout_s: float) -> None:
+        """Auf der Stelle um deg drehen (+ = links) mit höchstens w (Anteil von max_w), geregelt über den Kurs
+        (App.yaw) mit dreh_auf_kurs; danach turn_settle_s Nachlauf mitzählen. Ein Sollwert (set) bricht ab."""
+        self._v = self._w = 0.0
+        self._turn = {"soll": math.radians(deg), "summe": 0.0, "y": yaw, "w": w, "tol": tol_deg, "t0": now,
+                      "timeout": timeout_s, "ende": None}
+        self.turn_info = {"soll_deg": round(deg, 1), "gedreht_deg": 0.0, "fertig": False, "grund": None}
+
+    def turn_ende(self, grund: str) -> None:
+        if self.turn_info is not None and not self.turn_info["fertig"]:
+            self.turn_info.update(fertig=True, grund=self.turn_info["grund"] or grund)
+        self._turn = None
+
+    def _turn_step(self, yaw: float | None, now: float) -> Command:
+        t = self._turn
+        if yaw is None:
+            self.turn_ende("kein Kurs")
+            return Command(0.0, 0.0, None, "Handsteuerung – drehen: kein Kurs")
+        t["summe"] += _wrap(yaw - t["y"])
+        t["y"] = yaw
+        self.turn_info["gedreht_deg"] = round(math.degrees(t["summe"]), 1)
+        if t["ende"] is None:
+            w = dreh_auf_kurs(t["soll"] - t["summe"], t["tol"], now - t["t0"], t["timeout"], self.cfg.turn_to_kp,
+                              t["w"], self.rcfg)
+            if w is not None:
+                return Command(0.0, w, None, "Handsteuerung – drehe %+.0f° von %+.0f°" % (
+                    math.degrees(t["summe"]), math.degrees(t["soll"])))
+            t["ende"] = now
+            ok = abs(t["soll"] - t["summe"]) <= math.radians(t["tol"])
+            self.turn_info["grund"] = "angekommen" if ok else "Zeit abgelaufen"
+        if now - t["ende"] >= self.cfg.turn_settle_s:       # Nachlauf mitgezählt
+            self.turn_ende(self.turn_info["grund"])
+        return Command(0.0, 0.0, None, "Handsteuerung – gedreht %+.0f°" % math.degrees(t["summe"]))
+
+    def step(self, wd: World | None, yaw: float | None = None, now: float | None = None) -> Command:
+        import time as _time                          # braucht keine Weltdaten (auch ohne Kamera)
+        now = _time.monotonic() if now is None else now
+        if self._turn is not None:
+            return self._turn_step(yaw, now)
+        if now - self._t > self.HOLD_S:
             return Command(0.0, 0.0, None, "Handsteuerung – steht")
         return Command(self.rcfg.v_of(self._v), self.rcfg.w_of(self._w), None,
                        "Handsteuerung v=%+.2f w=%+.2f" % (self._v, self._w))
@@ -266,8 +304,7 @@ class Follow(Behavior):
         self._fails = 0
         self._stucks = 0
         self._drive_until = 0.0
-        self._look_th: float | None = None
-        self._look_sum = 0.0
+        self._umschau = Umschau()
         self.n_seek = self.n_found = 0     # Suchfahrten zur letzten Stelle / danach wiedergefunden
 
     @property
@@ -303,13 +340,13 @@ class Follow(Behavior):
         self.phase, self._goal, self._req = "", None, None
         self.f.clear()
         self._fails = self._stucks = 0
-        self._look_th, self._look_sum = None, 0.0
+        self._umschau.reset()
 
     def _look(self, w: World, why: str) -> None:
         log.info("follow: %s verloren, %s: schaue mich um", self.cls, why)
         self.phase = "umschauen"
         self.f.clear()
-        self._look_th, self._look_sum = None, 0.0
+        self._umschau.reset()
 
     def _seek_step(self, w: World) -> Command | None:
         """Suche nach der Raumkarte; None = nicht möglich (alter Suchweg)."""
@@ -327,8 +364,7 @@ class Follow(Behavior):
                 self.n_seek += 1
                 self._fails = self._stucks = 0
                 self._t_plan = -1e9
-                v_ms = max(self.rcfg.v_of(self.f.v) * self.rcfg.vx_limit, 0.02)
-                self._drive_until = w.t + 4.0 + 2.0 * d / v_ms
+                self._drive_until = w.t + fahrzeit_s(d, self.f.v, self.rcfg)
                 log.info("follow: %s verloren, fahre zur letzten Stelle (%.2f, %.2f), %.2f m", self.cls, lx, ly, d)
         if self.phase == "fahren":
             gx, gy = self._goal
@@ -344,12 +380,10 @@ class Follow(Behavior):
                 cmd.height_mm = c.height_search_mm if abs(cmd.v) < 1e-6 else cmd.height_mm
                 return cmd
         if self.phase == "umschauen":
-            if self._look_th is not None:
-                self._look_sum += abs(_wrap(th - self._look_th))
-            self._look_th = th
-            if self._look_sum < math.radians(c.lost_look_deg):
+            summe = self._umschau.schritt(th)
+            if summe < math.radians(c.lost_look_deg):
                 return Command(0.0, self.last_side * self.rcfg.w_of(c.lost_look_w), c.height_search_mm,
-                               "suche %s: schaue mich um %.0f°" % (self.cls, math.degrees(self._look_sum)))
+                               "suche %s: schaue mich um %.0f°" % (self.cls, math.degrees(summe)))
             log.info("follow: %s nicht wiedergefunden, warte", self.cls)
             self.phase = "warten"
         return Command(0, 0, c.height_cruise_mm, "Ziel verloren – warte")
@@ -382,7 +416,7 @@ class Follow(Behavior):
             if self.seek and w.pose is not None and w.pose_ok and w.balancing and dist is not None:
                 x, y, th = w.pose
                 d, a = min(dist, self.cfg.lost_seek_max_m), th + err
-                self.last_pos = (x + d * math.cos(a), y + d * math.sin(a))
+                self.last_pos = polar(x, y, d, a)
             fast = abs(v) > 0.6 * self.rcfg.max_v
             hmm = self.cfg.height_fast_mm if fast else self.cfg.height_cruise_mm
             st = "verfolge #%d %s (%+.0f°, %s)" % (tr.id, tr.cls, math.degrees(err),
@@ -450,7 +484,7 @@ class Explore(Behavior):
 
         if self.state == "backup":
             if w.t - self.t_state < 0.8:
-                return Command(-self.rcfg.v_of(self.cfg.backup_v), 0, hmm, "zurücksetzen")
+                return self.zurueck(hmm, "zurücksetzen")
             if fs and fs.valid:
                 n = len(fs.sectors)
                 left, right = sum(fs.sectors[: n // 2]), sum(fs.sectors[(n + 1) // 2:])
@@ -528,11 +562,58 @@ class Approach(Behavior):
         return c
 
 
-def _wrap(a: float) -> float:
-    return (a + math.pi) % (2 * math.pi) - math.pi
-
-
 STUCK_PROGRESS_M = 0.3    # so viel näher ans Ziel, dann zählt früheres Festfahren nicht mehr
+
+
+class Annaeherung:
+    """Fortschritt zum Ziel (home, Heimweg von explore): n = Festfahren in Folge ohne Annäherung; STUCK_PROGRESS_M
+    näher setzt zurück. Aufgeben nach max_fail Mal festgefahren und give_up_s ohne Annäherung."""
+
+    def __init__(self, h: HomeCfg):
+        self.h = h
+        self.reset()
+
+    def reset(self) -> None:
+        self.n, self.best, self.t_best = 0, math.inf, None
+
+    def schritt(self, dist: float, t: float) -> bool:
+        """Abstand jetzt eintragen; True = aufgeben."""
+        if dist < self.best - STUCK_PROGRESS_M:
+            self.best, self.n, self.t_best = dist, 0, t
+        return self.n >= self.h.max_fail and t - self.t_best > self.h.give_up_s
+
+    def nah(self, dist: float) -> bool:
+        """Festgefahren nahe am Ziel (near_m): Steht dort etwas, kommt er nie ganz hin – gilt als angekommen."""
+        return self.n >= 1 and dist < self.h.near_m
+
+
+class Umschau:
+    """Beim Umschauen gedrehter Winkel (rad), aus dem Kurs je Schritt aufsummiert."""
+
+    def __init__(self):
+        self.reset()
+
+    def reset(self) -> None:
+        self.th, self.summe = None, 0.0
+
+    def schritt(self, th: float) -> float:
+        if self.th is not None:
+            self.summe += abs(_wrap(th - self.th))
+        self.th = th
+        return self.summe
+
+
+def dreh_auf_kurs(err: float, tol_deg: float, laeuft_s: float, timeout_s: float, kp: float, w_max: float,
+                  rcfg: RobotCfg) -> float | None:
+    """Drehwert auf der Stelle zum Zielkurs (err rad, dreh_w), None = angekommen (|err| ≤ tol) oder Zeit um."""
+    if abs(err) > math.radians(tol_deg) and laeuft_s < timeout_s:
+        return dreh_w(err, kp, w_max, rcfg)
+    return None
+
+
+def fahrzeit_s(d: float, f: float, rcfg: RobotCfg, v_min_mps: float = 0.02) -> float:
+    """Zeitgrenze für eine Fahrt über d m mit Tempo-Faktor f: 4 s + doppelte Fahrzeit."""
+    return 4.0 + 2.0 * d / max(rcfg.v_of(f) * rcfg.vx_limit, v_min_mps)
 
 
 class PathFollower:
@@ -764,6 +845,12 @@ class PathFollower:
         return Command(v, wc, hmm, "%s (%+.0f°%s)" % (label, math.degrees(err), ", Lücke" if mitte else ", eng" if tight else ""),
                        extra={"tight": tight})
 
+    def ausrichten(self, err: float, label: str = "am Start – richte aus") -> Command | None:
+        """Am Ziel auf den Endkurs drehen (home.align_heading, align_tol_deg); None = steht schon richtig."""
+        if self.h.align_heading and abs(err) > math.radians(self.h.align_tol_deg):
+            return self.align(err, label)
+        return None
+
     def align(self, err: float, label: str) -> Command:
         """Auf der Stelle auf einen Endkurs drehen (err rad)."""
         wc = dreh_w(err, self.h.kp_turn, self.h.turn_w_max, self.rcfg)
@@ -805,9 +892,7 @@ class Home(Behavior):
         self.done = False
         self.gave_up = False
         self.keep_ok = False          # darf der Planer den bisherigen Weg behalten? (nicht nach Festfahren)
-        self.stuck_n = 0              # Festfahren in Folge ohne Annäherung ans Ziel
-        self.best_dist = math.inf
-        self.t_best = None
+        self.an = Annaeherung(self.h)  # Festfahren in Folge ohne Annäherung ans Ziel
 
     @property
     def path(self):
@@ -819,7 +904,7 @@ class Home(Behavior):
             return False
         if self.f.path is None or t - self.t_plan > self.h.replan_s or self.f.stuck:
             self.keep_ok = self.f.path is not None and not self.f.stuck
-            self.stuck_n += self.f.stuck
+            self.an.n += self.f.stuck
             self.pending, self.t_plan, self.f.stuck = True, t, False
             return True
         return False
@@ -861,14 +946,14 @@ class Home(Behavior):
             vx, vy = self._vorpunkt(w.goal)
             return self._weg(w, math.hypot(vx - x, vy - y), "zum Vorpunkt")
         if dist < self.h.arrive_m:
-            err = _wrap(gth - th)
-            if self.h.align_heading and abs(err) > math.radians(self.h.align_tol_deg):
-                return self.f.align(err, "am Start – richte aus")
+            c = self.f.ausrichten(_wrap(gth - th))
+            if c is not None:
+                return c
             self.done = True
             return Command(0, 0, hmm, "am Start angekommen")
         # Steht das Ziel selbst hinter einem Hindernis, findet der Planer immer denselben Weg und die
         # Bahnprüfung bremst ihn immer wieder (RiderPi 2026-11-06, Klebemarke am Startpunkt): aufhören
-        if self.stuck_n >= 1 and dist < self.h.near_m:
+        if self.an.nah(dist):
             self.done = True
             return Command(0, 0, hmm, "am Start angekommen (%.2f m daneben)" % dist)
         return self._weg(w, dist, "zum Start")
@@ -876,9 +961,7 @@ class Home(Behavior):
     def _weg(self, w: World, dist: float, label: str) -> Command:
         """Dem geplanten Weg folgen (zum Start oder zum Vorpunkt); Festfahren und Aufgeben wie gehabt."""
         hmm = self.cfg.height_cruise_mm
-        if dist < self.best_dist - STUCK_PROGRESS_M:
-            self.best_dist, self.stuck_n, self.t_best = dist, 0, w.t
-        if self.stuck_n >= self.h.max_fail and w.t - self.t_best > self.h.give_up_s:
+        if self.an.schritt(dist, w.t):
             self.gave_up = True
         if self.gave_up:
             return Command(0, 0, hmm, "kein Weg zum Start – stopp")
@@ -897,7 +980,7 @@ class Home(Behavior):
             vx, vy = self._vorpunkt((gx, gy, gth))
             dv = math.hypot(vx - x, vy - y)
             # am Vorpunkt, oder festgefahren in seiner Nähe (Hindernis darauf): von hier aus weiter
-            if dv >= sb.vor_tol_m and not (self.stuck_n >= 1 and dv < self.h.near_m):
+            if dv >= sb.vor_tol_m and not self.an.nah(dv):
                 return None
             self.f.clear()
             self._setze("dreh", w)
@@ -999,14 +1082,11 @@ class MapExplore(Behavior):
         self.t_goal = 0.0
         self.wanders = 0
         self.home_fails = 0
-        self.home_stuck = 0
-        self.home_best = math.inf
-        self.home_t_best = None
+        self.home_an = Annaeherung(self.h)  # Heimweg: Festfahren ohne Annäherung
         self.reason = ""
         self.save_map = False              # App speichert die Karte, sobald das gesetzt ist
         self.done = False
-        self._scan_th: float | None = None
-        self._scan_sum = 0.0
+        self._scan = Umschau()             # Rundumblick am Anfang
         self._cleared = False
         self._face: tuple | None = None
         self._known_best = 0.0
@@ -1057,7 +1137,7 @@ class MapExplore(Behavior):
     def request_plan(self, planner, grid, w: World, obstacles) -> int:
         from .frontier import next_goal
         if self.state == "heim":
-            self.home_stuck += self.f.stuck
+            self.home_an.n += self.f.stuck
             self.f.stuck = False
             return planner.request(w.pose[:2], w.goal[:2], keep=self.f.path if self.keep_ok else None, obstacles=obstacles)
         if not self._cleared:
@@ -1174,13 +1254,11 @@ class MapExplore(Behavior):
                 self._end("Akku", w)
 
         if self.state == "scan":
-            if self._scan_th is not None:
-                self._scan_sum += abs(_wrap(th - self._scan_th))
-            self._scan_th = th
-            if self._scan_sum >= 2 * math.pi:
+            summe = self._scan.schritt(th)
+            if summe >= 2 * math.pi:
                 self.state = "ziel"
                 return Command(0, 0, hmm, "Rundumblick fertig")
-            return Command(0.0, self.rcfg.w_of(e.scan_w), hmm, "Rundumblick %.0f°" % math.degrees(self._scan_sum))
+            return Command(0.0, self.rcfg.w_of(e.scan_w), hmm, "Rundumblick %.0f°" % math.degrees(summe))
         if self.state == "face":
             # Zur Frontier drehen: sie kann seitlich oder hinter ihm liegen, das Bild zeigt nur ±44°
             fx, fy = self._face
@@ -1197,7 +1275,7 @@ class MapExplore(Behavior):
             if w.t >= self.until:
                 self.state = "ziel"
                 return Command(0, 0, hmm, "weiter")
-            return Command(-self.rcfg.v_of(self.cfg.backup_v), 0.0, hmm, "setze zurück")
+            return self.zurueck(hmm)
         if self.state == "wander":
             if w.t >= self.until:
                 self.state = "ziel"
@@ -1232,23 +1310,21 @@ class MapExplore(Behavior):
                     self.rechecks += 1
                     self.reason = ""
                     self.state, self._home_d0 = "ziel", None
-                    self.no_goal = self.stucks = self.home_fails = self.home_stuck = 0
-                    self.home_best, self.home_t_best = math.inf, None
+                    self.no_goal = self.stucks = self.home_fails = 0
+                    self.home_an.reset()
                     self.frontier = self.goal = None
                     self.f.clear()
                     self.t_plan, self._t_growth = -1e9, w.t
                     return Command(0, 0, hmm, "am Start – suche noch einmal")
-                err = _wrap(gth - th)
-                if self.h.align_heading and abs(err) > math.radians(self.h.align_tol_deg):
-                    return self.f.align(err, "am Start – richte aus")
+                c = self.f.ausrichten(_wrap(gth - th))
+                if c is not None:
+                    return c
                 self._finish()
                 return Command(0, 0, hmm, self._final_status())
-            if self.home_stuck >= 1 and dist < self.h.near_m:
+            if self.home_an.nah(dist):
                 self._finish("am Start, %.2f m daneben" % dist)
                 return Command(0, 0, hmm, self._final_status())
-            if dist < self.home_best - STUCK_PROGRESS_M:
-                self.home_best, self.home_stuck, self.home_t_best = dist, 0, w.t
-            if self.home_stuck >= self.h.max_fail and w.t - self.home_t_best > self.h.give_up_s:
+            if self.home_an.schritt(dist, w.t):
                 self._finish("Start nicht erreicht, %.2f m entfernt" % dist)
                 return Command(0, 0, hmm, self._final_status())
             if self.f.path is None:
@@ -1454,7 +1530,7 @@ class Patrol(Behavior):
             return Command(0, 0, hmm, "Streife: schaue")
         if self.state == "backup":
             if w.t < self.until:
-                return Command(-self.rcfg.v_of(self.cfg.backup_v), 0.0, hmm, "setze zurück")
+                return self.zurueck(hmm)
             self.state = "fahrt"
             self._next(w)
             return Command(0, 0, hmm, "weiter")

@@ -1514,7 +1514,7 @@
 <td><code>drehen</code></td>
 <td>drehen</td>
 <td><code>grad</code> −1080..1080, <code>w</code> 0.16..1 (factor of <code>max_w</code>, default 0.5), <code>tol</code> 1..10° (default 3), <code>bild</code></td>
-<td>turn on the spot (+ = left), closed loop on <code>yaw_deg</code>, then image</td>
+<td>turn on the spot (+ = left): xgonav <code>POST /turn</code> closes the loop on the IMU heading (<code>behavior.turn_to_kp</code>, overshoot counted for <code>turn_settle_s</code>), MCP waits for <code>/status</code> <code>turn.fertig</code>; then image</td>
 </tr>
 <tr>
 <td><code>rundblick</code></td>
@@ -1647,7 +1647,7 @@
 </tr>
 <tr>
 <td>During a movement</td>
-<td><code>/status</code> + <code>/drive</code> at 10 Hz from one php-fpm worker (pool has 4)</td>
+<td><code>/status</code> + <code>/drive</code> at 10 Hz from one php-fpm worker (pool has 4); turning: one <code>/turn</code>, then <code>/status</code> at 10 Hz</td>
 </tr>
 <tr>
 <td><code>sicher=1</code></td>

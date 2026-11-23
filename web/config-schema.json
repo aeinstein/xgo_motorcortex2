@@ -1674,6 +1674,18 @@
        "hilfe": "Anteil von robot.max_w"
       },
       {
+       "key": "turn_to_kp",
+       "typ": "float",
+       "default": 3.6,
+       "hilfe": "POST /turn (Handsteuerung: um einen Winkel drehen, MCP „drehen“/„rundblick“, rider_nav dreh): Drehrate kp x Fehler, wie dort bisher 0,01 je Grad Restwinkel; nach dem Ziel turn_settle_s Nachlauf mitzählen 1/s"
+      },
+      {
+       "key": "turn_settle_s",
+       "typ": "float",
+       "default": 1.0,
+       "hilfe": ""
+      },
+      {
        "key": "blocked_free",
        "typ": "float",
        "default": 0.22,

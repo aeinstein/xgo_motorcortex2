@@ -30,13 +30,14 @@ def _freier_port() -> int:
 
 
 class Xgonav:
-    """Nachgestellte lokale Schnittstelle: merkt sich Aufrufe, dreht den Kurs mit jedem /drive."""
+    """Nachgestellte lokale Schnittstelle: merkt sich Aufrufe, dreht den Kurs mit jedem /drive und mit /turn."""
 
     def __init__(self):
         self.mode, self.pipeline, self.frame, self.yaw, self.m = "idle", True, 100, 0.0, 0.0
         self.calls: list[str] = []
         self.meldung = ""
         self.neu = True           # kennt /drive?sicher=1
+        self.turn = None          # /status turn (POST /turn dreht sofort, Nachlauf 2°)
         x = self
 
         class H(BaseHTTPRequestHandler):
@@ -64,7 +65,8 @@ class Xgonav:
                         "status": "Handsteuerung" + x.meldung, "frame": x.frame, "yaw_deg": round(x.yaw, 1),
                         "pitch_deg": 0.5, "free": [1.0, 0.8, 0.2], "fs_src": "net", "odom": {"m": round(x.m, 2)},
                         "grid": {"pose": [x.m, 0.0, x.yaw], "start": [0, 0, 0], "pose_ok": True, "zum_start_m": x.m},
-                        "tracks": [], "cam_h_mm": 123.8, "height_mm": 90.0, "battery": 80}).encode())
+                        "tracks": [], "cam_h_mm": 123.8, "height_mm": 90.0, "battery": 80, "tempo": 1.0,
+                        "turn": x.turn if x.mode == "manual" else None}).encode())
                 if u.path == "/frame":
                     return self._send(200, JPEG, "image/jpeg", {"X-Frame": str(x.frame)})
                 if u.path == "/map.png":
@@ -85,6 +87,13 @@ class Xgonav:
                     x.mode = "idle"
                 elif u.path == "/pipeline":
                     x.pipeline = q["on"][0] == "1"
+                elif u.path == "/turn":
+                    if x.mode != "manual":
+                        return self._send(409, json.dumps({"error": "Drehen nur im Modus manual"}).encode())
+                    deg = float(q["deg"][0])
+                    x.yaw += deg + (2.0 if deg > 0 else -2.0)
+                    x.turn = {"soll_deg": deg, "gedreht_deg": deg + (2.0 if deg > 0 else -2.0), "fertig": True,
+                              "grund": "angekommen"}
                 elif u.path == "/drive":
                     if x.mode != "manual":
                         return self._send(409, json.dumps({"error": "Handsteuerung nur im Modus manual"}).encode())
@@ -219,8 +228,9 @@ def test_freigabe_drehen_ohne_fahren(mcp):
     r = m.call("drehen", grad=45, bild=False)
     assert not r["isError"], r
     assert abs(x.yaw - 45) <= 15 and x.mode == "idle"                           # danach Stillstand + idle
-    antrieb = [c for c in x.calls if c.startswith("POST /drive")]
-    assert antrieb and all("v=0&" in c for c in antrieb) and "w=0" in antrieb[-1].split("&")[-1]
+    antrieb = [c for c in x.calls if c.startswith("POST /drive") or c.startswith("POST /turn")]
+    assert any(c.startswith("POST /turn?deg=45") for c in antrieb)                # xgonav regelt (seit 2026-11-23)
+    assert all("v=0&" in c for c in antrieb if c.startswith("POST /drive")) and "w=0" in antrieb[-1].split("&")[-1]
 
 
 def test_rundblick(mcp):
@@ -258,7 +268,7 @@ def test_liegt_und_akku(mcp):
     (proc / "state").write_text("1\n")
     (proc / "battery").write_text("12\n")
     assert "Akku" in m.call("drehen", grad=30)["content"][0]["text"]
-    assert not any(c.startswith("POST /drive") for c in x.calls)
+    assert not any(c.startswith("POST /drive") or c.startswith("POST /turn") for c in x.calls)
 
 
 def test_token(mcp):
@@ -270,15 +280,15 @@ def test_token(mcp):
 
 
 def test_fahren_ungeprueft_und_folge(mcp):
-    """geprueft = false: wie das Steuerkreuz (ohne sicher=1, bis 0,5); folge: Abschnitte ohne /stop dazwischen."""
+    """geprueft = false: wie das Steuerkreuz (ohne sicher=1, bis 1 = max_v); folge: Abschnitte ohne /stop dazwischen."""
     m, x, _ = mcp()
     r = m.call("fahren", v=0.3, sekunden=1, geprueft=False, bild=False)
     assert not r["isError"], r
     fahrt = [c for c in x.calls if c.startswith("POST /drive") and "v=0.300" in c]
     assert fahrt and not any("sicher" in c for c in fahrt) and x.mode == "idle"
     assert json.loads(r["content"][0]["text"])["geprueft"] is False
-    assert m.call("fahren", v=0.3, sekunden=1)["isError"]                       # geprüft nur bis 0,15
-    assert m.call("fahren", v=0.6, sekunden=1, geprueft=False)["isError"]
+    assert m.call("fahren", v=0.4, sekunden=1)["isError"]                       # geprüft nur bis 0,30
+    assert m.call("fahren", v=1.2, sekunden=1, geprueft=False)["isError"]
     n = len(x.calls)
     r = m.call("folge", abschnitte=[[0.1, 0, 1], [0, 0.2, 1]], bild=False)
     assert not r["isError"], r
@@ -298,4 +308,4 @@ def test_drehen_weit_und_rate(mcp):
     assert not r["isError"], r
     assert abs(x.yaw - 720) <= 30
     assert any("w=0.400" in c for c in x.calls)
-    assert m.call("drehen", grad=1200)["isError"] and m.call("drehen", grad=30, w=0.9)["isError"]
+    assert m.call("drehen", grad=1200)["isError"] and m.call("drehen", grad=30, w=1.5)["isError"]

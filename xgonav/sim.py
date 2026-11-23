@@ -19,6 +19,7 @@ import numpy as np
 from .camera import FrameSource
 from .config import CameraCfg
 from .detector import Detection, DetectionBatch
+from .mathe import w_to_yaw_rate, wrap
 from .robot import FW_DEADBAND, SimRobot
 
 SIM_NET_COLS = 80          # Spalten der Bodengrenze wie FloorNet (floornet.NCOLS)
@@ -291,7 +292,7 @@ class SimWorld(FrameSource):
         # Korrektur der Geschwindigkeitsregelung wirkt wie am Rider
         vn += self.robot.with_trim(self.robot.v_nominal) - self.robot.v_nominal
         v = vn * self.vx_mps
-        w = math.radians(wn * self.robot.cfg.vyaw_limit_dps)
+        w = w_to_yaw_rate(wn, self.robot.cfg)
         if self.dynamics:
             v, w = self._dyn(v, w, wn, dt)
         self.th += w * dt
@@ -535,9 +536,9 @@ class SimImu:
                     if self._th_alt is None:
                         self._kurs = w.th
                     else:
-                        self._kurs += self.yaw_scale * ((w.th - self._th_alt + math.pi) % (2 * math.pi) - math.pi)
+                        self._kurs += self.yaw_scale * wrap(w.th - self._th_alt)
                     self._th_alt = w.th
-                    self.add(self._seq, now + self.t_err, 0.0, raw, (self._kurs + math.pi) % (2 * math.pi) - math.pi)
+                    self.add(self._seq, now + self.t_err, 0.0, raw, wrap(self._kurs))
                     self.rate_hz = self.hz
 
         return _SimImu(*a, **k)
@@ -623,9 +624,9 @@ class Phantoms:
             if dist < 0.25 or dist > 2.0 or self._rng.random() > self.on_prob:
                 continue
             seen_from = math.atan2(-dy, -dx)
-            if abs((seen_from - d0 + math.pi) % (2 * math.pi) - math.pi) > math.radians(70):
+            if abs(wrap(seen_from - d0)) > math.radians(70):
                 continue
-            ang = (math.atan2(dy, dx) - w.th + math.pi) % (2 * math.pi) - math.pi
+            ang = wrap(math.atan2(dy, dx) - w.th)
             half = math.asin(min(1.0, self.radius / dist))
             cols = np.nonzero(np.abs(bear - ang) < half)[0]
             if not len(cols):

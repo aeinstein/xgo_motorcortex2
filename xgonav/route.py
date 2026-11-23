@@ -15,6 +15,7 @@ import numpy as np
 
 from .config import HomeCfg
 from .gridmap import GridMap
+from .mathe import arc_step
 from .planner import cost_map, driven_mask
 
 log = logging.getLogger(__name__)
@@ -61,9 +62,7 @@ def arc_hits_zone(pose: tuple, v_mps: float, w_rads: float, zones, margin_m: flo
     now = [zone_dist(z, x, y) for z in zones]
     dt = horizon_s / steps
     for _ in range(steps):
-        th += w_rads * dt
-        x += v_mps * math.cos(th) * dt
-        y += v_mps * math.sin(th) * dt
+        x, y, th = arc_step(x, y, th, v_mps, w_rads, dt)
         for z, d0 in zip(zones, now):
             d = zone_dist(z, x, y)
             if d < margin_m and d < d0 - 1e-3:

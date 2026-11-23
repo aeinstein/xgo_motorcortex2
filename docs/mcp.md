@@ -45,7 +45,7 @@ Lets a multimodal LLM look at the world through the Rider: camera image, room ma
 | `stopp` | schauen | | xgonav `/stop`: standstill, mode idle; aborts a running MCP movement |
 | `aufstehen` | drehen | | `/stop`, action 253, waits for balancing (≤ 8 s) + 6 s; needs pipeline, battery ≥ 20 % |
 | `absetzen` | drehen | | `/stop`, action 254, waits until lying |
-| `drehen` | drehen | `grad` −1080..1080, `w` 0.16..1 (factor of `max_w`, default 0.5), `tol` 1..10° (default 3), `bild` | turn on the spot (+ = left), closed loop on `yaw_deg`, then image |
+| `drehen` | drehen | `grad` −1080..1080, `w` 0.16..1 (factor of `max_w`, default 0.5), `tol` 1..10° (default 3), `bild` | turn on the spot (+ = left): xgonav `POST /turn` closes the loop on the IMU heading (`behavior.turn_to_kp`, overshoot counted for `turn_settle_s`), MCP waits for `/status` `turn.fertig`; then image |
 | `rundblick` | drehen | `bilder` (2..8, default 4), `overlay` | full turn in equal steps, one image per step, ends at the starting heading |
 | `hoehe` | drehen | `u8` 61..200 | body height → `/proc/XGORider/height`, waits 4 s |
 | `neigen` | drehen | `grad` −20..20 | roll → `/proc/XGORider/roll` |
@@ -79,7 +79,7 @@ Not offered: shutdown, restart, settings, Wi-Fi, calibration, floor model switch
 | Per tool call | one php-fpm request, 1–3 local HTTP requests to xgonav |
 | `bild` | one JPEG in the web thread of xgonav (hardware encoder), not in the image pipeline |
 | `karte` | one map render + PNG in the web thread |
-| During a movement | `/status` + `/drive` at 10 Hz from one php-fpm worker (pool has 4) |
+| During a movement | `/status` + `/drive` at 10 Hz from one php-fpm worker (pool has 4); turning: one `/turn`, then `/status` at 10 Hz |
 | `sicher=1` | one `safety()` + arc check per control step while such a setpoint is active, as in every autonomous mode |
 
 ## Clients

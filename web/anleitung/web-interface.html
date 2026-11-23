@@ -1980,6 +1980,11 @@ works without xgonav.</p>
 </tr>
 <tr>
 <td>POST</td>
+<td><code>/turn?deg=..&amp;w=0.5&amp;tol=3</code></td>
+<td>mode <code>manual</code>, balancing only (409 otherwise, 400 outside deg ±1080, w 0.05..1, tol 1..10): turn on the spot by <code>deg</code> (+ = left), rate <code>behavior.turn_to_kp</code> × remaining angle via <code>behaviors.dreh_auf_kurs</code>, at most <code>w</code> × <code>max_w</code>; time limit (10 s + 1 s per 20°) / <code>tempo</code>. Progress in <code>/status</code> <code>turn</code> (<code>soll_deg</code>, <code>gedreht_deg</code>, <code>fertig</code>, <code>grund</code>: <code>angekommen</code>, <code>Zeit abgelaufen</code>, <code>abgebrochen</code>, <code>liegt</code>, <code>kein Kurs</code>), overshoot counted for <code>turn_settle_s</code>; any <code>/drive</code> cancels. Used by MCP <code>drehen</code>/<code>rundblick</code> and <code>rider_nav.py dreh</code> (2026-11-23)</td>
+</tr>
+<tr>
+<td>POST</td>
 <td><code>/drive?v=..&amp;w=..[&amp;sicher=1]</code></td>
 <td>409 if not mode <code>manual</code>; <code>v</code>, <code>w</code> −1..1 are factors of <code>robot.max_v</code>/<code>max_w</code> (sent v · <code>tempo</code> · <code>max_v</code>; D-pad sends ±1); <code>sicher=1</code> (used by the <a href="mcp.html">MCP server</a>): this setpoint passes <code>safety()</code> and the arc check like the autonomous modes; with the pipeline stopped it only turns</td>
 </tr>

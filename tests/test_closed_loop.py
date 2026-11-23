@@ -10,10 +10,12 @@ from sim_run import run  # noqa: E402
 
 @pytest.mark.slow
 def test_follow_person_with_shake():
+    from xgonav.config import Config
+    soll = Config.neutral().behavior.follow_dist_m          # Rider-Wert (0,9 m), seit 2026-11-23 auch im Simulator
     r = run("follow", 30.0)
     assert r["collisions"] == 0
-    assert r["dist_min"] > 0.8          # nicht auffahren
-    assert 1.1 < r["dist_mean"] < 2.4   # dranbleiben (Soll 1.2 m + Totzone, Person läuft)
+    assert r["dist_min"] > soll - 0.3   # nicht auffahren
+    assert soll - 0.1 < r["dist_mean"] < 2.4   # dranbleiben (Soll + Totzone, Person läuft)
     assert r["loop_ms"] < 30
 
 
@@ -30,7 +32,7 @@ def test_follow_tuer_sucht_an_letzter_stelle():
 def test_pet_folgt_wie_follow_und_sucht():
     # wie follow durch die Tür: pet folgt mit der follow-Routine (ohne Vertrauen), verliert sie und findet sie an
     # der letzten Stelle wieder (Nutzer 2026-11-22)
-    over = {"pet.follow_m": -1.0, "pet.seek_m": -1.0, "pet.drive_v": 0.12, "pet.roam_m": 0.0}
+    over = {"pet.follow_m": -1.0, "pet.seek_m": -1.0, "pet.drive_v": 0.24, "pet.roam_m": 0.0}
     r = run("pet", 90.0, scene="zwei", wheels=True, dyn=True, overrides=over)
     assert r["collisions"] == 0 and r["pet"]["folgen"] >= 1
     assert r["pet"]["folgen_suche"] >= 1 and r["pet"]["folgen_wieder"] >= 1 and r["dist_max_late"] < 3.0
@@ -40,7 +42,7 @@ def test_pet_folgt_wie_follow_und_sucht():
 def test_pet_heim_nur_mit_startbild():
     # Sie verschwindet: Suche ohne Erfolg; mit lost_home fährt er wie home zum Start und misst am Startbild
     over = {"startbild.enabled": True, "pet.follow_m": -1.0, "pet.seek_m": -1.0,
-            "pet.drive_v": 0.12, "pet.roam_m": 0.0, "pet.lost_home": True, "pet.seek_home": True}
+            "pet.drive_v": 0.24, "pet.roam_m": 0.0, "pet.lost_home": True, "pet.seek_home": True}
     r = run("pet", 150.0, scene="zwei", wheels=True, dyn=True, speed=0.8, overrides=over)
     assert r["collisions"] == 0 and r["pet"]["folgen"] >= 1 and r["pet"]["folgen_suche"] >= 1
     assert r["startbild"]["ok"] + r["startbild"]["verworfen"] >= 1       # am Start gemessen

@@ -1543,6 +1543,10 @@
 <td>self-trained floor network in the C++ core (<code>native/floornet.cpp</code>), the only source of the floor boundary; <code>ZeilenGlaetter</code> smooths it over time (<a href="floornet.html">floornet.md</a>). Simulator: <code>sim.SimFloorNet</code> (ground truth)</td>
 </tr>
 <tr>
+<td><code>mathe.py</code></td>
+<td>small shared helpers without heavy imports (since 2026-11-23): <code>wrap</code>, <code>clamp</code>, <code>wrap32</code>, <code>yaw_rate_to_w</code>/<code>w_to_yaw_rate</code>, <code>pose_compose</code>, <code>to_world</code>, <code>polar</code>, <code>arc_step</code>; same operation order as before, so bit-identical (navfast comparisons hold)</td>
+</tr>
+<tr>
 <td><code>localmap.py</code></td>
 <td>Short-term obstacle memory in robot frame (<code>map.max_age_s</code> = 4 s); move, enter, confirm and arc check optionally in C++ (<code>native/navfast.cpp</code>)</td>
 </tr>
@@ -1627,12 +1631,13 @@
 <td><code>PetBrain._drive</code> (straight to the spot)</td>
 </tr>
 <tr>
-<td>turning on the spot (path follower, <code>pet</code>, fear of the dark)</td>
+<td>turning on the spot (path follower, <code>pet</code>, fear of the dark, <code>/turn</code>)</td>
 <td>–</td>
-<td><code>behaviors.dreh_w</code>: kp × error, between <code>robot.turn_min_w</code> and the mode's cap</td>
+<td><code>behaviors.dreh_w</code>: kp × error, between <code>robot.turn_min_w</code> and the mode's cap (factor of <code>max_w</code>); to a heading with tolerance and time limit <code>behaviors.dreh_auf_kurs</code></td>
 </tr>
 </tbody>
 </table>
+<p>Shared building blocks in <code>behaviors.py</code>: <code>Annaeherung</code> (progress towards the goal, stuck counter, give up; <code>home</code> and the way home of <code>explore</code>), <code>Umschau</code> (summed turn angle; <code>follow</code> look-around, <code>explore</code> initial scan), <code>PathFollower.ausrichten</code> (final heading at the start), <code>Behavior.zurueck</code> (backing up), <code>fahrzeit_s</code> (time limit of a leg).</p>
 <p><code>pet</code> keeps its decisions (arrival, budget, time, radius, stuck after two replans) in <code>PetBrain</code>; the path is driven by <code>Pet.f</code> at <code>pet.drive_v</code>.</p>
 <h2 id="swappable-backends">Swappable backends<a class="headerlink" href="#swappable-backends" title="Permanent link">&para;</a></h2>
 <table>

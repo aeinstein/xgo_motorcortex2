@@ -33,6 +33,7 @@ from xgonav.config import Config  # noqa: E402
 from xgonav.freespace import FreeSpace  # noqa: E402
 from xgonav.geometry import CamGeometry  # noqa: E402
 from xgonav.gridmap import GridMap  # noqa: E402
+from xgonav.mathe import wrap  # noqa: E402
 from xgonav.sim import SCENES, map_quality  # noqa: E402
 
 
@@ -180,7 +181,7 @@ def drift_bahn(wahr: list, t: np.ndarray, schlupf: float, kursdrift_dps: float, 
     dazu stetige Kursdrift. Beginnt an der wahren Pose."""
     out = [wahr[0]]
     for a, b, dt in zip(wahr, wahr[1:], np.diff(t)):
-        dth = (b[2] - a[2] + math.pi) % (2 * math.pi) - math.pi
+        dth = wrap(b[2] - a[2])
         mid = a[2] + dth / 2
         ds = (b[0] - a[0]) * math.cos(mid) + (b[1] - a[1]) * math.sin(mid)
         ds, dth = ds * (1 + schlupf), dth * (1 + dreh) + math.radians(kursdrift_dps) * dt
@@ -190,7 +191,7 @@ def drift_bahn(wahr: list, t: np.ndarray, schlupf: float, kursdrift_dps: float, 
 
 
 def _fehler(a: tuple, b: tuple) -> tuple[float, float]:
-    return math.hypot(a[0] - b[0], a[1] - b[1]), abs(math.degrees((a[2] - b[2] + math.pi) % (2 * math.pi) - math.pi))
+    return math.hypot(a[0] - b[0], a[1] - b[1]), abs(math.degrees(wrap(a[2] - b[2])))
 
 
 def karte_aus(data: dict, cfg: Config) -> GridMap:

@@ -26,6 +26,7 @@ import cv2
 import numpy as np
 
 from .config import RelocCfg
+from .mathe import pose_compose, to_world, wrap
 
 NMS_M, NMS_DEG = 0.3, 10.0        # näher beieinander gilt als dieselbe Lage
 SLIDE_DROP = 0.10                 # Lagen bis so viel unter der besten zählen als "fast gleich gut"
@@ -84,9 +85,8 @@ def _in_ks(pts: np.ndarray, von: tuple, nach: tuple) -> np.ndarray:
     """Punkte aus dem Roboter-KS der Pose von in das der Pose nach."""
     if not len(pts):
         return pts
-    c, s = math.cos(von[2]), math.sin(von[2])
-    wx = von[0] + c * pts[:, 0] - s * pts[:, 1] - nach[0]
-    wy = von[1] + s * pts[:, 0] + c * pts[:, 1] - nach[1]
+    wx, wy = to_world(von, pts[:, 0], pts[:, 1])
+    wx, wy = wx - nach[0], wy - nach[1]
     c, s = math.cos(nach[2]), math.sin(nach[2])
     return np.column_stack([c * wx + s * wy, -s * wx + c * wy])
 
@@ -244,9 +244,7 @@ def _anteil(feld: Feld, scan: Scan, pose: tuple) -> tuple[float, int]:
     """Treffer in der Lage pose: Anteil (nach Gewicht) an einer Wand der Karte unter denen, die in
     kartiertem Gebiet liegen, und deren Zahl. Treffer im Unbekannten sagen nichts: Beim Erkunden
     sieht der Rider ständig Neues, das spricht nicht gegen die Lage."""
-    c, s = math.cos(pose[2]), math.sin(pose[2])
-    x = pose[0] + c * scan.hits[:, 0] - s * scan.hits[:, 1]
-    y = pose[1] + s * scan.hits[:, 0] + c * scan.hits[:, 1]
+    x, y = to_world(pose, scan.hits[:, 0], scan.hits[:, 1])
     r = np.floor(y / feld.res + feld.n / 2).astype(np.int64)
     q = np.floor(x / feld.res + feld.n / 2).astype(np.int64)
     ok = (r >= 0) & (r < feld.n) & (q >= 0) & (q < feld.n)
@@ -321,7 +319,7 @@ def abgleich_lokal(feld: Feld, scan: Scan, pose: tuple, cfg: RelocCfg, search_m:
 
 
 def _winkel_diff(a: float, b: float) -> float:
-    return abs((a - b + math.pi) % (2 * math.pi) - math.pi)
+    return abs(wrap(a - b))
 
 
 def _gleich(a: tuple, b: tuple, weit: float = 1.0) -> bool:
@@ -395,8 +393,7 @@ def suche_global(feld: Feld, scan: Scan, cfg: RelocCfg, pause=None) -> Ergebnis:
 # ------------------------------------------------------------------ starre Transformationen
 def anwenden(k: tuple, pose: tuple) -> tuple:
     """k ∘ pose: Pose im korrigierten Karten-KS (k = (kx, ky, kth))."""
-    c, s = math.cos(k[2]), math.sin(k[2])
-    return (k[0] + c * pose[0] - s * pose[1], k[1] + s * pose[0] + c * pose[1], pose[2] + k[2])
+    return pose_compose(k, pose)
 
 
 def korrektur(von: tuple, nach: tuple) -> tuple:
@@ -410,7 +407,7 @@ def schritt(ist: tuple, soll: tuple, cfg: RelocCfg) -> tuple | None:
     """Gedämpfter Schritt von der Pose ist zur abgeglichenen Pose soll: Anteil gain, gedeckelt;
     None im Totband."""
     dx, dy = soll[0] - ist[0], soll[1] - ist[1]
-    dth = (soll[2] - ist[2] + math.pi) % (2 * math.pi) - math.pi
+    dth = wrap(soll[2] - ist[2])
     d = math.hypot(dx, dy)
     if d < cfg.deadband_m and abs(dth) < math.radians(cfg.deadband_deg):
         return None

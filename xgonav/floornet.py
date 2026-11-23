@@ -11,6 +11,7 @@ import os
 import numpy as np
 
 from . import fastlib
+from .mathe import wrap
 
 log = logging.getLogger(__name__)
 
@@ -165,7 +166,7 @@ class ZeilenGlaetter:
             return rows
         if self._alt:
             p, t0 = self._alt[0][1], self._alt[0][3]
-            dth = abs((pose[2] - p[2] + np.pi) % (2 * np.pi) - np.pi)
+            dth = abs(wrap(pose[2] - p[2]))
             if (t - t0 > self.MAX_DT or t < t0 or np.hypot(pose[0] - p[0], pose[1] - p[1]) > self.MAX_SPRUNG_M
                     or dth > self.MAX_SPRUNG_RAD):
                 self.reset()

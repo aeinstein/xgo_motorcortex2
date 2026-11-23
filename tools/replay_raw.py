@@ -29,6 +29,7 @@ from xgonav.config import Config  # noqa: E402
 from xgonav.freespace import FreeSpaceEstimator, column_runs  # noqa: E402
 from xgonav.geometry import CamGeometry  # noqa: E402
 from xgonav.localmap import LocalMap  # noqa: E402
+from xgonav.mathe import w_to_yaw_rate  # noqa: E402
 
 DIST_RE = re.compile(r"verfolge #\d+ \S+ \([+-]?\d+°, ([\d.]+) m\)")
 
@@ -83,7 +84,7 @@ def replay(d: str, cfg: Config, person_min: float = 1.2, video: str | None = Non
             fs_in_map = free_raw
             lmap.add_freespace(free, t,                  # Merkkarte unmaskiert wie in App._step
                                m["pitch_dev"])
-        wr = math.radians(m["sent"][1] * cfg.robot.vyaw_limit_dps)
+        wr = w_to_yaw_rate(m["sent"][1], cfg.robot)
         clr = lmap.arc_clearance(v_chk, wr, horizon_s=1.2)
         blk = clr < need
         if blk:                                      # nächster bestätigter Punkt im Nahbereich

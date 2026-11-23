@@ -322,6 +322,10 @@ class BehaviorCfg:
     lost_arrive_m: float = 0.25
     lost_look_deg: float = 360.0
     lost_look_w: float = 0.20          # Anteil von robot.max_w
+    # POST /turn (Handsteuerung: um einen Winkel drehen, MCP „drehen“/„rundblick“, rider_nav dreh): Drehrate
+    # kp x Fehler, wie dort bisher 0,01 je Grad Restwinkel; nach dem Ziel turn_settle_s Nachlauf mitzählen
+    turn_to_kp: float = 3.6            # 1/s
+    turn_settle_s: float = 1.0
     blocked_free: float = 0.22     # Freiraum im Zentrum darunter = blockiert
     slow_free: float = 0.55        # darunter proportional abbremsen
     ttc_avoid_s: float = 1.2       # Erkunden: Time-to-contact darunter -> ausweichen

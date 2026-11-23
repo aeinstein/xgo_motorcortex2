@@ -20,13 +20,9 @@ import time
 from collections import deque
 
 from .config import OdomCfg
+from .mathe import wrap32 as _wrap32
 
 log = logging.getLogger(__name__)
-
-
-def _wrap32(d: int) -> int:
-    """Differenz zweier int32-Zählerstände, über den Überlauf hinweg."""
-    return (d + 2 ** 31) % 2 ** 32 - 2 ** 31
 
 
 class WheelOdom:

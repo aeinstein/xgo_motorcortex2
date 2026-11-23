@@ -225,50 +225,44 @@ function kurs(array $s): ?float
     return is_numeric($y) ? (float)$y : null;
 }
 
-/** Auf der Stelle drehen (+ = links), Kurs aus /status; gibt den gedrehten Winkel zurück. Vorher fahrbereit(). */
+/** Auf der Stelle drehen (+ = links): xgonav regelt über den Kurs (POST /turn, seit 2026-11-23; Nachlauf mitgezählt,
+ *  Zeitgrenze dort). Gibt den gedrehten Winkel zurück. Vorher fahrbereit(). */
 function drehe(float $grad, float $w_max = 0.5, float $tol = 3.0): float
 {
-    $y_alt = kurs(status());
-    if ($y_alt === null) {
-        throw new Fehler('Kein Kurs in /status (IMU-Strom oder Bildverarbeitung fehlt).');
-    }
-    $gedreht = 0.0;
-    $ende = microtime(true) + (10.0 + abs($grad) / 20.0) / SCHNELL;
+    $tempo = max(0.05, (float)(status()['tempo'] ?? 1.0));
+    $ende = microtime(true) + (15.0 + abs($grad) / 20.0) / $tempo / SCHNELL;   // nur gegen Hänger
     $GLOBALS['faehrt'] = true;
+    $t = null;
     try {
+        post(sprintf('/turn?deg=%.2f&w=%.3f&tol=%.1f', $grad, $w_max, $tol));   // 409, sobald jemand „stopp“ ruft
         while (true) {
+            schlafen(0.1);
             if (!balanciert()) {
                 throw new Fehler('Abbruch: Der Rider liegt.');
             }
-            if (microtime(true) > $ende) {
-                throw new Fehler(sprintf('Abbruch: Zeit abgelaufen nach %+.0f° von %+.0f°.', $gedreht, $grad));
+            $t = status()['turn'] ?? null;
+            if (!is_array($t)) {
+                throw new Fehler('Abbruch: xgonav dreht nicht mehr (Modus gewechselt oder „stopp“).');
             }
-            $y = kurs(status());
-            if ($y === null) {
-                throw new Fehler('Abbruch: Kurs fehlt.');
-            }
-            $gedreht += fmod(fmod($y - $y_alt + 180.0, 360.0) + 360.0, 360.0) - 180.0;
-            $y_alt = $y;
-            $err = $grad - $gedreht;
-            if (abs($err) <= $tol) {
+            if (!empty($t['fertig'])) {
                 break;
             }
-            $w = min($w_max, max(0.16, 0.02 * abs($err))) * ($err < 0 ? -1 : 1);   // Anteil von max_w
-            post(sprintf('/drive?v=0&w=%.3f', $w));       // 409, sobald jemand „stopp“ ruft: Abbruch
-            schlafen(1.0 / HZ);
+            if (microtime(true) > $ende) {
+                throw new Fehler(sprintf('Abbruch: Zeit abgelaufen nach %+.0f° von %+.0f°.', (float)($t['gedreht_deg'] ?? 0), $grad));
+            }
         }
     } finally {
-        for ($i = 0; $i < 2; $i++) {
-            http('POST', '/drive?v=0&w=0', 1.0);
+        if (!is_array($t) || empty($t['fertig'])) {
+            for ($i = 0; $i < 2; $i++) {
+                http('POST', '/drive?v=0&w=0', 1.0);           // Sollwert bricht das Drehen in xgonav ab
+            }
         }
         $GLOBALS['faehrt'] = false;
     }
-    schlafen(1.0);                                         // er dreht nach dem Stopp etwas nach
-    $y = kurs(status());
-    if ($y !== null) {
-        $gedreht += fmod(fmod($y - $y_alt + 180.0, 360.0) + 360.0, 360.0) - 180.0;
+    if (($t['grund'] ?? '') !== 'angekommen') {
+        throw new Fehler(sprintf('Abbruch (%s) nach %+.0f° von %+.0f°.', (string)($t['grund'] ?? '?'), (float)($t['gedreht_deg'] ?? 0), $grad));
     }
-    return $gedreht;
+    return (float)($t['gedreht_deg'] ?? 0.0);
 }
 
 // ---------------------------------------------------------------- Inhalte

@@ -42,6 +42,7 @@ camera.FrameSource ─► egomotion.EgoMotion ─► tracker.Tracker ◄── d
 | `fastlib.py` | loads optional C++ core `native/libxgofast.so` and camera library `native/libxgocam.so` (ctypes), ABI check per function group |
 | `navfast.py` | ctypes binding of `native/navfast.cpp`: A* + path shortening, wavefront, frontier group scoring, local map (move, enter, confirm, arc check), wall distance, path-follower target; used by `planner.py`, `frontier.py`, `localmap.py`, `gridmap.py`, `behaviors.py`, each keeps an equivalent Python path |
 | `floornet.py` | self-trained floor network in the C++ core (`native/floornet.cpp`), the only source of the floor boundary; `ZeilenGlaetter` smooths it over time ([floornet.md](floornet.md)). Simulator: `sim.SimFloorNet` (ground truth) |
+| `mathe.py` | small shared helpers without heavy imports (since 2026-11-23): `wrap`, `clamp`, `wrap32`, `yaw_rate_to_w`/`w_to_yaw_rate`, `pose_compose`, `to_world`, `polar`, `arc_step`; same operation order as before, so bit-identical (navfast comparisons hold) |
 | `localmap.py` | Short-term obstacle memory in robot frame (`map.max_age_s` = 4 s); move, enter, confirm and arc check optionally in C++ (`native/navfast.cpp`) |
 | `wheels.py` | Wheel odometry from `wheels_log` |
 | `gridmap.py` | Room occupancy grid in world frame, start point, save/load; entering an observation (rays, free rays, hits) optionally in C++ (`native/gridfast.cpp`) |
@@ -66,7 +67,9 @@ Every mode ends in `Command(v, w)` → `safety()` → `_arc_check()` → `Robot.
 | `home`, `explore`, `patrol`; `follow` search at the last position; every planned path in `pet` (come, roam, search, call search, home) | yes | `PathFollower.drive` (hysteresis, narrow passages, `slow_end`, stuck, push) |
 | `follow` with target in view (also `pet` following) | no | `Servo` (PD on bearing, distance Kalman filter) |
 | `pet` without room map / without path | no | `PetBrain._drive` (straight to the spot) |
-| turning on the spot (path follower, `pet`, fear of the dark) | – | `behaviors.dreh_w`: kp × error, between `robot.turn_min_w` and the mode's cap |
+| turning on the spot (path follower, `pet`, fear of the dark, `/turn`) | – | `behaviors.dreh_w`: kp × error, between `robot.turn_min_w` and the mode's cap (factor of `max_w`); to a heading with tolerance and time limit `behaviors.dreh_auf_kurs` |
+
+Shared building blocks in `behaviors.py`: `Annaeherung` (progress towards the goal, stuck counter, give up; `home` and the way home of `explore`), `Umschau` (summed turn angle; `follow` look-around, `explore` initial scan), `PathFollower.ausrichten` (final heading at the start), `Behavior.zurueck` (backing up), `fahrzeit_s` (time limit of a leg).
 
 `pet` keeps its decisions (arrival, budget, time, radius, stuck after two replans) in `PetBrain`; the path is driven by `Pet.f` at `pet.drive_v`.
 

@@ -19,6 +19,7 @@ import numpy as np
 from . import navfast
 from .freespace import FreeSpace
 from .geometry import CamGeometry
+from .mathe import arc_step
 
 
 class LocalMap:
@@ -280,9 +281,7 @@ class LocalMap:
         dt = horizon_s / steps
         s = 0.0
         for _ in range(steps):
-            th += w_rads * dt
-            x += v_mps * math.cos(th) * dt
-            y += v_mps * math.sin(th) * dt
+            x, y, th = arc_step(x, y, th, v_mps, w_rads, dt)
             s += abs(v_mps) * dt
             near = np.hypot(pts[:, 0] - x, pts[:, 1] - y) < lim
             if near.any():

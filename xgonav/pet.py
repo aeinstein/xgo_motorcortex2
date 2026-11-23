@@ -36,7 +36,8 @@ import math
 import random
 from dataclasses import dataclass, field, replace
 
-from .behaviors import Behavior, Command, Follow, Home, PathFollower, World, _wrap, clamp, dreh_w
+from .behaviors import Behavior, Command, Follow, Home, PathFollower, World, _wrap, clamp, dreh_auf_kurs, dreh_w, fahrzeit_s
+from .mathe import polar
 from .config import ExploreCfg, HomeCfg, PetCfg, RobotCfg
 from .planner import path_length
 
@@ -612,7 +613,7 @@ class PetBrain:
         if go <= 0.0:
             return False
         a = self.yaw + tg.bearing
-        self._goal = (self.x + go * math.cos(a), self.y + go * math.sin(a))
+        self._goal = polar(self.x, self.y, go, a)
         return True
 
     def _come_step(self, s: Sense, tg: Seen | None) -> None:
@@ -665,8 +666,10 @@ class PetBrain:
     def _hear_drehen(self, s: Sense, act: Act) -> None:
         c, t = self.cfg, s.t
         err = _wrap(self._yaw_goal - self.yaw)
-        if abs(err) > math.radians(6.0) and t - self._phase_t < 8.0 and c.gestures:
-            act.w = dreh_w(err, c.turn_kp, c.turn_w if self._ear_fast else c.look_w, self.rcfg)
+        w = dreh_auf_kurs(err, 6.0, t - self._phase_t, 8.0, c.turn_kp, c.turn_w if self._ear_fast else c.look_w,
+                          self.rcfg) if c.gestures else None
+        if w is not None:
+            act.w = w
             return
         self._ear_fast = False
         self._phase_set("lauschen", t)
@@ -755,7 +758,7 @@ class PetBrain:
         goal = None
         if budget > self._stop_m() + 0.05:
             go = min(budget, CALL_LEG_M) - self._stop_m()
-            goal = (self.x + go * math.cos(self.yaw), self.y + go * math.sin(self.yaw))
+            goal = polar(self.x, self.y, go, self.yaw)
         log.info("pet: gerufen, suche vorn (Budget %.1f m)", budget)
         self._react(s.t, "like", "horch")
         self._task_start("suchen", s, goal)
@@ -1097,7 +1100,7 @@ class PetBrain:
             if s.balancing and person.dist is not None and (person.dist <= POS_DROP_M or self._last_pos is None):
                 d = min(person.dist, POS_CAP_M) if person.dist > 0 else CLOSE_M
                 a = self.yaw + person.bearing
-                self._last_pos = (self.x + d * math.cos(a), self.y + d * math.sin(a))
+                self._last_pos = polar(self.x, self.y, d, a)
         elif not self._gone_done and t - self._person_t >= c.gone_s:
             self._gone_done = True
             self.zone = None
@@ -1165,7 +1168,7 @@ class PetBrain:
         self._yaw_goal = None
         if name == "fahren":
             rest = math.hypot(self._goal[0] - self.x, self._goal[1] - self.y)
-            self._drive_t_max = t + 4.0 + 2.0 * rest / max(self.rcfg.v_of(self.cfg.drive_v) * self.rcfg.vx_limit, 1e-3)
+            self._drive_t_max = t + fahrzeit_s(rest, self.cfg.drive_v, self.rcfg, 1e-3)
 
     def _task_reset(self, t: float) -> None:
         self._seek_ear = self._ear_again = False
@@ -1328,9 +1331,10 @@ class PetBrain:
         """Rundumblick in look_steps Blicken: still stehen (Detektor, Bodenmodell), Freiraum merken, weiterdrehen."""
         c, t = self.cfg, s.t
         if self._yaw_goal is not None:
-            err = _wrap(self._yaw_goal - self.yaw)
-            if abs(err) > math.radians(6.0) and t - self._phase_t < 8.0:
-                act.w = dreh_w(err, c.turn_kp, c.look_w, self.rcfg)
+            w = dreh_auf_kurs(_wrap(self._yaw_goal - self.yaw), 6.0, t - self._phase_t, 8.0, c.turn_kp, c.look_w,
+                              self.rcfg)
+            if w is not None:
+                act.w = w
                 return
             self._yaw_goal, self._phase_t = None, t
             return
@@ -1379,7 +1383,7 @@ class PetBrain:
         for a, free in self._looks:
             if free is None or free < c.roam_free_min:
                 continue
-            ex, ey = self.x + leg * math.cos(a), self.y + leg * math.sin(a)
+            ex, ey = polar(self.x, self.y, leg, a)
             r = math.hypot(ex - hx, ey - hy)
             if r > self.roam_radius:
                 continue
@@ -1829,7 +1833,7 @@ class Pet(Behavior):
         r, d = self.h.inflate_m, 0.0
         while d + grid.res <= L:
             e = d + grid.res
-            if grid.wall_dist(x + e * math.cos(a), y + e * math.sin(a), r) < r:
+            if grid.wall_dist(*polar(x, y, e, a), r) < r:
                 return d
             d = e
         return L
@@ -1853,7 +1857,7 @@ class Pet(Behavior):
                 a, vor = a + math.pi, hin
                 b._goal_flip = None
         if vor < L or b._goal_flip is None:
-            g = (x + vor * math.cos(a), y + vor * math.sin(a))
+            g = polar(x, y, vor, a)
             b._goal = self._to_brain(w, g)
             self._nav_goal = g
         self._ray_for = self._nav_goal

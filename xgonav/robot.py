@@ -132,7 +132,7 @@ class SpeedCtrl:
             h.popleft()
         self.v_soll = sum(v for _, v in h) / len(h) * c.vx_limit
         self.v_ist = v_ist
-        d = (v_nominal > 0) - (v_nominal < 0)
+        d = 1 if v_nominal > 0 else -1 if v_nominal < 0 else 0     # auch für numpy-Werte
         if v_ist is None or abs(v_nominal) < FW_DEADBAND or d != self._dir:
             self.trim = 0.0
         else:

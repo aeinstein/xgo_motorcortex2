@@ -14,9 +14,12 @@ from __future__ import annotations
 import os
 import sys
 import time
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from xgonav.robot import NEUTRAL, norm_to_u8 as u8  # noqa: E402
 
 PROC = "/proc/XGORider"
-NEUTRAL = 128
 
 
 def write(name: str, value: int) -> None:
@@ -44,11 +47,6 @@ def yaw_deg() -> float:
 def stop() -> None:
     write("speed_x", NEUTRAL)
     write("speed_z", NEUTRAL)
-
-
-def u8(x: float) -> int:
-    x = max(-1.0, min(1.0, x))
-    return int(round(NEUTRAL + x * 127))
 
 
 def turn(deg: float, invert: bool, timeout: float = 12.0) -> None:

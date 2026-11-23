@@ -29,6 +29,7 @@ from . import fastlib, navfast
 from .config import GridCfg
 from .freespace import FreeSpace
 from .geometry import CamGeometry
+from .mathe import pose_compose
 
 log = logging.getLogger("xgonav.gridmap")
 
@@ -300,9 +301,7 @@ class GridMap:
     def shift_pose(self, k: tuple) -> None:
         """Kartenpose starr korrigieren (Kartenabgleich): Pose' = k ∘ Pose, k = (kx, ky, kth)."""
         with self._lock:
-            c, s = math.cos(k[2]), math.sin(k[2])
-            self.x, self.y, self.th = (k[0] + c * self.x - s * self.y, k[1] + s * self.x + c * self.y,
-                                       self.th + k[2])
+            self.x, self.y, self.th = pose_compose(k, (self.x, self.y, self.th))
 
     def mark_blocking(self, pts: np.ndarray) -> int:
         """Hindernispunkte (N x 2, Welt-m), vor denen die Bahnprüfung gerade bremst: gelten als bestätigt und
@@ -726,12 +725,8 @@ class GridWorker:
         ok, k = self.track.schritt(g, t, pose, fs, pd)
         if k is not None:
             g.shift_pose(k)
-            c, s = math.cos(k[2]), math.sin(k[2])
-
-            def um(p):
-                return (k[0] + c * p[0] - s * p[1], k[1] + s * p[0] + c * p[1], p[2] + k[2])
             with self._cond:
                 for i, (f, d, p, tt) in enumerate(self._q):
-                    self._q[i] = (f, d, um(p), tt)
-            pose = um(pose)
+                    self._q[i] = (f, d, pose_compose(k, p), tt)
+            pose = pose_compose(k, pose)
         return pose if ok else None

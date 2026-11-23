@@ -23,6 +23,7 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from xgonav.config import Config  # noqa: E402
 from xgonav.geometry import CamGeometry  # noqa: E402
+from xgonav.mathe import wrap  # noqa: E402
 from xgonav.startbild import Ansicht, messen  # noqa: E402
 
 
@@ -52,7 +53,7 @@ def relativ(a: tuple, b: tuple) -> tuple[float, float, float]:
     """Lage von b im KS von a (vor, links, Kurs Grad); Posen (x, y, rad)."""
     c, s = math.cos(a[2]), math.sin(a[2])
     dx, dy = b[0] - a[0], b[1] - a[1]
-    return c * dx + s * dy, -s * dx + c * dy, math.degrees((b[2] - a[2] + math.pi) % (2 * math.pi) - math.pi)
+    return c * dx + s * dy, -s * dx + c * dy, math.degrees(wrap(b[2] - a[2]))
 
 
 def tiefenbilder(ms: list[dict], i0: int, basen) -> list[int]:
