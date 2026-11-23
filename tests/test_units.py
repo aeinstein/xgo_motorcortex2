@@ -4198,3 +4198,23 @@ def test_mathe_bausteine_wie_frueher():
         xa, ya, tha = mathe.arc_step(xa, ya, tha, 0.3, 0.7, 0.12)
     assert (xa, ya, tha) == (x, y, th)
     assert mathe.wrap32(5 - (2 ** 32 - 3)) == 8
+
+
+def test_pathfollower_bremst_frueh_vor_dem_wegende():
+    """Seit 2026-11-23: Bremsweg-Profil auf den Restweg entlang des Wegs, um die Trägheit vorausgerechnet; schnell
+    beginnt er früher, weit weg bremst er nicht, kurz vor dem Ende bleibt end_min_v."""
+    from types import SimpleNamespace as NS
+    from xgonav.behaviors import PathFollower
+    cfg = Config.neutral()
+    rc, h = cfg.robot, cfg.home
+    f = PathFollower(cfg.behavior, rc, h, v=cfg.explore.v)
+    f.set_path([(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)])       # 3 m Weg, Luftlinie zum Ende 1 m
+    assert f.rest_m(0.0, 0.0) == pytest.approx(3.0) and f.rest_m(1.0, 0.5) == pytest.approx(1.5)
+    w = lambda v_rad: NS(v_rad=v_rad, cmd_v=0.0)
+    langsam, schnell = f.end_v(w(0.1), 0.5, 1.0), f.end_v(w(0.7), 0.5, 1.0)  # 0,5 m vor dem Ende
+    assert schnell < langsam                                             # schneller: früher bremsen
+    assert f.end_v(w(0.0), 0.0, 0.0) > rc.v_of(cfg.explore.v)            # 3 m vorher und steht: keine Grenze
+    assert f.end_v(w(0.7), 0.05, 1.0) == pytest.approx(rc.v_of(h.end_min_v))
+    # bei voller explore-Fahrt (0,4 absolut = 0,72 m/s) beginnt das Bremsen ~1,8 m vor dem Ende (vorher 0,9 m)
+    v_mps = rc.v_of(cfg.explore.v) * rc.vx_limit
+    assert f.end_v(w(v_mps), 1.0, 0.4) * rc.vx_limit < v_mps <= f.end_v(w(v_mps), 1.0, 0.15) * rc.vx_limit

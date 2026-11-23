@@ -2094,6 +2094,24 @@
        "hilfe": ""
       },
       {
+       "key": "end_decel_mps2",
+       "typ": "float",
+       "default": 0.25,
+       "hilfe": "Bremsen vor dem Wegende (PathFollower.drive, alle Fahrten mit Halt am Ende; explore nur ohne geplantes nächstes Ziel): Tempo höchstens sqrt(2 x end_decel_mps2 x s), s = Restweg entlang des Wegs minus Radtempo x end_lag_s (der Rider setzt einen Fahrwert erst nach ~0,7-1 s um, sonst bremst er zu spät), mindestens end_min_v (Anteil von robot.max_v), damit er ankommt. Seit 2026-11-23 (Nutzer: früher langsamer werden, wenn das Ende absehbar ist); vorher 0,45 x Luftlinie, höchstens bis home.v / 2, home ganz ohne."
+      },
+      {
+       "key": "end_lag_s",
+       "typ": "float",
+       "default": 1.0,
+       "hilfe": ""
+      },
+      {
+       "key": "end_min_v",
+       "typ": "float",
+       "default": 0.15,
+       "hilfe": ""
+      },
+      {
        "key": "near_m",
        "typ": "float",
        "default": 0.5,

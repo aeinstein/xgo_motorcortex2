@@ -345,6 +345,7 @@ All keys with comments: `PetCfg` in `xgonav/config.py`.
 | `margin_m` | 1.5 | search area = pose, start, driven path + margin |
 | `lookahead_m` | 0.5 | pure pursuit |
 | `arrive_m` | 0.15 | goal radius |
+| `end_decel_mps2` / `end_lag_s` / `end_min_v` | 0.25 / 1.0 / 0.15 | braking before the path end (every drive that stops there, also `home`/`patrol`; `explore` only without a planned next goal): speed ≤ √(2·a·s), s = remaining path length minus wheel speed × `end_lag_s` (the Rider applies a set-point only after ~0.7–1 s), at least `end_min_v` × `max_v`. Full `explore` speed starts braking ~1.8 m before the end (before 2026-11-23: 0.45 × straight-line distance, from ~0.9 m; `home` did not brake) |
 | `replan_s` | 2.0 | replan interval (also after 3 s without progress) |
 | `keep_factor` | 1.2 | keep the current path while free and ≤ factor × new path + 0.3 m (not after getting stuck) |
 | `use_localmap` | true | confirmed `LocalMap` points (same as the path check) are obstacles for planning |

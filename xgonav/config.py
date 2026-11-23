@@ -579,6 +579,14 @@ class HomeCfg:
     tight_center: bool = True
     tight_center_max_deg: float = 30.0
     arrive_m: float = 0.15
+    # Bremsen vor dem Wegende (PathFollower.drive, alle Fahrten mit Halt am Ende; explore nur ohne geplantes
+    # nächstes Ziel): Tempo höchstens sqrt(2 x end_decel_mps2 x s), s = Restweg entlang des Wegs minus
+    # Radtempo x end_lag_s (der Rider setzt einen Fahrwert erst nach ~0,7-1 s um, sonst bremst er zu spät),
+    # mindestens end_min_v (Anteil von robot.max_v), damit er ankommt. Seit 2026-11-23 (Nutzer: früher langsamer
+    # werden, wenn das Ende absehbar ist); vorher 0,45 x Luftlinie, höchstens bis home.v / 2, home ganz ohne.
+    end_decel_mps2: float = 0.25
+    end_lag_s: float = 1.0
+    end_min_v: float = 0.15
     # Festgefahren, aber so nah am Ziel: gilt als angekommen. Der Sicherheitsabstand der Bahnprüfung (0,18 m) lässt
     # ihn nicht an ein Ziel, neben dem etwas liegt, auch wenn das Ziel selbst frei ist (RiderPi 2026-11-06)
     near_m: float = 0.5

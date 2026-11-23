@@ -3263,6 +3263,11 @@ Sounds: <code>sound</code> true, <code>sound_dir</code> <code>/opt/xgonav/sounds
 <td>goal radius</td>
 </tr>
 <tr>
+<td><code>end_decel_mps2</code> / <code>end_lag_s</code> / <code>end_min_v</code></td>
+<td>0.25 / 1.0 / 0.15</td>
+<td>braking before the path end (every drive that stops there, also <code>home</code>/<code>patrol</code>; <code>explore</code> only without a planned next goal): speed ≤ √(2·a·s), s = remaining path length minus wheel speed × <code>end_lag_s</code> (the Rider applies a set-point only after ~0.7–1 s), at least <code>end_min_v</code> × <code>max_v</code>. Full <code>explore</code> speed starts braking ~1.8 m before the end (before 2026-11-23: 0.45 × straight-line distance, from ~0.9 m; <code>home</code> did not brake)</td>
+</tr>
+<tr>
 <td><code>replan_s</code></td>
 <td>2.0</td>
 <td>replan interval (also after 3 s without progress)</td>

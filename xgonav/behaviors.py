@@ -627,7 +627,6 @@ class PathFollower:
     # auf freier Strecke aus.
     PRESS_V, PRESS_M, PRESS_S = 0.08, 0.02, 2.5
     PRESS_AFTER_PUSH_S = 1.0
-    END_K = 0.45                    # normiertes v je m Rest bis zum Wegende (drive(slow_end=True))
 
     def __init__(self, cfg: BehaviorCfg, rcfg: RobotCfg, hcfg: HomeCfg, v: float | None = None):
         self.cfg, self.rcfg, self.h = cfg, rcfg, hcfg
@@ -802,9 +801,39 @@ class PathFollower:
             self.stuck = True
             self._anchor = None
 
-    def drive(self, w: World, label: str, slow_end: bool = False) -> Command:
-        """Fahrbefehl entlang des Wegs; label steht vorn im Status. slow_end: zum Wegende hin abbremsen
-        (END_K je m Rest, mindestens die Hälfte von home.v): Mit explore.v 0,30 rollte er über den
+    def rest_m(self, x: float, y: float) -> float:
+        """Restweg (m) entlang des Wegs ab der Projektion der Pose bis zum Ende."""
+        p = self.path
+        if len(p) == 1:
+            return math.hypot(p[0][0] - x, p[0][1] - y)
+        best, bi, bt = math.inf, 0, 0.0
+        for i in range(len(p) - 1):
+            ax, ay = p[i]
+            bx, by = p[i + 1]
+            dx, dy = bx - ax, by - ay
+            L2 = dx * dx + dy * dy
+            t = clamp(((x - ax) * dx + (y - ay) * dy) / L2, 0.0, 1.0) if L2 > 1e-12 else 0.0
+            d = math.hypot(ax + t * dx - x, ay + t * dy - y)
+            if d < best:
+                best, bi, bt = d, i, t
+        ax, ay = p[bi]
+        bx, by = p[bi + 1]
+        rest = (1.0 - bt) * math.hypot(bx - ax, by - ay)
+        for i in range(bi + 1, len(p) - 1):
+            rest += math.hypot(p[i + 1][0] - p[i][0], p[i + 1][1] - p[i][1])
+        return rest
+
+    def end_v(self, w: World, x: float, y: float) -> float:
+        """Höchster Fahrwert vor dem Wegende (home.end_*): Bremsweg-Profil auf den Restweg, um die Trägheit
+        (Radtempo x end_lag_s) vorausgerechnet."""
+        h, rc = self.h, self.rcfg
+        v_ist = w.v_rad if w.v_rad is not None else w.cmd_v * rc.vx_limit
+        s = max(0.0, self.rest_m(x, y) - max(0.0, v_ist) * h.end_lag_s)
+        return max(rc.v_of(h.end_min_v), math.sqrt(2.0 * h.end_decel_mps2 * s) / rc.vx_limit)
+
+    def drive(self, w: World, label: str, slow_end: bool = True) -> Command:
+        """Fahrbefehl entlang des Wegs; label steht vorn im Status. slow_end: zum Wegende hin rechtzeitig
+        abbremsen (end_v; aus nur, wenn er ohne Halt weiterfährt). Ohne: Mit explore.v 0,30 rollte er über den
         Ankunftsradius hinaus und pendelte am Startpunkt hin und her (Simulator 2026-11-11, ~60 s)."""
         hmm = self.cfg.height_cruise_mm
         x, y, th = w.pose
@@ -840,8 +869,7 @@ class PathFollower:
         if tight:
             v *= self.h.tight_v
         if slow_end:
-            rest = math.hypot(self.path[-1][0] - x, self.path[-1][1] - y)
-            v = min(v, max(0.5 * self.rcfg.v_of(self.h.v), self.END_K * rest))
+            v = min(v, self.end_v(w, x, y))
         return Command(v, wc, hmm, "%s (%+.0f°%s)" % (label, math.degrees(err), ", Lücke" if mitte else ", eng" if tight else ""),
                        extra={"tight": tight})
 
