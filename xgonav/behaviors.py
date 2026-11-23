@@ -6,6 +6,7 @@ Sicherheitsschicht hat immer das letzte Wort.
 """
 from __future__ import annotations
 
+import collections
 import logging
 import math
 import random
@@ -296,6 +297,8 @@ class Follow(Behavior):
         self.h = hcfg or HomeCfg()
         self.f = PathFollower(cfg, rcfg, self.h)
         self.last_pos: tuple[float, float] | None = None   # letzte Stelle des Ziels in der Raumkarte (m)
+        self._spur: collections.deque = collections.deque()  # (t, x, y) des Ziels in der Raumkarte, lost_vel_s lang
+        self.erwartet: tuple[float, float] | None = None   # erwartete Stelle (Anzeige in der Raumkarte)
         self.phase = ""               # "" | "fahren" | "umschauen" | "warten"
         self._goal: tuple[float, float] | None = None
         self._req = None
@@ -331,12 +334,39 @@ class Follow(Behavior):
         if self._req is not self._goal or self.phase != "fahren":
             return                                       # Ziel inzwischen ein anderes oder Suche vorbei
         if path is None:
+            if self._goal != self.last_pos and self.last_pos is not None and self.f.path is None:
+                # zur erwarteten Stelle kein Weg (Wand, Unbekanntes): dann zur zuletzt gesehenen
+                log.info("follow: zur erwarteten Stelle kein Weg, fahre zur letzten Stelle (%.2f, %.2f)", *self.last_pos)
+                self._goal = self.erwartet = self.last_pos
+                self._t_plan = -1e9
+                return
             self._fails += 1
             return                                       # alten Weg behalten, falls vorhanden
         self._fails = 0
         self.f.set_path(path)
 
+    @property
+    def ziel_anzeige(self) -> tuple[float, float] | None:
+        """Erwartete Stelle des verlorenen Ziels, solange er dorthin fährt oder sich dort umschaut (Raumkarte)."""
+        return self.erwartet if self.phase in ("fahren", "umschauen") else None
+
+    def _vorhersage(self, w: World) -> tuple[float, float]:
+        """Wohin das Ziel gegangen sein dürfte: letzte Stelle + Tempo (aus _spur) x lost_lead_s, gekappt."""
+        c = self.cfg
+        lx, ly = self.last_pos
+        sp = self._spur
+        if len(sp) < 2 or sp[-1][0] - sp[0][0] < 0.3:
+            return lx, ly
+        dt = sp[-1][0] - sp[0][0]
+        vx, vy = (sp[-1][1] - sp[0][1]) / dt, (sp[-1][2] - sp[0][2]) / dt
+        v = math.hypot(vx, vy)
+        if v < c.lost_lead_min_mps:
+            return lx, ly
+        d = min(v * c.lost_lead_s, c.lost_lead_max_m)
+        return lx + vx / v * d, ly + vy / v * d
+
     def _seek_reset(self) -> None:
+        self.erwartet = None
         self.phase, self._goal, self._req = "", None, None
         self.f.clear()
         self._fails = self._stucks = 0
@@ -357,26 +387,29 @@ class Follow(Behavior):
         if self.phase == "":
             lx, ly = self.last_pos
             d = math.hypot(lx - x, ly - y)
+            ex, ey = self.erwartet = self._vorhersage(w)
+            d = math.hypot(ex - x, ey - y)
             if d < c.lost_arrive_m:
-                self._look(w, "an der letzten Stelle")
+                self._look(w, "an der erwarteten Stelle")
             else:
-                self.phase, self._goal = "fahren", self.last_pos
+                self.phase, self._goal = "fahren", self.erwartet
                 self.n_seek += 1
                 self._fails = self._stucks = 0
                 self._t_plan = -1e9
                 self._drive_until = w.t + fahrzeit_s(d, self.f.v, self.rcfg)
-                log.info("follow: %s verloren, fahre zur letzten Stelle (%.2f, %.2f), %.2f m", self.cls, lx, ly, d)
+                log.info("follow: %s verloren, fahre zur erwarteten Stelle (%.2f, %.2f), %.2f m (zuletzt gesehen "
+                         "(%.2f, %.2f))", self.cls, ex, ey, d, lx, ly)
         if self.phase == "fahren":
             gx, gy = self._goal
             d = math.hypot(gx - x, gy - y)
             if d < c.lost_arrive_m:
-                self._look(w, "an der letzten Stelle")
+                self._look(w, "angekommen")
             elif self._fails >= self.PLAN_FAILS or self._stucks >= 2 or w.t > self._drive_until:
                 self._look(w, "kein Weg" if self._fails >= self.PLAN_FAILS else "festgefahren" if self._stucks >= 2 else "Zeit um")
             elif self.f.path is None:
-                return Command(0, 0, c.height_cruise_mm, "suche %s: plane Weg zur letzten Stelle" % self.cls)
+                return Command(0, 0, c.height_cruise_mm, "suche %s: plane Weg zur erwarteten Stelle" % self.cls)
             else:
-                cmd = self.f.drive(w, "suche %s: zur letzten Stelle %.2f m" % (self.cls, d), slow_end=True)
+                cmd = self.f.drive(w, "suche %s: zur erwarteten Stelle %.2f m" % (self.cls, d), slow_end=True)
                 cmd.height_mm = c.height_search_mm if abs(cmd.v) < 1e-6 else cmd.height_mm
                 return cmd
         if self.phase == "umschauen":
@@ -417,6 +450,10 @@ class Follow(Behavior):
                 x, y, th = w.pose
                 d, a = min(dist, self.cfg.lost_seek_max_m), th + err
                 self.last_pos = polar(x, y, d, a)
+                sp = self._spur
+                sp.append((w.t, *self.last_pos))
+                while sp and sp[0][0] < w.t - self.cfg.lost_vel_s:
+                    sp.popleft()
             fast = abs(v) > 0.6 * self.rcfg.max_v
             hmm = self.cfg.height_fast_mm if fast else self.cfg.height_cruise_mm
             st = "verfolge #%d %s (%+.0f°, %s)" % (tr.id, tr.cls, math.degrees(err),

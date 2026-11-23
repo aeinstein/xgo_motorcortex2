@@ -199,6 +199,8 @@ def serve(app: App, host: str, port: int, fps: int, render_cpus=None) -> Threadi
                                   "cam_fwd_m": round(g.cam_fwd, 4)}
                 gm = app.gridmap
                 body["plan"] = [] if gm is None else [[round(a, 3), round(b, 3)] for a, b in list(gm.plan)]
+                e = None if gm is None else gm.erwartet
+                body["erwartet"] = None if e is None else [round(e[0], 3), round(e[1], 3)]
                 body["aufzeichnung"] = None if app.rawrec is None else app.rawrec.status()
                 # Startbild live statt aus dem Snapshot: nach dem Absetzen (Bildverarbeitung oft aus) sofort weg
                 sb = getattr(app, "startbild", None)

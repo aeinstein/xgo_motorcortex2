@@ -896,6 +896,7 @@ class App:
                 self.behavior = self._make(name, target)
                 if self.gridmap is not None:
                     self.gridmap.plan = []
+                    self.gridmap.erwartet = None
                 log.info("Modus -> %s %s", name, target or "")
 
     def _drive(self, cmd: Command) -> None:
@@ -1515,6 +1516,7 @@ class App:
         if b.want_plan(w.t):
             self._plan_seq = b.request_plan(self.planner, self.gridmap, w, self._lmap_world(w.pose))
         self.gridmap.plan = list(b.path) if b.path else []
+        self.gridmap.erwartet = getattr(b, "ziel_anzeige", None)
         if b.name == "explore" and getattr(b, "done", False) and not self.gridmap.locked:
             self.gridmap.lock()                       # fertig kartiert: Fahrten ändern die Karte nicht mehr
             b.save_map = True

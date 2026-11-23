@@ -320,6 +320,14 @@ class BehaviorCfg:
     lost_seek: bool = True
     lost_seek_max_m: float = 4.0
     lost_arrive_m: float = 0.25
+    # Erwartete Stelle statt der zuletzt gesehenen (seit 2026-11-23, Nutzer): Tempo des Ziels in der Raumkarte über
+    # die letzten lost_vel_s; ging es schneller als lost_lead_min_mps, fährt er zur letzten Stelle + Tempo x
+    # lost_lead_s (höchstens lost_lead_max_m weiter). Kein Weg dorthin: zur zuletzt gesehenen Stelle. Die Stelle
+    # zeigt die Raumkarte (Ring orange) und /status erwartet. Gilt in follow und beim Folgen in pet.
+    lost_vel_s: float = 1.0
+    lost_lead_s: float = 1.5
+    lost_lead_max_m: float = 1.5
+    lost_lead_min_mps: float = 0.15
     lost_look_deg: float = 360.0
     lost_look_w: float = 0.20          # Anteil von robot.max_w
     # POST /turn (Handsteuerung: um einen Winkel drehen, MCP „drehen“/„rundblick“, rider_nav dreh): Drehrate

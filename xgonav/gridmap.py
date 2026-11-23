@@ -94,6 +94,7 @@ class GridMap:
             self._stats, self._stats_t = None, 0.0
             self.start = (0.0, 0.0, 0.0)                        # Startpunkt (x, y, th) im Karten-KS
             self.plan: list[tuple[float, float]] = []             # geplanter Weg (nur Anzeige, von App)
+            self.erwartet: tuple[float, float] | None = None      # erwartete Stelle eines verlorenen Ziels (Anzeige)
             self.map_id = secrets.token_hex(4)                    # Route und Zonen gehören zu genau dieser Karte
             self.locked = False                                   # gesperrt: Beobachtungen ändern die Karte nicht
             # False: Die Pose in der Karte ist unbekannt (getragen, gefallen, Neustart). Dann ändert nichts die
@@ -251,6 +252,7 @@ class GridMap:
             self.x, self.y, self.th = start
             self.path = [(start[0], start[1])]
             self.plan = []
+            self.erwartet = None
             self.map_id, self.locked = map_id, locked
             self.saved_pose = saved_pose
             self.route, self.route_loop, self.zones = [], False, []
@@ -575,6 +577,7 @@ class GridMap:
             x, y, th = self.x, self.y, self.th
             path = list(self.path)
             plan = list(self.plan)
+            erwartet = self.erwartet
             sx, sy, sth = self.start
             route, loop, zones = list(self.route), self.route_loop, list(self.zones)
             dark = list(self.dark_zones)
@@ -607,6 +610,12 @@ class GridMap:
             cv2.polylines(img, [np.array([to_px(a, b) for a, b in path], np.int32)], False, (60, 170, 60), 2)
         if len(plan) > 1:
             cv2.polylines(img, [np.array([to_px(a, b) for a, b in plan], np.int32)], False, (230, 210, 0), 2)
+        if erwartet is not None:                                         # erwartete Stelle des Ziels: Ring orange
+            q = to_px(*erwartet)
+            r_ = max(5, int(round(0.15 / self.res * k)))
+            cv2.circle(img, q, r_, (0, 140, 255), 2)
+            cv2.line(img, (q[0] - r_ // 2, q[1]), (q[0] + r_ // 2, q[1]), (0, 140, 255), 1)
+            cv2.line(img, (q[0], q[1] - r_ // 2), (q[0], q[1] + r_ // 2), (0, 140, 255), 1)
         for z in zones:                                                  # Sperrzonen rot, Route magenta
             cv2.polylines(img, [np.array([to_px(a, b) for a, b in z], np.int32)], True, (40, 40, 220), 2)
         for z in dark:                                                   # Dunkelzonen violett

@@ -1733,6 +1733,11 @@ class Pet(Behavior):
         return d.path if d is not None else self.f.path
 
     @property
+    def ziel_anzeige(self):
+        """Erwartete Stelle der verlorenen Person beim Folgen (Raumkarte), sonst None."""
+        return self.follow_drive.ziel_anzeige if self.follow_drive is not None else None
+
+    @property
     def pending(self) -> bool:
         d = self._drive
         return d.pending if d is not None else self._pending

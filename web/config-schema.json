@@ -1662,6 +1662,30 @@
        "hilfe": ""
       },
       {
+       "key": "lost_vel_s",
+       "typ": "float",
+       "default": 1.0,
+       "hilfe": "Erwartete Stelle statt der zuletzt gesehenen (seit 2026-11-23, Nutzer): Tempo des Ziels in der Raumkarte über die letzten lost_vel_s; ging es schneller als lost_lead_min_mps, fährt er zur letzten Stelle + Tempo x lost_lead_s (höchstens lost_lead_max_m weiter). Kein Weg dorthin: zur zuletzt gesehenen Stelle. Die Stelle zeigt die Raumkarte (Ring orange) und /status erwartet. Gilt in follow und beim Folgen in pet."
+      },
+      {
+       "key": "lost_lead_s",
+       "typ": "float",
+       "default": 1.5,
+       "hilfe": ""
+      },
+      {
+       "key": "lost_lead_max_m",
+       "typ": "float",
+       "default": 1.5,
+       "hilfe": ""
+      },
+      {
+       "key": "lost_lead_min_mps",
+       "typ": "float",
+       "default": 0.15,
+       "hilfe": ""
+      },
+      {
        "key": "lost_look_deg",
        "typ": "float",
        "default": 360.0,

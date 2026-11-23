@@ -181,6 +181,7 @@ Floor boundary from FloorNet only (`xgonav/freespace.py`, `docs/floornet.md`). T
 | `search_timeout_s` | 10.0 | | search without room map (turning in place), then wait |
 | `lost_seek` | true | | follow, target lost: drive to its last known position via the planner, then look around; needs room map + confirmed pose |
 | `lost_seek_max_m` / `lost_arrive_m` | 4.0 / 0.25 | | cap of the distance used for the last position / arrived there |
+| `lost_vel_s` / `lost_lead_s` / `lost_lead_max_m` / `lost_lead_min_mps` | 1.0 / 1.5 / 1.5 / 0.15 | | expected position instead of the last seen one (2026-11-23, also when following in `pet`): target speed in the room map over the last `lost_vel_s`; faster than `lost_lead_min_mps` → last position + speed × `lost_lead_s`, at most `lost_lead_max_m` further. No path there → last seen position. Shown in the room map (orange ring) and `/status` `erwartet` |
 | `lost_look_deg` / `lost_look_w` | 360 / 0.20 | | look around at the last position: angle, turn rate (factor of `max_w`) |
 | `blocked_free` / `slow_free` | 0.22 / 0.55 | |
 | `ttc_avoid_s` / `ttc_stop_s` | 1.2 / 0.8 | |

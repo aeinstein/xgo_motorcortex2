@@ -65,7 +65,7 @@ def test_verloren_plant_zur_letzten_stelle_und_schaut_um():
     assert math.isclose(goal[0], 2.0, abs_tol=0.05) and abs(goal[1]) < 0.05 and kw.get("clear_goal")
     f.set_path([(0.0, 0.0), (1.0, 0.0), (2.0, 0.0)])
     c = f.step(_welt(t + 0.05, pose))
-    assert c.v > 0 and "letzten Stelle" in c.status
+    assert c.v > 0 and "erwarteten Stelle" in c.status
     # am Ziel: umschauen, zur Seite der letzten Sichtung
     th, tt = 0.0, t + 5.0
     c = f.step(_welt(tt, (1.9, 0.0, th)))
@@ -248,3 +248,37 @@ def test_pet_fahrbefehl_roll_zurueck():
     app._cmd = Command(0.1, 0.0, None, "fährt")
     app._pet_tick()
     assert br.roll_deg == 0.0 and not br.rolled and br._gesture is None and rolls[-1] == 0.0 and levels == [1]
+
+
+def test_verloren_faehrt_zur_erwarteten_stelle():
+    """Seit 2026-11-23: ging die Person zuletzt seitlich, liegt das Ziel um Tempo x lost_lead_s weiter (gekappt);
+    die Raumkarte zeigt die Stelle (ziel_anzeige); ohne Weg dorthin zur zuletzt gesehenen Stelle."""
+    f, cfg = _follow()
+    b = cfg.behavior
+    pose = (0.0, 0.0, 0.0)
+    for i in range(11):                                        # 1 s lang nach links: Peilung wandert, 2 m Abstand
+        t = 0.1 * i
+        a = math.atan2(0.5 * t, 2.0)                          # 0,5 m/s quer
+        _sehen(f, t, pose, dist=math.hypot(2.0, 0.5 * t), cx=320.0 - a / (1.6 / 640))
+    lx, ly = f.last_pos
+    t = 1.0 + b.lost_search_s + 0.5
+    f.step(_welt(t, pose))
+    assert f.phase == "fahren" and f.ziel_anzeige is not None
+    ex, ey = f.erwartet
+    d = math.hypot(ex - lx, ey - ly)
+    assert ey > ly + 0.3 and d <= b.lost_lead_max_m + 1e-6               # weiter nach links, gekappt
+    assert f.want_plan(t)
+    f.request_plan(FakePlanner(), None, _welt(t, pose), None)
+    f.set_path(None)                                            # zur erwarteten Stelle kein Weg
+    assert f._goal == f.last_pos and f.erwartet == f.last_pos and f._fails == 0
+    c, _ = _sehen(f, t + 1.0, pose)
+    assert f.phase == "" and f.ziel_anzeige is None
+
+
+def test_stehende_person_keine_vorhersage():
+    f, cfg = _follow()
+    pose = (0.0, 0.0, 0.0)
+    for i in range(11):
+        _sehen(f, 0.1 * i, pose, dist=2.0)
+    f.step(_welt(1.0 + cfg.behavior.lost_search_s + 0.5, pose))
+    assert f.erwartet == f.last_pos

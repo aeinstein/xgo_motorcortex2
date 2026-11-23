@@ -55,6 +55,7 @@ Status JSON: `odom.src` = `räder` | `befehl`, `odom.m` = total distance.
 | dark | occupied |
 | green line | path |
 | cyan line | planned path (`home`) |
+| orange ring with cross | expected position of a lost target (`follow`, following in `pet`): where it should have gone (`behavior.lost_lead_s`) |
 | blue circle + line | start point and start heading |
 | red triangle | Rider pose |
 | yellow dots | short-term map (`localmap.py`) points, drawn only, never entered; gone once that map forgets them (`map.max_age_s`) or the pipeline stops |
