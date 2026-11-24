@@ -168,6 +168,9 @@ class Robot:
         self._level_on_t: float | None = None
         self._standup_levelled = False
         self._level_request = False
+        self._roll_cmd = 0                   # zuletzt geschriebener Rollbefehl (set_roll)
+        self._drive_level_on = False         # Nivellieren beim Fahren gerade an
+        self._straight_since: float | None = None
         self._stop_evt = threading.Event()
         self._thread: threading.Thread | None = None
         self.state = RobotState()
@@ -306,7 +309,8 @@ class Robot:
     def set_roll(self, deg: float) -> None:
         """Rollwinkel (Grad, −20..20); nicht während eines Nivellier-Impulses, der setzt ihn selbst."""
         if self._level_on_t is None and self.state.balancing:
-            self._write("roll", int(round(max(-20.0, min(20.0, deg)))))
+            self._roll_cmd = int(round(max(-20.0, min(20.0, deg))))
+            self._write("roll", self._roll_cmd)
 
     def set_height(self, mm: float) -> None:
         """Schreibt nur, wenn sich der eigene Sollwert ändert. Eine Höhe von außen (Web) bleibt so stehen,
@@ -423,6 +427,7 @@ class Robot:
             self._seen_down = True
             self._balancing_since = self._level_on_t = None
             self._standup_levelled = self._level_request = False
+            self._drive_level_on, self._straight_since, self._roll_cmd = False, None, 0   # Firmware setzt beim Absetzen zurück
             return
         if self._balancing_since is None:
             self._balancing_since = now
@@ -431,16 +436,37 @@ class Robot:
                 if now - self._level_on_t >= self.cfg.level_pulse_s:
                     self._write("roll_balance", 0)
                     self._level_on_t = None
+                    self._drive_level_on = False
                 return
             standup = self.cfg.level_after_standup and self._seen_down and not self._standup_levelled
             if (standup or self._level_request) and now - self._balancing_since >= 2.5:
                 self._write("roll", 0)
+                self._roll_cmd = 0
                 self._write("roll_balance", 1)
                 self._level_on_t = now
                 self._level_request = False
                 self._standup_levelled = True
+                self._straight_since = None
+                return
+            self._drive_level(now)
         except OSError as e:
             log.error("Nivellierung fehlgeschlagen: %s", e)
+
+    def _drive_level(self, now: float) -> None:
+        """Nivellieren beim Fahren (robot.level_while_driving): an nach level_drive_delay_s Geradeausfahrt, aus beim
+        Drehen, Anhalten, Rollbefehl oder einer Aktion der Firmware. Der Trimm bleibt danach stehen (Patch 0012)."""
+        v, w = self._cur
+        straight = (self.cfg.level_while_driving and self._roll_cmd == 0 and self._act is None
+                    and abs(v) >= FW_DEADBAND and abs(w) <= self.cfg.level_drive_w_max)
+        if not straight:
+            self._straight_since = None
+        elif self._straight_since is None:
+            self._straight_since = now
+        on = straight and now - self._straight_since >= self.cfg.level_drive_delay_s
+        if on != self._drive_level_on:
+            self._write("roll_balance", 1 if on else 0)
+            self._drive_level_on = on
+            log.debug("Nivellieren beim Fahren %s", "an" if on else "aus")
 
     def _ramp(self, target: tuple[float, float], now: float) -> None:
         dt = max(1e-3, now - self._last_ramp_t)

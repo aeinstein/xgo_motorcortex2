@@ -93,6 +93,24 @@
        "hilfe": ""
       },
       {
+       "key": "level_while_driving",
+       "typ": "bool",
+       "default": true,
+       "hilfe": "Nivellieren beim Fahren (Nutzer 2026-11-24: nach dem Drehen auf der Stelle bleibt ein Roll stehen): Fährt er level_drive_delay_s lang geradeaus (|v| über dem Totband, |w| <= level_drive_w_max, Rollbefehl 0), bleibt die Nivellierung der Firmware an, bis er dreht, anhält oder ein Rollbefehl kommt; der gefundene Trimm bleibt danach stehen (Patch 0012). Im Drehen nie: Fliehkraft und Dreh-Effekt (+1,8° links) wären sonst der Sollwert, die Firmware schaltet sie selbst ab ab Drehbefehl 128±16. Kosten am Pi: ein Vergleich je 0,2 s, Schreiben nur beim Wechsel."
+      },
+      {
+       "key": "level_drive_w_max",
+       "typ": "float",
+       "default": 0.06,
+       "hilfe": ""
+      },
+      {
+       "key": "level_drive_delay_s",
+       "typ": "float",
+       "default": 1.0,
+       "hilfe": ""
+      },
+      {
        "key": "accel_v",
        "typ": "float",
        "default": 0.8,

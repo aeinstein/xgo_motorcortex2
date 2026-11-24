@@ -952,6 +952,33 @@ def test_drive_faktor_mal_tempo_mal_max_v():
     r._cur = (-0.15, 0.0); r._send(time.monotonic() + 10)
     assert r._sent[0] == norm_to_u8(-0.15)                                         # rückwärts ohne Faktor
 
+def test_level_while_driving():
+    """Nivellieren beim Fahren: an nach 1 s geradeaus, aus beim Drehen, Anhalten und Rollbefehl."""
+    cfg = Config.neutral(); cfg.robot.level_while_driving = True
+    r = SimRobot(cfg.robot)
+    lv = lambda: [w[2] for w in r.writes if w[1] == "roll_balance"]
+    r.state.balancing = True
+    r._level_tick(0.0)
+    r._cur = (0.2, 0.0); r._level_tick(1.0); r._level_tick(1.8)
+    assert lv() == []                                     # noch keine Sekunde geradeaus
+    r._level_tick(2.0)
+    assert lv() == [1]
+    r._level_tick(3.0)
+    assert lv() == [1]                                    # nur beim Wechsel schreiben
+    r._cur = (0.2, 0.2); r._level_tick(3.2)
+    assert lv() == [1, 0]                                 # Kurve/Drehen: aus
+    r._cur = (0.2, 0.03); r._level_tick(3.4); r._level_tick(4.2)
+    assert lv() == [1, 0]                                 # nach dem Drehen erst wieder 1 s abwarten
+    r._level_tick(4.4)
+    assert lv() == [1, 0, 1]
+    r._cur = (0.0, 0.0); r._level_tick(5.0)
+    assert lv() == [1, 0, 1, 0]                           # Stillstand: aus, Trimm bleibt in der Firmware
+    r.set_roll(8.0); r._cur = (0.2, 0.0); r._level_tick(6.0); r._level_tick(8.0)
+    assert lv() == [1, 0, 1, 0]                           # Kopf schief (pet): nie
+    r.state.balancing = False; r._level_tick(9.0)
+    assert r._roll_cmd == 0 and not r._drive_level_on
+
+
 def test_level_pulse():
     """Impuls einmal je Aufstehen, nach dem Aufschwung und auf Knopfdruck; liegend nicht."""
     cfg = Config.neutral(); cfg.robot.level_after_standup = True; cfg.robot.level_pulse_s = 3.0

@@ -51,6 +51,15 @@ class RobotCfg:
     # Aufstehen (level_after_standup) und der Knopf im Web (POST /level).
     level_pulse_s: float = 3.0
     level_after_standup: bool = True
+    # Nivellieren beim Fahren (Nutzer 2026-11-24: nach dem Drehen auf der Stelle bleibt ein Roll stehen): Fährt er
+    # level_drive_delay_s lang geradeaus (|v| über dem Totband, |w| <= level_drive_w_max, Rollbefehl 0), bleibt die
+    # Nivellierung der Firmware an, bis er dreht, anhält oder ein Rollbefehl kommt; der gefundene Trimm bleibt
+    # danach stehen (Patch 0012). Im Drehen nie: Fliehkraft und Dreh-Effekt (+1,8° links) wären sonst der Sollwert,
+    # die Firmware schaltet sie selbst ab ab Drehbefehl 128±16. Kosten am Pi: ein Vergleich je 0,2 s, Schreiben nur
+    # beim Wechsel.
+    level_while_driving: bool = True
+    level_drive_w_max: float = 0.06
+    level_drive_delay_s: float = 1.0
     accel_v: float = 0.8           # max. Änderung von v pro Sekunde (normiert)
     accel_w: float = 2.0
     keepalive_s: float = 0.3       # Sollwert periodisch neu schreiben
@@ -1156,7 +1165,7 @@ UMBENANNT = {"freespace.shadow_net": "freespace.net"}
 # IMU (Vorzeichen/Versatz erst die Automatik, SimImu), Radmaßstab, Nivellieren der Firmware,
 # Detektor-Takt (FakeDetector), FloorNet (SimFloorNet), Display, CPU-Pinning. Fahr-, Dreh-, Verhaltens-, Karten- und
 # Taktwerte gehören NIE hierher.
-NEUTRAL = {"robot.level_after_standup": False,
+NEUTRAL = {"robot.level_after_standup": False, "robot.level_while_driving": False,
            "camera.sensor_mode": "", "camera.scaler_crop": [], "camera.lens_knots_px": [], "camera.lens_g_px": [],
            "camera.lens_center": [], "camera.lens_roll_deg": 0.0, "camera.lens_yaw_deg": 0.0,
            "camera.exposure_us": 4000, "camera.analogue_gain": 0.0, "camera.mount_offset_mm": 45.0,

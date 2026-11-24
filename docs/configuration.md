@@ -49,6 +49,7 @@ RiderPi = `deploy/config.example.toml` where it still differs (blank = default).
 | `tempo` | 1.0 | | start value of the speed slider: every drive and turn command of every mode is multiplied by it after the `max_v`/`max_w` clamp (`Robot.drive`); at runtime `POST /tempo?f=0.05..1` (web slider), until restart. Firmware actions run at their own speed |
 | `level_pulse_s` | 3.0 | | length of one leveling pulse (roll command 0, firmware `roll_balance` on, then off) |
 | `level_after_standup` | true (sim: false) | | one pulse after each stand-up, 2.5 s after it; web button „Neu ausrichten“ triggers the same pulse |
+| `level_while_driving` | true (sim: false) | | firmware leveling (0x61) on after `level_drive_delay_s` (1.0) of straight driving (\|w\| ≤ `level_drive_w_max` 0.06, roll command 0), off when turning, stopping or rolling; trim stays (patch 0012) |
 | `vx_limit` | 1.8 | | m/s per firmware unit (measured 2026-11-05: command 0.15 → ~27 cm/s); path check, follow prediction, odometry fallback |
 | `speed_ctrl` | true | | speed control on the wheels: sent value += ∫(target − wheel speed); target = sent value × `vx_limit`. Needs wheel odometry. Zero without fresh wheel data, at standstill, below the firmware dead band (0.05) and on a direction change. On at the RiderPi since 2026-11-13 |
 | `speed_ctrl_window_s` | 0.3 | | s, averaging window for wheel speed and target |
