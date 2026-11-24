@@ -1995,6 +1995,12 @@
 <td>one pulse after each stand-up, 2.5 s after it; web button „Neu ausrichten“ triggers the same pulse</td>
 </tr>
 <tr>
+<td><code>level_while_driving</code></td>
+<td>true (sim: false)</td>
+<td></td>
+<td>firmware leveling (0x61) on after <code>level_drive_delay_s</code> (1.0) of straight driving (|w| ≤ <code>level_drive_w_max</code> 0.06, roll command 0), off when turning, stopping or rolling; trim stays (patch 0012)</td>
+</tr>
+<tr>
 <td><code>vx_limit</code></td>
 <td>1.8</td>
 <td></td>
@@ -2144,6 +2150,12 @@
 <td>16.0 (sim: 0.0)</td>
 <td></td>
 <td>1..63.9, 0 = auto (auto max 8)</td>
+</tr>
+<tr>
+<td><code>gain_switch</code></td>
+<td>true (sim: false)</td>
+<td></td>
+<td>at <code>analogue_gain</code>: too bright (&gt; <code>gain_bright_frac</code> 0.05 of pixels ≥ <code>gain_sat_level</code> 250, or mean &gt; <code>gain_bright_mean</code> 120) → auto; auto at its limit (≥ <code>gain_auto_max</code> 8 − 0.5) and mean &lt; <code>gain_dark_mean</code> 70 → <code>analogue_gain</code>; <code>gain_dwell_s</code> 2, <code>gain_hold_s</code> 5; a manual web value pauses it (<code>xgonav/verstaerkung.py</code>)</td>
 </tr>
 <tr>
 <td><code>contrast</code>, <code>saturation</code>, <code>brightness</code></td>

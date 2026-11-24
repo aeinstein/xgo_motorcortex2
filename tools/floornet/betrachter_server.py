@@ -11,6 +11,8 @@ stage2.py, stage3.py und stage3_npz.py lesen die Liste. POST /gesichtet mit {"an
 POST /neu mit {"ansicht", "id", "prompt"[, "seed"]} (seed fehlt: zufällig) lässt das Bild von ComfyUI mit neuem Zufalls-Seed und der gewählten Prompt-Variante (leer = Standard) neu malen (neu_malen.py als eigener
 Prozess mit --python, immer nur einer zugleich); die alte Bearbeitung und ihre Masken werden überschrieben. Antwort:
 {"ok", "seed", "rows"} (neue Labelzeile je 8-px-Spalte).
+POST /hand mit {"ansicht", "id", "rows": [80 Zeilen 0..480]} schreibt eine von Hand gezogene Labellinie als Stage2- und
+Stage3-Maske (neu_malen.py --hand); das Grünbild in Stage1 bleibt. Antwort: {"ok", "rows"}.
 POST /name mit {"fahrt": "20261115-161345", "name": "Leiter umgefahren"} setzt den Anzeigenamen einer Fahrt in
 netz/namen.json (leerer Name löscht ihn). Umbenannt wird nur die Anzeige: Verzeichnisse, Bild-IDs, Labels und Listen
 hängen alle an der Kennung (Datum-Uhrzeit) und bleiben, wie sie sind.
@@ -51,6 +53,7 @@ _lock = threading.Lock()
 _neu_lock = threading.Lock()                                            # ComfyUI: ein Bild nach dem anderen
 NEU_CMD = [sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)), "neu_malen.py")]
 NEU_TIMEOUT_S = 180
+NCOLS, ZEILEN_H = 80, 480                                               # wie comfy_label.NCOLS, H (POST /hand)
 
 
 def pruefen(root: str, ansicht: str, bild: str) -> str:
@@ -106,6 +109,28 @@ def neu_malen(root: str, ansicht: str, bild: str, prompt: str = "", seed=None) -
         return "", dict(json.loads(p.stdout.strip().splitlines()[-1]))
     except (ValueError, IndexError):
         return "neu malen: unlesbare Antwort", {}
+
+
+def hand_linie(root: str, ansicht: str, bild: str, zeilen) -> tuple[str, dict]:
+    """Von Hand gezogene Labellinie als Stage2/3-Maske schreiben lassen (neu_malen.py --hand, eigener Prozess wegen
+    OpenCV). Rückgabe: Fehlertext ("" bei Erfolg) und die Antwort (rows, wie das Training die Maske liest)."""
+    fehler = pruefen(root, ansicht, bild)
+    if fehler:
+        return fehler, {}
+    if not isinstance(zeilen, list) or len(zeilen) != NCOLS or any(
+            isinstance(v, bool) or not isinstance(v, (int, float)) or not 0 <= v <= ZEILEN_H for v in zeilen):
+        return "Linie braucht %d Zahlen von 0 bis %d" % (NCOLS, ZEILEN_H), {}
+    try:
+        p = subprocess.run(NEU_CMD + ["--dir", root, "--hand", ansicht, bild], input=json.dumps(zeilen),
+                           capture_output=True, text=True, timeout=60)
+    except subprocess.TimeoutExpired:
+        return "Linie speichern dauerte zu lange", {}
+    if p.returncode != 0:
+        return "Linie speichern fehlgeschlagen: " + (p.stderr.strip().splitlines() or ["?"])[-1][:200], {}
+    try:
+        return "", dict(json.loads(p.stdout.strip().splitlines()[-1]))
+    except (ValueError, IndexError):
+        return "Linie speichern: unlesbare Antwort", {}
 
 
 def name_setzen(root: str, fahrt, name) -> tuple[str, dict]:
@@ -216,7 +241,7 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_error(400, "nur POST /aus oder /gesichtet mit kurzem JSON")
             return
         roh = self.rfile.read(n)                # erst lesen, sonst reißt die Verbindung beim Ablehnen ab
-        if self.path not in (*ZIELE, "/neu", "/name", "/prompt") or self.headers.get("Content-Type", "").split(";")[0].strip() != "application/json":
+        if self.path not in (*ZIELE, "/neu", "/hand", "/name", "/prompt") or self.headers.get("Content-Type", "").split(";")[0].strip() != "application/json":
             self.send_error(400, "nur POST /aus oder /gesichtet mit JSON")
             return
         antwort: dict = {}
@@ -226,6 +251,8 @@ class Handler(SimpleHTTPRequestHandler):
                 fehler, antwort["prompte"] = prompt_setzen(self.directory, d.get("name"), d.get("text"))
             elif self.path == "/name":
                 fehler, antwort["namen"] = name_setzen(self.directory, d.get("fahrt"), d.get("name"))
+            elif self.path == "/hand":
+                fehler, antwort = hand_linie(self.directory, d.get("ansicht"), d.get("id"), d.get("rows"))
             elif self.path == "/neu":
                 fehler, antwort = neu_malen(self.directory, d.get("ansicht"), d.get("id"), d.get("prompt") or "", d.get("seed"))
             elif self.path == "/gesichtet" and isinstance(d.get("ids"), list):

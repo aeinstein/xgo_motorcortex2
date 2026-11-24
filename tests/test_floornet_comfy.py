@@ -474,6 +474,44 @@ def test_betrachter_server_neu_malen(tmp_path, monkeypatch):
         srv.server_close()
 
 
+def test_neu_malen_hand_schreibt_masken(tmp_path):
+    """Linie von Hand -> Stage2/3-Masken; stage3_npz liest die gerundete Linie zurück, Stage1 bleibt, neu.jsonl hat sie."""
+    import neu_malen as NM
+    import stage3_npz as SN
+    (tmp_path / "stage1_p11" / "r").mkdir(parents=True)
+    (tmp_path / "stage1_p11" / "r" / "000001.png").write_bytes(b"gruen")
+    zeilen = [300.4] * 40 + [0] * 10 + [480] * 10 + [123.6] * 20
+    d = NM.hand(str(tmp_path), "p11", "r/000001", zeilen)
+    erwartet = [300.0] * 40 + [0.0] * 10 + [480.0] * 10 + [124.0] * 20
+    assert d["rows"] == erwartet
+    for st in ("stage2_p11", "stage3_p11"):
+        assert SN.rows_of(str(tmp_path / st / "r" / "000001.png")).tolist() == erwartet
+    assert (tmp_path / "stage1_p11" / "r" / "000001.png").read_bytes() == b"gruen"
+    e = json.loads((tmp_path / "stage1_p11" / "neu.jsonl").read_text(encoding="utf-8").splitlines()[-1])
+    assert e["id"] == "r/000001" and e["hand"] is True and e["rows"] == erwartet
+    with pytest.raises(ValueError):
+        NM.hand(str(tmp_path), "p11", "r/000001", [1.0] * 79)
+
+
+def test_betrachter_server_hand(tmp_path, monkeypatch):
+    """POST /hand prüft die Linie und reicht sie per stdin an neu_malen.py --hand (hier ein Ersatz)."""
+    import sys
+    import betrachter_server as BS
+    (tmp_path / "stage1_p11" / "r").mkdir(parents=True)
+    (tmp_path / "stage1_p11" / "r" / "000001.png").write_bytes(b"x")
+    ersatz = tmp_path / "ersatz.py"
+    ersatz.write_text("import json, sys\nz = json.loads(sys.stdin.read())\n"
+                      "print(json.dumps({'id': sys.argv[-1], 'rows': z, 'args': sys.argv[1:]}))\n", encoding="utf-8")
+    monkeypatch.setattr(BS, "NEU_CMD", [sys.executable, str(ersatz)])
+    root = str(tmp_path)
+    f, d = BS.hand_linie(root, "p11", "r/000001", [200] * 80)
+    assert f == "" and d["rows"] == [200] * 80 and d["args"] == ["--dir", root, "--hand", "p11", "r/000001"]
+    for schlecht in ([200] * 79, [200] * 79 + ["1"], [200] * 79 + [True], [200] * 79 + [481], [200] * 79 + [-1],
+                     [200] * 79 + [float("nan")], "200", None):
+        assert BS.hand_linie(root, "p11", "r/000001", schlecht)[0].startswith("Linie braucht"), schlecht
+    assert BS.hand_linie(root, "p11", "r/000002", [200] * 80)[0] == "Bild gibt es in dieser Ansicht nicht"
+
+
 def test_betrachter_server_name_setzen(tmp_path):
     """POST /name: Anzeigename je Fahrt in netz/namen.json, leer löscht ihn; nur vorhandene Fahrten, kurze Namen."""
     import betrachter_server as BS

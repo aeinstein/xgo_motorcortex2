@@ -11,6 +11,11 @@ für diese Bilder nicht mehr. --prompt wählt eine Variante für die Situation i
 bearbeitbar, betrachter_server.py legt sie beim Start aus den Dateien hier an), sonst comfy_promptx.txt oder
 comfy_prompt_x.txt neben diesem Skript; eine neue Variante ist eine neue Datei plus ein Eintrag in der Auswahl von
 netz_betrachter.html. Letzte Zeile der Ausgabe: JSON {"id", "seed", "rows"} (Labelzeile je 8-px-Spalte wie stage3_npz.py).
+
+  echo '[300, 300, ...]' | python tools/floornet/neu_malen.py --hand p11 explore10/005842
+
+--hand malt nicht, sondern schreibt eine von Hand gezogene Linie (80 Zeilen, Taste H im Netz-Betrachter) als Stage2-
+und Stage3-Maske; Stage1 bleibt. Protokoll ebenfalls in neu.jsonl ({"id", "hand": true, "zeit", "rows"}).
 """
 from __future__ import annotations
 
@@ -71,6 +76,33 @@ def neu(root: str, ansicht: str, bild: str, seed: int, data: str = "", variante:
     return {"id": bild, "seed": seed, "rows": rows}
 
 
+def hand(root: str, ansicht: str, bild: str, zeilen: list) -> dict:
+    """Labellinie von Hand (Taste H im Netz-Betrachter, POST /hand): je 8-px-Streifen ab der Zeile bis unten Boden, als
+    Stage2- und Stage3-Maske. Das Grünbild in Stage1 bleibt, wie Qwen es gemalt hat; die Linie steht in neu.jsonl
+    ("hand": true), die letzte Zeile je Bild gilt, ein späteres N ersetzt sie also wieder."""
+    import comfy_label as C
+    import cv2
+    import numpy as np
+
+    a = ANSICHT[ansicht]
+    if len(zeilen) != C.NCOLS:
+        raise ValueError("Linie braucht %d Werte" % C.NCOLS)
+    top = np.clip(np.rint(np.asarray(zeilen, np.float64)), 0, C.H).astype(int)
+    m = np.arange(C.H)[:, None] >= np.repeat(top, C.W // C.NCOLS)[None, :]
+    bild_m = m.astype(np.uint8) * 255
+    for k in ("stage2", "stage3"):
+        ziel = os.path.join(root, a[k], bild + ".png")
+        os.makedirs(os.path.dirname(ziel), exist_ok=True)
+        tmp = ziel + ".tmp.png"
+        if not cv2.imwrite(tmp, bild_m):
+            raise RuntimeError("Maske ließ sich nicht schreiben")
+        os.replace(tmp, ziel)
+    rows = [round(float(v), 1) for v in C.mask_rows(m)]
+    with open(os.path.join(root, a["stage1"], LOG), "a", encoding="utf-8", newline="\n") as f:
+        f.write(json.dumps({"id": bild, "hand": True, "zeit": time.strftime("%Y-%m-%d %H:%M:%S"), "rows": rows}) + "\n")
+    return {"id": bild, "rows": rows}
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("ansicht", choices=sorted(ANSICHT))
@@ -78,7 +110,11 @@ def main() -> int:
     ap.add_argument("--dir", default=os.path.expanduser("~/floornet"))
     ap.add_argument("--seed", type=int, default=0, help="0 = zufällig")
     ap.add_argument("--prompt", default="", help="Prompt-Variante (11, t1, t2, ...); ohne: Prompt der Ansicht")
+    ap.add_argument("--hand", action="store_true", help="nicht malen: Linie (JSON-Liste, 80 Zeilen) von stdin als Maske schreiben")
     a = ap.parse_args()
+    if a.hand:
+        print(json.dumps(hand(os.path.abspath(a.dir), a.ansicht, a.bild, json.loads(sys.stdin.read()))))
+        return 0
     seed = a.seed or random.randrange(2, 2 ** 31)
     print(json.dumps(neu(os.path.abspath(a.dir), a.ansicht, a.bild, seed, variante=a.prompt)))
     return 0

@@ -49,7 +49,7 @@
   <div class="zeile">
     <span id="id"></span><span id="pos"></span><span id="aus"></span><span id="sendfehler" style="color:#e44"></span>
     <span id="tasten"><button type="button">Tasten</button>
-      <span id="hilfe">← voriges · nächstes →<br>Bild auf/ab: ±20<br>F Fläche an/aus · K Karte an/aus<br>R Fahrt umbenennen<span id="hilfeaus"><br>X aussortieren · U zurückholen<br>N neu malen (ComfyUI; erst letzter Seed, dann neuer)<br>1–3 Prompt wählen · P Prompt bearbeiten<br>G Gesichtete zeigen</span></span></span>
+      <span id="hilfe">← voriges · nächstes →<br>Bild auf/ab: ±20<br>F Fläche an/aus · K Karte an/aus<br>R Fahrt umbenennen<span id="hilfeaus"><br>X aussortieren · U zurückholen<br>N neu malen (ComfyUI; erst letzter Seed, dann neuer)<br>1–3 Prompt wählen · P Prompt bearbeiten<br>G Gesichtete zeigen<br>H Linie von Hand: im Netzbild ziehen (unter den Rand = kein Boden),<br>M Netzlinie übernehmen · Strg+Z zurück · Enter/S speichern · Esc verwerfen</span></span></span>
   </div>
   <div class="zeile">
     <label>Netz <select id="lauf"></select></label>
@@ -63,6 +63,7 @@
       <option value="11">3 · Prompt 11 (nur blanker Boden)</option>
     </select></label>
     <button id="pbearbeiten" style="visibility: hidden" title="Text des gewählten Prompts ändern (P)">Prompt bearbeiten</button>
+    <button id="hbutton" style="visibility: hidden" title="Labellinie selbst ziehen, wenn Qwen sie nicht trifft (H)">Linie von Hand</button>
   </div>
 </div>
 <div id="text"></div>
@@ -131,10 +132,15 @@ function zeichnen() {
   const zeile = D.rows[pos], n = zeile.length;
   const pkt = [];
   for (let c = 0; c < n; c++) if (zeile[c] !== null) pkt.push([(c + 0.5) * B / n, zeile[c]]);
-  if (!pkt.length) return;
+  if (pkt.length) netzZeichnen(pkt);
+  labelZeichnen();
+  handZeichnen();
+}
+
+function netzZeichnen(pkt) {
   pkt.unshift([0, pkt[0][1]]);
   pkt.push([B, pkt[pkt.length - 1][1]]);
-  if (flaeche) {
+  if (flaeche && !hand) {
     cx.beginPath();
     cx.moveTo(0, H);
     for (const [x, y] of pkt) cx.lineTo(x, y);
@@ -148,10 +154,13 @@ function zeichnen() {
   cx.strokeStyle = "#f0f";
   cx.lineWidth = 2;
   cx.stroke();
-  if (D.label) {                                   // Label: grün
+}
+
+function labelZeichnen() {
+  if (D.label) {                                   // Label: grün (beim Zeichnen von Hand dünn, zum Vergleich)
     const l = D.label[pos], m = l.length;
     cx.strokeStyle = "#0f0";
-    cx.lineWidth = 2;
+    cx.lineWidth = hand ? 1 : 2;
     cx.beginPath();
     let an = false;
     for (let c = 0; c < m; c++) {
@@ -197,7 +206,8 @@ function planZeichnen() {
 function kennung(i) { return D.fahrt + "/" + D.files[i].replace(/\.jpg$/, ""); }
 
 function ausZeigen() {
-  document.getElementById("aus").textContent = D && D.ansicht && aus.has(kennung(pos)) ? "aussortiert" : "";
+  const id = D && D.ansicht ? kennung(pos) : "";
+  document.getElementById("aus").textContent = !id ? "" : aus.has(id) ? "aussortiert" : handIds.has(id) ? "Linie von Hand" : "";
 }
 
 function handlisteLaden() {                      // Zeilen "id" (aus) und "-id" (zurückgeholt), die letzte gilt
@@ -267,8 +277,12 @@ function neuLaden() {                            // neu.jsonl der Ansicht: neu g
       if (!z.trim()) continue;
       let e;
       try { e = JSON.parse(z); } catch (x) { continue; }
-      neuStand.set(e.id, e.seed);                // andere Adresse fürs Grünbild: der Browser hält das alte einen Tag
-      if (Number.isInteger(e.seed) && e.seed > 1) letzterSeed = e.seed;
+      if (e.hand) handIds.add(e.id);             // Linie von Hand: kein Seed, Grünbild unverändert
+      else {
+        handIds.delete(e.id);
+        neuStand.set(e.id, e.seed);              // andere Adresse fürs Grünbild: der Browser hält das alte einen Tag
+        if (Number.isInteger(e.seed) && e.seed > 1) letzterSeed = e.seed;
+      }
       if (stelle.has(e.id) && d.label && Array.isArray(e.rows)) d.label[stelle.get(e.id)] = e.rows;
     }
     if (D === d) { zeigen(pos); zeichnen(); }
@@ -283,7 +297,7 @@ const seedProbiert = new Set();                  // Bilder, bei denen der letzte
 const neuStand = new Map();                      // ID -> Seed der neuesten Bearbeitung, gegen den Zwischenspeicher
 
 function neuMalen() {
-  if (!D || !D.ansicht || !D.label || malt) return;
+  if (!D || !D.ansicht || !D.label || malt || hand) return;
   const id = kennung(pos), i = pos, daten = D, feld = document.getElementById("aus");
   malt = true;
   const seed = letzterSeed && !seedProbiert.has(id) && neuStand.get(id) !== letzterSeed ? letzterSeed : 0;
@@ -296,11 +310,113 @@ function neuMalen() {
       malt = false;
       if (!d.ok) { feld.textContent = "Fehler: " + d.fehler; return; }
       daten.label[i] = d.rows;
+      handIds.delete(id);
       neuStand.set(id, d.seed);
       letzterSeed = d.seed;
       if (D === daten && pos === i) { zeigen(pos); zeichnen(); feld.textContent = "neu gemalt, Seed " + d.seed + ", " + elPrompt.options[elPrompt.selectedIndex].textContent; }
     }).catch(() => { malt = false; feld.textContent = "Fehler: Server antwortet nicht"; });
 }
+
+// Labellinie von Hand (Nutzer 2026-11-24: wenn Qwen die Grenze auch nach vielem N nicht trifft). H startet mit der
+// grünen Linie, Ziehen setzt je 8-px-Streifen die Zeile, M nimmt die Netzlinie, Strg+Z einen Zug zurück, Enter/S
+// speichert (POST /hand -> Stage2/3-Maske, Grünbild bleibt), Esc verwirft. Unter dem Bildrand: 480 = kein Boden.
+let hand = null, handStapel = [], handLetzt = null, handSpeichert = false;
+const handIds = new Set();                       // Bilder, deren gültige Linie von Hand stammt (neu.jsonl, "hand")
+const NSTREIFEN = 80;
+
+function handStarten() {
+  if (!D || !D.ansicht || !D.label || hand || malt) return;
+  hand = D.label[pos].map((v) => v === null ? H : v);
+  handStapel = [];
+  cv.style.cursor = "crosshair";
+  cv.style.touchAction = "none";
+  document.getElementById("aus").textContent = "Linie von Hand: ziehen · M Netzlinie · Strg+Z zurück · Enter speichern · Esc verwerfen";
+  zeichnen();
+}
+
+function handEnde(meldung) {
+  hand = null; handStapel = []; handLetzt = null;
+  cv.style.cursor = ""; cv.style.touchAction = "";
+  ausZeigen();
+  if (meldung) document.getElementById("aus").textContent = meldung;
+  zeichnen();
+}
+
+function handZeichnen() {
+  if (!hand) return;
+  cx.strokeStyle = "#f90";
+  cx.lineWidth = 3;
+  cx.beginPath();
+  hand.forEach((y, c) => c ? cx.lineTo((c + 0.5) * B / NSTREIFEN, y) : cx.moveTo((c + 0.5) * B / NSTREIFEN, y));
+  cx.stroke();
+}
+
+function handPunkt(e) {                          // Mausposition -> Bildpunkt in 640x480
+  const r = cv.getBoundingClientRect();
+  return [(e.clientX - r.left) * B / r.width, Math.max(0, Math.min(H, (e.clientY - r.top) * H / r.height))];
+}
+
+function handSetzen([x, y]) {                    // von der letzten Stelle bis hierher jeden Streifen auffüllen
+  const [x0, y0] = handLetzt || [x, y];
+  const c0 = Math.floor(x0 * NSTREIFEN / B), c1 = Math.floor(x * NSTREIFEN / B);
+  const lo = Math.max(0, Math.min(c0, c1)), hi = Math.min(NSTREIFEN - 1, Math.max(c0, c1));
+  for (let c = lo; c <= hi; c++) {
+    const t = c1 === c0 ? 1 : (c - c0) / (c1 - c0);
+    hand[c] = Math.round(y0 + Math.max(0, Math.min(1, t)) * (y - y0));
+  }
+  handLetzt = [x, y];
+  zeichnen();
+}
+
+cv.addEventListener("pointerdown", (e) => {
+  if (!hand || e.button !== 0) return;
+  handStapel.push(hand.slice());
+  handLetzt = null;
+  cv.setPointerCapture(e.pointerId);
+  handSetzen(handPunkt(e));
+  e.preventDefault();
+});
+cv.addEventListener("pointermove", (e) => { if (hand && handLetzt && e.buttons & 1) handSetzen(handPunkt(e)); });
+cv.addEventListener("pointerup", () => { handLetzt = null; });
+cv.addEventListener("pointercancel", () => { handLetzt = null; });
+
+function handNetz() {                            // Netzlinie übernehmen (Streifen ohne Netzwert bleiben)
+  const z = D.rows[pos];
+  handStapel.push(hand.slice());
+  for (let c = 0; c < NSTREIFEN; c++) {
+    const v = z[Math.floor(c * z.length / NSTREIFEN)];
+    if (v !== null && v !== undefined) hand[c] = Math.round(v);
+  }
+  zeichnen();
+}
+
+function handSpeichern() {
+  if (!hand || handSpeichert) return;
+  const id = kennung(pos), i = pos, daten = D, feld = document.getElementById("aus");
+  handSpeichert = true;
+  feld.textContent = "Linie wird gespeichert …";
+  fetch("/hand", { method: "POST", headers: { "Content-Type": "application/json" },
+                   body: JSON.stringify({ ansicht: D.ansicht, id: id, rows: hand }) })
+    .then((r) => r.json()).then((d) => {
+      handSpeichert = false;
+      if (!d.ok) { feld.textContent = "Fehler: " + d.fehler + " (Linie noch offen)"; return; }
+      daten.label[i] = d.rows;
+      handIds.add(id);
+      if (D === daten && pos === i) handEnde("Linie von Hand gespeichert");
+    }).catch(() => { handSpeichert = false; feld.textContent = "Fehler: Server antwortet nicht (Linie noch offen)"; });
+}
+
+function handTaste(e) {                          // Tasten im Handmodus
+  if (e.key === "Escape") handEnde("Linie verworfen");
+  else if (e.key === "Enter" || e.key === "s" || e.key === "S") handSpeichern();
+  else if (e.key === "m" || e.key === "M") handNetz();
+  else if ((e.key === "z" || e.key === "Z") && (e.ctrlKey || e.metaKey)) { if (handStapel.length) { hand = handStapel.pop(); zeichnen(); } }
+  else if (e.key === "f" || e.key === "F") { flaeche = !flaeche; zeichnen(); }
+  else if (e.key === "k" || e.key === "K") { karte = !karte; zeichnen(); }
+  else return;                                   // alles andere (Blättern, X, N, …) ist im Handmodus gesperrt
+  e.preventDefault();
+}
+document.getElementById("hbutton").onclick = (e) => { e.target.blur(); handStarten(); };
 
 const pdialog = document.getElementById("pdialog"), ptext = document.getElementById("ptext");
 const pinfo = document.getElementById("pinfo");
@@ -352,6 +468,7 @@ function zeigen(p) {
 }
 
 function fahrtLaden(datei) {                     // datei: Bild, bei dem begonnen wird; fehlt es, bleibt die Stelle
+  if (hand) handEnde("Linie verworfen");
   const lauf = elLauf.value, fahrt = elFahrt.value;
   const anteil = D && D.files.length > 1 ? pos / (D.files.length - 1) : 0;
   const gleich = D && D.fahrt === fahrt ? D.files[pos] : datei;
@@ -385,6 +502,7 @@ function fahrtFertig(lauf, gleich, anteil) {
     document.getElementById("hilfeaus").style.display = D.ansicht ? "" : "none";
     document.getElementById("promptwahl").style.visibility = D.ansicht && D.label ? "visible" : "hidden";
     document.getElementById("pbearbeiten").style.visibility = D.ansicht && D.label ? "visible" : "hidden";
+    document.getElementById("hbutton").style.visibility = D.ansicht && D.label ? "visible" : "hidden";
     document.getElementById("legende").textContent = (D.netz ? " (Netz " + D.netz + ")" : "") + (D.label ? ", grün Label" : "") + (D.karte ? ", gelb Raumkarte" : "");
     handlisteLaden();
     neuLaden();
@@ -420,6 +538,7 @@ elFahrt.onchange = () => { D = null; fahrtLaden(); elFahrt.blur(); };
 elGesehen.onchange = () => { gesichtetSenden(); D = null; fahrtLaden(); };
 addEventListener("keydown", (e) => {
   if (pdialog.open) return;                      // im Prompt-Feld tippen löst keine Tasten aus (Esc schließt)
+  if (hand) { handTaste(e); return; }
   // Auswahlliste im Fokus: Buchstaben und Pfeile wären dort Schnellwahl (U sprang 2026-11-20 auf eine Fahrt mit U),
   // hier gelten sie nur als Tasten des Betrachters. Tab, Enter, Leertaste und Pfeil hoch/runter bleiben der Liste.
   if (e.target.tagName === "SELECT" && !e.ctrlKey && !e.altKey && !e.metaKey &&
@@ -435,6 +554,7 @@ addEventListener("keydown", (e) => {
   if (e.key === "x" || e.key === "X") aussortieren(true);
   if (e.key === "u" || e.key === "U") aussortieren(false);
   if (e.key === "n" || e.key === "N") neuMalen();
+  if (e.key === "h" || e.key === "H") { handStarten(); e.preventDefault(); }
   if ((e.key === "p" || e.key === "P") && D && D.ansicht && D.label) { promptBearbeiten(); e.preventDefault(); }
   if ((e.key === "g" || e.key === "G") && D && D.sichten) { elGesehen.checked = !elGesehen.checked; elGesehen.onchange(); }
   if (D && D.ansicht && "123".includes(e.key) && elPrompt.options[+e.key - 1]) elPrompt.selectedIndex = +e.key - 1;
