@@ -397,7 +397,8 @@ function handSpeichern() {
   feld.textContent = "Linie wird gespeichert …";
   fetch("/hand", { method: "POST", headers: { "Content-Type": "application/json" },
                    body: JSON.stringify({ ansicht: D.ansicht, id: id, rows: hand }) })
-    .then((r) => r.json()).then((d) => {
+    .then((r) => r.json().catch(() => ({ ok: false, fehler: "Server kennt /hand nicht (HTTP " + r.status + ", betrachter_server.py neu starten)" })))
+    .then((d) => {
       handSpeichert = false;
       if (!d.ok) { feld.textContent = "Fehler: " + d.fehler + " (Linie noch offen)"; return; }
       daten.label[i] = d.rows;
