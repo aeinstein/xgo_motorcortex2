@@ -49,7 +49,7 @@
   <div class="zeile">
     <span id="id"></span><span id="pos"></span><span id="aus"></span><span id="sendfehler" style="color:#e44"></span>
     <span id="tasten"><button type="button">Tasten</button>
-      <span id="hilfe">← voriges · nächstes →<br>Bild auf/ab: ±20<br>F Fläche an/aus · K Karte an/aus<br>R Fahrt umbenennen<span id="hilfeaus"><br>X aussortieren · U zurückholen<br>N neu malen (ComfyUI; erst letzter Seed, dann neuer)<br>1–3 Prompt wählen · P Prompt bearbeiten<br>G Gesichtete zeigen<br>H Linie von Hand: im Netzbild ziehen (unter den Rand = kein Boden),<br>M Netzlinie übernehmen · Strg+Z zurück · Enter/S speichern · Esc verwerfen</span></span></span>
+      <span id="hilfe">← voriges · nächstes →<br>Bild auf/ab: ±20<br>F Fläche an/aus · K Karte an/aus<br>R Fahrt umbenennen<span id="hilfeaus"><br>X aussortieren · U zurückholen<br>N neu malen (ComfyUI; erst letzter Seed, dann neuer)<br>1–3 Prompt wählen · P Prompt bearbeiten<br>G Gesichtete zeigen<br>H Linie von Hand: im Netzbild ziehen (unter den Rand = kein Boden),<br>Shift halten = Anker, Klick = Gerade bis dahin (weiter: Streckenzug)<br>M Netzlinie übernehmen · Strg+Z zurück · Enter/S speichern · Esc verwerfen</span></span></span>
   </div>
   <div class="zeile">
     <label>Netz <select id="lauf"></select></label>
@@ -318,7 +318,7 @@ function neuMalen() {
 }
 
 // Labellinie von Hand (Nutzer 2026-11-24: wenn Qwen die Grenze auch nach vielem N nicht trifft). H startet mit der
-// grünen Linie, Ziehen setzt je 8-px-Streifen die Zeile, M nimmt die Netzlinie, Strg+Z einen Zug zurück, Enter/S
+// grünen Linie, Ziehen setzt je 8-px-Streifen die Zeile (Shift: Gerade, siehe anker), M nimmt die Netzlinie, Strg+Z einen Zug zurück, Enter/S
 // speichert (POST /hand -> Stage2/3-Maske, Grünbild bleibt), Esc verwirft. Unter dem Bildrand: 480 = kein Boden.
 let hand = null, handStapel = [], handLetzt = null, handSpeichert = false;
 const handIds = new Set();                       // Bilder, deren gültige Linie von Hand stammt (neu.jsonl, "hand")
@@ -330,12 +330,12 @@ function handStarten() {
   handStapel = [];
   cv.style.cursor = "crosshair";
   cv.style.touchAction = "none";
-  document.getElementById("aus").textContent = "Linie von Hand: ziehen · M Netzlinie · Strg+Z zurück · Enter speichern · Esc verwerfen";
+  document.getElementById("aus").textContent = "Linie von Hand: ziehen · Shift + Klick gerade · M Netzlinie · Strg+Z zurück · Enter speichern · Esc verwerfen";
   zeichnen();
 }
 
 function handEnde(meldung) {
-  hand = null; handStapel = []; handLetzt = null;
+  hand = null; handStapel = []; handLetzt = null; anker = null;
   cv.style.cursor = ""; cv.style.touchAction = "";
   ausZeigen();
   if (meldung) document.getElementById("aus").textContent = meldung;
@@ -349,6 +349,7 @@ function handZeichnen() {
   cx.beginPath();
   hand.forEach((y, c) => c ? cx.lineTo((c + 0.5) * B / NSTREIFEN, y) : cx.moveTo((c + 0.5) * B / NSTREIFEN, y));
   cx.stroke();
+  ankerZeichnen();
 }
 
 function handPunkt(e) {                          // Mausposition -> Bildpunkt in 640x480
@@ -368,15 +369,59 @@ function handSetzen([x, y]) {                    // von der letzten Stelle bis h
   zeichnen();
 }
 
+// Gerade Linie (Nutzer 2026-11-24): Shift drücken setzt den Anker an die Mausstelle, Klick zieht die Gerade vom Anker
+// bis dorthin; der Klickpunkt wird neuer Anker, solange Shift gehalten bleibt (Streckenzug). Shift loslassen: Anker weg.
+// Steht die Maus beim Drücken nicht im Bild, setzt erst der erste Shift-Klick den Anker.
+let anker = null, maus = null;
+
+function ankerZeichnen() {
+  if (!hand || !anker) return;
+  cx.strokeStyle = cx.fillStyle = "#f90";
+  cx.lineWidth = 1.5;
+  cx.beginPath(); cx.arc(anker[0], anker[1], 4, 0, 7); cx.fill();
+  if (!maus) return;
+  cx.setLineDash([6, 4]);
+  cx.beginPath(); cx.moveTo(anker[0], anker[1]); cx.lineTo(maus[0], maus[1]); cx.stroke();
+  cx.setLineDash([]);
+}
+
+function ankerSetzen(an) {
+  const neu = an && hand ? anker || maus : null;
+  if (neu === anker) return;
+  anker = neu;
+  zeichnen();
+}
+
 cv.addEventListener("pointerdown", (e) => {
   if (!hand || e.button !== 0) return;
+  const p = handPunkt(e);
+  e.preventDefault();
+  if (e.shiftKey) {                              // Gerade vom Anker bis zum Klick, kein Ziehen
+    if (anker) {
+      handStapel.push(hand.slice());
+      handLetzt = anker;
+      handSetzen(p);
+      handLetzt = null;
+    }
+    anker = p;
+    zeichnen();
+    return;
+  }
   handStapel.push(hand.slice());
   handLetzt = null;
   cv.setPointerCapture(e.pointerId);
-  handSetzen(handPunkt(e));
-  e.preventDefault();
+  handSetzen(p);
 });
-cv.addEventListener("pointermove", (e) => { if (hand && handLetzt && e.buttons & 1) handSetzen(handPunkt(e)); });
+cv.addEventListener("pointermove", (e) => {
+  if (!hand) return;
+  maus = handPunkt(e);
+  if (!e.shiftKey && anker) anker = null;        // Shift losgelassen, während der Fokus woanders war
+  if (handLetzt && e.buttons & 1) handSetzen(maus);
+  else if (anker) zeichnen();
+});
+cv.addEventListener("pointerleave", () => { maus = null; if (anker) zeichnen(); });
+addEventListener("keyup", (e) => { if (e.key === "Shift") ankerSetzen(false); });
+addEventListener("blur", () => ankerSetzen(false));
 cv.addEventListener("pointerup", () => { handLetzt = null; });
 cv.addEventListener("pointercancel", () => { handLetzt = null; });
 
@@ -408,6 +453,7 @@ function handSpeichern() {
 }
 
 function handTaste(e) {                          // Tasten im Handmodus
+  if (e.key === "Shift") { if (!e.repeat) ankerSetzen(true); return; }
   if (e.key === "Escape") handEnde("Linie verworfen");
   else if (e.key === "Enter" || e.key === "s" || e.key === "S") handSpeichern();
   else if (e.key === "m" || e.key === "M") handNetz();
