@@ -4300,3 +4300,27 @@ def test_pathfollower_bremst_frueh_vor_dem_wegende():
     # bei voller explore-Fahrt (0,4 absolut = 0,72 m/s) beginnt das Bremsen ~1,8 m vor dem Ende (vorher 0,9 m)
     v_mps = rc.v_of(cfg.explore.v) * rc.vx_limit
     assert f.end_v(w(v_mps), 1.0, 0.4) * rc.vx_limit < v_mps <= f.end_v(w(v_mps), 1.0, 0.15) * rc.vx_limit
+
+
+def test_gain_switch():
+    """Verstärkung: hell bei 16 -> Automatik, Automatik am Anschlag und dunkel -> 16; Sperre, Handwert ruht."""
+    from xgonav.verstaerkung import GainSwitch, bildwerte
+    img = np.full((480, 640, 3), 100, np.uint8); img[:48, :, 2] = 255
+    m, a = bildwerte(img)
+    assert a == pytest.approx(0.1) and m == pytest.approx(100 + 155 / 30)
+    cfg = Config.neutral().camera
+    gs = GainSwitch(cfg)
+    u = lambda t, m, a, ist, soll: gs.update(t, m, a, ist, soll, 16.0)
+    assert u(0.0, 110, 0.0, 16.0, 16.0) is None                    # normal hell: bleibt
+    assert u(1.0, 110, 0.06, 16.0, 16.0) is None                   # ausgefressen, erst 2 s abwarten
+    assert u(2.9, 110, 0.06, 16.0, 16.0) is None
+    assert u(3.0, 110, 0.06, 16.0, 16.0) == 0.0                    # -> Automatik
+    assert u(4.0, 60, 0.0, 8.0, 0.0) is None and u(7.0, 60, 0.0, 8.0, 0.0) is None   # Sperre 5 s
+    assert u(8.5, 60, 0.0, 8.0, 0.0) is None
+    assert u(10.5, 60, 0.0, 8.0, 0.0) == 16.0                      # am Anschlag und dunkel -> fest
+    assert u(20.0, 125, 0.0, 16.0, 16.0) is None
+    assert u(22.0, 125, 0.0, 16.0, 16.0) == 0.0                    # Mittel zu hell
+    for t in range(30, 60):
+        assert u(float(t), 85, 0.0, 8.0, 0.0) is None              # Auto bei 8 mit 85: kein Flattern
+        assert u(float(t), 60, 0.0, 5.0, 0.0) is None              # nicht am Anschlag: bleibt Automatik
+    assert u(70.0, 200, 0.5, 4.0, 4.0) is None and u(80.0, 200, 0.5, 4.0, 4.0) is None   # Handwert: ruht

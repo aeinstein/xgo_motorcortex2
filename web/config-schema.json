@@ -255,6 +255,54 @@
        "hilfe": "feste Verstärkung 1..63,9 (OV5647); 0 = Auto"
       },
       {
+       "key": "gain_switch",
+       "typ": "bool",
+       "default": true,
+       "hilfe": "Verstärkung umschalten (xgonav/verstaerkung.py, Nutzer 2026-11-24): bei analogue_gain zu hell (mehr als gain_bright_frac der Pixel mit einem Kanal >= gain_sat_level ODER Mittel > gain_bright_mean) -> Automatik; hängt die Automatik am Anschlag (gemeldet >= gain_auto_max - 0,5) und ist das Mittel < gain_dark_mean -> wieder analogue_gain. Bedingung gain_dwell_s lang, danach gain_hold_s Sperre; ein Handwert im Web lässt es ruhen. Kosten am Pi: 4x je Sekunde 80x60 Pixel (< 0,1 ms), set_gain nur beim Wechsel."
+      },
+      {
+       "key": "gain_bright_mean",
+       "typ": "float",
+       "default": 120.0,
+       "hilfe": ""
+      },
+      {
+       "key": "gain_bright_frac",
+       "typ": "float",
+       "default": 0.05,
+       "hilfe": ""
+      },
+      {
+       "key": "gain_sat_level",
+       "typ": "int",
+       "default": 250,
+       "hilfe": ""
+      },
+      {
+       "key": "gain_auto_max",
+       "typ": "float",
+       "default": 8.0,
+       "hilfe": ""
+      },
+      {
+       "key": "gain_dark_mean",
+       "typ": "float",
+       "default": 70.0,
+       "hilfe": ""
+      },
+      {
+       "key": "gain_dwell_s",
+       "typ": "float",
+       "default": 2.0,
+       "hilfe": ""
+      },
+      {
+       "key": "gain_hold_s",
+       "typ": "float",
+       "default": 5.0,
+       "hilfe": ""
+      },
+      {
        "key": "contrast",
        "typ": "float",
        "default": 1.0,

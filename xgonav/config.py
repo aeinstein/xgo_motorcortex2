@@ -109,6 +109,19 @@ class CameraCfg:
     frame_clock_corr: float = 1.0
     exposure_us: int = 20000        # kurze Belichtung gegen Bewegungsunschärfe; 0 = Auto
     analogue_gain: float = 16.0     # feste Verstärkung 1..63,9 (OV5647); 0 = Auto
+    # Verstärkung umschalten (xgonav/verstaerkung.py, Nutzer 2026-11-24): bei analogue_gain zu hell (mehr als
+    # gain_bright_frac der Pixel mit einem Kanal >= gain_sat_level ODER Mittel > gain_bright_mean) -> Automatik;
+    # hängt die Automatik am Anschlag (gemeldet >= gain_auto_max - 0,5) und ist das Mittel < gain_dark_mean -> wieder
+    # analogue_gain. Bedingung gain_dwell_s lang, danach gain_hold_s Sperre; ein Handwert im Web lässt es ruhen.
+    # Kosten am Pi: 4x je Sekunde 80x60 Pixel (< 0,1 ms), set_gain nur beim Wechsel.
+    gain_switch: bool = True
+    gain_bright_mean: float = 120.0
+    gain_bright_frac: float = 0.05
+    gain_sat_level: int = 250
+    gain_auto_max: float = 8.0
+    gain_dark_mean: float = 70.0
+    gain_dwell_s: float = 2.0
+    gain_hold_s: float = 5.0
     # Kontrast und Sättigung im ISP der Kamera (1,0 = Standard, 0,5..4 über den Regler im Web zur Laufzeit).
     # Idee 2026-11-19: an der Quelle überdrehen, damit FloorNet kräftigere Kanten/Farben bekommt; der Browser zieht
     # es für die Anzeige wieder herunter (CSS-Filter). FloorNet ist auf 1,0 trainiert: überdrehte Bilder sind für
@@ -1169,7 +1182,7 @@ UMBENANNT = {"freespace.shadow_net": "freespace.net"}
 # IMU (Vorzeichen/Versatz erst die Automatik, SimImu), Radmaßstab, Nivellieren der Firmware,
 # Detektor-Takt (FakeDetector), FloorNet (SimFloorNet), Display, CPU-Pinning. Fahr-, Dreh-, Verhaltens-, Karten- und
 # Taktwerte gehören NIE hierher.
-NEUTRAL = {"robot.level_after_standup": False, "robot.level_while_driving": False,
+NEUTRAL = {"camera.gain_switch": False, "robot.level_after_standup": False, "robot.level_while_driving": False,
            "camera.sensor_mode": "", "camera.scaler_crop": [], "camera.lens_knots_px": [], "camera.lens_g_px": [],
            "camera.lens_center": [], "camera.lens_roll_deg": 0.0, "camera.lens_yaw_deg": 0.0,
            "camera.exposure_us": 4000, "camera.analogue_gain": 0.0, "camera.mount_offset_mm": 45.0,

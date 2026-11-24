@@ -35,7 +35,8 @@ from .route import arc_hits_zone, check as route_check, load as route_load, save
 from .robot import FW_ACTIONS, Robot, SpeedCtrl, action_cmds, stopp_text
 from .tracker import Tracker
 from .wlan import Helfer, HoldDetector, PressDetector, WlanSetup
-from .dunkel import Dunkelangst, helligkeit, sperr_rechteck
+from .dunkel import Dunkelangst, sperr_rechteck
+from .verstaerkung import GainSwitch, bildwerte
 
 log = logging.getLogger(__name__)
 
@@ -238,6 +239,8 @@ class App:
         self._luma: float | None = None
         self._dunkel_zonen: list[tuple[float, list]] = []      # (Ablaufzeit, Rechteck): Dunkelzonen der Raumkarte
         self._luma_t = 0.0
+        self.gain_switch = GainSwitch(cfg.camera)                # Verstärkung: hell -> Automatik, dunkel -> fest
+        self._gain_fest = float(cfg.camera.analogue_gain) or 16.0
         self.ortung = None             # ortung.Ortung (Schallrichtung), von __main__ gesetzt (nur am Rider)
         self.stimmen = None            # stimme.Stimmen (Nachplappern in pet), hängt an der Ortung
         # Fahr-Aktion der Firmware (robot.FW_ACTIONS): vom Web angefragt, im Regelschritt geprüft und gestartet
@@ -461,6 +464,18 @@ class App:
                 b = self.behavior
                 self.stimmen.aufnahme = (an and b.name == "pet" and self.cfg.pet.parrot
                                          and getattr(getattr(b, "brain", None), "hoert_zu", False))
+
+    def _gain_tick(self, f, hell: float) -> None:
+        """Verstärkung umschalten (verstaerkung.py); Fehler nur ins Log, die Bildschleife läuft weiter."""
+        try:
+            ist = (f.meta or {}).get("gain")
+            g = self.gain_switch.update(f.t, self._luma, hell, ist, self.src.gain, self._gain_fest)
+            if g is not None:
+                log.info("Verstärkung: Bild %s (Mittel %.0f, ausgefressen %.1f %%, ist %s) -> %s",
+                         "zu dunkel" if g else "zu hell", self._luma, 100 * hell, ist, g or "Automatik")
+                self.src.set_gain(g)
+        except Exception as e:
+            log.error("Verstärkung umschalten fehlgeschlagen: %s", e)
 
     # ------------------------------------------------------------------ Dunkelangst (dunkel.py)
     def _dunkel_tick(self, now: float, cmd: Command) -> Command:
@@ -955,9 +970,13 @@ class App:
     def _step(self, f) -> None:
         tm = _Marks()
         self._apply_pending_mode()
-        if self.cfg.dunkel.enabled and f.t - self._luma_t >= 1.0 / max(0.1, self.cfg.dunkel.check_hz):
+        cc = self.cfg.camera
+        if ((self.cfg.dunkel.enabled or cc.gain_switch)
+                and f.t - self._luma_t >= 1.0 / max(0.1, self.cfg.dunkel.check_hz)):
             self._luma_t = f.t
-            self._luma = helligkeit(f.bgr)
+            self._luma, hell = bildwerte(f.bgr, cc.gain_sat_level)
+            if cc.gain_switch:
+                self._gain_tick(f, hell)
 
         excl = [t.box for t in self.tracker.tracks]
         ego = self.ego.update(f.idx, f.t, f.bgr, excl)
