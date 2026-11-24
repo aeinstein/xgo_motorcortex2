@@ -979,6 +979,20 @@ def test_level_while_driving():
     assert r._roll_cmd == 0 and not r._drive_level_on
 
 
+def test_level_always():
+    """Test-Schalter: Nivellierung bleibt an, auch im Stand und beim Drehen (nach jedem Drehbefehl neu)."""
+    cfg = Config.neutral(); cfg.robot.level_always = True
+    r = SimRobot(cfg.robot)
+    lv = lambda: [w[2] for w in r.writes if w[1] == "roll_balance"]
+    r.state.balancing = True
+    r._level_tick(0.0)
+    assert lv() == [1]
+    r._cur = (0.0, 0.5); r._send(1.0)
+    assert lv() == [1, 1]
+    r._cur = (0.0, 0.0); r._level_tick(2.0); r._send(2.0)
+    assert lv() == [1, 1]
+
+
 def test_level_pulse():
     """Impuls einmal je Aufstehen, nach dem Aufschwung und auf Knopfdruck; liegend nicht."""
     cfg = Config.neutral(); cfg.robot.level_after_standup = True; cfg.robot.level_pulse_s = 3.0

@@ -111,6 +111,12 @@
        "hilfe": ""
       },
       {
+       "key": "level_always",
+       "typ": "bool",
+       "default": false,
+       "hilfe": "Test (Nutzer 2026-11-24): Nivellierung nie ausschalten, solange er balanciert, auch im Drehen und im Stand. Die Firmware schaltet sie bei jedem Drehbefehl ab 128±16 selbst ab, deshalb schreibt xgonav sie dann gleich mit neu (je Drehbefehl ein Schreiben mehr)."
+      },
+      {
        "key": "accel_v",
        "typ": "float",
        "default": 0.8,

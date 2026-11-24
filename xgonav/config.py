@@ -60,6 +60,10 @@ class RobotCfg:
     level_while_driving: bool = True
     level_drive_w_max: float = 0.06
     level_drive_delay_s: float = 1.0
+    # Test (Nutzer 2026-11-24): Nivellierung nie ausschalten, solange er balanciert, auch im Drehen und im Stand. Die
+    # Firmware schaltet sie bei jedem Drehbefehl ab 128±16 selbst ab, deshalb schreibt xgonav sie dann gleich mit neu
+    # (je Drehbefehl ein Schreiben mehr).
+    level_always: bool = False
     accel_v: float = 0.8           # max. Änderung von v pro Sekunde (normiert)
     accel_w: float = 2.0
     keepalive_s: float = 0.3       # Sollwert periodisch neu schreiben

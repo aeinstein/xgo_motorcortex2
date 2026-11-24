@@ -434,9 +434,10 @@ class Robot:
         try:
             if self._level_on_t is not None:
                 if now - self._level_on_t >= self.cfg.level_pulse_s:
-                    self._write("roll_balance", 0)
+                    if not self.cfg.level_always:
+                        self._write("roll_balance", 0)
                     self._level_on_t = None
-                    self._drive_level_on = False
+                    self._drive_level_on = self.cfg.level_always
                 return
             standup = self.cfg.level_after_standup and self._seen_down and not self._standup_levelled
             if (standup or self._level_request) and now - self._balancing_since >= 2.5:
@@ -455,6 +456,12 @@ class Robot:
     def _drive_level(self, now: float) -> None:
         """Nivellieren beim Fahren (robot.level_while_driving): an nach level_drive_delay_s Geradeausfahrt, aus beim
         Drehen, Anhalten, Rollbefehl oder einer Aktion der Firmware. Der Trimm bleibt danach stehen (Patch 0012)."""
+        if self.cfg.level_always:
+            if not self._drive_level_on:
+                self._write("roll_balance", 1)
+                self._drive_level_on = True
+                log.info("Nivellierung dauerhaft an (robot.level_always)")
+            return
         v, w = self._cur
         straight = (self.cfg.level_while_driving and self._roll_cmd == 0 and self._act is None
                     and abs(v) >= FW_DEADBAND and abs(w) <= self.cfg.level_drive_w_max)
@@ -496,6 +503,8 @@ class Robot:
                 self._write("speed_x", u[0])
             if prev is None or keepalive or u[1] != prev[1]:
                 self._write("speed_z", u[1])
+                if self.cfg.level_always and self.state.balancing and abs(u[1] - NEUTRAL) > 16:
+                    self._write("roll_balance", 1)   # Firmware schaltet sie beim Drehbefehl ab
             self._sent = u
             self._last_send_t = now
         except OSError as e:
