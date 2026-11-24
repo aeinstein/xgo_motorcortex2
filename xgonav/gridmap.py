@@ -34,14 +34,14 @@ from .mathe import pose_compose
 log = logging.getLogger("xgonav.gridmap")
 
 # ------------------------------------------------------------------ C++-Kern (optional)
-_GRID_ABI = 3
+_GRID_ABI = 4
 
 
 class _GridParams(ctypes.Structure):         # = GridParams in native/gridfast.cpp
     _fields_ = [(n, ctypes.c_int32) for n in ("n", "nrays", "step", "confirm_cells")] + \
                [(n, ctypes.c_double) for n in ("res", "half", "px", "py", "cp", "sp", "l_show", "l_free_occ", "l_free",
                                                "l_min", "l_occ", "l_max", "min_range", "max_range", "free_r",
-                                               "margin0", "margin_quad", "confirm_dr", "band_quad")] + \
+                                               "side_r", "margin0", "margin_quad", "confirm_dr", "band_quad")] + \
                [("geo", navfast.GeoRow)]
 
 
@@ -77,6 +77,7 @@ class GridMap:
                                    l_occ=c.l_occ, l_max=c.l_max, step=max(1, c.column_step),
                                    confirm_cells=max(0, int(c.confirm_cells)), min_range=c.min_range_m,
                                    max_range=c.max_range_m, free_r=c.free_range_m if c.free_range_m > 0 else c.max_range_m,
+                                   side_r=max(0.0, c.side_range_m),
                                    margin0=max(self.res, c.free_margin_m), margin_quad=c.free_margin_quad,
                                    confirm_dr=c.confirm_dr_m, band_quad=c.hit_band_quad)
             log.info("Raumkarte: C++-Kern %s", fastlib.PATH)
@@ -382,17 +383,29 @@ class GridMap:
         # ground_dist_np liefert den Abstand nach vorn (wie LocalMap: x = d, y = d*tan), die Strahlen
         # brauchen die Länge entlang der Peilung; auch max_range_m und free_range_m gelten entlang der Peilung
         ray = dist * rad
+        free_r = cfg.free_range_m if cfg.free_range_m > 0 else cfg.max_range_m
+        max_r = self._reichweite(rad, cfg.max_range_m)
+        free_r = self._reichweite(rad, free_r)
         with np.errstate(invalid="ignore"):
-            hit = ~to_horizon & np.isfinite(dist) & (ray <= cfg.max_range_m)
+            hit = ~to_horizon & np.isfinite(dist) & (ray <= max_r)
             # Freistrahl endet vor der Grenze: die gemessene Grenze schwankt mit der Entfernung (nach vorn, ∝ d²),
             # sonst löscht jede etwas zu weite Messung die zuvor belegte Zelle
-            free_r = cfg.free_range_m if cfg.free_range_m > 0 else cfg.max_range_m
             margin = max(self.res, cfg.free_margin_m) + cfg.free_margin_quad * dist * dist
             free_len = np.where(to_horizon, free_r,
                                 np.where(np.isfinite(dist), np.minimum((dist - margin) * rad, free_r), np.nan))
         dist, start = ray, start * rad
         ok = np.isfinite(free_len) & (free_len > start)
         return idx, bear, dist, free_len, start, ok, hit
+
+    def _reichweite(self, rad: np.ndarray, r: float):
+        """Reichweite entlang der Peilung: Ellipse mit r nach vorn und side_range_m zur Seite (rad = 1 / cos der
+        Peilung); ohne side_range_m überall r. Rechenweg wie reichweite() in native/gridfast.cpp."""
+        side = self.cfg.side_range_m
+        if side <= 0:
+            return r
+        c2 = 1.0 / (rad * rad)
+        s2 = 1.0 - c2
+        return 1.0 / np.sqrt(c2 / (r * r) + s2 / (side * side))
 
     def _peilung(self, ncols: int, sc: float) -> tuple:
         """Je Strahl (jede column_step-te Spalte): Spaltenindex, Peilung (links +), 1 / cos, cos und sin der

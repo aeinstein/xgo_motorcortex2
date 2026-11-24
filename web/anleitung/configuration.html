@@ -3034,7 +3034,11 @@ Sounds: <code>sound</code> true, <code>sound_dir</code> <code>/opt/xgonav/sounds
 </tr>
 <tr>
 <td><code>min_range_m</code> / <code>max_range_m</code></td>
-<td>0.15 / 1.5 (hits only up to here, distance along the ray since 2026-11-23; sim 1.25)</td>
+<td>0.15 / 2.5 (hits only up to here, distance along the ray since 2026-11-23; 1.5 until 2026-11-24)</td>
+</tr>
+<tr>
+<td><code>side_range_m</code></td>
+<td>1.0 (since 2026-11-24): hits and free rays only inside the ellipse <code>max_range_m</code>/<code>free_range_m</code> ahead × this sideways (camera frame); range along bearing β = 1/√(cos²β/R² + sin²β/side²): 2.5 m ahead, ~1.3 m at the image edge (46°), never more than 1 m to the side; 0 = off</td>
 </tr>
 <tr>
 <td><code>confirm_dr_m</code> / <code>confirm_cells</code></td>
@@ -3046,7 +3050,7 @@ Sounds: <code>sound</code> true, <code>sound_dir</code> <code>/opt/xgonav/sounds
 </tr>
 <tr>
 <td><code>free_range_m</code></td>
-<td>1.5 (RiderPi 1.1 from 2026-11-06 to 2026-11-14); free rays up to here (along the ray)</td>
+<td>2.5 (1.5 until 2026-11-24, RiderPi 1.1 from 2026-11-06 to 2026-11-14); free rays up to here (along the ray, limited sideways by <code>side_range_m</code>)</td>
 </tr>
 <tr>
 <td><code>column_step</code></td>

@@ -183,6 +183,7 @@ def test_reloc_scan_punkte_wie_karte():
     from xgonav.gridmap import GridMap
     cfg = Config.neutral()
     cfg.grid.max_range_m = 1.5                                  # entlang des Strahls: Wand 1 m am Rand ~1,44 m
+    cfg.grid.side_range_m = 0.0                                 # ohne Ellipse: Wand über die ganze Bildbreite
     g = CamGeometry(640, 480, 91.0, 1.39, 43.0, 85.0)
     m = GridMap(cfg.grid, g, 160, 120)
     hz = g.horizon_row(0) / 4

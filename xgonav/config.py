@@ -505,8 +505,15 @@ class GridCfg:
     size_m: float = 48.0
     # Treffer nur bis hierhin (Abstand entlang des Strahls, seit 2026-11-23; vorher nach vorn, am Bildrand also
     # bis ~1,44-fach weiter): Kamera nur 12,8 cm hoch, eine Bildzeile sind bei 2 m schon ~40 cm.
-    # 1,5 seit 2026-11-14 (Nutzer: Hindernisse schon aus 1,5 m eintragen); vorher und im Simulator 1,25
-    max_range_m: float = 1.5
+    # 1,5 seit 2026-11-14 (Nutzer: Hindernisse schon aus 1,5 m eintragen); vorher und im Simulator 1,25.
+    # 2,5 seit 2026-11-24 (Nutzer: nach vorn 2,5 m, zu den Rändern abfallend, seitlich nur näher als 1 m),
+    # zusammen mit side_range_m; nicht gefahren.
+    max_range_m: float = 2.5
+    # Seitliche Reichweite (m) für Treffer und Freistrahlen: Eingetragen wird nur innerhalb der Ellipse mit
+    # max_range_m bzw. free_range_m nach vorn und side_range_m zur Seite (Kamera-KS), die Reichweite entlang der
+    # Peilung β ist 1 / sqrt(cos²β / R² + sin²β / side²): voraus 2,5 m, am Bildrand (46°) ~1,3 m, seitlich nie
+    # weiter als 1 m. 0 = aus (Kreis mit R). Seit 2026-11-24, nicht gefahren.
+    side_range_m: float = 1.0
     min_range_m: float = 0.15          # davor sieht die Kamera den Boden nicht
     # Treffer erst eintragen, wenn dieselbe Stelle (± confirm_cells Zellen) aus Entfernungen getroffen wurde, die
     # sich um mindestens so viel unterscheiden (m). Spiegelungen im glänzenden Boden und Fugen wandern mit dem
@@ -533,8 +540,9 @@ class GridCfg:
     hit_band_quad: float = 0.05
     # Freistrahlen bis hierhin, entlang des Strahls (Treffer nur bis max_range_m); 0 = wie max_range_m. RiderPi 1,1 ab 2026-11-06 (eine
     # Stufe wurde aus > 1 m als Boden gesehen und bei 1,5 m als frei eingetragen), seit 2026-11-14 wieder 1,5
-    # (Nutzer: offenen Boden so weit sehen wie Hindernisse; mit dem Bodennetz, nicht gefahren)
-    free_range_m: float = 1.5
+    # (Nutzer: offenen Boden so weit sehen wie Hindernisse; mit dem Bodennetz, nicht gefahren), seit 2026-11-24
+    # 2,5 wie max_range_m (seitlich begrenzt durch side_range_m)
+    free_range_m: float = 2.5
     driven_free_r_m: float = 0.10      # gefahrener Weg gilt so breit als frei; 0 = aus
     # Bei schnellerer Drehung nichts eintragen (Unschärfe, Pose). 60 seit 2026-11-23 (vorher 40): Beim Erkunden mit
     # v 0,8 fuhr er Kurven mit ~50 °/s, 20 % der Bilder in Fahrt lagen über 40 °/s; Stellen, die er so passierte,

@@ -17,7 +17,7 @@
 
 namespace {
 
-constexpr int kGridAbi = 3;   // bei Änderung der Strukturen erhöhen (gridmap.py prüft das)
+constexpr int kGridAbi = 4;   // bei Änderung der Strukturen erhöhen (gridmap.py prüft das)
 
 }  // namespace
 
@@ -29,12 +29,22 @@ struct GridParams {
     double res, half, px, py, cp, sp;               // half = res / 2; Kamerafußpunkt; cos/sin des Kartenkurses
     double l_show, l_free_occ, l_free, l_min, l_occ, l_max;   // l_free_occ = l_free * occ_free_factor
     double min_range, max_range, free_r;            // free_r = free_range_m, sonst max_range_m
+    double side_r;                                  // seitliche Reichweite (Ellipse), <= 0: aus
     double margin0, margin_quad, confirm_dr;        // margin0 = max(res, free_margin_m); confirm_dr <= 0: aus
     double band_quad;                               // Treffer als Band ± band_quad * dist² entlang des Strahls; 0: eine Zelle
     GeoRow geo;
 };
 
 XGO_API int grid_abi(void) { return kGridAbi; }
+
+// Reichweite entlang der Peilung: Ellipse mit r nach vorn und side_r zur Seite, rad = 1 / cos(Peilung)
+// (wie GridMap._reichweite, gleiche Operationen in gleicher Reihenfolge)
+static double reichweite(double rad, double r, double side) {
+    if (side <= 0) return r;
+    const double c2 = 1.0 / (rad * rad);
+    const double s2 = 1.0 - c2;
+    return 1.0 / std::sqrt(c2 / (r * r) + s2 / (side * side));
+}
 
 // GridMap._rays ohne Peilung: je Strahl Länge bis zur Bodengrenze, Ende und Anfang des Freistrahls (alle
 // entlang der Peilung, m), ok (Freistrahl vorhanden) und hit (Treffer bis max_range). cols: Bodengrenze je
@@ -55,12 +65,15 @@ XGO_API void grid_rays(const GridParams* p, const double* cols, const double* kf
             s = kf[k] >= 0.98 ? inf : std::max(s, kn);
         }
         const bool to_horizon = v >= 0.98;
-        // d ist der Abstand nach vorn; Reichweiten (max_range, free_r) gelten entlang der Peilung
+        // d ist der Abstand nach vorn; Reichweiten (max_range, free_r) gelten entlang der Peilung, seitlich
+        // begrenzt durch side_r (Ellipse)
+        const double max_r = reichweite(rad[j], p->max_range, p->side_r);
+        const double free_r = reichweite(rad[j], p->free_r, p->side_r);
         dist[j] = d * rad[j];
-        hit[j] = !to_horizon && std::isfinite(d) && dist[j] <= p->max_range;
+        hit[j] = !to_horizon && std::isfinite(d) && dist[j] <= max_r;
         // Freistrahl endet vor der Grenze: die gemessene Grenze schwankt mit der Entfernung (nach vorn, ∝ d²)
         const double margin = p->margin0 + p->margin_quad * d * d;
-        free_len[j] = to_horizon ? p->free_r : (std::isfinite(d) ? std::min((d - margin) * rad[j], p->free_r) : xgo::kNaN);
+        free_len[j] = to_horizon ? free_r : (std::isfinite(d) ? std::min((d - margin) * rad[j], free_r) : xgo::kNaN);
         start[j] = s * rad[j];
         ok[j] = std::isfinite(free_len[j]) && free_len[j] > start[j];
     }
