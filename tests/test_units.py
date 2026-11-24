@@ -4163,6 +4163,13 @@ def test_robot_tempo_alle_befehle():
     assert r._target == pytest.approx((cfg.robot.max_v * 0.4, -cfg.robot.max_w * 0.4))
     r.drive(0.1, 0.05)
     assert r._target == pytest.approx((0.04, 0.02))
+    lo = cfg.robot.turn_min_w                                   # Drehen auf der Stelle: nie unter die Untergrenze
+    r.drive(0.0, -lo)
+    assert r._target == pytest.approx((0.0, -lo))
+    r.drive(0.0, 3 * lo)
+    assert r._target == pytest.approx((0.0, 3 * lo * 0.4))
+    r.drive(0.0, 0.5 * lo)                                      # kleiner als die Untergrenze bestellt: bleibt
+    assert r._target == pytest.approx((0.0, 0.5 * lo * 0.4))
     for bad in (0.0, 1.5, -0.2):
         with pytest.raises(ValueError):
             r.tempo = bad

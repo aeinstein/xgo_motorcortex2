@@ -22,7 +22,8 @@ class RobotCfg:
     max_v: float = 0.5
     max_w: float = 0.5
     # Kleinere Drehbefehle setzt die Firmware nicht um (Totband ~5 %): Untergrenze des gemeinsamen Drehreglers
-    # behaviors.dreh_w für alle Drehungen auf der Stelle (PathFollower, pet, Dunkelangst; seit 2026-11-23)
+    # behaviors.dreh_w für alle Drehungen auf der Stelle (PathFollower, pet, Dunkelangst; seit 2026-11-23). Gilt seit
+    # 2026-11-24 auch nach dem Tempo (Robot.drive): Tempo 0,75 machte aus 0,06 gesendet 0,045, er drehte nicht.
     turn_min_w: float = 0.06
     # Tempo (Anteil, 0,05..1): jeder Fahr- und Drehbefehl aller Modi wird nach der Begrenzung auf max_v/max_w
     # damit malgenommen (Robot.drive). Startwert; zur Laufzeit über den Temporegler im Web (POST /tempo),

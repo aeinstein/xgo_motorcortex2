@@ -214,7 +214,14 @@ class Robot:
         # Erst begrenzen, dann Tempo: v/w der Modi sind Faktor x max_v (RobotCfg.v_of), gesendet wird
         # Faktor x tempo x max_v; Verhältnis v/w und damit die geprüfte Bahn bleiben gleich.
         v = max(-self.cfg.max_v, min(self.cfg.max_v, v)) * self._tempo
+        w0 = w
         w = max(-self.cfg.max_w, min(self.cfg.max_w, w)) * self._tempo
+        # Drehen auf der Stelle: Das Tempo darf einen Drehwert ab turn_min_w nicht unter diese Untergrenze
+        # drücken, sonst steht er im Totband der Firmware (Fahrt 20261124-134052: Tempo 0,75, gesendet 0,045,
+        # „drehe (-12°)“ ohne Drehung bis „Ziel gesperrt“, viermal hintereinander)
+        lo = self.cfg.turn_min_w
+        if v == 0.0 and lo > 0 and abs(w0) >= lo and abs(w) < lo:
+            w = math.copysign(lo, w)
         with self._lock:
             self._target = (v, w)
             self._brake = brake and v == 0.0
