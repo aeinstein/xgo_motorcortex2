@@ -688,6 +688,15 @@ class HomeCfg:
     # 15-cm-Spalt ist zu, 25 cm offen. Vorher Zelle des Punkts + squeeze_m: 15 cm erschien als 20 cm (RiderPi
     # 2026-11-24 20:43, Stuhl- und Tischbein). 0 = wie vorher.
     merk_r_m: float = 0.08
+    # Ecken des geplanten Wegs als Kreisbögen (planner.glaetten, ARBEITSPLAN Punkt 3): Radius glatt_r_m, kleiner
+    # wo die Karte es verlangt, Punkte alle glatt_step_m; 0 = eckig wie bis 2026-11-25. Mit dem Fahrrahmen hält er
+    # Drehrate und Tempo selbst, die Kurve fährt er statt auf der Stelle zu drehen (Hauptgrund der Kartendrift).
+    glatt_r_m: float = 0.3
+    glatt_step_m: float = 0.05
+    # Kurventempo (PathFollower.kurve_v): höchstens sqrt(kurve_a_mps2 / Krümmung) in jeder Kurve des Wegs bis
+    # kurve_vorschau_m voraus, davor mit end_decel_mps2 abbremsen (wie am Wegende). 0 = aus.
+    kurve_a_mps2: float = 0.3
+    kurve_vorschau_m: float = 1.5
     v: float = 0.30                    # Anteil von robot.max_v, wie behavior.cruise_v (vorher absolut 0,15)
     start_v: float = 0.45              # „Zum Start“ (home, Heimfahrt in pet): +50 % (Nutzer 2026-11-22); Schlussfahrt startbild.gerade_v
     # Lenkung: am RiderPi rollt der Rider bei jedem Anfahren erst zurück und eine Drehung läuft

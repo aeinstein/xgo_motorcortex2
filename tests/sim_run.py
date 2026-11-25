@@ -47,6 +47,36 @@ def pick_route(gm, cfg, n=3):
     return pts
 
 
+def fahrweise(L) -> dict | None:
+    """Wie er fährt (Wahrheit des Simulators, ARBEITSPLAN Punkt 3): Drehen auf der Stelle (|v| < 0,03 m/s,
+    |w| > 0,15 rad/s) gegen Kurvenfahrt; Episoden ab 0,3 s zählen als eine Drehung."""
+    if len(L) < 2:
+        return None
+    dreh_s = fahr_s = dreh_rad = kurve_rad = 0.0
+    n, lauf = 0, 0.0
+    for a, b in zip(L, L[1:]):
+        dt = b["t"] - a["t"]
+        if dt <= 0:
+            continue
+        dth = abs((b["th"] - a["th"] + math.pi) % (2 * math.pi) - math.pi)
+        if abs(a["v"]) < 0.03 and abs(a["w"]) > 0.15:
+            dreh_s += dt
+            dreh_rad += dth
+            lauf += dt
+        else:
+            if lauf >= 0.3:
+                n += 1
+            lauf = 0.0
+            if abs(a["v"]) >= 0.03:
+                fahr_s += dt
+                kurve_rad += dth
+    if lauf >= 0.3:
+        n += 1
+    return {"dreh_n": n, "dreh_s": round(dreh_s, 1), "dreh_grad": round(math.degrees(dreh_rad)),
+            "fahr_s": round(fahr_s, 1), "kurve_grad": round(math.degrees(kurve_rad)),
+            "dauer_s": round(L[-1]["t"] - L[0]["t"], 1)}
+
+
 def run(mode="follow", secs=25.0, video=None, shake=1.0, quiet=True, imu=False, fs_thread=False, wheels=False, vx_true=None, dyn=False,
         overrides=None, scene="raum", record=None, phantoms=0, animal="person", speed=None, video_step=1, dunkel=None,
         yaw_scale=1.0):
@@ -152,6 +182,7 @@ def run(mode="follow", secs=25.0, video=None, shake=1.0, quiet=True, imu=False, 
             done_t["pts"] = [(round(a, 2), round(b, 2)) for a, b in pts]
             app.set_mode("patrol", confirmed=True)
             while app.running and app.behavior.name != "patrol": time.sleep(0.05)
+            switch["patrol_frame"] = len(world.log)
             t1 = time.monotonic()
             while app.running and not getattr(app.behavior, "done", False): time.sleep(0.2)
             done_t["streife_s"] = round(time.monotonic() - t1, 1)
@@ -200,12 +231,14 @@ def run(mode="follow", secs=25.0, video=None, shake=1.0, quiet=True, imu=False, 
            # wahrer Abstand vom Startpunkt am Ende (home: so gut traf er ihn wirklich)
            "start_wahr_m": round(math.hypot(world.x - L[0]["x"], world.y - L[0]["y"]), 3) if L else None,
            "start_wahr_deg": round(math.degrees((world.th - L[0]["th"] + math.pi) % (2 * math.pi) - math.pi), 1) if L else None,
-           "startbild": app.startbild.info() if getattr(app, "startbild", None) else None}
+           "startbild": app.startbild.info() if getattr(app, "startbild", None) else None,
+           "fahrweise": fahrweise(L)}
     if mode == "pet":
         out.update(pet=app.behavior.info() if app.behavior.name == "pet" else None,
                    aktionen=[v for _, n, v in robot.writes if n == "action"],
                    weg_von_start_m=round(math.hypot(world.x - L[0]["x"], world.y - L[0]["y"]), 3))
     if patrol:
+        out.update(fahrweise_streife=fahrweise(L[switch["patrol_frame"]:]) if "patrol_frame" in switch else None)
         out.update(route=done_t.get("pts"), route_fehler=done_t.get("route"), streife_s=done_t.get("streife_s"),
                    karte_gesperrt=gm.locked, belegt_ende=len(gm.occupied_cells()))
     if record is not None:

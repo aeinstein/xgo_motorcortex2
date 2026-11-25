@@ -899,6 +899,38 @@ class PathFollower:
                 return s
         return math.inf
 
+    def kurve_v(self, w: World, x: float, y: float) -> tuple[float, float]:
+        """Höchster Fahrwert (normiert) für die Kurven bis home.kurve_vorschau_m voraus: in jeder Ecke des Wegs
+        v ≤ sqrt(kurve_a_mps2 / Krümmung), Krümmung = Richtungsänderung / mittlere Stücklänge (geglättete Bögen: ihr
+        Radius), davor wie am Wegende abbremsen (brems_v-Profil, mit Nachlauf). Rückgabe (v, Abstand m), inf ohne."""
+        h, rc = self.h, self.rcfg
+        p = self.path
+        if h.kurve_a_mps2 <= 0 or p is None or len(p) < 3:
+            return math.inf, math.inf
+        bi, bt = self._proj(x, y)
+        s = (1.0 - bt) * math.hypot(p[bi + 1][0] - p[bi][0], p[bi + 1][1] - p[bi][1])
+        v_ist = w.v_rad if w.v_rad is not None else w.cmd_v * rc.vx_limit
+        if getattr(w, "v_erw", None) is not None:
+            v_ist = max(v_ist, w.v_erw)
+        best, best_s = math.inf, math.inf
+        for i in range(bi + 1, len(p) - 1):
+            if s > h.kurve_vorschau_m:
+                break
+            l1 = math.hypot(p[i][0] - p[i - 1][0], p[i][1] - p[i - 1][1])
+            l2 = math.hypot(p[i + 1][0] - p[i][0], p[i + 1][1] - p[i][1])
+            if l1 > 1e-6 and l2 > 1e-6:
+                d = abs(_wrap(math.atan2(p[i + 1][1] - p[i][1], p[i + 1][0] - p[i][0])
+                              - math.atan2(p[i][1] - p[i - 1][1], p[i][0] - p[i - 1][0])))
+                kappa = d / (0.5 * (l1 + l2))
+                if kappa > 1e-3:
+                    v_k = math.sqrt(h.kurve_a_mps2 / kappa)
+                    s_eff = max(0.0, s - max(0.0, v_ist) * h.end_lag_s)
+                    v = math.sqrt(v_k * v_k + 2.0 * h.end_decel_mps2 * s_eff)
+                    if v < best:
+                        best, best_s = v, s
+            s += l2
+        return (best / rc.vx_limit if best < math.inf else math.inf), best_s
+
     def ahead_pts(self, x: float, y: float) -> list:
         """Pose und die Wegpunkte voraus (für die freie Strecke entlang des Wegs)."""
         p = self.path
@@ -985,6 +1017,9 @@ class PathFollower:
         if slow_end:
             v = min(v, self.end_v(w, x, y))
         frei_txt, info = "", None
+        vk, sk = self.kurve_v(w, x, y)                  # Kurventempo (home.kurve_a_mps2)
+        if vk < v:
+            v, frei_txt = vk, ", Kurve in %.2fm" % sk
         if self.h.free_slow:
             # Tempo nach freier Strecke: vor dem ersten Hindernis der Merkkarte entlang des Wegs und vor einer
             # scharfen Ecke so bremsen wie am Wegende (home.free_slow)

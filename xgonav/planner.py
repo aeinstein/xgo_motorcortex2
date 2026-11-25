@@ -198,6 +198,54 @@ def shortcut(cells: list[tuple[int, int]], blocked: np.ndarray, cost: np.ndarray
     return out
 
 
+def glaetten(path: list[tuple[float, float]], r_m: float, step_m: float, frei) -> list[tuple[float, float]]:
+    """Ecken des gekürzten Wegs durch Kreisbögen mit Radius r_m ersetzen (ARBEITSPLAN Punkt 3: Kurven fahren statt
+    auf der Stelle drehen). frei(x, y) -> bool prüft jeden Bogenpunkt gegen die Sperren des Planers; ist einer
+    gesperrt, wird der Radius halbiert (höchstens dreimal), sonst bleibt die Ecke. Der Bogen beginnt und endet
+    höchstens auf halber Länge der anliegenden Stücke (am Start/Ziel auf 90 %), Start und Ziel bleiben. Punkte
+    etwa alle step_m. Kosten: einmal je neuem Weg, ein paar Dutzend Punkte."""
+    if r_m <= 0 or len(path) < 3:
+        return list(path)
+    p = [tuple(map(float, q)) for q in path]
+    n = len(p)
+    out = [p[0]]
+    for i in range(1, n - 1):
+        ax, ay = p[i - 1]
+        bx, by = p[i]
+        cx, cy = p[i + 1]
+        l1, l2 = math.hypot(bx - ax, by - ay), math.hypot(cx - bx, cy - by)
+        if l1 < 1e-6 or l2 < 1e-6:
+            out.append(p[i])
+            continue
+        u1 = ((bx - ax) / l1, (by - ay) / l1)
+        u2 = ((cx - bx) / l2, (cy - by) / l2)
+        cos_d = max(-1.0, min(1.0, u1[0] * u2[0] + u1[1] * u2[1]))
+        defl = math.acos(cos_d)                         # Richtungsänderung 0..pi
+        if defl < math.radians(5) or defl > math.radians(170):
+            out.append(p[i])                            # fast gerade, oder Kehre: bleibt
+            continue
+        sgn = 1.0 if u1[0] * u2[1] - u1[1] * u2[0] > 0 else -1.0
+        t_max = min(l1 * (0.9 if i == 1 else 0.5), l2 * (0.9 if i == n - 2 else 0.5))
+        r = r_m
+        bogen = None
+        for _ in range(4):
+            t = min(r * math.tan(defl / 2), t_max)
+            rr = t / math.tan(defl / 2)
+            p1 = (bx - t * u1[0], by - t * u1[1])
+            ox, oy = p1[0] - sgn * u1[1] * rr, p1[1] + sgn * u1[0] * rr      # Mittelpunkt links/rechts
+            a0 = math.atan2(p1[1] - oy, p1[0] - ox)
+            k = max(2, int(math.ceil(rr * defl / step_m)))
+            pts = [(ox + rr * math.cos(a0 + sgn * defl * j / k), oy + rr * math.sin(a0 + sgn * defl * j / k))
+                   for j in range(k + 1)]
+            if all(frei(qx, qy) for qx, qy in pts):
+                bogen = pts
+                break
+            r /= 2
+        out.extend(bogen if bogen is not None else [p[i]])
+    out.append(p[-1])
+    return out
+
+
 def path_length(p: list[tuple[float, float]]) -> float:
     return sum(math.hypot(b[0] - a[0], b[1] - a[1]) for a, b in zip(p, p[1:]))
 
@@ -345,7 +393,8 @@ def plan(grid: GridMap, start_xy: tuple[float, float], goal_xy: tuple[float, flo
         return kept
     if kept is not None and path_length(kept) <= cfg.keep_factor * path_length(out) + 0.3:
         return kept
-    return out
+    # Ecken zu Bögen (home.glatt_r_m); behaltene Wege sind schon geglättet
+    return glaetten(out, cfg.glatt_r_m, cfg.glatt_step_m, lambda px, py: not blocked[local((px, py))])
 
 
 class PlannerWorker:

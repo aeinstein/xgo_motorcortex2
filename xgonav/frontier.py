@@ -26,7 +26,7 @@ from . import navfast
 from .config import ExploreCfg, HomeCfg
 from .gridmap import GridMap
 from .mathe import wrap
-from .planner import cost_map, driven_mask, kept_path, known_area, merk_maske, path_length, route, squeeze_zone
+from .planner import cost_map, driven_mask, glaetten, kept_path, known_area, merk_maske, path_length, route, squeeze_zone
 
 
 @dataclass
@@ -263,10 +263,16 @@ def next_goal(grid: GridMap, pose: tuple, hcfg: HomeCfg, ecfg: ExploreCfg, obsta
             if sicht and not _sicht_frei(sperre, to_local(*path[-1]), g):
                 verworfen.add(k)
                 continue
+            kept = None
             if keeping and i == 0:                      # Weg nur bei gleichem Ziel behalten
                 kept = kept_path(keep_path, (x, y), blocked_x if blocked_x is not None else blocked, lambda p: to_local(*p))
                 if kept is not None and path_length(kept) <= hcfg.keep_factor * path_length(path) + 0.3:
                     path = kept
+                else:
+                    kept = None
+            if kept is None:                            # nur der gewählte neue Weg: Ecken zu Bögen (home.glatt_r_m)
+                blk = blocked_x if mit_merk else blocked
+                path = glaetten(path, hcfg.glatt_r_m, hcfg.glatt_step_m, lambda px, py: not blk[to_local(px, py)])
             nur_raum = blocked_x is not None and not mit_merk
             return ExplorePlan(path, path[-1], to_world(r, c), len(cand) + avoided, avoided, round(float(gain[k]), 2),
                                known_m2, tight=bool(code[k] == 2) or nur_raum)
