@@ -107,6 +107,11 @@ Kosten am ESP32: zwei PI-Regler + Rampe je Takt, vernachlässigbar gegen die Lag
   Zur Laufzeit `!velctl KI FF IMAX`. Gebaut (SHA 49578aae…, 1 265 568 Byte), alle Host-Tests grün. Im einfachen Modell
   (nicht der Rider): Last 2° → Original 17,5 mm/s Restfehler, mit Integral 0,3 mm/s; Vorsteuerung halbiert den
   Schleppfehler. ki und Vorsteuerung am Rider einstellen (Stufe 9). Nicht geflasht.
+- **Stufe 4 (2026-11-25):** Patch `0032-turn-rate-control.patch`: Kursziel läuft genau mit w_soll·dt (statt
+  0,005 je Takt = 1,25 × w), Kurs-PID wirkt damit als PI auf die Drehrate, Kurshalten bei w = 0 bleibt; langsames
+  Drehen zählt ab 0,05 °/s als Bewegung. Zur Laufzeit `!turnctl KP KD FF`. Gebaut (SHA ca488061…, 1 266 192 Byte),
+  alle Host-Tests grün. Im Modell (nicht der Rider): 30 °/s → 30,00 (Original 37,5); 0,5 °/s mit Haftreibung
+  6,8° in 20 s, Nachlauf 3,2°. Nicht geflasht.
 
 ### Zu klären
 
