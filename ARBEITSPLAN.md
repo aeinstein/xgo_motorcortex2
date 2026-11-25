@@ -15,7 +15,7 @@ Planer, der Planer fährt den Rider, nach der Sicherheitsprüfung.
 | 2 | **Test: Anfahren an eine Wand** | geradeaus geprüft gefahren 2026-11-25 (unten) |
 | 3 | **Test: Fahren einer Bahn entlang.** Kurven glätten, Drehungen auf der Stelle vermeiden (Hauptgrund der Drift) | offen |
 | 4 | **Fahrregler in die Firmware.** Pi sendet Sollgeschwindigkeit und Drehrate in echten Einheiten, die Firmware regelt | erledigt, gefahren (unten) |
-| 5 | **Bahnbefehle für die Navigation.** Krümmung statt Drehrate, Drehen auf Kurs, Strecke mit Halt, Rückmeldung im Strom (Plan unten) | Stufe 1: Firmware geflasht (2a7f213d), Treiber + xgonav fertig, `vel_kappa` aus, nicht gefahren |
+| 5 | **Bahnbefehle für die Navigation.** Krümmung statt Drehrate, Drehen auf Kurs, Strecke mit Halt, Rückmeldung im Strom (Plan unten) | Stufe 1: Firmware geflasht (2a7f213d), Treiber geladen, xgonav eingespielt, `vel_kappa` aus, nicht gefahren |
 
 ## Bahnbefehle (Punkt 5, Plan 2026-11-25)
 
@@ -46,7 +46,7 @@ beschreiben, und hält sie mit 260 Hz. Keine Wegpunktlisten in der Firmware.
 | 4 | **Rückmeldung** | Eigener Stromtyp **0x16** (0x14 bleibt unverändert), nur bei aktivem Rahmenweg, gleiche Rate und gleiches t_us wie die IMU-Probe, 12 Byte: u16 seq, u32 t_us, i16 v_soll, i16 w_soll (0,1 °/s), u8 Flags (Kurs erreicht, Strecke erreicht, Wächter, Sättigung = Soll-Nick an der Grenze), u8 reserviert; ~2 kB/s bei 100 Hz | Stromtyp 0x16 lesen, Felder in `/proc/XGORider/vel` | `Achse`-Nachbau nur noch für Simulator; Bahnprüfung und Anzeige nehmen den echten Sollwert; Sättigung senkt `kurve_a_mps2`/Tempo für den Rest der Fahrt | sinkt | Vergleich Nachbau ↔ Strom an einer Fahrt |
 
 Stand Stufe 1 (2026-11-25): Firmware 6194db7 geflasht. Treiber `kap V A J K ALPHA JW` und Zustand mit `kappa caps`
-(driver-test `--vel` grün auf kimmy, am Rider nicht gebaut). xgonav: `fahrrahmen.bogen_schritt` gleich allen 8
+(driver-test `--vel` grün auf kimmy; am Rider gebaut und geladen 2026-11-25 17:10, meldet caps 1). xgonav: `fahrrahmen.bogen_schritt` gleich allen 8
 Vektoren (`test_firmware_vektoren`), `Robot.drive(kappa=)`, `robot.bogen` nur mit Fähigkeitsbit und `vel_kappa`;
 Wegfolger setzt `Command.kappa` = Drehrate/Tempo (gleiche Lenkung wie bisher), `app.bogen_w` hält w = κ·v, wenn
 safety()/Bahnprüfung v senken. Simulator (je ein Lauf, `--dyn`): home 60 s beide am Start, explore 200 s `--rider`
