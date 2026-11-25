@@ -1685,10 +1685,14 @@ class App:
             # Engstellenmodus samt Bremsstelle (Simulator spalt 2026-11-24: Tür in 0 von 8 Läufen)
             erlaubt = lauf * k
             if ist is not None and abs(ist) > erlaubt + ARC_BRAKE_TOL_MPS:
-                # schneller als die Bahn erlaubt: voll bremsen, nur 0 setzt der Rider schnell um
-                cmd.v = 0.0
                 cmd.extra["bremsen"] = True
                 cmd.status += " | Bahn %.2fm, bremse" % clear
+                if self.robot.vel:
+                    # Fahrrahmen: die Firmware verzögert mit vel_brake auf das erlaubte Tempo, er rollt ohne Halt bis
+                    # an die Grenze (mit 0 hielt er schlagartig und fuhr dann langsam wieder an, Wand 2026-11-25)
+                    cmd.v = math.copysign(min(abs(cmd.v), erlaubt / self.cfg.robot.vx_limit), cmd.v)
+                else:
+                    cmd.v = 0.0             # Byteweg: nur 0 setzt der Rider schnell um
             else:
                 cmd.v *= k
                 cmd.status += " | Bahn %.2fm" % clear

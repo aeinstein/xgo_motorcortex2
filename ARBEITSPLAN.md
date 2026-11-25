@@ -51,8 +51,13 @@ MCP `fahren` geprüft geradeaus auf einen glatten Pfeiler, Abstand Vorderkante R
 
 - Haltepunkt unabhängig vom Anfahrtempo (laut Karte dreimal x 2,58–2,59 m): Die Bahnprüfung bremst voll, danach
   kriecht er mit kleinem Soll (7–30 Einheiten, `slow_free` bzw. Bahn) bis an die Grenze; kein Kontakt.
-- Bremsen aus voller Fahrt: Das Ist steigt erst (Gegenschwung: 74 → 102 Einheiten bei v 0,3), Soll-Nick bis −18°,
-  dann Halt ohne Sturz.
+- Bis 2026-11-25 setzte die Bahnprüfung beim Vollbremsen den Fahrbefehl auf 0 (Byteweg: nur 0 setzte der Rider
+  schnell um): schlagartiger Halt (Ist 74 → 102 durch den Gegenschwung, Soll-Nick bis −18°), danach fuhr er langsam
+  wieder an (Nutzer sah es an den LEDs). Jetzt auf dem Fahrrahmen: Bahnprüfung gibt das erlaubte Tempo vor,
+  `drive(brake=True)` verzögert auch auf Tempo > 0 mit `vel_brake`. Wiederholt mit v 0,3 aus 1,2 m („Bahn 0.17m,
+  bremse“): Soll 69 → 53 → 39 → 26 → 8 in 0,6 s, Ist-Spitze 78, Soll-Nick bis −8°, kein Wiederanfahren; Halt
+  ~24 cm (das Ende fiel mit dem Ende des 5-s-Abschnitts zusammen; Nachrücken bis an die Grenze nicht geprüft,
+  Akku 18 %).
 - Nebenbefund: rückwärts v −0,2 fährt er 1,29–1,37 × Soll (Ist −59…−63 statt −46, Soll-Nick +4°); vorwärts
   1,03–1,07 ×. Sache der Firmware (Nutzer 2026-11-25), an die Firmware-Sitzung gemeldet; xgonav ändert nichts.
 

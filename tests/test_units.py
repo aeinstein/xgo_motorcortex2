@@ -3659,7 +3659,8 @@ def test_arc_check_stops_at_zone():
 def test_arc_check_bremst_voll_wenn_raeder_zu_schnell():
     """Fahrt 2026-11-23 vor dem Stuhl: Der Rider setzt kleinere Fahrwerte erst nach ~1-2 s um. Die Bahnprüfung
     rechnet deshalb mit der Radgeschwindigkeit, wenn sie höher ist (Vorschau weiter als der Bremsabstand, Bogen
-    gleich), und bremst voll (Fahrwert 0, ohne Rampe), wenn er schneller ist, als die Bahn erlaubt."""
+    gleich), und bremst voll, wenn er schneller ist, als die Bahn erlaubt: Byteweg Fahrwert 0, Fahrrahmen auf das
+    erlaubte Tempo mit vel_brake (seit 2026-11-25, sonst hielt er schlagartig und fuhr wieder an)."""
     from xgonav.behaviors import Command
     app = _app(freespace=True)
     app.cfg.robot.vx_limit = 1.8
@@ -3682,7 +3683,15 @@ def test_arc_check_bremst_voll_wenn_raeder_zu_schnell():
     assert v == pytest.approx(0.6) and w == pytest.approx(math.radians(0.1 * app.cfg.robot.vyaw_limit_dps) * 0.6 / 0.18)
     need = 0.6 * 0.6 + 0.08 + 0.8 * 0.3
     assert h == pytest.approx((need + 0.15) / 0.6) and h > 1.2
+    # Fahrrahmen: erlaubt = 0,6 x (0,5 - 0,05) / need -> mehr als der Befehl, also bleibt der Befehl, gebremst
+    assert app.robot.vel and c.v == pytest.approx(0.1) and c.extra.get("bremsen") and "bremse" in c.status
+    c = app._arc_check(Command(0.33, 0.0, None, "x"))
+    erlaubt = 0.6 * (0.5 - 0.05) / need
+    assert c.v == pytest.approx(erlaubt / 1.8) and 0 < c.v < 0.33 and c.extra.get("bremsen")
+    app.robot.vel = False                                               # Byteweg: Fahrwert 0
+    c = app._arc_check(Command(0.1, 0.1, None, "x"))
     assert c.v == 0.0 and c.extra.get("bremsen") and "bremse" in c.status
+    app.robot.vel = True
     app._v_rad = 0.1                                                    # langsam genug: anteilig wie bisher
     Merk.frei = 0.15
     c = app._arc_check(Command(0.1, 0.0, None, "x"))

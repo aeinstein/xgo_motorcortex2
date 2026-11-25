@@ -119,6 +119,13 @@ def test_fahrrahmen_ohne_untergrenze_und_bremse():
         r.drive(0.0, 0.0, brake=True)
         time.sleep(0.06)
         assert "0 385 2564 0.0 360 1800" in _writes(r, "vel", t0)         # vel_brake 1,5 m/s², Ruck 10
+        for _ in range(40):                                                # wieder 0,36 m/s
+            r.drive(0.2, 0.0)
+            time.sleep(0.02)
+        t1 = time.monotonic()
+        r.drive(0.05, 0.0, brake=True)                                     # Bahnprüfung: auf ein kleineres Tempo
+        time.sleep(0.06)
+        assert "23 385 2564 0.0 360 1800" in _writes(r, "vel", t1)        # 0,09 m/s mit vel_brake
     finally:
         r.close()
 

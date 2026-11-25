@@ -227,14 +227,15 @@ class Robot:
         self._tempo = f
 
     def drive(self, v: float, w: float, brake: bool = False) -> None:
-        """brake (nur mit v = 0): Vollbremsung (Fahrrahmen: robot.vel_brake statt vel_decel)."""
+        """brake: Vollbremsung, beim Langsamerwerden mit robot.vel_brake statt vel_decel (Fahrrahmen; auch auf ein
+        kleineres Tempo als 0, so rollt er weich bis an die Grenze der Bahnprüfung). Auf dem Byteweg ohne Wirkung."""
         # Erst begrenzen, dann Tempo: v/w der Modi sind Faktor x max_v (RobotCfg.v_of), gesendet wird
         # Faktor x tempo x max_v; Verhältnis v/w und damit die geprüfte Bahn bleiben gleich.
         v = max(-self.cfg.max_v, min(self.cfg.max_v, v)) * self._tempo
         w = max(-self.cfg.max_w, min(self.cfg.max_w, w)) * self._tempo
         with self._lock:
             self._target = (v, w)
-            self._brake = brake and v == 0.0
+            self._brake = brake
             self._last_cmd_t = time.monotonic()
 
     def stop(self) -> None:
@@ -500,9 +501,10 @@ class Robot:
         c = self.cfg
         tv, tw = target[0] * c.vx_limit, target[1] * c.vyaw_limit_dps
         g = self._gen_v
-        if self._brake and target[0] == 0.0:
+        schneller = tv * g.x >= 0 and abs(tv) > abs(g.x)
+        if self._brake and not schneller:
             a, j = c.vel_brake_mps2, c.vel_brake_jerk_mps3
-        elif tv * g.x >= 0 and abs(tv) > abs(g.x):
+        elif schneller:
             a, j = c.vel_accel_mps2, c.vel_jerk_mps3          # schneller in derselben Richtung (oder aus dem Stand)
         else:
             a, j = c.vel_decel_mps2, c.vel_jerk_mps3          # langsamer oder Richtungswechsel
