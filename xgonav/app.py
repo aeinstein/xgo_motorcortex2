@@ -121,6 +121,9 @@ class App:
         self.odom_src = "befehl"
         self._vis_gap = False              # seit dem letzten Regelschritt ein Bild ohne Ego-Motion
         self.odom_m = 0.0                  # gefahrene Strecke laut Odometrie (Betrag, seit Start)
+        # vorzeichenbehaftet (vor +, zurück −): Für Strecken; odom_m zählt das Pendeln beim Balancieren mit (am Rider
+        # 2026-11-25 0,99 statt 0,93 m auf 1 m) und taugt nur als Laufleistung
+        self.odom_s_m = 0.0
         self._v_rad: float | None = None       # Radgeschwindigkeit (m/s) im letzten Regelschritt, für die Bahnprüfung
         self.imu_sync = ImuSync(cfg.imu)
         self._imu_frame: ImuFrame | None = None   # IMU zur Bildzeit, je Bild (imu.imu_frame)
@@ -968,8 +971,9 @@ class App:
         if soll is not None and cmd.v:
             # Strecke mit Halt (/drive?strecke=S): Reststrecke aus der Odometrie, ab dem ersten Regelschritt gezählt
             if self.behavior.strecke_odo0 is None:
-                self.behavior.strecke_odo0 = self.odom_m
-            cmd.strecke = max(0.0, soll - (self.odom_m - self.behavior.strecke_odo0))
+                self.behavior.strecke_odo0 = self.odom_s_m
+            gefahren = (self.odom_s_m - self.behavior.strecke_odo0) * (1.0 if cmd.v > 0 else -1.0)
+            cmd.strecke = max(0.0, soll - gefahren)
             cmd.status += " Strecke %.2fm" % cmd.strecke
         if getattr(self.behavior, "checked", False) and (cmd.v or cmd.w):
             if w is None:
@@ -1343,6 +1347,7 @@ class App:
         self.yaw_src = st.kurs_src
         self.odom_src = "befehl" if st.ds_src == "befehl" else "räder"
         self.odom_m += abs(st.ds)
+        self.odom_s_m += st.ds
         return st
 
     def kurs_deg(self) -> float | None:
