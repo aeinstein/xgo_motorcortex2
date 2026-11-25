@@ -124,7 +124,11 @@ Kosten am ESP32: zwei PI-Regler + Rampe je Takt, vernachlässigbar gegen die Lag
 
 - Höchste Beschleunigungen (`a_max`, `alpha_max`) werden in xgonav konfiguriert (Dataclass in `config.py`) und mit
   jedem Rahmen gesendet. (Vorschlag, nicht entschieden: Firmware klemmt zusätzlich auf eine feste Obergrenze.)
-- Die Radgeschwindigkeit der Firmware (`filtered_speed_mm_s`) ist echte mm/s; `v_soll` wird in mm/s gesendet.
+- ~~Die Radgeschwindigkeit der Firmware ist echte mm/s~~ (2026-11-25 widerlegt, Nutzer: so vorgehen): Messung
+  2026-11-05 Befehl 0,15 → ~27 cm/s echt, Firmware-Soll dafür 32,1 Einheiten (0x0e zeigte am 2026-11-10 genau 32,1),
+  also ~8,4 mm/s je Firmware-Einheit; 210 × 8,4 ≈ 1,8 m/s = `vx_limit`. xgonav bekommt `robot.fw_speed_unit_mm`
+  (vorläufig 8,4) und rechnet alles, was an die Firmware geht (v, a, Ruck, v_max), damit um. Faktor messen:
+  `tools/fw_einheit.py` (0x0e + Rad-Odometrie mitschreiben, gefahren über MCP).
 - Höchstwerte (größtes `a_max` ohne Kippen, größte Drehrate und Drehbeschleunigung) werden am Rider gemessen
   (Stufe 9), danach in `config.py` eingetragen.
 - Register 0xa0/0xa1 (`max_forward`/`max_turn`, Bereich der Bytes 0x30/0x32) kommen raus. Der alte Byteweg

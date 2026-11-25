@@ -84,7 +84,7 @@ python tools/imu_versatz.py ~/fahrt/<recording> [--fenster idx,idx,... --halb 48
 | 2026-11-17 | recording 20261117-161237 (height changes), 8 sections of 4 s: +9.9..+12.0 ms, all together **+10.5 ms**, sign −1, correlation 0.99; slope 1.13 (image pitch 13 % larger than IMU pitch: focal length or IMU scale, open) |
 
 Web: the line under the camera image shows the IMU value of each frame (pitch, roll, heading, sample age, pitch rate image vs. IMU) and counts frames without a valid IMU value (red).
-Drift check: *Bild am IMU-Nick festhalten* (camera bar) shifts each frame in the browser by `row_stand − row_imu` (normal pose against the pure IMU pitch; black border, no load on the pipeline); the cyan line is then fixed. Scene moving against it = IMU or time-sync drift.
+Drift check: *Bild am IMU-Nick festhalten* (camera bar) shifts each frame in the browser by `row_stand − row_imu` (normal pose against the pure IMU pitch; black border, no load on the pipeline); the cyan line is then fixed (while balancing at H/2: the browser also removes the mounting pitch `f·tan(tilt_deg)`). Scene moving against it = IMU or time-sync drift.
 
 ## 3. Lens shading — removed 2026-11-18
 
@@ -115,6 +115,8 @@ python3 tools/calibrate_odom.py rechne [--ref gerade|kamera|imu|mittel] [--dist-
 ## 5. Forward scale (command fallback)
 
 `robot.vx_limit`: 1.8 m/s per firmware unit on the RiderPi (2026-11-05). Used by the path check and follow prediction, and for the map only when wheel odometry is unavailable.
+
+Firmware speed unit (for the drive frame of firmware 0029–0032): the firmware's wheel speed (reg `0x0e`, controller input) is not real mm/s. From the 2026-11-05 measurement: command 0.15 → ~27 cm/s real, firmware target 32.1 units → ~8.4 mm/s per unit (210 × 8.4 ≈ 1.8 m/s = `vx_limit`). Measure it: `sudo python3 /opt/xgonav/tools/fw_einheit.py 60 /root/fw_einheit.csv` on the Rider (records only, does not drive) while driving straight via xgonav, a few seconds per speed; prints mm/s per unit (median, p10/p90, fit through 0) and firmware actual/target. Re-evaluate: `python tools/fw_einheit.py --auswerten file.csv`.
 RiderPi at v = 0.08: ~12.5 cm/s (assumption: 12 cm/s).
 
 ## 6. Drive gains (removed 2026-11-23)
