@@ -373,9 +373,11 @@ class BehaviorCfg:
     lost_look_deg: float = 360.0
     lost_look_w: float = 0.20          # Anteil von robot.max_w
     # POST /turn (Handsteuerung: um einen Winkel drehen, MCP „drehen“/„rundblick“, rider_nav dreh): Drehrate
-    # kp x Fehler, wie dort bisher 0,01 je Grad Restwinkel; nach dem Ziel turn_settle_s Nachlauf mitzählen
+    # kp x Fehler, wie dort bisher 0,01 je Grad Restwinkel; nach dem Ziel turn_settle_s Nachlauf mitzählen. Mit
+    # robot.vel_kurs geht im Nachlauf weiter das Kursziel an die Firmware: Sie hält den Kurs nur dann im Stand und
+    # bricht mit dem Integral des Kurs-Reglers die Haftreibung (81cb3335, braucht dafür 1,5–2 s; vorher 1 s)
     turn_to_kp: float = 3.6            # 1/s
-    turn_settle_s: float = 1.0
+    turn_settle_s: float = 2.0
     blocked_free: float = 0.22     # Freiraum im Zentrum darunter = blockiert
     slow_free: float = 0.55        # darunter proportional abbremsen
     ttc_avoid_s: float = 1.2       # Erkunden: Time-to-contact darunter -> ausweichen

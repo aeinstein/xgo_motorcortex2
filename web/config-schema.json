@@ -1845,12 +1845,12 @@
        "key": "turn_to_kp",
        "typ": "float",
        "default": 3.6,
-       "hilfe": "POST /turn (Handsteuerung: um einen Winkel drehen, MCP „drehen“/„rundblick“, rider_nav dreh): Drehrate kp x Fehler, wie dort bisher 0,01 je Grad Restwinkel; nach dem Ziel turn_settle_s Nachlauf mitzählen 1/s"
+       "hilfe": "POST /turn (Handsteuerung: um einen Winkel drehen, MCP „drehen“/„rundblick“, rider_nav dreh): Drehrate kp x Fehler, wie dort bisher 0,01 je Grad Restwinkel; nach dem Ziel turn_settle_s Nachlauf mitzählen. Mit robot.vel_kurs geht im Nachlauf weiter das Kursziel an die Firmware: Sie hält den Kurs nur dann im Stand und bricht mit dem Integral des Kurs-Reglers die Haftreibung (81cb3335, braucht dafür 1,5–2 s; vorher 1 s) 1/s"
       },
       {
        "key": "turn_settle_s",
        "typ": "float",
-       "default": 1.0,
+       "default": 2.0,
        "hilfe": ""
       },
       {
