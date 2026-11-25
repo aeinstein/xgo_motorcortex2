@@ -86,6 +86,20 @@ Byte-Vertrag: Kopfkommentar in `firmware/src/velocity_cmd.h` und dieser Abschnit
   setzt fort. Drehraten- oder Krümmungsrahmen beenden das Kursziel; aus der Kurve ins Kursziel ohne Sprung.
 - **0x1a lesen, Flags (Ergänzung Stufe 2):** bit4 Krümmung läuft, bit5 Kursziel läuft, bit6 Kursziel erreicht;
   Fähigkeiten 0x03 mit Stufe 2. Prüfvektoren haben seitdem zwei Spalten mehr: `rest` (°) und `done`.
+- **Strecke mit Halt (Ergänzung 2026-11-25, Stufe 3, Firmware 335401c / SHA ede94cd8):** 0x1a schreiben mit bit3 =
+  15 Byte, Bytes 0–12 wie bisher, Byte 13 u16 Reststrecke s in echten mm (0…65535). Kein Wechselbit: jeder Rahmen setzt
+  Rest = s neu, der Pi MUSS die Reststrecke aus seiner Odometrie nachrechnen (gleiches s immer wieder: kommt nie an).
+  Verworfen: bit3 mit 13 Byte, 15 Byte ohne bit3, bit3 + bit0, bit3 + bit2; bit3 + bit1 erlaubt (Bogen bis zum
+  Haltepunkt, Strecke = Bogenlänge der Encoder).
+- Firmware je Takt: Rest −= v_meas · unit_mm · dt · dir (dir = Vorzeichen des Rahmen-v, v_meas = Mittel der gefilterten
+  Radtempi). Nachlauf lag += (v_soll_vorher − v_meas) · unit_mm · dt · dir, klingt bei v_soll = 0 und |v_meas| < 1 mit
+  exp(−dt/0,5 s) ab, beginnt bei 0 und läuft über neue Rahmen weiter; wirksamer Rest = Rest − lag. Fahrachse: go =
+  approach(v_ziel, a, Ruck) (mit κ-Grenzen im Krümmungsbetrieb); fwd = go, solange wirksamer Rest − |go|·dt·unit −
+  |stopDistance(go)|·unit ≥ 0, sonst approach auf 0. Erreicht bei wirksamem Rest ≤ 5 mm (auch bei einem Rahmen mit
+  s − lag ≤ 5), dann v → 0, Flag bleibt bis zu einem Rahmen mit größerem s. Wächter bremst, Strecke bleibt offen.
+- 0x1a lesen: Flag-Byte bit7 = Strecke erreicht; Fähigkeiten 0x07. Prüfvektoren: alle haben vier Spalten mehr
+  (`v_meas`, an tick übergeben, außer strecke_* 0; `dist_rest`, `dist_done`, `dist_lag`), `frame_hex` bei strecke_*
+  15 Byte; 8 neue `strecke_*.csv` (Pi darin nachgebildet: alle 100 ms s = S − ∫v_meas·unit·dt).
 - Alte Rahmen (bit1–3 = 0) verhalten sich exakt wie geflasht; xgonav schaltet Stufe für Stufe um
   (`[robot] vel_kappa`, `vel_kurs`, `vel_strecke`, Default aus bis zur Fahrt).
 - Rückmeldung: Stromtyp 0x16 (Stufe 4), 0x14 bleibt unverändert.
