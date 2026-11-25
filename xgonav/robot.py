@@ -548,12 +548,12 @@ class Robot:
             return
         self._cur = target                   # Byteweg: die Firmware filtert selbst (Tiefpass, 5er-Schritt)
 
-    # Verlangtes Ziel weicht so weit vom laufenden ab: neues Ziel (Wechselbit). Der Restfehler kommt vom IMU-Kurs, der
-    # dem Generator beim Drehen nachläuft (bei 90 °/s mehrere Grad); mit 2° schob xgonav das Ziel während der Drehung
-    # immer weiter, er drehte 98° statt 90° (Rider 2026-11-25). Nur ein wirklich neues Ziel (Wegpunkt) liegt darüber.
-    # Nach der Ankunft kein neues Ziel nachschieben: Seit Firmware 3c9f6fc0 hält der Kurs-Regler das Ziel, solange
-    # Kursziel-Rahmen kommen, und holt den Rest selbst auf; ein nachgeschobenes Ziel aus dem IMU-Fehler wäre doppelt.
-    KURS_NEU_DEG = 20.0
+    # Neues Ziel (Wechselbit) nur, wenn keins läuft oder das laufende angekommen ist und der Aufrufer noch mehr als
+    # KURS_NEU_DEG daneben sieht (er will woanders hin). Nie während die Firmware dreht: Der Restfehler kommt vom Kurs
+    # in xgonav, der dem Generator nachläuft (am Rider 2026-11-25 über 20° bei 90 °/s); jede Schwelle darauf schob das
+    # Ziel weiter (2°: 98° statt 90°, 20°: 105°). Den Rest nach der Ankunft holt der Kurs-Regler der Firmware auf,
+    # solange Kursziel-Rahmen kommen (3c9f6fc0).
+    KURS_NEU_DEG = 15.0
 
     def _ramp_vel(self, target: tuple[float, float], dt: float, kappa: float | None = None,
                   kurs: tuple[float, float] | None = None) -> None:
@@ -588,7 +588,7 @@ class Robot:
         if kurs is not None:
             err = math.degrees(kurs[0])
             k = self._kurs
-            if not k.an or abs(self._gen_winkel + err - self._kurs_ziel) > self.KURS_NEU_DEG:
+            if not k.an or (k.done and abs(err) > self.KURS_NEU_DEG):
                 self._kurs_seq = not self._kurs_seq
                 self._kurs_dpsi = round(err * 10.0) / 10.0    # wie im Rahmen (0,1°)
                 self._kurs_ziel = self._gen_winkel + self._kurs_dpsi
