@@ -39,7 +39,7 @@ beschreiben, und hält sie mit 260 Hz. Keine Wegpunktlisten in der Firmware.
 
 | Stufe | Inhalt | Firmware (Patch 08-velocity) | Treiber (`xgo-vel.h`) | xgonav | Kosten am Pi | Prüfung |
 |---|---|---|---|---|---|---|
-| 0 | Rückwärts symmetrisch, Höchstwerte | geflasht 2026-11-25: Tempo-Regler über vier Fassungen (unten „Messfahrt Stufe 0“), jetzt ec493c66: Original-P 0,11 + Vorsteuerung −0,05·v_soll + atan(a/g), ki 0,1 auf ±40 ab Ende der Rampe; ki/i_max/kv aus 0x1b ignoriert | – | `vel_kv`/`vel_ki`/`vel_i_max_deg` als wirkungslos gekennzeichnet (`config.py`, `docs/configuration.md`); a_max ohne Kippen, w/alpha-Grenzen messen → `config.py` | 0 | gefahren 2026-11-25, zuletzt mit ec493c66: im Mittel 1,02–1,04 × in beide Richtungen, vorwärts langsames Pendeln bis 1,4 × (unten); Pendeln offen (Firmware) |
+| 0 | Rückwärts symmetrisch, Höchstwerte | geflasht 2026-11-25: Tempo-Regler über vier Fassungen (unten „Messfahrt Stufe 0“), jetzt ec493c66: Original-P 0,11 + Vorsteuerung −0,05·v_soll + atan(a/g), ki 0,1 auf ±40 ab Ende der Rampe; ki/i_max/kv aus 0x1b ignoriert | – | `vel_kv`/`vel_ki`/`vel_i_max_deg` als wirkungslos gekennzeichnet (`config.py`, `docs/configuration.md`); a_max ohne Kippen, w/alpha-Grenzen messen → `config.py` | 0 | gefahren 2026-11-25; mit kp 0,15 / ki 0,06 (im RAM gesetzt) v ±0,2 im Ziel (Spitze 1,13 / 1,15 ×), v ±0,3 nach dem Laden nachmessen, dann 5abeb9a6 flashen (unten) |
 | 1 | **Krümmungsbetrieb** | Flag bit1 in 0x1a: Feld w = κ in 0,001 1/m (i16, ±32 1/m); im Takt w_soll = κ · v_soll · 180/π (aus dem **Sollwert**, nicht v_ist: Kurs = ∫κ·v_soll dt, rauschfrei, am Pi nachrechenbar; keine v_min-Schwelle, w → 0 von selbst). Bahntreue unter Grenzen: nicht w kappen, sondern v begrenzen: \|v\| ≤ w_max/\|κ\|, a ≤ alpha/\|κ\|, Ruck ≤ Drehruck/\|κ\|. Neues κ während der Fahrt mit \|dκ/dt\| ≤ alpha/\|v\| nachführen (Klothoide), sonst springt w um Δκ·v. Rückwärts gleiches κ (derselbe Kreis rückwärts). Positionshalten beim Drehen (07-balance) greift nur bei v = 0, verträglich. Ohne bit1 wie heute | Text um κ erweitern, `zustand` liest Flag und Fähigkeitsbyte | `Robot.drive(v, w)` bleibt; neu `drive_bogen(v, kappa)`. `PathFollower` lenkt mit κ (Pure Pursuit κ = 2·sin α / L statt `kp_turn·err`); `_arc_check` prüft und bremst bei festem κ (nur v sinkt, Bahn bleibt). `Achse.schritt` + Kopplung, v/a/Ruck-Begrenzung durch κ und κ-Nachführung in Python nachgebaut, gegen Prüfvektoren | sinkt leicht (kein Lenkregler je Schritt, eine Multiplikation im 50-Hz-Durchlauf) | Host-Test: Bahn aus Generator-Simulation liegt bei Anfahren/Bremsen auf dem Kreis (Abweichung < 1 cm auf 1 m); Simulator `--dyn` explore/home; am Rider Kreisbogen v 0,2, κ 2 1/m, Endpunkt gegen Karte |
 | 2 | **Kursziel** | Flag bit2: Feld w = Δψ in 0,1°, relativ zum Generatorwinkel bei Empfang. Der Generator integriert seinen Winkel ∫w_soll dt selbst (= Änderung des Kursziels): Rest → w_ziel = sign · min(w_max, √(2·alpha·\|Rest\|)) → vorhandenes `approach` der Drehachse; angekommen bei \|Rest\| < 0,5° und w = 0 (Flag), danach hält der Kurs-PID | wie 1 | `dreh_auf_kurs`/`align`/`POST /turn` schreiben einmal Δψ statt 24 Hz `dreh_w`; Ankunft aus dem Flag statt aus dem Kursfehler | sinkt (keine Kursregelung je Schritt) | Host-Test Überschwingen < 1°; am Rider 90°/180° links/rechts, Endkurs gegen IMU-Kurs ±2° |
 | 3 | **Strecke mit Halt** | Flag bit3, Rahmen 15 Byte mit Reststrecke s (mm, u16): Rest = s − Radstrecke (Encoder) seit Empfang, v_ziel = sign · min(v, √(2·a·Rest)), danach v = 0 und Positionshalten. Neue Rahmen setzen s neu (Pi schickt die Reststrecke nach) | wie 1 | Wegfolger am Wegende (`end_v`) und Bahnprüfung schicken s = min(Weg bis Ziel, `clear − Rest`) statt das Tempo zu senken; Kriechen mit `slow_free` entfällt | sinkt | Wand wie Punkt 2: Halt 20 cm ±1 cm aus v 0,2/0,3; Host-Test Halt auf ±5 mm |
@@ -175,6 +175,23 @@ nach dem Start des Bodennetzes, wiederholt):
   den Mehrbedarf vorwärts als feste Vorsteuerung.
 - Aufstehen wieder vom Nutzer über das Web (18:27:03), nicht mitgeschrieben, kein Sturz.
 - Stufe 1/2 erst fahren, wenn vorwärts ruhig ist.
+
+Einstellen am Rider ohne Flashen (Nutzer 2026-11-25): Die Firmware-Sitzung setzt je Runde im Liegen über USB (COM4,
+DTR/RTS aus, kein Neustart) `!velctl KI FF IMAX KP KF` im RAM; Nutzer steckt das Kabel dafür an und zieht es zum
+Fahren ab. Mitschnitt ab vor dem Aufstehen (`runde1.csv`, `runde2.csv`). Befund der Firmware-Sitzung aus Runde 1:
+Das Integral steigt nur auf 1,6–2,4°; das Überschießen kommt vom Ist-Nick, der dem Soll-Nick nachläuft (bei +69 ist
+der Soll-Nick ab 1,4 s negativ, der Ist-Nick bis 2,1 s über 1,5°) – also mehr P statt weniger I.
+
+| Runde | Werte (KI FF IMAX KP KF) | Aufschwung max Soll-Nick | +46 Mittel / Spitze | −46 | +69 | −69 |
+|---|---|---|---|---|---|---|
+| 1 | 0,06 1 8 0,11 0,05 | 24,8° | 1,04 × / 1,33 × | 1,05 × / 1,18 × | 1,00 × / 1,36 × | 1,02 × / 1,18 × |
+| 2 | 0,06 1 8 0,15 0,05 | 22,0° | 0,98 × / 1,13 × | 1,01 × / 1,15 × | – | – |
+
+- Runde 2 vorwärts: 90 % nach 1,6 s ab Rampenbeginn (Firmware-Sitzung zählt ab Soll erreicht: Spitze 1,09 ×), ab 2 s
+  45…51 Einheiten, kein Unterschwingen, kein Pendeln; Soll-Nick gleichmäßig auf −1,6 … −2,2°. Rückwärts Streuung 2,0.
+- ±69 mit kp 0,15 nicht gefahren: Akku nach −46 bei 18 %, abgebrochen.
+- Firmware 023a6ff (SHA 5abeb9a6, kp 0,15 / ki 0,06 als Standard) gebaut, nicht geflasht. Weiter (Nutzer): laden,
+  Firmware-Sitzung prüft per USB, ob die RAM-Werte noch gelten (sonst neu setzen), dann ±69 nachmessen, dann flashen.
 
 ## Anfahren an eine Wand (Punkt 2, gefahren 2026-11-25)
 
