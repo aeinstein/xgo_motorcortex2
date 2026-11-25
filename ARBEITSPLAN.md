@@ -15,7 +15,7 @@ Planer, der Planer fährt den Rider, nach der Sicherheitsprüfung.
 | 2 | **Test: Anfahren an eine Wand** | geradeaus geprüft gefahren 2026-11-25 (unten) |
 | 3 | **Test: Fahren einer Bahn entlang.** Kurven glätten, Drehungen auf der Stelle vermeiden (Hauptgrund der Drift) | offen |
 | 4 | **Fahrregler in die Firmware.** Pi sendet Sollgeschwindigkeit und Drehrate in echten Einheiten, die Firmware regelt | erledigt, gefahren (unten) |
-| 5 | **Bahnbefehle für die Navigation.** Krümmung statt Drehrate, Drehen auf Kurs, Strecke mit Halt, Rückmeldung im Strom (Plan unten) | Stufe 0 fertig. Stufe 1: gefahren 2026-11-25 (κ 2, Firmware hält κ_soll exakt; Anfang enger, Halt jetzt auf dem Bogen), `vel_kappa` aus. Stufe 2: gefahren 2026-11-25 mit 81cb3335 (±90°/±180°, Sollwinkel auf 0,4°, IMU-Kurs 2 s nach Ende auf ≤ 1,4°). `vel_kappa`/`vel_kurs` seit 2026-11-25 Standard an. Stufe 3: Firmware ede94cd8 geflasht, Pi-Seite fertig (`vel_strecke` aus), nicht gefahren |
+| 5 | **Bahnbefehle für die Navigation.** Krümmung statt Drehrate, Drehen auf Kurs, Strecke mit Halt, Rückmeldung im Strom (Plan unten) | Stufe 0 fertig. Stufe 1: gefahren 2026-11-25 (κ 2, Firmware hält κ_soll exakt; Anfang enger, Halt jetzt auf dem Bogen), `vel_kappa` aus. Stufe 2: gefahren 2026-11-25 mit 81cb3335 (±90°/±180°, Sollwinkel auf 0,4°, IMU-Kurs 2 s nach Ende auf ≤ 1,4°). `vel_kappa`/`vel_kurs` seit 2026-11-25 Standard an. Stufe 3: gefahren 2026-11-25 von Hand (vorwärts 5–6 cm zu früh, rückwärts 9 cm zu weit: Nachlauf-Integral der Firmware, gemeldet), `vel_strecke` aus. home mit Krümmung + Kursziel gefahren: am Start 1 cm / 0,9° |
 
 ## Bahnbefehle (Punkt 5, Plan 2026-11-25)
 
@@ -68,6 +68,32 @@ Vektoren (Rest und Nachlauf auf 0,01 mm); `Robot.drive(strecke=Rest m)` schickt 
 v_meas = Sollwert (ohne Nachlauf); Handsteuerung `/drive?strecke=M` bzw. MCP `fahren` mit `strecke`, Reststrecke aus
 `odom_m` ab dem ersten Regelschritt. Wegfolger und Bahnprüfung schicken noch keine Strecke. Außerdem: xgonav fragt alle
 5 s nach, wenn der Fahrrahmen beim Start fehlte (Flashen), und schaltet dann um.
+
+## Strecke mit Halt und home gefahren (2026-11-25)
+
+Strecke von Hand (`fahrt.py` am Rider = MCP `fahren` mit `strecke`, `vel_strecke` nur für den Test; Mitschnitt
+`runde9.csv`). Wahre Strecke aus den Radticks (π·60 mm/1024 × 1,008, am Maßband kalibriert), Pose stimmt damit überein.
+
+| Fahrt | verlangt | gefahren (Ticks) | Ursache |
+|---|---|---|---|
+| v 0,2 vorwärts | 1,0 m | 0,93 m | Pi rechnete mit `odom_m` (Betrag, zählt das Pendeln beim Balancieren mit: 0,99 m) → behoben 044c0d7, vorzeichenbehaftet `odom_s_m` |
+| v −0,2 rückwärts | 0,5 m | 0,63 m | Pendeln der Odometrie machte den Rest wieder größer, die Firmware fuhr in 4 Stößen wieder an → behoben e25e0ad (Rest nur fallend) |
+| v 0,3 vorwärts | 1,0 m | 0,95 m | 5–6 cm zu früh |
+| v −0,2 rückwärts (nach Fix) | 0,5 m | 0,59 m | 9 cm zu weit, kein Nachschub mehr |
+
+- Verbleibender Fehler liegt in der Firmware: Der Nachlauf lag = ∫(v_soll − v_meas) summiert eine dauerhafte
+  Tempoabweichung auf (vorwärts Anlauf zu langsam → lag > 0 → zu früh; rückwärts schneller als Soll → lag < 0 → zu
+  spät). Vorschlag an die Firmware-Sitzung: momentaner erwarteter Nachlauf statt Integral. Offen.
+
+home mit `vel_kappa` + `vel_kurs` (Standard an), Startbild an, Weg ~1 m um eine Ecke:
+
+| Lauf | Ergebnis |
+|---|---|
+| 1 | am Start 1 cm, aber 180° falsch: Auf der Geraden zum Start 5 cm überrollt, zum Nachfahren umgedreht; die Schlussausrichtung brach sofort ab, weil das Vorzeichen des Fehlers um ±180° durch Zittern kippte („übergedreht“). Behoben 13237ae (übergedreht nur bei Fehler < 90°) |
+| 2 | am Start 1 cm, Kurs 0,9° daneben; auf der Geraden 8,7 cm überrollt, daher zweimal gedreht (nachfahren, ausrichten) |
+
+- Offen: Überrollen auf der Geraden zum Start (Bremsen auf den Startpunkt) – Kandidat für Strecke mit Halt, sobald
+  die Firmware den Nachlauf behebt; Nachfahren kurzer Reste rückwärts statt umdrehen.
 
 Reihenfolge: 0 → 1 → 2 → 3 → 4. Stufe 1 ist der Kern für Punkt 3 (Bahn entlang), 2 und 3 ersetzen Pi-Regelschleifen,
 4 räumt den doppelten Generator weg.
