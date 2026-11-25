@@ -1436,12 +1436,12 @@ class PetBrain:
             period = 0.2 if g[0] == "wackeln" else 0.6
             if g[0] != "kopf":
                 sign = 1.0 if int((t - g[1]) / period) % 2 == 0 else -1.0
-                act.w = sign * (self.rcfg.w_of(c.wiggle_w) if g[0] == "wackeln" else self.rcfg.turn_min_w)
+                act.w = sign * self.rcfg.w_of(c.wiggle_w if g[0] == "wackeln" else c.slow_w)
             return
         if tg is not None:
             act.w = self._turn_to(tg.bearing)
         elif not self._gone_done and t - self._person_t >= 0.5:
-            act.w = math.copysign(self.rcfg.turn_min_w, self._person_bearing)    # schaut hinterher
+            act.w = math.copysign(self.rcfg.w_of(c.slow_w), self._person_bearing)    # schaut hinterher
 
     def _turn_to(self, err: float) -> float:
         c = self.cfg

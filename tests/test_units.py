@@ -28,7 +28,7 @@ def test_u8_mapping():
 
 def test_robot_ramp_clamp_and_watchdog():
     cfg = Config.neutral().robot
-    cfg.vel_frame = False  # Byteweg (speed_x/speed_z, Rampe am Pi); Fahrrahmen: test_fahrrahmen*
+    cfg.vel_frame = False  # Byteweg (speed_x/speed_z); Fahrrahmen: test_fahrrahmen*
     r = SimRobot(cfg)
     r.start()
     try:
@@ -38,9 +38,7 @@ def test_robot_ramp_clamp_and_watchdog():
             r.drive(1.0, -1.0)
             time.sleep(0.02)
         v, w = r.command
-        assert 0 < v <= cfg.max_v + 1e-9          # Rampe: noch nicht am Ziel, aber > 0
-        assert v < cfg.max_v                       # accel_v 0.8/s -> nach 0.25 s ~0.2
-        assert -cfg.max_w - 1e-9 <= w < 0
+        assert (v, w) == pytest.approx((cfg.max_v, -cfg.max_w))   # ohne Rampe am Pi (seit 2026-11-25)
         time.sleep(cfg.stall_timeout_s + 0.6)      # kein drive() mehr -> Watchdog
         assert r.command == pytest.approx((0.0, 0.0), abs=1e-6)
         names = {n for _, n, _ in r.writes}
@@ -1387,99 +1385,6 @@ def test_wheel_speed_window():
     # Lücke (abgesetzt): kein Mittel über die Pause hinweg
     w.add(100, 5.0, int(w.latest()[1] * k), int(w.latest()[2] * k), 6000)
     assert w.speed(0.3) is None
-
-
-def _speed_ctrl_fahrt(abzug=0.0, v_cmd=0.2, on=True, secs=9.0):
-    """Regelkreis mit dem Trägheitsmodell des Simulators (sim._dyn): Rampe 50 Hz, Räder 50 Hz, Regelschritt
-    ~20 Hz. abzug: Fehlbetrag am Fahrwert (Teppich). Liefert (Soll m/s, Spitze, Mittel der letzten 2 s,
-    Spanne der letzten 2 s, Korrektur am Ende)."""
-    import math
-    from xgonav.config import OdomCfg
-    from xgonav.robot import SpeedCtrl
-    from xgonav.wheels import WheelOdom
-    cfg = Config.neutral().robot
-    cfg.vel_frame = False  # Byteweg (speed_ctrl am Pi); Fahrrahmen: test_fahrrahmen*
-    cfg.vx_limit, cfg.speed_ctrl = 1.8, on
-    r = SimRobot(cfg)
-    sc, w = SpeedCtrl(cfg), WheelOdom(Config.neutral().odom)
-    tau, nmp, h = SimWorld.DYN_TAU_V, SimWorld.DYN_NMP_S, 0.004
-    cur = vf = s = 0.0
-    vs = []
-    for k in range(int(secs / h)):
-        t = k * h
-        if k % 5 == 0:
-            cur += max(-cfg.accel_v * 0.02, min(cfg.accel_v * 0.02, v_cmd - cur))
-            r._cur = (cur, 0.0)
-            w.add(k // 5 + 1, t, int(s / w.m_per_tick), int(s / w.m_per_tick), int(t * 1000) + 1)
-        eff = max(0.0, r.with_trim(r.v_nominal) - abzug) * cfg.vx_limit
-        prev = vf
-        vf += (eff - vf) * (1 - math.exp(-h / tau))
-        v = vf - nmp * (vf - prev) / h
-        s += v * h
-        if k % 12 == 0 and on:
-            r.v_trim = sc.step(t, r.v_nominal, w.speed(cfg.speed_ctrl_window_s))
-        vs.append(v)
-    late = vs[-int(2.0 / h):]
-    return v_cmd * cfg.vx_limit, max(vs), sum(late) / len(late), max(late) - min(late), r.v_trim
-
-
-def test_speed_ctrl_reaches_setpoint():
-    """Teppich (Fehlbetrag am Fahrwert): ohne Regelung bleibt er unter dem Soll, mit Regelung erreicht er es,
-    ohne zu pendeln. Auf ebenem Boden ändert die Regelung fast nichts."""
-    soll, _, ende, _, _ = _speed_ctrl_fahrt(abzug=0.04, on=False)
-    assert ende < 0.82 * soll
-    soll, peak, ende, spanne, trim = _speed_ctrl_fahrt(abzug=0.04)
-    assert abs(ende - soll) < 0.05 * soll and peak < 1.10 * soll and spanne < 0.05 * soll
-    assert trim == pytest.approx(0.04, abs=0.008)
-    soll, peak, ende, spanne, trim = _speed_ctrl_fahrt(abzug=0.04, v_cmd=0.10)   # langsam, wie an Engstellen
-    assert abs(ende - soll) < 0.06 * soll and peak < 1.10 * soll
-    soll, peak, ende, spanne, trim = _speed_ctrl_fahrt()                          # eben
-    assert abs(ende - soll) < 0.03 * soll and peak < 1.10 * soll and abs(trim) < 0.008
-
-
-def test_speed_ctrl_rules():
-    """Korrektur 0 ohne Raddaten, unter dem Totband und bei Richtungswechsel; begrenzt; Stopp bleibt 128."""
-    from xgonav.robot import FW_DEADBAND, SpeedCtrl
-    cfg = Config.neutral().robot
-    cfg.vel_frame = False  # Byteweg (speed_x/speed_z, Rampe am Pi); Fahrrahmen: test_fahrrahmen*
-    cfg.vx_limit, cfg.speed_ctrl, cfg.speed_ctrl_lag_s = 1.8, True, 0.0
-    sc = SpeedCtrl(cfg)
-    t = 0.0
-    for _ in range(400):                                 # steht an: Ist 0 bei Soll 0,36 m/s
-        t += 0.05
-        sc.step(t, 0.2, 0.0)
-    assert sc.trim == pytest.approx(cfg.speed_ctrl_max)  # begrenzt
-    assert sc.v_soll == pytest.approx(0.36)
-    assert sc.step(t + 0.05, 0.2, None) == 0.0           # Raddaten weg
-    for _ in range(40):
-        t += 0.05
-        sc.step(t, 0.2, 0.1)
-    assert sc.trim > 0.02
-    assert sc.step(t + 0.05, -0.2, -0.1) == 0.0          # Richtungswechsel
-    for _ in range(40):
-        t += 0.05
-        sc.step(t, -0.2, -0.1)
-    assert sc.trim < -0.02                               # rückwärts zu langsam: mehr rückwärts
-    assert sc.step(t + 0.05, -0.5 * FW_DEADBAND, -0.1) == 0.0   # unter dem Totband der Firmware
-    for _ in range(400):                                 # schneller als verlangt: nimmt zurück, begrenzt
-        t += 0.05
-        sc.step(t, 0.2, 0.6)
-    assert sc.trim == pytest.approx(-cfg.speed_ctrl_max)
-    # Senden: Korrektur nach den Faktoren, nie über den Stillstand hinweg, Stopp exakt 128
-    r = SimRobot(cfg)
-    r.v_trim = 0.05
-    r._cur = (0.15, 0.0); r._send(100.0)
-    assert r._sent[0] == norm_to_u8(0.20)
-    r._cur = (-0.10, 0.0); r._send(200.0)
-    assert r._sent[0] == norm_to_u8(-0.05)               # -0,10 + 0,05 (ohne reverse_gain seit 2026-11-23)
-    r._cur = (0.0, 0.0); r._send(300.0)
-    assert r._sent[0] == 128
-    r.v_trim = -0.10
-    r._cur = (0.06, 0.0); r._send(400.0)
-    assert r._sent[0] == 128                             # kehrt die Richtung nicht um
-    r.v_trim = 0.10
-    r._cur = (0.5 * FW_DEADBAND, 0.0); r._send(500.0)
-    assert r._sent[0] == norm_to_u8(0.5 * FW_DEADBAND)   # unter dem Totband bleibt der Wert
 
 
 def test_wheel_scale_calibration():
@@ -3788,23 +3693,6 @@ def test_arc_check_bremst_voll_wenn_raeder_zu_schnell():
     assert c.v == 0.1 and rufe[-1][0] == pytest.approx(0.18)
 
 
-def test_robot_vollbremsung_ohne_rampe():
-    """drive(brake=True) mit v = 0 setzt den Fahrwert im nächsten Rampenschritt auf 0; ohne brake über die Rampe."""
-    _rc = Config.neutral().robot
-    _rc.vel_frame = False  # Byteweg (speed_x/speed_z, Rampe am Pi); Fahrrahmen: test_fahrrahmen*
-    r = SimRobot(_rc)
-    r._cur, r._last_ramp_t = (0.3, 0.1), 0.0
-    r.drive(0.0, 0.1)
-    r._ramp(r._target, 0.02)
-    assert 0.2 < r._cur[0] < 0.3
-    r.drive(0.0, 0.1, brake=True)
-    r._ramp(r._target, 0.04)
-    assert r._cur[0] == 0.0 and r._cur[1] > 0
-    r.drive(0.2, 0.0, brake=True)                                       # brake gilt nur für v = 0
-    r._ramp(r._target, 0.06)
-    assert 0 < r._cur[0] < 0.2
-
-
 def test_dunkelzone_sperrt_wie_sperrzone_ohne_speichern(tmp_path):
     """Dunkelzonen (gridmap.dark_zones) wirken auf Planer und Zielsuche wie Sperrzonen, stehen aber nicht in
     der Route-Datei und sind nach dem Leeren wieder weg."""
@@ -3910,16 +3798,16 @@ def test_config_schema_aktuell():
 
 
 def test_gesendet_hoechstens_vollausschlag():
-    """robot.max_sent ist weg (2026-11-23): Gesendet wird nur auf ±1 begrenzt, auch mit Korrektur der
-    Geschwindigkeitsregelung; der alte Schlüssel in einer config.toml ergibt nur eine Warnung."""
+    """robot.max_sent ist weg (2026-11-23): Gesendet wird nur auf ±1 begrenzt; alte Schlüssel in einer
+    config.toml (auch speed_ctrl, accel_*, turn_min_w seit 2026-11-25) ergeben nur eine Warnung."""
     from xgonav.config import ENTFERNT
     from xgonav.robot import SimRobot
-    assert {"robot.max_sent", "robot.manual_forward_gain", "robot.reverse_gain"} <= set(ENTFERNT)
+    assert {"robot.max_sent", "robot.manual_forward_gain", "robot.reverse_gain", "robot.speed_ctrl",
+            "robot.accel_v", "robot.turn_min_w"} <= set(ENTFERNT)
     cfg = Config.neutral()
     cfg.robot.vel_frame = False  # Byteweg (speed_x/speed_z, Rampe am Pi); Fahrrahmen: test_fahrrahmen*
     r = SimRobot(cfg.robot)
-    r.v_trim = 0.1
-    for cur, soll in (((0.5, 0.0), norm_to_u8(0.6)), ((0.95, 0.0), norm_to_u8(1.0)), ((-0.5, 0.0), norm_to_u8(-0.4))):
+    for cur, soll in (((0.5, 0.0), norm_to_u8(0.5)), ((1.3, 0.0), norm_to_u8(1.0)), ((-1.2, 0.0), norm_to_u8(-1.0))):
         r._cur = cur
         r._sent = None
         r._send(time.monotonic() + 10)
@@ -4212,13 +4100,8 @@ def test_robot_tempo_alle_befehle():
     assert r._target == pytest.approx((cfg.robot.max_v * 0.4, -cfg.robot.max_w * 0.4))
     r.drive(0.1, 0.05)
     assert r._target == pytest.approx((0.04, 0.02))
-    lo = cfg.robot.turn_min_w                                   # Drehen auf der Stelle: nie unter die Untergrenze
-    r.drive(0.0, -lo)
-    assert r._target == pytest.approx((0.0, -lo))
-    r.drive(0.0, 3 * lo)
-    assert r._target == pytest.approx((0.0, 3 * lo * 0.4))
-    r.drive(0.0, 0.5 * lo)                                      # kleiner als die Untergrenze bestellt: bleibt
-    assert r._target == pytest.approx((0.0, 0.5 * lo * 0.4))
+    r.drive(0.0, -0.06)                                         # Drehen auf der Stelle: auch mal Tempo (keine Untergrenze)
+    assert r._target == pytest.approx((0.0, -0.06 * 0.4))
     for bad in (0.0, 1.5, -0.2):
         with pytest.raises(ValueError):
             r.tempo = bad
@@ -4334,7 +4217,7 @@ def test_manual_turn_dreht_um_winkel_mit_nachlauf():
         t += dt
     i = m.turn_info
     assert i["grund"] == "angekommen" and abs(i["gedreht_deg"] - 90.0) <= 3.0 and m._turn is None
-    assert max(ws) <= cfg.robot.w_of(0.5) + 1e-9 and min(w for w in ws if w) >= cfg.robot.turn_min_w
+    assert max(ws) <= cfg.robot.w_of(0.5) + 1e-9 and min(w for w in ws if w) > 0
     m.turn(-45.0, 0.5, 3.0, t, yaw, 20.0)
     m.step(None, yaw=yaw, now=t)
     m.set(0.0, 0.0, t)

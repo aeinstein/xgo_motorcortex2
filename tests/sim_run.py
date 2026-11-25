@@ -192,7 +192,7 @@ def run(mode="follow", secs=25.0, video=None, shake=1.0, quiet=True, imu=False, 
            "dunkel": {"angst": app.dunkel.n_angst, "licht": app.dunkel.n_licht, "aufgeben": app.dunkel.n_aufgeben, "zonen": app.dunkel.n_zonen,
                       "ruhe": app.ruhe} if dunkel else None, "dist_m": round(world.dist_travelled, 2), "frames": len(L),
            "loop_ms": round(app._loop_ms, 1), "odom": app.odom_src, "odom_m": round(app.odom_m, 2),
-           # mittleres Tempo in Fahrt (m/s): mit robot.speed_ctrl unabhängig davon, wie schwer er rollt (--vx-true)
+           # mittleres Tempo in Fahrt (m/s)
            "v_fahrt": round(float(np.mean([r["v"] for r in L if r["v"] > 0.05] or [0.0])), 3),
            "grid": grid, "status": app._cmd.status, "fertig_s": done_t.get("s"),
            "explore": app.behavior.info() if hasattr(app.behavior, "info") else None,

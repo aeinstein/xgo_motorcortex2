@@ -884,7 +884,7 @@ def test_horchen_beim_streifen_sucht():
         return b, weg
     b, weg = lauf(lambda t: 70.0 if 33.0 <= t <= 34.5 else None)
     assert b.n_seek == 1 and b.n_called == 0 and weg == 0.0 and b.task is None
-    b, weg = lauf(lambda t: 70.0 if 33.0 <= t <= 34.5 or 41.0 <= t <= 43.5 else None)
+    b, weg = lauf(lambda t: 70.0 if 33.0 <= t <= 34.5 or 41.0 <= t <= 44.5 else None)
     assert b.n_seek == 2 and b.n_called == 1 and weg > 0.3, weg
 
 
@@ -1440,7 +1440,7 @@ def test_pet_streifen_faehrt_geplanten_weg_mit_wegfolger():
     p._nav_goal = p._to_grid(w, b._goal)
     c = p.step(w)
     assert c.v == 0.0 and "drehe" in c.status
-    assert cfg.robot.turn_min_w <= abs(c.w) <= cfg.robot.w_of(cfg.home.turn_w_max) + 1e-9
+    assert 0 < abs(c.w) <= cfg.robot.w_of(cfg.home.turn_w_max) + 1e-9
 
 
 def test_pet_gehirn_haelt_bei_festgefahren_nicht_bei_bahnpruefung():
@@ -1470,8 +1470,10 @@ def test_dreh_w_gemeinsamer_drehregler():
     r = RobotCfg()
     assert dreh_w(0.0, 1.5, 0.4, r) == 0.0
     assert dreh_w(math.radians(5), 1.5, 0.4, r, deadband_deg=8.0) == 0.0
-    assert dreh_w(math.radians(2), 1.5, 0.4, r) == pytest.approx(r.turn_min_w)       # Untergrenze Firmware
-    assert dreh_w(-math.radians(2), 1.5, 0.4, r) == pytest.approx(-r.turn_min_w)
+    klein = math.degrees(1.5 * math.radians(2)) / r.vyaw_limit_dps                    # keine Untergrenze (seit 2026-11-25)
+    assert dreh_w(math.radians(2), 1.5, 0.4, r) == pytest.approx(klein)
+    assert dreh_w(-math.radians(2), 1.5, 0.4, r) == pytest.approx(-klein)
+    assert dreh_w(math.radians(2), 1.5, 0.4, r, w_min=0.06) == pytest.approx(0.06)    # w_min nur noch auf Wunsch
     assert dreh_w(math.radians(170), 1.5, 0.4, r) == pytest.approx(r.w_of(0.4))       # Obergrenze je Modus (Faktor)
     assert dreh_w(math.radians(40), 1.5, 0.8, r) == pytest.approx(math.degrees(1.5 * math.radians(40)) / r.vyaw_limit_dps)
     assert dreh_w(math.radians(2), 1.5, 0.4, r, w_min=0.0) == pytest.approx(math.degrees(1.5 * math.radians(2)) / r.vyaw_limit_dps)

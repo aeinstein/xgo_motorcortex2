@@ -289,8 +289,6 @@ class SimWorld(FrameSource):
 
     def _integrate(self, t: float, dt: float) -> None:
         vn, wn = self.robot.command
-        # Korrektur der Geschwindigkeitsregelung wirkt wie am Rider
-        vn += self.robot.with_trim(self.robot.v_nominal) - self.robot.v_nominal
         v = vn * self.vx_mps
         w = w_to_yaw_rate(wn, self.robot.cfg)
         if self.dynamics:

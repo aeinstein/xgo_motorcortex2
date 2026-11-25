@@ -30,7 +30,7 @@
        "key": "max_v",
        "typ": "float",
        "default": 0.5,
-       "hilfe": "Höchstwerte (Anteil des Firmware-Vollausschlags). Seit 2026-11-23 sind alle Fahr- und Drehwerte der Modi (home.v, explore.v, pet.drive_v, behavior.search_w, …) und die Handsteuerung Anteile davon: gesendet = Faktor x tempo x max_v (bzw. max_w), dazu nur die Korrektur von speed_ctrl; Handsteuerung = max_v x tempo x 1 (Nutzer 2026-11-23: reverse_gain/manual_forward_gain waren Notlösungen für die alte Firmware). Nutzer 2026-11-13: beide 0,5 (vorher 0,15 / 0,30); 0,5 sind rechnerisch ~0,9 m/s und 180 °/s, über 0,24 (50 cm/s) ist nie gefahren worden."
+       "hilfe": "Höchstwerte (Anteil des Firmware-Vollausschlags). Seit 2026-11-23 sind alle Fahr- und Drehwerte der Modi (home.v, explore.v, pet.drive_v, behavior.search_w, …) und die Handsteuerung Anteile davon: gesendet = Faktor x tempo x max_v (bzw. max_w); Handsteuerung = max_v x tempo x 1 (Nutzer 2026-11-23: reverse_gain/manual_forward_gain waren Notlösungen für die alte Firmware). Nutzer 2026-11-13: beide 0,5 (vorher 0,15 / 0,30); 0,5 sind rechnerisch ~0,9 m/s und 180 °/s, über 0,24 (50 cm/s) ist nie gefahren worden."
       },
       {
        "key": "max_w",
@@ -39,52 +39,16 @@
        "hilfe": ""
       },
       {
-       "key": "turn_min_w",
-       "typ": "float",
-       "default": 0.06,
-       "hilfe": "Kleinere Drehbefehle setzt die Firmware nicht um (Totband ~5 %): Untergrenze des gemeinsamen Drehreglers behaviors.dreh_w für alle Drehungen auf der Stelle (PathFollower, pet, Dunkelangst; seit 2026-11-23). Gilt seit 2026-11-24 auch nach dem Tempo (Robot.drive): Tempo 0,75 machte aus 0,06 gesendet 0,045, er drehte nicht."
-      },
-      {
        "key": "tempo",
        "typ": "float",
        "default": 1.0,
        "hilfe": "Tempo (Anteil, 0,05..1): jeder Fahr- und Drehbefehl aller Modi wird nach der Begrenzung auf max_v/max_w damit malgenommen (Robot.drive). Startwert; zur Laufzeit über den Temporegler im Web (POST /tempo), gilt bis zum Neustart. Firmware-Aktionen (POST /action) fahren mit eigener Geschwindigkeit."
       },
       {
-       "key": "speed_ctrl",
-       "typ": "bool",
-       "default": true,
-       "hilfe": "Geschwindigkeitsregelung: Die Firmware regelt die Fahrgeschwindigkeit praktisch nur proportional, auf Teppich bleibt der Rider deshalb unter dem Soll. Mit speed_ctrl vergleicht xgonav im Regelschritt Soll (gesendeter Wert x vx_limit) und Ist (Räder), beide über speed_ctrl_window_s gemittelt, und stellt den gesendeten Wert nach: Korrektur += (Soll - Ist) / vx_limit x dt / speed_ctrl_ti_s, höchstens +-speed_ctrl_max (normiert). Ohne frische Raddaten, im Stand, unter dem Totband der Firmware und bei Richtungswechsel ist die Korrektur 0. Steht er an einem Hindernis an, drückt er um speed_ctrl_max stärker. speed_ctrl_lag_s: So träge folgt das Soll dem Fahrwert (Anlaufen des Riders), sonst lädt sich die Korrektur bei jedem Anfahren auf. Abgestimmt am Trägheitsmodell des Simulators (sim._dyn, 2026-11-12): ohne Modell 31-46 % Überschwingen beim Anfahren auf ebenem Boden, mit 0,8 s und ti 2 s 5 %; ein Fehlbetrag von 0,04 ist dann nach ~3 s zu 95 % ausgeglichen. Seit 2026-11-23 1,2 s wie die Trägheit des Riders (Fahrt vor dem Stuhl: Räder folgen dem Fahrwert mit ~1,2 s; mit 0,8 s lief er schneller als verlangt und die Korrektur stand trotzdem bei +0,07); Simulator damit 8 % Überschwingen statt 19 %. am RiderPi seit 2026-11-13 an"
-      },
-      {
-       "key": "speed_ctrl_window_s",
-       "typ": "float",
-       "default": 0.3,
-       "hilfe": ""
-      },
-      {
-       "key": "speed_ctrl_ti_s",
-       "typ": "float",
-       "default": 2.0,
-       "hilfe": ""
-      },
-      {
-       "key": "speed_ctrl_lag_s",
-       "typ": "float",
-       "default": 1.2,
-       "hilfe": ""
-      },
-      {
-       "key": "speed_ctrl_max",
-       "typ": "float",
-       "default": 0.1,
-       "hilfe": ""
-      },
-      {
        "key": "vel_frame",
        "typ": "bool",
        "default": true,
-       "hilfe": "Fahrrahmen (Firmware 0029–0032, xgonav/fahrrahmen.py, ARBEITSPLAN.md Punkt 4): Kennt der Treiber /proc/XGORider/vel und antwortet die Firmware, schickt Robot statt speed_x/speed_z Sollwerte in echten Einheiten (normiert x vx_limit bzw. x vyaw_limit_dps) mit Beschleunigung und Ruck; die Firmware rampt (S-Kurve) und regelt Tempo und Drehrate selbst. Dann sind die Rampe am Pi (accel_v/accel_w), speed_ctrl und die Untergrenze turn_min_w in drive() aus (Code bleibt bis zur Messfahrt). v_max = max_v x vx_limit, w_max = max_w x vyaw_limit_dps gehen beim Start nach vel_limits, mit dem Wächter der Firmware vel_timeout_ms (> keepalive_s). Beschleunigung beim Schnellerwerden vel_accel, beim Langsamerwerden vel_decel, drive(brake=True) vel_brake mit vel_brake_jerk. Höchstwerte sind vorsichtige Startwerte (Nutzer 2026-11-25: werden am Rider gemessen); 0,5 m/s² entspricht ~2,9° Vorlage. fw_speed_unit_mm: mm/s je Firmware-Einheit der Radgeschwindigkeit (Ist in 0x0e, Eingang des Reglers), gemessen 2026-11-25 mit tools/fw_einheit.py: 3,95 / 3,90 bei 152 / 246 mm/s (Encoder). Die frühere 8,4 kam vom Soll des Bytewegs, den der P-Regler um das 1,4–1,7-fache überfährt."
+       "hilfe": "Fahrrahmen (Firmware 0029–0032, xgonav/fahrrahmen.py, ARBEITSPLAN.md Punkt 4): Kennt der Treiber /proc/XGORider/vel und antwortet die Firmware, schickt Robot statt speed_x/speed_z Sollwerte in echten Einheiten (normiert x vx_limit bzw. x vyaw_limit_dps) mit Beschleunigung und Ruck; die Firmware rampt (S-Kurve) und regelt Tempo und Drehrate selbst (Rampe am Pi, speed_ctrl und turn_min_w seit 2026-11-25 entfernt; auf dem Byteweg filtert die Firmware selbst). v_max = max_v x vx_limit, w_max = max_w x vyaw_limit_dps gehen beim Start nach vel_limits, mit dem Wächter der Firmware vel_timeout_ms (> keepalive_s). Beschleunigung beim Schnellerwerden vel_accel, beim Langsamerwerden vel_decel, drive(brake=True) vel_brake mit vel_brake_jerk. Höchstwerte sind vorsichtige Startwerte (Nutzer 2026-11-25: werden am Rider gemessen); 0,5 m/s² entspricht ~2,9° Vorlage. fw_speed_unit_mm: mm/s je Firmware-Einheit der Radgeschwindigkeit (Ist in 0x0e, Eingang des Reglers), gemessen 2026-11-25 mit tools/fw_einheit.py: 3,95 / 3,90 bei 152 / 246 mm/s (Encoder). Die frühere 8,4 kam vom Soll des Bytewegs, den der P-Regler um das 1,4–1,7-fache überfährt."
       },
       {
        "key": "fw_speed_unit_mm",
@@ -199,18 +163,6 @@
        "typ": "bool",
        "default": false,
        "hilfe": "Test (Nutzer 2026-11-24): Nivellierung nie ausschalten, solange er balanciert, auch im Drehen und im Stand. Die Firmware schaltet sie bei jedem Drehbefehl ab 128±16 selbst ab, deshalb schreibt xgonav sie dann gleich mit neu (je Drehbefehl ein Schreiben mehr)."
-      },
-      {
-       "key": "accel_v",
-       "typ": "float",
-       "default": 0.8,
-       "hilfe": "max. Änderung von v pro Sekunde (normiert)"
-      },
-      {
-       "key": "accel_w",
-       "typ": "float",
-       "default": 2.0,
-       "hilfe": ""
       },
       {
        "key": "keepalive_s",
@@ -2652,6 +2604,12 @@
        "hilfe": "Anteil von robot.max_w"
       },
       {
+       "key": "slow_w",
+       "typ": "float",
+       "default": 0.12,
+       "hilfe": "Anteil von robot.max_w: langsames Hin- und Herdrehen, hinterherschauen"
+      },
+      {
        "key": "wiggle_s",
        "typ": "float",
        "default": 1.2,
@@ -2673,7 +2631,7 @@
        "key": "turn_w",
        "typ": "float",
        "default": 0.8,
-       "hilfe": "Anteil von robot.max_w (absolut 0,40; Nutzer 2026-11-13: Drehen x2); Untergrenze robot.turn_min_w"
+       "hilfe": "Anteil von robot.max_w (absolut 0,40; Nutzer 2026-11-13: Drehen x2)"
       },
       {
        "key": "retreat_m",
@@ -3448,7 +3406,7 @@
        "key": "turn_w",
        "typ": "float",
        "default": 0.4,
-       "hilfe": "Anteil von robot.max_w; Untergrenze robot.turn_min_w"
+       "hilfe": "Anteil von robot.max_w"
       },
       {
        "key": "tol_deg",

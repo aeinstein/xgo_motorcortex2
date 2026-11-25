@@ -19,7 +19,7 @@ Alles uncommittet, am Rider nicht eingespielt, nicht gefahren. Diese Punkte brau
 - `freespace.net_smooth_n = 3`: Zacken evtl. seit IMU je Bild / 36094d2 weg; kostet ein Netzbild Verzögerung.
 - `reloc.track`: Default an, am Rider aus; alle 10 s Kopie der 48-m-Karte.
 - `home.turn_w_max = 0.25`: mit Firmware 0017 neu messen.
-- `robot.speed_ctrl` + Anschub `behavior.push_*` + Firmware 0015: drei Mechanismen für dasselbe, nach einer Fahrt entscheiden.
+- Anschub `behavior.push_*` + Firmware 0015: zwei Mechanismen für dasselbe (`robot.speed_ctrl` ist seit 2026-11-25 raus, die Firmware regelt das Tempo auf dem Fahrrahmen), nach einer Fahrt entscheiden.
 - `freespace.restart_hold_s` (1 s ohne Freiraum nach dem Aufstehen): Anlass war das Farbmodell (seit 2026-11-18 entfernt), das Netz lernt nichts; prüfen, ob die Haltezeit noch nötig ist.
 - Raumkarte im Web holt `map.png` je Sekunde (Anzeige kostet Pi-Zeit).
 - `localmap.py`: zweimal `rebase` je Bodenergebnis in Python, Kandidat für C++.

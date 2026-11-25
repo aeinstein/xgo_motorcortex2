@@ -225,6 +225,11 @@ Kosten am ESP32: zwei PI-Regler + Rampe je Takt, vernachlässigbar gegen die Lag
   nach 0,5 s, Spitze 1,10 ×, letzte Sekunde 1,07 ×, 0,64 m; v 0,3 (Soll 69): 90 % nach 0,95 s, Spitze 1,08 ×, letzte
   Sekunde 1,03 ×, 0,82 m in 3 s; Drehen w 0,4 (72 °/s): 1,00 ×, Winkel 219 / 215°. Firmware ab hier Sache einer
   anderen Sitzung (Nutzer 2026-11-25).
+- **xgonav aufgeräumt (2026-11-25, Nutzer):** `robot.turn_min_w` (Untergrenze in `Robot.drive` und
+  `behaviors.dreh_w`, pet nimmt für langsames Drehen `pet.slow_w`), `robot.speed_ctrl*` (`SpeedCtrl`,
+  `App._speed_tick`, `v_trim`/`with_trim`, Status `speed_ctrl`) und die Rampe am Pi (`accel_v`/`accel_w`; Byteweg
+  sendet das Ziel direkt, die Firmware filtert) entfernt; alte Schlüssel geben nur eine Warnung. Drehungen enden
+  ohne Untergrenze etwas weicher (kp·Fehler bis ins Totband).
 
 ### Zu klären
 

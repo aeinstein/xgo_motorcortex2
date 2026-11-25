@@ -31,7 +31,7 @@ Unknown section or key in TOML → `KeyError` at load. New parameters go into th
 
 Default = `config.py` = the RiderPi values (`/opt/xgonav/config.toml` without `/opt` paths). (sim: …) = `Config.neutral()` (`NEUTRAL` in `config.py`), used by `tests/sim_run.py` and the tests; since 2026-11-23 it differs only where the simulator cannot model the hardware (camera, IMU auto sync, wheel scale, levelling, detector rate, FloorNet, display, CPU pinning) — all drive, turn, behaviour, map and timing values are the Rider's.
 
-**Speeds (since 2026-11-23):** every drive and turn value of a mode (`home.v`, `explore.v`, `pet.drive_v`, `behavior.search_w`, …) and the hand control are **factors 0..1 of `robot.max_v` / `robot.max_w`**. Sent = factor × `tempo` × `max_v` (hand control: stick × `tempo` × `max_v`), plus only the `speed_ctrl` correction; capped at ±1 (firmware range). Values below are factors; absolute = factor × 0.5 on the RiderPi.
+**Speeds (since 2026-11-23):** every drive and turn value of a mode (`home.v`, `explore.v`, `pet.drive_v`, `behavior.search_w`, …) and the hand control are **factors 0..1 of `robot.max_v` / `robot.max_w`**. Sent = factor × `tempo` × `max_v` (hand control: stick × `tempo` × `max_v`); capped at ±1 (firmware range). Values below are factors; absolute = factor × 0.5 on the RiderPi.
 
 RiderPi = `deploy/config.example.toml` where it still differs (blank = default). [K] = device-specific, calibrate.
 
@@ -45,20 +45,13 @@ RiderPi = `deploy/config.example.toml` where it still differs (blank = default).
 |---|---|---|---|
 | `max_v` | 0.5 | | maximum drive value (share of the firmware range); all speeds are factors of it. RiderPi 0.15 → 0.5 on 2026-11-13 (user), **never driven above 0.24 absolute**. Sent 0.12 ≈ 26 cm/s, 0.24 ≈ 50 cm/s |
 | `max_w` | 0.5 | | maximum turn value; 0.25 ≈ 90 °/s (firmware scale assumed); RiderPi 0.30 → 0.5 on 2026-11-13 (user) |
-| `turn_min_w` | 0.06 | | lower bound of the shared turn controller `behaviors.dreh_w` (firmware ignores smaller turn values): path follower turning in place and final alignment, `pet` turns, fear of the dark. Since 2026-11-23; replaces `pet.turn_min_w`, `dunkel.turn_min_w` and `behavior.search_w` as the path follower's minimum. Since 2026-11-24 also a floor after `tempo` in `Robot.drive` for turns on the spot (v = 0, requested ≥ `turn_min_w`): with tempo 0.75 a sent 0.045 left the Rider standing in the firmware dead band |
 | `tempo` | 1.0 | | start value of the speed slider: every drive and turn command of every mode is multiplied by it after the `max_v`/`max_w` clamp (`Robot.drive`); at runtime `POST /tempo?f=0.05..1` (web slider), until restart. Firmware actions run at their own speed |
 | `level_pulse_s` | 3.0 | | length of one leveling pulse (roll command 0, firmware `roll_balance` on, then off) |
 | `level_after_standup` | true (sim: false) | | one pulse after each stand-up, 2.5 s after it; web button „Neu ausrichten“ triggers the same pulse |
 | `level_while_driving` | true (sim: false) | | firmware leveling (0x61) on after `level_drive_delay_s` (1.0) of straight driving (\|w\| ≤ `level_drive_w_max` 0.06, roll command 0), off when turning, stopping or rolling; trim stays (patch 0012) |
 | `vx_limit` | 1.8 | | m/s per firmware unit (measured 2026-11-05: command 0.15 → ~27 cm/s); path check, follow prediction, odometry fallback |
-| `speed_ctrl` | true | | speed control on the wheels: sent value += ∫(target − wheel speed); target = sent value × `vx_limit`. Needs wheel odometry. Zero without fresh wheel data, at standstill, below the firmware dead band (0.05) and on a direction change. On at the RiderPi since 2026-11-13 |
-| `speed_ctrl_window_s` | 0.3 | | s, averaging window for wheel speed and target |
-| `speed_ctrl_ti_s` | 2.0 | | s, integral time |
-| `speed_ctrl_lag_s` | 1.2 | | s, lag of the target behind the sent value (Rider inertia, wheels vs. command 2026-11-23); without it the correction winds up at every start. Simulator (`sim._dyn`): 8 % overshoot (0.8 s: 19 %) |
-| `speed_ctrl_max` | 0.10 | | normalised, limit of the correction (≈ 18 cm/s); blocked against an obstacle it pushes this much harder |
 | `vyaw_limit_dps` | 360 | | °/s at u8 0/255 |
-| `accel_v` / `accel_w` | 0.8 / 2.0 | | per second |
-| `vel_frame` | true | | drive frame of firmware 0029–0032 (`xgonav/fahrrahmen.py`): used when the driver has `/proc/XGORider/vel` and the firmware answers reg 0x1a, else bytes. Sends target m/s (normalised × `vx_limit`) and °/s (× `vyaw_limit_dps`) with acceleration and jerk; the firmware ramps (S-curve) and controls speed and turn rate. Then the Pi ramp (`accel_v`/`accel_w`), `speed_ctrl` and the `turn_min_w` floor in `Robot.drive` are off; `robot.command` is the firmware's setpoint, recomputed on the Pi. Simulator follows it with 0.15 s / 0.1 s lag (assumption until measured) |
+| `vel_frame` | true | | drive frame of firmware 0029–0032 (`xgonav/fahrrahmen.py`): used when the driver has `/proc/XGORider/vel` and the firmware answers reg 0x1a, else bytes. Sends target m/s (normalised × `vx_limit`) and °/s (× `vyaw_limit_dps`) with acceleration and jerk; the firmware ramps (S-curve) and controls speed and turn rate. (Pi ramp, `speed_ctrl` and `turn_min_w` removed 2026-11-25; the byte fallback sends targets unramped); `robot.command` is the firmware's setpoint, recomputed on the Pi. Simulator follows it with 0.15 s / 0.1 s lag (assumption until measured) |
 | `fw_speed_unit_mm` | 3.9 | | mm/s per firmware speed unit (measured 2026-11-25: 3.95 / 3.90 at 152 / 246 mm/s); all drive values to the firmware (v, a, jerk, v_max) are divided by it. Measure: `tools/fw_einheit.py` ([calibration.md](calibration.md)) |
 | `vel_accel_mps2` / `vel_decel_mps2` / `vel_jerk_mps3` | 0.5 / 1.0 / 2.5 | | faster in the same direction / slower or reversing; cautious start values, to be measured (0.5 m/s² ≈ 2.9° lean) |
 | `vel_brake_mps2` / `vel_brake_jerk_mps3` | 1.5 / 10 | | `drive(brake=True)` |
@@ -118,7 +111,7 @@ RiderPi = `deploy/config.example.toml` where it still differs (blank = default).
 
 ### Removed 2026-11-23
 
-Ignored with a warning: `pet.turn_min_w`, `dunkel.turn_min_w` → `robot.turn_min_w`; `robot.max_sent` (cap is `max_v`/`max_w`, sent at most ±1); `robot.manual_forward_gain`, `robot.reverse_gain` (workarounds for the old firmware; hand control = `max_v` × `tempo` × 1).
+Ignored with a warning: `pet.turn_min_w`, `dunkel.turn_min_w`, `robot.turn_min_w` (no lower turn bound since 2026-11-25, the firmware controls small turn rates); `robot.speed_ctrl*`, `robot.accel_v`, `robot.accel_w` (the firmware ramps and controls speed, drive frame); `robot.max_sent` (cap is `max_v`/`max_w`, sent at most ±1); `robot.manual_forward_gain`, `robot.reverse_gain` (workarounds for the old firmware; hand control = `max_v` × `tempo` × 1).
 
 ### Removed 2026-11-17
 

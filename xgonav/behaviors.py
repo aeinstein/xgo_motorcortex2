@@ -70,8 +70,8 @@ class World:
     # Merkkarte (m, inf frei). Beide für den Anschub (PathFollower), clear_fn nur beim Auslösen gerufen.
     v_rad: float | None = None
     clear_fn: object = None
-    # Tempo (m/s), auf das der Rider laut Trägheitsmodell des Temporeglers gerade hinbeschleunigt (None ohne
-    # robot.speed_ctrl). Für das Bremsprofil: Beim Anfahren liegt es über v_rad, die Räder legen noch zu.
+    # Tempo (m/s), auf das der Rider gerade hinbeschleunigt: Sollwert des Generators der Firmware (Fahrrahmen; None
+    # auf dem Byteweg). Für das Bremsprofil: Beim Anfahren liegt es über v_rad, die Räder legen noch zu.
     v_erw: float | None = None
     # path_free_fn(pts, pose, tight) = freie Strecke (m) entlang des Wegs pts (N x 2, Welt-m, ab der Pose) laut
     # Merkkarte, inf frei; tight: mit dem Radius der Engstelle. Für das Tempo des Wegfolgers (home.free_slow).
@@ -100,12 +100,12 @@ class Command:
 def dreh_w(err: float, kp: float, w_max: float, rcfg: RobotCfg, deadband_deg: float = 0.0,
            w_min: float | None = None) -> float:
     """Gemeinsamer Drehregler für alle Drehungen (PathFollower, Servo, pet, Dunkelangst; seit 2026-11-23):
-    Soll-Drehrate kp * err (rad/s) als normierter Drehwert, Betrag zwischen w_min (absolut, Standard
-    robot.turn_min_w: kleinere Werte setzt die Firmware nicht um) und w_max (Faktor: Anteil von robot.max_w),
-    im Totband (Grad) 0."""
+    Soll-Drehrate kp * err (rad/s) als normierter Drehwert, Betrag höchstens w_max (Faktor: Anteil von robot.max_w),
+    mindestens w_min (absolut, Standard 0: die Firmware regelt auch kleine Drehraten, Patch 0032), im Totband
+    (Grad) 0."""
     if err == 0.0 or abs(err) < math.radians(deadband_deg):
         return 0.0
-    lo = rcfg.turn_min_w if w_min is None else w_min
+    lo = 0.0 if w_min is None else w_min
     return math.copysign(clamp(yaw_rate_to_w(kp * abs(err), rcfg), lo, max(rcfg.w_of(w_max), lo)), err)
 
 

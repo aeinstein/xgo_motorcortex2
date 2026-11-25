@@ -69,7 +69,6 @@ def _meta_zeile(snap, name: str, imu=None, raeder=None, jpeg: str | None = None)
         # Kurs/Pose für die Auswertung von explore/home: Räder, IMU (Firmware), Raumkarte
         "mode": st.get("mode"), "yaw_deg": st.get("yaw_deg"), "yaw_src": st.get("yaw_src"),
         "yaw_imu": st.get("yaw_imu"), "odom": st.get("odom"), "height_mm": st.get("height_mm"),
-        "speed_ctrl": st.get("speed_ctrl"),
         # Tempo-Profil des Wegfolgers (home.free_slow): freie Strecke bis Knick/Hindernis auf Weg/Bogen, None = frei
         "frei": snap.cmd.extra.get("frei") if snap.cmd is not None else None,
         "pose": (st.get("grid") or {}).get("pose"), "start": (st.get("grid") or {}).get("start"),

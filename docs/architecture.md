@@ -67,7 +67,7 @@ Every mode ends in `Command(v, w)` → `safety()` → `_arc_check()` → `Robot.
 | `home`, `explore`, `patrol`; `follow` search at the last position; every planned path in `pet` (come, roam, search, call search, home) | yes | `PathFollower.drive` (hysteresis, narrow passages, `slow_end`, stuck, push) |
 | `follow` with target in view (also `pet` following) | no | `Servo` (PD on bearing, distance Kalman filter) |
 | `pet` without room map / without path | no | `PetBrain._drive` (straight to the spot) |
-| turning on the spot (path follower, `pet`, fear of the dark, `/turn`) | – | `behaviors.dreh_w`: kp × error, between `robot.turn_min_w` and the mode's cap (factor of `max_w`); to a heading with tolerance and time limit `behaviors.dreh_auf_kurs` |
+| turning on the spot (path follower, `pet`, fear of the dark, `/turn`) | – | `behaviors.dreh_w`: kp × error up to the mode's cap (factor of `max_w`), no lower bound since 2026-11-25; to a heading with tolerance and time limit `behaviors.dreh_auf_kurs` |
 
 Shared building blocks in `behaviors.py`: `Annaeherung` (progress towards the goal, stuck counter, give up; `home` and the way home of `explore`), `Umschau` (summed turn angle; `follow` look-around, `explore` initial scan), `PathFollower.ausrichten` (final heading at the start), `Behavior.zurueck` (backing up), `fahrzeit_s` (time limit of a leg).
 
@@ -92,7 +92,7 @@ Shared building blocks in `behaviors.py`: `Annaeherung` (progress towards the go
 | `App._liegt_idle()` | not balancing (set down, fallen): every mode except `idle`, `manual`, `pet` ends at once → `idle`, before the behaviour runs; those modes cannot be selected while lying (since 2026-11-24; explore had blocked gaps and written the local map into the room map while lying) |
 | `behaviors.safety()` | not balancing → stop; blind (no FloorNet) → stop; centre free space < `blocked_free`·0.6 → no forward; < `slow_free` → scale v (≥ 0.25); TTC < `ttc_stop_s` (0.8 s) → no forward; free space and TTC skipped for a push of the path follower (length limited, see `push_*`) |
 | `App._arc_check()` | planned arc (forward and reverse) checked against local map; speed = max(command, wheels over 0.2 s), look-ahead ≥ braking distance + 0.15 m (min. 1.2 s); free length < `0.6·v + 0.08 + 0.8·max(0, v − 0.3)` → v scaled, or v = 0 without ramp if the wheels are > 0.05 m/s faster than the scaled value (Rider follows smaller commands only after ~1–2 s, brakes on 0 in ~0.3 s; 2026-11-23, simulator only); a push of the path follower only checks keep-out zones |
-| `Robot` | clamp to `max_v`/`max_w`, ramp (`accel_v`, `accel_w`; skipped for a full brake from the arc check), keepalive 0.3 s, userspace watchdog `stall_timeout_s` 0.5 s |
+| `Robot` | clamp to `max_v`/`max_w`, × `tempo`; drive frame: target m/s and °/s with acceleration/jerk (the firmware ramps and controls), else bytes without a ramp on the Pi; keepalive 0.3 s, userspace watchdog `stall_timeout_s` 0.5 s |
 | Kernel | `settings/motion_timeout_ms` (xgonav sets `robot.kernel_watchdog_ms` = 1000) |
 
 `manual` mode skips floor model and arc check; fall detection and watchdogs stay active.
@@ -103,7 +103,6 @@ Shared building blocks in `behaviors.py`: `Annaeherung` (progress towards the go
 - `robot.norm_to_u8`: `u8 = 255/(2L)·(v + L)`, 128 = standstill.
 - Firmware **holds** setpoints; stops must be written explicitly.
 - Speeds of all modes and the hand control are factors of `robot.max_v`/`max_w` (`RobotCfg.v_of`/`w_of`); `Robot.drive` clamps to `max_v`/`max_w` and multiplies by `tempo`. Sent at most ±1; no direction or mode gains (removed 2026-11-23).
-- `robot.speed_ctrl`: `App._speed_tick` (control step) compares wheel speed with the target, `robot.SpeedCtrl` integrates the difference, `Robot._send` adds it. Firmware speed loop is P only, so the Rider runs slower on carpet without it.
 
 ## CPU (RiderPi config, `[cpu]`)
 

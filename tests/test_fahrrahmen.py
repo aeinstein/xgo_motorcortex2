@@ -107,7 +107,7 @@ def test_fahrrahmen_ohne_untergrenze_und_bremse():
     r.start()
     try:
         r.drive(0.0, 0.01)
-        assert r._target == pytest.approx((0.0, 0.01))                     # kein turn_min_w ohne Totband
+        assert r._target == pytest.approx((0.0, 0.01))                     # keine Untergrenze
         r.tempo = 0.5
         r.drive(0.0, 0.08)
         assert r._target == pytest.approx((0.0, 0.04))

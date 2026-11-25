@@ -1501,7 +1501,7 @@ cat /proc/XGORider/serial_stats; cat /proc/XGORider/imu
 </tr>
 <tr>
 <td>2026-11-25</td>
-<td>drive frame of firmware patches 0029–0032: <code>vel</code>, <code>vel_limits</code> (text ↔ bytes in <code>xgo-vel.h</code>, shared with the driver test). <strong>Not installed on the Rider</strong></td>
+<td>drive frame of firmware patches 0029–0032: <code>vel</code>, <code>vel_limits</code> (text ↔ bytes in <code>xgo-vel.h</code>, shared with the driver test); installed on the Rider 2026-11-25, <code>vel_limits</code> with 7 fields (14 bytes) since firmware 0035</td>
 </tr>
 </tbody>
 </table>
@@ -1615,7 +1615,7 @@ cat /proc/XGORider/serial_stats; cat /proc/XGORider/imu
 <tr>
 <td><code>vel_limits</code></td>
 <td>rw</td>
-<td>write <code>V_MAX W_MAX TIMEOUT_MS</code> (mm/s, °/s with one decimal, firmware watchdog ms, 0 = off); xgonav writes it at start. Read = last written text</td>
+<td>write <code>V_MAX W_MAX TIMEOUT_MS UNIT_UM KI_E4 IMAX_CENTI KV_E4</code> → 14 bytes (firmware 0035): v_max in firmware speed units, °/s with one decimal, firmware watchdog ms (0 = off), µm/s per firmware unit, integral gain × 10000, its limit in 0.01° (both 0 = console value), pitch feed-forward per unit of measured speed × 10000 (0 = off); xgonav writes it at start and every 2 s. Read = last written text</td>
 <td>0x1b</td>
 </tr>
 <tr>

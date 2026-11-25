@@ -32,7 +32,7 @@ from . import startbild as sbm
 from .imu import ImuFrame, ImuSource, ImuSync, imu_frame, make_imu, max_age as imu_max_age
 from .localmap import LocalMap, mask_movable
 from .route import arc_hits_zone, check as route_check, load as route_load, save as route_save
-from .robot import FW_ACTIONS, Robot, SpeedCtrl, action_cmds, stopp_text
+from .robot import FW_ACTIONS, Robot, action_cmds, stopp_text
 from .tracker import Tracker
 from .wlan import Helfer, HoldDetector, PressDetector, WlanSetup
 from .dunkel import Dunkelangst, sperr_rechteck
@@ -121,8 +121,6 @@ class App:
         self.odom_src = "befehl"
         self._vis_gap = False              # seit dem letzten Regelschritt ein Bild ohne Ego-Motion
         self.odom_m = 0.0                  # gefahrene Strecke laut Odometrie (Betrag, seit Start)
-        self.speed_ctrl = SpeedCtrl(cfg.robot)
-        self._speed_stat: dict | None = None   # None = Regelung aus
         self._v_rad: float | None = None       # Radgeschwindigkeit (m/s) im letzten Regelschritt, für die Bahnprüfung
         self.imu_sync = ImuSync(cfg.imu)
         self._imu_frame: ImuFrame | None = None   # IMU zur Bildzeit, je Bild (imu.imu_frame)
@@ -996,7 +994,6 @@ class App:
         now = time.monotonic()
         if now - self._last_ctrl >= period:
             self._last_ctrl = now
-            self._speed_tick(now)
             cmd = self._manual_cmd()
             self._drive(cmd)
             self._cmd = Command(cmd.v, cmd.w, None, cmd.status + " (ohne Bildverarbeitung)")
@@ -1090,7 +1087,6 @@ class App:
                                  None if self._vis_gap else dyaw_vis, dt)
             self._vis_gap = False
             ds, dyaw = st.ds, st.dyaw
-            self._speed_tick(now)
             wh = self.wheels
             self._v_rad = (wh.speed(ARC_IST_WINDOW_S) if wh is not None and self.robot.state.balancing
                            and wh.fresh(now) else None)
@@ -1225,7 +1221,6 @@ class App:
                                         "hz": round(self.wheels.rate_hz, 1) if self.wheels else None,
                                         **self.odomf.info(),
                                         "imu_spruenge": self.imu.yaw_jumps if self.imu is not None else None},
-                               "speed_ctrl": self._speed_stat,
                                "startbild": None if self.startbild is None else self.startbild.info(),
                                "turn": getattr(self.behavior, "turn_info", None) if self.behavior.name == "manual" else None,
                                "mode": self.behavior.name, "yaw_vis_deg": round(math.degrees(self.vis_yaw), 1),
@@ -1347,26 +1342,10 @@ class App:
 
     def _v_erwartet(self) -> float | None:
         """Tempo (m/s), das der Rider gerade anstrebt: Fahrrahmen = Sollwert des Generators der Firmware (Robot rechnet
-        ihn nach), sonst das Trägheitsmodell der Geschwindigkeitsregelung (nur mit speed_ctrl)."""
+        ihn nach); auf dem Byteweg unbekannt (None)."""
         if self.robot.vel:
             return self.robot.command[0] * self.cfg.robot.vx_limit
-        return self.speed_ctrl.v_modell if self.cfg.robot.speed_ctrl else None
-
-    def _speed_tick(self, now: float) -> None:
-        """Geschwindigkeitsregelung (robot.speed_ctrl): Ist aus den Rädern gegen das Soll, Korrektur an den
-        Roboter. Je Regelschritt ein Blick in die Radhistorie, kein Lesezugriff auf /proc."""
-        c = self.cfg.robot
-        if not c.speed_ctrl or self.robot.vel:   # Fahrrahmen: die Firmware regelt das Tempo (Patch 0031)
-            return
-        w = self.wheels
-        ist = None
-        if w is not None and self.robot.state.balancing and w.fresh(now):
-            ist = w.speed(c.speed_ctrl_window_s)
-        sc = self.speed_ctrl
-        self.robot.v_trim = sc.step(now, self.robot.v_nominal, ist)
-        # fürs Web und die Rohaufnahme; hier statt je Bild gebaut
-        self._speed_stat = {"trim": round(sc.trim, 3), "soll": round(sc.v_soll, 3),
-                            "ist": None if ist is None else round(ist, 3)}
+        return None
 
     def loop_breakdown(self) -> dict:
         """Wo die Schleifenzeit hingeht (letzte ~250 Bilder): je Abschnitt Mittel und p95 der

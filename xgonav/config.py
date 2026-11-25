@@ -16,41 +16,20 @@ class RobotCfg:
     vyaw_limit_dps: float = 360.0  # Grad/s bei u8=0/255
     # Höchstwerte (Anteil des Firmware-Vollausschlags). Seit 2026-11-23 sind alle Fahr- und Drehwerte der Modi
     # (home.v, explore.v, pet.drive_v, behavior.search_w, …) und die Handsteuerung Anteile davon:
-    # gesendet = Faktor x tempo x max_v (bzw. max_w), dazu nur die Korrektur von speed_ctrl; Handsteuerung =
+    # gesendet = Faktor x tempo x max_v (bzw. max_w); Handsteuerung =
     # max_v x tempo x 1 (Nutzer 2026-11-23: reverse_gain/manual_forward_gain waren Notlösungen für die alte Firmware). Nutzer 2026-11-13: beide 0,5 (vorher 0,15 / 0,30); 0,5 sind rechnerisch ~0,9 m/s und 180 °/s,
     # über 0,24 (50 cm/s) ist nie gefahren worden.
     max_v: float = 0.5
     max_w: float = 0.5
-    # Kleinere Drehbefehle setzt die Firmware nicht um (Totband ~5 %): Untergrenze des gemeinsamen Drehreglers
-    # behaviors.dreh_w für alle Drehungen auf der Stelle (PathFollower, pet, Dunkelangst; seit 2026-11-23). Gilt seit
-    # 2026-11-24 auch nach dem Tempo (Robot.drive): Tempo 0,75 machte aus 0,06 gesendet 0,045, er drehte nicht.
-    turn_min_w: float = 0.06
     # Tempo (Anteil, 0,05..1): jeder Fahr- und Drehbefehl aller Modi wird nach der Begrenzung auf max_v/max_w
     # damit malgenommen (Robot.drive). Startwert; zur Laufzeit über den Temporegler im Web (POST /tempo),
     # gilt bis zum Neustart. Firmware-Aktionen (POST /action) fahren mit eigener Geschwindigkeit.
     tempo: float = 1.0
-    # Geschwindigkeitsregelung: Die Firmware regelt die Fahrgeschwindigkeit praktisch nur proportional, auf
-    # Teppich bleibt der Rider deshalb unter dem Soll. Mit speed_ctrl vergleicht xgonav im Regelschritt Soll
-    # (gesendeter Wert x vx_limit) und Ist (Räder), beide über speed_ctrl_window_s gemittelt, und stellt den
-    # gesendeten Wert nach: Korrektur += (Soll - Ist) / vx_limit x dt / speed_ctrl_ti_s, höchstens
-    # +-speed_ctrl_max (normiert). Ohne frische Raddaten, im Stand, unter dem Totband der Firmware und bei
-    # Richtungswechsel ist die Korrektur 0. Steht er an einem Hindernis an, drückt er um speed_ctrl_max stärker.
-    # speed_ctrl_lag_s: So träge folgt das Soll dem Fahrwert (Anlaufen des Riders), sonst lädt sich die
-    # Korrektur bei jedem Anfahren auf. Abgestimmt am Trägheitsmodell des Simulators (sim._dyn, 2026-11-12):
-    # ohne Modell 31-46 % Überschwingen beim Anfahren auf ebenem Boden, mit 0,8 s und ti 2 s 5 %; ein
-    # Fehlbetrag von 0,04 ist dann nach ~3 s zu 95 % ausgeglichen. Seit 2026-11-23 1,2 s wie die Trägheit des
-    # Riders (Fahrt vor dem Stuhl: Räder folgen dem Fahrwert mit ~1,2 s; mit 0,8 s lief er schneller als verlangt
-    # und die Korrektur stand trotzdem bei +0,07); Simulator damit 8 % Überschwingen statt 19 %.
-    speed_ctrl: bool = True       # am RiderPi seit 2026-11-13 an
-    speed_ctrl_window_s: float = 0.3
-    speed_ctrl_ti_s: float = 2.0
-    speed_ctrl_lag_s: float = 1.2
-    speed_ctrl_max: float = 0.10
     # Fahrrahmen (Firmware 0029–0032, xgonav/fahrrahmen.py, ARBEITSPLAN.md Punkt 4): Kennt der Treiber
     # /proc/XGORider/vel und antwortet die Firmware, schickt Robot statt speed_x/speed_z Sollwerte in echten Einheiten
     # (normiert x vx_limit bzw. x vyaw_limit_dps) mit Beschleunigung und Ruck; die Firmware rampt (S-Kurve) und regelt
-    # Tempo und Drehrate selbst. Dann sind die Rampe am Pi (accel_v/accel_w), speed_ctrl und die Untergrenze
-    # turn_min_w in drive() aus (Code bleibt bis zur Messfahrt). v_max = max_v x vx_limit, w_max = max_w x
+    # Tempo und Drehrate selbst (Rampe am Pi, speed_ctrl und turn_min_w seit 2026-11-25 entfernt; auf dem Byteweg
+    # filtert die Firmware selbst). v_max = max_v x vx_limit, w_max = max_w x
     # vyaw_limit_dps gehen beim Start nach vel_limits, mit dem Wächter der Firmware vel_timeout_ms (> keepalive_s).
     # Beschleunigung beim Schnellerwerden vel_accel, beim Langsamerwerden vel_decel, drive(brake=True) vel_brake mit
     # vel_brake_jerk. Höchstwerte sind vorsichtige Startwerte (Nutzer 2026-11-25: werden am Rider gemessen); 0,5 m/s²
@@ -95,8 +74,6 @@ class RobotCfg:
     # Firmware schaltet sie bei jedem Drehbefehl ab 128±16 selbst ab, deshalb schreibt xgonav sie dann gleich mit neu
     # (je Drehbefehl ein Schreiben mehr).
     level_always: bool = False
-    accel_v: float = 0.8           # max. Änderung von v pro Sekunde (normiert)
-    accel_w: float = 2.0
     keepalive_s: float = 0.3       # Sollwert periodisch neu schreiben
     stall_timeout_s: float = 0.5   # kein drive() mehr -> Stopp (Userspace-Watchdog)
     kernel_watchdog_ms: int = 1000 # nur wirksam mit Kernel-Patch (settings/motion_timeout_ms)
@@ -865,10 +842,11 @@ class PetCfg:
     roll_deg: float = 8.0              # Kopf schief; höchstens 12
     tilt_s: float = 1.2
     wiggle_w: float = 0.20             # Anteil von robot.max_w
+    slow_w: float = 0.12               # Anteil von robot.max_w: langsames Hin- und Herdrehen, hinterherschauen
     wiggle_s: float = 1.2
     turn_kp: float = 1.5               # 1/s
     turn_deadband_deg: float = 8.0
-    turn_w: float = 0.80               # Anteil von robot.max_w (absolut 0,40; Nutzer 2026-11-13: Drehen x2); Untergrenze robot.turn_min_w
+    turn_w: float = 0.80               # Anteil von robot.max_w (absolut 0,40; Nutzer 2026-11-13: Drehen x2)
     # Budgets, 0 = aus. Rückwärts ist blind und vorwärts sieht das Bodenmodell Stufen zu spät: nur mit
     # Beobachtung und nur, wo keine Treppe ist. Ohne Räder fährt er nie, Obergrenzen 0,30 m / 1,0 m.
     retreat_m: float = 0.0             # je Ereignis (RiderPi-Test: 0.12)
@@ -1043,7 +1021,7 @@ class DunkelCfg:
     fright_s: float = 1.5              # Angst: so lange stehen (Emotion, Ton)
     settle_s: float = 1.5              # nach dem Drehen warten, bis die Belichtung nachgeregelt hat
     turn_kp: float = 1.5               # 1/s, wie pet
-    turn_w: float = 0.40               # Anteil von robot.max_w; Untergrenze robot.turn_min_w
+    turn_w: float = 0.40               # Anteil von robot.max_w
     tol_deg: float = 8.0
     turn_timeout_s: float = 10.0
     max_events: int = 3                # so oft in events_window_s ins Dunkle: gleich aufgeben
@@ -1260,8 +1238,11 @@ ENTFERNT.update({"robot.max_sent": "seit 2026-11-23: Grenze ist robot.max_v/max_
                  "robot.manual_forward_gain": "seit 2026-11-23: Handsteuerung = max_v x tempo x 1",
                  "robot.reverse_gain": "seit 2026-11-23: Firmware fährt seit 2026-11-05 symmetrisch",
                  "robot.vel_stock_scale": "seit 2026-11-25: Vorfaktor des Bestandswegs entfernt (Firmware 0035, vel_kv)"})
-ENTFERNT.update({k: "eine Untergrenze für alle Drehungen seit 2026-11-23 ([robot] turn_min_w)"
-                 for k in ("pet.turn_min_w", "dunkel.turn_min_w")})
+ENTFERNT.update({k: "seit 2026-11-25 keine Untergrenze mehr, die Firmware regelt kleine Drehraten (Patch 0032)"
+                 for k in ("pet.turn_min_w", "dunkel.turn_min_w", "robot.turn_min_w")})
+ENTFERNT.update({f"robot.{k}": "seit 2026-11-25: Tempo regelt und rampt die Firmware (Fahrrahmen, Patch 0030/0035)"
+                 for k in ("speed_ctrl", "speed_ctrl_window_s", "speed_ctrl_ti_s", "speed_ctrl_lag_s",
+                           "speed_ctrl_max", "accel_v", "accel_w")})
 UMBENANNT = {"freespace.shadow_net": "freespace.net"}
 
 # Die Defaults oben sind die Werte des RiderPi (/opt/xgonav/config.toml ohne Pfade unter /opt). Simulator und Tests

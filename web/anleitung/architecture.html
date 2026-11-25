@@ -1633,7 +1633,7 @@
 <tr>
 <td>turning on the spot (path follower, <code>pet</code>, fear of the dark, <code>/turn</code>)</td>
 <td>–</td>
-<td><code>behaviors.dreh_w</code>: kp × error, between <code>robot.turn_min_w</code> and the mode's cap (factor of <code>max_w</code>); to a heading with tolerance and time limit <code>behaviors.dreh_auf_kurs</code></td>
+<td><code>behaviors.dreh_w</code>: kp × error up to the mode's cap (factor of <code>max_w</code>), no lower bound since 2026-11-25; to a heading with tolerance and time limit <code>behaviors.dreh_auf_kurs</code></td>
 </tr>
 </tbody>
 </table>
@@ -1700,7 +1700,7 @@
 </tr>
 <tr>
 <td><code>Robot</code></td>
-<td>clamp to <code>max_v</code>/<code>max_w</code>, ramp (<code>accel_v</code>, <code>accel_w</code>; skipped for a full brake from the arc check), keepalive 0.3 s, userspace watchdog <code>stall_timeout_s</code> 0.5 s</td>
+<td>clamp to <code>max_v</code>/<code>max_w</code>, × <code>tempo</code>; drive frame: target m/s and °/s with acceleration/jerk (the firmware ramps and controls), else bytes without a ramp on the Pi; keepalive 0.3 s, userspace watchdog <code>stall_timeout_s</code> 0.5 s</td>
 </tr>
 <tr>
 <td>Kernel</td>
@@ -1715,7 +1715,6 @@
 <li><code>robot.norm_to_u8</code>: <code>u8 = 255/(2L)·(v + L)</code>, 128 = standstill.</li>
 <li>Firmware <strong>holds</strong> setpoints; stops must be written explicitly.</li>
 <li>Speeds of all modes and the hand control are factors of <code>robot.max_v</code>/<code>max_w</code> (<code>RobotCfg.v_of</code>/<code>w_of</code>); <code>Robot.drive</code> clamps to <code>max_v</code>/<code>max_w</code> and multiplies by <code>tempo</code>. Sent at most ±1; no direction or mode gains (removed 2026-11-23).</li>
-<li><code>robot.speed_ctrl</code>: <code>App._speed_tick</code> (control step) compares wheel speed with the target, <code>robot.SpeedCtrl</code> integrates the difference, <code>Robot._send</code> adds it. Firmware speed loop is P only, so the Rider runs slower on carpet without it.</li>
 </ul>
 <h2 id="cpu-riderpi-config-cpu">CPU (RiderPi config, <code>[cpu]</code>)<a class="headerlink" href="#cpu-riderpi-config-cpu" title="Permanent link">&para;</a></h2>
 <table>

@@ -49,7 +49,6 @@ def test_angst_umdrehen_licht_hinten():
     assert d.n_licht == 1 and d.state == "ok"
     assert abs(abs(yaw) - math.pi) < math.radians(cfg.tol_deg + 2)
     assert any(c is not None and abs(c.w) > 0 for c in cmds)
-    assert all(c is None or c.w == 0 or abs(c.w) >= Config.neutral().robot.turn_min_w for c in cmds)
 
 
 def test_kein_licht_drei_richtungen_dann_aufgeben():

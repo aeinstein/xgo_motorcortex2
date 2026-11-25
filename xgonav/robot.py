@@ -13,7 +13,6 @@ Konventionen
 """
 from __future__ import annotations
 
-import collections
 import logging
 import math
 import os
@@ -137,64 +136,16 @@ class RobotState:
         return lage(self.mode)
 
 
-class SpeedCtrl:
-    """Geschwindigkeitsregelung über die Räder (RobotCfg.speed_ctrl): stellt den gesendeten Fahrwert nach,
-    bis die Räder so schnell drehen wie verlangt. step() läuft im Regelschritt der App und liefert die
-    Korrektur (normiert), die Robot beim Senden addiert."""
-
-    def __init__(self, cfg: RobotCfg):
-        self.cfg = cfg
-        self.trim = 0.0
-        self.v_soll = 0.0                    # m/s, über das Fenster gemittelt
-        self.v_ist: float | None = None      # m/s aus den Rädern, None = keine frischen Raddaten
-        self._soll: collections.deque[tuple[float, float]] = collections.deque()   # (t, gesendeter Sollwert)
-        self._lag = 0.0                      # Sollwert hinter dem Trägheitsmodell (normiert)
-        self._last_t: float | None = None
-        self._dir = 0
-
-    def step(self, now: float, v_nominal: float, v_ist: float | None) -> float:
-        """v_nominal: Fahrwert nach Rampe und Faktoren, ohne Korrektur (normiert). v_ist: Radgeschwindigkeit
-        (m/s) über dasselbe Fenster oder None (keine frischen Raddaten, nicht balancierend)."""
-        c = self.cfg
-        dt = min(0.2, now - self._last_t) if self._last_t is not None else 0.0
-        self._last_t = now
-        # Soll so träge wie der Rider (speed_ctrl_lag_s) und über dasselbe Fenster wie das Ist gemittelt:
-        # sonst zählt jedes Anfahren als Fehler und die Korrektur lädt sich dabei auf
-        tau = c.speed_ctrl_lag_s
-        self._lag += (v_nominal - self._lag) * ((1.0 - math.exp(-dt / tau)) if tau > 0 else 1.0)
-        h = self._soll
-        h.append((now, self._lag))
-        while h[0][0] < now - c.speed_ctrl_window_s:
-            h.popleft()
-        self.v_soll = sum(v for _, v in h) / len(h) * c.vx_limit
-        self.v_ist = v_ist
-        d = 1 if v_nominal > 0 else -1 if v_nominal < 0 else 0     # auch für numpy-Werte
-        if v_ist is None or abs(v_nominal) < FW_DEADBAND or d != self._dir:
-            self.trim = 0.0
-        else:
-            self.trim += (self.v_soll - v_ist) / c.vx_limit * dt / c.speed_ctrl_ti_s
-            self.trim = max(-c.speed_ctrl_max, min(c.speed_ctrl_max, self.trim))
-        self._dir = d
-        return self.trim
-
-    @property
-    def v_modell(self) -> float:
-        """Tempo (m/s), das der Rider laut Trägheitsmodell (speed_ctrl_lag_s) gerade anstrebt: Er setzt einen
-        neuen Fahrwert erst nach 1-2 s um und beschleunigt so lange auf den alten hin."""
-        return self._lag * self.cfg.vx_limit
-
-
 class Robot:
     """Gemeinsame Logik (Rampe, Watchdog). Unterklassen implementieren _write_*."""
 
     def __init__(self, cfg: RobotCfg):
         self.cfg = cfg
-        self.v_trim = 0.0                    # App: Korrektur der Geschwindigkeitsregelung (SpeedCtrl), sonst 0
         self._tempo = 1.0
         self.tempo = getattr(cfg, "tempo", 1.0)
         self._lock = threading.Lock()
         self._target = (0.0, 0.0)
-        self._brake = False                  # Vollbremsung verlangt: Fahrwert ohne Rampe auf 0
+        self._brake = False                  # Vollbremsung verlangt (Fahrrahmen: vel_brake statt vel_decel)
         self._cur = (0.0, 0.0)
         self._sent: tuple[int, int] | None = None
         self._last_cmd_t = 0.0
@@ -276,19 +227,11 @@ class Robot:
         self._tempo = f
 
     def drive(self, v: float, w: float, brake: bool = False) -> None:
-        """brake (nur mit v = 0): Fahrwert sofort auf 0 statt über die Rampe; der Rider bremst nur auf 0 schnell,
-        Zwischenwerte der Rampe setzt er erst nach ~1-2 s um (Bahnprüfung, Fahrt 2026-11-23)."""
+        """brake (nur mit v = 0): Vollbremsung (Fahrrahmen: robot.vel_brake statt vel_decel)."""
         # Erst begrenzen, dann Tempo: v/w der Modi sind Faktor x max_v (RobotCfg.v_of), gesendet wird
         # Faktor x tempo x max_v; Verhältnis v/w und damit die geprüfte Bahn bleiben gleich.
         v = max(-self.cfg.max_v, min(self.cfg.max_v, v)) * self._tempo
-        w0 = w
         w = max(-self.cfg.max_w, min(self.cfg.max_w, w)) * self._tempo
-        # Drehen auf der Stelle: Das Tempo darf einen Drehwert ab turn_min_w nicht unter diese Untergrenze
-        # drücken, sonst steht er im Totband der Firmware (Fahrt 20261124-134052: Tempo 0,75, gesendet 0,045,
-        # „drehe (-12°)“ ohne Drehung bis „Ziel gesperrt“, viermal hintereinander)
-        lo = self.cfg.turn_min_w
-        if not self.vel and v == 0.0 and lo > 0 and abs(w0) >= lo and abs(w) < lo:   # Fahrrahmen: kein Totband
-            w = math.copysign(lo, w)
         with self._lock:
             self._target = (v, w)
             self._brake = brake and v == 0.0
@@ -432,20 +375,6 @@ class Robot:
         """Aktuell (nach Rampe) gesendeter Sollwert, normiert."""
         return self._cur
 
-    @property
-    def v_nominal(self) -> float:
-        """Fahrwert nach der Rampe, ohne die Korrektur der Geschwindigkeitsregelung. Mal vx_limit ist das die
-        verlangte Geschwindigkeit."""
-        return self._cur[0]
-
-    def with_trim(self, v: float) -> float:
-        """v plus Korrektur der Geschwindigkeitsregelung. Unter dem Totband der Firmware bleibt v, wie es
-        ist (Stillstand bleibt 128), und die Korrektur kehrt die Richtung nie um."""
-        t = self.v_trim
-        if self.vel or t == 0.0 or abs(v) < FW_DEADBAND:   # Fahrrahmen: Firmware regelt das Tempo selbst
-            return v
-        return max(0.0, v + t) if v > 0 else min(0.0, v + t)
-
     # ---- interne Schleife (50 Hz) ---------------------------------------
     def _loop(self) -> None:
         next_poll = 0.0
@@ -563,15 +492,7 @@ class Robot:
         if self.vel:
             self._ramp_vel(target, dt)
             return
-        v, w = self._cur
-        if self._brake and target[0] == 0.0:
-            v = 0.0                          # Vollbremsung (drive(brake=True)): ohne Rampe
-        dv = max(-self.cfg.accel_v * dt, min(self.cfg.accel_v * dt, target[0] - v))
-        dw = max(-self.cfg.accel_w * dt, min(self.cfg.accel_w * dt, target[1] - w))
-        # Bremsen darf schneller gehen als Beschleunigen
-        if abs(target[0]) < abs(v):
-            dv = max(-3 * self.cfg.accel_v * dt, min(3 * self.cfg.accel_v * dt, target[0] - v))
-        self._cur = (v + dv, w + dw)
+        self._cur = target                   # Byteweg: die Firmware filtert selbst (Tiefpass, 5er-Schritt)
 
     def _ramp_vel(self, target: tuple[float, float], dt: float) -> None:
         """Fahrrahmen: Ziel in m/s und °/s, Beschleunigung je nach Richtung; der Generator rechnet nach, was die
@@ -617,10 +538,9 @@ class Robot:
         if self.vel and not (self._act is not None and self._act_abort):
             self._send_vel(now)
             return
-        # die Geschwindigkeitsregelung wirkt nach max_v;
         # begrenzt wird nur noch auf den Bereich der Firmware (robot.max_sent entfiel 2026-11-23, Nutzer)
         m = 1.0
-        v = max(-m, min(m, self.with_trim(self.v_nominal)))
+        v = max(-m, min(m, self._cur[0]))
         u = (norm_to_u8(v), norm_to_u8(max(-m, min(m, self._cur[1]))))
         keepalive = now - self._last_send_t > self.cfg.keepalive_s
         prev = self._sent
