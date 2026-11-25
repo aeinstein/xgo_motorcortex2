@@ -39,7 +39,7 @@ beschreiben, und hält sie mit 260 Hz. Keine Wegpunktlisten in der Firmware.
 
 | Stufe | Inhalt | Firmware (Patch 08-velocity) | Treiber (`xgo-vel.h`) | xgonav | Kosten am Pi | Prüfung |
 |---|---|---|---|---|---|---|
-| 0 | Rückwärts symmetrisch, Höchstwerte | geflasht 2026-11-25: Tempo-Regler über drei Fassungen (unten „Messfahrt Stufe 0“), jetzt 2a3c9422: Original-P 0,11 + Vorsteuerung −0,05·v_soll + ki 0,05; ki/i_max/kv aus 0x1b ignoriert | – | `vel_kv`/`vel_ki`/`vel_i_max_deg` als wirkungslos gekennzeichnet (`config.py`, `docs/configuration.md`); a_max ohne Kippen, w/alpha-Grenzen messen → `config.py` | 0 | gefahren 2026-11-25 mit 2a3c9422: rückwärts 0,91–1,00 ×, vorwärts nur 0,62–0,78 × (unten); offen |
+| 0 | Rückwärts symmetrisch, Höchstwerte | geflasht 2026-11-25: Tempo-Regler über vier Fassungen (unten „Messfahrt Stufe 0“), jetzt ec493c66: Original-P 0,11 + Vorsteuerung −0,05·v_soll + atan(a/g), ki 0,1 auf ±40 ab Ende der Rampe; ki/i_max/kv aus 0x1b ignoriert | – | `vel_kv`/`vel_ki`/`vel_i_max_deg` als wirkungslos gekennzeichnet (`config.py`, `docs/configuration.md`); a_max ohne Kippen, w/alpha-Grenzen messen → `config.py` | 0 | gefahren 2026-11-25, zuletzt mit ec493c66: im Mittel 1,02–1,04 × in beide Richtungen, vorwärts langsames Pendeln bis 1,4 × (unten); Pendeln offen (Firmware) |
 | 1 | **Krümmungsbetrieb** | Flag bit1 in 0x1a: Feld w = κ in 0,001 1/m (i16, ±32 1/m); im Takt w_soll = κ · v_soll · 180/π (aus dem **Sollwert**, nicht v_ist: Kurs = ∫κ·v_soll dt, rauschfrei, am Pi nachrechenbar; keine v_min-Schwelle, w → 0 von selbst). Bahntreue unter Grenzen: nicht w kappen, sondern v begrenzen: \|v\| ≤ w_max/\|κ\|, a ≤ alpha/\|κ\|, Ruck ≤ Drehruck/\|κ\|. Neues κ während der Fahrt mit \|dκ/dt\| ≤ alpha/\|v\| nachführen (Klothoide), sonst springt w um Δκ·v. Rückwärts gleiches κ (derselbe Kreis rückwärts). Positionshalten beim Drehen (07-balance) greift nur bei v = 0, verträglich. Ohne bit1 wie heute | Text um κ erweitern, `zustand` liest Flag und Fähigkeitsbyte | `Robot.drive(v, w)` bleibt; neu `drive_bogen(v, kappa)`. `PathFollower` lenkt mit κ (Pure Pursuit κ = 2·sin α / L statt `kp_turn·err`); `_arc_check` prüft und bremst bei festem κ (nur v sinkt, Bahn bleibt). `Achse.schritt` + Kopplung, v/a/Ruck-Begrenzung durch κ und κ-Nachführung in Python nachgebaut, gegen Prüfvektoren | sinkt leicht (kein Lenkregler je Schritt, eine Multiplikation im 50-Hz-Durchlauf) | Host-Test: Bahn aus Generator-Simulation liegt bei Anfahren/Bremsen auf dem Kreis (Abweichung < 1 cm auf 1 m); Simulator `--dyn` explore/home; am Rider Kreisbogen v 0,2, κ 2 1/m, Endpunkt gegen Karte |
 | 2 | **Kursziel** | Flag bit2: Feld w = Δψ in 0,1°, relativ zum Generatorwinkel bei Empfang. Der Generator integriert seinen Winkel ∫w_soll dt selbst (= Änderung des Kursziels): Rest → w_ziel = sign · min(w_max, √(2·alpha·\|Rest\|)) → vorhandenes `approach` der Drehachse; angekommen bei \|Rest\| < 0,5° und w = 0 (Flag), danach hält der Kurs-PID | wie 1 | `dreh_auf_kurs`/`align`/`POST /turn` schreiben einmal Δψ statt 24 Hz `dreh_w`; Ankunft aus dem Flag statt aus dem Kursfehler | sinkt (keine Kursregelung je Schritt) | Host-Test Überschwingen < 1°; am Rider 90°/180° links/rechts, Endkurs gegen IMU-Kurs ±2° |
 | 3 | **Strecke mit Halt** | Flag bit3, Rahmen 15 Byte mit Reststrecke s (mm, u16): Rest = s − Radstrecke (Encoder) seit Empfang, v_ziel = sign · min(v, √(2·a·Rest)), danach v = 0 und Positionshalten. Neue Rahmen setzen s neu (Pi schickt die Reststrecke nach) | wie 1 | Wegfolger am Wegende (`end_v`) und Bahnprüfung schicken s = min(Weg bis Ziel, `clear − Rest`) statt das Tempo zu senken; Kriechen mit `slow_free` entfällt | sinkt | Wand wie Punkt 2: Halt 20 cm ±1 cm aus v 0,2/0,3; Host-Test Halt auf ±5 mm |
@@ -137,7 +137,8 @@ derselben Spur zurück.
 |---|---|
 | e93e525/4aabe9f6 (Tempo nur kp 0,3 · (Soll − Ist), Klemme nur ±100°) | Sturz ~1 s nach dem Aufstehen: Räder im Aufschwung ±190 Einheiten → Soll-Nick 0,3 · 191 = 57°, vornüber. xgonav schickt sofort einen Rahmen v 0, damit war der Regler aktiv |
 | f287c1a9 (kp 0,11 voll + Zuschlag bis 0,3 im ±20-Band) | Aufstehen ok (Nutzer über das Web). Fahren: Grenzzyklus ~2,5 Hz, Ist −10 … −87 bei Soll −35, Soll-Nick ±10°, rückwärts 1,2 × Soll; die Bahnprüfung bremste vorwärts an den Ist-Spitzen (230 mm/s). Wirksame Verstärkung ~0,22, stabil nur ≤ 0,135. Abgebrochen nach v ±0,2 (Tempo 75 %) |
-| 2a3c9422 (Original-P 0,11, Vorsteuerung −0,05 · v_soll, ki 0,05 auf ±20) | ruhig, Soll-Nick ±2–4°, keine Bremsung; Tabelle unten |
+| 2a3c9422 (Original-P 0,11, Vorsteuerung −0,05 · v_soll, ki 0,05 auf ±20) | ruhig, Soll-Nick ±2–4°, keine Bremsung; vorwärts zu langsam (Tabelle unten) |
+| ec493c66 (wie 2a3c9422, Integral ab Ende der Rampe statt 0,6 s danach, ki 0,1 auf ±40) | im Mittel richtig in beide Richtungen, vorwärts langsames Pendeln (zweite Tabelle) |
 
 2a3c9422, Tempo 100 % (`messfahrt0d.csv`):
 
@@ -153,7 +154,27 @@ derselben Spur zurück.
   erst das Integral zieht ihn nach ~3 s auf −2°, dann Überschwingen auf 1,4–1,5 ×. Verdacht Vorzeichen der
   Vorsteuerung oder ein Versatz nur vorwärts; an die Firmware-Sitzung gemeldet, offen.
 - Aufstehen mit 2a3c9422 nicht mitgeschrieben (Nutzer stand ihn über das Web auf, bevor der Mitschnitt lief), kein Sturz.
-- Stufe 1/2 erst fahren, wenn vorwärts stimmt.
+- Befund der Firmware-Sitzung: kein Vorzeichenfehler. Am Soll-Nick +1,05° bei Soll 69 / Ist 28 rechnet P (+4,5°) +
+  Vorsteuerung (−3,45°) richtig; vorwärts braucht der Rider aber ~1,5° mehr Nick als die Vorsteuerung liefert
+  (rückwärts nicht). Das Integral holte das zu spät und zu langsam. Herkunft des einseitigen Versatzes offen.
+
+ec493c66, Tempo 100 % (`messfahrt0e.csv`; erster Vorwärtsversuch nach 0,34 m von der Bahnprüfung gebremst, direkt
+nach dem Start des Bodennetzes, wiederholt):
+
+| Soll | Ist ab 1 s (Firmware / Encoder) | Bereich (Einh.) | 90 % nach | Spitze | Soll-Nick |
+|---|---|---|---|---|---|
+| v 0,2 vorwärts (46) | 1,04 × / 1,03 × | 23 … 64 | 1,6 s | 1,40 × | −3,9 … +1,5° |
+| v 0,2 rückwärts | 1,03 × / 1,04 × | −51 … −40 | 0,5 s | 1,12 × | +1,1 … +2,8° |
+| v 0,3 vorwärts (69, 4 s) | 1,04 × / 1,03 × | 34 … 96 | 1,8 s | 1,40 × | −5,7 … +1,7° |
+| v 0,3 rückwärts (3,8 s) | 1,02 × / 1,01 × | −81 … −53 | 1,4 s | 1,17 × | +1,0 … +4,4° |
+
+- Vorwärts im Mittel behoben (vorher 0,62–0,78 ×), kein schnelles Schwingen.
+- Vorwärts langsames Pendeln, Periode ~4 s: bei +46 Ist 26 (1,0 s) → 66 (2,8 s, 1,43 ×) → 34 (4,3 s, 0,74 ×); bei
+  +69 38 → 96 (2,5 s, 1,39 ×) → 58 (3,8 s). Das Integral überschießt beim Aufbau des Vorwärts-Mehrbedarfs.
+  Rückwärts sauber. An die Firmware-Sitzung zur Behebung (Nutzer 2026-11-25); Vorschläge: Integral sanfter oder
+  den Mehrbedarf vorwärts als feste Vorsteuerung.
+- Aufstehen wieder vom Nutzer über das Web (18:27:03), nicht mitgeschrieben, kein Sturz.
+- Stufe 1/2 erst fahren, wenn vorwärts ruhig ist.
 
 ## Anfahren an eine Wand (Punkt 2, gefahren 2026-11-25)
 
