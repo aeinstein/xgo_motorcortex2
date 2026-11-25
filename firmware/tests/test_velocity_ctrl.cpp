@@ -1,10 +1,12 @@
 // Host-Test 08-velocity: Geschwindigkeitsregler des Fahrrahmens (control/rider_motion.h VelocityControl).
-// Prüft am Regler: aus = Byteweg bitgleich (auch mit Fahr-Integral), Vorsteuerung atan(a·unit_mm/g) − kv·v_ist,
+// Prüft am Regler: aus = Byteweg bitgleich (auch mit Fahr-Integral), Vorsteuerung atan(a·unit_mm/g), P allein auf
+// Soll − Ist (kp beim Fahren, Original-P beim Halten, gleicher Fehler = gleicher Soll-Nick in beiden Richtungen),
 // Integral (Vorzeichen, Grenze, Anti-Windup, freeze, erst nach kVelSettleS mit a = 0, Abklingen beim Halten und
 // nach dem Ende ohne Sprung), Rest des Fahr-Integrals klingt ab; die Integral-Tests setzen vel_settled vorab (settle()).
-// Dazu ein geschlossener Kreis mit einem einfachen Fahrmodell (NICHT der echte Rider): Beschleunigung
-// g·tan(Nick − Last), Nick folgt dem Soll-Nick mit 0,1 s Verzögerung. Damit: bleibende Abweichung unter Last mit dem
-// Original-P gegen ~0 mit Integral, kein Aufschaukeln, Vorsteuerung verkleinert den Schleppfehler beim Anfahren.
+// Dazu ein geschlossener Kreis mit einem Fahrmodell, das die Messfahrten 2026-11-25 nachbildet (NICHT der echte
+// Rider): Tempo in Firmware-Einheiten (3,9 mm/s), Beschleunigung g·tan(Nick − Last − Bedarf(v)) mit Nick-Bedarf
+// 0,8° − 0,05°·v (damit läuft der Original-P auf ~1,8 × Soll, mit dem alten kv 0,025 rückwärts ~1,3 ×), Nick folgt
+// dem Soll-Nick mit 0,1 s. Damit: beide Richtungen, Steigung ±2°, am Ende am Soll, kein Aufschaukeln.
 // Aufruf: firmware/tests/run.sh test_velocity_ctrl
 #include "control/rider_motion.h"
 #include "velocity_cmd.h"
@@ -32,14 +34,16 @@ static float step(BalanceState& b, float target, float speed, float pitch, bool 
     return b.pitch.target;
 }
 
-// Fahrmodell: v' = g·tan(θ − Last), θ folgt dem Soll mit tau.
+// Fahrmodell in Firmware-Einheiten: v' = g/Einheit · tan(θ − Last − (n0 − c·v)), θ folgt dem Soll mit tau.
+constexpr float kUnit = 3.9f, kNeedN0 = 0.8f, kNeedC = 0.05f;
 struct Plant { float v = 0, theta = 0; };
 static void plantStep(Plant& p, float theta_target, float load_deg, float tau = 0.1f) {
     p.theta += (theta_target - p.theta) * kDt / tau;
-    p.v += V::clampAbs(kGravityMmS2 * std::tan((p.theta - load_deg) * 0.0174533f), 20000.0f) * kDt;
+    const float need = kNeedN0 - kNeedC * p.v;
+    p.v += V::clampAbs(kGravityMmS2 / kUnit * std::tan((p.theta - load_deg - need) * 0.0174533f), 20000.0f) * kDt;
 }
 
-struct LoopResult { float err_end = 0, err_peak = 0, osc_late = 0; };
+struct LoopResult { float err_end = 0, err_peak = 0, osc_late = 0, v_end = 0; };
 // Fährt target(t) mit Last; vc == nullptr = Originalweg ohne Fahr-Integral.
 static LoopResult loop(float seconds, float load_deg, VelocityControl* vc, float v_target, const V::Frame* frame = nullptr) {
     BalanceState b; Plant p; LoopResult r;
@@ -50,13 +54,13 @@ static LoopResult loop(float seconds, float load_deg, VelocityControl* vc, float
     for (int i = 0; i < n; ++i) {
         float tgt = v_target, acc = 0;
         if (frame) { V::tick(gs, gl, std::uint32_t((i + 1) * kDt * 1e6f)); tgt = gs.v; acc = gs.fwd.a; }
-        if (vc) { vc->accel = acc; vc->dt = kDt; }
+        if (vc) { vc->accel = acc; vc->dt = kDt; vc->unit_mm = kUnit; }
         const float th = step(b, tgt, p.v, p.theta, false, false, vc);
         plantStep(p, th, load_deg);
         const float e = tgt - p.v;
         r.err_peak = std::max(r.err_peak, std::fabs(e));
         if (i >= n - int(2.0f / kDt)) { vmin = std::min(vmin, p.v); vmax = std::max(vmax, p.v); }
-        r.err_end = e;
+        r.err_end = e; r.v_end = p.v;
     }
     r.osc_late = vmax - vmin;
     return r;
@@ -101,7 +105,7 @@ int main() {
         for (int i = 0; i < 149; ++i) step(b, 40, 0, 0, false, true, &vc);   // 0,596 s nach Rampenende
         check(b.vel_i == 0, "bis 0,6 s nach Rampenende kein Integral");
         for (int i = 0; i < 26; ++i) step(b, 40, 0, 0, false, true, &vc);
-        check(near(b.vel_i, 0.208f, 0.005f), "danach wächst es (26 Takte × 0,05 × 40 × 0,004 = 0,208°)");
+        check(near(b.vel_i, 0.624f, 0.005f), "danach wächst es (26 Takte × 0,15 × 40 × 0,004 = 0,624°)");
         vc.accel = -50; step(b, 40, 0, 0, false, true, &vc);
         const float frozen = b.vel_i;
         for (int i = 0; i < 100; ++i) step(b, 40, 0, 0, false, true, &vc);
@@ -110,31 +114,28 @@ int main() {
         step(b, 40, 0, 0, false, true, &off);
         check(b.vel_settled == 0, "Rahmenweg aus setzt die Wartezeit zurück");
     }
-    // --- Tempo-Vorsteuerung des Soll-Nicks auf das gemessene Tempo
+    // --- P allein auf Soll − Ist
     {
-        BalanceState a, b; VelocityControl v0; v0.on = true; v0.dt = kDt; v0.ki = 0;
-        VelocityControl v1 = v0; v1.kv = 0.05f;
-        const float t0 = step(a, 60, 60, 0, false, true, &v0), t1 = step(b, 60, 60, 0, false, true, &v1);
-        check(near(t1 - t0, -3.0f, 1e-4f), "kv 0,05 bei 60 Einheiten Ist -> Soll-Nick −3°");
-        BalanceState c, d2; VelocityControl rev = v1;
-        const float r0 = step(c, -40, -40, 0, false, true, &v0), r1 = step(d2, -40, -40, 0, false, true, &rev);
-        check(near(r1 - r0, 2.0f, 1e-4f), "rückwärts mit umgekehrtem Vorzeichen");
-        BalanceState g0, g1;
-        const float m0 = step(g0, 60, 20, 0, false, true, &v0), m1 = step(g1, 60, 20, 0, false, true, &v1);
-        check(near(m1 - m0, -1.0f, 1e-4f), "kv wirkt auf das gemessene Tempo (20 -> −1°), nicht aufs Soll");
-        BalanceState e0, e1; VelocityControl off = v1; off.on = false;
-        check(step(e0, 60, 60, 0, false, true, &off) == step(e1, 60, 60, 0, false, true, nullptr), "ohne Rahmenweg keine Wirkung");
+        VelocityControl vc; vc.on = true; vc.dt = kDt; vc.ki = 0;
+        BalanceState a, b, c, d2;
+        const float f = step(a, 60, 40, 0, false, true, &vc);
+        check(near(f, 0.3f * 20, 1e-4f), "Fahren: kp 0,3 × 20 Einheiten Fehler -> 6°");
+        const float r = step(b, -20, -40, 0, false, true, &vc);
+        check(f == r, "gleicher Fehler, andere Richtung/anderes Tempo: gleicher Soll-Nick (kein Tempo-Modell)");
+        check(step(c, 60, 60, 0, false, true, &vc) == 0.0f, "ohne Fehler kein Soll-Nick");
+        const float h = step(d2, 60, 40, 0, true, true, &vc);
+        check(near(h, d2.speed.output, 1e-6f) && near(h, 0.14f * 20, 0.02f), "Halten: Original-P 0,14");
     }
     // --- Integral: wächst mit ki·Fehler·dt, Grenze, Vorzeichen
     {
-        BalanceState b; VelocityControl vc; vc.on = true; vc.dt = kDt;   // ki 0,05
+        BalanceState b; VelocityControl vc; vc.on = true; vc.dt = kDt;   // ki 0,15
         settle(b);
-        for (int i = 0; i < 250; ++i) step(b, 30, 0, 0, false, true, &vc);   // 1 s, 30 mm/s Fehler
-        check(near(b.vel_i, 1.5f, 0.01f), "Integral: 30 mm/s über 1 s -> 1,5°");
+        for (int i = 0; i < 250; ++i) step(b, 30, 0, 0, false, true, &vc);   // 1 s, 30 Einheiten Fehler
+        check(near(b.vel_i, 4.5f, 0.02f), "Integral: 30 Einheiten über 1 s -> 4,5°");
         for (int i = 0; i < 1000; ++i) step(b, 30, 0, 0, false, true, &vc);
-        check(near(b.vel_i, 4.0f, 1e-4f), "Integral: Grenze i_max 4°");
+        check(near(b.vel_i, 8.0f, 1e-4f), "Integral: Grenze i_max 8°");
         for (int i = 0; i < 250; ++i) step(b, 0, 60, 0, false, true, &vc);
-        check(near(b.vel_i, 1.0f, 0.01f), "Integral: negativer Fehler baut ab");
+        check(near(b.vel_i, -1.0f, 0.02f), "Integral: negativer Fehler baut ab (8° − 9° = −1°)");
         check(b.drive_i == 0, "Fahr-Integral ist auf dem Rahmenweg aus");
     }
     // --- Anti-Windup und freeze
@@ -157,12 +158,13 @@ int main() {
         BalanceState c; settle(c);
         for (int i = 0; i < 250; ++i) step(c, 40, 40 - 1e-3f, 0, false, true, &vc);
         for (int i = 0; i < 250; ++i) step(c, 40, 0, 0, false, true, &vc);
+        const float i_start = c.vel_i;
         const float before = step(c, 40, 40, 0, false, true, &vc);
         VelocityControl off; off.on = false; off.dt = kDt;
         const float after = step(c, 40, 40, 0, false, true, &off);
         check(std::fabs(after - before) < 0.05f, "Rahmenweg endet: kein Sprung im Soll-Nick");
         for (int i = 0; i < 250; ++i) step(c, 40, 40, 0, false, true, &off);
-        check(std::fabs(c.vel_i) < 0.1f, "Rahmenweg endet: Integral nach 1 s unter 5 % (Zeitkonstante 0,3 s)");
+        check(std::fabs(c.vel_i) < 0.05f * i_start, "Rahmenweg endet: Integral nach 1 s unter 5 % (Zeitkonstante 0,3 s)");
     }
     // --- Rest des Fahr-Integrals klingt beim Wechsel ab
     {
@@ -171,32 +173,26 @@ int main() {
         const float d0 = b.drive_i;
         VelocityControl vc; vc.on = true; vc.dt = kDt; vc.ki = 0;
         const float t0 = step(b, 200, 0, 0, false, true, &vc);
-        check(d0 > 0.5f && b.drive_i > 0.9f * d0 && near(t0, b.speed.output + b.drive_i, 1e-3f), "Wechsel auf den Rahmenweg: Rest des Fahr-Integrals bleibt erst stehen");
+        check(d0 > 0.5f && b.drive_i > 0.9f * d0 && near(t0, vc.kp * 200 + b.drive_i, 1e-3f), "Wechsel auf den Rahmenweg: Rest des Fahr-Integrals bleibt erst stehen");
         for (int i = 0; i < 1000; ++i) step(b, 200, 0, 0, false, true, &vc);
         check(b.drive_i == 0, "Rest des Fahr-Integrals klingt ab (4 s)");
     }
-    // --- geschlossener Kreis (Modell)
+    // --- geschlossener Kreis (Modell der Messfahrten)
     {
-        const LoopResult orig = loop(8, 2.0f, nullptr, 200);
-        VelocityControl vc; vc.on = true;
-        const LoopResult pi = loop(8, 2.0f, &vc, 200);
-        std::printf("       Modell, Last 2°: Original Restfehler %.1f mm/s, mit Integral %.2f mm/s (Schwankung zuletzt %.2f)\n",
-                    double(orig.err_end), double(pi.err_end), double(pi.osc_late));
-        check(orig.err_end > 15.0f, "Modell: Original-P lässt unter Last ~18 mm/s Abweichung");
-        check(std::fabs(pi.err_end) < 1.0f, "Modell: mit Integral nach 8 s < 1 mm/s");
-        check(pi.osc_late < 1.0f, "Modell: kein Aufschaukeln");
-        VelocityControl hk; hk.on = true; hk.ki = 0.2f;   // ki kommt von xgonav
-        const LoopResult pi2 = loop(8, 2.0f, &hk, 200);
-        std::printf("       Modell, Last 2°, ki 0,2: Restfehler %.2f mm/s (Schwankung zuletzt %.2f)\n",
-                    double(pi2.err_end), double(pi2.osc_late));
-        check(std::fabs(pi2.err_end) < 1.0f && pi2.osc_late < 1.0f, "Modell: ki 0,2 ohne Aufschaukeln");
-        V::Frame f; f.v = 300; f.a = 500; f.jerk = 2500;
-        VelocityControl ff; ff.on = true;
-        VelocityControl noff; noff.on = true; noff.ff_gain = 0;
-        const LoopResult with = loop(3, 0, &ff, 0, &f), without = loop(3, 0, &noff, 0, &f);
-        std::printf("       Modell, Anfahren 0 -> 300 mm/s: Schleppfehler mit Vorsteuerung %.1f, ohne %.1f mm/s\n",
-                    double(with.err_peak), double(without.err_peak));
-        check(with.err_peak < 0.5f * without.err_peak, "Modell: Vorsteuerung halbiert den Schleppfehler beim Anfahren");
+        const LoopResult orig = loop(6, 0, nullptr, 46);
+        std::printf("       Modell: Original-P bei Soll 46 -> %.2f × Soll\n", double(orig.v_end / 46));
+        check(orig.v_end > 1.5f * 46, "Modell: Original-P läuft auf ~1,8 × Soll (wie am Rider)");
+        float worst = 0;
+        for (float s : {46.0f, 69.0f, -46.0f, -69.0f}) for (float load : {0.0f, 2.0f, -2.0f}) {
+            V::Frame f; f.v = s; f.a = 128; f.jerk = 641;   // xgonav: 0,5 m/s², 2,5 m/s³ in Einheiten von 3,9 mm/s
+            VelocityControl vc; vc.on = true;
+            const LoopResult r = loop(6, load, &vc, 0, &f);
+            const float q = r.v_end / s;
+            std::printf("       Modell, Soll %+3.0f, Steigung %+.0f°: Ende %.3f × Soll, Spitze %.2f × Soll, Schwankung zuletzt %.2f\n",
+                        double(s), double(load), double(q), double(1 + r.err_peak / std::fabs(s)), double(r.osc_late));
+            worst = std::max(worst, std::max(std::fabs(q - 1), 0.5f * r.osc_late / std::fabs(s)));
+        }
+        check(worst < 0.03f, "Modell: vorwärts/rückwärts, eben und ±2° Steigung nach 6 s auf ±3 % am Soll, zuletzt < 6 % Schwankung");
     }
     std::printf(fail ? "\nFEHLER\n" : "\nalle ok\n");
     return fail;

@@ -36,7 +36,7 @@ firmware/tests/run.sh [filter]        # Host-Tests (g++, nach build.sh); am PC k
 
 ## Stand am Rider
 
-Geflasht 2026-11-25 ~14:05 die alte Serie 0001–0035 (SHA ef2a2894…, `out/app0_0035neu.bin` = Rückfallstand). Die Serie 01–08 (SHA 97d8cf13…, ohne Totcode, sonst gleich) ist gebaut, Host-Tests grün, **nicht geflasht**. Einlegen in Kurven (232) war nie an; erst Vorzeichen in einer Kurve prüfen.
+Geflasht 2026-11-25 die Serie 01–08 (SHA 12556176…), Rückfallstand `out/app0_0035neu.bin` (0001–0035, SHA ef2a2894…). Gegenüber 0035 ohne Totcode und mit Tempo-Regelung nur über Soll − Ist (kv raus, kp 0,3, ki 0,15, i_max 8° in der Firmware, ki/i_max/kv aus 0x1b ignoriert); **noch nicht gefahren**. Einlegen in Kurven (232) war nie an; erst Vorzeichen in einer Kurve prüfen.
 
 ## Schnittstelle zum Pi
 

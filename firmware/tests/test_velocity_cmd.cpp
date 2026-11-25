@@ -1,5 +1,5 @@
 // Host-Test 08-velocity: Fahrrahmen in mm/s und °/s (Register 0x1a/0x1b, velocity_cmd.h), 0xa0/0xa1 entfernt.
-// Prüft: Rahmen- und Grenzen-Format (0x1b 14 Byte: Einheit, ki, i_max, kv; 0 = Standard; andere Längen verworfen),
+// Prüft: Rahmen- und Grenzen-Format (0x1b 14 Byte: Einheit, 0 = Standard, Bytes 8..13 ohne Bedeutung; andere Längen verworfen),
 // Ablehnung ohne Grenzen, Begrenzung auf v_max/w_max, Beschleunigungsbetrieb (Vorzeichen, Grenze), Wächter,
 // Abbruch, Byte-Gegenwert, Protokoll (Längen, Lesen 0x1a, 0xa0/0xa1 unbekannt) und dass der Rahmenweg in
 // updateCommandTargets ohne Byte-Totband ankommt, der Byteweg aber unverändert bleibt.
@@ -254,18 +254,17 @@ int main() {
         check(x.filtered_forward == y.filtered_forward && x.filtered_turn == y.filtered_turn && x.forward == y.forward,
               "velocity = false: bitgleich zum alten Weg");
     }
-    {   // Einheit, ki, i_max, kv
+    {   // Einheit; Bytes 8..13 (ki, i_max, kv von xgonav) ohne Bedeutung
         const V::Limits z = limits(231, 1800, 500);
-        check(z.unit_mm == 1.0f && z.ki < 0 && z.i_max < 0 && z.kv == 0, "0x1b mit 0: Einheit 1, ki/i_max von !velctl, kv aus");
+        check(z.unit_mm == 1.0f, "0x1b mit 0: Einheit 1");
         std::uint8_t d[V::kLimitsLen];
         V::put16(d, 231); V::put16(d + 2, 1800); V::put16(d + 4, 500); V::put16(d + 6, 3900);
         V::put16(d + 8, 300); V::put16(d + 10, 600); V::put16(d + 12, 250);
         V::Limits l; check(V::parseLimits(d, sizeof d, l), "0x1b 14 Byte angenommen");
         check(l.v_max == 231 && near(l.w_max, 180.0f, 1e-4f) && l.timeout_ms == 500, "0x1b: Grenzen");
-        check(near(l.unit_mm, 3.9f, 1e-5f) && near(l.ki, 0.03f, 1e-6f) && near(l.i_max, 6.0f, 1e-5f) && near(l.kv, 0.025f, 1e-6f),
-              "0x1b: Einheit 3,9 mm/s, ki 0,03, i_max 6°, kv 0,025");
-        V::put16(d + 8, 60000); V::put16(d + 10, 60000); V::put16(d + 12, 60000); V::parseLimits(d, sizeof d, l);
-        check(l.ki == 1.0f && l.i_max == 10.0f && near(l.kv, 0.2f, 1e-6f), "ki ≤ 1, i_max ≤ 10°, kv ≤ 0,2");
+        check(near(l.unit_mm, 3.9f, 1e-5f), "0x1b: Einheit 3,9 mm/s");
+        V::Limits l2; V::put16(d + 8, 60000); V::put16(d + 10, 0); V::put16(d + 12, 60000); V::parseLimits(d, sizeof d, l2);
+        check(l2.v_max == l.v_max && l2.w_max == l.w_max && l2.unit_mm == l.unit_mm, "Bytes 8..13 ändern nichts");
         check(!V::parseLimits(d, 6, l), "0x1b mit 6 Byte verworfen");
     }
     std::printf(fail ? "\nFEHLER\n" : "\nalle ok\n");
