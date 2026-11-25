@@ -57,6 +57,12 @@
        "hilfe": "Krümmungsbetrieb (ARBEITSPLAN.md Punkt 5 Stufe 1): Wegfolger-Befehle mit Command.kappa gehen als Bahnkrümmung an die Firmware (w = κ · v_soll dort), der Bogen bleibt beim Anfahren und Bremsen. Nur wenn die Firmware das Fähigkeitsbit meldet; aus, bis am Rider gefahren."
       },
       {
+       "key": "vel_kurs",
+       "typ": "bool",
+       "default": false,
+       "hilfe": "Kursziel (Punkt 5 Stufe 2): Drehen auf einen Kurs (Wegfolger, POST /turn) als Ziel Δψ an die Firmware, die mit Bremsvorausschau dreht; w_max des Modus geht solange über vel_limits. Nur mit Fähigkeitsbit; aus bis gefahren."
+      },
+      {
        "key": "fw_speed_unit_mm",
        "typ": "float",
        "default": 3.9,

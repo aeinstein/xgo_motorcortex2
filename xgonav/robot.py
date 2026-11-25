@@ -21,7 +21,8 @@ import time
 from dataclasses import dataclass
 
 from .config import RobotCfg
-from .fahrrahmen import CAP_KAPPA, W_LEVEL_OFF_DPS, Achse, Bogen, bogen_schritt, bogen_text, grenzen_text, rahmen_text, zustand
+from .fahrrahmen import (CAP_KAPPA, CAP_KURS, W_LEVEL_OFF_DPS, Achse, Bogen, Kurs, bogen_schritt, bogen_text, grenzen_text,
+                         kurs_empfang, kurs_schritt, kurs_text, rahmen_text, zustand)
 
 log = logging.getLogger(__name__)
 
@@ -182,6 +183,16 @@ class Robot:
         self.bogen = False
         self._target_k: float | None = None
         self._bogen = Bogen()
+        # Kursziel (Fähigkeitsbit und robot.vel_kurs): drive(kurs=(Restfehler rad, w_max Anteil)) schickt ein Ziel Δψ,
+        # die Firmware dreht mit Bremsvorausschau darauf. Neues Ziel (Wechselbit) nur, wenn sich das verlangte Ziel
+        # gegen das laufende um mehr als KURS_NEU_DEG verschiebt. _gen_winkel: ∫ w_soll dt wie der Generator der Firmware.
+        self.kurs_an = False
+        self._target_kurs: tuple[float, float] | None = None
+        self._kurs = Kurs()
+        self._kurs_seq = False
+        self._kurs_ziel = self._kurs_dpsi = 0.0
+        self._gen_winkel = 0.0
+        self._w_lim: float | None = None        # °/s: w_max in vel_limits während eines Kursziels (Obergrenze des Modus)
         self._frame = ""                        # Text des aktuellen Rahmens
         self._frame_sent: str | None = None
         self._limits_t = -1e9
@@ -194,11 +205,16 @@ class Robot:
     def w_max_dps(self) -> float:
         return self.cfg.max_w * self.cfg.vyaw_limit_dps
 
+    @property
+    def _w_max_jetzt(self) -> float:
+        """w_max, das gerade in vel_limits steht: im Kursziel die Obergrenze des Modus (die Firmware dreht dort mit w_max)."""
+        return self.w_max_dps if self._w_lim is None else min(self.w_max_dps, self._w_lim)
+
     def _write_limits(self, now: float) -> None:
         """v_max/w_max und Wächter an die Firmware (Fahrrahmen); periodisch, ein ESP-Neustart verliert sie."""
         c = self.cfg
         try:
-            self._write("vel_limits", grenzen_text(self.v_max_mps, self.w_max_dps, c.vel_timeout_ms, c.fw_speed_unit_mm,
+            self._write("vel_limits", grenzen_text(self.v_max_mps, self._w_max_jetzt, c.vel_timeout_ms, c.fw_speed_unit_mm,
                                                   c.vel_ki, c.vel_i_max_deg, c.vel_kv))
         except OSError as e:
             log.error("vel_limits nicht geschrieben: %s", e)
@@ -214,6 +230,12 @@ class Robot:
                         "Drehratenweg", caps)
         elif self.bogen:
             log.info("Krümmungsbetrieb aktiv (Fähigkeiten %d)", caps)
+        self.kurs_an = bool(self.cfg.vel_kurs and caps & CAP_KURS)
+        if self.cfg.vel_kurs and not self.kurs_an:
+            log.warning("robot.vel_kurs an, aber Firmware oder Treiber melden kein Kursziel (Fähigkeiten %d) – "
+                        "Drehratenweg", caps)
+        elif self.kurs_an:
+            log.info("Kursziel aktiv (Fähigkeiten %d)", caps)
 
     # ---- öffentliche API -------------------------------------------------
     def start(self) -> None:
@@ -242,11 +264,14 @@ class Robot:
             raise ValueError(f"Tempo {f} außerhalb {self.TEMPO_MIN}..1")
         self._tempo = f
 
-    def drive(self, v: float, w: float, brake: bool = False, kappa: float | None = None) -> None:
+    def drive(self, v: float, w: float, brake: bool = False, kappa: float | None = None,
+              kurs: tuple[float, float] | None = None) -> None:
         """brake: Vollbremsung, beim Langsamerwerden mit robot.vel_brake statt vel_decel (Fahrrahmen; auch auf ein
         kleineres Tempo als 0, so rollt er weich bis an die Grenze der Bahnprüfung). Auf dem Byteweg ohne Wirkung.
         kappa: Bahnkrümmung (1/m, + = links) zum Befehl; mit self.bogen geht sie statt w an die Firmware (w = κ · v_soll
-        dort, Grenzen begrenzen v statt w), sonst zählt w."""
+        dort, Grenzen begrenzen v statt w), sonst zählt w. kurs: (Restfehler zum Zielkurs in rad, + = links; höchster
+        normierter Drehwert wie w, z. B. RobotCfg.w_of(Anteil)) beim Drehen auf einen Kurs; mit self.kurs_an dreht die
+        Firmware selbst darauf."""
         # Erst begrenzen, dann Tempo: v/w der Modi sind Faktor x max_v (RobotCfg.v_of), gesendet wird
         # Faktor x tempo x max_v; Verhältnis v/w und damit die geprüfte Bahn bleiben gleich.
         v = max(-self.cfg.max_v, min(self.cfg.max_v, v)) * self._tempo
@@ -254,6 +279,10 @@ class Robot:
         with self._lock:
             self._target = (v, w)
             self._target_k = kappa if self.bogen else None
+            self._target_kurs = None
+            if kurs is not None and self.kurs_an:
+                self._target_kurs = (kurs[0], max(0.0, min(self.cfg.max_w, kurs[1])) * self._tempo
+                                     * self.cfg.vyaw_limit_dps)
             self._brake = brake
             self._last_cmd_t = time.monotonic()
 
@@ -410,6 +439,7 @@ class Robot:
             with self._lock:
                 target = self._target
                 kappa = self._target_k
+                kurs = self._target_kurs
                 stale = now - self._last_cmd_t > self.cfg.stall_timeout_s
             if stale:
                 target = (0.0, 0.0)
@@ -430,8 +460,8 @@ class Robot:
                 if self.vel:
                     self._gen_reset()
             if stale or not self.state.balancing or (self._act is not None and self._act_abort):
-                kappa = None                        # Stopp von hier: Drehratenweg wie bisher
-            self._ramp(target, now, kappa)
+                kappa = kurs = None                 # Stopp von hier: Drehratenweg wie bisher
+            self._ramp(target, now, kappa, kurs)
             with self._act_lock:
                 if not self._action_tick(now):
                     self._send(now)
@@ -509,18 +539,24 @@ class Robot:
             self._drive_level_on = on
             log.debug("Nivellieren beim Fahren %s", "an" if on else "aus")
 
-    def _ramp(self, target: tuple[float, float], now: float, kappa: float | None = None) -> None:
+    def _ramp(self, target: tuple[float, float], now: float, kappa: float | None = None,
+              kurs: tuple[float, float] | None = None) -> None:
         dt = max(1e-3, now - self._last_ramp_t)
         self._last_ramp_t = now
         if self.vel:
-            self._ramp_vel(target, dt, kappa if self.bogen else None)
+            self._ramp_vel(target, dt, kappa if self.bogen else None, kurs if self.kurs_an else None)
             return
         self._cur = target                   # Byteweg: die Firmware filtert selbst (Tiefpass, 5er-Schritt)
 
-    def _ramp_vel(self, target: tuple[float, float], dt: float, kappa: float | None = None) -> None:
+    KURS_NEU_DEG = 2.0        # verlangtes Ziel weicht so weit vom laufenden ab: neues Ziel (Wechselbit)
+    KURS_NACH_DEG = 1.0       # angekommen, der Kurs (IMU) liegt aber noch so weit daneben: neues Ziel nachschieben
+
+    def _ramp_vel(self, target: tuple[float, float], dt: float, kappa: float | None = None,
+                  kurs: tuple[float, float] | None = None) -> None:
         """Fahrrahmen: Ziel in m/s und °/s, Beschleunigung je nach Richtung; der Generator rechnet nach, was die
         Firmware daraus macht (_cur), der Rahmen selbst trägt nur Ziel und Grenzen. kappa: Krümmungsrahmen
-        (bogen_schritt wie velocity_cmd.h tickKappa, w = κ · v_soll)."""
+        (bogen_schritt wie velocity_cmd.h tickKappa, w = κ · v_soll). kurs: Kursziel-Rahmen (kurs_schritt wie
+        tickCourse); w_max des Modus geht dabei über vel_limits."""
         c = self.cfg
         tv, tw = target[0] * c.vx_limit, target[1] * c.vyaw_limit_dps
         g = self._gen_v
@@ -531,7 +567,28 @@ class Robot:
             a, j = c.vel_accel_mps2, c.vel_jerk_mps3          # schneller in derselben Richtung (oder aus dem Stand)
         else:
             a, j = c.vel_decel_mps2, c.vel_jerk_mps3          # langsamer oder Richtungswechsel
-        if kappa is not None:
+        w_lim = kurs[1] if kurs is not None else None
+        if w_lim != self._w_lim:
+            self._w_lim = w_lim
+            self._write_limits(time.monotonic())
+        if kurs is None and self._kurs.an:
+            kurs_empfang(self._kurs, None)            # anderer Rahmen beendet das Kursziel
+        if kurs is not None:
+            err = math.degrees(kurs[0])
+            k = self._kurs
+            if (not k.an or abs(self._gen_winkel + err - self._kurs_ziel) > self.KURS_NEU_DEG
+                    or (k.done and abs(err) > self.KURS_NACH_DEG)):
+                self._kurs_seq = not self._kurs_seq
+                self._kurs_dpsi = round(err * 10.0) / 10.0    # wie im Rahmen (0,1°)
+                self._kurs_ziel = self._gen_winkel + self._kurs_dpsi
+                kurs_empfang(k, self._kurs_dpsi, self._kurs_seq)
+            g.schritt(tv, a, j, dt)
+            self._bogen.an = False
+            kurs_schritt(self._gen_w, k, c.vel_alpha_dps2, c.vel_jerk_w_dps3, self._w_max_jetzt, dt)
+            self._frame = kurs_text(self._kurs_seq, tv, a, j, self._kurs_dpsi, c.vel_alpha_dps2, c.vel_jerk_w_dps3,
+                                    c.fw_speed_unit_mm)
+            self._frame_w = self._gen_w.x
+        elif kappa is not None:
             kq = round(kappa * 1000.0) / 1000.0       # wie im Rahmen (0,001 1/m)
             gw = self._gen_w
             gw.x = bogen_schritt(g, self._bogen, gw.x, tv, kq, a, j, c.vel_alpha_dps2, c.vel_jerk_w_dps3,
@@ -545,6 +602,7 @@ class Robot:
             self._gen_w.schritt(tw, c.vel_alpha_dps2, c.vel_jerk_w_dps3, dt)
             self._frame = rahmen_text(tv, a, j, tw, c.vel_alpha_dps2, c.vel_jerk_w_dps3, c.fw_speed_unit_mm)
             self._frame_w = tw
+        self._gen_winkel += self._gen_w.x * dt
         self._cur = (g.x / c.vx_limit, self._gen_w.x / c.vyaw_limit_dps)
 
     def _gen_reset(self, resend: bool = True) -> None:
@@ -552,6 +610,7 @@ class Robot:
         nächster Durchlauf schreibt den Rahmen sofort (nicht im Liegen, sonst schriebe er in jedem Durchlauf)."""
         self._gen_v, self._gen_w = Achse(), Achse()
         self._bogen = Bogen()
+        self._kurs = Kurs()
         if resend:
             self._frame_sent = None
 
@@ -797,7 +856,7 @@ class SimRobot(Robot):
     def _setup(self) -> None:
         if self.vel:
             self._write_limits(time.monotonic())
-            self._caps_setup(CAP_KAPPA)             # wie die Firmware mit Stufe 1 der Bahnbefehle
+            self._caps_setup(CAP_KAPPA | CAP_KURS)  # wie die Firmware mit Stufe 2 der Bahnbefehle
 
     def _read_text(self, name: str) -> str | None:
         if name.startswith("settings/"):

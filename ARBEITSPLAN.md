@@ -15,7 +15,7 @@ Planer, der Planer fährt den Rider, nach der Sicherheitsprüfung.
 | 2 | **Test: Anfahren an eine Wand** | geradeaus geprüft gefahren 2026-11-25 (unten) |
 | 3 | **Test: Fahren einer Bahn entlang.** Kurven glätten, Drehungen auf der Stelle vermeiden (Hauptgrund der Drift) | offen |
 | 4 | **Fahrregler in die Firmware.** Pi sendet Sollgeschwindigkeit und Drehrate in echten Einheiten, die Firmware regelt | erledigt, gefahren (unten) |
-| 5 | **Bahnbefehle für die Navigation.** Krümmung statt Drehrate, Drehen auf Kurs, Strecke mit Halt, Rückmeldung im Strom (Plan unten) | Stufe 1: Firmware geflasht (2a7f213d), Treiber geladen, xgonav eingespielt, `vel_kappa` aus, nicht gefahren. Stufe 2: Firmware gebaut (ad2f52e, 4aabe9f6, nicht geflasht), Pi-Seite offen |
+| 5 | **Bahnbefehle für die Navigation.** Krümmung statt Drehrate, Drehen auf Kurs, Strecke mit Halt, Rückmeldung im Strom (Plan unten) | Stufe 1: Firmware geflasht (2a7f213d), Treiber geladen, xgonav eingespielt, `vel_kappa` aus, nicht gefahren. Stufe 2: Firmware geflasht (4aabe9f6), Pi-Seite fertig, `vel_kurs` aus, nicht gefahren |
 
 ## Bahnbefehle (Punkt 5, Plan 2026-11-25)
 
@@ -51,6 +51,15 @@ Vektoren (`test_firmware_vektoren`), `Robot.drive(kappa=)`, `robot.bogen` nur mi
 Wegfolger setzt `Command.kappa` = Drehrate/Tempo (gleiche Lenkung wie bisher), `app.bogen_w` hält w = κ·v, wenn
 safety()/Bahnprüfung v senken. Simulator (je ein Lauf, `--dyn`): home 60 s beide am Start, explore 200 s `--rider`
 beide Karte fertig ohne Kollision (κ: 1 Stelle nicht erreicht, Posefehler 0,7 statt 2,7 cm).
+
+Stand Stufe 2 (2026-11-25): Firmware ad2f52e geflasht (caps 3). Treiber `kurs S V A J D ALPHA JW`, Zustand mit
+`kurs erreicht` (13 Felder; driver-test `--vel` grün auf kimmy). xgonav: `fahrrahmen.kurs_schritt`/`kurs_empfang`
+gegen die 10 `kurs_*`-Vektoren (float gegen double: Vorausschau kippt an der Grenze einen Takt verschieden, höchstens
+0,61 °/s, Rest 0,05°, „angekommen“ ±2 Takte, Endrest gleich). `Robot.drive(kurs=(Fehler, w))`: neues Ziel mit
+Wechselbit nur bei > 2° Verschiebung (oder > 1° Rest nach Ankunft), w-Obergrenze des Modus über `vel_limits`.
+Befehle mit `Command.kurs`: Wegfolger (Drehen, Ausrichten) und `POST /turn`; Dunkelangst und pet noch über `dreh_w`.
+Simulator (je ein Lauf, `--dyn`): home 60 s mit Kursziel und mit Kursziel + Krümmung am Start (4–5 cm), explore 200 s
+`--rider` beide an: Karte fertig in 110 s, keine Kollision, 1 Stelle nicht erreicht.
 
 Reihenfolge: 0 → 1 → 2 → 3 → 4. Stufe 1 ist der Kern für Punkt 3 (Bahn entlang), 2 und 3 ersetzen Pi-Regelschleifen,
 4 räumt den doppelten Generator weg.

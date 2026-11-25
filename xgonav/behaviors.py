@@ -98,6 +98,9 @@ class Command:
     # Bahnkrümmung (1/m, + = links) zum Befehl, gesetzt vom Wegfolger beim Fahren im Bogen (w = κ · v). Wer danach v
     # ändert, behält den Bogen (App._arc_check rechnet w nach); mit robot.vel_kappa geht κ statt w an die Firmware.
     kappa: float | None = None
+    # Drehen auf einen Kurs: (Restfehler rad, + = links; höchster normierter Drehwert wie w). Mit robot.vel_kurs dreht
+    # die Firmware selbst mit Bremsvorausschau darauf (ARBEITSPLAN.md Punkt 5 Stufe 2), sonst zählt w.
+    kurs: tuple[float, float] | None = None
 
 
 def dreh_w(err: float, kp: float, w_max: float, rcfg: RobotCfg, deadband_deg: float = 0.0,
@@ -184,7 +187,8 @@ class Manual(Behavior):
                               t["w"], self.rcfg)
             if w is not None:
                 return Command(0.0, w, None, "Handsteuerung – drehe %+.0f° von %+.0f°" % (
-                    math.degrees(t["summe"]), math.degrees(t["soll"])))
+                    math.degrees(t["summe"]), math.degrees(t["soll"])),
+                    kurs=(t["soll"] - t["summe"], self.rcfg.w_of(t["w"])))
             t["ende"] = now
             ok = abs(t["soll"] - t["summe"]) <= math.radians(t["tol"])
             self.turn_info["grund"] = "angekommen" if ok else "Zeit abgelaufen"
@@ -1010,7 +1014,8 @@ class PathFollower:
         self._watch(w.t, x, y, err)
         if self._turning:
             wc = dreh_w(err, self.h.kp_turn, self.h.turn_w_max, self.rcfg)
-            return Command(0.0, wc, hmm, "%s – drehe (%+.0f°)" % (label, math.degrees(err)), extra={"tight": tight})
+            return Command(0.0, wc, hmm, "%s – drehe (%+.0f°)" % (label, math.degrees(err)), extra={"tight": tight},
+                           kurs=(err, self.rcfg.w_of(self.h.turn_w_max)))
         wc = clamp(yaw_rate_to_w(self.h.kp_turn * err, self.rcfg), -1.0, 1.0)     # Kurve: Lenken beim Fahren
         if abs(wc) < self.rcfg.w_of(self.h.min_w) and abs(err) > math.radians(self.h.min_w_err_deg):
             wc = math.copysign(self.rcfg.w_of(self.h.min_w), err)
@@ -1060,7 +1065,8 @@ class PathFollower:
     def align(self, err: float, label: str) -> Command:
         """Auf der Stelle auf einen Endkurs drehen (err rad)."""
         wc = dreh_w(err, self.h.kp_turn, self.h.turn_w_max, self.rcfg)
-        return Command(0.0, wc, self.cfg.height_cruise_mm, "%s (%+.0f°)" % (label, math.degrees(err)))
+        return Command(0.0, wc, self.cfg.height_cruise_mm, "%s (%+.0f°)" % (label, math.degrees(err)),
+                       kurs=(err, self.rcfg.w_of(self.h.turn_w_max)))
 
 
 class Home(Behavior):

@@ -950,7 +950,8 @@ class App:
     def _drive(self, cmd: Command) -> None:
         """Fahrbefehl an den Roboter (alle Modi gleich, auch die Handsteuerung: Faktor x tempo x max_v)."""
         bogen_w(cmd, self.robot, self.cfg.robot)
-        self.robot.drive(cmd.v, cmd.w, brake=bool(cmd.extra.get("bremsen")), kappa=cmd.kappa)
+        self.robot.drive(cmd.v, cmd.w, brake=bool(cmd.extra.get("bremsen")), kappa=cmd.kappa,
+                         kurs=cmd.kurs if abs(cmd.v) < 1e-6 else None)
 
     def _manual_cmd(self, w: World | None = None) -> Command:
         """Handsteuerung: nur Sturz-Erkennung, kein Bodenmodell/keine Bahnprüfung. Geprüfter Sollwert

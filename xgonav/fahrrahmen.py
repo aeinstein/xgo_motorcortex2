@@ -27,6 +27,10 @@ W_LEVEL_OFF_DPS = 16.0 / 127.5 * 300.0     # wie das Drehbyte (|Byte-128| > 16):
 KDEG = 57.29578                            # ° je rad wie in velocity_cmd.h (kDeg)
 KAPPA_MAX = 32.767                         # 1/m, Bereich des i16-Felds (0,001 1/m)
 CAP_KAPPA = 1                              # Fähigkeitsbyte (0x1a lesen, Byte 1): bit0 Krümmungsbetrieb
+CAP_KURS = 2                               # bit1 Kursziel
+KURS_ANKUNFT_DEG = 0.5                     # Restwinkel für „angekommen“ (kCourseArrive)
+STOP_SIM_MAX = 1000                        # Takte der Bremswinkel-Vorausschau (kStopSimMax)
+WATCHDOG_ALPHA = 180.0                     # °/s², Wächter ohne alpha im Rahmen (kWatchdogAlpha)
 
 
 def _clamp_abs(x: float, m: float) -> float:
@@ -127,6 +131,63 @@ def bogen_schritt(fwd: Achse, b: Bogen, w_jetzt: float, v_ziel: float, k_ziel: f
     return b.kappa * m * fwd.x * KDEG
 
 
+@dataclass
+class Kurs:
+    """Zustand des Kursziels (ARBEITSPLAN.md Punkt 5 Stufe 2, velocity_cmd.h course_*): an = läuft, seq = Wechselbit
+    des laufenden Ziels, done = angekommen, rest = Restwinkel (°)."""
+    an: bool = False
+    seq: bool = False
+    done: bool = False
+    rest: float = 0.0
+
+
+def kurs_empfang(k: Kurs, dpsi_deg: float | None, seq: bool = False) -> None:
+    """Rahmen angenommen (velocity_cmd.h receive): dpsi None = kein Kursziel-Rahmen (beendet es). Ein neues Ziel nur,
+    wenn keins lief oder das Wechselbit anders ist; gleiche Rahmen halten nur den Wächter wach."""
+    if dpsi_deg is None:
+        k.an = False
+    elif not k.an or seq != k.seq:
+        k.an, k.seq, k.rest, k.done = True, seq, dpsi_deg, False
+
+
+def stop_winkel(ax: Achse, alpha: float, jw: float, dt: float) -> float:
+    """Bremswinkel (°) der Drehachse aus (w, a), mit demselben approach auf 0 vorausgerechnet (stopAngle)."""
+    s, d = Achse(ax.x, ax.a), 0.0
+    for _ in range(STOP_SIM_MAX):
+        if s.x == 0 and s.a == 0:
+            break
+        s.schritt(0.0, alpha, jw, dt)
+        d += s.x * dt
+    return d
+
+
+def kurs_schritt(turn: Achse, k: Kurs, alpha: float, jw: float, w_max: float, dt: float,
+                 waechter: bool = False) -> None:
+    """Drehachse eines Takts im Kursziel (velocity_cmd.h tickCourse; die Fahrachse läuft wie im Geschwindigkeitsbetrieb
+    beim Aufrufer). Mit Vorausschau: weiter auf ±w_max, solange der Bremswinkel danach noch in den Rest passt, sonst
+    bremsen; ohne alpha springt w. Danach w auf w_max geklemmt, Rest −= w·dt, angekommen bei w = a = 0, |Rest| < 0,5°.
+    Kosten am Pi: bis ~20 approach-Schritte je Durchlauf bei dt 0,02 s (nur während eines Kursziels)."""
+    if waechter:
+        turn.schritt(0.0, alpha if alpha > 0 else WATCHDOG_ALPHA, jw, dt)
+    elif dt > 0:
+        if k.done:
+            turn.schritt(0.0, alpha, jw, dt)
+        elif alpha <= 0:
+            turn.x, turn.a = math.copysign(min(w_max, abs(k.rest) / dt), k.rest), 0.0
+        else:
+            sg = 1.0 if k.rest >= 0 else -1.0
+            go = Achse(turn.x, turn.a)
+            go.schritt(sg * w_max, alpha, jw, dt)
+            if (k.rest - go.x * dt - stop_winkel(go, alpha, jw, dt)) * sg >= 0:
+                turn.x, turn.a = go.x, go.a
+            else:
+                turn.schritt(0.0, alpha, jw, dt)
+    turn.x = _clamp_abs(turn.x, w_max)
+    k.rest -= turn.x * dt
+    if not k.done and not waechter and turn.x == 0 and turn.a == 0 and abs(k.rest) < KURS_ANKUNFT_DEG:
+        k.done = True
+
+
 def _rund(x: float) -> int:
     """Kaufmännisch runden (vom Nullpunkt weg; Pythons round rundet 0,5 auf gerade, -0,05 °/s würde 0)."""
     return int(math.copysign(math.floor(abs(x) + 0.5), x))
@@ -160,6 +221,13 @@ def bogen_text(v_mps: float, a_mps2: float, j_mps3: float, kappa: float, alpha_d
     return "kap " + " ".join(t)
 
 
+def kurs_text(seq: bool, v_mps: float, a_mps2: float, j_mps3: float, dpsi_deg: float, alpha_dps2: float,
+              jw_dps3: float, unit_mm: float) -> str:
+    """Kursziel-Rahmen für /proc/XGORider/vel: "kurs S V A J D ALPHA JW", S = Wechselbit (0/1, umschalten = neues
+    Ziel), D = Δψ in ° (eine Nachkommastelle, + = links). Nur senden, wenn die Firmware CAP_KURS meldet."""
+    return "kurs %d " % (1 if seq else 0) + rahmen_text(v_mps, a_mps2, j_mps3, dpsi_deg, alpha_dps2, jw_dps3, unit_mm)
+
+
 def grenzen_text(v_max_mps: float, w_max_dps: float, timeout_ms: int, unit_mm: float,
                  ki: float, i_max_deg: float, kv: float) -> str:
     """Text für /proc/XGORider/vel_limits (Firmware-Patch 08-velocity, 14 Byte):
@@ -177,14 +245,19 @@ def grenzen_text(v_max_mps: float, w_max_dps: float, timeout_ms: int, unit_mm: f
 
 
 def zustand(text: str) -> dict | None:
-    """Gelesenes /proc/XGORider/vel ("aktiv beschl waechter grenzen v w v_max w_max timeout [kappa caps]") -> dict;
-    None bei Fehler. Alter Treiber (9 Felder): kappa False, caps 0."""
+    """Gelesenes /proc/XGORider/vel ("aktiv beschl waechter grenzen v w v_max w_max timeout [kappa caps [kurs
+    erreicht]]") -> dict; None bei Fehler. Älterer Treiber (9 bzw. 11 Felder): fehlende Felder False/0. caps nimmt
+    nur die Bits, die der Treiber auch schreiben kann (11 Felder: nur Krümmung)."""
     f = text.split()
-    if len(f) not in (9, 11) or f[0] == "Fehler":
+    if len(f) not in (9, 11, 13) or f[0] == "Fehler":
         return None
     try:
+        caps = int(f[10]) if len(f) >= 11 else 0
+        if len(f) == 11:
+            caps &= CAP_KAPPA                # Treiber ohne Kursrahmen
         return {"aktiv": f[0] == "1", "beschl": f[1] == "1", "waechter": f[2] == "1", "grenzen": f[3] == "1",
                 "v": int(f[4]), "w": float(f[5]), "v_max": int(f[6]), "w_max": float(f[7]), "timeout_ms": int(f[8]),
-                "kappa": len(f) == 11 and f[9] == "1", "caps": int(f[10]) if len(f) == 11 else 0}
+                "kappa": len(f) >= 11 and f[9] == "1", "caps": caps,
+                "kurs": len(f) == 13 and f[11] == "1", "erreicht": len(f) == 13 and f[12] == "1"}
     except ValueError:
         return None

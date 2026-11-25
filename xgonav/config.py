@@ -41,6 +41,9 @@ class RobotCfg:
     # die Firmware (w = κ · v_soll dort), der Bogen bleibt beim Anfahren und Bremsen. Nur wenn die Firmware das
     # Fähigkeitsbit meldet; aus, bis am Rider gefahren.
     vel_kappa: bool = False
+    # Kursziel (Punkt 5 Stufe 2): Drehen auf einen Kurs (Wegfolger, POST /turn) als Ziel Δψ an die Firmware, die mit
+    # Bremsvorausschau dreht; w_max des Modus geht solange über vel_limits. Nur mit Fähigkeitsbit; aus bis gefahren.
+    vel_kurs: bool = False
     fw_speed_unit_mm: float = 3.9
     vel_accel_mps2: float = 0.5
     vel_decel_mps2: float = 1.0
