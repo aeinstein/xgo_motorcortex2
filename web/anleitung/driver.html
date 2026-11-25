@@ -1499,6 +1499,10 @@ cat /proc/XGORider/serial_stats; cat /proc/XGORider/imu
 <td>2026-11-17</td>
 <td>read paths for firmware without firmware patch 0001 removed (IMU modes 0/1/2, wheel register 0x0c, <code>settings/wheel_hz</code>); <code>yaw</code> from the stream; <code>force_yaw</code> removed; dead code removed (<code>xgo-lcd.c</code>, <code>xgo-lcd.h</code>). <strong>Not installed on the Rider</strong></td>
 </tr>
+<tr>
+<td>2026-11-25</td>
+<td>drive frame of firmware patches 0029–0032: <code>vel</code>, <code>vel_limits</code> (text ↔ bytes in <code>xgo-vel.h</code>, shared with the driver test). <strong>Not installed on the Rider</strong></td>
+</tr>
 </tbody>
 </table>
 <h2 id="imu-wheel-read-path-auto-detected-at-load">IMU / wheel read path (auto-detected at load)<a class="headerlink" href="#imu-wheel-read-path-auto-detected-at-load" title="Permanent link">&para;</a></h2>
@@ -1603,6 +1607,18 @@ cat /proc/XGORider/serial_stats; cat /proc/XGORider/imu
 <td>0x32</td>
 </tr>
 <tr>
+<td><code>vel</code></td>
+<td>rw</td>
+<td>write one drive frame (firmware 0029–0032): <code>V A J W ALPHA JW</code> = mm/s, mm/s² (≥ 0), mm/s³, °/s (one decimal), °/s², °/s³ (0 = no limit), or <code>acc A J W ALPHA JW</code> = acceleration mode (A signed, up to ±v_max); arms the motion watchdog (it writes 128 to 0x30/0x32, which also ends the frame path). Read = firmware state, fresh from the ESP32: <code>active accel_mode watchdog_fired limits_set v w v_max w_max timeout_ms</code> (e.g. <code>1 0 0 1 250 -12.3 500 90.0 300</code>); old firmware: <code>Fehler &lt;n&gt;</code>. Without <code>vel_limits</code> the firmware drops every frame</td>
+<td>0x1a</td>
+</tr>
+<tr>
+<td><code>vel_limits</code></td>
+<td>rw</td>
+<td>write <code>V_MAX W_MAX TIMEOUT_MS</code> (mm/s, °/s with one decimal, firmware watchdog ms, 0 = off); xgonav writes it at start. Read = last written text</td>
+<td>0x1b</td>
+</tr>
+<tr>
 <td><code>height</code></td>
 <td>rw</td>
 <td>u8 0..255 (web UI min 43); read: last written value, empty until first write; not reset when the firmware stands up at 128</td>
@@ -1641,7 +1657,7 @@ cat /proc/XGORider/serial_stats; cat /proc/XGORider/imu
 <tr>
 <td><code>state</code></td>
 <td>r</td>
-<td>firmware state: 1 = balancing, 254 = lying (set down by action 254, LEDs orange), 0 = fallen (tilt, LEDs red), 253 = ready (disarmed, starts when upright), 250 = low battery, 251 = actuator fault, 252 = other fault; names in <code>robot.FW_ZUSTAND</code></td>
+<td>firmware state: 1 = balancing, 254 = lying (set down by action 254, LEDs orange), 0 = fallen (tilt, LEDs red; since firmware 0027 stays until a command, also upright), 253 = ready (disarmed, starts when upright), 250 = low battery, 251 = actuator fault, 252 = other fault; names in <code>robot.FW_ZUSTAND</code></td>
 <td></td>
 </tr>
 <tr>
@@ -1691,6 +1707,12 @@ cat /proc/XGORider/serial_stats; cat /proc/XGORider/imu
 <td>rw, root</td>
 <td>write <code>"0x0b 16"</code> (addr, len), read <code>"0x0b 16: 00 11 .."</code>; read-only diagnostics</td>
 <td>any</td>
+</tr>
+<tr>
+<td><code>lift</code></td>
+<td>r</td>
+<td>lift-guard log of firmware patch 0027, read from the ESP32 on every open, format as <code>raw_reg</code> (<code>"0x19 32: .."</code>, layout <code>firmware/README.md</code>); old firmware: <code>Fehler &lt;n&gt;</code>. xgonav reads it once after a fall (<code>robot.lift_text</code>)</td>
+<td>0x19</td>
 </tr>
 <tr>
 <td><code>ble</code></td>

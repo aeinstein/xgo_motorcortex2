@@ -21,6 +21,9 @@
 #define XGO_TUNNEL_MAX 24
 #define XGO_PI_IP 0x18          // Firmware-Patch 0025: schreiben = IPv4 des Pi (4 Byte), der ESP32 zeigt sie über BLE;
                                 // ohne neue Meldung gilt sie dort nach 10 s als 0.0.0.0
+#define XGO_VEL 0x1a            // Firmware-Patch 0029: Fahrrahmen schreiben (13 Byte: v mm/s, a, Ruck, w 0,1 °/s, alpha,
+                                //   Drehruck), lesen = Zustand (12 Byte); Text-Format kernel_module/xgo-vel.h
+#define XGO_VEL_LIMITS 0x1b     // Firmware-Patch 0029: v_max mm/s, w_max 0,1 °/s, Wächter ms (6 Byte); schreibt xgonav beim Start
 #define XGO_VX 0x30
 #define XGO_VYAW 0x32
 #define XGO_BODYHEIGHT 0x35

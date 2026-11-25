@@ -3,7 +3,80 @@
 const char *g_serial_path;
 #include "xgo-serial.c"
 #include "imu_extract.c"
+#include "xgo-vel.h"   /* Fahrrahmen 0x1a/0x1b (Firmware 0029), dieselben Funktionen wie /proc/XGORider/vel */
 #include <math.h>
+
+/* Text -> Bytes der Fahrrahmen prüfen, ohne Emulator */
+static int vel_case(const char *text, int want_ok, const uint8_t *want, int lim) {
+	uint8_t out[XGO_VEL_FRAME_LEN] = {0};
+	int r = lim ? vel_limits_encode(text, out) : vel_encode(text, out);
+	int n = lim ? XGO_VEL_LIMITS_LEN : XGO_VEL_FRAME_LEN;
+	int ok = want_ok ? (r == 0 && memcmp(out, want, n) == 0) : r != 0;
+	if (!ok) printf("VEL FEHLER '%s' (r %d)\n", text, r);
+	return !ok;
+}
+static int test_vel(void) {
+	int bad = 0;
+	const uint8_t f1[] = {0, 0xfa, 0x00, 0xf4, 0x01, 0xc4, 0x09, 0x7b, 0x00, 0x78, 0x00, 0x58, 0x02};   /* 250 500 2500 12.3 120 600 */
+	const uint8_t f2[] = {1, 0, 0, 0xd4, 0xfe, 0xd0, 0x07, 0xce, 0xff, 0, 0, 0, 0};                     /* acc -300 2000 -5 0 0 */
+	const uint8_t f3[] = {0, 0x9c, 0xff, 0, 0, 0, 0, 0x05, 0x00, 0, 0, 0, 0};                             /* -100 0 0 0.50 0 0 */
+	const uint8_t l1[] = {0xf4, 0x01, 0x89, 0x03, 0x2c, 0x01};                                             /* 500 90.5 300 */
+	bad += vel_case("250 500 2500 12.3 120 600", 1, f1, 0);
+	bad += vel_case("250 500 2500 12.3 120 600\n", 1, f1, 0);
+	bad += vel_case("acc -300 2000 -5 0 0", 1, f2, 0);
+	bad += vel_case("-100 0 0 0.50 0 0", 1, f3, 0);
+	bad += vel_case("250 -500 0 0 0 0", 0, NULL, 0);        /* negatives a nur im Beschleunigungsbetrieb */
+	bad += vel_case("1 2 3 4.25 5 6", 0, NULL, 0);          /* zwei Nachkommastellen */
+	bad += vel_case("1 2 3 4 5", 0, NULL, 0);
+	bad += vel_case("1 2 3 4 5 6 7", 0, NULL, 0);
+	bad += vel_case("40000 0 0 0 0 0", 0, NULL, 0);
+	bad += vel_case("acc 1 2 x 4 5", 0, NULL, 0);
+	bad += vel_case("1 2 3 4 -5 6", 0, NULL, 0);
+	bad += vel_case("500 90.5 300", 1, l1, 1);
+	bad += vel_case("500 -1 300", 0, NULL, 1);
+	bad += vel_case("500 90 300 7", 0, NULL, 1);
+	{
+		const uint8_t d[] = {9, 0, 0xfa, 0x00, 0x85, 0xff, 0xf4, 0x01, 0x84, 0x03, 0x2c, 0x01};
+		const uint8_t e[] = {1, 0, 0, 0, 0xfb, 0xff, 0, 0, 0, 0, 0, 0};
+		char t[80];
+		vel_format_diag(d, t, sizeof(t));
+		if (strcmp(t, "1 0 0 1 250 -12.3 500 90.0 300\n")) { printf("VEL FEHLER Zustand '%s'\n", t); bad++; }
+		vel_format_diag(e, t, sizeof(t));
+		if (strcmp(t, "1 0 0 0 0 -0.5 0 0.0 0\n")) { printf("VEL FEHLER Zustand '%s'\n", t); bad++; }
+	}
+	printf("VELPARSE %s\n", bad ? "FEHLER" : "ok");
+	return bad;
+}
+
+/* mit --vel im Emulator: Grenzen + Rahmen wie /proc schicken, Zustand zurücklesen */
+static void vel_roundtrip(void) {
+	static const char *lim = "450 72.5 300";
+	static const char *frames[] = {"250 500 2500 12.3 120 600", "acc -300 2000 -5 0 0", "-120 800 4000 -30.0 90 400"};
+	uint8_t b[XGO_VEL_FRAME_LEN];
+	char hex[64], t[80];
+	vel_limits_encode(lim, b);
+	write_serial_data(XGO_VEL_LIMITS, (char *)b, XGO_VEL_LIMITS_LEN);
+	for (int i = 0; i < XGO_VEL_LIMITS_LEN; i++) sprintf(hex + 2 * i, "%02x", b[i]);
+	printf("VELLIM %s\n", hex);
+	for (size_t k = 0; k < sizeof(frames) / sizeof(frames[0]); k++) {
+		vel_encode(frames[k], b);
+		write_serial_data(XGO_VEL, (char *)b, XGO_VEL_FRAME_LEN);
+		for (int i = 0; i < XGO_VEL_FRAME_LEN; i++) sprintf(hex + 2 * i, "%02x", b[i]);
+		printf("VELSENT %s\n", hex);
+		msleep(20);
+	}
+	printf("VELWANT 1 0 0 1 -120 -30.0 450 72.5 300\n");
+	for (int tries = 0; tries < 5; tries++) {
+		uint8_t d[XGO_VEL_DIAG_LEN];
+		if (read_addr_sync(XGO_VEL, sizeof(d), d, 100) >= (int)sizeof(d)) {
+			vel_format_diag(d, t, sizeof(t));
+			t[strcspn(t, "\n")] = 0;
+			printf("VELDIAG %s\n", t);
+			return;
+		}
+	}
+	printf("VELDIAG Fehler\n");
+}
 
 static atomic_int g_stop_aux;
 static int n_main_ok, n_main_fail, n_writes;
@@ -68,6 +141,7 @@ int main(int argc, char **argv) {
 	XGO_IMU_HZ = atoi(argv[3]);
 	if (argc > 4) XGO_IMU_STREAM_HZ = atoi(argv[4]);   /* Strom (Firmware 0014) einschalten */
 	if (test_f32()) return 2;
+	if (test_vel()) return 2;
 
 	if (open_serial_port()) { printf("open failed\n"); return 1; }
 	char fw[11] = {0};
@@ -76,6 +150,7 @@ int main(int argc, char **argv) {
 	imu_detect_combo();
 	printf("BLOCK %d\n", combo_supported ? 3 : 0);
 	printf("WHEELS %d\n", combo_supported);
+	if (getenv("XGO_TEST_VEL")) vel_roundtrip();
 
 	imu_thread = kthread_run(imu_loop, NULL, "imu");
 	pthread_t tm, tw, tt;

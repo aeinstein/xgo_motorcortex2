@@ -8,6 +8,9 @@ python3 esp32_emu.py <harness> <sekunden> <imu_hz> [--faults] [--wheels --combo]
 Typ 0x14 (seq, t_us der Messung nach eigener, driftender ESP-Uhr, Winkel, Ticks) mit zufälligem Sendeverzug
 (Firmware-loop); aus nach 5 s ohne Byte vom Host. Das Testprogramm bekommt HZ (Standard 100) als Strom-Rate.
 --stream-off: wie --stream, aber die Firmware kennt 0x11 nicht (Rückfall auf Abfrage prüfen).
+--vel: Firmware 0029. Der Emulator nimmt Fahrrahmen (0x1a, 13 Byte) und Grenzen (0x1b, 6 Byte) an, prüft Länge und
+Prüfsumme und beantwortet 0x1a lesen mit dem Zustand des letzten Rahmens; am Ende vergleicht er die empfangenen Bytes
+mit denen, die das Testprogramm laut VELSENT/VELLIM geschickt hat, und dessen VELDIAG mit dem erwarteten Text.
 --tunnel: Firmware 0025. Der Emulator schickt wie ein BLE-Client Daten durch den Tunnel (Rahmen Typ 0x15, Register
 0x17, Kennung + höchstens 23 Byte, davor die Meldung "verbunden"); das Testprogramm schickt sie zurück (Schreiben auf
 0x17). Geprüft wird, dass alles vollständig und in der Reihenfolge zurückkommt, neben Abfragen und Strom. Dazu wird
@@ -34,6 +37,7 @@ IMU65 = "--imu65" in args
 WHEELS = "--wheels" in args
 COMBO = "--combo" in args
 TUNNEL = "--tunnel" in args
+VEL = "--vel" in args   # Firmware 0029: Fahrrahmen 0x1a (13 Byte) / Grenzen 0x1b (6 Byte), 0x1a lesen = Zustand
 _st = [a for a in args if a.startswith("--stream")]
 STREAM = bool(_st) and "--stream-off" not in args
 STREAM_HZ = int(_st[0].split("=")[1]) if _st and "=" in _st[0] else 100
@@ -76,6 +80,13 @@ def payload(addr, n, t):
             return None
         a, b = wheels_truth(t)
         return struct.pack("<IIii", a, b, a % 1024, (b & 0xFFFFFFFF) % 1024)[:n]
+    if addr == 0x1a and VEL:                # Zustand wie die Firmware (velocity_cmd.h fillDiag), ohne Rampe
+        if not vel_frames:
+            return bytes([8 if vel_limits else 0]) + bytes(11)
+        fl = vel_frames[-1]
+        lim = vel_limits[-1] if vel_limits else bytes(6)
+        flags = 1 | (2 if fl[0] & 1 else 0) | (8 if vel_limits else 0)
+        return bytes([flags, 0]) + fl[1:3] + fl[7:9] + lim[0:6]
     if addr == 0x62 and n == 12:
         return (f(r) + f(p) + f(y)) if BLOCK else f(r)   # ohne Block-Support: nur 4 Byte
     table = {0x62: f(r), 0x63: f(p), 0x64: f(y), 0x01: bytes([87]), 0x02: bytes([1]),
@@ -91,6 +102,7 @@ stop = False
 wlock = threading.Lock()                  # Antworten und Strom-Pakete nicht ineinander schreiben
 stream_rate = 0
 last_rx = time.monotonic()
+vel_frames, vel_limits = [], []          # --vel: empfangene Nutzdaten 0x1a / 0x1b
 
 
 def send(out):
@@ -189,6 +201,14 @@ def serve():
                     stream_rate = fr[5]
                 if addr == 0x17 and len(fr) >= 9 and fr[5] == 0:
                     tunnel_back.extend(fr[6:ln - 3])
+                if VEL and addr in (0x1a, 0x1b):
+                    data = fr[5:ln - 3]
+                    ok = fr[ln - 3] == 255 - ((ln + mode + addr + sum(data)) % 256)
+                    want = 13 if addr == 0x1a else 6
+                    if not ok or len(data) != want:
+                        stats["vel_bad"] = stats.get("vel_bad", 0) + 1
+                    else:
+                        (vel_frames if addr == 0x1a else vel_limits).append(bytes(data))
                 if addr == 0x18 and ln == 12:
                     global pi_ip
                     pi_ip = "%d.%d.%d.%d" % tuple(fr[5:9])
@@ -228,7 +248,8 @@ threading.Thread(target=streamer, daemon=True).start()
 if TUNNEL:
     threading.Thread(target=tunneler, daemon=True).start()
 hargs = [harness, name, secs, hz] + ([str(STREAM_HZ)] if _st else [])
-p = subprocess.run(hargs, capture_output=True, text=True, timeout=float(secs) + 30)
+henv = dict(os.environ, XGO_TEST_VEL="1") if VEL else None
+p = subprocess.run(hargs, capture_output=True, text=True, timeout=float(secs) + 30, env=henv)
 stop = True
 lines = p.stdout.splitlines()
 samples = [tuple(map(int, l.split()[1:])) for l in lines if l.startswith("S ")]
@@ -246,6 +267,16 @@ if wheels:
     print("WHEELRATE %.1f Hz (%d Proben, %d Lücken), Abweichung median %d p95 %d max %d Ticks"
           % ((len(wheels) - 1) / wd if wd > 0 else 0, len(wheels), wgaps, e[len(e) // 2], e[int(len(e) * .95)], e[-1]))
 print("EMU", stats)
+if VEL:
+    sent = [bytes.fromhex(l.split()[1]) for l in lines if l.startswith("VELSENT ")]
+    lsent = [bytes.fromhex(l.split()[1]) for l in lines if l.startswith("VELLIM ")]
+    diag = [l[len("VELDIAG "):] for l in lines if l.startswith("VELDIAG ")]
+    want_diag = lines and next((l[len("VELWANT "):] for l in lines if l.startswith("VELWANT ")), None)
+    ok = (sent and sent == vel_frames and lsent == vel_limits and not stats.get("vel_bad")
+          and diag and diag[-1] == want_diag)
+    print("VELTEST %s: %d Rahmen, %d Grenzen angekommen (gesendet %d/%d), Zustand '%s' (soll '%s')"
+          % ("ok" if ok else "FEHLER", len(vel_frames), len(vel_limits), len(sent), len(lsent),
+             diag[-1] if diag else "-", want_diag))
 if TUNNEL:
     print("TUNNELTEST %s: %d Byte gesendet, %d zurück; IP des Pi %s"
           % ("ok" if tunnel_sent and bytes(tunnel_back) == bytes(tunnel_sent) else "FEHLER", len(tunnel_sent), len(tunnel_back), pi_ip))

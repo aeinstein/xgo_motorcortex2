@@ -3,6 +3,7 @@
 //
 
 #include "xgo-proc.h"
+#include "xgo-vel.h"   // Fahrrahmen 0x1a/0x1b (Firmware 0029)
 
 static const struct proc_ops yaw_ops = {
 	.proc_read = yaw_read,
@@ -170,6 +171,82 @@ static ssize_t raw_reg_write(struct file *file, const char __user *user_buf, siz
 	return count;
 }
 
+/*
+ * lift (Firmware-Patch 0027): Protokoll des Hebeschutzes, Register 0x19 (32 Byte, Aufbau in der Firmware
+ * main.cpp fillLiftDiag), bei jedem Lesen frisch vom ESP32. Format wie raw_reg: "0x19 32: 00 11 ...".
+ * Lesbar für alle (xgonav liest es nach einem Sturz); alte Firmware antwortet nicht -> "Fehler <n>".
+ */
+static int lift_show(struct seq_file *m, void *v) {
+	u8 b[32];
+	int r = read_addr_sync(0x19, sizeof(b), b, 100);
+	seq_printf(m, "0x19 %zu:", sizeof(b));
+	if (r < 0) {
+		seq_printf(m, " Fehler %d\n", r);
+		return 0;
+	}
+	for (size_t i = 0; i < sizeof(b); i++) seq_printf(m, " %02x", b[i]);
+	seq_putc(m, '\n');
+	return 0;
+}
+static int lift_open(struct inode *inode, struct file *file) { return single_open(file, lift_show, NULL); }
+
+/*
+ * vel, vel_limits (Firmware-Patches 0029–0032): Fahrrahmen in mm/s und °/s, Text-Format in xgo-vel.h.
+ * vel schreiben = ein Rahmen auf 0x1a und Neustart des Kernel-Wächters (wie speed_x/speed_z); läuft er ab, schreibt
+ * er 128 auf 0x30/0x32, das beendet in der Firmware auch den Rahmenweg. vel lesen = Zustand 0x1a frisch vom ESP32
+ * (alte Firmware antwortet nicht -> "Fehler <n>"). vel_limits schreiben = 0x1b, lesen = zuletzt geschriebener Text.
+ */
+static char vel_limits_text[32];
+static DEFINE_MUTEX(vel_limits_lock);
+
+static int vel_show(struct seq_file *m, void *v) {
+	u8 b[XGO_VEL_DIAG_LEN];
+	char txt[80];
+	int r = read_addr_sync(XGO_VEL, sizeof(b), b, 100);
+	if (r < (int)sizeof(b)) {
+		seq_printf(m, "Fehler %d\n", r < 0 ? r : -EIO);
+		return 0;
+	}
+	vel_format_diag(b, txt, sizeof(txt));
+	seq_puts(m, txt);
+	return 0;
+}
+static int vel_open(struct inode *inode, struct file *file) { return single_open(file, vel_show, NULL); }
+
+static ssize_t vel_write(struct file *file, const char __user *user_buf, size_t count, loff_t *ppos) {
+	char buffer[64];
+	u8 frame[XGO_VEL_FRAME_LEN];
+	if (count == 0 || count >= sizeof(buffer)) return -EINVAL;
+	if (copy_from_user(buffer, user_buf, count)) return -EFAULT;
+	buffer[count] = '\0';
+	if (vel_encode(buffer, frame)) return -EINVAL;
+	write_serial_data(XGO_VEL, (char *)frame, sizeof(frame));
+	arm_motion_watchdog();
+	return count;
+}
+
+static ssize_t vel_limits_read(struct file *file, char __user *user_buf, size_t count, loff_t *ppos) {
+	char buffer[sizeof(vel_limits_text)];
+	mutex_lock(&vel_limits_lock);
+	memcpy(buffer, vel_limits_text, sizeof(buffer));
+	mutex_unlock(&vel_limits_lock);
+	return simple_read_from_buffer(user_buf, count, ppos, buffer, strnlen(buffer, sizeof(buffer)));
+}
+
+static ssize_t vel_limits_write(struct file *file, const char __user *user_buf, size_t count, loff_t *ppos) {
+	char buffer[sizeof(vel_limits_text)];
+	u8 lim[XGO_VEL_LIMITS_LEN];
+	if (count == 0 || count >= sizeof(buffer) - 1) return -EINVAL;
+	if (copy_from_user(buffer, user_buf, count)) return -EFAULT;
+	buffer[count] = '\0';
+	if (vel_limits_encode(buffer, lim)) return -EINVAL;
+	write_serial_data(XGO_VEL_LIMITS, (char *)lim, sizeof(lim));
+	mutex_lock(&vel_limits_lock);
+	scnprintf(vel_limits_text, sizeof(vel_limits_text), "%s%s", strim(buffer), "\n");
+	mutex_unlock(&vel_limits_lock);
+	return count;
+}
+
 static const struct proc_ops imu_ops = {
 	.proc_open = imu_open, .proc_read = seq_read, .proc_lseek = seq_lseek, .proc_release = single_release,
 };
@@ -184,6 +261,16 @@ static const struct proc_ops wheels_ops = {
 };
 static const struct proc_ops wheels_log_ops = {
 	.proc_open = wheels_log_open, .proc_read = seq_read, .proc_lseek = seq_lseek, .proc_release = single_release,
+};
+static const struct proc_ops lift_ops = {
+	.proc_open = lift_open, .proc_read = seq_read, .proc_lseek = seq_lseek, .proc_release = single_release,
+};
+static const struct proc_ops vel_ops = {
+	.proc_open = vel_open, .proc_read = seq_read, .proc_lseek = seq_lseek, .proc_release = single_release,
+	.proc_write = vel_write,
+};
+static const struct proc_ops vel_limits_ops = {
+	.proc_read = vel_limits_read, .proc_write = vel_limits_write,
 };
 static const struct proc_ops raw_reg_ops = {
 	.proc_open = raw_reg_open, .proc_read = seq_read, .proc_lseek = seq_lseek, .proc_release = single_release,
@@ -619,6 +706,9 @@ static int createFilesystem(){
 	proc_create("imu_log", 0444, proc_imu, &imu_log_ops);
 	proc_create("serial_stats", 0444, proc_imu, &serial_stats_ops);
 	proc_create("raw_reg", 0600, proc_imu, &raw_reg_ops);
+	proc_create("lift", 0444, proc_imu, &lift_ops);
+	proc_create("vel", 0666, proc_imu, &vel_ops);
+	proc_create("vel_limits", 0666, proc_imu, &vel_limits_ops);
 	proc_create("ble", 0600, proc_imu, &ble_ops);
 	proc_create("wheels", 0444, proc_imu, &wheels_ops);
 	proc_create("wheels_log", 0444, proc_imu, &wheels_log_ops);
@@ -652,6 +742,9 @@ static void destroyFilesystem(){
 	remove_proc_entry("imu_log", proc_imu);
 	remove_proc_entry("serial_stats", proc_imu);
 	remove_proc_entry("raw_reg", proc_imu);
+	remove_proc_entry("lift", proc_imu);
+	remove_proc_entry("vel", proc_imu);
+	remove_proc_entry("vel_limits", proc_imu);
 	remove_proc_entry("ble", proc_imu);
 	remove_proc_entry("wheels", proc_imu);
 	remove_proc_entry("wheels_log", proc_imu);

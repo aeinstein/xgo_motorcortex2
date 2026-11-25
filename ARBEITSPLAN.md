@@ -112,6 +112,10 @@ Kosten am ESP32: zwei PI-Regler + Rampe je Takt, vernachlässigbar gegen die Lag
   Drehen zählt ab 0,05 °/s als Bewegung. Zur Laufzeit `!turnctl KP KD FF`. Gebaut (SHA ca488061…, 1 266 192 Byte),
   alle Host-Tests grün. Im Modell (nicht der Rider): 30 °/s → 30,00 (Original 37,5); 0,5 °/s mit Haftreibung
   6,8° in 20 s, Nachlauf 3,2°. Nicht geflasht.
+- **Stufe 7 (2026-11-25):** Treiber `/proc/XGORider/vel` (schreiben `V A J W ALPHA JW` oder `acc A J W ALPHA JW`,
+  lesen = Zustand 0x1a) und `vel_limits` (`V_MAX W_MAX TIMEOUT_MS`), Text ↔ Bytes in `kernel_module/xgo-vel.h`
+  (gemeinsam mit dem Treibertest); `vel` startet den Kernel-Wächter neu. `driver-test/run.sh … --vel` auf kimmy grün
+  (auch mit `--faults --stream --tunnel`), Modul baut dort. Nicht am Rider eingespielt.
 
 ### Zu klären
 

@@ -1487,6 +1487,11 @@
 <td>driver code vs ESP32 emulator (without <code>--wheels --combo</code> the driver does not poll IMU/wheels)</td>
 <td>~6 s</td>
 </tr>
+<tr>
+<td><code>driver-test/run.sh kernel_module 6 50 --wheels --combo --vel</code></td>
+<td>drive frame (firmware 0029): <code>VELPARSE</code> = text ↔ bytes of <code>xgo-vel.h</code> (valid/invalid inputs, state text), <code>VELTEST</code> = limits + 3 frames reach the emulator byte for byte with checksum, state read back; needs Linux (kimmy)</td>
+<td>~6 s</td>
+</tr>
 </tbody>
 </table>
 <p>Simulator floor boundary: <code>sim.SimFloorNet</code> takes it from the ground truth of each rendered frame (walls, boxes, person); FloorNet only knows real frames. <code>--phantoms n</code> adds false alarms. Maps and control are tested against the truth, FloorNet itself only on recordings (<code>docs/floornet.md</code>).</p>

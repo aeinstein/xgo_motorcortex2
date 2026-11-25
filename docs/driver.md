@@ -24,6 +24,7 @@ cat /proc/XGORider/serial_stats; cat /proc/XGORider/imu
 | later | wheel encoders (combined register 0x0d) → `wheels`, `wheels_log`; `raw_reg` diagnostics; `calibration` sends bytes 0/1 (was ASCII, inverted); `pitch_calibration` |
 | stream | IMU/wheel stream of firmware patch 0014 (2026-11-08): `settings/imu_stream_hz`, frames type 0x14 → `imu_log`/`wheels_log` with the firmware's sample time; polling only as fallback |
 | 2026-11-17 | read paths for firmware without firmware patch 0001 removed (IMU modes 0/1/2, wheel register 0x0c, `settings/wheel_hz`); `yaw` from the stream; `force_yaw` removed; dead code removed (`xgo-lcd.c`, `xgo-lcd.h`). **Not installed on the Rider** |
+| 2026-11-25 | drive frame of firmware patches 0029–0032: `vel`, `vel_limits` (text ↔ bytes in `xgo-vel.h`, shared with the driver test). **Not installed on the Rider** |
 
 ## IMU / wheel read path (auto-detected at load)
 
@@ -57,13 +58,15 @@ cat /proc/XGORider/serial_stats; cat /proc/XGORider/imu
 |---|---|---|---|
 | `speed_x` | w | u8 0..255, 128 = stop; arms motion watchdog | 0x30 |
 | `speed_z` | w | u8 0..255, 128 = stop; arms watchdog | 0x32 |
+| `vel` | rw | write one drive frame (firmware 0029–0032): `V A J W ALPHA JW` = mm/s, mm/s² (≥ 0), mm/s³, °/s (one decimal), °/s², °/s³ (0 = no limit), or `acc A J W ALPHA JW` = acceleration mode (A signed, up to ±v_max); arms the motion watchdog (it writes 128 to 0x30/0x32, which also ends the frame path). Read = firmware state, fresh from the ESP32: `active accel_mode watchdog_fired limits_set v w v_max w_max timeout_ms` (e.g. `1 0 0 1 250 -12.3 500 90.0 300`); old firmware: `Fehler <n>`. Without `vel_limits` the firmware drops every frame | 0x1a |
+| `vel_limits` | rw | write `V_MAX W_MAX TIMEOUT_MS` (mm/s, °/s with one decimal, firmware watchdog ms, 0 = off); xgonav writes it at start. Read = last written text | 0x1b |
 | `height` | rw | u8 0..255 (web UI min 43); read: last written value, empty until first write; not reset when the firmware stands up at 128 | 0x35 |
 | `roll` | rw | int −20..20 °, mapped linearly to 0..255; read: last written value, empty until first write | 0x36 |
 | `roll_balance` | w | 0/1 | 0x61 |
 | `action` | w | u8; R-1.1.6+patch: 1..6 actions, 237 restart the ESP32 (firmware patch 0018, refused while balancing), 253 stand up from lying, 254 disarm/emergency stop, 255 arm, 0 = no action | 0x3e |
 | `leds/0`..`leds/3` | w | `#RRGGBB` | 0x69..0x6c |
 | `battery` | r | % | 0x01 |
-| `state` | r | firmware state: 1 = balancing, 254 = lying (set down by action 254, LEDs orange), 0 = fallen (tilt, LEDs red), 253 = ready (disarmed, starts when upright), 250 = low battery, 251 = actuator fault, 252 = other fault; names in `robot.FW_ZUSTAND` | |
+| `state` | r | firmware state: 1 = balancing, 254 = lying (set down by action 254, LEDs orange), 0 = fallen (tilt, LEDs red; since firmware 0027 stays until a command, also upright), 253 = ready (disarmed, starts when upright), 250 = low battery, 251 = actuator fault, 252 = other fault; names in `robot.FW_ZUSTAND` | |
 | `yaw` | r | integer degrees, only updated while balancing; from the stream, without stream from register 0x68 every `sleep_ms_on_loop` | |
 | `buttons` | r | bit mask, 1 = pressed: A = 1 (GPIO 17), B = 2 (22), C = 4 (23), D = 8 (24); polled every `sleep_ms_on_loop`. **A+B together = `orderly_poweroff`** (driver). C+D held 3 s = Wi-Fi setup ([wifi-setup.md](wifi-setup.md)) | |
 | `imu` | r | `seq t_ns roll pitch yaw` (millidegrees), newest sample | |
@@ -72,6 +75,7 @@ cat /proc/XGORider/serial_stats; cat /proc/XGORider/imu
 | `wheels_log` | r | last 64 samples | |
 | `serial_stats` | r | `frames bad timeouts unsolicited imu_seq imu_hz imu_block wheels wheel_seq stream stream_gaps stream_hz stream_active stream_offset_us tunnel_rx tunnel_drop tunnel_tx pi_ip` (one per line) | |
 | `raw_reg` | rw, root | write `"0x0b 16"` (addr, len), read `"0x0b 16: 00 11 .."`; read-only diagnostics | any |
+| `lift` | r | lift-guard log of firmware patch 0027, read from the ESP32 on every open, format as `raw_reg` (`"0x19 32: .."`, layout `firmware/README.md`); old firmware: `Fehler <n>`. xgonav reads it once after a fall (`robot.lift_text`) | 0x19 |
 | `ble` | rw, root | BLE tunnel of firmware patch 0025 ([ble.md](ble.md)). Blocking read (or `poll`) = one record: byte 0 kind (0 data, 1 BLE connected, 2 disconnected) + ≤ 23 bytes, buffer ≥ 24 bytes; returns 0 when the module unloads. Write = bytes to the BLE client, sent in 23-byte chunks every 4 ms. Reader: `xgo-ble` | 0x17, frames type 0x15 |
 
 ### `/proc/XGORider/settings`

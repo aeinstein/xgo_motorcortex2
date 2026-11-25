@@ -41,6 +41,7 @@ python3 -m venv .venv && .venv/bin/pip install "opencv-python-headless>=4.6" "nu
 | `python tools/map_eval.py reloc B.pkl --karte A.pkl [--schlupf 0.03 --dreh 0.02 --kursdrift 0.1]` | simulator, against ground truth: drive B with drifting odometry matched against the finished map of drive A (same scene), pose error without / with matching; global search of pieces of B in map A. Without `--karte`: matching while the map is being built | |
 | `python -m pytest -q tests/test_reloc.py` | map matching on synthetic maps: finds the pose, reports "unsure" for identical corners, corridor, too little wall | <1 s |
 | `driver-test/run.sh kernel_module 6 50 --wheels --combo --faults` | driver code vs ESP32 emulator (without `--wheels --combo` the driver does not poll IMU/wheels) | ~6 s |
+| `driver-test/run.sh kernel_module 6 50 --wheels --combo --vel` | drive frame (firmware 0029): `VELPARSE` = text ↔ bytes of `xgo-vel.h` (valid/invalid inputs, state text), `VELTEST` = limits + 3 frames reach the emulator byte for byte with checksum, state read back; needs Linux (kimmy) | ~6 s |
 
 Simulator floor boundary: `sim.SimFloorNet` takes it from the ground truth of each rendered frame (walls, boxes, person); FloorNet only knows real frames. `--phantoms n` adds false alarms. Maps and control are tested against the truth, FloorNet itself only on recordings (`docs/floornet.md`).
 

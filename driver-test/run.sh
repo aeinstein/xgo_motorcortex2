@@ -1,11 +1,11 @@
 #!/bin/bash
 # Treibercode im Userspace gegen einen ESP32-Emulator testen (kein Modul-Laden nötig).
-#   driver-test/run.sh kernel_module [sekunden] [imu_hz] [--wheels --combo] [--stream[=HZ]|--stream-off] [--tunnel] [--faults]
+#   driver-test/run.sh kernel_module [sekunden] [imu_hz] [--wheels --combo] [--stream[=HZ]|--stream-off] [--tunnel] [--vel] [--faults]
 # Ohne --wheels --combo kennt der Emulator 0x0d nicht: der Treiber fragt dann IMU und Räder nicht ab (nur Strom).
 set -euo pipefail
 KM=$(realpath "$1"); shift
 HERE=$(cd "$(dirname "$0")" && pwd)
-cp "$KM/xgo-serial.c" "$KM/xgo-serial.h" "$HERE/km/"
+cp "$KM/xgo-serial.c" "$KM/xgo-serial.h" "$KM/xgo-vel.h" "$HERE/km/"
 cp "$KM/../constants.h" "$HERE/constants.h"
 cat > "$HERE/km/xgo-drv.h" <<'H'
 #pragma once
