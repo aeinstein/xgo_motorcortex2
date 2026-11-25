@@ -86,7 +86,7 @@ index a69366e..e4f1bd0 100644
      uint8_t pi_ip[4] = {};
      uint8_t policy_mode=0,policy_action_space=0;
 diff --git a/firmware/src/control/rider_motion.cpp b/firmware/src/control/rider_motion.cpp
-index fa7a21b..f494280 100644
+index fa7a21b..4d0bd35 100644
 --- a/firmware/src/control/rider_motion.cpp
 +++ b/firmware/src/control/rider_motion.cpp
 @@ -25,8 +25,11 @@ float decode(std::uint8_t x,float range) {
@@ -167,7 +167,7 @@ index fa7a21b..f494280 100644
      s.pitch.measurement=pitch+bias;
      updatePid(s.pitch);
      const float output=std::fma(pitch_rate,rate_gain,s.pitch.output);
-@@ -114,16 +149,23 @@ void addWheelSpeedCorrection(Wheels &w,float forward,float turn,float speed11,fl
+@@ -114,16 +149,25 @@ void addWheelSpeedCorrection(Wheels &w,float forward,float turn,float speed11,fl
  void addHeadingCorrection(HeadingState &s,Wheels &w,std::uint32_t now,
                            std::uint8_t mode,bool hold_heading,float forward,
                            float turn,float filtered_turn,float yaw,
@@ -178,7 +178,9 @@ index fa7a21b..f494280 100644
 +    s.pid.kp=turn_on?tc->kp:3.0f;s.pid.kd=turn_on?tc->kd:.5f;   // aus: Werte von headingPid
 +    // auf dem Rahmenweg zählt schon langsames Fahren/Drehen als Bewegung (sonst setzte das Original das
 +    // Kursziel unter 1 °/s immer wieder auf den Ist-Kurs zurück)
-+    const bool moving=turn_on?(std::fabs(forward)>=1 || std::fabs(turn)>=0.05f):(std::fabs(forward)>=10 || std::fabs(turn)>=1);
++    // Kursziel (tc->hold): auch nach der Ankunft gilt er als bewegt, sonst gäbe die Original-Logik den Kurs im Stand auf
++    // (keine Korrektur ohne Bewegung, nach 200 ms Ziel = Ist-Kurs) und der Nachlauf des PID (2–4 % der Drehung) bliebe stehen
++    const bool moving=turn_on?(std::fabs(forward)>=1 || std::fabs(turn)>=0.05f || tc->hold):(std::fabs(forward)>=10 || std::fabs(turn)>=1);
 +    if(moving)s.last_motion_ms=now;
      else {
          const auto elapsed=std::uint32_t(now-s.last_motion_ms);
@@ -197,7 +199,7 @@ index fa7a21b..f494280 100644
      const float room=static_cast<float>(std::min(std::abs(static_cast<int>(w.id11)+offset),std::abs(static_cast<int>(w.id21)+offset)));
      const float magnitude=std::min(room,std::fabs(demand));
 diff --git a/firmware/src/control/rider_motion.h b/firmware/src/control/rider_motion.h
-index 776c330..ab92b3a 100644
+index 776c330..0f6de3e 100644
 --- a/firmware/src/control/rider_motion.h
 +++ b/firmware/src/control/rider_motion.h
 @@ -9,7 +9,12 @@ namespace rider { namespace control {
@@ -265,7 +267,7 @@ index 776c330..ab92b3a 100644
  // 0x400d4fd4; called before the command filters are advanced.
  void addWheelSpeedCorrection(Wheels &, float filtered_forward,
                               float filtered_turn, float speed11, float speed21);
-@@ -67,12 +100,25 @@ struct HeadingState {
+@@ -67,12 +100,26 @@ struct HeadingState {
      float target=0;
      std::uint32_t last_motion_ms=0;
  };
@@ -280,6 +282,7 @@ index 776c330..ab92b3a 100644
 +    float kp=3.0f;          // Kurs-PID wie headingPid
 +    float kd=0.5f;
 +    float ff_gain=0.5f;     // Radeinheiten je °/s Soll-Drehrate (Original 0,5)
++    bool hold=false;        // Kursziel läuft: Kurs auch im Stand halten (Ziel nicht auf den Ist-Kurs zurücksetzen)
 +};
  // 0x400d53a4; called after command filtering and leg roll calculation.
  void addHeadingCorrection(HeadingState &, Wheels &, std::uint32_t now_ms,
@@ -293,7 +296,7 @@ index 776c330..ab92b3a 100644
  void addWheelFriction(Wheels &);
  
 diff --git a/firmware/src/main.cpp b/firmware/src/main.cpp
-index 75d1306..552bf89 100644
+index 75d1306..82b9d7c 100644
 --- a/firmware/src/main.cpp
 +++ b/firmware/src/main.cpp
 @@ -28,6 +28,7 @@ extern "C" {extern const volatile uint32_t rider_rl_only_build=0x524c4f31;}
@@ -434,7 +437,7 @@ index 75d1306..552bf89 100644
 +            vc.unit_mm=vel_limits.unit_mm;   // Einheit aus 0x1b (xgonav), Reglerwerte aus der Firmware
 +            vc.dt=float(uint32_t(us-vel_ctrl_us))*1e-6f;vel_ctrl_us=us;vc.freeze=lift_acting;
 +            auto& tc=request.turn_control;
-+            tc.on=vc.on;tc.dt=vc.dt;tc.kp=turn_kp;tc.kd=turn_kd;tc.ff_gain=turn_ff;
++            tc.on=vc.on;tc.dt=vc.dt;tc.kp=turn_kp;tc.kd=turn_kd;tc.ff_gain=turn_ff;tc.hold=vc.on&&vel.course_on;
 +        }
  #if RIDER2_RL_ONLY
          // Training saw height bytes 55..200; keep the phone slider inside that band.
@@ -560,7 +563,7 @@ index 8cf9b55..a85dbbb 100644
      uint32_t now_ms=0;
 diff --git a/firmware/src/velocity_cmd.h b/firmware/src/velocity_cmd.h
 new file mode 100644
-index 0000000..9c0ce7e
+index 0000000..eb304a1
 --- /dev/null
 +++ b/firmware/src/velocity_cmd.h
 @@ -0,0 +1,299 @@
@@ -595,7 +598,7 @@ index 0000000..9c0ce7e
 +//   mit w_max (0x1b), alpha und Drehruck (Rahmen) ohne Überschwingen hin: je Takt nimmt er den Schritt Richtung ±w_max nur,
 +//   wenn der Bremsweg danach (mit demselben approach auf 0 vorausgerechnet) noch in den Rest passt, sonst bremst er.
 +//   Ohne alpha (0) ist w = sign·min(w_max, |Rest|/dt). Angekommen bei w = 0 und |Rest| < 0,5° (0x1a lesen Flag bit6),
-+//   danach w = 0, der Kurs-PID hält. Wechselbit (Flag bit4): Ein Kursziel-Rahmen setzt nur dann ein neues Ziel, wenn
++//   danach w = 0, der Kurs-PID hält das Kursziel, solange Kursziel-Rahmen kommen (auch im Stand, TurnControl::hold). Wechselbit (Flag bit4): Ein Kursziel-Rahmen setzt nur dann ein neues Ziel, wenn
 +//   vorher kein Kursziel lief oder bit4 anders ist als im letzten Kursziel-Rahmen; gleiche Rahmen halten nur den Wächter
 +//   wach (der Pi schickt sie laufend nach). Das Feld v gilt wie im Geschwindigkeitsbetrieb (Drehen im Fahren = Bogen).
 +//   Wächter: v und w mit den Rahmengrenzen auf 0, das Ziel bleibt offen.
