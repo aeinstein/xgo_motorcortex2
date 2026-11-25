@@ -40,6 +40,7 @@
 #   0027 Protokoll des Hebeschutzes übersteht Stopps (Register 0x19), kein Selbststart aus Zustand 0 (rot) nach Sturz
 #   0028 Roll laufend auf 0 halten, auch beim Drehen (Aktion 236 an / 235 aus); LEDs blau beim Herunterfahren (234 an / 233 aus)
 #   0029 Fahrrahmen in mm/s und °/s (Register 0x1a, Grenzen + Wächter 0x1b, Beschleunigungsbetrieb), 0xa0/0xa1 entfernt
+#   0030 Sollwertgenerator für den Fahrrahmen: Rampe mit Ruckbegrenzung (S-Kurve) statt Tiefpass
 # Braucht: git, python3 (venv), Internet beim ersten Lauf (PlatformIO lädt Toolchain ~1 GB).
 set -euo pipefail
 

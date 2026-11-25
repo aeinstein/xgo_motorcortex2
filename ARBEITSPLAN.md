@@ -96,6 +96,12 @@ Kosten am ESP32: zwei PI-Regler + Rampe je Takt, vernachlässigbar gegen die Lag
   Vorerst gehen v/w (begrenzt, ohne Byte-Totband) in die alte Kaskade; a/Ruck gespeichert für Stufe 2.
   Gebaut (`out/app0.bin`, SHA 7e0094fd…, 1 262 624 Byte), alle Host-Tests auf kimmy grün (`test_velocity_cmd.cpp`
   neu). Nicht geflasht, Treiber und xgonav noch ohne den Rahmen.
+- **Stufe 2 (2026-11-25):** Patch `0030-velocity-generator.patch`: S-Kurve je Achse (a, Ruck; alpha, Drehruck),
+  ersetzt für den Rahmenweg Tiefpass und 5er-Schritt; Wächter bremst mit den Rahmengrenzen; Übernahme aus der
+  Fahrt. Gebaut (SHA d5f01194…, 1 263 776 Byte), alle Host-Tests grün. Nicht geflasht.
+  Für Stufe 4 gesehen: `addHeadingCorrection` erhöht das Kursziel je Takt um filtered_turn × 0,005, bei ~333 Hz
+  also um ~1,67 × w je Sekunde (nicht 1 × w); dazu die Vorsteuerung −turn × 0,5. Welche Drehrate wirklich
+  herauskommt, ist ungemessen.
 
 ### Zu klären
 

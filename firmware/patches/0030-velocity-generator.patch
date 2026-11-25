@@ -1,0 +1,178 @@
+diff --git a/firmware/src/control/rider_motion.cpp b/firmware/src/control/rider_motion.cpp
+index 756ecfb..be77cea 100644
+--- a/firmware/src/control/rider_motion.cpp
++++ b/firmware/src/control/rider_motion.cpp
+@@ -55,6 +55,8 @@ void updateCommandTargets(CommandState &s,const MotionCommand &c) {
+     const float delta=forward-s.filtered_forward;
+     s.filtered_forward=std::fabs(delta)<5?forward:s.filtered_forward+(forward<s.filtered_forward?-5.0f:5.0f);
+     s.filtered_turn=std::fma(s.filtered_turn,.949999988079071f,s.turn*.05000001192092896f);
++    // Patch 0030: Rahmenweg kommt fertig aus dem Sollwertgenerator (velocity_cmd.h): kein Tiefpass, kein 5er-Schritt
++    if(c.velocity){s.filtered_forward=s.forward;s.filtered_turn=s.turn;}
+     s.filtered_height=static_cast<float>(static_cast<double>(s.filtered_height)*.97+static_cast<double>(s.height)*.03);
+ }
+ 
+diff --git a/firmware/src/control/rider_motion.h b/firmware/src/control/rider_motion.h
+index 86f8388..3087a10 100644
+--- a/firmware/src/control/rider_motion.h
++++ b/firmware/src/control/rider_motion.h
+@@ -13,6 +13,7 @@ struct MotionCommand {
+     bool automatic_lean=false;
+     // Patch 0029: Rahmenweg (velocity_cmd.h). velocity = true ersetzt die Bytes forward/turn durch Sollwerte in
+     // mm/s und °/s (ohne Byte-Totband); die Bytes bleiben für Positionshalten und LEDs auf dem Gegenwert.
++    // Patch 0030: die Sollwerte sind schon gerampt, filtered_forward/turn übernehmen sie unverändert.
+     bool velocity=false;
+     float velocity_forward=0, velocity_turn=0;
+ };
+diff --git a/firmware/src/main.cpp b/firmware/src/main.cpp
+index fd4b66d..02a5e0a 100644
+--- a/firmware/src/main.cpp
++++ b/firmware/src/main.cpp
+@@ -733,7 +733,10 @@ public:
+         in.zero_a=s.calibration.zero_a;in.zero_b=s.calibration.zero_b;in.pitch_trim=s.calibration.pitch_trim;
+         request.command=a.command;
+         if(vel.active&&a.action_id==0) {   // patch 0029: Rahmenweg; eine laufende Aktion geht vor
+-            rider2::velocity::tick(vel,vel_limits,us);
++            // patch 0030: Generator startet beim aktuellen gefilterten Sollwert (Übernahme aus der Fahrt); nur wenn er
++            // schon balanciert fährt, sonst stünde in s.motion noch der Stand vor dem letzten Stopp (z. B. Sturz)
++            const bool take=driving&&s.motion.valid;
++            rider2::velocity::tick(vel,vel_limits,us,take?s.motion.command.filtered_forward:0.0f,take?s.motion.command.filtered_turn:0.0f);
+             request.command.velocity=true;request.command.velocity_forward=vel.v;request.command.velocity_turn=vel.w;
+             // Bytes auf den Gegenwert: Positionshalten (Drehen 113..143) rechnet weiter damit
+             request.command.forward=rider2::velocity::toByte(vel.v,rider2::velocity::kByteForward);
+diff --git a/firmware/src/velocity_cmd.h b/firmware/src/velocity_cmd.h
+index c9317e5..058e874 100644
+--- a/firmware/src/velocity_cmd.h
++++ b/firmware/src/velocity_cmd.h
+@@ -1,5 +1,6 @@
+ #pragma once
+ // Patch 0029: Fahrbefehl in echten Einheiten (Stufe 1 von ARBEITSPLAN.md Punkt 4: Schnittstelle).
++// Patch 0030: Sollwertgenerator (Stufe 2): Rampe mit Ruckbegrenzung (S-Kurve) statt Tiefpass.
+ //
+ // Bisher kamen Fahr- und Drehbefehl als Byte (0x30/0x32, 128 = Stillstand, Bereich über 0xa0/0xa1). Neu schreibt
+ // der Pi einen Rahmen mit Sollgeschwindigkeit (mm/s), Beschleunigung und Ruck sowie Drehrate (°/s),
+@@ -7,11 +8,18 @@
+ // ausgeführt, ohne Geschwindigkeitsregelung, begrenzt durch v_max (nur Fahren; Drehen braucht immer w).
+ // v_max, w_max und der Wächter kommen einmal beim Start von xgonav (0x1b); ohne sie wird 0x1a verworfen.
+ //
+-// Stufe 1: Die Sollwerte gehen in die bestehende Kaskade (CommandState::forward/turn sind schon mm/s und °/s,
+-// mit dem Tiefpass aus updateCommandTargets). a/Ruck werden gespeichert, aber erst in Stufe 2 (Sollwertgenerator)
+-// ausgewertet; im Beschleunigungsbetrieb integriert Stufe 1 nur v += a·dt.
++// Sollwertgenerator (0030), je Achse (Fahren: v, a, Ruck; Drehen: w, alpha, Drehruck):
++//   Die Soll-Beschleunigung läuft mit höchstens Ruck auf die Wunsch-Beschleunigung zu; die Wunsch-Beschleunigung
++//   ist die größte, die sich mit dem Ruck bis zum Ziel noch auf 0 abbauen lässt: sign(dv)·min(a, sqrt(2·Ruck·|dv|))
++//   (im Takt um den Stufenabbau berichtigt).
++//   Am Ziel rastet der Sollwert ein (a = 0). a = 0 heißt ohne Beschleunigungsgrenze (Sprung), Ruck = 0 ohne
++//   Ruckgrenze (Rampe mit Knicken). Beschleunigungsbetrieb: Ziel ±v_max mit |a|; a = 0 hält das Tempo (Beschleunigung
++//   baut sich mit dem Ruck ab). Ausgegeben werden v/w und die Soll-Beschleunigungen (für die Vorsteuerung, Stufe 3).
++//   Die Sollwerte ersetzen in updateCommandTargets Tiefpass und 5er-Schritt (filtered_forward/turn = Sollwert).
++//   Start aus der Fahrt: der Generator beginnt beim aktuellen filtered_forward/turn.
+ // Der zuletzt beschriebene Weg gilt: ein Byte 0x30/0x32, Neutral, Stopp, Aktion oder Armen beenden den Rahmenweg.
+-// Wächter: kommt timeout_ms lang kein Rahmen, gehen v und w auf 0 (der Tiefpass rampt), Beschleunigungsbetrieb aus.
++// Wächter: kommt timeout_ms lang kein Rahmen, rampt er v und w mit den Grenzen des letzten Rahmens auf 0
++// (ohne Grenze mit kWatchdogAccel/kWatchdogAlpha), Beschleunigungsbetrieb aus.
+ //
+ // Register (little-endian):
+ //   0x1a schreiben, 13 Byte: 0 u8 Flags (bit0 = ohne Geschwindigkeit) | 1 i16 v mm/s | 3 i16 a mm/s² (Vorzeichen
+@@ -32,6 +40,8 @@ constexpr std::uint8_t kFrameLen = 13, kLimitsLen = 6, kDiagLen = 12;
+ constexpr std::uint8_t kFlagNoSpeed = 1;
+ // Byte-Bereich des alten Wegs (vorher 0xa0/0xa1, jetzt fest): für Positionshalten und LEDs, die noch Bytes lesen
+ constexpr float kByteForward = 210.0f, kByteTurn = 300.0f;
++// Wächter ohne Grenze im letzten Rahmen: damit bremst er (Patch 0030)
++constexpr float kWatchdogAccel = 500.0f, kWatchdogAlpha = 180.0f;   // mm/s², °/s²
+ 
+ struct Limits { float v_max = 0, w_max = 0; std::uint16_t timeout_ms = 0; bool set = false; };
+ struct Frame {
+@@ -39,12 +49,14 @@ struct Frame {
+     float v = 0, a = 0, jerk = 0;        // mm/s, mm/s², mm/s³
+     float w = 0, alpha = 0, jerk_w = 0;  // °/s, °/s², °/s³
+ };
++struct Axis { float x = 0, a = 0; };     // Sollwert und Soll-Beschleunigung einer Achse (Patch 0030)
+ struct State {
+     bool active = false, accel_mode = false, timed_out = false;
+     Frame frame{};
+     std::uint32_t last_rx_us = 0, last_tick_us = 0;
+     bool ticked = false;
+-    float v = 0, w = 0;                  // ausgegebene Sollwerte mm/s, °/s
++    Axis fwd{}, turn{};                  // mm/s + mm/s², °/s + °/s²
++    float v = 0, w = 0;                  // ausgegebene Sollwerte mm/s, °/s (= fwd.x, turn.x)
+ };
+ 
+ inline std::int16_t i16(const std::uint8_t* d) { return std::int16_t(std::uint16_t(d[0] | (d[1] << 8))); }
+@@ -77,23 +89,68 @@ inline bool receive(State& s, const Limits& l, const Frame& f, std::uint32_t now
+     return true;
+ }
+ // Rahmenweg beenden (Byte-Befehl, Neutral, Stopp, Aktion, Armen).
+-inline void cancel(State& s) { s.active = false; s.accel_mode = false; s.timed_out = false; s.v = 0; s.w = 0; s.ticked = false; }
++inline void cancel(State& s) {
++    s.active = false; s.accel_mode = false; s.timed_out = false; s.v = 0; s.w = 0; s.ticked = false;
++    s.fwd = Axis{}; s.turn = Axis{};
++}
+ 
+ inline float clampAbs(float x, float m) { return std::max(-m, std::min(m, x)); }
+ 
+-// Je Regeltakt, solange der Rahmenweg aktiv ist: Wächter, Beschleunigungsbetrieb, Grenzen. Ergebnis in s.v/s.w.
+-inline void tick(State& s, const Limits& l, std::uint32_t now_us) {
++// Eine Achse einen Schritt dt auf target zu, Beschleunigung ≤ amax, Ruck ≤ jmax (0 = ohne Grenze).
++inline void approach(Axis& s, float target, float amax, float jmax, float dt) {
++    if (amax <= 0) { s.x = target; s.a = 0; return; }   // ohne Grenze: Sprung, auch im ersten Takt
++    if (dt <= 0) return;
++    const float dv = target - s.x;
++    if (jmax <= 0) {
++        const float step = amax * dt;
++        if (std::fabs(dv) <= step) { s.x = target; s.a = 0; }
++        else { s.a = std::copysign(amax, dv); s.x += s.a * dt; }
++        return;
++    }
++    // größte Beschleunigung, die sich mit jmax bis zum Ziel noch auf 0 abbauen lässt. Stetig a²/2j = |dv|; im Takt dt
++    // baut sie sich in Stufen jmax·dt ab und legt dabei a²/2j + a·dt/2 zurück, daraus a (sonst käme er mit Rest-a an)
++    const float jstep = jmax * dt, h = 0.5f * jstep;
++    const float a_des = dv == 0 ? 0.0f : std::copysign(std::min(amax, std::sqrt(h * h + 2.0f * jmax * std::fabs(dv)) - h), dv);
++    s.a += std::max(-jstep, std::min(jstep, a_des - s.a));
++    const float nx = s.x + s.a * dt;
++    if (dv == 0 ? std::fabs(s.a) <= jstep : (target - nx) * dv <= 0) { s.x = target; s.a = 0; }   // am Ziel einrasten
++    else s.x = nx;
++}
++// Beschleunigungsbetrieb ohne Tempoziel: a mit Ruck auf a_cmd, Tempo bis ±vmax (dort einrasten).
++inline void accelerate(Axis& s, float a_cmd, float jmax, float vmax, float dt) {
++    if (dt <= 0) return;
++    if (a_cmd != 0) { approach(s, std::copysign(vmax, a_cmd), std::fabs(a_cmd), jmax, dt); return; }
++    // a = 0: Tempo halten, Beschleunigung mit dem Ruck abbauen
++    if (jmax <= 0) s.a = 0;
++    else { const float jstep = jmax * dt; s.a -= std::max(-jstep, std::min(jstep, s.a)); }
++    s.x = clampAbs(s.x + s.a * dt, vmax);
++}
++
++// Je Regeltakt, solange der Rahmenweg aktiv ist: Wächter, Generator, Grenzen. Ergebnis in s.v/s.w und s.fwd/s.turn.
++// v_now/w_now: aktuelle gefilterte Sollwerte der Kaskade, Startwert beim ersten Takt (Übernahme aus der Fahrt).
++inline void tick(State& s, const Limits& l, std::uint32_t now_us, float v_now = 0, float w_now = 0) {
+     if (!s.active) return;
+-    const float dt = s.ticked ? std::min(0.05f, float(std::uint32_t(now_us - s.last_tick_us)) * 1e-6f) : 0.0f;
++    float dt = 0;
++    if (!s.ticked) {
++        s.fwd = Axis{clampAbs(std::isfinite(v_now) ? v_now : 0.0f, l.v_max), 0};
++        s.turn = Axis{clampAbs(std::isfinite(w_now) ? w_now : 0.0f, l.w_max), 0};
++    } else dt = std::min(0.05f, float(std::uint32_t(now_us - s.last_tick_us)) * 1e-6f);
+     s.last_tick_us = now_us; s.ticked = true;
++    const Frame& f = s.frame;
+     if (l.timeout_ms && std::uint32_t(now_us - s.last_rx_us) > std::uint32_t(l.timeout_ms) * 1000u) {
+         if (!s.timed_out) { s.timed_out = true; s.accel_mode = false; }
+-        s.v = 0; s.w = 0;
+-        return;
++        const float a = std::fabs(f.a) > 0 ? std::fabs(f.a) : kWatchdogAccel;
++        const float al = f.alpha > 0 ? f.alpha : kWatchdogAlpha;
++        approach(s.fwd, 0, a, f.jerk, dt);
++        approach(s.turn, 0, al, f.jerk_w, dt);
++    } else {
++        if (s.accel_mode) accelerate(s.fwd, f.a, f.jerk, l.v_max, dt);
++        else approach(s.fwd, clampAbs(f.v, l.v_max), std::fabs(f.a), f.jerk, dt);
++        approach(s.turn, clampAbs(f.w, l.w_max), f.alpha, f.jerk_w, dt);
+     }
+-    if (s.accel_mode) s.v = clampAbs(s.v + s.frame.a * dt, l.v_max);
+-    else s.v = clampAbs(s.frame.v, l.v_max);
+-    s.w = clampAbs(s.frame.w, l.w_max);
++    // Grenzen können während der Fahrt kleiner werden (neues 0x1b): sofort einhalten
++    s.fwd.x = clampAbs(s.fwd.x, l.v_max); s.turn.x = clampAbs(s.turn.x, l.w_max);
++    s.v = s.fwd.x; s.w = s.turn.x;
+ }
+ 
+ // Sollwert als Byte des alten Wegs (128 ± 127,5 über den festen Bereich), für Positionshalten und LEDs.
