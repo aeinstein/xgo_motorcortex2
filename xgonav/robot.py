@@ -191,6 +191,7 @@ class Robot:
         self._kurs = Kurs()
         self._kurs_seq = False
         self._kurs_ziel = self._kurs_dpsi = 0.0
+        self._kurs_done_t: float | None = None     # seit wann das laufende Ziel angekommen ist
         self._gen_winkel = 0.0
         self._w_lim: float | None = None        # °/s: w_max in vel_limits während eines Kursziels (Obergrenze des Modus)
         self._frame = ""                        # Text des aktuellen Rahmens
@@ -548,8 +549,12 @@ class Robot:
             return
         self._cur = target                   # Byteweg: die Firmware filtert selbst (Tiefpass, 5er-Schritt)
 
-    KURS_NEU_DEG = 2.0        # verlangtes Ziel weicht so weit vom laufenden ab: neues Ziel (Wechselbit)
-    KURS_NACH_DEG = 1.0       # angekommen, der Kurs (IMU) liegt aber noch so weit daneben: neues Ziel nachschieben
+    # Verlangtes Ziel weicht so weit vom laufenden ab: neues Ziel (Wechselbit). Der Restfehler kommt vom IMU-Kurs, der
+    # dem Generator beim Drehen nachläuft (bei 90 °/s mehrere Grad); mit 2° schob xgonav das Ziel während der Drehung
+    # immer weiter, er drehte 98° statt 90° (Rider 2026-11-25). Nur ein wirklich neues Ziel (Wegpunkt) liegt darüber.
+    KURS_NEU_DEG = 20.0
+    KURS_NACH_DEG = 1.0       # angekommen, der Kurs (IMU) liegt aber noch so weit daneben: neues Ziel nachschieben,
+    KURS_NACH_S = 0.5         # aber erst, wenn der Kurs-Regler der Firmware so lange nachziehen konnte
 
     def _ramp_vel(self, target: tuple[float, float], dt: float, kappa: float | None = None,
                   kurs: tuple[float, float] | None = None) -> None:
@@ -584,8 +589,12 @@ class Robot:
         if kurs is not None:
             err = math.degrees(kurs[0])
             k = self._kurs
+            jetzt = time.monotonic()
+            if k.done and self._kurs_done_t is None:
+                self._kurs_done_t = jetzt
             if (not k.an or abs(self._gen_winkel + err - self._kurs_ziel) > self.KURS_NEU_DEG
-                    or (k.done and abs(err) > self.KURS_NACH_DEG)):
+                    or (k.done and jetzt - self._kurs_done_t >= self.KURS_NACH_S and abs(err) > self.KURS_NACH_DEG)):
+                self._kurs_done_t = None
                 self._kurs_seq = not self._kurs_seq
                 self._kurs_dpsi = round(err * 10.0) / 10.0    # wie im Rahmen (0,1°)
                 self._kurs_ziel = self._gen_winkel + self._kurs_dpsi
@@ -619,6 +628,7 @@ class Robot:
         self._gen_v, self._gen_w = Achse(), Achse()
         self._bogen = Bogen()
         self._kurs = Kurs()
+        self._kurs_done_t = None
         if resend:
             self._frame_sent = None
 

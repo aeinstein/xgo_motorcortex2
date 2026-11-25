@@ -402,3 +402,27 @@ def test_kurs_senkt_w_max_nicht_waehrend_des_kursziels():
         assert all(b >= a for a, b in zip(grenzen, grenzen[1:]))          # nur anheben
     finally:
         r.close()
+
+
+def test_kurs_nachlaufender_imu_kurs_schiebt_ziel_nicht():
+    """Der Restfehler kommt vom IMU-Kurs, der dem Generator nachläuft (Rider 2026-11-25: bei 90 °/s mehrere Grad). Das
+    darf kein neues Ziel auslösen: ein Rahmen, Generator dreht genau 90° (vorher 98° durch nachgeschobene Ziele)."""
+    import collections
+    cfg = _cfg(vel_kurs=True)
+    r = SimRobot(cfg)
+    r.start()
+    try:
+        t0 = time.monotonic()
+        verlauf = collections.deque()                                      # (t, Generatorwinkel) für 0,1 s Nachlauf
+        for _ in range(150):
+            jetzt = time.monotonic()
+            verlauf.append((jetzt, r._gen_winkel))
+            while len(verlauf) > 1 and verlauf[1][0] <= jetzt - 0.1:
+                verlauf.popleft()
+            r.drive(0.0, 0.5, kurs=(math.radians(90.0 - verlauf[0][1]), cfg.w_of(0.5)))   # bis 90 °/s
+            time.sleep(0.02)
+        kurse = {t for t in _writes(r, "vel", t0) if t.startswith("kurs ")}
+        assert len(kurse) == 1, kurse
+        assert abs(r._gen_winkel - 90.0) < 0.6
+    finally:
+        r.close()
