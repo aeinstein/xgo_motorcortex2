@@ -204,7 +204,7 @@ def serve():
                 if VEL and addr in (0x1a, 0x1b):
                     data = fr[5:ln - 3]
                     ok = fr[ln - 3] == 255 - ((ln + mode + addr + sum(data)) % 256)
-                    want = (13,) if addr == 0x1a else (6, 10)   # 0x1b: 10 Byte mit Einheit/Vorfaktor (0035)
+                    want = (13,) if addr == 0x1a else (6, 10, 14)   # 0x1b: 10 Byte 0035, 14 Byte 0037
                     if not ok or len(data) not in want:
                         stats["vel_bad"] = stats.get("vel_bad", 0) + 1
                     else:

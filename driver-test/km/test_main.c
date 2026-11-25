@@ -8,7 +8,7 @@ const char *g_serial_path;
 
 /* Text -> Bytes der Fahrrahmen prüfen, ohne Emulator */
 static int vel_case(const char *text, int want_ok, const uint8_t *want, int lim) {
-	uint8_t out[XGO_VEL_FRAME_LEN] = {0};
+	uint8_t out[16] = {0};   /* Rahmen 13, Grenzen bis 14 Byte */
 	int r = lim ? vel_limits_encode(text, out) : vel_encode(text, out);
 	int n = lim ? lim : XGO_VEL_FRAME_LEN;   /* lim = erwartete Länge der Grenzen */
 	int ok = want_ok ? (r == (lim ? n : 0) && memcmp(out, want, n) == 0) : r < 0;
@@ -42,6 +42,13 @@ static int test_vel(void) {
 		bad += vel_case("231 180.0 500 3900 2001", 0, NULL, 10);
 		bad += vel_case("231 180.0 500 -1 550", 0, NULL, 10);
 		bad += vel_case("231 180.0 500 3900 550 1", 0, NULL, 10);
+		{   /* Firmware 0037: ki × 10000, i_max × 100 */
+			const uint8_t l3[] = {0xe7, 0x00, 0x08, 0x07, 0xf4, 0x01, 0x3c, 0x0f, 0x26, 0x02, 0xdc, 0x05, 0x90, 0x01};
+			bad += vel_case("231 180.0 500 3900 550 1500 400", 1, l3, 14);
+			bad += vel_case("231 180.0 500 3900 550 10001 400", 0, NULL, 14);
+			bad += vel_case("231 180.0 500 3900 550 1500 1001", 0, NULL, 14);
+			bad += vel_case("231 180.0 500 3900 550 1500 400 9", 0, NULL, 14);
+		}
 	}
 	{
 		const uint8_t d[] = {9, 0, 0xfa, 0x00, 0x85, 0xff, 0xf4, 0x01, 0x84, 0x03, 0x2c, 0x01};
@@ -58,9 +65,9 @@ static int test_vel(void) {
 
 /* mit --vel im Emulator: Grenzen + Rahmen wie /proc schicken, Zustand zurücklesen */
 static void vel_roundtrip(void) {
-	static const char *lim = "450 72.5 300 3900 550";   /* 10 Byte (Firmware 0035) */
+	static const char *lim = "450 72.5 300 3900 550 1500 400";   /* 14 Byte (Firmware 0037) */
 	static const char *frames[] = {"250 500 2500 12.3 120 600", "acc -300 2000 -5 0 0", "-120 800 4000 -30.0 90 400"};
-	uint8_t b[XGO_VEL_FRAME_LEN];
+	uint8_t b[16];   /* Rahmen 13, Grenzen bis 14 Byte */
 	char hex[64], t[80];
 	int ln = vel_limits_encode(lim, b);
 	write_serial_data(XGO_VEL_LIMITS, (char *)b, ln);

@@ -5,6 +5,7 @@
 // 0030: Sollwertgenerator (S-Kurve): Beschleunigung ≤ a, Ruck ≤ Ruckgrenze, kein Überschwingen, Dauer wie gerechnet,
 // Umkehr, Beschleunigungsbetrieb mit Ruck, Wächter mit den Rahmengrenzen, Übernahme aus der Fahrt, Drehachse.
 // 0035: 0x1b mit 10 Byte (Einheit, Vorfaktor), 6 Byte wie vorher, Vorfaktor begrenzt.
+// 0037: 0x1b mit 14 Byte (ki, i_max), 0 = nicht gesendet, Grenzen.
 // Nach firmware/build.sh (Quellen mit Patches in firmware/build/), im Repo-Root:
 //   S=firmware/build/xgorider2_rl/firmware/src
 //   g++ -std=c++17 -ffp-contract=off -I $S firmware/tests/test_velocity_cmd.cpp $S/control/rider_motion.cpp $S/control/pid.cpp $S/command_protocol.cpp -o t && ./t
@@ -229,6 +230,7 @@ int main() {
         e.reg = 0x1b; e.length = 6; check(validCommand(e) && commandKind(e) == CommandKind::VelocityLimits, "0x1b mit 6 Byte gültig");
         e.length = 10; check(validCommand(e), "0x1b mit 10 Byte gültig (0035)");
         e.length = 8; check(!validCommand(e), "0x1b mit 8 Byte ungültig");
+        e.length = 14; check(validCommand(e), "0x1b mit 14 Byte gültig (0037)");
         e.length = 6;
         e.reg = 0xa0; e.length = 1; check(!validCommand(e), "0xa0 (max_forward) entfernt");
         e.reg = 0xa1; check(!validCommand(e), "0xa1 (max_turn) entfernt");
@@ -270,6 +272,19 @@ int main() {
         V::put16(d + 8, 9000); V::parseLimits(d, sizeof d, l);
         check(near(l.stock_scale, 2.0f, 1e-6f), "Vorfaktor oben auf 2 begrenzt");
         check(!V::parseLimits(d, 8, l), "0x1b mit 8 Byte verworfen");
+        check(l.ki < 0 && l.i_max < 0, "0x1b 10 Byte: ki/i_max nicht gesendet");
+    }
+    {   // Patch 0037: ki und i_max
+        std::uint8_t d[V::kLimitsLenCtl];
+        V::put16(d, 231); V::put16(d + 2, 1800); V::put16(d + 4, 500); V::put16(d + 6, 3900); V::put16(d + 8, 550);
+        V::put16(d + 10, 1500); V::put16(d + 12, 400);
+        V::Limits l; check(V::parseLimits(d, sizeof d, l), "0x1b 14 Byte angenommen");
+        check(near(l.unit_mm, 3.9f, 1e-5f) && near(l.stock_scale, 0.55f, 1e-5f), "0x1b 14 Byte: Einheit und Vorfaktor wie bei 10");
+        check(near(l.ki, 0.15f, 1e-6f) && near(l.i_max, 4.0f, 1e-5f), "0x1b 14 Byte: ki 0,15, i_max 4°");
+        V::put16(d + 10, 0); V::put16(d + 12, 0); V::parseLimits(d, sizeof d, l);
+        check(l.ki < 0 && l.i_max < 0, "0x1b 14 Byte mit 0: Konsolenwerte gelten");
+        V::put16(d + 10, 60000); V::put16(d + 12, 60000); V::parseLimits(d, sizeof d, l);
+        check(l.ki == 1.0f && l.i_max == 10.0f, "ki ≤ 1, i_max ≤ 10°");
     }
     std::printf(fail ? "\nFEHLER\n" : "\nalle ok\n");
     return fail;

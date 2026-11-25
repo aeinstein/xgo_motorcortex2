@@ -153,6 +153,18 @@
        "hilfe": "Firmware 0035: auf dem Rahmenweg sehen Speed-P und Radkorrektur des Originals das Soll × vel_stock_scale, das Integral das volle Soll. Messfahrt 2026-11-25 ohne Vorfaktor: Ist-Spitze 1,8 / 1,9 × Soll nach ~2 s, dann langsam zurück; 0,55 ergab 1,30 × (Messfahrt 2026-11-25), 0,42 war schlechter (längerer Nachlauf, mehr Windup), daher 0,55; Integral seit Firmware 0036 erst bei ruhendem Generator. Geht mit Einheit an vel_limits (10 Byte, braucht Firmware 0035)."
       },
       {
+       "key": "vel_ki",
+       "typ": "float",
+       "default": 0.15,
+       "hilfe": "Firmware 0037: Integral des Tempo-Reglers (0031) in ° Soll-Nick je (Firmware-Einheit Fehler · s) und seine Grenze. Messfahrt mit 0036 und ki 0,05: der Bestandsweg kroch weiter auf 1,13–1,26 × Soll (Fehler −8 → nur −0,4°/s); 0,15 ist der nächste Versuch. Geht mit vel_limits an die Firmware (14 Byte)."
+      },
+      {
+       "key": "vel_i_max_deg",
+       "typ": "float",
+       "default": 4.0,
+       "hilfe": ""
+      },
+      {
        "key": "level_pulse_s",
        "typ": "float",
        "default": 3.0,

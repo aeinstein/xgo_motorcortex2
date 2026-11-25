@@ -196,7 +196,7 @@ static int lift_open(struct inode *inode, struct file *file) { return single_ope
  * er 128 auf 0x30/0x32, das beendet in der Firmware auch den Rahmenweg. vel lesen = Zustand 0x1a frisch vom ESP32
  * (alte Firmware antwortet nicht -> "Fehler <n>"). vel_limits schreiben = 0x1b, lesen = zuletzt geschriebener Text.
  */
-static char vel_limits_text[32];
+static char vel_limits_text[48];   /* bis 7 Felder (Firmware 0037) */
 static DEFINE_MUTEX(vel_limits_lock);
 
 static int vel_show(struct seq_file *m, void *v) {

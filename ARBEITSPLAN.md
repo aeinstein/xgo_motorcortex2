@@ -162,6 +162,9 @@ Kosten am ESP32: zwei PI-Regler + Rampe je Takt, vernachlässigbar gegen die Lag
   (Spitze 1,26 × bei 3,7 s, Ende 1,13 ×), Strecke 0,68 m. v 0,3 nach 2,4 s von der Bahnprüfung gebremst: bis dahin
   Ist 56 → 78 (1,13 ×). Die frühe Spitze ist weg, aber der Bestandsweg kriecht weiter nach oben, auch während das
   Integral läuft: ki 0,05 (Fehler −8 → −0,4°/s) ist dafür zu schwach. Windup war nur ein Teil.
+- **Firmware 0037 (Nutzer: Weg 2):** ki und i_max gehen mit 0x1b (14 Byte) von xgonav an die Firmware
+  (`robot.vel_ki` 0,15, `vel_i_max_deg` 4). Treiber `vel_limits` mit 7 Feldern, Textpuffer 48 Byte. Host-Tests und
+  Treibertest grün, Build SHA aa2260dd… (`out/app0_0037.bin`).
 
 ### Zu klären
 

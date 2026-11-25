@@ -185,6 +185,11 @@ int main() {
         check(orig.err_end > 15.0f, "Modell: Original-P lässt unter Last ~18 mm/s Abweichung");
         check(std::fabs(pi.err_end) < 1.0f, "Modell: mit Integral nach 8 s < 1 mm/s");
         check(pi.osc_late < 1.0f, "Modell: kein Aufschaukeln");
+        VelocityControl hk; hk.on = true; hk.ki = 0.2f;   // 0037: xgonav schickt ki bis 0,2
+        const LoopResult pi2 = loop(8, 2.0f, &hk, 200);
+        std::printf("       Modell, Last 2°, ki 0,2: Restfehler %.2f mm/s (Schwankung zuletzt %.2f)\n",
+                    double(pi2.err_end), double(pi2.osc_late));
+        check(std::fabs(pi2.err_end) < 1.0f && pi2.osc_late < 1.0f, "Modell: ki 0,2 ohne Aufschaukeln");
         V::Frame f; f.v = 300; f.a = 500; f.jerk = 2500;
         VelocityControl ff; ff.on = true;
         VelocityControl noff; noff.on = true; noff.ff_gain = 0;
