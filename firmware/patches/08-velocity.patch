@@ -86,7 +86,7 @@ index a69366e..e4f1bd0 100644
      uint8_t pi_ip[4] = {};
      uint8_t policy_mode=0,policy_action_space=0;
 diff --git a/firmware/src/control/rider_motion.cpp b/firmware/src/control/rider_motion.cpp
-index fa7a21b..7ded3ab 100644
+index fa7a21b..f494280 100644
 --- a/firmware/src/control/rider_motion.cpp
 +++ b/firmware/src/control/rider_motion.cpp
 @@ -25,8 +25,11 @@ float decode(std::uint8_t x,float range) {
@@ -142,7 +142,7 @@ index fa7a21b..7ded3ab 100644
 +        const float lim=s.speed.output_limit;
 +        const float err=target-s.speed.measurement;
 +        // P auf Soll − Ist: beim Halten der Original-P; beim Fahren der Original-P (0,11) auf den ganzen Fehler und kp − 0,11
-+        // nur bis ±kVelBand (Standard kp = 0,11: kein Zuschlag; 0,3 schwang mit der Balance-Kaskade, 57° beim Aufstehen).
++        // nur bis ±kVelBand (kp 0,15: Zuschlag 0,04 bremst das Überschießen vorwärts; 0,3 schwang, 57° beim Aufstehen).
 +        const float band=std::max(-kVelBand,std::min(kVelBand,err));
 +        const float p=holding?s.speed.output:std::max(-lim,std::min(lim,s.speed.output+(vc->kp-s.speed.kp)*band));
 +        // Vorsteuerung nur aus dem Soll: a in echten mm/s² (unit_mm) und der Nick, den der Rider zum Halten des Soll-Tempos
@@ -197,7 +197,7 @@ index fa7a21b..7ded3ab 100644
      const float room=static_cast<float>(std::min(std::abs(static_cast<int>(w.id11)+offset),std::abs(static_cast<int>(w.id21)+offset)));
      const float magnitude=std::min(room,std::fabs(demand));
 diff --git a/firmware/src/control/rider_motion.h b/firmware/src/control/rider_motion.h
-index 776c330..2e8323e 100644
+index 776c330..ab92b3a 100644
 --- a/firmware/src/control/rider_motion.h
 +++ b/firmware/src/control/rider_motion.h
 @@ -9,7 +9,12 @@ namespace rider { namespace control {
@@ -239,8 +239,8 @@ index 776c330..2e8323e 100644
 +struct VelocityControl {
 +    bool on=false;          // Rahmenweg aktiv; aus = Originalweg bitgleich
 +    float accel=0;          // Soll-Beschleunigung aus dem Generator, Firmware-Einheiten/s²
-+    float kp=0.11f;         // ° Soll-Nick je Firmware-Einheit Fehler (Original-P 0,11 = kein Zuschlag; 0,3 schwang)
-+    float ki=0.1f;          // ° Soll-Nick je (Firmware-Einheit Fehler · s); 0,05 baute den Vorwärts-Versatz (~1,5°) zu langsam auf
++    float kp=0.15f;         // ° Soll-Nick je Firmware-Einheit Fehler (Original-P 0,11; Zuschlag bis ±kVelBand; 0,3 schwang, 0,15 gefahren)
++    float ki=0.06f;         // ° Soll-Nick je (Firmware-Einheit Fehler · s); 0,05 + 0,6 s Wartezeit zu langsam, 0,1 pendelte vorwärts
 +    float kf=0.05f;         // ° Soll-Nick je Firmware-Einheit Soll-Tempo (Vorsteuerung −kf·v_soll, gemessen 0,047–0,057)
 +    float i_max=8.0f;       // ° Betragsgrenze des Integrals
 +    float ff_gain=1.0f;     // Anteil der Vorsteuerung atan(a/g)
@@ -293,7 +293,7 @@ index 776c330..2e8323e 100644
  void addWheelFriction(Wheels &);
  
 diff --git a/firmware/src/main.cpp b/firmware/src/main.cpp
-index 75d1306..fcf60ae 100644
+index 75d1306..552bf89 100644
 --- a/firmware/src/main.cpp
 +++ b/firmware/src/main.cpp
 @@ -28,6 +28,7 @@ extern "C" {extern const volatile uint32_t rider_rl_only_build=0x524c4f31;}
@@ -309,7 +309,7 @@ index 75d1306..fcf60ae 100644
  volatile float yaw_slew_per_second=20000.0f;
  bool battery_low_seen=false;   // Akku-Warnung war aktiv (nur Robot-Task)
 +// Geschwindigkeitsregler des Rahmenwegs, Konsole !velctl KI FF IMAX [KP [KF]] (nur RAM)
-+volatile float vel_ki=0.1f,vel_ff=1.0f,vel_i_max=8.0f,vel_kp=0.11f,vel_kf=0.05f;
++volatile float vel_ki=0.06f,vel_ff=1.0f,vel_i_max=8.0f,vel_kp=0.15f,vel_kf=0.05f;
 +// Drehratenregler des Rahmenwegs, Konsole !turnctl KP KD FF (nur RAM)
 +volatile float turn_kp=3.0f,turn_kd=0.5f,turn_ff=0.5f;
  // In schnellen Kurven einlegen (Aktion 232 an / 231 aus, !lean on|off): Roll halten regelt auf
