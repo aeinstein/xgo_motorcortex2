@@ -68,6 +68,10 @@ class RobotCfg:
     vel_jerk_w_dps3: float = 1800.0
     vel_timeout_ms: int = 500
     vel_limits_s: float = 2.0      # vel_limits so oft neu schreiben (ESP-Neustart verliert sie)
+    # Firmware 0035: auf dem Rahmenweg sehen Speed-P und Radkorrektur des Originals das Soll × vel_stock_scale, das
+    # Integral das volle Soll. Messfahrt 2026-11-25 ohne Vorfaktor: Ist-Spitze 1,8 / 1,9 × Soll nach ~2 s, dann langsam
+    # zurück; 0,55 ≈ 1/1,85 (Startwert, am Rider prüfen). Geht mit Einheit an vel_limits (10 Byte, braucht Firmware 0035).
+    vel_stock_scale: float = 0.55
     # Die Beine haben eine Totzone: bei gleichem Befehl steht der Rider je nach Vorgeschichte bei
     # +0,7..+3,4° Roll (2026-11-05). Ein kurzer Impuls der Nivellierung in der Firmware richtet ihn
     # aus, danach bleibt er so stehen (dauerhaft an schwankt er mehr). Auslöser: einmal nach jedem

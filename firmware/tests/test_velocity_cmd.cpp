@@ -4,6 +4,7 @@
 // dass der Rahmenweg in updateCommandTargets ohne Byte-Totband ankommt, der alte Weg aber unverändert bleibt.
 // 0030: Sollwertgenerator (S-Kurve): Beschleunigung ≤ a, Ruck ≤ Ruckgrenze, kein Überschwingen, Dauer wie gerechnet,
 // Umkehr, Beschleunigungsbetrieb mit Ruck, Wächter mit den Rahmengrenzen, Übernahme aus der Fahrt, Drehachse.
+// 0035: 0x1b mit 10 Byte (Einheit, Vorfaktor), 6 Byte wie vorher, Vorfaktor begrenzt.
 // Nach firmware/build.sh (Quellen mit Patches in firmware/build/), im Repo-Root:
 //   S=firmware/build/xgorider2_rl/firmware/src
 //   g++ -std=c++17 -ffp-contract=off -I $S firmware/tests/test_velocity_cmd.cpp $S/control/rider_motion.cpp $S/control/pid.cpp $S/command_protocol.cpp -o t && ./t
@@ -226,6 +227,9 @@ int main() {
         check(validCommand(e) && commandKind(e) == CommandKind::Velocity, "0x1a mit 13 Byte gültig");
         e.length = 1; check(!validCommand(e), "0x1a mit 1 Byte ungültig");
         e.reg = 0x1b; e.length = 6; check(validCommand(e) && commandKind(e) == CommandKind::VelocityLimits, "0x1b mit 6 Byte gültig");
+        e.length = 10; check(validCommand(e), "0x1b mit 10 Byte gültig (0035)");
+        e.length = 8; check(!validCommand(e), "0x1b mit 8 Byte ungültig");
+        e.length = 6;
         e.reg = 0xa0; e.length = 1; check(!validCommand(e), "0xa0 (max_forward) entfernt");
         e.reg = 0xa1; check(!validCommand(e), "0xa1 (max_turn) entfernt");
         e.reg = 0x30; check(validCommand(e), "0x30 (Fahrbyte) bleibt");
@@ -250,6 +254,22 @@ int main() {
         for (int i = 0; i < 50; ++i) { updateCommandTargets(x, old); updateCommandTargets(y, same); }
         check(x.filtered_forward == y.filtered_forward && x.filtered_turn == y.filtered_turn && x.forward == y.forward,
               "velocity = false: bitgleich zum alten Weg");
+    }
+    {   // Patch 0035: Einheit und Vorfaktor
+        const V::Limits old = limits(231, 1800, 500);
+        check(old.unit_mm == 1.0f && old.stock_scale == 1.0f, "0x1b 6 Byte: Einheit 1, kein Vorfaktor (wie vorher)");
+        std::uint8_t d[V::kLimitsLenExt];
+        V::put16(d, 231); V::put16(d + 2, 1800); V::put16(d + 4, 500); V::put16(d + 6, 3900); V::put16(d + 8, 550);
+        V::Limits l; check(V::parseLimits(d, sizeof d, l), "0x1b 10 Byte angenommen");
+        check(l.v_max == 231 && near(l.w_max, 180.0f, 1e-4f) && l.timeout_ms == 500, "0x1b 10 Byte: Grenzen wie bei 6 Byte");
+        check(near(l.unit_mm, 3.9f, 1e-5f) && near(l.stock_scale, 0.55f, 1e-5f), "0x1b 10 Byte: Einheit 3,9 mm/s, Vorfaktor 0,55");
+        V::put16(d + 6, 0); V::put16(d + 8, 0); V::parseLimits(d, sizeof d, l);
+        check(l.unit_mm == 1.0f && l.stock_scale == 1.0f, "0x1b 10 Byte mit 0: Standardwerte");
+        V::put16(d + 8, 50); V::parseLimits(d, sizeof d, l);
+        check(near(l.stock_scale, 0.1f, 1e-6f), "Vorfaktor unten auf 0,1 begrenzt");
+        V::put16(d + 8, 9000); V::parseLimits(d, sizeof d, l);
+        check(near(l.stock_scale, 2.0f, 1e-6f), "Vorfaktor oben auf 2 begrenzt");
+        check(!V::parseLimits(d, 8, l), "0x1b mit 8 Byte verworfen");
     }
     std::printf(fail ? "\nFEHLER\n" : "\nalle ok\n");
     return fail;

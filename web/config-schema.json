@@ -147,6 +147,12 @@
        "hilfe": "vel_limits so oft neu schreiben (ESP-Neustart verliert sie)"
       },
       {
+       "key": "vel_stock_scale",
+       "typ": "float",
+       "default": 0.55,
+       "hilfe": "Firmware 0035: auf dem Rahmenweg sehen Speed-P und Radkorrektur des Originals das Soll × vel_stock_scale, das Integral das volle Soll. Messfahrt 2026-11-25 ohne Vorfaktor: Ist-Spitze 1,8 / 1,9 × Soll nach ~2 s, dann langsam zurück; 0,55 ≈ 1/1,85 (Startwert, am Rider prüfen). Geht mit Einheit an vel_limits (10 Byte, braucht Firmware 0035)."
+      },
+      {
        "key": "level_pulse_s",
        "typ": "float",
        "default": 3.0,

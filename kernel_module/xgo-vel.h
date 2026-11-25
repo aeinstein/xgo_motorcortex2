@@ -12,12 +12,15 @@
 //   "aktiv beschl waechter grenzen v w v_max w_max timeout_ms", z. B. "1 0 0 1 250 -12.3 500 90.0 300"
 // /proc/XGORider/vel_limits schreiben (Register 0x1b, 6 Byte): "V_MAX W_MAX TIMEOUT_MS" (W_MAX eine Nachkommastelle,
 //   Wächter 0 = aus). Ohne diese Grenzen verwirft die Firmware jeden Fahrrahmen; xgonav schreibt sie beim Start.
+//   Firmware 0035, 10 Byte: "V_MAX W_MAX TIMEOUT_MS EINHEIT_UM VORFAKTOR_PROMILLE" (µm/s je Firmware-Einheit,
+//   z. B. 3900; Vorfaktor des Bestandswegs, z. B. 550; je 0 = Standard der Firmware). Ältere Firmware verwirft 10 Byte.
 //
 #ifndef XGO_VEL_H
 #define XGO_VEL_H
 
 #define XGO_VEL_FRAME_LEN 13
-#define XGO_VEL_LIMITS_LEN 6
+#define XGO_VEL_LIMITS_LEN 10      /* Puffergröße; gesendet werden 6 oder 10 Byte (vel_limits_encode) */
+#define XGO_VEL_LIMITS_LEN_OLD 6
 #define XGO_VEL_DIAG_LEN 12
 #define XGO_VEL_FLAG_NO_SPEED 1
 
@@ -67,17 +70,20 @@ static int vel_encode(const char *text, uint8_t out[XGO_VEL_FRAME_LEN]) {
 	return 0;
 }
 
-// Text -> Grenzen 0x1b. 0 = ok, -1 = ungültig.
+// Text -> Grenzen 0x1b. Länge (6 oder 10 Byte) = ok, -1 = ungültig.
 static int vel_limits_encode(const char *text, uint8_t out[XGO_VEL_LIMITS_LEN]) {
 	char wtok[16];
-	int vmax, wmax10, ms, n;
-	if (sscanf(text, "%d %15s %d%n", &vmax, wtok, &ms, &n) != 3) return -1;
+	int vmax, wmax10, ms, n, unit = 0, scale = 0, len = XGO_VEL_LIMITS_LEN_OLD;
+	if (sscanf(text, "%d %15s %d %d %d%n", &vmax, wtok, &ms, &unit, &scale, &n) == 5) len = XGO_VEL_LIMITS_LEN;
+	else if (sscanf(text, "%d %15s %d%n", &vmax, wtok, &ms, &n) != 3) return -1;
 	while (text[n] == ' ' || text[n] == '\n' || text[n] == '\t') n++;
 	if (text[n] != '\0') return -1;
 	if (vel_parse_tenths(wtok, &wmax10)) return -1;
 	if (!vel_in(vmax, 0, 65535) || !vel_in(wmax10, 0, 65535) || !vel_in(ms, 0, 65535)) return -1;
+	if (!vel_in(unit, 0, 65535) || !vel_in(scale, 0, 2000)) return -1;
 	vel_put16(out, vmax); vel_put16(out + 2, wmax10); vel_put16(out + 4, ms);
-	return 0;
+	vel_put16(out + 6, unit); vel_put16(out + 8, scale);
+	return len;
 }
 
 // Zustand 0x1a (12 Byte) -> Text. Zehntel ohne Fließkomma.

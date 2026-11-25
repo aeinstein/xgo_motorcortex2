@@ -10,8 +10,8 @@ const char *g_serial_path;
 static int vel_case(const char *text, int want_ok, const uint8_t *want, int lim) {
 	uint8_t out[XGO_VEL_FRAME_LEN] = {0};
 	int r = lim ? vel_limits_encode(text, out) : vel_encode(text, out);
-	int n = lim ? XGO_VEL_LIMITS_LEN : XGO_VEL_FRAME_LEN;
-	int ok = want_ok ? (r == 0 && memcmp(out, want, n) == 0) : r != 0;
+	int n = lim ? lim : XGO_VEL_FRAME_LEN;   /* lim = erwartete Länge der Grenzen */
+	int ok = want_ok ? (r == (lim ? n : 0) && memcmp(out, want, n) == 0) : r < 0;
 	if (!ok) printf("VEL FEHLER '%s' (r %d)\n", text, r);
 	return !ok;
 }
@@ -32,9 +32,17 @@ static int test_vel(void) {
 	bad += vel_case("40000 0 0 0 0 0", 0, NULL, 0);
 	bad += vel_case("acc 1 2 x 4 5", 0, NULL, 0);
 	bad += vel_case("1 2 3 4 -5 6", 0, NULL, 0);
-	bad += vel_case("500 90.5 300", 1, l1, 1);
-	bad += vel_case("500 -1 300", 0, NULL, 1);
-	bad += vel_case("500 90 300 7", 0, NULL, 1);
+	bad += vel_case("500 90.5 300", 1, l1, 6);
+	bad += vel_case("500 -1 300", 0, NULL, 6);
+	bad += vel_case("500 90 300 7", 0, NULL, 6);
+	{   /* Firmware 0035: Einheit µm/s und Vorfaktor ‰ */
+		const uint8_t l2[] = {0xe7, 0x00, 0x08, 0x07, 0xf4, 0x01, 0x3c, 0x0f, 0x26, 0x02};   /* 231 180.0 500 3900 550 */
+		bad += vel_case("231 180.0 500 3900 550", 1, l2, 10);
+		bad += vel_case("231 180.0 500 3900 550\n", 1, l2, 10);
+		bad += vel_case("231 180.0 500 3900 2001", 0, NULL, 10);
+		bad += vel_case("231 180.0 500 -1 550", 0, NULL, 10);
+		bad += vel_case("231 180.0 500 3900 550 1", 0, NULL, 10);
+	}
 	{
 		const uint8_t d[] = {9, 0, 0xfa, 0x00, 0x85, 0xff, 0xf4, 0x01, 0x84, 0x03, 0x2c, 0x01};
 		const uint8_t e[] = {1, 0, 0, 0, 0xfb, 0xff, 0, 0, 0, 0, 0, 0};
@@ -50,13 +58,13 @@ static int test_vel(void) {
 
 /* mit --vel im Emulator: Grenzen + Rahmen wie /proc schicken, Zustand zurücklesen */
 static void vel_roundtrip(void) {
-	static const char *lim = "450 72.5 300";
+	static const char *lim = "450 72.5 300 3900 550";   /* 10 Byte (Firmware 0035) */
 	static const char *frames[] = {"250 500 2500 12.3 120 600", "acc -300 2000 -5 0 0", "-120 800 4000 -30.0 90 400"};
 	uint8_t b[XGO_VEL_FRAME_LEN];
 	char hex[64], t[80];
-	vel_limits_encode(lim, b);
-	write_serial_data(XGO_VEL_LIMITS, (char *)b, XGO_VEL_LIMITS_LEN);
-	for (int i = 0; i < XGO_VEL_LIMITS_LEN; i++) sprintf(hex + 2 * i, "%02x", b[i]);
+	int ln = vel_limits_encode(lim, b);
+	write_serial_data(XGO_VEL_LIMITS, (char *)b, ln);
+	for (int i = 0; i < ln; i++) sprintf(hex + 2 * i, "%02x", b[i]);
 	printf("VELLIM %s\n", hex);
 	for (size_t k = 0; k < sizeof(frames) / sizeof(frames[0]); k++) {
 		vel_encode(frames[k], b);

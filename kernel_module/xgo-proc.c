@@ -236,11 +236,13 @@ static ssize_t vel_limits_read(struct file *file, char __user *user_buf, size_t 
 static ssize_t vel_limits_write(struct file *file, const char __user *user_buf, size_t count, loff_t *ppos) {
 	char buffer[sizeof(vel_limits_text)];
 	u8 lim[XGO_VEL_LIMITS_LEN];
+	int len;
 	if (count == 0 || count >= sizeof(buffer) - 1) return -EINVAL;
 	if (copy_from_user(buffer, user_buf, count)) return -EFAULT;
 	buffer[count] = '\0';
-	if (vel_limits_encode(buffer, lim)) return -EINVAL;
-	write_serial_data(XGO_VEL_LIMITS, (char *)lim, sizeof(lim));
+	len = vel_limits_encode(buffer, lim);   /* 6 oder 10 Byte (Firmware 0035) */
+	if (len < 0) return -EINVAL;
+	write_serial_data(XGO_VEL_LIMITS, (char *)lim, len);
 	mutex_lock(&vel_limits_lock);
 	scnprintf(vel_limits_text, sizeof(vel_limits_text), "%s%s", strim(buffer), "\n");
 	mutex_unlock(&vel_limits_lock);

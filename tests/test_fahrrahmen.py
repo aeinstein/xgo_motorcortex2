@@ -20,6 +20,8 @@ def test_rahmen_text_einheiten():
     assert rahmen_text(99.0, 999.0, 0, 9999.0, 0, 0, 8.4) == "11786 32767 0 3276.7 0 0"           # Grenzen des Rahmens
     assert grenzen_text(0.9, 180.0, 500, 8.4) == "107 180.0 500"
     assert grenzen_text(0.5 * 1.8, 0.5 * 360, 0, 1.0) == "900 180.0 0"
+    assert grenzen_text(0.9, 180.0, 500, 3.9, 0.55) == "231 180.0 500 3900 550"   # Firmware 0035
+    assert grenzen_text(0.9, 180.0, 500, 3.9, 0.01).endswith(" 3900 100")             # Vorfaktor ≥ 0,1
 
 
 def test_zustand_lesen():
@@ -70,7 +72,7 @@ def test_fahrrahmen_robot_schreibt_rahmen():
     r = SimRobot(cfg)
     r.start()
     try:
-        assert _writes(r, "vel_limits") == ["231 180.0 500"]
+        assert _writes(r, "vel_limits") == ["231 180.0 500 3900 550"]
         for _ in range(60):                                                # 1,2 s fahren (0,2 x 1,8 = 0,36 m/s)
             r.drive(0.2, 0.0)
             time.sleep(0.02)
@@ -153,7 +155,7 @@ def test_fahrrahmen_einschalten_nur_mit_treiber_und_firmware(tmp_path):
     (tmp_path / "vel").write_text("0 0 0 0 0 0.0 0 0.0 0\n")
     (tmp_path / "vel_limits").write_text("")
     r._vel_setup()
-    assert r.vel and (tmp_path / "vel_limits").read_text() == "231 180.0 500"
+    assert r.vel and (tmp_path / "vel_limits").read_text() == "231 180.0 500 3900 550"
     cfg.vel_frame = False
     r._vel_setup()
     assert not r.vel

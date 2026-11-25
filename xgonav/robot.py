@@ -242,7 +242,8 @@ class Robot:
         """v_max/w_max und Wächter an die Firmware (Fahrrahmen); periodisch, ein ESP-Neustart verliert sie."""
         c = self.cfg
         try:
-            self._write("vel_limits", grenzen_text(self.v_max_mps, self.w_max_dps, c.vel_timeout_ms, c.fw_speed_unit_mm))
+            self._write("vel_limits", grenzen_text(self.v_max_mps, self.w_max_dps, c.vel_timeout_ms, c.fw_speed_unit_mm,
+                                                  c.vel_stock_scale))
         except OSError as e:
             log.error("vel_limits nicht geschrieben: %s", e)
         self._limits_t = now

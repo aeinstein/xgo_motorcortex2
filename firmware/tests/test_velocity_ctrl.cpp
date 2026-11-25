@@ -4,6 +4,8 @@
 // Dazu ein geschlossener Kreis mit einem einfachen Fahrmodell (NICHT der echte Rider): Beschleunigung
 // g·tan(Nick − Last), Nick folgt dem Soll-Nick mit 0,1 s Verzögerung. Damit: bleibende Abweichung unter Last mit dem
 // Original-P gegen ~0 mit Integral, kein Aufschaukeln, Vorsteuerung verkleinert den Schleppfehler beim Anfahren.
+// 0035: Vorsteuerung mit unit_mm (a in Firmware-Einheiten/s²), stock_scale: Original-P sieht Soll × c, Integral
+// das volle Soll, aus/1 = bitgleich.
 // Nach firmware/build.sh (Quellen mit Patches in firmware/build/), im Repo-Root:
 //   S=firmware/build/xgorider2_rl/firmware/src
 //   g++ -std=c++17 -ffp-contract=off -I $S firmware/tests/test_velocity_ctrl.cpp $S/control/rider_motion.cpp $S/control/pid.cpp -o t && ./t
@@ -84,6 +86,22 @@ int main() {
         vc.accel = -800; vc.ff_gain = 0.5f;
         const float th2 = step(b, 100, 100, 0, false, true, &vc);
         check(near(th2, -0.5f * std::atan(800.0f / 9810.0f) * 57.29578f, 1e-3f), "Vorsteuerung: Vorzeichen und Anteil ff_gain");
+    }
+    // --- Patch 0035: Einheit in der Vorsteuerung, Vorfaktor des Bestandswegs
+    {
+        BalanceState b; VelocityControl vc; vc.on = true; vc.ki = 0; vc.dt = kDt;
+        vc.accel = 128.2f; vc.unit_mm = 3.9f;   // 0,5 m/s² in Einheiten von 3,9 mm/s
+        const float th = step(b, 100, 100, 0, false, true, &vc);
+        check(near(th, std::atan(500.0f / 9810.0f) * 57.29578f, 2e-3f), "0035: Vorsteuerung mit Einheit 3,9 -> 2,92° bei 0,5 m/s²");
+        BalanceState p, q; VelocityControl one; one.on = true; one.dt = kDt;
+        VelocityControl sc = one; sc.stock_scale = 0.55f;
+        step(p, 100, 40, 0, false, true, &one); step(q, 100, 40, 0, false, true, &sc);
+        BalanceState r; VelocityControl ref = one; step(r, 55, 40, 0, false, true, &ref);
+        check(q.speed.output == r.speed.output, "0035: Original-P sieht Soll × 0,55");
+        check(near(q.vel_i, p.vel_i, 1e-7f) && q.vel_i > 0, "0035: Integral rechnet mit dem vollen Soll");
+        VelocityControl off = sc; off.on = false; BalanceState o1, o2;
+        check(step(o1, 100, 40, 0, false, true, &off) == step(o2, 100, 40, 0, false, true, nullptr),
+              "0035: Rahmenweg aus -> Vorfaktor wirkt nicht");
     }
     // --- Integral: wächst mit ki·Fehler·dt, Grenze, Vorzeichen
     {

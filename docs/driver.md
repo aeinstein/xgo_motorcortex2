@@ -59,7 +59,7 @@ cat /proc/XGORider/serial_stats; cat /proc/XGORider/imu
 | `speed_x` | w | u8 0..255, 128 = stop; arms motion watchdog | 0x30 |
 | `speed_z` | w | u8 0..255, 128 = stop; arms watchdog | 0x32 |
 | `vel` | rw | write one drive frame (firmware 0029–0032): `V A J W ALPHA JW` = mm/s, mm/s² (≥ 0), mm/s³, °/s (one decimal), °/s², °/s³ (0 = no limit), or `acc A J W ALPHA JW` = acceleration mode (A signed, up to ±v_max); arms the motion watchdog (it writes 128 to 0x30/0x32, which also ends the frame path). Read = firmware state, fresh from the ESP32: `active accel_mode watchdog_fired limits_set v w v_max w_max timeout_ms` (e.g. `1 0 0 1 250 -12.3 500 90.0 300`); old firmware: `Fehler <n>`. Without `vel_limits` the firmware drops every frame | 0x1a |
-| `vel_limits` | rw | write `V_MAX W_MAX TIMEOUT_MS` (mm/s, °/s with one decimal, firmware watchdog ms, 0 = off); xgonav writes it at start. Read = last written text | 0x1b |
+| `vel_limits` | rw | write `V_MAX W_MAX TIMEOUT_MS` (firmware speed units, °/s with one decimal, firmware watchdog ms, 0 = off) → 6 bytes, or `V_MAX W_MAX TIMEOUT_MS UNIT_UM SCALE_PERMILLE` → 10 bytes (firmware 0035: µm/s per firmware speed unit, stock-path scale in ‰; older firmware rejects 10 bytes); xgonav writes it at start. Read = last written text | 0x1b |
 | `height` | rw | u8 0..255 (web UI min 43); read: last written value, empty until first write; not reset when the firmware stands up at 128 | 0x35 |
 | `roll` | rw | int −20..20 °, mapped linearly to 0..255; read: last written value, empty until first write | 0x36 |
 | `roll_balance` | w | 0/1 | 0x61 |

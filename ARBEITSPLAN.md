@@ -141,6 +141,10 @@ Kosten am ESP32: zwei PI-Regler + Rampe je Takt, vernachlässigbar gegen die Lag
   1,28 m statt ~0,6 / 0,9 m. Anhalten sauber. Deutung: der Bestandsregler fährt von sich aus 1,4–1,9 × Soll (wie im
   Byteweg), das Integral (ki 0,05, i_max 4°) holt das erst in ~2 s zurück. Dazu Einheitenfehler in 0031: die
   Vorsteuerung rechnet atan(a/9810 mm/s²) mit a in Firmware-Einheiten/s², also 3,9-mal zu klein (0,7° statt 2,9°).
+- **Firmware 0035 (2026-11-25, Nutzer: Einheitenfehler beheben und b)):** 0x1b mit 10 Byte bringt Einheit (µm/s je
+  Einheit) und Vorfaktor c; Vorsteuerung in echten mm/s², Speed-P und Radkorrektur des Originals sehen Soll × c
+  (`robot.vel_stock_scale` 0,55 ≈ 1/1,85), das Integral das volle Soll. Treiber `vel_limits` mit 5 Feldern
+  ("231 180.0 500 3900 550"). Host-Tests und Treibertest grün; nicht geflasht, nicht gefahren.
 
 ### Zu klären
 

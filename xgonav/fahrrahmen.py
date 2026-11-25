@@ -77,11 +77,21 @@ def rahmen_text(v_mps: float, a_mps2: float, j_mps3: float, w_dps: float, alpha_
     return f"{v} {a} {j} {w} {al} {jw}"
 
 
-def grenzen_text(v_max_mps: float, w_max_dps: float, timeout_ms: int, unit_mm: float) -> str:
-    """Text für /proc/XGORider/vel_limits: "V_MAX W_MAX TIMEOUT_MS" (V_MAX in Firmware-Einheiten, W_MAX in °/s)."""
+def grenzen_text(v_max_mps: float, w_max_dps: float, timeout_ms: int, unit_mm: float,
+                 stock_scale: float | None = None) -> str:
+    """Text für /proc/XGORider/vel_limits: "V_MAX W_MAX TIMEOUT_MS" (V_MAX in Firmware-Einheiten, W_MAX in °/s).
+
+    Mit stock_scale (Firmware 0035, 10 Byte) dazu "EINHEIT_UM VORFAKTOR_PROMILLE": die Einheit braucht die
+    Vorsteuerung der Firmware, der Vorfaktor verkleinert das Soll für den Bestandsregler (robot.vel_stock_scale).
+    """
     v = max(0, min(65535, _fw(v_max_mps, unit_mm)))
     w10 = max(0, min(65535, _rund(w_max_dps * 10.0)))
-    return f"{v} {w10 // 10}.{w10 % 10} {max(0, min(65535, int(timeout_ms)))}"
+    t = f"{v} {w10 // 10}.{w10 % 10} {max(0, min(65535, int(timeout_ms)))}"
+    if stock_scale is None:
+        return t
+    um = max(1, min(65535, _rund(unit_mm * 1000.0)))
+    c = max(100, min(2000, _rund(stock_scale * 1000.0)))
+    return f"{t} {um} {c}"
 
 
 def zustand(text: str) -> dict | None:
