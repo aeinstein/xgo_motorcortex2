@@ -86,7 +86,7 @@ index a69366e..e4f1bd0 100644
      uint8_t pi_ip[4] = {};
      uint8_t policy_mode=0,policy_action_space=0;
 diff --git a/firmware/src/control/rider_motion.cpp b/firmware/src/control/rider_motion.cpp
-index fa7a21b..2d3a82a 100644
+index fa7a21b..7ded3ab 100644
 --- a/firmware/src/control/rider_motion.cpp
 +++ b/firmware/src/control/rider_motion.cpp
 @@ -25,8 +25,11 @@ float decode(std::uint8_t x,float range) {
@@ -152,9 +152,9 @@ index fa7a21b..2d3a82a 100644
 +        const float dt=std::max(0.0f,std::min(0.05f,vc->dt));
 +        s.vel_settled=vc->accel==0?std::min(kVelSettleS,s.vel_settled+dt):0.0f;
 +        if(holding)s.vel_i*=std::exp(-dt/kVelHoldTau);
-+        else if(!vc->freeze&&s.vel_settled>=kVelSettleS) {
++        else if(!vc->freeze&&vc->accel==0&&s.vel_settled>=kVelSettleS) {
 +            const float unsat=p+s.vel_i+ff;
-+            if(!(std::fabs(unsat)>=lim&&err*unsat>0))   // Anti-Windup; Fehler auf ±kVelBand geklemmt (Aufschwung: höchstens ki·20 °/s)
++            if(!(std::fabs(unsat)>=lim&&err*unsat>0))   // Anti-Windup; Fehler auf ±kVelBand geklemmt (höchstens ki·kVelBand °/s)
 +                s.vel_i=std::max(-vc->i_max,std::min(vc->i_max,s.vel_i+vc->ki*band*dt));
 +        }
 +        s.pitch.target=std::max(-lim,std::min(lim,p+s.vel_i+ff+s.drive_i));
@@ -197,7 +197,7 @@ index fa7a21b..2d3a82a 100644
      const float room=static_cast<float>(std::min(std::abs(static_cast<int>(w.id11)+offset),std::abs(static_cast<int>(w.id21)+offset)));
      const float magnitude=std::min(room,std::fabs(demand));
 diff --git a/firmware/src/control/rider_motion.h b/firmware/src/control/rider_motion.h
-index 776c330..79afd56 100644
+index 776c330..2e8323e 100644
 --- a/firmware/src/control/rider_motion.h
 +++ b/firmware/src/control/rider_motion.h
 @@ -9,7 +9,12 @@ namespace rider { namespace control {
@@ -232,7 +232,7 @@ index 776c330..79afd56 100644
 +// atan(a_soll/g) − kf·v_soll (beides nur aus dem Soll), geregelt allein
 +// über Soll − Ist. Echtes Integral mit Anti-Windup: es wächst nicht weiter,
 +// solange der Soll-Nick in der Grenze (output_limit) steht und der Fehler weiter hinein zeigt, nicht bei freeze
-+// (Hebeschutz greift) und erst, wenn die Soll-Beschleunigung kVelSettleS lang 0 ist (beim Anfahren hängt das Ist
++// (Hebeschutz greift) und erst, wenn die Soll-Beschleunigung 0 ist und kVelSettleS vergangen sind (beim Anfahren hängt das Ist
 +// hinterher, es lud sich sonst bis i_max auf). Beim Halten (Stand, Positionshalten) klingt es mit kVelHoldTau ab,
 +// ohne Rahmenweg mit kVelOffTau (kein Sprung). Das Integral trägt alles, was der Rider zum Halten des Tempos an Nick
 +// braucht (~0,05° je Einheit, Versatz, Steigung): zu langsam -> mehr, zu schnell -> weniger. Kein Modellterm.
@@ -240,7 +240,7 @@ index 776c330..79afd56 100644
 +    bool on=false;          // Rahmenweg aktiv; aus = Originalweg bitgleich
 +    float accel=0;          // Soll-Beschleunigung aus dem Generator, Firmware-Einheiten/s²
 +    float kp=0.11f;         // ° Soll-Nick je Firmware-Einheit Fehler (Original-P 0,11 = kein Zuschlag; 0,3 schwang)
-+    float ki=0.05f;         // ° Soll-Nick je (Firmware-Einheit Fehler · s)
++    float ki=0.1f;          // ° Soll-Nick je (Firmware-Einheit Fehler · s); 0,05 baute den Vorwärts-Versatz (~1,5°) zu langsam auf
 +    float kf=0.05f;         // ° Soll-Nick je Firmware-Einheit Soll-Tempo (Vorsteuerung −kf·v_soll, gemessen 0,047–0,057)
 +    float i_max=8.0f;       // ° Betragsgrenze des Integrals
 +    float ff_gain=1.0f;     // Anteil der Vorsteuerung atan(a/g)
@@ -249,8 +249,8 @@ index 776c330..79afd56 100644
 +    float unit_mm=1.0f;     // mm/s je Firmware-Einheit, für atan(a/g) in echten mm/s²
 +};
 +constexpr float kVelHoldTau=1.5f, kVelOffTau=0.3f;   // s
-+constexpr float kVelBand=20.0f;     // Firmware-Einheiten: kp über 0,11 und Integral sehen den Fehler höchstens bis ±kVelBand
-+constexpr float kVelSettleS=0.6f;   // s Soll-Beschleunigung 0, bevor das Integral läuft (im Beschleunigungsbetrieb nie)
++constexpr float kVelBand=40.0f;     // Firmware-Einheiten: kp über 0,11 und Integral sehen den Fehler höchstens bis ±kVelBand
++constexpr float kVelSettleS=0.0f;   // s Soll-Beschleunigung 0, bevor das Integral läuft (0: sofort nach der Rampe; 0,6 s war vorwärts zu spät)
 +constexpr float kGravityMmS2=9810.0f;
  struct Wheels { std::int16_t id11=0, id21=0; };
  float wheelDistance(std::int32_t id11_encoder, std::int32_t second_encoder);
@@ -293,7 +293,7 @@ index 776c330..79afd56 100644
  void addWheelFriction(Wheels &);
  
 diff --git a/firmware/src/main.cpp b/firmware/src/main.cpp
-index 75d1306..b465af1 100644
+index 75d1306..fcf60ae 100644
 --- a/firmware/src/main.cpp
 +++ b/firmware/src/main.cpp
 @@ -28,6 +28,7 @@ extern "C" {extern const volatile uint32_t rider_rl_only_build=0x524c4f31;}
@@ -309,7 +309,7 @@ index 75d1306..b465af1 100644
  volatile float yaw_slew_per_second=20000.0f;
  bool battery_low_seen=false;   // Akku-Warnung war aktiv (nur Robot-Task)
 +// Geschwindigkeitsregler des Rahmenwegs, Konsole !velctl KI FF IMAX [KP [KF]] (nur RAM)
-+volatile float vel_ki=0.05f,vel_ff=1.0f,vel_i_max=8.0f,vel_kp=0.11f,vel_kf=0.05f;
++volatile float vel_ki=0.1f,vel_ff=1.0f,vel_i_max=8.0f,vel_kp=0.11f,vel_kf=0.05f;
 +// Drehratenregler des Rahmenwegs, Konsole !turnctl KP KD FF (nur RAM)
 +volatile float turn_kp=3.0f,turn_kd=0.5f,turn_ff=0.5f;
  // In schnellen Kurven einlegen (Aktion 232 an / 231 aus, !lean on|off): Roll halten regelt auf

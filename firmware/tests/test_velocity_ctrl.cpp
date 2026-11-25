@@ -2,7 +2,7 @@
 // Prüft am Regler: aus = Byteweg bitgleich (auch mit Fahr-Integral), Vorsteuerung atan(a·unit_mm/g), P allein auf
 // Soll − Ist (Original-P + kp − 0,11 bis ±kVelBand beim Fahren, Original-P beim Halten, gleicher Fehler = gleicher
 // Soll-Nick in beiden Richtungen, großer Fehler beim Aufschwung nur Original-P + 3,8°), Integral mit geklemmtem Fehler,
-// Integral (Vorzeichen, Grenze, Anti-Windup, freeze, erst nach kVelSettleS mit a = 0, Abklingen beim Halten und
+// Integral (Vorzeichen, Grenze, Anti-Windup, freeze, sofort nach der Rampe (a = 0), Abklingen beim Halten und
 // nach dem Ende ohne Sprung), Rest des Fahr-Integrals klingt ab; die Integral-Tests setzen vel_settled vorab (settle()).
 // Dazu ein geschlossener Kreis mit einem Fahrmodell, das die Messfahrten 2026-11-25 nachbildet (NICHT der echte
 // Rider): Tempo in Firmware-Einheiten (3,9 mm/s), Beschleunigung g·tan(Nick − Last − Bedarf(v)) mit Nick-Bedarf
@@ -36,15 +36,16 @@ static float step(BalanceState& b, float target, float speed, float pitch, bool 
 }
 
 // Fahrmodell in Firmware-Einheiten: v' = g/Einheit · tan(θ − Last − (n0 − c·v)), θ folgt dem Soll mit tau.
-constexpr float kUnit = 3.9f, kNeedN0 = 0.8f, kNeedC = 0.05f;
+constexpr float kUnit = 3.9f, kNeedC = 0.05f;
+static float g_fwd_extra = 0;   // zusätzlicher Nick-Bedarf nur vorwärts (°), messfahrt0d: ~1,5 (rückwärts stimmte es)
 struct Plant { float v = 0, theta = 0; };
 static void plantStep(Plant& p, float theta_target, float load_deg, float tau = 0.1f) {
     p.theta += (theta_target - p.theta) * kDt / tau;
-    const float need = kNeedN0 - kNeedC * p.v;
+    const float need = 0.8f - kNeedC * p.v + g_fwd_extra * std::max(0.0f, std::min(1.0f, p.v / 10.0f));
     p.v += V::clampAbs(kGravityMmS2 / kUnit * std::tan((p.theta - load_deg - need) * 0.0174533f), 20000.0f) * kDt;
 }
 
-struct LoopResult { float err_end = 0, err_peak = 0, osc_late = 0, v_end = 0; };
+struct LoopResult { float err_end = 0, err_peak = 0, osc_late = 0, v_end = 0, t90 = -1, th_end = 0, v_peak = 0; };
 // Fährt target(t) mit Last; vc == nullptr = Originalweg ohne Fahr-Integral.
 static LoopResult loop(float seconds, float load_deg, VelocityControl* vc, float v_target, const V::Frame* frame = nullptr) {
     BalanceState b; Plant p; LoopResult r;
@@ -61,7 +62,9 @@ static LoopResult loop(float seconds, float load_deg, VelocityControl* vc, float
         const float e = tgt - p.v;
         r.err_peak = std::max(r.err_peak, std::fabs(e));
         if (i >= n - int(2.0f / kDt)) { vmin = std::min(vmin, p.v); vmax = std::max(vmax, p.v); }
-        r.err_end = e; r.v_end = p.v;
+        r.err_end = e; r.v_end = p.v; r.th_end = th;
+        r.v_peak = std::max(r.v_peak, std::fabs(p.v));
+        if (r.t90 < 0 && frame && std::fabs(p.v) >= 0.9f * std::fabs(frame->v)) r.t90 = (i + 1) * kDt;
     }
     r.osc_late = vmax - vmin;
     return r;
@@ -103,10 +106,8 @@ int main() {
         for (int i = 0; i < 500; ++i) step(b, 20, 0, 0, false, true, &vc);   // 2 s Rampe, Ist hängt 20 hinterher
         check(b.vel_i == 0 && b.vel_settled == 0, "während der Rampe (a ≠ 0) kein Integral");
         vc.accel = 0;
-        for (int i = 0; i < 149; ++i) step(b, 20, 0, 0, false, true, &vc);   // 0,596 s nach Rampenende
-        check(b.vel_i == 0, "bis 0,6 s nach Rampenende kein Integral");
         for (int i = 0; i < 26; ++i) step(b, 20, 0, 0, false, true, &vc);
-        check(near(b.vel_i, 0.312f, 0.005f), "danach wächst es (26 Takte × 0,15 × 20 × 0,004 = 0,312°)");
+        check(near(b.vel_i, 0.312f, 0.005f), "sofort nach der Rampe wächst es (26 Takte × 0,15 × 20 × 0,004 = 0,312°)");
         vc.accel = -50; step(b, 20, 0, 0, false, true, &vc);
         const float frozen = b.vel_i;
         for (int i = 0; i < 100; ++i) step(b, 20, 0, 0, false, true, &vc);
@@ -127,7 +128,7 @@ int main() {
         const float h = step(d2, 60, 40, 0, true, true, &vc);
         check(near(h, d2.speed.output, 1e-6f) && near(h, 0.14f * 20, 0.02f), "Halten: Original-P 0,14");
         BalanceState g; const float big = step(g, 0, -190, 0, false, true, &vc);
-        check(near(big, 0.11f * 190 + (0.3f - 0.11f) * kVelBand, 0.1f), "großer Fehler (Aufschwung, Räder 190): Original-P + 0,19 × 20 = 24,7°, nicht 57°");
+        check(near(big, 0.11f * 190 + (0.3f - 0.11f) * kVelBand, 0.1f), "großer Fehler (Aufschwung, Räder 190): kp 0,3 nur im Band, Original-P + 0,19 × 40 = 28,5°, nicht 57°");
     }
     // --- Standardwerte: Original-P ohne Zuschlag, Vorsteuerung −kf·v_soll aus dem Soll
     {
@@ -161,8 +162,8 @@ int main() {
         for (int i = 0; i < 250; ++i) step(b, 0, 20, 0, false, true, &vc);
         check(near(b.vel_i, 5.0f, 0.02f), "Integral: negativer Fehler baut ab (8° − 3° = 5°)");
         BalanceState o; settle(o);
-        for (int i = 0; i < 250; ++i) step(o, 30, 0, 0, false, true, &vc);
-        check(near(o.vel_i, 3.0f, 0.02f), "Integral: außerhalb des Bands nur mit dem Bandrand (Fehler 30 wie 20 -> 3° in 1 s)");
+        for (int i = 0; i < 250; ++i) step(o, 60, 0, 0, false, true, &vc);
+        check(near(o.vel_i, 6.0f, 0.02f), "Integral: außerhalb des Bands nur mit dem Bandrand (Fehler 60 wie 40 -> 6° in 1 s)");
         check(b.drive_i == 0, "Fahr-Integral ist auf dem Rahmenweg aus");
     }
     // --- Anti-Windup und freeze
@@ -220,6 +221,27 @@ int main() {
             worst = std::max(worst, std::max(std::fabs(q - 1), 0.5f * r.osc_late / std::fabs(s)));
         }
         check(worst < 0.03f, "Modell: vorwärts/rückwärts eben nach 6 s, ±2° Steigung nach 10 s auf ±3 % am Soll, zuletzt < 6 % Schwankung");
+    }
+    // --- Vorwärts-Versatz wie messfahrt0d (vorwärts 1,5° mehr Nick-Bedarf, rückwärts nicht): beide Richtungen schnell am Soll
+    {
+        g_fwd_extra = 1.5f;
+        float worst_t90 = 0, worst_peak = 0, worst_end = 0; bool need_ok = true;
+        for (float s : {46.0f, 69.0f, -46.0f, -69.0f}) {
+            V::Frame f; f.v = s; f.a = 128; f.jerk = 641;
+            VelocityControl vc; vc.on = true;
+            const LoopResult r = loop(6, 0, &vc, 0, &f);
+            const float ramp = std::fabs(s) / 128.0f + 128.0f / 641.0f;   // Dauer der Rampe (s)
+            std::printf("       Vorwärts-Versatz 1,5°, Soll %+3.0f: 90 %% nach %.2f s (Rampe %.2f s), Spitze %.2f ×, Ende %.3f ×, Soll-Nick am Ende %+.2f°\n",
+                        double(s), double(r.t90), double(ramp), double(r.v_peak / std::fabs(s)), double(r.v_end / s), double(r.th_end));
+            worst_t90 = std::max(worst_t90, r.t90 < 0 ? 99.0f : r.t90 - ramp);
+            if (s > 0) worst_peak = std::max(worst_peak, r.v_peak / s);   // rückwärts überschießt das Modell auch ohne Versatz (1,4–1,5 ×; Rider 1,2 ×)
+            worst_end = std::max(worst_end, std::fabs(r.v_end / s - 1));
+            if (std::fabs(r.th_end - (0.8f - 0.05f * s + (s > 0 ? 1.5f : 0.0f))) > 0.2f) need_ok = false;   // Bedarf am Soll
+        }
+        check(worst_t90 < 1.5f, "Versatz: 90 % des Solls spätestens 1,5 s nach der Rampe (vorwärts und rückwärts)");
+        check(worst_peak < 1.35f && worst_end < 0.03f, "Versatz: vorwärts Spitze < 1,35 × (gemessen 1,4–1,5 ×), beide Richtungen nach 6 s auf ±3 %");
+        check(need_ok, "Versatz: Soll-Nick am Soll = Bedarf (vorwärts 2,3° − 0,05·v, rückwärts 0,8° − 0,05·v)");
+        g_fwd_extra = 0;
     }
     std::printf(fail ? "\nFEHLER\n" : "\nalle ok\n");
     return fail;
