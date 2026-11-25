@@ -187,6 +187,13 @@ Kosten am ESP32: zwei PI-Regler + Rampe je Takt, vernachlässigbar gegen die Lag
   Tempo-Vorsteuerung des Soll-Nicks −kv · v_soll (kv ≈ 0,05 °/Einheit), Integral nur für den Rest.
 - **Firmware 0038 (Nutzer: so vorgehen):** −kv·v_soll im Soll-Nick, kv über 0x1b (16 Byte); xgonav `vel_kv` 0,05,
   c wieder 1,0, i_max 6°, ki 0,08. Treiber `vel_limits` mit 8 Feldern.
+- **Geflasht 0001–0038 (2026-11-25, SHA 1d01f150…), Messfahrt kv 0,05, c 1, ki 0,08:** schlechter. Erster Versuch
+  von der Bahnprüfung (Kabel) nach 13 cm gebremst. v 0,2: nach der Rampe fällt das Ist von 22 auf 10 (Soll 46),
+  90 % erst nach 2,4 s, dann Spitze 69 (1,50 ×), letzte Sekunde 1,37 ×; v 0,3: Ist fällt von 40 auf 26, 90 % nach
+  2,5 s, Spitze 94 (1,37 ×). Ablauf aus Soll-Nick nachgerechnet: am Rampenende fallen atan(a/g) (≈ +2,9°) weg und
+  −kv·v_soll (−2,3° / −3,5°) setzt voll ein, solange das Ist noch weit unter dem Soll ist -> er bremst; das Integral
+  lädt sich in dieser Delle auf (+2,1° bei 1,8 s) und treibt danach über das Soll. Erklärt auch den Bestandsweg:
+  Gleichgewicht 0,11·(s − v) = −0,05·v ergibt v = 1,83 · s (gemessen 1,8–1,9 ×).
 
 ### Zu klären
 
