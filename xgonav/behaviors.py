@@ -70,6 +70,15 @@ class World:
     # Merkkarte (m, inf frei). Beide für den Anschub (PathFollower), clear_fn nur beim Auslösen gerufen.
     v_rad: float | None = None
     clear_fn: object = None
+    # Tempo (m/s), auf das der Rider laut Trägheitsmodell des Temporeglers gerade hinbeschleunigt (None ohne
+    # robot.speed_ctrl). Für das Bremsprofil: Beim Anfahren liegt es über v_rad, die Räder legen noch zu.
+    v_erw: float | None = None
+    # path_free_fn(pts, pose, tight) = freie Strecke (m) entlang des Wegs pts (N x 2, Welt-m, ab der Pose) laut
+    # Merkkarte, inf frei; tight: mit dem Radius der Engstelle. Für das Tempo des Wegfolgers (home.free_slow).
+    path_free_fn: object = None
+    # arc_free_fn(v, w, tight) = freie Strecke (m) auf dem Bogen des Fahrbefehls (normiert) laut Merkkarte bis
+    # zur Reichweite der Merkkarte (2,5 m), wie die Bahnprüfung (gleicher Bogen, gleicher Radius), inf frei
+    arc_free_fn: object = None
 
     def bearing(self, x: float) -> float:
         """Bildspalte -> Winkel rad (links positiv)."""
@@ -685,6 +694,7 @@ class PathFollower:
         self._t_prog = 0.0
         self._err_ref = 0.0
         self.tight_t = -math.inf                  # zuletzt in einer Engstelle gefahren (Zeit)
+        self._kn, self._kn_of = (), None          # Ecken des Wegs über home.turn_enter_deg (Index), je Weg einmal
 
     def set_path(self, path) -> None:
         self.path = list(path) if path else None
@@ -839,11 +849,9 @@ class PathFollower:
             self.stuck = True
             self._anchor = None
 
-    def rest_m(self, x: float, y: float) -> float:
-        """Restweg (m) entlang des Wegs ab der Projektion der Pose bis zum Ende."""
+    def _proj(self, x: float, y: float) -> tuple[int, float]:
+        """Projektion der Pose auf den Weg (mindestens 2 Punkte): (Index des Stücks, Anteil darauf)."""
         p = self.path
-        if len(p) == 1:
-            return math.hypot(p[0][0] - x, p[0][1] - y)
         best, bi, bt = math.inf, 0, 0.0
         for i in range(len(p) - 1):
             ax, ay = p[i]
@@ -854,6 +862,57 @@ class PathFollower:
             d = math.hypot(ax + t * dx - x, ay + t * dy - y)
             if d < best:
                 best, bi, bt = d, i, t
+        return bi, bt
+
+    def _ecken(self) -> tuple:
+        """Indizes der Wegpunkte, an denen der Weg um mehr als home.turn_enter_deg abknickt (je Weg einmal)."""
+        p = self.path
+        if self._kn_of is not p:
+            lim = math.radians(self.h.turn_enter_deg)
+            kn = []
+            for i in range(1, len(p) - 1):
+                a = math.atan2(p[i][1] - p[i - 1][1], p[i][0] - p[i - 1][0])
+                b = math.atan2(p[i + 1][1] - p[i][1], p[i + 1][0] - p[i][0])
+                if abs(_wrap(b - a)) > lim:
+                    kn.append(i)
+            self._kn, self._kn_of = tuple(kn), p
+        return self._kn
+
+    def knick_m(self, x: float, y: float, weiter=None) -> float:
+        """Weg (m) bis zur ersten Ecke über home.turn_enter_deg voraus, inf ohne. weiter: der nächste Weg bei
+        Weiterfahrt ohne Halt; knickt er am Wegende so stark ab, zählt das Ende als Ecke."""
+        p = self.path
+        if p is None or len(p) < 2:
+            return math.inf
+        bi, bt = self._proj(x, y)
+        s = (1.0 - bt) * math.hypot(p[bi + 1][0] - p[bi][0], p[bi + 1][1] - p[bi][1])
+        for i in range(bi + 1, len(p)):
+            if i in self._ecken():
+                return s
+            if i < len(p) - 1:
+                s += math.hypot(p[i + 1][0] - p[i][0], p[i + 1][1] - p[i][1])
+        if weiter is not None and len(weiter) >= 2:
+            ex, ey = p[-1]
+            a = math.atan2(ey - p[-2][1], ex - p[-2][0])
+            q = next((q for q in weiter if math.hypot(q[0] - ex, q[1] - ey) >= 0.15), None)
+            if q is not None and abs(_wrap(math.atan2(q[1] - ey, q[0] - ex) - a)) > math.radians(self.h.turn_enter_deg):
+                return s
+        return math.inf
+
+    def ahead_pts(self, x: float, y: float) -> list:
+        """Pose und die Wegpunkte voraus (für die freie Strecke entlang des Wegs)."""
+        p = self.path
+        if len(p) < 2:
+            return [(x, y), p[0]]
+        bi, _ = self._proj(x, y)
+        return [(x, y)] + list(p[bi + 1:])
+
+    def rest_m(self, x: float, y: float) -> float:
+        """Restweg (m) entlang des Wegs ab der Projektion der Pose bis zum Ende."""
+        p = self.path
+        if len(p) == 1:
+            return math.hypot(p[0][0] - x, p[0][1] - y)
+        bi, bt = self._proj(x, y)
         ax, ay = p[bi]
         bx, by = p[bi + 1]
         rest = (1.0 - bt) * math.hypot(bx - ax, by - ay)
@@ -864,15 +923,25 @@ class PathFollower:
     def end_v(self, w: World, x: float, y: float) -> float:
         """Höchster Fahrwert vor dem Wegende (home.end_*): Bremsweg-Profil auf den Restweg, um die Trägheit
         (Radtempo x end_lag_s) vorausgerechnet."""
+        return self.brems_v(w, self.rest_m(x, y))
+
+    def brems_v(self, w: World, s: float) -> float:
+        """Höchster Fahrwert, um nach s Metern zu stehen (home.end_*), mindestens end_min_v."""
         h, rc = self.h, self.rcfg
         v_ist = w.v_rad if w.v_rad is not None else w.cmd_v * rc.vx_limit
-        s = max(0.0, self.rest_m(x, y) - max(0.0, v_ist) * h.end_lag_s)
+        v_erw = getattr(w, "v_erw", None)
+        if v_erw is not None:
+            # beschleunigt er noch, fährt er während end_lag_s schneller als jetzt (RiderPi 2026-11-24: Fahrwert
+            # 0,28 -> 0,10, Räder trotzdem 0,29 -> 0,40 m/s)
+            v_ist = max(v_ist, v_erw)
+        s = max(0.0, s - max(0.0, v_ist) * h.end_lag_s)
         return max(rc.v_of(h.end_min_v), math.sqrt(2.0 * h.end_decel_mps2 * s) / rc.vx_limit)
 
-    def drive(self, w: World, label: str, slow_end: bool = True) -> Command:
+    def drive(self, w: World, label: str, slow_end: bool = True, weiter=None) -> Command:
         """Fahrbefehl entlang des Wegs; label steht vorn im Status. slow_end: zum Wegende hin rechtzeitig
         abbremsen (end_v; aus nur, wenn er ohne Halt weiterfährt). Ohne: Mit explore.v 0,30 rollte er über den
-        Ankunftsradius hinaus und pendelte am Startpunkt hin und her (Simulator 2026-11-11, ~60 s)."""
+        Ankunftsradius hinaus und pendelte am Startpunkt hin und her (Simulator 2026-11-11, ~60 s).
+        weiter: der nächste Weg bei Weiterfahrt ohne Halt (für das Bremsen vor einer scharfen Ecke)."""
         hmm = self.cfg.height_cruise_mm
         x, y, th = w.pose
         push = self.press_step(w, label)
@@ -888,6 +957,11 @@ class PathFollower:
         tx, ty = self.target(x, y, self.h.tight_lookahead_m if tight else None)
         err = _wrap(math.atan2(ty - y, tx - x) - th)
         mitte = False
+        knick = None                                    # Weg bis zur nächsten Ecke, einmal je Schritt
+        if gap is not None and self.h.tight_center_knick_m > 0:
+            knick = self.knick_m(x, y, None if slow_end else weiter)
+            if knick <= self.h.tight_center_knick_m:
+                gap = None                              # der Weg biegt gleich ab: um die Ecke, nicht durch die Lücke
         if gap is not None:
             # Lücke voraus in Wegrichtung: auf ihre gemessene Mitte zielen statt auf den Weg der Raumkarte
             eg = math.atan2(gap[1], max(gap[0], 0.10))
@@ -910,8 +984,30 @@ class PathFollower:
             v *= self.h.tight_v
         if slow_end:
             v = min(v, self.end_v(w, x, y))
-        return Command(v, wc, hmm, "%s (%+.0f°%s)" % (label, math.degrees(err), ", Lücke" if mitte else ", eng" if tight else ""),
-                       extra={"tight": tight})
+        frei_txt, info = "", None
+        if self.h.free_slow:
+            # Tempo nach freier Strecke: vor dem ersten Hindernis der Merkkarte entlang des Wegs und vor einer
+            # scharfen Ecke so bremsen wie am Wegende (home.free_slow)
+            if knick is None:
+                knick = self.knick_m(x, y, None if slow_end else weiter)
+            weg = bogen = math.inf
+            if w.path_free_fn is not None:
+                weg = w.path_free_fn(self.ahead_pts(x, y), w.pose, tight)
+            if w.arc_free_fn is not None and v > 0:
+                # derselbe Bogen wie die Bahnprüfung, nur weiter voraus: Sie bremste im Simulator, während der Weg
+                # frei war, weil der Bogen ein paar Zentimeter neben dem Weg an einer Kante vorbeiführt
+                bogen = w.arc_free_fn(v, wc, tight)
+            frei = min(knick, weg - self.h.free_rest_m, bogen - self.h.free_rest_m)
+            # für die Rohaufnahme (meta.jsonl "frei"): welche Strecke begrenzt, None = frei
+            info = {k: (None if s == math.inf else round(s, 2)) for k, s in
+                    (("knick", knick), ("weg", weg), ("bogen", bogen), ("v_erw", w.v_erw if w.v_erw is not None
+                                                                      else math.inf))}
+            if frei < math.inf:
+                vf = self.brems_v(w, frei)
+                if vf < v:
+                    v, frei_txt = vf, ", frei %.2fm" % max(0.0, frei)
+        return Command(v, wc, hmm, "%s (%+.0f°%s%s)" % (label, math.degrees(err), ", Lücke" if mitte else ", eng" if tight else "",
+                                                       frei_txt), extra={"tight": tight, "frei": info})
 
     def ausrichten(self, err: float, label: str = "am Start – richte aus") -> Command | None:
         """Am Ziel auf den Endkurs drehen (home.align_heading, align_tol_deg); None = steht schon richtig."""
@@ -1434,6 +1530,9 @@ class MapExplore(Behavior):
                 return Command(0, 0, hmm, "komme nicht weiter, plane neu")
             if self.frontier is not None:
                 self.blocked_goals.append((self.frontier[0], self.frontier[1]))
+                if in_gap and self.goal is not None:
+                    # auch den Haltepunkt: Nachbarstellen hinter derselben Lücke fallen mit (RiderPi 2026-11-24)
+                    self.blocked_goals.append((self.goal[0], self.goal[1]))
             # an einer Lücke gesperrt: App trägt die Hindernisse der Merkkarte ringsum in die Raumkarte ein
             self.gap_blocked = in_gap
             self.stucks = 0
@@ -1467,8 +1566,9 @@ class MapExplore(Behavior):
             self.state, self.until = "face", w.t + 6.0
             return Command(0, 0, hmm, "Ziel erreicht")
         # Steht das nächste Ziel schon fest, mit vollem Tempo über das Ziel; sonst davor abbremsen
-        return self.f.drive(w, "erkunde (%d Stellen)" % self.clusters,
-                            slow_end=self._next is None or w.t - self._next_t >= e.pass_age_s)
+        slow_end = self._next is None or w.t - self._next_t >= e.pass_age_s
+        return self.f.drive(w, "erkunde (%d Stellen)" % self.clusters, slow_end=slow_end,
+                            weiter=None if slow_end else self._next.path)
 
     def _final_status(self) -> str:
         offen = self.avoided

@@ -23,6 +23,8 @@ import shutil
 import threading
 import time
 
+import cv2
+
 from .affinity import pin_thread
 from .jpeg import Jpeg
 
@@ -68,6 +70,8 @@ def _meta_zeile(snap, name: str, imu=None, raeder=None, jpeg: str | None = None)
         "mode": st.get("mode"), "yaw_deg": st.get("yaw_deg"), "yaw_src": st.get("yaw_src"),
         "yaw_imu": st.get("yaw_imu"), "odom": st.get("odom"), "height_mm": st.get("height_mm"),
         "speed_ctrl": st.get("speed_ctrl"),
+        # Tempo-Profil des Wegfolgers (home.free_slow): freie Strecke bis Knick/Hindernis auf Weg/Bogen, None = frei
+        "frei": snap.cmd.extra.get("frei") if snap.cmd is not None else None,
         "pose": (st.get("grid") or {}).get("pose"), "start": (st.get("grid") or {}).get("start"),
         "tracks": [{"id": t.id, "cls": t.cls, "conf": round(t.conf, 3),
                     "box": [round(v, 1) for v in t.box]} for t in snap.tracks],
@@ -107,6 +111,11 @@ class RawRecorder:
         self._jpeg_native = bool(getattr(oc, "jpeg_native", True))
         self._jpeg_dev = getattr(oc, "jpeg_dev", "/dev/video31")
         self._jpeg: Jpeg | None = None      # eigener Kodierer, erst im Aufzeichnungs-Faden geöffnet
+        self._karte_s = float(getattr(oc, "record_map_s", 0.0))
+        self._karte_px = int(getattr(oc, "record_map_px", 480))
+        self._karte_m = float(getattr(oc, "record_map_view_m", 6.0))
+        self._t_karte = -1e9
+        self.karten = 0
 
     def schalten(self, an: bool) -> None:
         if an:
@@ -195,7 +204,8 @@ class RawRecorder:
             os.makedirs(self.basis, exist_ok=True)
             self._platz_pruefen()
             self.ordner = raw_run_dir(self.basis)
-            self.bilder = 0
+            self.bilder = self.karten = 0
+            self._t_karte = -1e9
             self._meta = open(os.path.join(self.ordner, "meta.jsonl"), "x", buffering=1)
             self._t_platz = self._t_start = now
             self._bytes = 0
@@ -223,6 +233,9 @@ class RawRecorder:
             raeder = src.since(self._t_rad)
             if raeder:
                 self._t_rad = raeder[-1][0]
+        if self._karte_s > 0 and now - self._t_karte >= self._karte_s:
+            self._t_karte = now
+            self._karte(snap.idx)
         zeile = _meta_zeile(snap, name, imu, raeder, self._jpeg.zuletzt)
         self._meta.write(zeile)
         self.bilder += 1
@@ -230,6 +243,27 @@ class RawRecorder:
         dauer = now - self._t_start
         if dauer >= RATE_MIN_S and dauer > 0:
             self._rate = self._bytes / dauer / (1024 * 1024)
+
+    def _karte(self, idx: int) -> None:
+        """Raumkarte samt Merkkarte als PNG (karte/<idx>.png), Bildnummer wie das JPEG zur selben Zeit. Ein Fehler
+        beim Zeichnen beendet die Aufnahme nicht."""
+        gm = getattr(self.app, "gridmap", None)
+        if gm is None:
+            return
+        try:
+            img = gm.render(self._karte_px, self._karte_m, None, self.app.merk_punkte())[0]
+            ok, png = cv2.imencode(".png", img)
+        except Exception as e:                          # noqa: BLE001 - nur Anzeige
+            log.warning("Kartenbild nicht gezeichnet: %s", e)
+            return
+        if not ok:
+            return
+        d = os.path.join(self.ordner, "karte")
+        os.makedirs(d, exist_ok=True)
+        with open(os.path.join(d, "%06d.png" % idx), "wb") as f:
+            f.write(png.tobytes())
+        self.karten += 1
+        self._bytes += len(png)
 
     def _schliessen(self) -> None:
         if self._meta is None:

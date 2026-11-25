@@ -418,6 +418,12 @@ class OutputCfg:
     # Kodierer je Bild in meta.jsonl ("jpeg": "hw95" / "cv92"). Nutzerentscheidung 2026-11-19: Hardware q95.
     record_jpeg_q_hw: int = 95
     record_jpeg_q_cv: int = 92
+    # Dazu alle record_map_s Sekunden die Raumkarte samt Merkkarte als PNG (karte/<Bildnummer>.png, Ausschnitt
+    # record_map_view_m um die Pose) für die Fehlersuche. Im Aufzeichnungs-Faden, ~10 ms je Karte. 0 = aus.
+    # Seit 2026-11-24 (Nutzer).
+    record_map_s: float = 2.0
+    record_map_px: int = 480
+    record_map_view_m: float = 6.0
 
 
 @dataclass
@@ -528,6 +534,18 @@ class GridCfg:
     # Punkte der Merkkarte, vor denen die Bahnprüfung bremst, gelten in der Raumkarte als bestätigt und belegt
     # (auch ohne confirm_dr_m): Was ihn bremst, steht in der Karte, und der Planer fährt darum herum.
     mark_blocking: bool = True
+    # Bremsstellen: Bremst die Bahnprüfung schon im Engstellenmodus ([map] radius_tight_m) voll, passt die Stelle
+    # nicht: Planer und Zielsuche sperren den Umkreis brake_block_r_m (wie [map] radius_m) um die Trefferpunkte
+    # brake_block_s lang. Freistrahlen öffnen sie nicht, nur die Zeit (mark_blocking baut FloorNet sofort wieder
+    # ab: Stuhlbeine, Schrankkanten, dahinter sieht es Boden). Nicht bei jeder Vollbremsung: Vor der 25-cm-Tür
+    # (Simulator spalt) bremst er erst mit dem normalen Radius und fährt dann eng hindurch; schon wenige gemerkte
+    # Zellen in der Öffnung schlossen sie (Boden 43 statt 82 %, 2026-11-24). Nur im Speicher. 0: aus.
+    brake_block_s: float = 300.0
+    brake_block_r_m: float = 0.18
+    # Nur wenn die Räder dabei höchstens so schnell waren (m/s): Eine Vollbremsung aus voller Fahrt im
+    # Engstellenmodus heißt „zu schnell“, nicht „passt nicht“; sie sperrte im Simulator die 25-cm-Tür, sobald
+    # der Wegfolger früher abbremste (home.free_slow, spalt 2026-11-24). Ohne Raddaten: sperrt wie bisher.
+    brake_block_max_mps: float = 0.25
     column_step: int = 2              # jede k-te Spalte des Bodenmodells (160 Spalten)
     l_free: float = -0.4               # Log-Odds je Beobachtung
     l_occ: float = 0.5                 # zwei Treffer bis "belegt" (l_show): ein Ausreißer sperrt nichts
@@ -628,6 +646,10 @@ class HomeCfg:
     # höchstens so weit von der Wegrichtung abweicht. Die Raumkarte legt eine 25-cm-Lücke um Zentimeter daneben.
     tight_center: bool = True
     tight_center_max_deg: float = 30.0
+    # Nicht auf die Lückenmitte zielen, wenn der Weg höchstens so weit voraus abknickt (Ecke über turn_enter_deg):
+    # Dann führt der Weg um eine Ecke, nicht durch die Lücke. RiderPi 2026-11-24: Weg links um die Schrankecke
+    # (Knick 0,33 m), er zielte geradeaus auf die Lückenmitte, schlich 3 s mit 0,03 gegen den Schrank. 0 = aus.
+    tight_center_knick_m: float = 0.5
     arrive_m: float = 0.15
     # Bremsen vor dem Wegende (PathFollower.drive, alle Fahrten mit Halt am Ende; explore nur ohne geplantes
     # nächstes Ziel): Tempo höchstens sqrt(2 x end_decel_mps2 x s), s = Restweg entlang des Wegs minus
@@ -637,13 +659,28 @@ class HomeCfg:
     end_decel_mps2: float = 0.25
     end_lag_s: float = 1.0
     end_min_v: float = 0.15
+    # Tempo nach freier Strecke (PathFollower.drive): dasselbe Bremsprofil wie am Wegende auch vor dem ersten
+    # Hindernis der Merkkarte entlang des Wegs und auf dem Bogen des Fahrbefehls (bis 2,5 m), minus free_rest_m, und vor dem ersten
+    # scharfen Knick (über turn_enter_deg, auch zum nächsten Weg bei Weiterfahrt ohne Halt). Die Bahnprüfung
+    # schaut nur bis zum Bremsabstand voraus; der Rider fuhr mit 0,65 m/s auf die Wand zu und musste dann voll
+    # bremsen (RiderPi 2026-11-24, Bahn 0,69 m). Seit 2026-11-24, nicht gefahren.
+    free_slow: bool = True
+    free_rest_m: float = 0.10
     # Festgefahren, aber so nah am Ziel: gilt als angekommen. Der Sicherheitsabstand der Bahnprüfung (0,18 m) lässt
     # ihn nicht an ein Ziel, neben dem etwas liegt, auch wenn das Ziel selbst frei ist (RiderPi 2026-11-06)
     near_m: float = 0.5
     replan_s: float = 2.0
     keep_factor: float = 1.2           # alter Weg bleibt, solange frei und <= Faktor x neuer + 0,3 m
     use_localmap: bool = True          # Hindernisse der Bahnprüfung (Merkkarte) mit einplanen
-    localmap_reach_m: float = 1.0      # nur so nahe: weiter weg misst die Merkkarte zu ungenau
+    # Merkkarte-Punkte bis so weit vom Rider zählen für Planer und Zielsuche. 2,0 seit 2026-11-24 (vorher 1,0, „weiter
+    # weg misst die Merkkarte zu ungenau“): Mit 1,0 plante er aus 2 m auf einen Durchgang zu, den Kamera und Merkkarte
+    # schon als zu sahen, und erfuhr es erst 1 m davor (RiderPi 2026-11-24, Schrank).
+    localmap_reach_m: float = 2.0
+    # Merkkarte-Punkte sperren für den Planer jede Zelle, deren Mitte näher als so (m) liegt, mit den echten
+    # Koordinaten (planner.merk_maske), wie die Bahnprüfung in Engstellen ([map] radius_tight_m, gleich halten): ein
+    # 15-cm-Spalt ist zu, 25 cm offen. Vorher Zelle des Punkts + squeeze_m: 15 cm erschien als 20 cm (RiderPi
+    # 2026-11-24 20:43, Stuhl- und Tischbein). 0 = wie vorher.
+    merk_r_m: float = 0.08
     v: float = 0.30                    # Anteil von robot.max_v, wie behavior.cruise_v (vorher absolut 0,15)
     start_v: float = 0.45              # „Zum Start“ (home, Heimfahrt in pet): +50 % (Nutzer 2026-11-22); Schlussfahrt startbild.gerade_v
     # Lenkung: am RiderPi rollt der Rider bei jedem Anfahren erst zurück und eine Drehung läuft
@@ -728,6 +765,17 @@ class ExploreCfg:
     # Dabei die bestätigten Hindernisse der Merkkarte bis zu diesem Abstand vom Rider in die Raumkarte eintragen
     # (belegt, wie grid.mark_blocking): Die Stuhlbeine standen dort nur als einzelne Flecken. 0 = aus.
     gap_mark_r_m: float = 0.6
+    # Ziel nur, wenn die Frontier vom Haltepunkt aus zu sehen ist (Gerade frei in Raumkarte und Merkkarte), und der
+    # Rückfallweg ohne Merkkarte darf keinen ihrer Punkte schneiden. Seit 2026-11-24: Er sah am RiderPi, dass am
+    # Mülleimer nichts frei ist (nur Merkkarte), fuhr trotzdem näher und dann dahinter. False = wie vorher.
+    ziel_sicht: bool = True
+    # Weg zur Stelle nur über bekannten Boden (Unbekanntes gesperrt statt nur teurer, home.unknown_cost). Seit
+    # 2026-11-24: Sonst plante er durch eine andere Öffnung ins Unbekannte und von hinten an die Stelle.
+    weg_bekannt: bool = True
+    # Der Rückfallweg (nur Raumkarte) muss mindestens so weit an jedem bestätigten Merkkarte-Punkt vorbei, wie die
+    # Bahnprüfung in Engstellen verlangt ([map] radius_tight_m, gleich halten). Sonst plante er in einen 10-cm-Spalt
+    # zwischen Kasten und Tür, die Bahnprüfung bremste, nach 5 s gesperrt (RiderPi 2026-11-24 19:02).
+    merk_abstand_m: float = 0.08
     no_growth_s: float = 120.0         # so lange kaum Zuwachs an bekanntem Boden: Karte gilt als fertig
     min_growth_m2: float = 0.5
     # Umkreis besuchter und gesperrter Stellen. Mit 0,5 m fiel die letzte Stelle eines Gangs weg, die nur

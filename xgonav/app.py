@@ -258,6 +258,10 @@ class App:
     # Nur diese Modi bekommen Bilder für den Detektor (YOLO, ~1 Kern am CM4); sonst schläft sein Thread.
     # Erkennungen dienen nur dem Ziel, nie Freiraum oder Bahnprüfung (Nutzer 2026-11-13).
     DET_MODES = {"follow", "approach", "pet"}
+    # Liegt er (abgesetzt, gefallen), enden alle Modi außer diesen sofort (idle). pet legt sich selbst hin und steht
+    # wieder auf, Hand kann ihn aufstellen (Nutzer 2026-11-24: explore sperrte liegend Lücken und trug die
+    # Merkkarte in die Raumkarte ein)
+    LIEGEND_OK = {"idle", "manual", "pet"}
     TARGET_MODES = {"follow", "approach"}
 
     def _pose_unbekannt(self, grund: str) -> None:
@@ -350,6 +354,8 @@ class App:
                 raise ModeNotAllowed(f"Akku {batt} %: Streife erst ab {self.cfg.patrol.start_battery} %")
             if not self.robot.state.balancing:
                 raise ModeNotAllowed("Streife: Rider muss stehen, er rollt beim Aufstehen noch vor")
+        if name not in self.LIEGEND_OK and not self.robot.state.balancing:
+            raise ModeNotAllowed(f"Modus {name}: Rider muss stehen (liegt oder gefallen), erst aufstehen")
 
     def _make(self, name: str, target: str | None = None) -> Behavior:
         b = make_behavior(name, self.cfg.behavior, self.cfg.robot, target, self.cfg.home, self.cfg.explore,
@@ -756,8 +762,24 @@ class App:
         with self._mode_lock:
             self._pending_mode = (name, target)
 
+    def merk_punkte(self):
+        """Punkte der Merkkarte für das Bild der Raumkarte (alle, bestätigte); None ohne laufende Bildverarbeitung.
+        Nur auf Anfrage (Browser 1x je s, Rohaufzeichnung alle record_map_s), nie im Regeltakt; die Felder der
+        Merkkarte werden nie verändert, nur ersetzt."""
+        lm = getattr(self, "lmap", None)
+        if lm is None or not self.pipeline_on:
+            return None
+        pts = lm.pts
+        if not len(pts):
+            return None
+        try:
+            best = lm.confirmed_later(lm.max_range)()
+        except Exception:                              # Felder mitten im Wechsel: dieses Bild ohne
+            best = None
+        return pts, best
+
     # ------------------------------------------------------------ Bodenmodell wählen (Web)
-    FN_NAME = re.compile(r"^[A-Za-z0-9_.+-]{1,80}\.bin$")
+    FN_NAME =re.compile(r"^[A-Za-z0-9_.+-]{1,80}\.bin$")
     FN_MODES = {"idle", "manual"}          # Wechsel nur, wenn nichts nach dem Bodenmodell fährt
 
     def floornet_info(self) -> dict:
@@ -902,6 +924,19 @@ class App:
             log.info("beendet")
 
     # ------------------------------------------------------------------
+    def _liegt_idle(self) -> None:
+        """Liegt er (abgesetzt, gefallen), endet jeder Modus außer LIEGEND_OK sofort, noch vor dem Verhalten."""
+        b = self.behavior
+        if b.name in self.LIEGEND_OK or self.robot.state.balancing:
+            return
+        with self._mode_lock:
+            self._pending_mode = None
+            self.behavior = self._make("idle")
+            if self.gridmap is not None:
+                self.gridmap.plan = []
+                self.gridmap.erwartet = None
+        log.warning("Modus %s endet: Rider liegt (%s) -> idle", b.name, stopp_text(self.robot.state.mode))
+
     def _apply_pending_mode(self) -> None:
         with self._mode_lock:
             if self._pending_mode:
@@ -939,6 +974,7 @@ class App:
         """Hauptschleife bei gestoppter Bildverarbeitung: Moduswechsel sofort übernehmen;
         im Modus manual mit control_hz regeln (ohne Kamera), sonst Stillstand."""
         self._apply_pending_mode()
+        self._liegt_idle()
         self._pose_watch(time.monotonic())
         self._start_tick(time.monotonic())
         if self.ruhe:
@@ -970,6 +1006,7 @@ class App:
     def _step(self, f) -> None:
         tm = _Marks()
         self._apply_pending_mode()
+        self._liegt_idle()
         cc = self.cfg.camera
         if ((self.cfg.dunkel.enabled or cc.gain_switch)
                 and f.t - self._luma_t >= 1.0 / max(0.1, self.cfg.dunkel.check_hz)):
@@ -1065,7 +1102,8 @@ class App:
                       yaw=self.yaw, cmd_v=self.robot.command[0],
                       geo=self.geo, pitch_dev=pitch_dev, battery=self.robot.state.battery,
                       blind=self.fs_worker is not None and self.fs_worker.blind,
-                      v_rad=self._v_rad, clear_fn=self._clear_ahead if self.lmap is not None else None)
+                      v_rad=self._v_rad, clear_fn=self._clear_ahead if self.lmap is not None else None,
+                      v_erw=self.speed_ctrl.v_modell if self.cfg.robot.speed_ctrl else None)
             if self.behavior.name == "pet":
                 self._pet_world(w, ds, now)
             if self.lmap is not None:
@@ -1105,6 +1143,9 @@ class App:
                 if self.startbild is not None:
                     w.pose = self._startbild_tick(f, w, pitch_dev, dyaw, dt)
                 if hasattr(self.behavior, "want_plan"):
+                    if self.lmap is not None and self.cfg.home.free_slow:
+                        w.path_free_fn = self._path_free     # Tempo nach freier Strecke (nur beim Fahren gerufen)
+                        w.arc_free_fn = self._arc_free
                     if self.cfg.home.tight_m > 0:           # Engstellen: der Wegfolger fragt nur bei Bedarf
                         w.wall_fn = self.gridmap.wall_dist
                         if self.lmap is not None and self.cfg.home.tight_center:
@@ -1133,6 +1174,8 @@ class App:
                     self.behavior.want_messung = False
                     self._startbild_messen(f, w, pitch_dev)
                 cmd = self._dunkel_tick(now, cmd)
+                if self.gridmap is not None and self.gridmap.bremsen_abgelaufen(now):
+                    log.info("Bremsstellen abgelaufen, jetzt %d", len(self.gridmap.brems))
                 cmd = self._arc_check(cmd)
             if self._action_pending is not None or self.robot._act is not None or self._action_note is not None:
                 cmd = self._action_tick(w, cmd, now)
@@ -1583,6 +1626,34 @@ class App:
     def _map_view(self, free: FreeSpace, tracks) -> FreeSpace:
         return mask_movable(free, [(t.cls, t.box) for t in tracks], self.cfg.camera.width, self.cfg.camera.height)
 
+    def _path_free(self, pts, pose, tight: bool) -> float:
+        """Freie Strecke (m) entlang des Wegs pts (Welt-m, ab der Pose) laut Merkkarte, inf frei; tight: Radius
+        der Engstelle wie in der Bahnprüfung."""
+        p = np.asarray(pts, np.float64).reshape(-1, 2)
+        c, s = math.cos(pose[2]), math.sin(pose[2])
+        dx, dy = p[:, 0] - pose[0], p[:, 1] - pose[1]
+        r = np.column_stack([dx * c + dy * s, -dx * s + dy * c])
+        return self.lmap.path_clearance(r, radius=self.cfg.map.radius_tight_m if tight else None)
+
+    def _arc_free(self, v: float, w: float, tight: bool) -> float:
+        """Freie Strecke (m) auf dem Bogen des Fahrbefehls (normiert) bis zur Reichweite der Merkkarte, gerechnet wie in
+        _arc_check (schnelleres von Befehl und Rädern, Drehrate mitskaliert, gleicher Radius)."""
+        vm = v * self.cfg.robot.vx_limit
+        if abs(vm) < 1e-3:
+            return math.inf
+        wr = w_to_yaw_rate(w, self.cfg.robot)
+        ist, lauf = self._v_rad, abs(vm)
+        if ist is not None and ist * vm > 0 and abs(ist) > lauf:
+            wr *= abs(ist) / lauf
+            lauf = abs(ist)
+        reach = self.lmap.max_range
+        # immer mit dem Radius der Engstelle: Mit map.radius_m bremste er schon weit vor der 25-cm-Tür auf
+        # Schritttempo (streift die Rahmen), sah sie lange aus der Nähe, und die Raumkarte schloss sie
+        # (Simulator spalt 2026-11-24, 0 von 3 Läufen). Seitliches Streifen bleibt Sache der Bahnprüfung.
+        return self.lmap.arc_clearance(math.copysign(lauf, vm), wr, horizon_s=reach / lauf,
+                                       steps=max(10, int(math.ceil(reach / 0.05))),
+                                       radius=self.cfg.map.radius_tight_m)
+
     def _clear_ahead(self) -> float:
         """Freie Strecke geradeaus laut Merkkarte (m, bis 0,3 m geprüft, sonst inf); nur beim Auslösen eines Anschubs."""
         return self.lmap.arc_clearance(0.3, 0.0, horizon_s=1.0)
@@ -1623,7 +1694,10 @@ class App:
                                         hit_out=hits)
         if clear < need:
             k = max(0.0, (clear - 0.05) / need)
-            erlaubt = abs(cmd.v) * k * self.cfg.robot.vx_limit
+            # erlaubt aus dem schnelleren von Befehl und Rädern: Senkt der Wegfolger den Befehl schon früh
+            # (home.free_slow), während die Räder noch nachlaufen, wäre es sonst eine Vollbremsung, im
+            # Engstellenmodus samt Bremsstelle (Simulator spalt 2026-11-24: Tür in 0 von 8 Läufen)
+            erlaubt = lauf * k
             if ist is not None and abs(ist) > erlaubt + ARC_BRAKE_TOL_MPS:
                 # schneller als die Bahn erlaubt: voll bremsen, nur 0 setzt der Rider schnell um
                 cmd.v = 0.0
@@ -1632,10 +1706,24 @@ class App:
             else:
                 cmd.v *= k
                 cmd.status += " | Bahn %.2fm" % clear
-            if gm is not None and hits and self.cfg.grid.mark_blocking:
-                # Wofür er bremst, kommt in die Raumkarte (wenige Punkte, einmal je Regelschritt beim Bremsen)
+            if gm is not None and hits:
                 p = hits[0]
-                gm.mark_blocking(np.column_stack(to_world(gm.pose(), p[:, 0], p[:, 1])))
+                pw = np.column_stack(to_world(gm.pose(), p[:, 0], p[:, 1]))
+                if self.cfg.grid.mark_blocking:
+                    # Wofür er bremst, kommt in die Raumkarte (wenige Punkte, einmal je Regelschritt beim Bremsen)
+                    gm.mark_blocking(pw)
+                if (cmd.extra.get("bremsen") and cmd.extra.get("tight") and self.cfg.grid.brake_block_s > 0
+                        and (ist is None or abs(ist) <= self.cfg.grid.brake_block_max_mps)):
+                    # Vollbremsung schon mit dem Radius der Engstelle: passt nicht, auf Zeit sperren
+                    # (grid.brake_block_s); Freistrahlen öffnen sie nicht wieder
+                    neu = gm.bremse_sperren(pw, time.monotonic() + self.cfg.grid.brake_block_s)
+                    if neu:
+                        log.info("Bremsstelle in Engstelle gesperrt: %d Zellen um (%.2f, %.2f) für %.0f s, jetzt %d",
+                                 neu, float(pw[:, 0].mean()), float(pw[:, 1].mean()),
+                                 self.cfg.grid.brake_block_s, len(gm.brems))
+                        neu_planen = getattr(self.behavior, "neu_planen", None)
+                        if neu_planen is not None:
+                            neu_planen()
         return cmd
 
 

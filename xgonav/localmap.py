@@ -38,6 +38,10 @@ class LocalMap:
         self.pts = np.zeros((0, 2))
         self._conf = np.zeros(0, np.int8)   # je Punkt: -1 ungeprüft, 0 unbestätigt, 1 bestätigt
         self._conf_t = None                 # gilt für dieses self.t (neu bei jeder Änderung der Punktmenge)
+        self._conf_ok = None                # (t, reach, Weg bei der Prüfung): _conf gilt für alle Punkte, die damals
+                                            # innerhalb reach lagen; move() ändert den Abstand höchstens um |ds|
+        self._moved = 0.0                   # Summe |ds| aus move()
+        self._r_pts, self._r = None, np.zeros(0)   # Abstand je Punkt, gilt für dieses self.pts (nie verändert, nur ersetzt)
         self.t = np.zeros(0)
         self.obs = np.zeros(0, np.int64)     # Nummer der Beobachtung, aus der der Punkt stammt
         self._obs_n = 0
@@ -51,9 +55,11 @@ class LocalMap:
         self.odo = (x + ds * math.cos(th), y + ds * math.sin(th), th + dyaw)
         if not len(self.pts):
             return
+        self._moved += abs(ds)
         c, s = math.cos(-dyaw), math.sin(-dyaw)
         if self._lib is not None:
-            self.pts = navfast.move(self._lib, self.pts, ds, c, s)
+            self.pts, self._r = navfast.move(self._lib, self.pts, ds, c, s)
+            self._r_pts = self.pts
             return
         # ausgeschrieben statt Matrixprodukt: BLAS rundet je nach Rechner anders, so rechnet auch der C++-Kern
         px, py = self.pts[:, 0] - ds, self.pts[:, 1]
@@ -75,6 +81,7 @@ class LocalMap:
         Aufnahme) wird im KS der Aufnahme eingetragen und freigeräumt, danach zurück ins aktuelle KS."""
         if fs is None or fs.columns is None:
             return
+        self._conf_ok = None           # Punkte werden hin- und zurückgerechnet, auch ohne neue Punkte
         odo = getattr(fs, "odo", None)
         if odo is not None and tuple(odo) != self.odo:
             jetzt = self.odo
@@ -210,22 +217,30 @@ class LocalMap:
                 qx, qy = x, y
         return pts[keep]
 
-    def confirmed_points(self, reach: float = math.inf) -> np.ndarray:
-        """Punkte innerhalb reach, in deren Nähe Beobachtungen aus mindestens `confirm`
-        Bildern liegen. Fehlalarme des Bodenmodells (Reflexe, Fugen) flackern, echte
-        Hindernisse nicht. Exakt gezählt, aber nur im Nahbereich; die Punktdichte begrenzt
-        add_freespace (MIN_SPACING), sonst wüchse der Aufwand quadratisch."""
-        if not len(self.pts):
-            return self.pts
-        r = np.hypot(self.pts[:, 0], self.pts[:, 1])
-        cand = r < reach
-        if self.confirm <= 1 or not cand.any():
-            return self.pts[cand]
+    CONF_SPARE_M = 0.10   # _conf_bis: so viel weiter voraus mitbestätigen
+
+    def _dist(self) -> np.ndarray:
+        """Abstand je Punkt zum Rider, einmal je Lage der Punkte (move/add ersetzen self.pts)."""
+        if self._r_pts is not self.pts:
+            self._r_pts, self._r = self.pts, np.hypot(self.pts[:, 0], self.pts[:, 1])
+        return self._r
+
+    def _conf_bis(self, reach: float):
+        """Sorgt dafür, dass _conf für alle Punkte innerhalb reach gilt (1 bestätigt, 0 nicht, sonst -1 ungeprüft),
+        und liefert es; None, wenn jeder Punkt zählt (confirm <= 1). Je Lage der Punkte nur einmal gerechnet."""
+        if self.confirm <= 1:
+            return None
         # Das Ergebnis je Punkt ändert sich nur mit der Punktmenge: move() verschiebt alle gleich. Der
         # Regelschritt fragt mehrmals je Takt, am RiderPi kostete das bei ~2000 Punkten ~27 ms CPU.
         if self._conf_t is not self.t or len(self._conf) != len(self.pts):
             self._conf_t, self._conf = self.t, np.full(len(self.pts), -1, np.int8)
-        need = cand & (self._conf < 0)
+            self._conf_ok = None
+        ok = self._conf_ok
+        if ok is not None and ok[0] is self.t and reach + (self._moved - ok[2]) <= ok[1]:
+            return self._conf
+        reach += self.CONF_SPARE_M    # Reserve: die nächsten Regelschritte (Fahrt, kleinerer reach) prüfen nicht neu
+        r = self._dist()
+        need = (r < reach) & (self._conf < 0)
         if need.any():
             nb = r < r[need].max() + self.confirm_radius
             if self._lib is not None:
@@ -234,7 +249,20 @@ class LocalMap:
                 C, P, O = self.pts[need], self.pts[nb], self.obs[nb]
                 near = ((C[:, None, :] - P[None, :, :]) ** 2).sum(-1) < self.confirm_radius ** 2
                 self._conf[need] = self._distinct(near, O) >= self.confirm
-        return self.pts[cand & (self._conf == 1)]
+        self._conf_ok = (self.t, reach, self._moved)
+        return self._conf
+
+    def confirmed_points(self, reach: float = math.inf) -> np.ndarray:
+        """Punkte innerhalb reach, in deren Nähe Beobachtungen aus mindestens `confirm`
+        Bildern liegen. Fehlalarme des Bodenmodells (Reflexe, Fugen) flackern, echte
+        Hindernisse nicht. Exakt gezählt, aber nur im Nahbereich; die Punktdichte begrenzt
+        add_freespace (MIN_SPACING), sonst wüchse der Aufwand quadratisch."""
+        if not len(self.pts):
+            return self.pts
+        cand = self._dist() < reach
+        if self.confirm <= 1 or not cand.any():
+            return self.pts[cand]
+        return self.pts[cand & (self._conf_bis(reach) == 1)]
 
     def confirmed_later(self, reach: float):
         """Funktion, die confirmed_points(reach) für den jetzigen Stand rechnet, ohne Zwischenspeicher: für den
@@ -268,14 +296,18 @@ class LocalMap:
         if abs(v_mps) < 1e-3:
             return math.inf
         radius = self.radius if radius is None else radius
-        pts = self.confirmed_points(abs(v_mps) * horizon_s + radius)
+        reach = abs(v_mps) * horizon_s + radius
+        if self._lib is not None:      # Auswahl der Punkte und Prüfung in einem Aufruf
+            if not len(self.pts):
+                return math.inf
+            s, near = navfast.arc(self._lib, self.pts, self._dist(), self._conf_bis(reach), reach, v_mps, w_rads,
+                                  horizon_s, steps, radius, ESCAPE_TOL_M)
+            if near is not None and hit_out is not None:
+                hit_out.append(self.pts[near])
+            return s
+        pts = self.confirmed_points(reach)
         if not len(pts):
             return math.inf
-        if self._lib is not None:
-            s, near = navfast.arc(self._lib, pts, v_mps, w_rads, horizon_s, steps, radius, ESCAPE_TOL_M)
-            if near is not None and hit_out is not None:
-                hit_out.append(pts[near])
-            return s
         lim = np.minimum(radius, np.hypot(pts[:, 0], pts[:, 1]) - ESCAPE_TOL_M)
         x = y = th = 0.0
         dt = horizon_s / steps
@@ -288,6 +320,59 @@ class LocalMap:
                 if hit_out is not None:
                     hit_out.append(pts[near])
                 return s
+        return math.inf
+
+    PATH_STEP_M = 0.05   # path_clearance: Abstand der Abtastpunkte entlang des Wegs
+
+    def path_clearance(self, path: np.ndarray, radius: float | None = None, hit_out: list | None = None) -> float:
+        """Freie Strecke (m) entlang eines Wegs (Polylinie N x 2 im Rider-KS, beginnt meist bei 0, 0), bevor ein
+        bestätigter Punkt näher als radius kommt; inf, wenn bis max_range alles frei ist. Abgetastet alle
+        PATH_STEP_M; Punkte schon im Radius sperren wie bei arc_clearance erst, wenn der Weg ihnen näher kommt.
+        Für das Tempo des Wegfolgers: Die Bahnprüfung schaut nur bis zum Bremsabstand voraus und kann dann nur
+        noch voll bremsen, die Merkkarte kennt das Hindernis aber bis max_range."""
+        path = np.asarray(path, np.float64).reshape(-1, 2)
+        if len(path) < 2:
+            return math.inf
+        radius = self.radius if radius is None else radius
+        if self._lib is not None:      # Abtasten, Auswahl der Punkte und Prüfung in einem Aufruf
+            if not len(self.pts):
+                return math.inf
+            # alle Abtastpunkte liegen höchstens max_range entlang des Wegs vom ersten Punkt entfernt
+            conf = self._conf_bis(math.hypot(path[0, 0], path[0, 1]) + self.max_range + radius + 1e-6)
+            s, near = navfast.path(self._lib, self.pts, self._dist(), conf, path, self.PATH_STEP_M, self.max_range,
+                                   radius, ESCAPE_TOL_M)
+            if near is not None and hit_out is not None:
+                hit_out.append(self.pts[near])
+            return s
+        # wie lmap_path im C++-Kern ausgeschrieben (np.hypot = libm wie dort)
+        seg = np.hypot(np.diff(path[:, 0]), np.diff(path[:, 1]))
+        cum = np.concatenate([[0.0], np.cumsum(seg)]).tolist()
+        total = min(cum[-1], self.max_range)
+        if total < self.PATH_STEP_M:
+            return math.inf
+        m, n, j = int(total / self.PATH_STEP_M), len(path), 0
+        P = path.tolist()
+        smp = np.empty((m, 2))
+        for k in range(m):
+            s = (k + 1) * self.PATH_STEP_M
+            while j + 1 < n and cum[j + 1] <= s:
+                j += 1
+            if j == n - 1 or cum[j] == s:
+                smp[k] = P[j]
+            else:
+                d = cum[j + 1] - cum[j]
+                smp[k] = ((P[j + 1][0] - P[j][0]) / d * (s - cum[j]) + P[j][0],
+                          (P[j + 1][1] - P[j][1]) / d * (s - cum[j]) + P[j][1])
+        pts = self.confirmed_points(float(np.hypot(smp[:, 0], smp[:, 1]).max()) + radius)
+        if not len(pts):
+            return math.inf
+        lim = np.minimum(radius, np.hypot(pts[:, 0], pts[:, 1]) - ESCAPE_TOL_M)
+        for k in range(m):
+            near = np.hypot(pts[:, 0] - smp[k, 0], pts[:, 1] - smp[k, 1]) < lim
+            if near.any():
+                if hit_out is not None:
+                    hit_out.append(pts[near])
+                return (k + 1) * self.PATH_STEP_M
         return math.inf
 
     def gap_center(self, ahead_m: float = 0.45, side_m: float = 0.30, max_width_m: float = 0.5) -> tuple | None:

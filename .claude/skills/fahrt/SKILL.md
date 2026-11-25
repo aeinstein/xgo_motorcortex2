@@ -36,6 +36,10 @@ gerade, Restzeit aus `tail -1 ~/floornet/stage1_p11/batchNN.log` des laufenden L
 .venv/Scripts/python .claude/skills/fahrt/analyse.py "<scratchpad>/fahrt/<fahrt>" --spur --von 100 --bis 108
 ```
 
+Seit 2026-11-24 liegt in der Fahrt `karte/<Bildnummer>.png`: alle 2 s die Raumkarte samt Merkkarte (6 m um die
+Pose, oben = +x, wie MCP `karte`). Zur Stelle, nach der der Nutzer fragt, die Kartenbilder davor mit Read ansehen
+(Ziel, Weg, Merkkarte-Punkte gegen Raumkarte).
+
 Erst die Übersicht (Statuswechsel, Ereignisse: „bremse“, „Freiraum!“, Sperrzone, „komme nicht weiter“; Stecken =
 Fahrwert > 0,08 bei Rädern < 0,05 m/s; Nick-Spitzen), dann das Ereignisbild `<fahrt>_ereignisse.jpg` mit Read
 ansehen, dann mit `--spur` die Sekunden vor der Stelle, nach der der Nutzer fragt. Dabei klären:

@@ -2162,6 +2162,15 @@ def test_tight_spot_steers_to_gap_center():
     assert 0.0 < eng.v < frei.v
     quer = f.drive(welt(wall_fn=nah, gap_fn=lambda: (0.1, 0.25)), "x")   # Lücke weit neben dem Weg: Weg gilt
     assert "Lücke" not in quer.status and quer.w == 0.0
+    # Weg knickt 0,3 m voraus links ab (home.tight_center_knick_m): um die Ecke, nicht geradeaus in die Lücke
+    # (RiderPi 2026-11-24, Schrank)
+    f.set_path([(0.0, 0.0), (0.3, 0.0), (0.3, 1.0)])
+    ecke = f.drive(welt(wall_fn=lambda *a: 0.15, gap_fn=lambda: (0.3, 0.0)), "x")
+    assert "Lücke" not in ecke.status
+    cfg.home.tight_center_knick_m = 0.0                        # vorher: Lückenmitte geradeaus
+    f2 = PathFollower(cfg.behavior, cfg.robot, cfg.home)
+    f2.set_path([(0.0, 0.0), (0.3, 0.0), (0.3, 1.0)])
+    assert "Lücke" in f2.drive(welt(wall_fn=lambda *a: 0.15, gap_fn=lambda: (0.3, 0.0)), "x").status
 
 
 def test_planner_keeps_path_and_plans_around_obstacles():
@@ -2295,7 +2304,10 @@ def test_frontier_merkkarte_weg_zuerst():
     assert np.min(np.hypot(pfad[:, None, 0] - beine[None, :, 0], pfad[:, None, 1] - beine[None, :, 1])) > 0.2
     cfg, m = _room_map(door=True)
     p = next_goal(m, (0.0, 0.0, 0.0), cfg.home, cfg.explore, obstacles=beine)
-    assert p.frontier[0] > 1.0 and p.tight                     # einzige Stelle: trotzdem, als Engstelle
+    assert p.path is None and p.clusters == 1                  # einzige Stelle hinter den Beinen: kein Ziel (ziel_sicht)
+    cfg.explore.ziel_sicht = False
+    p = next_goal(m, (0.0, 0.0, 0.0), cfg.home, cfg.explore, obstacles=beine)
+    assert p.frontier[0] > 1.0 and p.tight                     # ohne Sichtprüfung: trotzdem, als Engstelle
 
 
 def test_frontier_prefer_richtung_und_min_m():
@@ -2394,13 +2406,37 @@ def test_frontier_keeps_goal_instead_of_switching():
 
 
 def test_frontier_ignores_localmap_for_reachability():
-    """Merkkarte versperrt den Weg: Das Ziel bleibt erhalten und wird notfalls ohne sie angefahren."""
+    """Merkkarte versperrt den Weg: Die Stelle bleibt erreichbar (gezählt), wird aber nicht durch sie hindurch
+    angefahren (explore.ziel_sicht, RiderPi 2026-11-24 Mülleimer); ohne ziel_sicht notfalls ohne sie."""
     from xgonav.frontier import next_goal
     cfg, m = _room_map(door=True)
     ys = np.linspace(-1.2, 1.2, 60)
-    wall = np.column_stack([np.full(60, 0.3), ys])             # angebliche Wand quer durch den Raum
+    wall = np.column_stack([np.full(60, 0.3), ys])             # Wand quer durch den Raum, nur in der Merkkarte
+    p = next_goal(m, (-0.5, 0.0, 0.0), cfg.home, cfg.explore, obstacles=wall)
+    assert p.path is None and p.clusters == 1
+    cfg.explore.ziel_sicht = False
     p = next_goal(m, (-0.5, 0.0, 0.0), cfg.home, cfg.explore, obstacles=wall)
     assert p.path is not None and p.clusters == 1
+
+
+def test_frontier_nicht_hinter_merkkarte_hindernis():
+    """Zwei Türen; vor der geraden (+x) steht ein Hindernis, das nur die Merkkarte kennt (Mülleimer, RiderPi
+    2026-11-24). Ziel ist die andere Tür, nicht die Stelle dahinter."""
+    from xgonav.frontier import next_goal
+    cfg, m = _room_map(door=True)
+    r1, _ = (int(v) for v in m.cell(1.2, 1.2))
+    _, dc0 = (int(v) for v in m.cell(-0.4, 0.0))
+    _, dc1 = (int(v) for v in m.cell(0.4, 0.0))
+    m.lo[r1, dc0:dc1 + 1] = cfg.grid.l_min                     # zweite Tür in +y
+    a = np.linspace(-math.pi / 2, math.pi / 2, 30)
+    eimer = np.column_stack([1.05 - 0.45 * np.cos(a), 0.45 * np.sin(a)])  # Vorderseite, breiter als die Tür +x
+    p = next_goal(m, (0.0, 0.0, 0.0), cfg.home, cfg.explore)
+    assert p.frontier[0] > 1.0                                 # ohne Merkkarte: geradeaus
+    p = next_goal(m, (0.0, 0.0, 0.0), cfg.home, cfg.explore, obstacles=eimer)
+    assert p.path is not None and p.frontier[1] > 1.0 and not p.tight   # mit ihr: die Tür in +y
+    cfg.explore.ziel_sicht = cfg.explore.weg_bekannt = False   # vorher: durchs Unbekannte zur Stelle dahinter
+    p = next_goal(m, (0.0, 0.0, 0.0), cfg.home, cfg.explore, obstacles=eimer)
+    assert p.frontier[0] > 1.0
 
 
 def test_shorten_path():
@@ -2601,7 +2637,7 @@ def test_map_explore_stuck_in_gap_blocks_goal_at_once():
     b.f.tight_t = 0.5
     b.f.stuck = True
     b.step(_ex_world(2.0, (0.0, 0.0, 0.0)))
-    assert b.blocked_goals == [(1.3, 0.0)] and b.state == "backup"
+    assert b.blocked_goals == [(1.3, 0.0), (1.0, 0.0)] and b.state == "backup"   # Stelle + Haltepunkt
     assert b.gap_blocked                                       # App trägt die Merkkarte ringsum ein
     cfg, b = _explore_ready()
     b.want_plan(0.0)
@@ -4356,3 +4392,203 @@ def test_gain_switch():
         assert u(float(t), 85, 0.0, 8.0, 0.0) is None              # Auto bei 8 mit 85: kein Flattern
         assert u(float(t), 60, 0.0, 5.0, 0.0) is None              # nicht am Anschlag: bleibt Automatik
     assert u(70.0, 200, 0.5, 4.0, 4.0) is None and u(80.0, 200, 0.5, 4.0, 4.0) is None   # Handwert: ruht
+
+
+def test_bremsstelle_sperrt_luecke_auf_zeit():
+    """Bremsstellen (grid.brake_block_s): Eine Lücke, vor der die Bahnprüfung im Engstellenmodus voll gebremst hat,
+    bleibt für Planer und Zielsuche zu, auch wenn Freistrahlen die Zellen der Karte frei machen; nach Ablauf ist
+    sie wieder offen."""
+    from xgonav.frontier import next_goal
+    from xgonav.planner import plan
+    cfg, m = _route_map()
+    _, cw = (int(k) for k in m.cell(1.5, 0.0))
+    rg0, rg1 = (int(m.cell(0.0, y)[0]) for y in (-0.2, 0.2))
+    m.lo[:, cw - 1:cw + 2] = cfg.grid.l_max                             # Wand bei x = 1,5 m ...
+    m.lo[rg0:rg1 + 1, cw - 1:cw + 2] = cfg.grid.l_min                   # ... mit 0,4 m Lücke um y = 0
+    assert plan(m, (0.0, 0.0), (2.5, 0.0), cfg.home) is not None
+    assert m.bremse_sperren(np.array([[1.51, 0.02], [1.53, 0.04]]), bis=100.0) == 1   # eine Zelle
+    assert m.bremse_sperren(np.array([[1.52, 0.03]]), bis=110.0) == 0                 # dieselbe: nichts Neues
+    assert len(m.brems) == 1 and m.brems[0, 2] == 110.0
+    assert plan(m, (0.0, 0.0), (2.5, 0.0), cfg.home) is None
+    _, c2 = (int(k) for k in m.cell(2.0, 0.0))
+    m.lo[:, c2:] = 0.0                                                  # ab x = 2 m unbekannt
+    r = next_goal(m, (0.0, 0.0, 0.0), cfg.home, cfg.explore)
+    assert r.path is None or all(p[0] < 1.4 for p in r.path)
+    assert m.bremsen_abgelaufen(105.0) == 0 and len(m.brems) == 1
+    assert m.bremsen_abgelaufen(111.0) == 1 and len(m.brems) == 0
+    r = next_goal(m, (0.0, 0.0, 0.0), cfg.home, cfg.explore)
+    assert r.path is not None and r.path[-1][0] > 1.5
+    m.cfg = type(m.cfg)(**{**m.cfg.__dict__, "brake_block_s": 0.0})    # aus: keine Maske
+    m.bremse_sperren(np.array([[1.5, 0.0]]), bis=1e9)
+    assert m.brems_maske(0, 0, (10, 10)) is None
+
+
+def test_path_clearance_entlang_des_wegs():
+    """Freie Strecke entlang des Wegs (Merkkarte): Wand voraus, Weg mit Knick an ihr vorbei, leer = inf."""
+    from xgonav.localmap import LocalMap
+    lm = LocalMap(CamGeometry(640, 480, 91.0, 0.0, 43.0, 85.0), 160, 120, confirm=1, native=False)
+    assert lm.path_clearance(np.array([[0.0, 0.0], [2.0, 0.0]])) == math.inf
+    lm.pts = np.array([[1.5, y] for y in np.arange(-0.3, 0.31, 0.02)])
+    lm.t = np.zeros(len(lm.pts)); lm.obs = np.arange(len(lm.pts))
+    s = lm.path_clearance(np.array([[0.0, 0.0], [2.0, 0.0]]))
+    assert abs(s - (1.5 - lm.radius)) <= LocalMap.PATH_STEP_M + 1e-9          # bremst, bevor der Radius die Wand berührt
+    # Knick vor der Wand nach links weg: frei
+    assert lm.path_clearance(np.array([[0.0, 0.0], [1.0, 0.0], [1.0, 2.0]])) == math.inf
+    # Wand weiter als max_range: inf
+    lm.pts = lm.pts + [2.0, 0.0]
+    assert lm.path_clearance(np.array([[0.0, 0.0], [5.0, 0.0]])) == math.inf
+
+
+def test_pathfollower_tempo_nach_freier_strecke():
+    """Wand der Merkkarte auf dem Weg: Tempo nach Bremsprofil, nicht erst die Bahnprüfung; ebenso vor einer
+    scharfen Ecke und am Wegende bei Weiterfahrt, wenn der nächste Weg scharf abknickt."""
+    from dataclasses import replace
+    from xgonav.behaviors import PathFollower, World
+    cfg = Config.neutral()
+    f = PathFollower(cfg.behavior, cfg.robot, cfg.home, v=0.8)
+
+    def welt(frei, v_rad=0.65, v_erw=None):
+        return World(t=0.0, dt=0.05, W=640, H=480, hfov=1.6, ego=None, tracks=[], free=None, balancing=True,
+                     yaw=0.0, cmd_v=0.4, pose=(0.0, 0.0, 0.0), v_rad=v_rad, v_erw=v_erw,
+                     path_free_fn=lambda pts, pose, tight: frei)
+    f.set_path([(0.0, 0.0), (5.0, 0.0)])
+    voll = f.drive(welt(math.inf), "x", slow_end=False)
+    assert voll.v == pytest.approx(cfg.robot.v_of(0.8))
+    weit = f.drive(welt(1.6), "x", slow_end=False)
+    nah = f.drive(welt(0.7), "x", slow_end=False)
+    assert nah.v < weit.v < voll.v and "frei" in nah.status
+    assert nah.v == pytest.approx(cfg.robot.v_of(cfg.home.end_min_v))     # 0,7 - 0,1 - 0,65 x 1 s: kein Platz
+    # beschleunigt er noch (Trägheitsmodell über dem Radtempo), bremst das Profil früher; die Aufnahme sieht je
+    # Strecke, was begrenzt
+    anfahren = f.drive(welt(1.6, v_rad=0.3, v_erw=0.5), "x", slow_end=False)
+    assert anfahren.v < f.drive(welt(1.6, v_rad=0.3), "x", slow_end=False).v
+    assert anfahren.extra["frei"] == {"knick": None, "weg": 1.6, "bogen": None, "v_erw": 0.5}
+    aus = PathFollower(cfg.behavior, cfg.robot, replace(cfg.home, free_slow=False), v=0.8)
+    aus.set_path([(0.0, 0.0), (5.0, 0.0)])
+    assert aus.drive(welt(0.9), "x", slow_end=False).v == pytest.approx(voll.v)
+    # Ecke über turn_enter_deg nach 1 m
+    f.set_path([(0.0, 0.0), (1.0, 0.0), (1.0, -0.2), (5.0, -0.2)])
+    assert f.knick_m(0.0, 0.0) == pytest.approx(1.0)
+    assert f.drive(welt(math.inf), "x", slow_end=False).v < voll.v
+    # Weiterfahrt: der nächste Weg kehrt am Ende um -> Ende zählt als Ecke; geradeaus weiter -> nicht
+    f.set_path([(0.0, 0.0), (1.5, 0.0)])
+    assert f.knick_m(0.0, 0.0, [(1.5, 0.0), (1.5, 1.0)]) == pytest.approx(1.5)
+    assert f.knick_m(0.0, 0.0, [(1.5, 0.0), (3.0, 0.1)]) == math.inf
+
+
+
+def test_liegend_springt_auf_idle():
+    """Abgesetzt oder gefallen: fahrende Modi enden sofort (idle), pet und Hand bleiben; liegend nicht wählbar
+    (Nutzer 2026-11-24: explore sperrte liegend Lücken)."""
+    from xgonav.app import ModeNotAllowed
+    app = _app(freespace=True)
+    app.behavior = app._make("explore")
+    app._liegt_idle()
+    assert app.behavior.name == "explore"                      # steht: bleibt
+    app.robot.state.balancing = False
+    app._liegt_idle()
+    assert app.behavior.name == "idle"
+    for m in ("manual", "pet"):
+        app.behavior = app._make(m)
+        app._liegt_idle()
+        assert app.behavior.name == m
+    with pytest.raises(ModeNotAllowed, match="stehen"):
+        app.set_mode("follow")
+    app.robot.state.balancing = True
+    app.set_mode("idle")
+
+
+def test_frontier_rueckfall_nicht_durch_zu_schmalen_spalt():
+    """Rückfallweg nur Raumkarte: Er muss explore.merk_abstand_m (wie [map] radius_tight_m) an der Merkkarte vorbei.
+    Ein 10-cm-Spalt zwischen Kasten und Tür ist kein Weg (RiderPi 2026-11-24 19:02), 30 cm schon."""
+    from xgonav.frontier import next_goal
+
+    def wand(spalt):
+        ys = np.arange(-1.2, 1.21, 0.025)                   # quer durch den ganzen Raum
+        ys = ys[np.abs(ys) >= spalt / 2]
+        return np.column_stack([np.full(len(ys), 0.9), ys])
+
+    cfg, m = _room_map(door=True)                              # einzige Stelle: Tür in +x
+    p = next_goal(m, (0.0, 0.0, 0.0), cfg.home, cfg.explore, obstacles=wand(0.10))
+    assert p.path is None and p.clusters == 1
+    p = next_goal(m, (0.0, 0.0, 0.0), cfg.home, cfg.explore, obstacles=wand(0.30))
+    assert p.path is not None and p.frontier[0] > 1.0           # passt
+    cfg.explore.merk_abstand_m = 0.0                           # vorher: auch durch den 10-cm-Spalt
+    p = next_goal(m, (0.0, 0.0, 0.0), cfg.home, cfg.explore, obstacles=wand(0.10))
+    assert p.path is not None and p.tight
+
+
+def test_frontier_kein_ziel_an_loch_in_merkkarte_wand():
+    """Loch in einer gezeichneten Wand der Raumkarte (unbekannte Zellen), die Merkkarte sieht dort eine Wand: keine
+    Stelle (RiderPI 2026-11-24 20:17, Nische am Heizkörper); ohne ziel_sicht wie vorher."""
+    from xgonav.frontier import next_goal
+    cfg, m = _room_map(door=True)                              # Tür in +x = Loch in der Wand
+    wand = np.array([(1.2, y) for y in np.arange(-0.45, 0.46, 0.025)])   # Merkkarte: dort ist Wand
+    p = next_goal(m, (0.0, 0.0, 0.0), cfg.home, cfg.explore, obstacles=wand)
+    assert p.path is None and p.clusters == 0
+    cfg.explore.ziel_sicht = False
+    p = next_goal(m, (0.0, 0.0, 0.0), cfg.home, cfg.explore, obstacles=wand)
+    assert p.path is not None
+
+
+def test_lift_text_firmware_0027():
+    """Register 0x19 (Hebeschutz-Protokoll, Firmware 0027) aus /proc/XGORider/lift -> Logtext."""
+    from xgonav.robot import lift_text
+
+    def zeile(d: bytes) -> str:
+        return "0x19 32: " + " ".join(f"{b:02x}" for b in d)
+
+    def roh(**f) -> bytes:
+        d = bytearray(32)
+        put = lambda a, v, n, s=False: d.__setitem__(slice(a, a + n), int(v).to_bytes(n, "little", signed=s))
+        put(0, f.get("jetzt", 100_000), 4); put(4, f.get("n", 0), 2); d[6] = f.get("ende", 0); d[7] = f.get("flags", 3)
+        put(8, f.get("t", 0), 4); put(12, 350, 2, True); put(14, 348, 2, True); put(16, 430, 2, True)
+        put(18, -428, 2, True); put(20, 450, 2, True); put(22, -50, 2, True); put(24, 30, 2); put(26, -520, 2, True)
+        d[28] = f.get("ende_grund", 0); d[29] = f.get("stopp", 0); put(30, f.get("alter", 65535), 2)
+        return bytes(d)
+
+    assert lift_text("0x19 32: Fehler -110") is None
+    assert lift_text("0x19 32: 00 11") is None
+    assert "nie ausgelöst" in lift_text(zeile(roh()))
+    t = lift_text(zeile(roh(n=1, t=99_880, ende=2, ende_grund=7, stopp=7, alter=5)))
+    assert "VOR DIESEM STURZ" in t and "durch Stopp (gekippt)" in t and "Rad 350/348" in t
+    assert "Spitze -520" in t and "Befehl 45.0" in t and "gekippt vor 0.05 s" in t
+    t = lift_text(zeile(roh(n=2, t=10_000, ende=1, flags=1)))
+    assert "nicht bei diesem Sturz" in t and "nur Detektor" in t and "kein Stopp" in t
+
+
+def test_merkkarte_punkt_direkt_vor_dem_rider_bleibt_zu():
+    """Um die Pose gibt der Planer die aufgeblasene Wand frei, aber nicht die Merkkarte-Punkte selbst: kein Weg durch
+    ein Tischbein 12 cm vor ihm (RiderPi 2026-11-24 20:43). Zielsuche und planner.plan."""
+    from xgonav.frontier import next_goal
+    from xgonav.planner import plan
+
+    def abstand(path, q):
+        p = np.array(path)
+        t = np.linspace(0, 1, 20)[:, None]
+        pts = np.concatenate([a + t * (b - a) for a, b in zip(p[:-1], p[1:])])
+        return float(np.min(np.hypot(pts[:, 0] - q[0], pts[:, 1] - q[1])))
+
+    cfg, m = _room_map(door=True)
+    bein = np.array([[0.62, 0.0]])
+    p = next_goal(m, (0.5, 0.0, 0.0), cfg.home, cfg.explore, obstacles=bein)
+    assert p.path is not None and abstand(p.path, bein[0]) > 0.04
+    cfg, m = _room_map()
+    w = plan(m, (0.5, 0.0), (1.0, 0.0), cfg.home, obstacles=bein)
+    assert w is not None and abstand(w, bein[0]) > 0.04
+
+
+def test_merkkarte_spalt_unabhaengig_vom_raster():
+    """home.merk_r_m: Merkkarte-Punkte sperren mit echten Koordinaten. Ein 15-cm-Spalt ist an jeder Lage im 5-cm-Raster
+    zu, 25 cm immer offen (RiderPi 2026-11-24 20:43: 15 cm zwischen Stuhl- und Tischbein erschien als 20 cm)."""
+    from xgonav.frontier import next_goal
+    for versatz in (0.0, 0.01, 0.02, 0.03, 0.04):
+        for spalt, offen in ((0.15, False), (0.25, True)):
+            cfg, m = _room_map(door=True)
+            mitte = versatz
+            ys = np.arange(-1.2, 1.21, 0.02)
+            ys = ys[np.abs(ys - mitte) >= spalt / 2 - 1e-9]
+            ys = np.sort(np.concatenate([ys, [mitte - spalt / 2, mitte + spalt / 2]]))
+            wand = np.column_stack([np.full(len(ys), 0.9), ys])
+            p = next_goal(m, (0.0, 0.0, 0.0), cfg.home, cfg.explore, obstacles=wand)
+            assert (p.path is not None) == offen, (versatz, spalt)

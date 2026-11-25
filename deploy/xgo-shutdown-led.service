@@ -1,0 +1,13 @@
+[Unit]
+Description=xgo shutdown-led - beim Herunterfahren des Pi LEDs des Riders blau (Firmware 0028, Aktion 234); xgonav setzt sie beim Start zurück (233)
+# Nach rc-local (lädt den Treiber) und xgonav gestartet, also beim Herunterfahren vor beiden gestoppt: der Treiber ist noch da.
+After=rc-local.service xgonav.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/true
+ExecStop=/bin/sh -c 'echo 234 > /proc/XGORider/action || true'
+
+[Install]
+WantedBy=multi-user.target

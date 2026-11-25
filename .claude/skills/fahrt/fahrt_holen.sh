@@ -32,12 +32,12 @@ fi
 
 OK=()
 for d in $FAHRTEN; do
-    r=$($SSH $RIDER "cd /home/aeinstein/fahrt && echo \$(ls $d | wc -l) \$(md5sum $d/meta.jsonl | cut -c1-12) \$(du -sh $d | cut -f1)")
+    r=$($SSH $RIDER "cd /home/aeinstein/fahrt && echo \$(find $d -type f | wc -l) \$(md5sum $d/meta.jsonl | cut -c1-12) \$(du -sh $d | cut -f1)")
     $SSH $RIDER "tar -C /home/aeinstein/fahrt -cf - $d" | tee >(tar -xf - -C "$LOKAL") | \
         $SSH $KIMMY "tar -C ~/floornet/data/rider/fahrt/mit_imu -xf - && cd ~/floornet/data/rider/fahrt && ln -sfn mit_imu/$d $d"
     sleep 1
-    k=$($SSH $KIMMY "cd ~/floornet/data/rider/fahrt/mit_imu && echo \$(ls $d | wc -l) \$(md5sum $d/meta.jsonl | cut -c1-12)")
-    l="$(ls "$LOKAL/$d" | wc -l) $(md5sum "$LOKAL/$d/meta.jsonl" | cut -c1-12)"
+    k=$($SSH $KIMMY "cd ~/floornet/data/rider/fahrt/mit_imu && echo \$(find $d -type f | wc -l) \$(md5sum $d/meta.jsonl | cut -c1-12)")
+    l="$(find "$LOKAL/$d" -type f | wc -l) $(md5sum < "$LOKAL/$d/meta.jsonl" | cut -c1-12)"
     l=$(echo $l)
     if [ "$k" = "$(echo $r | cut -d' ' -f1-2)" ] && [ "$l" = "$k" ]; then
         $SSH $RIDER "rm -rf /home/aeinstein/fahrt/$d"

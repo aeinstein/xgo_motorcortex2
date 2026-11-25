@@ -88,6 +88,41 @@ def stopp_text(mode: int | None) -> str:
     return "LIEGT – Stopp" if mode == 254 else "GEFALLEN – Stopp"
 
 
+# StopReason der Firmware (runtime_guard.h), in der Reihenfolge der Aufzählung
+FW_STOPGRUND = ("keiner", "Start", "Befehl", "Kalibrierung", "Kalibrierung ungültig", "IMU fehlt", "Aktoren fehlen",
+                "gekippt", "Akku", "Taktlücke", "Reglerausgang ungültig", "RL", "freier Fall")
+FW_SHUTDOWN_LEDS_OFF = 233   # Firmware 0028: 234 = LEDs blau (Pi fährt herunter), 233 = normal
+LIFT_NAH_S = 3.0      # Auslösung so kurz vor dem Lesen gehört zu diesem Sturz
+
+
+def lift_text(line: str) -> str | None:
+    """Zeile aus /proc/XGORider/lift (Register 0x19, Firmware 0027, Aufbau main.cpp fillLiftDiag) -> Logtext;
+    None, wenn der Treiber einen Fehler meldet (alte Firmware) oder die Zeile nicht passt."""
+    try:
+        kopf, _, rest = line.partition(":")
+        d = bytes(int(x, 16) for x in rest.split())
+    except ValueError:
+        return None
+    if not kopf.startswith("0x19") or len(d) != 32:
+        return None
+    u16 = lambda a: int.from_bytes(d[a:a + 2], "little")
+    s16 = lambda a: int.from_bytes(d[a:a + 2], "little", signed=True)
+    u32 = lambda a: int.from_bytes(d[a:a + 4], "little")
+    grund = lambda g: FW_STOPGRUND[g] if g < len(FW_STOPGRUND) else f"Grund {g}"
+    jetzt, n = u32(0), u16(4)
+    stopp = "kein Stopp aus dem Balancieren" if u16(30) == 65535 else \
+        f"letzter Stopp aus dem Balancieren: {grund(d[29])} vor {u16(30) / 100:.2f} s"
+    if n == 0:
+        return f"Hebeschutz: seit Start nie ausgelöst; {stopp}"
+    alter = ((jetzt - u32(8)) & 0xFFFFFFFF) / 1000
+    ende = {0: "greift noch", 1: "frei gegeben", 2: f"durch Stopp ({grund(d[28])})"}.get(d[6], f"Ende {d[6]}")
+    griff = "griff" if d[7] & 2 else "nur Detektor (Hebeschutz aus)"
+    wann = "VOR DIESEM STURZ" if alter <= LIFT_NAH_S else "nicht bei diesem Sturz"
+    return (f"Hebeschutz {wann}: {griff} vor {alter:.2f} s, {u16(24)} Takte, {ende}; Rad {s16(12)}/{s16(14)} "
+            f"(roh {s16(16)}/{s16(18)}, Spitze {s16(26)}), Befehl {s16(20) / 10:.1f}, Nick {s16(22) / 100:.2f}°; "
+            f"{n}× seit Start; {stopp}")
+
+
 @dataclass
 class RobotState:
     balancing: bool = True      # Kurs kommt allein aus dem IMU-Strom (App.kurs_deg), nicht aus /proc yaw
@@ -140,6 +175,12 @@ class SpeedCtrl:
             self.trim = max(-c.speed_ctrl_max, min(c.speed_ctrl_max, self.trim))
         self._dir = d
         return self.trim
+
+    @property
+    def v_modell(self) -> float:
+        """Tempo (m/s), das der Rider laut Trägheitsmodell (speed_ctrl_lag_s) gerade anstrebt: Er setzt einen
+        neuen Fahrwert erst nach 1-2 s um und beschleunigt so lange auf den alten hin."""
+        return self._lag * self.cfg.vx_limit
 
 
 class Robot:
@@ -560,6 +601,9 @@ class ProcRobot(Robot):
             log.warning("Kernel ohne motion_timeout_ms – bei Absturz fährt der Rider weiter! "
                         "Treiber aus kernel_module/ bauen und laden.")
         self._emergency_stop()
+        # Firmware 0028: LEDs aus dem Shutdown-Blau zurück (beim Herunterfahren des Pi setzt xgo-shutdown-led 234);
+        # ältere Firmware kennt 233 nicht als Aktion und tut nichts
+        self._write("action", FW_SHUTDOWN_LEDS_OFF)
         self._led_start()
 
     def gespeicherte_led(self) -> int:
@@ -631,11 +675,31 @@ class ProcRobot(Robot):
                     log.warning("Rider GEFALLEN – Stopp")
                 else:
                     log.warning("Rider %s (Zustand %d)", lage(st), st)
+                if alt == 1 and st != 254:
+                    self._lift_nach_sturz()
             self.state.balancing = bal
         self.state.battery = self._read_int("battery")
         self.state.buttons = self._read_int("buttons") or 0
         self._poll_height()
         self.state.t = time.monotonic()
+
+    def _lift_nach_sturz(self) -> None:
+        """Nach einem Sturz einmal das Protokoll des Hebeschutzes lesen (Firmware 0027, Treiber /proc/XGORider/lift)
+        und loggen. Eigener Faden: das Lesen fragt den ESP32 (bis 0,1 s), die Schleife schreibt derweil weiter Stopps."""
+        pfad = self._path("lift")
+        if not os.path.exists(pfad):
+            return
+
+        def lesen() -> None:
+            try:
+                with open(pfad) as f:
+                    text = lift_text(f.read().strip())
+            except OSError:
+                return
+            if text:
+                log.warning("%s", text)
+
+        threading.Thread(target=lesen, name="lift", daemon=True).start()
 
     def _poll_height(self) -> None:
         """Höhen-Sollwert zurücklesen: Das Web (api.php) schreibt ihn direkt, ohne xgonav. Am 2026-11-07

@@ -26,7 +26,7 @@ from . import navfast
 from .config import ExploreCfg, HomeCfg
 from .gridmap import GridMap
 from .mathe import wrap
-from .planner import cost_map, driven_mask, kept_path, known_area, path_length, route, squeeze_zone
+from .planner import cost_map, driven_mask, kept_path, known_area, merk_maske, path_length, route, squeeze_zone
 
 
 @dataclass
@@ -105,10 +105,19 @@ def next_goal(grid: GridMap, pose: tuple, hcfg: HomeCfg, ecfg: ExploreCfg, obsta
     blocked, cost = cost_map(lo, res, l_show, hcfg, None, driven)
     blocked_x = cost_x = None
     if extra is not None:
-        blocked_x, cost_x = cost_map(lo, res, l_show, hcfg, extra, driven)
+        blocked_x, cost_x = cost_map(lo, res, l_show, hcfg, extra, driven,
+                                     merk_maske(grid, obstacles, r0, c0, lo.shape, hcfg.merk_r_m))
     occ = lo > l_show
     free = lo < -l_show
     unknown = ~free & ~occ
+    # Merkkarte, aufgezogen um merk_abstand_m (explore.ziel_sicht): Wo sie eine bestätigte Wand sieht, ist nichts
+    # unbekannt. Sonst wurde ein Loch in einer gezeichneten Wand zur Stelle, und er fuhr in die Ecke davor (RiderPi
+    # 2026-11-24 20:17, Nische am Heizkörper). Dient auch der Prüfung des Rückfallwegs.
+    merk_weg = None
+    if ecfg.ziel_sicht and extra is not None:
+        merk_weg = merk_maske(grid, obstacles, r0, c0, lo.shape, ecfg.merk_abstand_m)
+        merk_weg = extra | merk_weg if merk_weg is not None else extra
+        unknown &= ~merk_weg
     n = grid.n
 
     def to_world(r: int, c: int) -> tuple[float, float]:
@@ -125,6 +134,18 @@ def next_goal(grid: GridMap, pose: tuple, hcfg: HomeCfg, ecfg: ExploreCfg, obsta
     blocked[disk.astype(bool)] = False                 # die Pose driftet: Wand neben dem Rider sperrt ihn nicht ein
     if blocked_x is not None:
         blocked_x[disk.astype(bool)] = False
+        # Die Punkte der Merkkarte selbst bleiben auch um die Pose zu, nur die Zelle der Pose nicht: Sonst plante er
+        # durch ein Tischbein 10 cm vor sich (RiderPi 2026-11-24 20:43, „frei 0,00 m“, 4 s gedrückt)
+        blocked_x[extra & disk.astype(bool)] = True
+        blocked_x[s] = False
+    # Bremsstellen (grid.brake_block_s): gesperrt auch für die Erreichbarkeit, sonst bliebe eine Stelle hinter
+    # einer Lücke, die nicht passt, das Ziel; nur um die Pose nicht
+    brems = grid.brems_maske(r0, c0, lo.shape)
+    if brems is not None:
+        brems &= ~disk.astype(bool)
+        blocked |= brems
+        if blocked_x is not None:
+            blocked_x |= brems
     forbid = None
     zones = grid.all_zones()                           # Sperr- und Dunkelzonen
     if zones:                                          # Sperrzonen bleiben zu, auch als Ziel
@@ -143,6 +164,15 @@ def next_goal(grid: GridMap, pose: tuple, hcfg: HomeCfg, ecfg: ExploreCfg, obsta
     if not fr.any():
         return ExplorePlan(None, known_m2=known_m2)
     zone = squeeze_zone(cost, hcfg)                    # dicht an Hindernissen: nur als Engstelle befahrbar
+    if ecfg.weg_bekannt:
+        # Wege zu Stellen nur über bekannten Boden: Eine Stelle liegt am Rand des Bekannten, der Weg durchs
+        # Unbekannte führte durch eine andere Öffnung von hinten an sie heran (RiderPi 2026-11-24, Mülleimer)
+        fremd = unknown & ~disk.astype(bool)
+        if driven is not None:
+            fremd &= ~driven
+        blocked = blocked | fremd
+        if blocked_x is not None:
+            blocked_x = blocked_x | fremd
 
     # Fahrweg-Schätzung und unbekannte Fläche um jeden Punkt
     dist, step = wavefront(passable, s, native=hcfg.native)
@@ -207,18 +237,32 @@ def next_goal(grid: GridMap, pose: tuple, hcfg: HomeCfg, ecfg: ExploreCfg, obsta
     # die übrigen ohne sie. Ein Weg, den nur die Raumkarte erlaubt, führte am RiderPi durch Stuhlbeine, die
     # nur die Merkkarte kannte (2026-11-23); er gilt deshalb als Engstelle (explore.tight_max).
     gaenge = [True, False] if blocked_x is not None else [False]
+    # Sichtprüfung (explore.ziel_sicht): Das Ziel muss vom Haltepunkt aus zu sehen sein, gemessen an Raumkarte und
+    # Merkkarte. Sonst lag die Stelle hinter einem Hindernis, das nur die Merkkarte kannte, und er fuhr darauf zu und
+    # dahinter (RiderPi 2026-11-24, Mülleimer). Nur auf den Kandidaten, im Planer-Thread.
+    sicht = ecfg.ziel_sicht
+    sperre = (occ | extra) if (sicht and extra is not None) else occ
+    verworfen = set()
     for mit_merk in gaenge:
         for i, (k, r, c) in enumerate(order):
             g = (r, c)
+            if k in verworfen:
+                continue
+            if blocked_x is not None and (mit_merk or sicht) and blocked_x[g]:
+                continue
             if mit_merk:
-                if blocked_x[g]:
-                    continue
                 path = route(blocked_x, cost_x, s, g, to_world, (x, y), to_world(*g), hcfg.native)
             else:
                 path = route(blocked, cost, s, g, to_world, (x, y), to_world(*g), hcfg.native)
+                if path is not None and merk_weg is not None and (_weg_trifft(merk_weg, path, to_local, s, rad)
+                                                                  or _weg_trifft(extra, path, to_local, s, 1)):
+                    continue                            # Rückfall nur, wenn der Weg die Merkkarte nicht schneidet
             if path is None:
                 continue
             path = shorten(path, ecfg.standoff_m)
+            if sicht and not _sicht_frei(sperre, to_local(*path[-1]), g):
+                verworfen.add(k)
+                continue
             if keeping and i == 0:                      # Weg nur bei gleichem Ziel behalten
                 kept = kept_path(keep_path, (x, y), blocked_x if blocked_x is not None else blocked, lambda p: to_local(*p))
                 if kept is not None and path_length(kept) <= hcfg.keep_factor * path_length(path) + 0.3:
@@ -226,7 +270,26 @@ def next_goal(grid: GridMap, pose: tuple, hcfg: HomeCfg, ecfg: ExploreCfg, obsta
             nur_raum = blocked_x is not None and not mit_merk
             return ExplorePlan(path, path[-1], to_world(r, c), len(cand) + avoided, avoided, round(float(gain[k]), 2),
                                known_m2, tight=bool(code[k] == 2) or nur_raum)
-    return ExplorePlan(None, clusters=len(cand) + avoided, avoided=avoided, known_m2=known_m2)
+    return ExplorePlan(None, clusters=len(cand) + avoided, avoided=avoided + len(verworfen), known_m2=known_m2)
+
+
+def _sicht_frei(sperre: np.ndarray, a: tuple[int, int], b: tuple[int, int]) -> bool:
+    """Gerade von Zelle a nach Zelle b (Zeile, Spalte) ohne gesperrte Zelle dazwischen (Endpunkte zählen nicht)."""
+    m = np.zeros(sperre.shape, np.uint8)
+    cv2.line(m, (a[1], a[0]), (b[1], b[0]), 1, 1)
+    m[a] = 0
+    m[b] = 0
+    return not bool((sperre & (m > 0)).any())
+
+
+def _weg_trifft(maske: np.ndarray, path: list, to_local, s: tuple[int, int], frei_r: int = 0) -> bool:
+    """Schneidet der Weg (Weltpunkte) eine Zelle der Maske? Zellen bis frei_r um die Pose zählen nicht (steht er
+    schon dicht an etwas, sperrte das sonst jeden Weg)."""
+    m = np.zeros(maske.shape, np.uint8)
+    pts = np.array([to_local(*p)[::-1] for p in path], np.int32)
+    cv2.polylines(m, [pts], False, 1, 1)
+    cv2.circle(m, (s[1], s[0]), frei_r, 0, -1)
+    return bool((maske & (m > 0)).any())
 
 
 def _hyp(a: float, b: float) -> float:

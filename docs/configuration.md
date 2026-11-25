@@ -193,7 +193,7 @@ Floor boundary from FloorNet only (`xgonav/freespace.py`, `docs/floornet.md`). T
 | `height_cruise_mm` / `height_search_mm` / `height_fast_mm` | 85 / 100 / 80 | |
 
 ### `[output]`
-`web_host` 127.0.0.1, `web_port` 8088 (0 = off), `web_fps` 10, `jpeg_native` true (browser JPEG in the hardware encoder `jpeg_dev` = `/dev/video31`, fallback `cv2.imencode`), `lcd_fifo` `""` = off (sim: `/tmp/lcd0`), `lcd_fps` 15, `record_dir` `~/fahrt` (raw recording), `record_min_free_mb` 500 (below: recording switches itself off), `record_jpeg_q_hw` 95 (raw-recording JPEG in the hardware encoder; RiderPi: 4.6 instead of 8.6 ms CPU per image, mean deviation 0.70 vs 0.63, 51 vs 41 KB; above 95 only larger), `record_jpeg_q_cv` 92 (libjpeg fallback). `meta.jsonl` names the encoder per image (`"jpeg": "hw95"`/`"cv92"`; missing before 2026-11-19 = libjpeg q92).
+`web_host` 127.0.0.1, `web_port` 8088 (0 = off), `web_fps` 10, `jpeg_native` true (browser JPEG in the hardware encoder `jpeg_dev` = `/dev/video31`, fallback `cv2.imencode`), `lcd_fifo` `""` = off (sim: `/tmp/lcd0`), `lcd_fps` 15, `record_dir` `~/fahrt` (raw recording), `record_min_free_mb` 500 (below: recording switches itself off), `record_jpeg_q_hw` 95 (raw-recording JPEG in the hardware encoder; RiderPi: 4.6 instead of 8.6 ms CPU per image, mean deviation 0.70 vs 0.63, 51 vs 41 KB; above 95 only larger), `record_jpeg_q_cv` 92 (libjpeg fallback), `record_map_s` 2.0 (room map PNG every n s into `karte/`, 0 = off), `record_map_px` 480, `record_map_view_m` 6.0. `meta.jsonl` names the encoder per image (`"jpeg": "hw95"`/`"cv92"`; missing before 2026-11-19 = libjpeg q92).
 
 ### `[emotion]`
 `enabled` true, `dir` `/opt/xgonav/emotions`, `fifo` `/tmp/lcd0`, `gap_s` 5, `lost_s` 2, `battery_low` 20 %, `battery_repeat_s` 300.
@@ -293,6 +293,9 @@ All keys with comments: `PetCfg` in `xgonav/config.py`.
 | `side_range_m` | 1.0 (since 2026-11-24): hits and free rays only inside the ellipse `max_range_m`/`free_range_m` ahead × this sideways (camera frame); range along bearing β = 1/√(cos²β/R² + sin²β/side²): 2.5 m ahead, ~1.3 m at the image edge (46°), never more than 1 m to the side; 0 = off |
 | `confirm_dr_m` / `confirm_cells` | 0 = off (since 2026-11-14, one sighting is enough with FloorNet; 0.2 before) / 2: with > 0 a hit counts only once the same spot (± cells) was hit from ranges at least this far apart; until then it is a candidate (orange in `/map.png`). Reflections in a glossy floor and seams move with the Rider and are never confirmed; turning on the spot alone confirms nothing |
 | `mark_blocking` | true | `LocalMap` points the path check brakes for are entered as confirmed and occupied (what stops the Rider is on the map); free rays remove them again if the spot is later seen free |
+| `brake_block_s` | 300 | full brake while already in tight mode (`[map] radius_tight_m`): the spot does not fit, planner and goal search block the hit points plus `brake_block_r_m` this long; free rays do not reopen it, only time. In memory only. 0 = off |
+| `brake_block_r_m` | 0.18 | radius of that block (= `[map] radius_m`) |
+| `brake_block_max_mps` | 0.25 | only if the wheels were at most this fast: a full brake from cruising speed in tight mode means "too fast", not "does not fit" (it closed the 25 cm door in sim `spalt` once the follower braked earlier) |
 | `free_range_m` | 2.5 (1.5 until 2026-11-24, RiderPi 1.1 from 2026-11-06 to 2026-11-14); free rays up to here (along the ray, limited sideways by `side_range_m`) |
 | `column_step` | 2 |
 | `l_free` / `l_occ` | -0.4 / 0.5 (two hits to `l_show`) |
@@ -350,6 +353,7 @@ All keys with comments: `PetCfg` in `xgonav/config.py`.
 | `lookahead_m` | 0.5 | pure pursuit |
 | `arrive_m` | 0.15 | goal radius |
 | `end_decel_mps2` / `end_lag_s` / `end_min_v` | 0.25 / 1.0 / 0.15 | braking before the path end (every drive that stops there, also `home`/`patrol`; `explore` only without a planned next goal): speed ≤ √(2·a·s), s = remaining path length minus wheel speed × `end_lag_s` (the Rider applies a set-point only after ~0.7–1 s), at least `end_min_v` × `max_v`. Full `explore` speed starts braking ~1.8 m before the end (before 2026-11-23: 0.45 × straight-line distance, from ~0.9 m; `home` did not brake) |
+| `free_slow` / `free_rest_m` | true / 0.10 | same braking profile before the first local-map obstacle along the path and on the arc of the drive command (same arc and radius as the arc check, up to 2.5 m; s minus `free_rest_m`) and before the first sharp corner (> `turn_enter_deg`; with pass-through also into the next path). Status `frei …m` when it limits. Before: only the arc check (look-ahead = braking distance + 0.15 m, ~0.85 m at 0.65 m/s) reacted, with a full brake (RiderPi 2026-11-24). The arc check now derives its allowed speed from the faster of command and wheels, so an early lowered command no longer forces a full brake (sim `spalt`: that closed the door via brake spots) |
 | `replan_s` | 2.0 | replan interval (also after 3 s without progress) |
 | `keep_factor` | 1.2 | keep the current path while free and ≤ factor × new path + 0.3 m (not after getting stuck) |
 | `use_localmap` | true | confirmed `LocalMap` points (same as the path check) are obstacles for planning |

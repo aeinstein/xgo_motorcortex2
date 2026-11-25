@@ -107,7 +107,10 @@ class GridMap:
             self.zones: list[list[tuple[float, float]]] = []      # Sperrzonen: Eckpunkte, gelten für alle Modi
             # Dunkelzonen (dunkel.py): sperren wie zones, aber nur im Speicher und auf Zeit; App ersetzt die Liste
             self.dark_zones: list[list[tuple[float, float]]] = []
-            self._saved_key = None                                # (updates, start) beim letzten Speichern
+            # Bremsstellen (grid.brake_block_s): Zeilen (x, y, bis), nach bis aufsteigend. Wird ersetzt, nie
+            # geändert: Der Planer-Thread liest ohne Sperre.
+            self.brems = np.zeros((0, 3), np.float64)
+            self._saved_key = None                               # (updates, start) beim letzten Speichern
             self._saved_t = time.monotonic()
 
     def _reset_confirm(self) -> None:
@@ -258,6 +261,7 @@ class GridMap:
             self.saved_pose = saved_pose
             self.route, self.route_loop, self.zones = [], False, []
             self.dark_zones = []
+            self.brems = np.zeros((0, 3), np.float64)
             self._stats = None
             self._saved_key = (self.updates, self.start)
         log.info("Raumkarte geladen (%s) – Rider muss am Startpunkt stehen", path)
@@ -321,6 +325,53 @@ class GridMap:
                 self.conf.flat[lin] = True
             self.lo.flat[lin] = np.maximum(self.lo.flat[lin], self.cfg.l_show + self.cfg.l_occ)
         return int(lin.size)
+
+    BREMS_MAX = 400                     # höchstens so viele Bremsstellen (Zellen), die ältesten fallen weg
+
+    def bremse_sperren(self, pts: np.ndarray, bis: float) -> int:
+        """Punkte (N x 2, Welt-m), vor denen die Bahnprüfung schon im Engstellenmodus voll bremst: Die Stelle passt
+        nicht, bis zur Zeit bis sperren (grid.brake_block_s). Je Zelle eine Stelle, eine schon bekannte gilt ab jetzt
+        neu. Rückgabe: Zahl der Zellen, die vorher nicht gesperrt waren (0: kein Grund, neu zu planen)."""
+        if not self.pose_ok or pts is None or not len(pts):
+            return 0
+        pts = np.asarray(pts, np.float64)
+        r, c = self.cell(pts[:, 0], pts[:, 1])
+        lin, i = np.unique(r * self.n + c, return_index=True)
+        alt = self.brems
+        frisch = len(lin)
+        if len(alt):
+            ra, ca = self.cell(alt[:, 0], alt[:, 1])
+            la = ra * self.n + ca
+            frisch = int((~np.isin(lin, la)).sum())
+            alt = alt[~np.isin(la, lin)]
+        neu = np.column_stack([pts[i, 0], pts[i, 1], np.full(len(i), float(bis))])
+        self.brems = np.concatenate([alt, neu])[-self.BREMS_MAX:]
+        return frisch
+
+    def bremsen_abgelaufen(self, now: float) -> int:
+        """Abgelaufene Bremsstellen entfernen; ein Vergleich, solange keine abgelaufen ist (Regeltakt)."""
+        b = self.brems
+        if not len(b) or b[0, 2] > now:
+            return 0
+        keep = b[:, 2] > now
+        self.brems = b[keep]
+        return int((~keep).sum())
+
+    def brems_maske(self, r0: int, c0: int, shape: tuple) -> np.ndarray | None:
+        """Zellen im Umkreis grid.brake_block_r_m um die Bremsstellen (bool, Ausschnitt ab r0, c0) oder None."""
+        b = self.brems
+        if not len(b) or self.cfg.brake_block_s <= 0:
+            return None
+        k = int(round(self.cfg.brake_block_r_m / self.res))
+        r, c = self.cell(b[:, 0], b[:, 1])
+        r, c = r - r0, c - c0
+        ok = (r >= -k) & (r < shape[0] + k) & (c >= -k) & (c < shape[1] + k)
+        if not ok.any():
+            return None
+        m = np.zeros(shape, np.uint8)
+        for rr, cc in zip(r[ok].tolist(), c[ok].tolist()):
+            cv2.circle(m, (cc, rr), k, 1, -1)
+        return m.astype(bool)
 
     def cell(self, x, y):
         """Welt-Meter -> Zellindizes (Zeile, Spalte); Kartenmitte = Ursprung."""
@@ -569,7 +620,7 @@ class GridMap:
             free = int(np.count_nonzero(lo < -self.cfg.l_show))
             return {"belegt_m2": round(occ * self.res ** 2, 2), "frei_m2": round(free * self.res ** 2, 2),
                     "updates": self.updates, "gesperrt": self.locked, "map_id": self.map_id,
-                    "route": len(self.route), "zonen": len(self.zones), "dunkelzonen": len(self.dark_zones)}
+                    "route": len(self.route), "zonen": len(self.zones), "dunkelzonen": len(self.dark_zones), "bremsstellen": len(self.brems)}
 
     def image(self, px: int = 480, view_m: float | None = None) -> np.ndarray:
         return self.render(px, view_m)[0]
@@ -633,6 +684,9 @@ class GridMap:
             cv2.polylines(img, [np.array([to_px(a, b) for a, b in z], np.int32)], True, (40, 40, 220), 2)
         for z in dark:                                                   # Dunkelzonen violett
             cv2.polylines(img, [np.array([to_px(a, b) for a, b in z], np.int32)], True, (160, 40, 110), 2)
+        rb = max(2, int(round(self.cfg.brake_block_r_m / self.res * k)))
+        for a, b, _ in self.brems.tolist():                              # Bremsstellen: Kreis rot, dünn
+            cv2.circle(img, to_px(a, b), rb, (40, 40, 200), 1)
         if route:
             cv2.polylines(img, [np.array([to_px(a, b) for a, b in route], np.int32)], loop, (200, 60, 200), 1)
             for i, (a, b) in enumerate(route, 1):

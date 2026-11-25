@@ -1109,7 +1109,10 @@ function verbindungWeg() { pille('p-verb', tr('getrennt'), 'schlecht'); }
 // „Roll ausgleichen“ (nick=2: dazu Roll und cx im Kopf): Das Bild wird um den Horizontpunkt bei cx um den
 // IMU-Roll gedreht (CSS rotate, im Uhrzeigersinn = rechts tief ausgleichen). Stimmt der Roll, stehen senkrechte
 // Kanten senkrecht und die cyan Linie liegt waagerecht. Am Pi rechnet dafür nichts zusätzlich.
-let bildUrl = null, bildDy = 0, bildRoll = 0, bildCx = NaN, bildRowImu = NaN;
+// Abgezogen wird der gleitende Mittelwert (~3 s) von row_stand − row_imu: Der ruhige Stand weicht von der
+// Normallage (pitch_ref_deg, aus Fahrten abgestimmt) um einige Grad ab; ohne Abzug stünde das Bild dauerhaft
+// um diesen Rest verschoben (schwarzer Rand). So gleicht ⇕ nur das Nicken aus, im Mittel füllt das Bild den Kasten.
+let bildUrl = null, bildDy = 0, bildDyMittel = NaN, bildRoll = 0, bildCx = NaN, bildRowImu = NaN;
 let bildStabil = false, bildRollAn = false, bildMitteAn = true;
 // Symbol-Umschalter (Kameraleiste): an = blau hervorgehoben wie ein aktiver Knopf
 function umschaltZeigen(id, an) {
@@ -1142,7 +1145,8 @@ function bildMitte(W, H, transform, origin) {
 function bildVerschieben() {
   const b = $('bild'), H = b.naturalHeight || 480, W = b.naturalWidth || 640;
   const t = [];
-  if (bildStabil && bildDy) t.push('translateY(' + (bildDy / H * 100).toFixed(3) + '%)');
+  const dy = bildStabil && Number.isFinite(bildDyMittel) ? bildDy - bildDyMittel : 0;
+  if (dy) t.push('translateY(' + (dy / H * 100).toFixed(3) + '%)');
   if (bildRollAn && bildRoll) {
     t.push('rotate(' + bildRoll.toFixed(2) + 'deg)');
     const ox = Number.isFinite(bildCx) ? bildCx / W * 100 : 50, oy = Number.isFinite(bildRowImu) ? bildRowImu / H * 100 : 50;
@@ -1282,6 +1286,9 @@ function bildVerbinden() {
     vor.decode().then(() => {
       if (nr !== neuestes) { URL.revokeObjectURL(url); return; }   // inzwischen kam ein neueres
       bildDy = Number.isFinite(stand) && Number.isFinite(imu) ? stand - imu : 0;
+      // gleitender Mittelwert, ~3 s bei 24 Bildern/s; Sprünge (Aufstehen/Absetzen) > 40 px setzen ihn neu
+      if (!Number.isFinite(bildDyMittel) || Math.abs(bildDy - bildDyMittel) > 40) bildDyMittel = bildDy;
+      else bildDyMittel += (bildDy - bildDyMittel) / 72;
       bildRoll = Number.isFinite(r) ? r : 0;
       bildCx = cx;
       bildRowImu = imu;
@@ -2148,12 +2155,14 @@ async function lageKalibrieren() {
   befehl('pitch_calibration');
 }
 // Kopfleiste: balanciert er, nur Absetzen; liegt er, nur Aufstehen/Aufspringen; unbekannt (keine Verbindung): alle
-// Gefallen (state 0): Absetzen bleibt sichtbar, sonst käme man aus dem Zustand nicht heraus
+// Gefallen (state 0): Absetzen bleibt sichtbar, sonst käme man aus dem Zustand nicht heraus;
+// bereit (state 253, nach Aufstehen/Arm, wartet aufs Aufrichten): Absetzen ebenso, um das Arm zurückzunehmen
 let lageZustand = null;
+const absetzbar = st => st === 0 || st === 253;
 function lageKnoepfe(balanciert, state = lageZustand) {
   lageZustand = state ?? null;
   const b = balanciert === true, l = balanciert === false;
-  $('k-absetzen').hidden = l && lageZustand !== 0;
+  $('k-absetzen').hidden = l && !absetzbar(lageZustand);
   $('k-aufstehen').hidden = b;
   $('k-aufspringen').hidden = b;
 }
@@ -3293,7 +3302,7 @@ function sysVerarbeiten(s) {
   if (s.height != null) { beinSoll.h = s.height; if (!hoeheAusStatus) hoeheSetzen(s.height); }
   if (s.roll != null) { beinSoll.r = s.roll; reglerSetzen('roll', s.roll, s.roll + '°'); }
   beinSoll.abgesetzt = s.state === 254;
-  if (s.state != null) { zustandPille(s.state, s.state === 1); if ((s.state === 0) !== (lageZustand === 0)) lageKnoepfe(s.state === 1, s.state); }
+  if (s.state != null) { zustandPille(s.state, s.state === 1); if (absetzbar(s.state) !== absetzbar(lageZustand)) lageKnoepfe(s.state === 1, s.state); }
   const jetzt = Date.now();
   // Auslastung auf den Höchsttakt bezogen: 100 % bei halbem Takt zählt als 50 %
   const takt = s.mhz && s.mhz[1] > 0 ? Math.min(1, s.mhz[0] / s.mhz[1]) : 1;

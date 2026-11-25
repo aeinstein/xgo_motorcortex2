@@ -42,7 +42,7 @@
        "key": "turn_min_w",
        "typ": "float",
        "default": 0.06,
-       "hilfe": "Kleinere Drehbefehle setzt die Firmware nicht um (Totband ~5 %): Untergrenze des gemeinsamen Drehreglers behaviors.dreh_w für alle Drehungen auf der Stelle (PathFollower, pet, Dunkelangst; seit 2026-11-23)"
+       "hilfe": "Kleinere Drehbefehle setzt die Firmware nicht um (Totband ~5 %): Untergrenze des gemeinsamen Drehreglers behaviors.dreh_w für alle Drehungen auf der Stelle (PathFollower, pet, Dunkelangst; seit 2026-11-23). Gilt seit 2026-11-24 auch nach dem Tempo (Robot.drive): Tempo 0,75 machte aus 0,06 gesendet 0,045, er drehte nicht."
       },
       {
        "key": "tempo",
@@ -1170,6 +1170,24 @@
        "hilfe": "Punkte der Merkkarte, vor denen die Bahnprüfung bremst, gelten in der Raumkarte als bestätigt und belegt (auch ohne confirm_dr_m): Was ihn bremst, steht in der Karte, und der Planer fährt darum herum."
       },
       {
+       "key": "brake_block_s",
+       "typ": "float",
+       "default": 300.0,
+       "hilfe": "Bremsstellen: Bremst die Bahnprüfung schon im Engstellenmodus ([map] radius_tight_m) voll, passt die Stelle nicht: Planer und Zielsuche sperren den Umkreis brake_block_r_m (wie [map] radius_m) um die Trefferpunkte brake_block_s lang. Freistrahlen öffnen sie nicht, nur die Zeit (mark_blocking baut FloorNet sofort wieder ab: Stuhlbeine, Schrankkanten, dahinter sieht es Boden). Nicht bei jeder Vollbremsung: Vor der 25-cm-Tür (Simulator spalt) bremst er erst mit dem normalen Radius und fährt dann eng hindurch; schon wenige gemerkte Zellen in der Öffnung schlossen sie (Boden 43 statt 82 %, 2026-11-24). Nur im Speicher. 0: aus."
+      },
+      {
+       "key": "brake_block_r_m",
+       "typ": "float",
+       "default": 0.18,
+       "hilfe": ""
+      },
+      {
+       "key": "brake_block_max_mps",
+       "typ": "float",
+       "default": 0.25,
+       "hilfe": "Nur wenn die Räder dabei höchstens so schnell waren (m/s): Eine Vollbremsung aus voller Fahrt im Engstellenmodus heißt „zu schnell“, nicht „passt nicht“; sie sperrte im Simulator die 25-cm-Tür, sobald der Wegfolger früher abbremste (home.free_slow, spalt 2026-11-24). Ohne Raddaten: sperrt wie bisher."
+      },
+      {
        "key": "column_step",
        "typ": "int",
        "default": 2,
@@ -2046,6 +2064,24 @@
        "hilfe": "Dabei die bestätigten Hindernisse der Merkkarte bis zu diesem Abstand vom Rider in die Raumkarte eintragen (belegt, wie grid.mark_blocking): Die Stuhlbeine standen dort nur als einzelne Flecken. 0 = aus."
       },
       {
+       "key": "ziel_sicht",
+       "typ": "bool",
+       "default": true,
+       "hilfe": "Ziel nur, wenn die Frontier vom Haltepunkt aus zu sehen ist (Gerade frei in Raumkarte und Merkkarte), und der Rückfallweg ohne Merkkarte darf keinen ihrer Punkte schneiden. Seit 2026-11-24: Er sah am RiderPi, dass am Mülleimer nichts frei ist (nur Merkkarte), fuhr trotzdem näher und dann dahinter. False = wie vorher."
+      },
+      {
+       "key": "weg_bekannt",
+       "typ": "bool",
+       "default": true,
+       "hilfe": "Weg zur Stelle nur über bekannten Boden (Unbekanntes gesperrt statt nur teurer, home.unknown_cost). Seit 2026-11-24: Sonst plante er durch eine andere Öffnung ins Unbekannte und von hinten an die Stelle."
+      },
+      {
+       "key": "merk_abstand_m",
+       "typ": "float",
+       "default": 0.08,
+       "hilfe": "Der Rückfallweg (nur Raumkarte) muss mindestens so weit an jedem bestätigten Merkkarte-Punkt vorbei, wie die Bahnprüfung in Engstellen verlangt ([map] radius_tight_m, gleich halten). Sonst plante er in einen 10-cm-Spalt zwischen Kasten und Tür, die Bahnprüfung bremste, nach 5 s gesperrt (RiderPi 2026-11-24 19:02)."
+      },
+      {
        "key": "no_growth_s",
        "typ": "float",
        "default": 120.0,
@@ -2202,6 +2238,12 @@
        "hilfe": ""
       },
       {
+       "key": "tight_center_knick_m",
+       "typ": "float",
+       "default": 0.5,
+       "hilfe": "Nicht auf die Lückenmitte zielen, wenn der Weg höchstens so weit voraus abknickt (Ecke über turn_enter_deg): Dann führt der Weg um eine Ecke, nicht durch die Lücke. RiderPi 2026-11-24: Weg links um die Schrankecke (Knick 0,33 m), er zielte geradeaus auf die Lückenmitte, schlich 3 s mit 0,03 gegen den Schrank. 0 = aus."
+      },
+      {
        "key": "arrive_m",
        "typ": "float",
        "default": 0.15,
@@ -2223,6 +2265,18 @@
        "key": "end_min_v",
        "typ": "float",
        "default": 0.15,
+       "hilfe": ""
+      },
+      {
+       "key": "free_slow",
+       "typ": "bool",
+       "default": true,
+       "hilfe": "Tempo nach freier Strecke (PathFollower.drive): dasselbe Bremsprofil wie am Wegende auch vor dem ersten Hindernis der Merkkarte entlang des Wegs und auf dem Bogen des Fahrbefehls (bis 2,5 m), minus free_rest_m, und vor dem ersten scharfen Knick (über turn_enter_deg, auch zum nächsten Weg bei Weiterfahrt ohne Halt). Die Bahnprüfung schaut nur bis zum Bremsabstand voraus; der Rider fuhr mit 0,65 m/s auf die Wand zu und musste dann voll bremsen (RiderPi 2026-11-24, Bahn 0,69 m). Seit 2026-11-24, nicht gefahren."
+      },
+      {
+       "key": "free_rest_m",
+       "typ": "float",
+       "default": 0.1,
        "hilfe": ""
       },
       {
@@ -2252,8 +2306,14 @@
       {
        "key": "localmap_reach_m",
        "typ": "float",
-       "default": 1.0,
-       "hilfe": "nur so nahe: weiter weg misst die Merkkarte zu ungenau"
+       "default": 2.0,
+       "hilfe": "Merkkarte-Punkte bis so weit vom Rider zählen für Planer und Zielsuche. 2,0 seit 2026-11-24 (vorher 1,0, „weiter weg misst die Merkkarte zu ungenau“): Mit 1,0 plante er aus 2 m auf einen Durchgang zu, den Kamera und Merkkarte schon als zu sahen, und erfuhr es erst 1 m davor (RiderPi 2026-11-24, Schrank)."
+      },
+      {
+       "key": "merk_r_m",
+       "typ": "float",
+       "default": 0.08,
+       "hilfe": "Merkkarte-Punkte sperren für den Planer jede Zelle, deren Mitte näher als so (m) liegt, mit den echten Koordinaten (planner.merk_maske), wie die Bahnprüfung in Engstellen ([map] radius_tight_m, gleich halten): ein 15-cm-Spalt ist zu, 25 cm offen. Vorher Zelle des Punkts + squeeze_m: 15 cm erschien als 20 cm (RiderPi 2026-11-24 20:43, Stuhl- und Tischbein). 0 = wie vorher."
       },
       {
        "key": "v",
@@ -3802,6 +3862,24 @@
        "key": "record_jpeg_q_cv",
        "typ": "int",
        "default": 92,
+       "hilfe": ""
+      },
+      {
+       "key": "record_map_s",
+       "typ": "float",
+       "default": 2.0,
+       "hilfe": "Dazu alle record_map_s Sekunden die Raumkarte samt Merkkarte als PNG (karte/<Bildnummer>.png, Ausschnitt record_map_view_m um die Pose) für die Fehlersuche. Im Aufzeichnungs-Faden, ~10 ms je Karte. 0 = aus. Seit 2026-11-24 (Nutzer)."
+      },
+      {
+       "key": "record_map_px",
+       "typ": "int",
+       "default": 480,
+       "hilfe": ""
+      },
+      {
+       "key": "record_map_view_m",
+       "typ": "float",
+       "default": 6.0,
        "hilfe": ""
       }
      ]

@@ -207,3 +207,29 @@ def test_status_freier_platz_und_rate(tmp_path):
     st = rec.status()                               # Rate bleibt nach dem Stopp stehen
     assert st["rate_gemessen"] and rec._rate > 0    # 8x8-Bilder: gerundet 0
     rec.beenden()
+
+
+def test_kartenbild_alle_record_map_s(tmp_path):
+    """record_map_s: Raumkarte samt Merkkarte als karte/<Bildnummer>.png, nicht je Bild (Nutzer 2026-11-24)."""
+    app, base = FakeApp(), str(tmp_path / "fahrt")
+    app.cfg = SimpleNamespace(output=SimpleNamespace(record_map_s=0.05, record_map_px=120, record_map_view_m=6.0))
+    aufrufe = []
+
+    def render(px, view, center, merk):
+        aufrufe.append((px, view, center, merk))
+        return np.full((px, px, 3), 128, np.uint8), 0.0, 0.0, view
+
+    app.gridmap = SimpleNamespace(render=render)
+    app.merk_punkte = lambda: "merk"
+    rec = RawRecorder(app, base)
+    rec.schalten(True)
+    assert bilder_bis(app, rec, 3)
+    time.sleep(0.12)
+    assert bilder_bis(app, rec, 3)
+    rec.beenden()
+    karten = sorted(os.listdir(os.path.join(base, laeufe(base)[0], "karte")))
+    assert len(karten) >= 2 and rec.karten == len(karten)
+    assert len(karten) < rec.bilder                             # nicht je Bild
+    jpgs = set(os.listdir(os.path.join(base, laeufe(base)[0])))
+    assert all(k.replace(".png", ".jpg") in jpgs for k in karten)   # Bildnummer wie das JPEG
+    assert aufrufe[0] == (120, 6.0, None, "merk")

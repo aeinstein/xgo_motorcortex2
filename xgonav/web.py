@@ -202,7 +202,7 @@ def serve(app: App, host: str, port: int, fps: int, render_cpus=None) -> Threadi
                 # Projektion rechnet der Browser (nur zur Anfragezeit, live.php fragt 1×/s)
                 g = app.geo
                 body["kamera"] = {"W": g.W, "H": g.H, "f": round(g.f, 3), "cam_h_m": round(g.cam_h, 4),
-                                  "cam_fwd_m": round(g.cam_fwd, 4)}
+                                  "cam_fwd_m": round(g.cam_fwd, 4), "tilt_deg": round(g.tilt_deg, 3)}
                 gm = app.gridmap
                 body["plan"] = [] if gm is None else [[round(a, 3), round(b, 3)] for a, b in list(gm.plan)]
                 e = None if gm is None else gm.erwartet
@@ -454,17 +454,7 @@ def serve(app: App, host: str, port: int, fps: int, render_cpus=None) -> Threadi
             """Punkte der Merkkarte für die Raumkarte (alle, bestätigte); None ohne laufende Bildverarbeitung.
             Nur auf Anfrage (Browser, 1x je s) und im Bild-Thread; die Felder der Merkkarte werden nie
             verändert, nur ersetzt."""
-            lm = getattr(app, "lmap", None)
-            if lm is None or not app.pipeline_on:
-                return None
-            pts = lm.pts
-            if not len(pts):
-                return None
-            try:
-                best = lm.confirmed_later(lm.max_range)()
-            except Exception:                              # Felder mitten im Wechsel: dieses Bild ohne
-                best = None
-            return pts, best
+            return app.merk_punkte()
 
         def _map_png(self, q):
             gm = app.gridmap

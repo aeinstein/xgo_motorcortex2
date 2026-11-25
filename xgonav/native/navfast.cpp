@@ -20,7 +20,7 @@
 
 namespace {
 
-constexpr int kNavAbi = 3;   // bei Änderung der Strukturen oder Signaturen erhöhen (navfast.py prüft das)
+constexpr int kNavAbi = 5;   // bei Änderung der Strukturen oder Signaturen erhöhen (navfast.py prüft das)
 constexpr double kInf = std::numeric_limits<double>::infinity();
 constexpr double kPi = 3.141592653589793;   // math.pi
 
@@ -468,35 +468,122 @@ XGO_API void lmap_confirm(const double* pts, const int64_t* obs, int64_t n, cons
     }
 }
 
-// localmap.LocalMap.arc_clearance ab den bestätigten Punkten (n x 2): freie Strecke (m) entlang des Bogens,
-// inf = frei. sperrt (n uint8): Punkte, die die Bahn sperren (nur bei Rückgabe < inf gesetzt).
-XGO_API double lmap_arc(const double* pts, int64_t n, double v, double w, double horizon_s, int steps,
-                        double radius, double tol, uint8_t* sperrt) {
-    std::vector<double> lim(static_cast<size_t>(n));
-    for (int64_t i = 0; i < n; ++i) lim[i] = std::min(radius, std::hypot(pts[2 * i], pts[2 * i + 1]) - tol);
+// Merkkarte: Punkte, die für Bogen und Weg zählen (r < reach, bestätigt, wenn conf gegeben), mit ihrem Grenzwert
+// min(radius, r - tol). Punkte mit Grenzwert <= 0 können nie sperren (Abstand < Grenzwert) und fallen gleich weg.
+static void lmap_sel(const double* r, const int8_t* conf, int64_t n, double reach, double radius, double tol,
+                     std::vector<int64_t>& idx, std::vector<double>& lim) {
+    for (int64_t i = 0; i < n; ++i) {
+        if (!(r[i] < reach) || (conf && conf[i] != 1)) continue;
+        const double l = std::min(radius, r[i] - tol);
+        if (l > 0.0) { idx.push_back(i); lim.push_back(l); }
+    }
+}
+
+// Erster gesperrter Abtastpunkt (x, y je Punkt in smp, m Stück) oder -1. Gesperrt wie np.hypot(...) < lim. Je Block
+// von 8 Abtastpunkten zählen nur Punkte im Rechteck um den Block plus radius (lim <= radius, weiter draußen kann
+// keiner sperren); hypot nur nahe der Grenze, das Quadrat davor hat Reserve. Setzt sperrt[i] = 1 der Treffer.
+static int64_t lmap_first(const double* pts, const std::vector<int64_t>& idx, const std::vector<double>& lim,
+                          const double* smp, int64_t m, double radius, uint8_t* sperrt) {
+    constexpr int64_t kBlock = 8;
+    const double rr = radius * 1.0001 + 1e-9;
+    std::vector<size_t> sub;
+    sub.reserve(idx.size());
+    for (int64_t b0 = 0; b0 < m; b0 += kBlock) {
+        const int64_t b1 = std::min(m, b0 + kBlock);
+        double x0 = smp[2 * b0], x1 = x0, y0 = smp[2 * b0 + 1], y1 = y0;
+        for (int64_t k = b0 + 1; k < b1; ++k) {
+            x0 = std::min(x0, smp[2 * k]); x1 = std::max(x1, smp[2 * k]);
+            y0 = std::min(y0, smp[2 * k + 1]); y1 = std::max(y1, smp[2 * k + 1]);
+        }
+        x0 -= rr; x1 += rr; y0 -= rr; y1 += rr;
+        sub.clear();
+        for (size_t q = 0; q < idx.size(); ++q) {
+            const double px = pts[2 * idx[q]], py = pts[2 * idx[q] + 1];
+            if (px >= x0 && px <= x1 && py >= y0 && py <= y1) sub.push_back(q);
+        }
+        if (sub.empty()) continue;
+        for (int64_t k = b0; k < b1; ++k) {
+            const double x = smp[2 * k], y = smp[2 * k + 1];
+            bool any = false;
+            for (size_t q : sub) {
+                const int64_t i = idx[q];
+                const double dx = pts[2 * i] - x, dy = pts[2 * i + 1] - y, l = lim[q];
+                if (dx * dx + dy * dy > l * l * 1.0001) continue;
+                if (std::hypot(dx, dy) < l) { sperrt[i] = 1; any = true; }
+            }
+            if (any) return k;
+        }
+    }
+    return -1;
+}
+
+// localmap.LocalMap.arc_clearance: alle Punkte (n x 2) mit ihrem Abstand r, conf (n, 1 = bestätigt) oder null
+// (jeder Punkt zählt), es zählen nur die mit r < reach. Freie Strecke (m) entlang des Bogens, inf = frei.
+// sperrt (n uint8, mit 0 übergeben): Punkte, die die Bahn sperren.
+XGO_API double lmap_arc(const double* pts, const double* r, const int8_t* conf, int64_t n, double reach,
+                        double v, double w, double horizon_s, int steps, double radius, double tol, uint8_t* sperrt) {
+    std::vector<int64_t> idx; std::vector<double> lim;
+    lmap_sel(r, conf, n, reach, radius, tol, idx, lim);
+    if (idx.empty() || steps <= 0) return kInf;
     const double dt = horizon_s / steps;
+    std::vector<double> smp(static_cast<size_t>(2 * steps)), s_of(static_cast<size_t>(steps));
     double x = 0.0, y = 0.0, th = 0.0, s = 0.0;
     for (int k = 0; k < steps; ++k) {
         th += w * dt;
         x += v * std::cos(th) * dt;
         y += v * std::sin(th) * dt;
         s += std::fabs(v) * dt;
-        bool any = false;
-        for (int64_t i = 0; i < n; ++i) {
-            sperrt[i] = std::hypot(pts[2 * i] - x, pts[2 * i + 1] - y) < lim[i];
-            any = any || sperrt[i];
-        }
-        if (any) return s;
+        smp[2 * k] = x; smp[2 * k + 1] = y; s_of[k] = s;
     }
-    return kInf;
+    const int64_t k = lmap_first(pts, idx, lim, smp.data(), steps, radius, sperrt);
+    return k < 0 ? kInf : s_of[k];
 }
 
-// localmap.LocalMap.move: Punkte (n x 2) um ds zurück und um den Winkel mit cos c, sin s gedreht nach out.
-XGO_API void lmap_move(const double* pts, int64_t n, double ds, double c, double s, double* out) {
+// localmap.LocalMap.path_clearance: Weg (np Stützpunkte x 2, Rider-KS) alle step m abgetastet bis max_range
+// (Strecke wie np.cumsum(np.hypot(np.diff)), Zwischenpunkte linear wie np.interp), dann gegen die Punkte wie
+// lmap_arc mit reach = größter Abstand eines Abtastpunkts + radius. s des ersten gesperrten Abtastpunkts, sonst inf.
+XGO_API double lmap_path(const double* pts, const double* r, const int8_t* conf, int64_t n, const double* poly,
+                         int64_t np_, double step, double max_range, double radius, double tol, uint8_t* sperrt) {
+    if (np_ < 2) return kInf;
+    std::vector<double> cum(static_cast<size_t>(np_));
+    cum[0] = 0.0;
+    for (int64_t j = 1; j < np_; ++j)
+        cum[j] = cum[j - 1] + std::hypot(poly[2 * j] - poly[2 * j - 2], poly[2 * j + 1] - poly[2 * j - 1]);
+    const double total = std::min(cum[np_ - 1], max_range);
+    if (total < step) return kInf;
+    const int64_t m = static_cast<int64_t>(total / step);
+    std::vector<double> smp(static_cast<size_t>(2 * m));
+    double reach = 0.0;
+    int64_t j = 0;
+    for (int64_t k = 0; k < m; ++k) {
+        const double s = static_cast<double>(k + 1) * step;
+        while (j + 1 < np_ && cum[j + 1] <= s) ++j;
+        double x, y;
+        if (j == np_ - 1 || cum[j] == s) {
+            x = poly[2 * j]; y = poly[2 * j + 1];
+        } else {
+            const double d = cum[j + 1] - cum[j];
+            x = (poly[2 * j + 2] - poly[2 * j]) / d * (s - cum[j]) + poly[2 * j];
+            y = (poly[2 * j + 3] - poly[2 * j + 1]) / d * (s - cum[j]) + poly[2 * j + 1];
+        }
+        smp[2 * k] = x; smp[2 * k + 1] = y;
+        reach = std::max(reach, std::hypot(x, y));
+    }
+    std::vector<int64_t> idx; std::vector<double> lim;
+    lmap_sel(r, conf, n, reach + radius, radius, tol, idx, lim);
+    if (idx.empty()) return kInf;
+    const int64_t k = lmap_first(pts, idx, lim, smp.data(), m, radius, sperrt);
+    return k < 0 ? kInf : static_cast<double>(k + 1) * step;
+}
+
+// localmap.LocalMap.move: Punkte (n x 2) um ds zurück und um den Winkel mit cos c, sin s gedreht nach out, dazu
+// ihr Abstand zum Rider nach r (wie np.hypot, für LocalMap._dist).
+XGO_API void lmap_move(const double* pts, int64_t n, double ds, double c, double s, double* out, double* r) {
     for (int64_t i = 0; i < n; ++i) {
         const double px = pts[2 * i] - ds, py = pts[2 * i + 1];
         out[2 * i] = px * c - py * s;
         out[2 * i + 1] = px * s + py * c;
+        r[i] = std::hypot(out[2 * i], out[2 * i + 1]);
     }
 }
 

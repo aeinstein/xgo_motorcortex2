@@ -45,22 +45,51 @@ def driven_mask(grid: GridMap, r0: int, c0: int, shape: tuple) -> np.ndarray | N
     return m.astype(bool)
 
 
+def merk_maske(grid, pts: np.ndarray | None, r0: int, c0: int, shape: tuple, r_m: float) -> np.ndarray | None:
+    """Zellen (bool, Ausschnitt ab r0, c0), deren Mitte näher als r_m an einem Punkt pts (N x 2, Welt-m) liegt, mit
+    den echten Koordinaten statt der Zelle des Punkts: Auf das 5-cm-Raster gerundet erschien ein 15-cm-Spalt
+    zwischen Stuhl- und Tischbein als 20 cm, und er plante hindurch (RiderPi 2026-11-24 20:43). Kosten: N x 25
+    Abstände je Planung (Planer-Thread)."""
+    if pts is None or not len(pts) or r_m <= 0:
+        return None
+    res, n = grid.res, grid.n
+    rr, cc = grid.cell(pts[:, 0], pts[:, 1])
+    k = int(math.ceil(r_m / res))
+    m = np.zeros(shape, bool)
+    for dr in range(-k, k + 1):
+        for dc in range(-k, k + 1):
+            r, c = rr + dr, cc + dc
+            near = np.hypot((c + 0.5 - n / 2) * res - pts[:, 0], (r + 0.5 - n / 2) * res - pts[:, 1]) < r_m
+            r, c = r[near] - r0, c[near] - c0
+            ok = (r >= 0) & (r < shape[0]) & (c >= 0) & (c < shape[1])
+            m[r[ok], c[ok]] = True
+    return m
+
+
 def cost_map(lo: np.ndarray, res: float, l_show: float, cfg: HomeCfg,
-             extra_occ: np.ndarray | None = None, driven: np.ndarray | None = None) -> tuple[np.ndarray, np.ndarray]:
+             extra_occ: np.ndarray | None = None, driven: np.ndarray | None = None,
+             extra_block: np.ndarray | None = None) -> tuple[np.ndarray, np.ndarray]:
     """(gesperrt, Kosten je Zelle) aus Log-Odds. Kosten >= 1. extra_occ: zusätzlich belegte
     Zellen (bool, gleiche Form), z. B. Hindernisse der Merkkarte. driven: passierbar trotz Raumkarte
-    (driven_mask); was extra_occ gerade sieht, sperrt auch dort."""
-    occ = lo > l_show
-    if extra_occ is not None:
-        occ |= extra_occ
+    (driven_mask); was extra_occ gerade sieht, sperrt auch dort. extra_block (merk_maske): für die Merkkarte
+    gesperrt statt extra_occ aufgeblasen um squeeze_m (genauer als das Raster)."""
+    occ_lo = lo > l_show
+    occ = occ_lo | extra_occ if extra_occ is not None else occ_lo
     # Abstand jeder Zelle (m) zur nächsten belegten Zelle
     dist = cv2.distanceTransform((~occ).astype(np.uint8), cv2.DIST_L2, 5) * res if occ.any() \
         else np.full(lo.shape, np.inf, np.float32)
     hard = cfg.squeeze_m if 0 < cfg.squeeze_m < cfg.inflate_m else cfg.inflate_m
-    blocked = dist < hard
+    if extra_block is not None:
+        dist_lo = cv2.distanceTransform((~occ_lo).astype(np.uint8), cv2.DIST_L2, 5) * res if occ_lo.any() \
+            else np.full(lo.shape, np.inf, np.float32)
+        blocked = (dist_lo < hard) | extra_block
+    else:
+        blocked = dist < hard
     if driven is not None:
         opened = driven
-        if extra_occ is not None and extra_occ.any():
+        if extra_block is not None:
+            opened = driven & ~extra_block
+        elif extra_occ is not None and extra_occ.any():
             opened = driven & (cv2.distanceTransform((~extra_occ).astype(np.uint8), cv2.DIST_L2, 5) * res >= hard)
         blocked[opened] = False
     near = np.clip(1.0 - (dist - cfg.inflate_m) / max(cfg.inflate_m, 1e-3), 0.0, 1.0)
@@ -262,7 +291,8 @@ def plan(grid: GridMap, start_xy: tuple[float, float], goal_xy: tuple[float, flo
         extra = np.zeros(lo.shape, bool)
         extra[rr[ok], cc[ok]] = True
     driven = driven_mask(grid, r0, c0, lo.shape)
-    blocked, cost = cost_map(lo, res, grid.cfg.l_show, cfg, extra, driven)
+    blocked, cost = cost_map(lo, res, grid.cfg.l_show, cfg, extra, driven,
+                             merk_maske(grid, obstacles, r0, c0, lo.shape, cfg.merk_r_m) if extra is not None else None)
 
     def local(xy):
         r, c = grid.cell(xy[0], xy[1])
@@ -274,19 +304,29 @@ def plan(grid: GridMap, start_xy: tuple[float, float], goal_xy: tuple[float, flo
     zones = grid.all_zones()                            # Sperr- und Dunkelzonen
     forbid = grid.zones_mask(zones, r0, c0, lo.shape, cfg.inflate_m) if zones else None
     core = grid.zones_mask(zones, r0, c0, lo.shape, 0.0) if zones else None
+    brems = grid.brems_maske(r0, c0, lo.shape)           # Bremsstellen (grid.brake_block_s)
 
-    def clear_ends(b: np.ndarray) -> None:
+    def clear_ends(b: np.ndarray, merk: np.ndarray | None = None) -> None:
         for (r, c) in ((s, g) if clear_goal else (s,)):
             disk = np.zeros_like(b, np.uint8)
             cv2.circle(disk, (c, r), rad, 1, -1)
             b[disk.astype(bool)] = False
+            if merk is not None:
+                # Punkte der Merkkarte selbst bleiben zu, nur die Zelle der Pose/des Ziels nicht (sonst plante er durch
+                # ein Tischbein direkt vor sich, RiderPi 2026-11-24 20:43)
+                b[merk & disk.astype(bool)] = True
+                b[r, c] = False
+        if brems is not None:                           # Bremsstelle bleibt zu, auch am Ziel; nur um die Pose nicht
+            near = np.zeros_like(b, np.uint8)
+            cv2.circle(near, (s[1], s[0]), rad, 1, -1)
+            b[brems & ~near.astype(bool)] = True
         if forbid is not None:                          # Sperrzone bleibt zu; nur am Rand wegfahren darf er
             b[forbid] = True
             near = np.zeros_like(b, np.uint8)
             cv2.circle(near, (s[1], s[0]), rad, 1, -1)
             b[near.astype(bool) & ~core] = False
             b[core] = True
-    clear_ends(blocked)
+    clear_ends(blocked, extra)
 
     def to_world(r, c):
         return (c + c0 + 0.5 - n / 2) * res, (r + r0 + 0.5 - n / 2) * res

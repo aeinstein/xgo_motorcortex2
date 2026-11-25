@@ -13,7 +13,7 @@ import numpy as np
 
 from . import fastlib
 
-_NAV_ABI = 3
+_NAV_ABI = 5
 _cache: list = []
 
 
@@ -61,9 +61,11 @@ def lib():
             L.lmap_confirm.restype = None
             L.lmap_confirm.argtypes = [p, p, ctypes.c_int64, p, p, d, d, i, p]
             L.lmap_arc.restype = d
-            L.lmap_arc.argtypes = [p, ctypes.c_int64, d, d, d, i, d, d, p]
+            L.lmap_arc.argtypes = [p, p, p, ctypes.c_int64, d, d, d, d, i, d, d, p]
+            L.lmap_path.restype = d
+            L.lmap_path.argtypes = [p, p, p, ctypes.c_int64, p, ctypes.c_int64, d, d, d, d, p]
             L.lmap_move.restype = None
-            L.lmap_move.argtypes = [p, ctypes.c_int64, d, d, d, p]
+            L.lmap_move.argtypes = [p, ctypes.c_int64, d, d, d, p, p]
             L.lmap_add.restype = ctypes.c_int64
             L.lmap_add.argtypes = [ctypes.POINTER(_LmapAdd)] + [p] * 8
             L.nav_wall_dist.restype = d
@@ -144,20 +146,53 @@ def confirm(L, pts: np.ndarray, obs: np.ndarray, need: np.ndarray, nb: np.ndarra
                    rad * 1.001, int(count), conf.ctypes.data)
 
 
-def arc(L, pts: np.ndarray, v: float, w: float, horizon_s: float, steps: int, radius: float, tol: float) -> tuple:
-    """Schleife von LocalMap.arc_clearance: (freie Strecke oder inf, Maske der sperrenden Punkte)."""
-    p = np.ascontiguousarray(pts, np.float64)
+_ptrs: dict = {}
+
+
+def _ptr(a: np.ndarray) -> int:
+    """a.ctypes.data, für unveränderte Felder (Punkte, Abstände, Bestätigung der Merkkarte) zwischengespeichert:
+    am RiderPi kostet jeder Aufruf von .ctypes ~5 us, der Regelschritt braucht davon sonst ein Dutzend."""
+    e = _ptrs.get(id(a))
+    if e is not None and e[0] is a:
+        return e[1]
+    if len(_ptrs) > 32:
+        _ptrs.clear()
+    p = a.ctypes.data
+    _ptrs[id(a)] = (a, p)          # hält a fest: id wird nicht neu vergeben, solange der Eintrag lebt
+    return p
+
+
+def arc(L, pts: np.ndarray, r: np.ndarray, conf, reach: float, v: float, w: float, horizon_s: float, steps: int,
+        radius: float, tol: float) -> tuple:
+    """LocalMap.arc_clearance in einem Aufruf: alle Punkte mit Abstand r, conf (int8, 1 = bestätigt) oder None,
+    es zählen die mit r < reach. (freie Strecke oder inf, Maske der sperrenden Punkte über alle Punkte)."""
+    p, rr = np.ascontiguousarray(pts, np.float64), np.ascontiguousarray(r, np.float64)
+    c = None if conf is None else np.ascontiguousarray(conf, np.int8)
     hit = np.zeros(len(p), np.uint8)
-    s = L.lmap_arc(p.ctypes.data, len(p), v, w, horizon_s, int(steps), radius, tol, hit.ctypes.data)
+    s = L.lmap_arc(_ptr(p), _ptr(rr), None if c is None else _ptr(c), len(p), reach, v, w,
+                   horizon_s, int(steps), radius, tol, hit.ctypes.data)
     return (s, hit.view(bool)) if s < math.inf else (math.inf, None)
 
 
-def move(L, pts: np.ndarray, ds: float, c: float, s: float) -> np.ndarray:
-    """LocalMap.move: neue Punkte, um ds zurück und mit (cos c, sin s) gedreht."""
+def path(L, pts: np.ndarray, r: np.ndarray, conf, poly: np.ndarray, step: float, max_range: float, radius: float,
+         tol: float) -> tuple:
+    """LocalMap.path_clearance in einem Aufruf (Abtasten des Wegs, Auswahl der Punkte, Prüfung): wie arc, poly =
+    Stützpunkte des Wegs (N x 2, Rider-KS)."""
+    p, rr = np.ascontiguousarray(pts, np.float64), np.ascontiguousarray(r, np.float64)
+    c = None if conf is None else np.ascontiguousarray(conf, np.int8)
+    q = np.ascontiguousarray(poly, np.float64)
+    hit = np.zeros(len(p), np.uint8)
+    s = L.lmap_path(_ptr(p), _ptr(rr), None if c is None else _ptr(c), len(p), q.ctypes.data,
+                    len(q), step, max_range, radius, tol, hit.ctypes.data)
+    return (s, hit.view(bool)) if s < math.inf else (math.inf, None)
+
+
+def move(L, pts: np.ndarray, ds: float, c: float, s: float) -> tuple:
+    """LocalMap.move: (neue Punkte, um ds zurück und mit (cos c, sin s) gedreht; ihr Abstand zum Rider)."""
     p = np.ascontiguousarray(pts, np.float64)
-    out = np.empty_like(p)
-    L.lmap_move(p.ctypes.data, len(p), ds, c, s, out.ctypes.data)
-    return out
+    out, r = np.empty_like(p), np.empty(len(p))
+    L.lmap_move(_ptr(p), len(p), ds, c, s, _ptr(out), _ptr(r))
+    return out, r
 
 
 def add(L, pts: np.ndarray, t: np.ndarray, obs: np.ndarray, cols, known_from, par: dict) -> tuple:

@@ -105,6 +105,15 @@ systemctl daemon-reload
 systemctl enable xgo-wlan-auto >/dev/null 2>&1
 systemctl restart xgo-wlan-auto
 
+# ---------------------------------------------------------------- LEDs beim Herunterfahren
+# Firmware 0028: beim Herunterfahren des Pi werden die LEDs blau (Aktion 234), xgonav setzt sie beim Start zurück.
+# Nur starten, nicht neu starten: ein Neustart des Dienstes liefe durch ExecStop und machte sie jetzt schon blau.
+schritt "xgo-shutdown-led (LEDs blau beim Herunterfahren)"
+installiere deploy/xgo-shutdown-led.service /etc/systemd/system/xgo-shutdown-led.service
+systemctl daemon-reload
+systemctl enable xgo-shutdown-led >/dev/null 2>&1
+systemctl start xgo-shutdown-led
+
 # ---------------------------------------------------------------- xgonav
 schritt "xgonav nach /opt/xgonav (deploy/install.sh)"
 ./deploy/install.sh

@@ -31,10 +31,16 @@ Fault colour depends on `last_stop_reason` (`ledFaultFor(driving,last_stop)`), n
 
 | Colour | Pattern | Meaning (LedFault ← stop reason) |
 |---|---|---|
-| **Red, steady** | constant | **Tipped over / tilt fault**. Also `mode 0`. |
+| **Red, steady** | constant | **Tipped over / tilt fault**. Also `mode 0`, upright too. Patch 0027: no self-start from mode 0 (stock: balanced again after ~500 upright control ticks while still red); only a command arms it (255, stand-up 253), then pink. |
 | **Red, fast blink** (~5 Hz) | 100 ms on/off | **Free fall detected** — stopped and servos released *before* impact. |
 | **Red, slow blink** (~1 Hz) | 500 ms on/off | **Other fault**: IMU, actuator, timing, invalid control output, policy or calibration fault. Servos released. |
 | **Amber** (R200 G70 B0), steady | constant | **Manually stopped** — `!stop`, action 0x3e=254, switch or app. |
+
+## Pi shutdown (patch 0028)
+
+| Colour | Pattern | Meaning |
+|---|---|---|
+| **Blue** (R0 G0 B200), steady, all 4 | constant | **Pi shut down** (action 234, set by `xgo-shutdown-led.service` on Pi shutdown/reboot). Before every other display, nothing else changes; cleared by action 233 (xgonav on start) or ESP restart. |
 
 ## Low battery
 
@@ -60,7 +66,7 @@ Fault colour depends on `last_stop_reason` (`ledFaultFor(driving,last_stop)`), n
 | mode | Situation | LED |
 |---:|---|---|
 | 1 | balancing / driving | user LEDs, green direction |
-| 0 | tilt/fall fault, "stranded", runaway protection | red (tilt = steady, fall = fast blink) |
+| 0 | tilt/fall fault, "stranded", runaway protection; stays until a command (patch 0027) | red (tilt = steady, fall = fast blink) |
 | 250 | battery empty / shutdown | red blinking (battery timing) |
 | 251 | actuator fault / flash stop | red slow blink (Other) |
 | 252 | policy/control fault | red slow blink (Other) |
@@ -69,12 +75,12 @@ Fault colour depends on `last_stop_reason` (`ledFaultFor(driving,last_stop)`), n
 | 255 | leg calibration running | (calibration mode) |
 
 ## Cheat sheet
-- **Red** = problem/stopped (pattern gives cause: steady = tip, fast = fall, slow = fault, battery timing = battery).
+- **Red** = problem/stopped (pattern gives cause: steady = tip, fast = fall, slow = fault, battery timing = battery). Does not balance by itself (patch 0027).
 - **Amber** = deliberately stopped.
 - **Green** = driving (direction).
-- **Blue** = pitch trim.
+- **Blue** = pitch trim (blinking); steady blue = Pi shut down (patch 0028).
 - **Pink circling** = gyro calibrating, keep still.
-- **Pink** = powered on / armed, or idle with default user LEDs.
+- **Pink** = powered on / armed (mode 253 balances by itself once upright), or idle with default user LEDs.
 - **Other steady colour** = idle (user LEDs set via `!rgb` / `leds/0..3`).
 
 Read state live: `!status` → `mode`, `driving`, `reason`, `last_stop_reason`. Set LEDs (visible whenever no state display is due, also while lying; reset to pink by arming):

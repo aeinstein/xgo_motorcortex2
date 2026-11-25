@@ -226,6 +226,14 @@ def test_localmap_matches_numpy():
                     assert _gleich(ha[0], hb[0])
                 gesperrt += sa < math.inf
                 frei += sa == math.inf
+            weg = np.cumsum(rng.normal([0.15, 0.0], [0.05, 0.12], (12, 2)), axis=0)
+            weg = np.vstack([[0.0, 0.0], weg])
+            ha, hb = [], []
+            pa = a.path_clearance(weg, radius=(None, 0.08)[k % 2], hit_out=ha)
+            pb = b.path_clearance(weg, radius=(None, 0.08)[k % 2], hit_out=hb)
+            assert pa == pb and len(ha) == len(hb)
+            if ha:
+                assert _gleich(ha[0], hb[0])
             ga, gb = a.gap_center(), b.gap_center()
             assert (ga is None) == (gb is None) and (ga is None or _gleich(ga, gb))
         assert gesperrt > 10 and frei > 10 and len(a.pts) > 200
