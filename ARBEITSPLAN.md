@@ -15,7 +15,7 @@ Planer, der Planer fährt den Rider, nach der Sicherheitsprüfung.
 | 2 | **Test: Anfahren an eine Wand** | geradeaus geprüft gefahren 2026-11-25 (unten) |
 | 3 | **Test: Fahren einer Bahn entlang.** Kurven glätten, Drehungen auf der Stelle vermeiden (Hauptgrund der Drift) | offen |
 | 4 | **Fahrregler in die Firmware.** Pi sendet Sollgeschwindigkeit und Drehrate in echten Einheiten, die Firmware regelt | erledigt, gefahren (unten) |
-| 5 | **Bahnbefehle für die Navigation.** Krümmung statt Drehrate, Drehen auf Kurs, Strecke mit Halt, Rückmeldung im Strom (Plan unten) | Stufe 0 fertig. Stufe 1: gefahren 2026-11-25 (κ 2, Firmware hält κ_soll exakt; Anfang enger, Halt jetzt auf dem Bogen), `vel_kappa` aus. Stufe 2: gefahren 2026-11-25 mit 81cb3335 (±90°/±180°, Sollwinkel auf 0,4°, IMU-Kurs 2 s nach Ende auf ≤ 1,4°). `vel_kappa`/`vel_kurs` seit 2026-11-25 Standard an. Stufe 3: gefahren 2026-11-25 von Hand, mit Firmware 33c685ea auf ≤ 3,3 cm; `vel_strecke` aus (Wegfolger/home schicken noch keine Strecke). home mit Krümmung + Kursziel gefahren: am Start 1 cm / 0,9° |
+| 5 | **Bahnbefehle für die Navigation.** Krümmung statt Drehrate, Drehen auf Kurs, Strecke mit Halt, Rückmeldung im Strom (Plan unten) | Stufe 0 fertig. Stufe 1: gefahren 2026-11-25 (κ 2, Firmware hält κ_soll exakt; Anfang enger, Halt jetzt auf dem Bogen), `vel_kappa` aus. Stufe 2: gefahren 2026-11-25 mit 81cb3335 (±90°/±180°, Sollwinkel auf 0,4°, IMU-Kurs 2 s nach Ende auf ≤ 1,4°). `vel_kappa`/`vel_kurs` seit 2026-11-25 Standard an. Stufe 3: gefahren 2026-11-25 von Hand, mit Firmware 33c685ea auf ≤ 3,3 cm; `vel_strecke` Standard an, genutzt von Handsteuerung und home am Schluss. home mit Krümmung + Kursziel gefahren: am Start 1 cm / 0,9° |
 
 ## Bahnbefehle (Punkt 5, Plan 2026-11-25)
 
@@ -101,8 +101,10 @@ home mit `vel_kappa` + `vel_kurs` (Standard an), Startbild an, Weg ~1 m um eine 
 | 1 | am Start 1 cm, aber 180° falsch: Auf der Geraden zum Start 5 cm überrollt, zum Nachfahren umgedreht; die Schlussausrichtung brach sofort ab, weil das Vorzeichen des Fehlers um ±180° durch Zittern kippte („übergedreht“). Behoben 13237ae (übergedreht nur bei Fehler < 90°) |
 | 2 | am Start 1 cm, Kurs 0,9° daneben; auf der Geraden 8,7 cm überrollt, daher zweimal gedreht (nachfahren, ausrichten) |
 
-- Offen: Überrollen auf der Geraden zum Start (Bremsen auf den Startpunkt) – Kandidat für Strecke mit Halt, sobald
-  die Firmware den Nachlauf behebt; Nachfahren kurzer Reste rückwärts statt umdrehen.
+- Umgesetzt 2026-11-25: Die Schlussfahrt zum Start trägt die Reststrecke (Strecke mit Halt, `vel_strecke` jetzt
+  Standard an), steht er still mit ≤ 4 cm Rest, misst er; das Nachfahren nach dem Abgleich fährt rückwärts, wenn der
+  Start ≤ 0,3 m hinter ihm liegt (`Home.RUECK_MAX_M`). In `Robot` darf der Rest innerhalb einer Fahrt nur fallen
+  (Sprung > 10 cm = neues Ziel). Simulator home 60/90 s: 0,8 / 2,2 cm, −0,2 / −0,5°. Am Rider noch nicht gefahren.
 
 Reihenfolge: 0 → 1 → 2 → 3 → 4. Stufe 1 ist der Kern für Punkt 3 (Bahn entlang), 2 und 3 ersetzen Pi-Regelschleifen,
 4 räumt den doppelten Generator weg.

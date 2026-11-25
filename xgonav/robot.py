@@ -573,6 +573,7 @@ class Robot:
     KURS_NEU_DEG = 15.0
 
     STRECKE_STUFE_M = 0.005   # Reststrecke im Rahmen auf 5 mm gerundet: sonst jeder Durchlauf ein neuer Rahmen
+    STRECKE_NEU_M = 0.10      # Rest wächst um mehr: neues Ziel, sonst bleibt der kleinere
 
     def _ramp_vel(self, target: tuple[float, float], dt: float, kappa: float | None = None,
                   kurs: tuple[float, float] | None = None, strecke: float | None = None) -> None:
@@ -617,6 +618,10 @@ class Robot:
             # nicht) und ohne Nachlauf (der Nachbau rollt nicht nach; mit lag hielte er 0,25 s × v zu früh); jeder neue
             # Rahmen setzt den Rest
             sq = round(strecke / self.STRECKE_STUFE_M) * self.STRECKE_STUFE_M
+            if st.an and self._strecke_q is not None and self._strecke_q < sq < self._strecke_q + self.STRECKE_NEU_M:
+                # nur kleiner werden lassen: ein größerer Rest weckt die Firmware nach dem Halt wieder auf (Pendeln der
+                # Odometrie beim Balancieren, Rider 2026-11-25); erst ein Sprung über STRECKE_NEU_M ist ein neues Ziel
+                sq = self._strecke_q
             strecke_messen(st, g.x, 1.0 if tv >= 0 else -1.0, 1000.0, dt)
             st.lag = 0.0
             if not st.an or sq != self._strecke_q:

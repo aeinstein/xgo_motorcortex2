@@ -2916,6 +2916,34 @@ def test_home_startbild_phases():
     assert b.done and "8 cm" in c.status
 
 
+def test_home_startbild_strecke_und_rueckwaerts():
+    """Schlussfahrt trägt die Reststrecke (Strecke mit Halt); steht er nah am Start still, misst er; liegt der Start
+    nach dem Abgleich nah hinter ihm, fährt er rückwärts nach statt umzudrehen (Rider 2026-11-25)."""
+    from xgonav.behaviors import Home
+    from xgonav.startbild import Ergebnis
+    cfg = Config.neutral()
+    cfg.startbild.enabled = True
+    b = Home(cfg.behavior, cfg.robot, cfg.home, cfg.startbild)
+
+    def w(t, pose, v_rad=None):
+        x = _world_at(t, pose)
+        x.anker = True
+        x.v_rad = v_rad
+        return x
+    b.phase, b.t_phase = "gerade", 0.0
+    c = b.step(w(1.0, (-0.30, 0.0, 0.0), v_rad=0.1))
+    assert c.v > 0 and c.strecke == pytest.approx(0.30)
+    c = b.step(w(3.0, (-0.03, 0.0, 0.0), v_rad=0.0))                      # steht 3 cm vor dem Start: messen
+    assert b.phase == "messen"
+    b.phase, b.t_phase, b.messung = "messen", 3.0, Ergebnis(True, "ok")
+    b.messung = Ergebnis(True, "8 cm")
+    c = b.step(w(4.0, (0.08, 0.0, 0.0)))                                  # 8 cm über den Start hinaus
+    assert b.phase == "fein" and c.v < 0 and c.strecke == pytest.approx(0.08)   # rückwärts, ohne Drehen
+    assert "rückwärts" in c.status
+    c = b.step(w(5.0, (0.01, 0.0, 0.0)))
+    assert b.phase == "ende"
+
+
 def test_home_startbild_endkurs_eng():
     """Schlussausrichtung nach dem Abgleich: enger als align_tol_deg (Fahrt 161006 blieb bei −9,5° stehen), über den
     Startkurs hinaus gedreht oder nach end_s: fertig statt pendeln."""

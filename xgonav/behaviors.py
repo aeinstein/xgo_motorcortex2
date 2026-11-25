@@ -1102,6 +1102,8 @@ class Home(Behavior):
     weiter wie bisher."""
     name = "home"
     SB_RUHE_S = 0.5               # vor dem Messbild so lange stehen (Nicken abklingen lassen)
+    STEHT_REST_M = 0.04           # Schlussfahrt: steht er mit so wenig Rest, ist er am Start (Strecke hält ±3 cm)
+    RUECK_MAX_M = 0.30            # nachfahren: liegt der Start so nah hinter ihm, rückwärts statt umzudrehen
 
     def __init__(self, cfg, rcfg, hcfg: HomeCfg | None = None, sbcfg=None):
         super().__init__(cfg, rcfg)
@@ -1225,7 +1227,11 @@ class Home(Behavior):
         if self.phase == "gerade":
             ux, uy = math.cos(gth), math.sin(gth)
             rest = (gx - x) * ux + (gy - y) * uy           # bis zum Start entlang des Startkurses
-            if rest <= 0.01:
+            # Mit Strecke mit Halt (robot.vel_strecke) bremst die Firmware genau auf den Start und steht dort ±3 cm;
+            # steht er schon (Räder ruhig) und fehlen höchstens STEHT_REST_M, ist er auch da (sonst hinge er bis zur
+            # Zeitgrenze). Ohne Strecke rollte er 5–9 cm übers Ziel (Rider 2026-11-25).
+            steht = (w.v_rad is not None and abs(w.v_rad) < 0.01 and w.t - self.t_phase > 1.0)
+            if rest <= 0.01 or (steht and rest <= self.STEHT_REST_M):
                 self._setze("messen", w)
                 return Command(0, 0, hmm, "Startbild: stehe")
             v_ms = max(self.rcfg.v_of(sb.gerade_v) * self.rcfg.vx_limit, 0.02)
@@ -1239,7 +1245,8 @@ class Home(Behavior):
             err = _wrap(soll - th)
             wm = self.rcfg.w_of(self.h.turn_w_max)
             wc = clamp(yaw_rate_to_w(self.h.kp_turn * err, self.rcfg), -wm, wm)
-            return Command(self.rcfg.v_of(sb.gerade_v), wc, hmm, "Startbild: gerade zum Start %.2f m" % rest)
+            return Command(self.rcfg.v_of(sb.gerade_v), wc, hmm, "Startbild: gerade zum Start %.2f m" % rest,
+                           strecke=rest)
         if self.phase == "messen":
             if self.messung is None:
                 if not self._gemessen and w.t - self.t_phase >= self.SB_RUHE_S:
@@ -1263,6 +1270,11 @@ class Home(Behavior):
                 self._setze("ende", w)
             else:
                 err = _wrap(math.atan2(gy - y, gx - x) - th)
+                # Liegt der Start hinter ihm und ist nah, rückwärts nachfahren statt umzudrehen (Rider 2026-11-25:
+                # für 5–9 cm zweimal 180° gedreht); die Strecke dorthin hat er gerade vorwärts überrollt, sie ist gesehen
+                rueck = abs(err) > math.pi / 2 and dist <= self.RUECK_MAX_M
+                if rueck:
+                    err = _wrap(err - math.pi)                  # Heck zum Start
                 if not self._fein_fahrt and abs(err) > math.radians(3.0):
                     return self.f.align(err, "Startbild: drehe zum Start")
                 self._fein_fahrt = True
@@ -1272,7 +1284,9 @@ class Home(Behavior):
                 if w.t - self.t_phase > 20.0:
                     self._setze("ende", w)
                 else:
-                    return Command(0.75 * self.rcfg.v_of(sb.gerade_v), wc, hmm, "Startbild: nachfahren %.2f m" % dist)
+                    v = 0.75 * self.rcfg.v_of(sb.gerade_v) * (-1.0 if rueck else 1.0)
+                    return Command(v, wc, hmm, "Startbild: nachfahren %s%.2f m" % ("rückwärts " if rueck else "", dist),
+                                   strecke=dist)
         # ende: auf den Startkurs drehen (enger als sonst, sb.end_deg), fertig; über den Kurs hinaus gedreht oder
         # nach end_s: stehen bleiben statt pendeln
         err = _wrap(gth - th)

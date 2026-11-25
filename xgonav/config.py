@@ -46,8 +46,9 @@ class RobotCfg:
     # (±90°/±180° auf ±1,4° mit Firmware 81cb3335), seitdem an (Nutzer).
     vel_kurs: bool = True
     # Strecke mit Halt (Punkt 5 Stufe 3): Befehle mit Command.strecke (Reststrecke, vom Aufrufer laufend nachgerechnet)
-    # gehen als 15-Byte-Rahmen; die Firmware bremst so, dass er dort steht. Nur mit Fähigkeitsbit; aus bis gefahren.
-    vel_strecke: bool = False
+    # gehen als 15-Byte-Rahmen; die Firmware bremst so, dass er dort steht. Nur mit Fähigkeitsbit. Gefahren 2026-11-25
+    # (±3 cm auf 0,5–1 m mit Firmware 33c685ea); nutzt die Handsteuerung (/drive?strecke=) und home am Schluss.
+    vel_strecke: bool = True
     fw_speed_unit_mm: float = 3.9
     vel_accel_mps2: float = 0.5
     vel_decel_mps2: float = 1.0
