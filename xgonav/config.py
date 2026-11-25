@@ -49,7 +49,9 @@ class RobotCfg:
     # gehen als 15-Byte-Rahmen; die Firmware bremst so, dass er dort steht. Nur mit Fähigkeitsbit. Gefahren 2026-11-25
     # (±3 cm auf 0,5–1 m mit Firmware 33c685ea); nutzt die Handsteuerung (/drive?strecke=) und home am Schluss.
     vel_strecke: bool = True
-    fw_speed_unit_mm: float = 3.9
+    # 3,97 seit 2026-11-25: Strecke mit Halt zählte in drei Fahrten 1,6–2,0 % weniger als die Radticks (Maßstab vom
+    # Maßband, odom.scale 1,008); vorher 3,9 aus tools/fw_einheit.py mit Raddurchmesser 60 mm ohne diesen Maßstab
+    fw_speed_unit_mm: float = 3.97
     vel_accel_mps2: float = 0.5
     vel_decel_mps2: float = 1.0
     vel_jerk_mps3: float = 2.5

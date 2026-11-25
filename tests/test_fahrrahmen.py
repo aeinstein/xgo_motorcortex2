@@ -209,16 +209,16 @@ def test_fahrrahmen_robot_schreibt_rahmen():
     r = SimRobot(cfg)
     r.start()
     try:
-        assert _writes(r, "vel_limits") == ["231 180.0 500 3900 300 600 250"]
+        assert _writes(r, "vel_limits") == ["227 180.0 500 3970 300 600 250"]
         for _ in range(60):                                                # 1,2 s fahren (0,2 x 1,8 = 0,36 m/s)
             r.drive(0.2, 0.0)
             time.sleep(0.02)
         assert _writes(r, "speed_x") == [128] and _writes(r, "speed_z") == [128] or not _writes(r, "speed_x")
-        assert "92 128 641 0.0 360 1800" in _writes(r, "vel")
+        assert "91 126 630 0.0 360 1800" in _writes(r, "vel")
         assert r.command[0] == pytest.approx(0.2, abs=1e-9)               # Generator nach 0,92 s am Ziel
         t0 = time.monotonic()
         time.sleep(cfg.stall_timeout_s + 0.25)                             # Userspace-Watchdog -> Ziel 0
-        assert "0 256 641 0.0 360 1800" in _writes(r, "vel", t0)          # langsamer: vel_decel 1,0 m/s²
+        assert "0 252 630 0.0 360 1800" in _writes(r, "vel", t0)          # langsamer: vel_decel 1,0 m/s²
         assert 0.0 <= r.command[0] < 0.2                                   # bremst über die Rampe
     finally:
         r.close()
@@ -257,14 +257,14 @@ def test_fahrrahmen_ohne_untergrenze_und_bremse():
         t0 = time.monotonic()
         r.drive(0.0, 0.0, brake=True)
         time.sleep(0.06)
-        assert "0 385 2564 0.0 360 1800" in _writes(r, "vel", t0)         # vel_brake 1,5 m/s², Ruck 10
+        assert "0 378 2519 0.0 360 1800" in _writes(r, "vel", t0)         # vel_brake 1,5 m/s², Ruck 10
         for _ in range(40):                                                # wieder 0,36 m/s
             r.drive(0.2, 0.0)
             time.sleep(0.02)
         t1 = time.monotonic()
         r.drive(0.05, 0.0, brake=True)                                     # Bahnprüfung: auf ein kleineres Tempo
         time.sleep(0.06)
-        assert "23 385 2564 0.0 360 1800" in _writes(r, "vel", t1)        # 0,09 m/s mit vel_brake
+        assert "23 378 2519 0.0 360 1800" in _writes(r, "vel", t1)        # 0,09 m/s mit vel_brake
     finally:
         r.close()
 
@@ -299,7 +299,7 @@ def test_fahrrahmen_einschalten_nur_mit_treiber_und_firmware(tmp_path):
     (tmp_path / "vel").write_text("0 0 0 0 0 0.0 0 0.0 0\n")
     (tmp_path / "vel_limits").write_text("")
     r._vel_setup()
-    assert r.vel and (tmp_path / "vel_limits").read_text() == "231 180.0 500 3900 300 600 250"
+    assert r.vel and (tmp_path / "vel_limits").read_text() == "227 180.0 500 3970 300 600 250"
     cfg.vel_frame = False
     r._vel_setup()
     assert not r.vel
@@ -332,7 +332,7 @@ def test_bogen_robot_schreibt_kruemmung_und_haelt_den_bogen():
             v, w = r.command
             if v > 1e-3:
                 vk.append(math.radians(w * cfg.vyaw_limit_dps) / (v * cfg.vx_limit))
-        assert "kap 92 128 641 2000 360 1800" in _writes(r, "vel")
+        assert "kap 91 126 630 2000 360 1800" in _writes(r, "vel")
         assert vk and all(abs(x - k) < 1e-6 for x in vk)                   # Krümmung in jedem Takt
         r.drive(0.2, 0.3)                                                  # ohne κ: wieder Drehratenweg
         time.sleep(0.1)
@@ -371,8 +371,8 @@ def test_kurs_robot_dreht_auf_ziel_ein_rahmen_je_ziel():
             time.sleep(0.02)
         assert abs(r._gen_winkel - ziel) < 0.6 and r._kurs.done
         vel = [t for t in _writes(r, "vel", t0) if t.startswith("kurs ")]
-        assert vel and len(set(vel)) == 1 and vel[0] == "kurs 1 0 256 641 90.0 360 1800"
-        assert "231 45.0 500 3900 300 600 250" in _writes(r, "vel_limits", t0)
+        assert vel and len(set(vel)) == 1 and vel[0] == "kurs 1 0 252 630 90.0 360 1800"
+        assert "227 45.0 500 3970 300 600 250" in _writes(r, "vel_limits", t0)
         assert max(abs(x) for x in [r.command[1]]) <= 45.0 / cfg.vyaw_limit_dps + 1e-9
         t1 = time.monotonic()
         for _ in range(10):
@@ -383,7 +383,7 @@ def test_kurs_robot_dreht_auf_ziel_ein_rahmen_je_ziel():
         for _ in range(10):
             r.drive(0.0, 0.0)                                              # ohne Kursziel: Drehrate, w_max zurück
             time.sleep(0.02)
-        assert "231 180.0 500 3900 300 600 250" in _writes(r, "vel_limits", t2)
+        assert "227 180.0 500 3970 300 600 250" in _writes(r, "vel_limits", t2)
         assert not _writes(r, "vel")[-1].startswith("kurs ")
     finally:
         r.close()
@@ -521,7 +521,7 @@ def test_fahrrahmen_wird_nachtraeglich_erkannt(tmp_path):
     (tmp_path / "vel").write_text("0 0 0 0 0 0.0 0 0.0 0 0 3 0 0\n")
     r._vel_nachpruefen(r._vel_neu_t + r.VEL_NEU_S)
     assert r.vel and r.bogen and r.kurs_an
-    assert (tmp_path / "vel_limits").read_text().startswith("231 180.0")
+    assert (tmp_path / "vel_limits").read_text().startswith("227 180.0")
 
 
 def test_strecke_text_und_robot_haelt_am_ende():

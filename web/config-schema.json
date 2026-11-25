@@ -71,8 +71,8 @@
       {
        "key": "fw_speed_unit_mm",
        "typ": "float",
-       "default": 3.9,
-       "hilfe": ""
+       "default": 3.97,
+       "hilfe": "3,97 seit 2026-11-25: Strecke mit Halt zählte in drei Fahrten 1,6–2,0 % weniger als die Radticks (Maßstab vom Maßband, odom.scale 1,008); vorher 3,9 aus tools/fw_einheit.py mit Raddurchmesser 60 mm ohne diesen Maßstab"
       },
       {
        "key": "vel_accel_mps2",
