@@ -86,7 +86,7 @@ index a69366e..e4f1bd0 100644
      uint8_t pi_ip[4] = {};
      uint8_t policy_mode=0,policy_action_space=0;
 diff --git a/firmware/src/control/rider_motion.cpp b/firmware/src/control/rider_motion.cpp
-index fa7a21b..4d0bd35 100644
+index fa7a21b..23c81fb 100644
 --- a/firmware/src/control/rider_motion.cpp
 +++ b/firmware/src/control/rider_motion.cpp
 @@ -25,8 +25,11 @@ float decode(std::uint8_t x,float range) {
@@ -167,7 +167,7 @@ index fa7a21b..4d0bd35 100644
      s.pitch.measurement=pitch+bias;
      updatePid(s.pitch);
      const float output=std::fma(pitch_rate,rate_gain,s.pitch.output);
-@@ -114,16 +149,25 @@ void addWheelSpeedCorrection(Wheels &w,float forward,float turn,float speed11,fl
+@@ -114,16 +149,30 @@ void addWheelSpeedCorrection(Wheels &w,float forward,float turn,float speed11,fl
  void addHeadingCorrection(HeadingState &s,Wheels &w,std::uint32_t now,
                            std::uint8_t mode,bool hold_heading,float forward,
                            float turn,float filtered_turn,float yaw,
@@ -176,6 +176,11 @@ index fa7a21b..4d0bd35 100644
 +                          bool leveling,float roll,const TurnControl* tc) {
 +    const bool turn_on=tc!=nullptr&&tc->on;
 +    s.pid.kp=turn_on?tc->kp:3.0f;s.pid.kd=turn_on?tc->kd:.5f;   // aus: Werte von headingPid
++    // Halten im Stand nach dem Kursziel: Integral mit engem Totband, frisch ab dem Beginn des Haltens; sonst wie headingPid
++    const bool hold_still=turn_on&&tc->hold&&std::fabs(turn)<0.05f&&std::fabs(forward)<1;
++    if(hold_still&&!s.hold_still)s.pid.integral=0;
++    s.hold_still=hold_still;
++    s.pid.ki=hold_still?tc->ki_hold:0.0f;s.pid.deadband=hold_still?kHoldDeadband:2.0f;
 +    // auf dem Rahmenweg zählt schon langsames Fahren/Drehen als Bewegung (sonst setzte das Original das
 +    // Kursziel unter 1 °/s immer wieder auf den Ist-Kurs zurück)
 +    // Kursziel (tc->hold): auch nach der Ankunft gilt er als bewegt, sonst gäbe die Original-Logik den Kurs im Stand auf
@@ -199,7 +204,7 @@ index fa7a21b..4d0bd35 100644
      const float room=static_cast<float>(std::min(std::abs(static_cast<int>(w.id11)+offset),std::abs(static_cast<int>(w.id21)+offset)));
      const float magnitude=std::min(room,std::fabs(demand));
 diff --git a/firmware/src/control/rider_motion.h b/firmware/src/control/rider_motion.h
-index 776c330..0f6de3e 100644
+index 776c330..03fc0d4 100644
 --- a/firmware/src/control/rider_motion.h
 +++ b/firmware/src/control/rider_motion.h
 @@ -9,7 +9,12 @@ namespace rider { namespace control {
@@ -267,10 +272,12 @@ index 776c330..0f6de3e 100644
  // 0x400d4fd4; called before the command filters are advanced.
  void addWheelSpeedCorrection(Wheels &, float filtered_forward,
                               float filtered_turn, float speed11, float speed21);
-@@ -67,12 +100,26 @@ struct HeadingState {
+@@ -66,13 +99,32 @@ struct HeadingState {
+     Pid pid=headingPid();
      float target=0;
      std::uint32_t last_motion_ms=0;
- };
++    bool hold_still=false;   // Rahmenweg: Kursziel erreicht, Kurs wird im Stand gehalten (Integral aktiv)
++};
 +// Drehratenregler für den Rahmenweg (velocity_cmd.h). Das Original erhöht das Kursziel je Regeltakt um filtered_turn × 0,005, bei 4 ms Takt also um 1,25 × w je Sekunde
 +// und abhängig vom Takt; daneben die Vorsteuerung −turn × 0,5 auf die Räder. Mit on läuft das Kursziel genau mit
 +// w_soll · dt (w_soll = gerampter Sollwert des Generators): P auf den Kurs wirkt dann als Integral auf die Drehrate, D auf
@@ -283,7 +290,11 @@ index 776c330..0f6de3e 100644
 +    float kd=0.5f;
 +    float ff_gain=0.5f;     // Radeinheiten je °/s Soll-Drehrate (Original 0,5)
 +    bool hold=false;        // Kursziel läuft: Kurs auch im Stand halten (Ziel nicht auf den Ist-Kurs zurücksetzen)
-+};
++    float ki_hold=0.04f;    // Integral des Kurs-PID je Takt nur beim Halten im Stand (w = 0): überwindet die Haftung
+ };
++// Beim Halten: P allein bringt unter ~3° Rest weniger als die 10 Radeinheiten, ab denen die Reibungskompensation
++// greift (Rest 1,4–2,2° gefahren); das Integral wächst, bis das Rad losbricht, und fällt beim Nulldurchgang auf 0.
++constexpr float kHoldDeadband=0.3f;   // ° (Original 2°: darin klingt das Integral ab)
  // 0x400d53a4; called after command filtering and leg roll calculation.
  void addHeadingCorrection(HeadingState &, Wheels &, std::uint32_t now_ms,
                            std::uint8_t robot_mode, bool hold_heading,
@@ -296,7 +307,7 @@ index 776c330..0f6de3e 100644
  void addWheelFriction(Wheels &);
  
 diff --git a/firmware/src/main.cpp b/firmware/src/main.cpp
-index 75d1306..82b9d7c 100644
+index 75d1306..e535114 100644
 --- a/firmware/src/main.cpp
 +++ b/firmware/src/main.cpp
 @@ -28,6 +28,7 @@ extern "C" {extern const volatile uint32_t rider_rl_only_build=0x524c4f31;}
@@ -314,7 +325,7 @@ index 75d1306..82b9d7c 100644
 +// Geschwindigkeitsregler des Rahmenwegs, Konsole !velctl KI FF IMAX [KP [KF]] (nur RAM)
 +volatile float vel_ki=0.06f,vel_ff=1.0f,vel_i_max=8.0f,vel_kp=0.15f,vel_kf=0.05f;
 +// Drehratenregler des Rahmenwegs, Konsole !turnctl KP KD FF (nur RAM)
-+volatile float turn_kp=3.0f,turn_kd=0.5f,turn_ff=0.5f;
++volatile float turn_kp=3.0f,turn_kd=0.5f,turn_ff=0.5f,turn_ki=0.04f;
  // In schnellen Kurven einlegen (Aktion 232 an / 231 aus, !lean on|off): Roll halten regelt auf
  // -atan(v * Gierrate / g) statt auf 0 (control::updateCurveLean). Default aus, nicht gespeichert.
  volatile bool curve_lean_enabled=false;
@@ -437,7 +448,7 @@ index 75d1306..82b9d7c 100644
 +            vc.unit_mm=vel_limits.unit_mm;   // Einheit aus 0x1b (xgonav), Reglerwerte aus der Firmware
 +            vc.dt=float(uint32_t(us-vel_ctrl_us))*1e-6f;vel_ctrl_us=us;vc.freeze=lift_acting;
 +            auto& tc=request.turn_control;
-+            tc.on=vc.on;tc.dt=vc.dt;tc.kp=turn_kp;tc.kd=turn_kd;tc.ff_gain=turn_ff;tc.hold=vc.on&&vel.course_on;
++            tc.on=vc.on;tc.dt=vc.dt;tc.kp=turn_kp;tc.kd=turn_kd;tc.ff_gain=turn_ff;tc.ki_hold=turn_ki;tc.hold=vc.on&&vel.course_on;
 +        }
  #if RIDER2_RL_ONLY
          // Training saw height bytes 55..200; keep the phone slider inside that band.
@@ -458,7 +469,7 @@ index 75d1306..82b9d7c 100644
          t.leg12_zero=s.calibration.zero_a;t.leg22_zero=s.calibration.zero_b;
          t.policy_mode=uint8_t(s.policy.mode);t.policy_model_id=policy.model().id;
          t.policy_trained=s.policy.trained;t.policy_valid=s.policy.model_valid;
-@@ -1100,6 +1137,38 @@ void console(const char* line,Print& out) {
+@@ -1100,6 +1137,39 @@ void console(const char* line,Print& out) {
      {float g=0;if(sscanf(line,"!gain %f",&g)==1){wheel_gain=g;out.printf("wheel gain %.3f\n",g);return;}}
      {float g=0;if(sscanf(line,"!speedcal %f",&g)==1){if(g>=.2f&&g<=4.f&&!shared.driving){speed_cal=g;out.printf("policy speed scale %.3f\n",g);}else out.println("ERR speedcal 0.2..4.0 and standstill");return;}}
      {int ms=0;if(sscanf(line,"!smooth %d",&ms)==1&&ms>=0){wheel_smooth_ms=unsigned(ms);out.printf("wheel smoothing %d ms\n",ms);return;}}
@@ -473,9 +484,10 @@ index 75d1306..82b9d7c 100644
 +        if(sscanf(line,"!velctl %f %f %f %f %f",&x,&y,&vk,&kp,&kf)>=3){
 +            if(x<0||x>1||y<0||y>2||vk<0||vk>10||kp<0||kp>1||kf<0||kf>0.2f){out.println("ERR !velctl KI(0..1 deg per unit*s) FF(0..2) IMAX(0..10 deg) [KP(0..1 deg per unit) [KF(0..0.2 deg per unit)]]");return;}
 +            vel_ki=x;vel_ff=y;vel_i_max=vk;vel_kp=kp;vel_kf=kf;out.printf("velocity control ki %.4f ff %.2f imax %.1f kp %.3f kf %.3f\n",double(x),double(y),double(vk),double(kp),double(kf));return;}
-+        if(sscanf(line,"!turnctl %f %f %f",&x,&y,&vk)==3){
-+            if(x<0||x>20||y<0||y>5||vk<0||vk>5){out.println("ERR !turnctl KP(0..20) KD(0..5) FF(0..5 wheel units per deg/s)");return;}
-+            turn_kp=x;turn_kd=y;turn_ff=vk;out.printf("turn control kp %.2f kd %.2f ff %.2f\n",double(x),double(y),double(vk));return;}
++        float tki=turn_ki;
++        if(sscanf(line,"!turnctl %f %f %f %f",&x,&y,&vk,&tki)>=3){
++            if(x<0||x>20||y<0||y>5||vk<0||vk>5||tki<0||tki>1){out.println("ERR !turnctl KP(0..20) KD(0..5) FF(0..5 wheel units per deg/s) [KI_HOLD(0..1 per call)]");return;}
++            turn_kp=x;turn_kd=y;turn_ff=vk;turn_ki=tki;out.printf("turn control kp %.2f kd %.2f ff %.2f ki_hold %.3f\n",double(x),double(y),double(vk),double(tki));return;}
 +        if(!strcmp(line,"!vel status")){const auto snap=snapshot();const uint8_t* d=snap.telemetry.veldiag;
 +            out.printf("velocity %s%s%s%s, limits %s: v %d mm/s, w %.1f deg/s, v_max %u mm/s, w_max %.1f deg/s, timeout %u ms, caps 0x%02x\n",
 +                d[0]&1?"active":"off",d[0]&2?" (accel)":"",d[0]&4?" (timed out)":"",d[0]&16?" (kappa)":d[0]&64?" (course reached)":d[0]&32?" (course)":"",d[0]&8?"set":"missing",
@@ -497,7 +509,7 @@ index 75d1306..82b9d7c 100644
      char cmd[20]={};int a=0,b=0,c=0,d=0;
      const int count=sscanf(line,"%19s %d %d %d %d",cmd,&a,&b,&c,&d);
      if(count==3&&!strcmp(cmd,"!move")){if(a<0||a>255||b<0||b>255){out.println("ERR expected bytes 0..255");return;}valueCommand(CommandKind::Forward,a,out);valueCommand(CommandKind::Turn,b,out);return;}
-@@ -1108,14 +1177,14 @@ void console(const char* line,Print& out) {
+@@ -1108,14 +1178,14 @@ void console(const char* line,Print& out) {
          const struct{const char* text;CommandKind kind;} maps[]={
              {"!action",CommandKind::Action},{"!loop",CommandKind::ActionLoop},{"!height",CommandKind::Height},
              {"!roll",CommandKind::Roll},{"!level",CommandKind::Leveling},{"!heading",CommandKind::HeadingHold},
@@ -511,7 +523,7 @@ index 75d1306..82b9d7c 100644
      out.print(" | !standup | !restart");
      out.print(" | !led BYTE | !shutdown on/off");
      out.print(" | !lean on/off");
-+    out.print(" | !vel limits VMAX_mm_s WMAX_deg_s TIMEOUT_ms | !vel V_mm_s W_deg_s | !vel accel A_mm_s2 W_deg_s | !vel kappa V_mm_s K_1_per_m | !vel turn DEG | !vel status | !velctl KI FF IMAX [KP [KF]] | !turnctl KP KD FF");
++    out.print(" | !vel limits VMAX_mm_s WMAX_deg_s TIMEOUT_ms | !vel V_mm_s W_deg_s | !vel accel A_mm_s2 W_deg_s | !vel kappa V_mm_s K_1_per_m | !vel turn DEG | !vel status | !velctl KI FF IMAX [KP [KF]] | !turnctl KP KD FF [KI_HOLD]");
      out.println();
  }
  }

@@ -6,6 +6,7 @@
 // Kurs-PID nach der Drehung das Ziel und holt den Nachlauf auf; ohne hold gibt die Original-Logik den Kurs im Stand auf.
 // Aufruf: firmware/tests/run.sh test_turn_ctrl
 #include "control/rider_motion.h"
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 
@@ -97,22 +98,29 @@ int main() {
     }
     // --- Kursziel: nach der Drehung den Kurs halten (am Rider ohne !heading)
     {
-        auto turn90 = [](bool hold, float stiction, float& lag_end, float& err_late, float& target_late) {
+        float swing = 0;
+        auto turn90 = [&swing](bool hold, float stiction, float& lag_end, float& err_late, float& target_late) {
             Sim s; s.heading_hold = false; TurnControl tc; tc.on = true; tc.hold = hold;
             for (int i = 0; i < 100; ++i) s.step(0, &tc, stiction);
             const float t0 = s.h.target;
             for (int i = 0; i < 375; ++i) s.step(60, &tc, stiction);   // 1,5 s mit 60 °/s = 90°
             lag_end = (t0 + 90.0f) - s.yaw;
-            for (int i = 0; i < 500; ++i) s.step(0, &tc, stiction);     // 2 s danach
+            float lo = 1e9f, hi = -1e9f;
+            for (int i = 0; i < 500; ++i) { s.step(0, &tc, stiction); if (i >= 250) { lo = std::min(lo, s.yaw); hi = std::max(hi, s.yaw); } }   // 2 s danach
+            swing = hi - lo;
             err_late = (t0 + 90.0f) - s.yaw; target_late = s.h.target - (t0 + 90.0f);
         };
         float l0, e0, g0, l1, e1, g1, l2, e2, g2;
         turn90(false, 0, l0, e0, g0); turn90(true, 0, l1, e1, g1); turn90(true, 10, l2, e2, g2);
+        const float swing_stiction = swing;
+        float l3, e3, g3; turn90(true, 20, l3, e3, g3);
         std::printf("       90°-Drehung: Nachlauf am Ende %.2f°; 2 s später ohne hold %.2f° (Ziel versetzt um %.2f°), mit hold %.2f°, mit hold + Haftreibung 10 %.2f°\n",
                     double(l1), double(e0), double(g0), double(e1), double(e2));
         check(std::fabs(g0) > 0.01f || std::fabs(e0) > 0.01f || l0 < 0.01f, "ohne hold: Original gibt das Kursziel im Stand auf (Ziel = Ist-Kurs)");
         check(std::fabs(g1) < 1e-3f && std::fabs(e1) < 0.3f, "mit hold: Kursziel bleibt, Kurs 2 s nach der Drehung auf < 0,3° am Ziel");
-        check(std::fabs(e2) < 1.5f, "mit hold und Haftreibung 10: < 1,5° am Ziel (Rest, wo kp·Fehler unter der Haftung liegt)");
+        std::printf("       mit Haftreibung 10: Rest %.2f°, Schwankung zuletzt %.2f°; Haftreibung 20: Rest %.2f°\n", double(e2), double(swing_stiction), double(e3));
+        check(std::fabs(e2) < 0.5f && swing_stiction < 0.6f, "mit hold und Haftreibung 10: Integral bricht die Haftung, < 0,5° am Ziel, kein Aufschaukeln");
+        check(std::fabs(e3) < 0.5f, "mit hold und Haftreibung 20: < 0,5° am Ziel");
     }
     std::printf(fail ? "\nFEHLER\n" : "\nalle ok\n");
     return fail;
