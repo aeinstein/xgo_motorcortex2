@@ -206,6 +206,12 @@ Kosten am ESP32: zwei PI-Regler + Rampe je Takt, vernachlässigbar gegen die Lag
   (1,05 ×), kriecht zum Ende auf 80 (letzte Sekunde 1,12 ×), Strecke 1,0 m. Soll-Nick beim Halten −0,5° bei 46,
   −2,5…−3,5° bei 73–80: der Bedarf wächst stärker als linear (bei 46 ~0,01, bei 75 ~0,035° je Einheit). Offen:
   höhere Tempi messen, kv ggf. tempoabhängig; Drehen auf dem Rahmenweg noch nicht gemessen.
+- **Messfahrt v 0,4 / 0,5 (2026-11-25, kv 0,025, ki 0,03, ungeprüft über MCP, da geprüft nur bis 0,30;
+  gegenläufig, 2,5 / 2 s):** v 0,4 (Soll 92 = 0,36 m/s): 90 % nach 1,8 s, Spitze 93 (1,01 ×), letzte 0,7 s 0,96 ×,
+  Soll-Nick −1,5°, Strecke 0,79 m. v 0,5 (Soll 115 = 0,45 m/s): 90 % nach 1,0 s, Spitze 134 (1,16 ×), letzte 0,7 s
+  1,11 ×, Soll-Nick −4,7°, Strecke 0,86 m. Beim Bremsen aus v 0,5 Soll-Nick bis −15°, ohne Sturz. Die
+  Halteabschnitte sind kurz (1–1,7 s), also nicht eingeschwungen. Bedarf je Einheit uneinheitlich (0,017 bei 88,
+  0,037 bei 128); v 0,3 und 0,5 kriechen etwas über, v 0,2 und 0,4 nicht.
 
 ### Zu klären
 
