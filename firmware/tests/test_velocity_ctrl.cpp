@@ -83,7 +83,7 @@ int main() {
     }
     // --- Vorsteuerung
     {
-        BalanceState b; VelocityControl vc; vc.on = true; vc.accel = 500; vc.ki = 0; vc.dt = kDt;
+        BalanceState b; VelocityControl vc; vc.on = true; vc.accel = 500; vc.ki = 0; vc.kf = 0; vc.dt = kDt;
         const float th = step(b, 100, 100, 0, false, true, &vc);
         check(near(th, std::atan(500.0f / 9810.0f) * 57.29578f, 1e-3f), "Vorsteuerung: 500 mm/s² -> +2,92° ohne Fehler");
         vc.accel = -800; vc.ff_gain = 0.5f;
@@ -92,14 +92,14 @@ int main() {
     }
     // --- Einheit in der Vorsteuerung
     {
-        BalanceState b; VelocityControl vc; vc.on = true; vc.ki = 0; vc.dt = kDt;
+        BalanceState b; VelocityControl vc; vc.on = true; vc.ki = 0; vc.kf = 0; vc.dt = kDt;
         vc.accel = 128.2f; vc.unit_mm = 3.9f;   // 0,5 m/s² in Einheiten von 3,9 mm/s
         const float th = step(b, 100, 100, 0, false, true, &vc);
         check(near(th, std::atan(500.0f / 9810.0f) * 57.29578f, 2e-3f), "Vorsteuerung mit Einheit 3,9 -> 2,92° bei 0,5 m/s²");
     }
     // --- Integral erst bei ruhendem Generator
     {
-        BalanceState b; VelocityControl vc; vc.on = true; vc.dt = kDt; vc.accel = 128;
+        BalanceState b; VelocityControl vc; vc.on = true; vc.dt = kDt; vc.accel = 128; vc.ki = 0.15f;
         for (int i = 0; i < 500; ++i) step(b, 20, 0, 0, false, true, &vc);   // 2 s Rampe, Ist hängt 20 hinterher
         check(b.vel_i == 0 && b.vel_settled == 0, "während der Rampe (a ≠ 0) kein Integral");
         vc.accel = 0;
@@ -117,7 +117,7 @@ int main() {
     }
     // --- P allein auf Soll − Ist
     {
-        VelocityControl vc; vc.on = true; vc.dt = kDt; vc.ki = 0;
+        VelocityControl vc; vc.on = true; vc.dt = kDt; vc.ki = 0; vc.kp = 0.3f; vc.kf = 0;
         BalanceState a, b, c, d2;
         const float f = step(a, 60, 40, 0, false, true, &vc);
         check(near(f, 0.3f * 20, 0.02f), "Fahren: kp 0,3 × 20 Einheiten Fehler (Bandrand) -> 6°");
@@ -129,9 +129,30 @@ int main() {
         BalanceState g; const float big = step(g, 0, -190, 0, false, true, &vc);
         check(near(big, 0.11f * 190 + (0.3f - 0.11f) * kVelBand, 0.1f), "großer Fehler (Aufschwung, Räder 190): Original-P + 0,19 × 20 = 24,7°, nicht 57°");
     }
+    // --- Standardwerte: Original-P ohne Zuschlag, Vorsteuerung −kf·v_soll aus dem Soll
+    {
+        VelocityControl vc; vc.on = true; vc.dt = kDt; vc.ki = 0;
+        BalanceState a, b, c;
+        const float f = step(a, 60, 60, 0, false, true, &vc);
+        check(near(f, -0.05f * 60, 0.02f), "kf 0,05: Soll 60 ohne Fehler -> −3° (aus dem Soll, nicht dem Ist)");
+        const float r = step(b, -40, -40, 0, false, true, &vc);
+        check(near(r, 2.0f, 0.02f), "rückwärts: Soll −40 -> +2°");
+        const float g = step(c, 0, -190, 0, false, true, &vc);
+        check(near(g, c.speed.output, 1e-6f) && near(g, 0.11f * 190, 0.1f), "Standard kp 0,11: Aufschwung (Räder 190) nur Original-P");
+    }
+    // --- Halt nach der Fahrt: der Tempo-Anteil geht mit dem Soll auf 0 (kein Nick für ein Tempo, das er nicht mehr fährt)
+    {
+        VelocityControl vc; vc.on = true; vc.dt = kDt;
+        BalanceState b; settle(b);
+        for (int i = 0; i < 1000; ++i) step(b, 35, 35, 0, false, true, &vc);   // 4 s am Soll, kein Fehler
+        const float drive = b.pitch.target;
+        const float stop = step(b, 0, 0, 0, false, true, &vc);
+        check(near(drive, -0.05f * 35, 0.05f) && std::fabs(stop) < 0.05f && std::fabs(b.vel_i) < 0.05f,
+              "Halt: Soll-Nick −1,75° beim Fahren, 0 beim Stehen, Integral leer");
+    }
     // --- Integral: wächst mit ki·Fehler·dt, Grenze, Vorzeichen
     {
-        BalanceState b; VelocityControl vc; vc.on = true; vc.dt = kDt;   // ki 0,15
+        BalanceState b; VelocityControl vc; vc.on = true; vc.dt = kDt; vc.ki = 0.15f;
         settle(b);
         for (int i = 0; i < 250; ++i) step(b, 20, 0, 0, false, true, &vc);   // 1 s, 20 Einheiten Fehler
         check(near(b.vel_i, 3.0f, 0.02f), "Integral: 20 Einheiten über 1 s -> 3°");
@@ -146,7 +167,7 @@ int main() {
     }
     // --- Anti-Windup und freeze
     {
-        BalanceState b; VelocityControl vc; vc.on = true; vc.dt = kDt;
+        BalanceState b; VelocityControl vc; vc.on = true; vc.dt = kDt; vc.kf = 0;
         for (int i = 0; i < 250; ++i) step(b, 2000, 0, 0, false, true, &vc);   // P allein 220° > Grenze 100°
         check(b.vel_i == 0 && b.pitch.target == b.speed.output_limit, "Anti-Windup: in der Grenze wächst das Integral nicht");
         BalanceState c; vc.freeze = true;
@@ -155,7 +176,7 @@ int main() {
     }
     // --- Halten und Ende ohne Sprung
     {
-        BalanceState b; VelocityControl vc; vc.on = true; vc.dt = kDt;
+        BalanceState b; VelocityControl vc; vc.on = true; vc.dt = kDt; vc.ki = 0.15f;
         settle(b);
         for (int i = 0; i < 250; ++i) step(b, 20, 0, 0, false, true, &vc);
         const float i0 = b.vel_i;
@@ -179,7 +200,7 @@ int main() {
         const float d0 = b.drive_i;
         VelocityControl vc; vc.on = true; vc.dt = kDt; vc.ki = 0;
         const float t0 = step(b, 200, 0, 0, false, true, &vc);
-        check(d0 > 0.5f && b.drive_i > 0.9f * d0 && near(t0, b.speed.output + (vc.kp - b.speed.kp) * kVelBand + b.drive_i, 1e-3f), "Wechsel auf den Rahmenweg: Rest des Fahr-Integrals bleibt erst stehen");
+        check(d0 > 0.5f && b.drive_i > 0.9f * d0 && near(t0, b.speed.output + (vc.kp - b.speed.kp) * kVelBand - vc.kf * 200 + b.drive_i, 1e-3f), "Wechsel auf den Rahmenweg: Rest des Fahr-Integrals bleibt erst stehen");
         for (int i = 0; i < 1000; ++i) step(b, 200, 0, 0, false, true, &vc);
         check(b.drive_i == 0, "Rest des Fahr-Integrals klingt ab (4 s)");
     }
@@ -192,13 +213,13 @@ int main() {
         for (float s : {46.0f, 69.0f, -46.0f, -69.0f}) for (float load : {0.0f, 2.0f, -2.0f}) {
             V::Frame f; f.v = s; f.a = 128; f.jerk = 641;   // xgonav: 0,5 m/s², 2,5 m/s³ in Einheiten von 3,9 mm/s
             VelocityControl vc; vc.on = true;
-            const LoopResult r = loop(6, load, &vc, 0, &f);
+            const LoopResult r = loop(load == 0 ? 6.0f : 10.0f, load, &vc, 0, &f);
             const float q = r.v_end / s;
             std::printf("       Modell, Soll %+3.0f, Steigung %+.0f°: Ende %.3f × Soll, Spitze %.2f × Soll, Schwankung zuletzt %.2f\n",
                         double(s), double(load), double(q), double(1 + r.err_peak / std::fabs(s)), double(r.osc_late));
             worst = std::max(worst, std::max(std::fabs(q - 1), 0.5f * r.osc_late / std::fabs(s)));
         }
-        check(worst < 0.03f, "Modell: vorwärts/rückwärts, eben und ±2° Steigung nach 6 s auf ±3 % am Soll, zuletzt < 6 % Schwankung");
+        check(worst < 0.03f, "Modell: vorwärts/rückwärts eben nach 6 s, ±2° Steigung nach 10 s auf ±3 % am Soll, zuletzt < 6 % Schwankung");
     }
     std::printf(fail ? "\nFEHLER\n" : "\nalle ok\n");
     return fail;

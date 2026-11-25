@@ -86,7 +86,7 @@ index a69366e..e4f1bd0 100644
      uint8_t pi_ip[4] = {};
      uint8_t policy_mode=0,policy_action_space=0;
 diff --git a/firmware/src/control/rider_motion.cpp b/firmware/src/control/rider_motion.cpp
-index fa7a21b..5aa8c26 100644
+index fa7a21b..2d3a82a 100644
 --- a/firmware/src/control/rider_motion.cpp
 +++ b/firmware/src/control/rider_motion.cpp
 @@ -25,8 +25,11 @@ float decode(std::uint8_t x,float range) {
@@ -134,7 +134,7 @@ index fa7a21b..5aa8c26 100644
      else {
          const float dir=target>0?1.0f:-1.0f;
          // only towards the command, only up to kDriveMinFrac of it; a leftover against the command decays
-@@ -94,6 +103,30 @@ float updateBalance(BalanceState &s,float target,float speed11,float speed21,
+@@ -94,6 +103,32 @@ float updateBalance(BalanceState &s,float target,float speed11,float speed21,
      }
      s.pitch.target=s.drive_i==0?s.speed.output:
          std::max(-s.speed.output_limit,std::min(s.speed.output_limit,s.speed.output+s.drive_i));
@@ -142,12 +142,13 @@ index fa7a21b..5aa8c26 100644
 +        const float lim=s.speed.output_limit;
 +        const float err=target-s.speed.measurement;
 +        // P auf Soll − Ist: beim Halten der Original-P; beim Fahren der Original-P (0,11) auf den ganzen Fehler und kp − 0,11
-+        // nur bis ±kVelBand (der Original-P allein liefe auf ~1,8 × Soll). Große Fehler (Aufschwung, Stoß: Räder ±190) bekommen
-+        // so den Original-P, sonst schaukelt kp den Soll-Nick auf (2026-11-25: 57°, Sturz nach dem Aufstehen).
++        // nur bis ±kVelBand (Standard kp = 0,11: kein Zuschlag; 0,3 schwang mit der Balance-Kaskade, 57° beim Aufstehen).
 +        const float band=std::max(-kVelBand,std::min(kVelBand,err));
 +        const float p=holding?s.speed.output:std::max(-lim,std::min(lim,s.speed.output+(vc->kp-s.speed.kp)*band));
-+        // Vorsteuerung nur aus dem Soll: a in echten mm/s² (unit_mm)
-+        const float ff=vc->ff_gain*std::atan(vc->accel*vc->unit_mm/kGravityMmS2)*57.29578f;
++        // Vorsteuerung nur aus dem Soll: a in echten mm/s² (unit_mm) und der Nick, den der Rider zum Halten des Soll-Tempos
++        // braucht (−kf·v_soll; der Original-P allein liefe auf ~1,8 × Soll). Den Rest (Versatz, Steigung) trägt das Integral.
++        const float ff=vc->ff_gain*std::atan(vc->accel*vc->unit_mm/kGravityMmS2)*57.29578f-vc->kf*target;
++        s.vel_ff=ff;
 +        const float dt=std::max(0.0f,std::min(0.05f,vc->dt));
 +        s.vel_settled=vc->accel==0?std::min(kVelSettleS,s.vel_settled+dt):0.0f;
 +        if(holding)s.vel_i*=std::exp(-dt/kVelHoldTau);
@@ -157,7 +158,8 @@ index fa7a21b..5aa8c26 100644
 +                s.vel_i=std::max(-vc->i_max,std::min(vc->i_max,s.vel_i+vc->ki*band*dt));
 +        }
 +        s.pitch.target=std::max(-lim,std::min(lim,p+s.vel_i+ff+s.drive_i));
-+    } else if(s.vel_i!=0) {   // Rahmenweg beendet: Rest weich abbauen
++    } else if(s.vel_i!=0||s.vel_ff!=0) {   // Rahmenweg beendet: Rest (Integral + letzte Vorsteuerung) weich abbauen
++        s.vel_i+=s.vel_ff;s.vel_ff=0;
 +        const float dt=vc?std::max(0.0f,std::min(0.05f,vc->dt)):0.004f;
 +        s.vel_i*=std::exp(-dt/kVelOffTau);if(std::fabs(s.vel_i)<1e-3f)s.vel_i=0;
 +        s.pitch.target=std::max(-s.speed.output_limit,std::min(s.speed.output_limit,s.pitch.target+s.vel_i));
@@ -165,7 +167,7 @@ index fa7a21b..5aa8c26 100644
      s.pitch.measurement=pitch+bias;
      updatePid(s.pitch);
      const float output=std::fma(pitch_rate,rate_gain,s.pitch.output);
-@@ -114,16 +147,23 @@ void addWheelSpeedCorrection(Wheels &w,float forward,float turn,float speed11,fl
+@@ -114,16 +149,23 @@ void addWheelSpeedCorrection(Wheels &w,float forward,float turn,float speed11,fl
  void addHeadingCorrection(HeadingState &s,Wheels &w,std::uint32_t now,
                            std::uint8_t mode,bool hold_heading,float forward,
                            float turn,float filtered_turn,float yaw,
@@ -195,7 +197,7 @@ index fa7a21b..5aa8c26 100644
      const float room=static_cast<float>(std::min(std::abs(static_cast<int>(w.id11)+offset),std::abs(static_cast<int>(w.id21)+offset)));
      const float magnitude=std::min(room,std::fabs(demand));
 diff --git a/firmware/src/control/rider_motion.h b/firmware/src/control/rider_motion.h
-index 776c330..9a7dfe9 100644
+index 776c330..79afd56 100644
 --- a/firmware/src/control/rider_motion.h
 +++ b/firmware/src/control/rider_motion.h
 @@ -9,7 +9,12 @@ namespace rider { namespace control {
@@ -212,21 +214,22 @@ index 776c330..9a7dfe9 100644
  };
  struct CommandState {
      float forward=0, turn=0, height=0, roll=0; // mapped requests, 3ffc30d8
-@@ -36,6 +41,7 @@ void updatePositionHold(HoldState &, std::uint32_t now_ms,
+@@ -36,6 +41,8 @@ void updatePositionHold(HoldState &, std::uint32_t now_ms,
  
  struct BalanceState { Pid speed=speedPid(), pitch=pitchPid();
                        float drive_i=0;   // integral of the speed error while driving, byte path (deg of pitch target)
 +                      float vel_i=0, vel_settled=0;   // velocity frame: integral (deg), s the generator has been at its target
++                      float vel_ff=0;                 // velocity frame: last feed-forward (deg), folded into vel_i at the end
  };
  // The stock speed PI clamps its integral at 100 (ki 0.00073 -> at most 0.07 deg), so it is effectively P only:
  // pitch target = 0.11 x (target - speed), at most ~3.5 deg at full command. A constant load (slight slope, rolling
-@@ -48,6 +54,30 @@ constexpr float kDriveKi=0.0003f;    // deg per control call (~3 ms) and unit of
+@@ -48,6 +55,31 @@ constexpr float kDriveKi=0.0003f;    // deg per control call (~3 ms) and unit of
  constexpr float kDriveIMax=3.0f;     // deg
  constexpr float kDriveMinFrac=0.3f;  // floor speed as a fraction of the command
  constexpr float kDriveDecay=0.99f;   // per call without forward command (~0.3 s)
 +// Geschwindigkeitsregler für den Rahmenweg (velocity_cmd.h). Soll-Nick = Original-P 0,11·(Soll − Ist) + (kp − 0,11)·Fehler
 +// bis ±kVelBand (beim Halten der Original-P 0,14) + Integral über den auf ±kVelBand geklemmten Fehler + Vorsteuerung
-+// atan(a_soll/g), geregelt allein
++// atan(a_soll/g) − kf·v_soll (beides nur aus dem Soll), geregelt allein
 +// über Soll − Ist. Echtes Integral mit Anti-Windup: es wächst nicht weiter,
 +// solange der Soll-Nick in der Grenze (output_limit) steht und der Fehler weiter hinein zeigt, nicht bei freeze
 +// (Hebeschutz greift) und erst, wenn die Soll-Beschleunigung kVelSettleS lang 0 ist (beim Anfahren hängt das Ist
@@ -236,8 +239,9 @@ index 776c330..9a7dfe9 100644
 +struct VelocityControl {
 +    bool on=false;          // Rahmenweg aktiv; aus = Originalweg bitgleich
 +    float accel=0;          // Soll-Beschleunigung aus dem Generator, Firmware-Einheiten/s²
-+    float kp=0.3f;          // ° Soll-Nick je Firmware-Einheit Fehler (Original-P 0,11)
-+    float ki=0.15f;         // ° Soll-Nick je (Firmware-Einheit Fehler · s)
++    float kp=0.11f;         // ° Soll-Nick je Firmware-Einheit Fehler (Original-P 0,11 = kein Zuschlag; 0,3 schwang)
++    float ki=0.05f;         // ° Soll-Nick je (Firmware-Einheit Fehler · s)
++    float kf=0.05f;         // ° Soll-Nick je Firmware-Einheit Soll-Tempo (Vorsteuerung −kf·v_soll, gemessen 0,047–0,057)
 +    float i_max=8.0f;       // ° Betragsgrenze des Integrals
 +    float ff_gain=1.0f;     // Anteil der Vorsteuerung atan(a/g)
 +    float dt=0.004f;        // s seit dem letzten Regeltakt
@@ -251,7 +255,7 @@ index 776c330..9a7dfe9 100644
  struct Wheels { std::int16_t id11=0, id21=0; };
  float wheelDistance(std::int32_t id11_encoder, std::int32_t second_encoder);
  // 0x400d582c numeric portion. Set forward_target from the PREVIOUS cycle's
-@@ -57,7 +87,8 @@ float updateBalance(BalanceState &, float forward_target,
+@@ -57,7 +89,8 @@ float updateBalance(BalanceState &, float forward_target,
                      float speed11, float speed21, float pitch_deg,
                      float pitch_bias, float pitch_rate_rad_s,
                      float filtered_height, bool holding, Wheels &,
@@ -261,7 +265,7 @@ index 776c330..9a7dfe9 100644
  // 0x400d4fd4; called before the command filters are advanced.
  void addWheelSpeedCorrection(Wheels &, float filtered_forward,
                               float filtered_turn, float speed11, float speed21);
-@@ -67,12 +98,25 @@ struct HeadingState {
+@@ -67,12 +100,25 @@ struct HeadingState {
      float target=0;
      std::uint32_t last_motion_ms=0;
  };
@@ -289,7 +293,7 @@ index 776c330..9a7dfe9 100644
  void addWheelFriction(Wheels &);
  
 diff --git a/firmware/src/main.cpp b/firmware/src/main.cpp
-index 75d1306..2558db7 100644
+index 75d1306..b465af1 100644
 --- a/firmware/src/main.cpp
 +++ b/firmware/src/main.cpp
 @@ -28,6 +28,7 @@ extern "C" {extern const volatile uint32_t rider_rl_only_build=0x524c4f31;}
@@ -304,8 +308,8 @@ index 75d1306..2558db7 100644
  volatile uint32_t wheel_smooth_ms=0;
  volatile float yaw_slew_per_second=20000.0f;
  bool battery_low_seen=false;   // Akku-Warnung war aktiv (nur Robot-Task)
-+// Geschwindigkeitsregler des Rahmenwegs, Konsole !velctl KI FF IMAX [KP] (nur RAM)
-+volatile float vel_ki=0.15f,vel_ff=1.0f,vel_i_max=8.0f,vel_kp=0.3f;
++// Geschwindigkeitsregler des Rahmenwegs, Konsole !velctl KI FF IMAX [KP [KF]] (nur RAM)
++volatile float vel_ki=0.05f,vel_ff=1.0f,vel_i_max=8.0f,vel_kp=0.11f,vel_kf=0.05f;
 +// Drehratenregler des Rahmenwegs, Konsole !turnctl KP KD FF (nur RAM)
 +volatile float turn_kp=3.0f,turn_kd=0.5f,turn_ff=0.5f;
  // In schnellen Kurven einlegen (Aktion 232 an / 231 aus, !lean on|off): Roll halten regelt auf
@@ -426,7 +430,7 @@ index 75d1306..2558db7 100644
 +        }
 +        {   // Regler des Rahmenwegs; Takt aus dem Regeltakt, Integral steht, solange der Hebeschutz greift
 +            auto& vc=request.velocity_control;
-+            vc.on=vel.active&&a.action_id==0;vc.accel=vel.fwd.a;vc.kp=vel_kp;vc.ki=vel_ki;vc.ff_gain=vel_ff;vc.i_max=vel_i_max;
++            vc.on=vel.active&&a.action_id==0;vc.accel=vel.fwd.a;vc.kp=vel_kp;vc.kf=vel_kf;vc.ki=vel_ki;vc.ff_gain=vel_ff;vc.i_max=vel_i_max;
 +            vc.unit_mm=vel_limits.unit_mm;   // Einheit aus 0x1b (xgonav), Reglerwerte aus der Firmware
 +            vc.dt=float(uint32_t(us-vel_ctrl_us))*1e-6f;vel_ctrl_us=us;vc.freeze=lift_acting;
 +            auto& tc=request.turn_control;
@@ -462,10 +466,10 @@ index 75d1306..2558db7 100644
 +            if(x<0||x>65535||y<0||y>6553||ms<0||ms>65535){out.println("ERR !vel limits VMAX_mm_s WMAX_deg_s TIMEOUT_ms");return;}
 +            uint8_t d[V::kLimitsLen]={};V::put16(d,uint16_t(x));V::put16(d+2,uint16_t(std::lround(y*10)));V::put16(d+4,uint16_t(ms));   // Rest 0 = Standard
 +            protocolCommand(CommandKind::VelocityLimits,d,sizeof d,out);return;}
-+        float kp=vel_kp;
-+        if(sscanf(line,"!velctl %f %f %f %f",&x,&y,&vk,&kp)>=3){
-+            if(x<0||x>1||y<0||y>2||vk<0||vk>10||kp<0||kp>1){out.println("ERR !velctl KI(0..1 deg per unit*s) FF(0..2) IMAX(0..10 deg) [KP(0..1 deg per unit)]");return;}
-+            vel_ki=x;vel_ff=y;vel_i_max=vk;vel_kp=kp;out.printf("velocity control ki %.4f ff %.2f imax %.1f kp %.3f\n",double(x),double(y),double(vk),double(kp));return;}
++        float kp=vel_kp,kf=vel_kf;
++        if(sscanf(line,"!velctl %f %f %f %f %f",&x,&y,&vk,&kp,&kf)>=3){
++            if(x<0||x>1||y<0||y>2||vk<0||vk>10||kp<0||kp>1||kf<0||kf>0.2f){out.println("ERR !velctl KI(0..1 deg per unit*s) FF(0..2) IMAX(0..10 deg) [KP(0..1 deg per unit) [KF(0..0.2 deg per unit)]]");return;}
++            vel_ki=x;vel_ff=y;vel_i_max=vk;vel_kp=kp;vel_kf=kf;out.printf("velocity control ki %.4f ff %.2f imax %.1f kp %.3f kf %.3f\n",double(x),double(y),double(vk),double(kp),double(kf));return;}
 +        if(sscanf(line,"!turnctl %f %f %f",&x,&y,&vk)==3){
 +            if(x<0||x>20||y<0||y>5||vk<0||vk>5){out.println("ERR !turnctl KP(0..20) KD(0..5) FF(0..5 wheel units per deg/s)");return;}
 +            turn_kp=x;turn_kd=y;turn_ff=vk;out.printf("turn control kp %.2f kd %.2f ff %.2f\n",double(x),double(y),double(vk));return;}
@@ -504,7 +508,7 @@ index 75d1306..2558db7 100644
      out.print(" | !standup | !restart");
      out.print(" | !led BYTE | !shutdown on/off");
      out.print(" | !lean on/off");
-+    out.print(" | !vel limits VMAX_mm_s WMAX_deg_s TIMEOUT_ms | !vel V_mm_s W_deg_s | !vel accel A_mm_s2 W_deg_s | !vel kappa V_mm_s K_1_per_m | !vel turn DEG | !vel status | !velctl KI FF IMAX [KP] | !turnctl KP KD FF");
++    out.print(" | !vel limits VMAX_mm_s WMAX_deg_s TIMEOUT_ms | !vel V_mm_s W_deg_s | !vel accel A_mm_s2 W_deg_s | !vel kappa V_mm_s K_1_per_m | !vel turn DEG | !vel status | !velctl KI FF IMAX [KP [KF]] | !turnctl KP KD FF");
      out.println();
  }
  }
