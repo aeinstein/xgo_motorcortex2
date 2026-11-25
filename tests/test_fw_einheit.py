@@ -18,7 +18,11 @@ def _zeile_0e(ms, v11, v21, fwd10, flags):
 
 def test_diag_0e_felder():
     d = fe.diag_0e(_zeile_0e(1234, 32, -5, 321, 1))
-    assert d == {"fw_ms": 1234, "fw_v11": 32, "fw_v21": -5, "fw_cmd": 32.1, "faehrt": 1}
+    assert {k: d[k] for k in ("fw_ms", "fw_v11", "fw_v21", "fw_cmd", "faehrt")} == \
+        {"fw_ms": 1234, "fw_v11": 32, "fw_v21": -5, "fw_cmd": 32.1, "faehrt": 1}
+    assert {"nick_soll", "nick_ist", "balance", "halt_korr", "halt_modus"} <= d.keys()
+    assert fe.imu_nick("56144 579050273938 51 -2244 174491") == -2.244
+    assert fe.imu_nick("") is None
     assert fe.diag_0e("0x0e 32: Fehler -110") is None
     assert fe.diag_0e("0x15 32: " + " ".join(["00"] * 32)) is None
 

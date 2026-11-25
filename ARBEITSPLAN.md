@@ -176,6 +176,15 @@ Kosten am ESP32: zwei PI-Regler + Rampe je Takt, vernachlässigbar gegen die Lag
   halbem ki fast gleich steil und läuft über das Soll hinaus weiter, ist also nicht (nur) das Integral. Neue
   Vermutung: beim Fahren ein Nick-Versatz von ~2° nach vorn (P 0,11 °/Einheit hält 15–20 Einheiten Überschuss),
   der den Rider stetig schneller macht. Prüfen: Nick (IMU) und Soll-Nick beim Fahren mitschreiben.
+- **Messfahrt mit Nick (2026-11-25, `tools/fw_einheit.py` schreibt jetzt Soll-/Ist-Nick aus 0x0e, Balance,
+  Positionshalten und IMU-Nick mit; c 0,8, ki 0,08, gegenläufig gefahren):** Versatz bestätigt, aber anders als
+  vermutet. Der Nick-Regler (P 37,5) erreicht seinen Soll-Nick beim Fahren nicht: Soll-Nick geht auf −2,9° (v 0,2)
+  bzw. −3,9° (v 0,3), der gemessene bleibt 3–4° weiter vorn und nähert sich nur langsam. Der Balance-Ausgang wächst
+  mit dem Tempo (−90 bei 46, −145…−185 bei 73–84): die Räder bekommen ein Tempo-artiges Kommando, und um es zu
+  halten, braucht es eine Nick-Abweichung proportional zum Tempo. Am Ende beider Abschnitte nahe am Soll:
+  Soll-Nick / Ist-Tempo = −2,2° / 46 und −3,3° / 73, also ~−0,05° je Firmware-Einheit. Diesen Anteil muss bisher
+  das Integral lernen (dauert, schwingt) und i_max 4° begrenzt ihn auf ~80 Einheiten ≈ 0,31 m/s. Vorschlag:
+  Tempo-Vorsteuerung des Soll-Nicks −kv · v_soll (kv ≈ 0,05 °/Einheit), Integral nur für den Rest.
 
 ### Zu klären
 

@@ -9,12 +9,16 @@ Sekunden mit gleichem Tempo. Mitgeschrieben werden ~20-mal je Sekunde:
   * Register 0x0e (Firmware-Patch 0007, über /proc/XGORider/raw_reg): gefilterte Radgeschwindigkeit 11/21 in
     Firmware-Einheiten (Eingang des Geschwindigkeitsreglers), gefilterter Fahrbefehl (x10), Flags (bit0 fährt)
   * /proc/XGORider/wheels: Radticks (1024 je Umdrehung) -> echte Geschwindigkeit aus dem Raddurchmesser
+  * aus 0x0e auch Soll-Nick und gemessener Nick + Bias (°, Eingang des Nick-Reglers), Balance-Ausgang,
+    Korrektur und Modus des Positionshaltens; dazu der IMU-Nick aus /proc/XGORider/imu (°) — für die Frage, ob
+    er beim Fahren mit einem Nick-Versatz schneller wird (ARBEITSPLAN.md, Messfahrten 2026-11-25)
 Auswertung: In Abschnitten mit |v| >= --min-mps und ruhigem Tempo ist Faktor = echte mm/s / Firmware-Einheit
 (Median, Streuung, Ausgleichsgerade durch 0). Dazu Firmware-Soll gegen Firmware-Ist: Regelt die Firmware, stehen
 beide gleich; fährt sie viel schneller als verlangt, wirkt der Befehl wie eine Kraft.
 
 Spalten: t (s, CLOCK_MONOTONIC), fw_ms, fw_v11, fw_v21 (Einheiten), fw_cmd (Einheiten), faehrt (0/1), ticks11, ticks21,
-odo_mms (mm/s, über --fenster gemittelt; leer bis genug Proben)
+odo_mms (mm/s, über --fenster gemittelt; leer bis genug Proben), nick_soll, nick_ist (°, 0x0e), balance,
+halt_korr, halt_modus (0x0e), imu_nick (°)
 
 Kosten am Pi: nur während des Mitschnitts, ein Python-Prozess, je Zeile zwei /proc-Zugriffe (0x0e = eine Anfrage
 an den ESP32, ~4 ms auf der Leitung). raw_reg hat nur eine Adresse: nicht gleichzeitig mit rawdiag.py laufen lassen.
@@ -31,6 +35,7 @@ import sys
 import time
 
 RAW = "/proc/XGORider/raw_reg"
+IMU = "/proc/XGORider/imu"
 WHEELS = "/proc/XGORider/wheels"
 TICKS_PER_REV = 1024
 
@@ -45,7 +50,16 @@ def diag_0e(text: str) -> dict | None:
         return None
     ms, v11, v21 = struct.unpack_from("<Hhh", b, 0)
     fwd10, = struct.unpack_from("<h", b, 28)
-    return {"fw_ms": ms, "fw_v11": v11, "fw_v21": v21, "fw_cmd": fwd10 / 10.0, "faehrt": b[23] & 1}
+    bal, soll100, ist100, korr10 = struct.unpack_from("<hhhh", b, 14)
+    return {"fw_ms": ms, "fw_v11": v11, "fw_v21": v21, "fw_cmd": fwd10 / 10.0, "faehrt": b[23] & 1,
+            "nick_soll": soll100 / 100.0, "nick_ist": ist100 / 100.0, "balance": bal,
+            "halt_korr": korr10 / 10.0, "halt_modus": b[22]}
+
+
+def imu_nick(text: str) -> float | None:
+    """/proc/XGORider/imu (\"seq t_ns roll pitch yaw\", Milligrad) -> Nick in °."""
+    f = text.split()
+    return int(f[3]) / 1000.0 if len(f) >= 5 else None
 
 
 def wheels(text: str) -> tuple[int, int, int] | None:
@@ -141,7 +155,8 @@ def mitschreiben(sek: float, pfad: str, durchmesser_m: float, fenster_s: float, 
     ende = time.monotonic() + sek
     with open(pfad, "w", newline="") as out:
         w = csv.writer(out)
-        w.writerow(["t", "fw_ms", "fw_v11", "fw_v21", "fw_cmd", "faehrt", "ticks11", "ticks21", "odo_mms"])
+        w.writerow(["t", "fw_ms", "fw_v11", "fw_v21", "fw_cmd", "faehrt", "ticks11", "ticks21", "odo_mms",
+                    "nick_soll", "nick_ist", "balance", "halt_korr", "halt_modus", "imu_nick"])
         try:
             while time.monotonic() < ende:
                 t0 = time.monotonic()
@@ -149,6 +164,11 @@ def mitschreiben(sek: float, pfad: str, durchmesser_m: float, fenster_s: float, 
                     d = diag_0e(f.read())
                 with open(WHEELS) as f:
                     wl = wheels(f.read())
+                try:
+                    with open(IMU) as f:
+                        nk = imu_nick(f.read())
+                except (OSError, ValueError):
+                    nk = None
                 if d is None or wl is None:
                     fehler += 1
                 else:
@@ -156,7 +176,9 @@ def mitschreiben(sek: float, pfad: str, durchmesser_m: float, fenster_s: float, 
                     r = dict(d, t=t0, ticks11=wl[1], ticks21=wl[2], odo_mms=o)
                     rows.append(r)
                     w.writerow([f"{t0:.4f}", d["fw_ms"], d["fw_v11"], d["fw_v21"], f"{d['fw_cmd']:.1f}", d["faehrt"],
-                                wl[1], wl[2], "" if o is None else f"{o:.1f}"])
+                                wl[1], wl[2], "" if o is None else f"{o:.1f}",
+                                f"{d['nick_soll']:.2f}", f"{d['nick_ist']:.2f}", d["balance"], f"{d['halt_korr']:.1f}",
+                                d["halt_modus"], "" if nk is None else f"{nk:.3f}"])
                     if len(rows) % int(hz) == 0:
                         print("fw %5.0f/%5.0f Soll %6.1f  Räder %s mm/s" % (d["fw_v11"], d["fw_v21"], d["fw_cmd"],
                               "-" if o is None else f"{o:6.0f}"), flush=True)
