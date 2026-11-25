@@ -5,8 +5,8 @@ Statt der Bytes speed_x/speed_z (wirken wie eine Kraft) schreibt Robot je Änder
 rampt selbst (S-Kurve) und regelt Tempo (PI + Vorsteuerung) und Drehrate. v_max, w_max und ihr Wächter gehen
 beim Start (und alle paar Sekunden neu) nach /proc/XGORider/vel_limits; ohne sie verwirft sie jeden Rahmen.
 
-Einheiten: Die Radgeschwindigkeit der Firmware ist nicht echte mm/s, sondern ~8,4 mm/s je Einheit
-(robot.fw_speed_unit_mm, aus der Messung 2026-11-05; Messung: tools/fw_einheit.py). Alles Fahren (v, a, Ruck,
+Einheiten: Die Radgeschwindigkeit der Firmware ist nicht echte mm/s, sondern ~3,9 mm/s je Einheit
+(robot.fw_speed_unit_mm, gemessen 2026-11-25 mit tools/fw_einheit.py). Alles Fahren (v, a, Ruck,
 v_max) wird damit umgerechnet. Drehen ist seit 0032 in echten °/s (Kursziel läuft mit w·dt gegen den IMU-Kurs).
 
 Achse.schritt ist der Sollwertgenerator der Firmware (velocity_cmd.h approach) in Python: Robot rechnet so am Pi

@@ -54,10 +54,11 @@ class RobotCfg:
     # vyaw_limit_dps gehen beim Start nach vel_limits, mit dem Wächter der Firmware vel_timeout_ms (> keepalive_s).
     # Beschleunigung beim Schnellerwerden vel_accel, beim Langsamerwerden vel_decel, drive(brake=True) vel_brake mit
     # vel_brake_jerk. Höchstwerte sind vorsichtige Startwerte (Nutzer 2026-11-25: werden am Rider gemessen); 0,5 m/s²
-    # entspricht ~2,9° Vorlage. fw_speed_unit_mm: mm/s je Firmware-Einheit der Radgeschwindigkeit, vorläufig 8,4 aus
-    # der Messung 2026-11-05 (Befehl 0,15 -> 27 cm/s bei 32,1 Einheiten Soll), messen mit tools/fw_einheit.py.
+    # entspricht ~2,9° Vorlage. fw_speed_unit_mm: mm/s je Firmware-Einheit der Radgeschwindigkeit (Ist in 0x0e, Eingang
+    # des Reglers), gemessen 2026-11-25 mit tools/fw_einheit.py: 3,95 / 3,90 bei 152 / 246 mm/s (Encoder). Die frühere
+    # 8,4 kam vom Soll des Bytewegs, den der P-Regler um das 1,4–1,7-fache überfährt.
     vel_frame: bool = True
-    fw_speed_unit_mm: float = 8.4
+    fw_speed_unit_mm: float = 3.9
     vel_accel_mps2: float = 0.5
     vel_decel_mps2: float = 1.0
     vel_jerk_mps3: float = 2.5

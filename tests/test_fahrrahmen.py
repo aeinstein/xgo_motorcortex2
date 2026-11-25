@@ -70,16 +70,16 @@ def test_fahrrahmen_robot_schreibt_rahmen():
     r = SimRobot(cfg)
     r.start()
     try:
-        assert _writes(r, "vel_limits") == ["107 180.0 500"]
+        assert _writes(r, "vel_limits") == ["231 180.0 500"]
         for _ in range(60):                                                # 1,2 s fahren (0,2 x 1,8 = 0,36 m/s)
             r.drive(0.2, 0.0)
             time.sleep(0.02)
         assert _writes(r, "speed_x") == [128] and _writes(r, "speed_z") == [128] or not _writes(r, "speed_x")
-        assert "43 60 298 0.0 360 1800" in _writes(r, "vel")
+        assert "92 128 641 0.0 360 1800" in _writes(r, "vel")
         assert r.command[0] == pytest.approx(0.2, abs=1e-9)               # Generator nach 0,92 s am Ziel
         t0 = time.monotonic()
         time.sleep(cfg.stall_timeout_s + 0.25)                             # Userspace-Watchdog -> Ziel 0
-        assert "0 119 298 0.0 360 1800" in _writes(r, "vel", t0)          # langsamer: vel_decel 1,0 m/s²
+        assert "0 256 641 0.0 360 1800" in _writes(r, "vel", t0)          # langsamer: vel_decel 1,0 m/s²
         assert 0.0 <= r.command[0] < 0.2                                   # bremst über die Rampe
     finally:
         r.close()
@@ -118,7 +118,7 @@ def test_fahrrahmen_ohne_untergrenze_und_bremse():
         t0 = time.monotonic()
         r.drive(0.0, 0.0, brake=True)
         time.sleep(0.06)
-        assert "0 179 1190 0.0 360 1800" in _writes(r, "vel", t0)         # vel_brake 1,5 m/s², Ruck 10
+        assert "0 385 2564 0.0 360 1800" in _writes(r, "vel", t0)         # vel_brake 1,5 m/s², Ruck 10
     finally:
         r.close()
 
@@ -153,7 +153,7 @@ def test_fahrrahmen_einschalten_nur_mit_treiber_und_firmware(tmp_path):
     (tmp_path / "vel").write_text("0 0 0 0 0 0.0 0 0.0 0\n")
     (tmp_path / "vel_limits").write_text("")
     r._vel_setup()
-    assert r.vel and (tmp_path / "vel_limits").read_text() == "107 180.0 500"
+    assert r.vel and (tmp_path / "vel_limits").read_text() == "231 180.0 500"
     cfg.vel_frame = False
     r._vel_setup()
     assert not r.vel

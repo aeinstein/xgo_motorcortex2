@@ -116,7 +116,7 @@ python3 tools/calibrate_odom.py rechne [--ref gerade|kamera|imu|mittel] [--dist-
 
 `robot.vx_limit`: 1.8 m/s per firmware unit on the RiderPi (2026-11-05). Used by the path check and follow prediction, and for the map only when wheel odometry is unavailable.
 
-Firmware speed unit (for the drive frame of firmware 0029–0032): the firmware's wheel speed (reg `0x0e`, controller input) is not real mm/s. From the 2026-11-05 measurement: command 0.15 → ~27 cm/s real, firmware target 32.1 units → ~8.4 mm/s per unit (210 × 8.4 ≈ 1.8 m/s = `vx_limit`). Measure it: `sudo python3 /opt/xgonav/tools/fw_einheit.py 60 /root/fw_einheit.csv` on the Rider (records only, does not drive) while driving straight via xgonav, a few seconds per speed; prints mm/s per unit (median, p10/p90, fit through 0) and firmware actual/target. Re-evaluate: `python tools/fw_einheit.py --auswerten file.csv`.
+Firmware speed unit (for the drive frame of firmware 0029–0032): the firmware's wheel speed (reg `0x0e`, controller input) is not real mm/s. Measured 2026-11-25 (byte path, straight, encoders): 152 mm/s at 38.4 units actual, 246 mm/s at 63.1 → **3.9 mm/s per unit**. The byte path overshoots its target by 1.4–1.7×, so the earlier 8.4 (from the target, 2026-11-05) is not the unit. Measure it: `sudo python3 /opt/xgonav/tools/fw_einheit.py 60 /root/fw_einheit.csv` on the Rider (records only, does not drive) while driving straight via xgonav, a few seconds per speed; prints mm/s per unit (median, p10/p90, fit through 0) and firmware actual/target. Re-evaluate: `python tools/fw_einheit.py --auswerten file.csv`.
 RiderPi at v = 0.08: ~12.5 cm/s (assumption: 12 cm/s).
 
 ## 6. Drive gains (removed 2026-11-23)

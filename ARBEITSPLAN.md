@@ -119,13 +119,21 @@ Kosten am ESP32: zwei PI-Regler + Rampe je Takt, vernachlässigbar gegen die Lag
 - **Geflasht 2026-11-25:** Firmware 0001–0032 (SHA ca488061…), liegend; 0x1a antwortet. Rahmenweg noch nicht benutzt.
 - **Stufe 8 (2026-11-25):** xgonav `fahrrahmen.py` + `Robot`: `drive(v, w)` bleibt normiert; mit Treiber `vel` und
   Firmware ab 0029 schreibt Robot Rahmen (Ziel m/s = v × `vx_limit`, °/s = w × `vyaw_limit_dps`, an die Firmware
-  ÷ `fw_speed_unit_mm` 8,4) mit a/Ruck (`vel_accel` 0,5 / `vel_decel` 1,0 m/s², Ruck 2,5; Drehen 360 °/s², 1800 °/s³;
+  ÷ `fw_speed_unit_mm`, gemessen 3,9) mit a/Ruck (`vel_accel` 0,5 / `vel_decel` 1,0 m/s², Ruck 2,5; Drehen 360 °/s², 1800 °/s³;
   Bremse 1,5 m/s²), `vel_limits` beim Start und alle 2 s; Rampe am Pi, `speed_ctrl` und `turn_min_w` in `drive()` aus.
   Python-Generator = Firmware-Generator, `robot.command` ist deren Sollwert (Simulator, `v_erw`). Simulator fährt
   standardmäßig den Rahmenweg (Nachlauf 0,15 / 0,1 s angenommen). Unit-Tests 569 grün (Bytewege-Tests auf
   `vel_frame = False`, neu `tests/test_fahrrahmen.py`). Am Rider eingespielt 11:27: dort noch Bytes (Treiber ohne `vel`).
-  Offen: Faktor messen (Byteweg), dann Treiber einspielen; `turn_min_w` in `behaviors.dreh_w`, `speed_ctrl` und Pi-Rampe
+  Offen: Treiber einspielen; `turn_min_w` in `behaviors.dreh_w`, `speed_ctrl` und Pi-Rampe
   nach der Messfahrt entfernen.
+
+- **Messfahrt 2026-11-25** (Byteweg, `tools/fw_einheit.py`, MCP geprüft geradeaus): v 0,2 / 0,3 je 3,5 s,
+  Encoder 395 / 683 mm (= Kartenstrecke 0,40 / 0,68 m). Stationär 152 mm/s bei Firmware-Ist 38,4, Soll 27,5;
+  246 mm/s bei Ist 63,1, Soll 37,1. **Firmware-Einheit = 3,9 mm/s** (3,95 / 3,90; Auswertung Median 3,82,
+  p10–p90 3,66–3,93, gemittelt über Anfahren). Firmware-Ist/Soll 1,4–1,7: der Byteweg überfährt sein Soll, die
+  8,4 war der Faktor zum Soll, nicht zur Einheit. `fw_speed_unit_mm` = 3,9; Höchsttempo des Rahmens damit
+  210 × 3,9 ≈ 0,82 m/s (v_max aus `vx_limit` × `max_v` = 0,9 m/s wird in der Firmware nicht geklemmt, fährt aber
+  bei normierten Werten ≤ 0,5 nie dorthin).
 
 ### Zu klären
 
@@ -137,7 +145,7 @@ Kosten am ESP32: zwei PI-Regler + Rampe je Takt, vernachlässigbar gegen die Lag
 - ~~Die Radgeschwindigkeit der Firmware ist echte mm/s~~ (2026-11-25 widerlegt, Nutzer: so vorgehen): Messung
   2026-11-05 Befehl 0,15 → ~27 cm/s echt, Firmware-Soll dafür 32,1 Einheiten (0x0e zeigte am 2026-11-10 genau 32,1),
   also ~8,4 mm/s je Firmware-Einheit; 210 × 8,4 ≈ 1,8 m/s = `vx_limit`. xgonav bekommt `robot.fw_speed_unit_mm`
-  (vorläufig 8,4) und rechnet alles, was an die Firmware geht (v, a, Ruck, v_max), damit um. Faktor messen:
+  (gemessen 3,9, siehe Messfahrt) und rechnet alles, was an die Firmware geht (v, a, Ruck, v_max), damit um. Faktor messen:
   `tools/fw_einheit.py` (0x0e + Rad-Odometrie mitschreiben, gefahren über MCP).
 - Höchstwerte (größtes `a_max` ohne Kippen, größte Drehrate und Drehbeschleunigung) werden am Rider gemessen
   (Stufe 9), danach in `config.py` eingetragen.
