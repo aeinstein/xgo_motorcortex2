@@ -28,6 +28,7 @@ def test_u8_mapping():
 
 def test_robot_ramp_clamp_and_watchdog():
     cfg = Config.neutral().robot
+    cfg.vel_frame = False  # Byteweg (speed_x/speed_z, Rampe am Pi); Fahrrahmen: test_fahrrahmen*
     r = SimRobot(cfg)
     r.start()
     try:
@@ -68,6 +69,7 @@ def test_robot_action_setzt_keepalive_aus():
     """Während einer Fahr-Aktion der Firmware schreibt Robot keine Sollwerte (sonst hält der Keepalive sie
     an) und der Kernel-Watchdog ist aus; danach läuft beides wieder."""
     cfg = Config.neutral().robot
+    cfg.vel_frame = False  # Byteweg (speed_x/speed_z, Rampe am Pi); Fahrrahmen: test_fahrrahmen*
     cfg.action_tick_s = 0.01                     # Aktion 3: 20 Takte = 0,2 s + 0,3 s Reserve
     r = SimRobot(cfg)
     r.settings["motion_timeout_ms"] = "1000"
@@ -800,6 +802,7 @@ def test_manual_drive_and_deadman():
     import threading
     from xgonav.app import App, ModeNotAllowed
     cfg = Config.neutral(); cfg.output.web_port = 0; cfg.detector.enabled = False
+    cfg.robot.vel_frame = False  # Byteweg (speed_x/speed_z, Rampe am Pi); Fahrrahmen: test_fahrrahmen*
     robot = SimRobot(cfg.robot)
     world = SimWorld(cfg.camera, robot, None, start=(1.0, 1.5, 0.0))
     app = App(cfg, robot, world, imu=None, floor_net=SimFloorNet(world))
@@ -827,6 +830,7 @@ def test_manual_checked_uses_safety():
     import threading
     from xgonav.app import App
     cfg = Config.neutral(); cfg.output.web_port = 0; cfg.detector.enabled = False
+    cfg.robot.vel_frame = False  # Byteweg (speed_x/speed_z, Rampe am Pi); Fahrrahmen: test_fahrrahmen*
     robot = SimRobot(cfg.robot)
     world = SimWorld(cfg.camera, robot, None, start=(1.0, 1.5, 0.0))
     app = App(cfg, robot, world, imu=None, floor_net=None)        # kein Netz: blind
@@ -863,6 +867,7 @@ def test_manual_without_pipeline():
     import threading
     from xgonav.app import App, ModeNotAllowed
     cfg = Config.neutral(); cfg.output.web_port = 0; cfg.detector.enabled = False
+    cfg.robot.vel_frame = False  # Byteweg (speed_x/speed_z, Rampe am Pi); Fahrrahmen: test_fahrrahmen*
     robot = SimRobot(cfg.robot)
     world = SimWorld(cfg.camera, robot, None, start=(1.0, 1.5, 0.0))
     app = App(cfg, robot, world, imu=None, floor_net=SimFloorNet(world))
@@ -933,6 +938,7 @@ def test_drive_faktor_mal_tempo_mal_max_v():
     from xgonav.app import App
     from xgonav.behaviors import Command, Manual
     cfg = Config.neutral()
+    cfg.robot.vel_frame = False  # Byteweg (speed_x/speed_z, Rampe am Pi); Fahrrahmen: test_fahrrahmen*
     rc = cfg.robot
     assert rc.v_of(0.5) == pytest.approx(0.5 * rc.max_v) and rc.w_of(1.0) == pytest.approx(rc.max_w)
     r = SimRobot(rc)
@@ -982,6 +988,7 @@ def test_level_while_driving():
 def test_level_always():
     """Test-Schalter: Nivellierung bleibt an, auch im Stand und beim Drehen (nach jedem Drehbefehl neu)."""
     cfg = Config.neutral(); cfg.robot.level_always = True
+    cfg.robot.vel_frame = False  # Byteweg (speed_x/speed_z, Rampe am Pi); Fahrrahmen: test_fahrrahmen*
     r = SimRobot(cfg.robot)
     lv = lambda: [w[2] for w in r.writes if w[1] == "roll_balance"]
     r.state.balancing = True
@@ -1391,6 +1398,7 @@ def _speed_ctrl_fahrt(abzug=0.0, v_cmd=0.2, on=True, secs=9.0):
     from xgonav.robot import SpeedCtrl
     from xgonav.wheels import WheelOdom
     cfg = Config.neutral().robot
+    cfg.vel_frame = False  # Byteweg (speed_ctrl am Pi); Fahrrahmen: test_fahrrahmen*
     cfg.vx_limit, cfg.speed_ctrl = 1.8, on
     r = SimRobot(cfg)
     sc, w = SpeedCtrl(cfg), WheelOdom(Config.neutral().odom)
@@ -1433,6 +1441,7 @@ def test_speed_ctrl_rules():
     """Korrektur 0 ohne Raddaten, unter dem Totband und bei Richtungswechsel; begrenzt; Stopp bleibt 128."""
     from xgonav.robot import FW_DEADBAND, SpeedCtrl
     cfg = Config.neutral().robot
+    cfg.vel_frame = False  # Byteweg (speed_x/speed_z, Rampe am Pi); Fahrrahmen: test_fahrrahmen*
     cfg.vx_limit, cfg.speed_ctrl, cfg.speed_ctrl_lag_s = 1.8, True, 0.0
     sc = SpeedCtrl(cfg)
     t = 0.0
@@ -3781,7 +3790,9 @@ def test_arc_check_bremst_voll_wenn_raeder_zu_schnell():
 
 def test_robot_vollbremsung_ohne_rampe():
     """drive(brake=True) mit v = 0 setzt den Fahrwert im nächsten Rampenschritt auf 0; ohne brake über die Rampe."""
-    r = SimRobot(Config.neutral().robot)
+    _rc = Config.neutral().robot
+    _rc.vel_frame = False  # Byteweg (speed_x/speed_z, Rampe am Pi); Fahrrahmen: test_fahrrahmen*
+    r = SimRobot(_rc)
     r._cur, r._last_ramp_t = (0.3, 0.1), 0.0
     r.drive(0.0, 0.1)
     r._ramp(r._target, 0.02)
@@ -3905,6 +3916,7 @@ def test_gesendet_hoechstens_vollausschlag():
     from xgonav.robot import SimRobot
     assert {"robot.max_sent", "robot.manual_forward_gain", "robot.reverse_gain"} <= set(ENTFERNT)
     cfg = Config.neutral()
+    cfg.robot.vel_frame = False  # Byteweg (speed_x/speed_z, Rampe am Pi); Fahrrahmen: test_fahrrahmen*
     r = SimRobot(cfg.robot)
     r.v_trim = 0.1
     for cur, soll in (((0.5, 0.0), norm_to_u8(0.6)), ((0.95, 0.0), norm_to_u8(1.0)), ((-0.5, 0.0), norm_to_u8(-0.4))):
@@ -4190,6 +4202,7 @@ def test_robot_tempo_alle_befehle():
     """Temporegler: jeder Fahrbefehl wird nach der Begrenzung auf max_v/max_w mit tempo malgenommen (alle Modi,
     auch Drehen); außerhalb 0,05..1 abgelehnt, Wert bleibt."""
     cfg = Config.neutral()
+    cfg.robot.vel_frame = False  # Byteweg (speed_x/speed_z, Rampe am Pi); Fahrrahmen: test_fahrrahmen*
     r = SimRobot(cfg.robot)
     assert r.tempo == 1.0
     r.drive(1.0, -1.0)

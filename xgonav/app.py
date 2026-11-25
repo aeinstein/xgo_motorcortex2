@@ -1103,7 +1103,7 @@ class App:
                       geo=self.geo, pitch_dev=pitch_dev, battery=self.robot.state.battery,
                       blind=self.fs_worker is not None and self.fs_worker.blind,
                       v_rad=self._v_rad, clear_fn=self._clear_ahead if self.lmap is not None else None,
-                      v_erw=self.speed_ctrl.v_modell if self.cfg.robot.speed_ctrl else None)
+                      v_erw=self._v_erwartet())
             if self.behavior.name == "pet":
                 self._pet_world(w, ds, now)
             if self.lmap is not None:
@@ -1345,11 +1345,18 @@ class App:
         y = self.imu.latest_yaw() if self.imu is not None else None
         return None if y is None else round(math.degrees(y), 1)
 
+    def _v_erwartet(self) -> float | None:
+        """Tempo (m/s), das der Rider gerade anstrebt: Fahrrahmen = Sollwert des Generators der Firmware (Robot rechnet
+        ihn nach), sonst das Trägheitsmodell der Geschwindigkeitsregelung (nur mit speed_ctrl)."""
+        if self.robot.vel:
+            return self.robot.command[0] * self.cfg.robot.vx_limit
+        return self.speed_ctrl.v_modell if self.cfg.robot.speed_ctrl else None
+
     def _speed_tick(self, now: float) -> None:
         """Geschwindigkeitsregelung (robot.speed_ctrl): Ist aus den Rädern gegen das Soll, Korrektur an den
         Roboter. Je Regelschritt ein Blick in die Radhistorie, kein Lesezugriff auf /proc."""
         c = self.cfg.robot
-        if not c.speed_ctrl:
+        if not c.speed_ctrl or self.robot.vel:   # Fahrrahmen: die Firmware regelt das Tempo (Patch 0031)
             return
         w = self.wheels
         ist = None

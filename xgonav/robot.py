@@ -22,6 +22,7 @@ import time
 from dataclasses import dataclass
 
 from .config import RobotCfg
+from .fahrrahmen import W_LEVEL_OFF_DPS, Achse, grenzen_text, rahmen_text, zustand
 
 log = logging.getLogger(__name__)
 
@@ -221,6 +222,30 @@ class Robot:
         self._act: tuple[int, float, float] | None = None
         self._act_abort = False
         self._act_lock = threading.Lock()       # Start der Aktion gegen einen gerade laufenden Keepalive
+        # Fahrrahmen (fahrrahmen.py): _setup schaltet ihn ein, wenn Treiber und Firmware ihn kennen. _gen_v/_gen_w
+        # rechnen den Sollwert der Firmware nach (m/s bzw. °/s); _cur ist dann deren Sollwert, normiert.
+        self.vel = False
+        self._gen_v, self._gen_w = Achse(), Achse()
+        self._frame = ""                        # Text des aktuellen Rahmens
+        self._frame_sent: str | None = None
+        self._limits_t = -1e9
+
+    @property
+    def v_max_mps(self) -> float:
+        return self.cfg.max_v * self.cfg.vx_limit
+
+    @property
+    def w_max_dps(self) -> float:
+        return self.cfg.max_w * self.cfg.vyaw_limit_dps
+
+    def _write_limits(self, now: float) -> None:
+        """v_max/w_max und Wächter an die Firmware (Fahrrahmen); periodisch, ein ESP-Neustart verliert sie."""
+        c = self.cfg
+        try:
+            self._write("vel_limits", grenzen_text(self.v_max_mps, self.w_max_dps, c.vel_timeout_ms, c.fw_speed_unit_mm))
+        except OSError as e:
+            log.error("vel_limits nicht geschrieben: %s", e)
+        self._limits_t = now
 
     # ---- öffentliche API -------------------------------------------------
     def start(self) -> None:
@@ -261,7 +286,7 @@ class Robot:
         # drücken, sonst steht er im Totband der Firmware (Fahrt 20261124-134052: Tempo 0,75, gesendet 0,045,
         # „drehe (-12°)“ ohne Drehung bis „Ziel gesperrt“, viermal hintereinander)
         lo = self.cfg.turn_min_w
-        if v == 0.0 and lo > 0 and abs(w0) >= lo and abs(w) < lo:
+        if not self.vel and v == 0.0 and lo > 0 and abs(w0) >= lo and abs(w) < lo:   # Fahrrahmen: kein Totband
             w = math.copysign(lo, w)
         with self._lock:
             self._target = (v, w)
@@ -289,6 +314,7 @@ class Robot:
         ist, prüft die App vorher und in jedem Regelschritt (App._action_tick). Rückgabe: Ende."""
         _, end = FW_ACTIONS[n]
         self.stop()
+        self._gen_reset()                        # Fahrrahmen: die Aktion beendet den Rahmenweg der Firmware
         with self._act_lock:
             now = time.monotonic()
             t_end = now + end * self.cfg.action_tick_s + FW_ACTION_RESERVE_S
@@ -312,6 +338,7 @@ class Robot:
     def _action_end(self) -> None:
         self._act, self._act_abort = None, False
         self._sent = None                        # nächster Durchlauf schreibt sofort wieder
+        self._gen_reset()                        # Fahrrahmen: die Aktion hat den Rahmenweg der Firmware beendet
         self._kernel_watchdog(self.cfg.kernel_watchdog_ms)
 
     def _kernel_watchdog(self, ms: int) -> None:
@@ -414,7 +441,7 @@ class Robot:
         """v plus Korrektur der Geschwindigkeitsregelung. Unter dem Totband der Firmware bleibt v, wie es
         ist (Stillstand bleibt 128), und die Korrektur kehrt die Richtung nie um."""
         t = self.v_trim
-        if t == 0.0 or abs(v) < FW_DEADBAND:
+        if self.vel or t == 0.0 or abs(v) < FW_DEADBAND:   # Fahrrahmen: Firmware regelt das Tempo selbst
             return v
         return max(0.0, v + t) if v > 0 else min(0.0, v + t)
 
@@ -439,12 +466,18 @@ class Robot:
                 self._poll_state()
                 self._height_tick()
                 self._level_tick(now)
+                if self.vel and now - self._limits_t >= self.cfg.vel_limits_s:
+                    self._write_limits(now)
                 next_poll = now + 0.2
             if not self.state.balancing:
                 target = (0.0, 0.0)
+                if self.vel:
+                    self._gen_reset(resend=False)   # Firmware beendet den Rahmenweg bei jedem Stopp
             if self._act is not None and self._act_abort:
                 target = (0.0, 0.0)
                 self._cur = (0.0, 0.0)
+                if self.vel:
+                    self._gen_reset()
             self._ramp(target, now)
             with self._act_lock:
                 if not self._action_tick(now):
@@ -526,6 +559,9 @@ class Robot:
     def _ramp(self, target: tuple[float, float], now: float) -> None:
         dt = max(1e-3, now - self._last_ramp_t)
         self._last_ramp_t = now
+        if self.vel:
+            self._ramp_vel(target, dt)
+            return
         v, w = self._cur
         if self._brake and target[0] == 0.0:
             v = 0.0                          # Vollbremsung (drive(brake=True)): ohne Rampe
@@ -536,7 +572,50 @@ class Robot:
             dv = max(-3 * self.cfg.accel_v * dt, min(3 * self.cfg.accel_v * dt, target[0] - v))
         self._cur = (v + dv, w + dw)
 
+    def _ramp_vel(self, target: tuple[float, float], dt: float) -> None:
+        """Fahrrahmen: Ziel in m/s und °/s, Beschleunigung je nach Richtung; der Generator rechnet nach, was die
+        Firmware daraus macht (_cur), der Rahmen selbst trägt nur Ziel und Grenzen."""
+        c = self.cfg
+        tv, tw = target[0] * c.vx_limit, target[1] * c.vyaw_limit_dps
+        g = self._gen_v
+        if self._brake and target[0] == 0.0:
+            a, j = c.vel_brake_mps2, c.vel_brake_jerk_mps3
+        elif tv * g.x >= 0 and abs(tv) > abs(g.x):
+            a, j = c.vel_accel_mps2, c.vel_jerk_mps3          # schneller in derselben Richtung (oder aus dem Stand)
+        else:
+            a, j = c.vel_decel_mps2, c.vel_jerk_mps3          # langsamer oder Richtungswechsel
+        g.schritt(tv, a, j, dt)
+        self._gen_w.schritt(tw, c.vel_alpha_dps2, c.vel_jerk_w_dps3, dt)
+        self._cur = (g.x / c.vx_limit, self._gen_w.x / c.vyaw_limit_dps)
+        self._frame = rahmen_text(tv, a, j, tw, c.vel_alpha_dps2, c.vel_jerk_w_dps3, c.fw_speed_unit_mm)
+        self._frame_w = tw
+
+    def _gen_reset(self, resend: bool = True) -> None:
+        """Firmware hat den Rahmenweg beendet (Stopp, Aktion, nicht balancierend): Generator neu ab 0. resend:
+        nächster Durchlauf schreibt den Rahmen sofort (nicht im Liegen, sonst schriebe er in jedem Durchlauf)."""
+        self._gen_v, self._gen_w = Achse(), Achse()
+        if resend:
+            self._frame_sent = None
+
+    def _send_vel(self, now: float) -> None:
+        keepalive = now - self._last_send_t > self.cfg.keepalive_s
+        if self._frame == self._frame_sent and not keepalive:
+            return
+        try:
+            self._write("vel", self._frame)
+            self._frame_sent = self._frame
+            self._last_send_t = now
+            if (self.cfg.level_always and self.state.balancing
+                    and abs(getattr(self, "_frame_w", 0.0)) > W_LEVEL_OFF_DPS):
+                self._write("roll_balance", 1)               # Firmware schaltet sie beim Drehen ab
+        except OSError as e:
+            log.error("Schreiben fehlgeschlagen: %s", e)
+
     def _send(self, now: float) -> None:
+        # Abbruch einer Firmware-Aktion bleibt bei den Bytes: 128/128 in jedem Durchlauf (hält die Aktion an)
+        if self.vel and not (self._act is not None and self._act_abort):
+            self._send_vel(now)
+            return
         # die Geschwindigkeitsregelung wirkt nach max_v;
         # begrenzt wird nur noch auf den Bereich der Firmware (robot.max_sent entfiel 2026-11-23, Nutzer)
         m = 1.0
@@ -601,10 +680,30 @@ class ProcRobot(Robot):
             log.warning("Kernel ohne motion_timeout_ms – bei Absturz fährt der Rider weiter! "
                         "Treiber aus kernel_module/ bauen und laden.")
         self._emergency_stop()
+        self._vel_setup()
         # Firmware 0028: LEDs aus dem Shutdown-Blau zurück (beim Herunterfahren des Pi setzt xgo-shutdown-led 234);
         # ältere Firmware kennt 233 nicht als Aktion und tut nichts
         self._write("action", FW_SHUTDOWN_LEDS_OFF)
         self._led_start()
+
+    def _vel_setup(self) -> None:
+        """Fahrrahmen einschalten, wenn robot.vel_frame, der Treiber /proc/XGORider/vel hat und die Firmware auf 0x1a
+        antwortet (ab 0029); sonst bleibt es bei speed_x/speed_z."""
+        self.vel = False
+        if not self.cfg.vel_frame:
+            return
+        if not os.path.exists(self._path("vel")):
+            log.warning("Treiber ohne /proc/XGORider/vel – Fahrbefehle als Bytes (speed_x/speed_z)")
+            return
+        st = zustand(self._read_text("vel") or "")
+        if st is None:
+            log.warning("Firmware antwortet nicht auf den Fahrrahmen (0x1a, vor Patch 0029) – Fahrbefehle als Bytes")
+            return
+        self._write_limits(time.monotonic())
+        self.vel = True
+        c = self.cfg
+        log.info("Fahrrahmen aktiv: v_max %.2f m/s, w_max %.0f °/s, a %.2f/%.2f m/s², Wächter %d ms, %.2f mm/s je Einheit",
+                 self.v_max_mps, self.w_max_dps, c.vel_accel_mps2, c.vel_decel_mps2, c.vel_timeout_ms, c.fw_speed_unit_mm)
 
     def gespeicherte_led(self) -> int:
         """Im Web gespeicherte LED-Helligkeit (0..255), sonst led_default."""
@@ -735,6 +834,11 @@ class SimRobot(Robot):
         self._up_at: float | None = None     # Aufspringen läuft, balanciert ab dann
         self.state.mode = 1
         self.settings: dict[str, str] = {}   # Treiber-Einstellungen (settings/<name>), für Tests vorbelegbar
+        self.vel = cfg.vel_frame             # wie eine Firmware ab 0029 mit passendem Treiber
+
+    def _setup(self) -> None:
+        if self.vel:
+            self._write_limits(time.monotonic())
 
     def _read_text(self, name: str) -> str | None:
         if name.startswith("settings/"):

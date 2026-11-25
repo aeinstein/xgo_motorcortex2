@@ -46,6 +46,27 @@ class RobotCfg:
     speed_ctrl_ti_s: float = 2.0
     speed_ctrl_lag_s: float = 1.2
     speed_ctrl_max: float = 0.10
+    # Fahrrahmen (Firmware 0029–0032, xgonav/fahrrahmen.py, ARBEITSPLAN.md Punkt 4): Kennt der Treiber
+    # /proc/XGORider/vel und antwortet die Firmware, schickt Robot statt speed_x/speed_z Sollwerte in echten Einheiten
+    # (normiert x vx_limit bzw. x vyaw_limit_dps) mit Beschleunigung und Ruck; die Firmware rampt (S-Kurve) und regelt
+    # Tempo und Drehrate selbst. Dann sind die Rampe am Pi (accel_v/accel_w), speed_ctrl und die Untergrenze
+    # turn_min_w in drive() aus (Code bleibt bis zur Messfahrt). v_max = max_v x vx_limit, w_max = max_w x
+    # vyaw_limit_dps gehen beim Start nach vel_limits, mit dem Wächter der Firmware vel_timeout_ms (> keepalive_s).
+    # Beschleunigung beim Schnellerwerden vel_accel, beim Langsamerwerden vel_decel, drive(brake=True) vel_brake mit
+    # vel_brake_jerk. Höchstwerte sind vorsichtige Startwerte (Nutzer 2026-11-25: werden am Rider gemessen); 0,5 m/s²
+    # entspricht ~2,9° Vorlage. fw_speed_unit_mm: mm/s je Firmware-Einheit der Radgeschwindigkeit, vorläufig 8,4 aus
+    # der Messung 2026-11-05 (Befehl 0,15 -> 27 cm/s bei 32,1 Einheiten Soll), messen mit tools/fw_einheit.py.
+    vel_frame: bool = True
+    fw_speed_unit_mm: float = 8.4
+    vel_accel_mps2: float = 0.5
+    vel_decel_mps2: float = 1.0
+    vel_jerk_mps3: float = 2.5
+    vel_brake_mps2: float = 1.5
+    vel_brake_jerk_mps3: float = 10.0
+    vel_alpha_dps2: float = 360.0
+    vel_jerk_w_dps3: float = 1800.0
+    vel_timeout_ms: int = 500
+    vel_limits_s: float = 2.0      # vel_limits so oft neu schreiben (ESP-Neustart verliert sie)
     # Die Beine haben eine Totzone: bei gleichem Befehl steht der Rider je nach Vorgeschichte bei
     # +0,7..+3,4° Roll (2026-11-05). Ein kurzer Impuls der Nivellierung in der Firmware richtet ihn
     # aus, danach bleibt er so stehen (dauerhaft an schwankt er mehr). Auslöser: einmal nach jedem

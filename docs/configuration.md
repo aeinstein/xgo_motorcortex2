@@ -58,6 +58,12 @@ RiderPi = `deploy/config.example.toml` where it still differs (blank = default).
 | `speed_ctrl_max` | 0.10 | | normalised, limit of the correction (≈ 18 cm/s); blocked against an obstacle it pushes this much harder |
 | `vyaw_limit_dps` | 360 | | °/s at u8 0/255 |
 | `accel_v` / `accel_w` | 0.8 / 2.0 | | per second |
+| `vel_frame` | true | | drive frame of firmware 0029–0032 (`xgonav/fahrrahmen.py`): used when the driver has `/proc/XGORider/vel` and the firmware answers reg 0x1a, else bytes. Sends target m/s (normalised × `vx_limit`) and °/s (× `vyaw_limit_dps`) with acceleration and jerk; the firmware ramps (S-curve) and controls speed and turn rate. Then the Pi ramp (`accel_v`/`accel_w`), `speed_ctrl` and the `turn_min_w` floor in `Robot.drive` are off; `robot.command` is the firmware's setpoint, recomputed on the Pi. Simulator follows it with 0.15 s / 0.1 s lag (assumption until measured) |
+| `fw_speed_unit_mm` | 8.4 | | mm/s per firmware speed unit (2026-11-05: command 0.15 → 27 cm/s at 32.1 units); all drive values to the firmware (v, a, jerk, v_max) are divided by it. Measure: `tools/fw_einheit.py` ([calibration.md](calibration.md)) |
+| `vel_accel_mps2` / `vel_decel_mps2` / `vel_jerk_mps3` | 0.5 / 1.0 / 2.5 | | faster in the same direction / slower or reversing; cautious start values, to be measured (0.5 m/s² ≈ 2.9° lean) |
+| `vel_brake_mps2` / `vel_brake_jerk_mps3` | 1.5 / 10 | | `drive(brake=True)` |
+| `vel_alpha_dps2` / `vel_jerk_w_dps3` | 360 / 1800 | | turning |
+| `vel_timeout_ms` / `vel_limits_s` | 500 / 2.0 | | firmware watchdog (no frame → ramp to 0; above `keepalive_s`); `vel_limits` (v_max = `max_v` × `vx_limit`, w_max = `max_w` × `vyaw_limit_dps`) rewritten this often (an ESP restart loses it) |
 | `keepalive_s` | 0.3 | | s |
 | `stall_timeout_s` | 0.5 | | s, userspace watchdog |
 | `kernel_watchdog_ms` | 1000 | 1000 | `settings/motion_timeout_ms` |

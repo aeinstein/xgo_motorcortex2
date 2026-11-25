@@ -116,6 +116,16 @@ Kosten am ESP32: zwei PI-Regler + Rampe je Takt, vernachlässigbar gegen die Lag
   lesen = Zustand 0x1a) und `vel_limits` (`V_MAX W_MAX TIMEOUT_MS`), Text ↔ Bytes in `kernel_module/xgo-vel.h`
   (gemeinsam mit dem Treibertest); `vel` startet den Kernel-Wächter neu. `driver-test/run.sh … --vel` auf kimmy grün
   (auch mit `--faults --stream --tunnel`), Modul baut dort. Nicht am Rider eingespielt.
+- **Geflasht 2026-11-25:** Firmware 0001–0032 (SHA ca488061…), liegend; 0x1a antwortet. Rahmenweg noch nicht benutzt.
+- **Stufe 8 (2026-11-25):** xgonav `fahrrahmen.py` + `Robot`: `drive(v, w)` bleibt normiert; mit Treiber `vel` und
+  Firmware ab 0029 schreibt Robot Rahmen (Ziel m/s = v × `vx_limit`, °/s = w × `vyaw_limit_dps`, an die Firmware
+  ÷ `fw_speed_unit_mm` 8,4) mit a/Ruck (`vel_accel` 0,5 / `vel_decel` 1,0 m/s², Ruck 2,5; Drehen 360 °/s², 1800 °/s³;
+  Bremse 1,5 m/s²), `vel_limits` beim Start und alle 2 s; Rampe am Pi, `speed_ctrl` und `turn_min_w` in `drive()` aus.
+  Python-Generator = Firmware-Generator, `robot.command` ist deren Sollwert (Simulator, `v_erw`). Simulator fährt
+  standardmäßig den Rahmenweg (Nachlauf 0,15 / 0,1 s angenommen). Unit-Tests 569 grün (Bytewege-Tests auf
+  `vel_frame = False`, neu `tests/test_fahrrahmen.py`). Am Rider eingespielt 11:27: dort noch Bytes (Treiber ohne `vel`).
+  Offen: Faktor messen (Byteweg), dann Treiber einspielen; `turn_min_w` in `behaviors.dreh_w`, `speed_ctrl` und Pi-Rampe
+  nach der Messfahrt entfernen.
 
 ### Zu klären
 
