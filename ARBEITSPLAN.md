@@ -15,7 +15,7 @@ Planer, der Planer fährt den Rider, nach der Sicherheitsprüfung.
 | 2 | **Test: Anfahren an eine Wand** | geradeaus geprüft gefahren 2026-11-25 (unten) |
 | 3 | **Test: Fahren einer Bahn entlang.** Kurven glätten, Drehungen auf der Stelle vermeiden (Hauptgrund der Drift) | offen |
 | 4 | **Fahrregler in die Firmware.** Pi sendet Sollgeschwindigkeit und Drehrate in echten Einheiten, die Firmware regelt | erledigt, gefahren (unten) |
-| 5 | **Bahnbefehle für die Navigation.** Krümmung statt Drehrate, Drehen auf Kurs, Strecke mit Halt, Rückmeldung im Strom (Plan unten) | Stufe 0 fertig. Stufe 1: gefahren 2026-11-25 (κ 2, Firmware hält κ_soll exakt; Anfang enger, Halt jetzt auf dem Bogen), `vel_kappa` aus. Stufe 2: gefahren 2026-11-25 mit 81cb3335 (±90°/±180°, Sollwinkel auf 0,4°, IMU-Kurs 2 s nach Ende auf ≤ 1,4°). `vel_kappa`/`vel_kurs` seit 2026-11-25 Standard an. Stufe 3: gefahren 2026-11-25 von Hand (vorwärts 5–6 cm zu früh, rückwärts 9 cm zu weit: Nachlauf-Integral der Firmware; Fix 73f08ad/33c685ea gebaut, nicht geflasht, Pi-Nachbau nachgezogen), `vel_strecke` aus. home mit Krümmung + Kursziel gefahren: am Start 1 cm / 0,9° |
+| 5 | **Bahnbefehle für die Navigation.** Krümmung statt Drehrate, Drehen auf Kurs, Strecke mit Halt, Rückmeldung im Strom (Plan unten) | Stufe 0 fertig. Stufe 1: gefahren 2026-11-25 (κ 2, Firmware hält κ_soll exakt; Anfang enger, Halt jetzt auf dem Bogen), `vel_kappa` aus. Stufe 2: gefahren 2026-11-25 mit 81cb3335 (±90°/±180°, Sollwinkel auf 0,4°, IMU-Kurs 2 s nach Ende auf ≤ 1,4°). `vel_kappa`/`vel_kurs` seit 2026-11-25 Standard an. Stufe 3: gefahren 2026-11-25 von Hand, mit Firmware 33c685ea auf ≤ 3,3 cm; `vel_strecke` aus (Wegfolger/home schicken noch keine Strecke). home mit Krümmung + Kursziel gefahren: am Start 1 cm / 0,9° |
 
 ## Bahnbefehle (Punkt 5, Plan 2026-11-25)
 
@@ -81,9 +81,18 @@ Strecke von Hand (`fahrt.py` am Rider = MCP `fahren` mit `strecke`, `vel_strecke
 | v 0,3 vorwärts | 1,0 m | 0,95 m | 5–6 cm zu früh |
 | v −0,2 rückwärts (nach Fix) | 0,5 m | 0,59 m | 9 cm zu weit, kein Nachschub mehr |
 
-- Verbleibender Fehler liegt in der Firmware: Der Nachlauf lag = ∫(v_soll − v_meas) summiert eine dauerhafte
-  Tempoabweichung auf (vorwärts Anlauf zu langsam → lag > 0 → zu früh; rückwärts schneller als Soll → lag < 0 → zu
-  spät). Vorschlag an die Firmware-Sitzung: momentaner erwarteter Nachlauf statt Integral. Offen.
+- Firmware-Fehler: Der Nachlauf lag = ∫(v_soll − v_meas) summierte eine dauerhafte Tempoabweichung auf (vorwärts
+  Anlauf zu langsam → zu früh; rückwärts schneller als Soll → zu spät). Fix 73f08ad (SHA 33c685ea): lag = 0,25 s × v_ist.
+
+Nachfahrt mit 33c685ea (`runde10.csv`):
+
+| Fahrt | verlangt | gefahren (Radticks) | Pose |
+|---|---|---|---|
+| v 0,3 vorwärts | 1,0 m | 1,033 m (+3,3 cm) | 1,032 m |
+| v −0,2 rückwärts | 0,5 m | 0,520 m (+2,0 cm) | 0,521 m |
+| v 0,2 vorwärts | 1,0 m | 0,998 m (−0,2 cm) | 1,007 m |
+
+- Stufe 3 damit von Hand auf ≤ 3,3 cm; ohne Bremsung, kein Nachschub.
 
 home mit `vel_kappa` + `vel_kurs` (Standard an), Startbild an, Weg ~1 m um eine Ecke:
 
