@@ -144,7 +144,12 @@ Kosten am ESP32: zwei PI-Regler + Rampe je Takt, vernachlässigbar gegen die Lag
 - **Firmware 0035 (2026-11-25, Nutzer: Einheitenfehler beheben und b)):** 0x1b mit 10 Byte bringt Einheit (µm/s je
   Einheit) und Vorfaktor c; Vorsteuerung in echten mm/s², Speed-P und Radkorrektur des Originals sehen Soll × c
   (`robot.vel_stock_scale` 0,55 ≈ 1/1,85), das Integral das volle Soll. Treiber `vel_limits` mit 5 Feldern
-  ("231 180.0 500 3900 550"). Host-Tests und Treibertest grün; nicht geflasht, nicht gefahren.
+  ("231 180.0 500 3900 550"). Host-Tests und Treibertest grün.
+- **Geflasht 2026-11-25 ~12:26:** 0001–0035 (SHA a4d09455…, 1 267 872 Byte, `out/app0_0035.bin`), Treiber und
+  xgonav eingespielt, Firmware nimmt die 10-Byte-Grenzen an. **Messfahrt (c 0,55):** v 0,2: Soll 46, Ist nach 0,5 s
+  ~40, Spitze 60 (1,30 × statt 1,80 ×) nach ~2,5 s, am Ende 52; v 0,3: Soll 69, Spitze 90 (1,30 × statt 1,91 ×)
+  nach ~2 s, am Ende ~80. Strecke 0,70 / 1,09 m (vorher 0,85 / 1,28). Schneller am Soll, Überschwingen auf ein
+  Drittel; der Rest steigt langsam an (Bestandsweg) und das Integral holt ihn zu langsam zurück.
 
 ### Zu klären
 
