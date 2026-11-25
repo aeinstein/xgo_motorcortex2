@@ -6,6 +6,8 @@
 // Original-P gegen ~0 mit Integral, kein Aufschaukeln, Vorsteuerung verkleinert den Schleppfehler beim Anfahren.
 // 0035: Vorsteuerung mit unit_mm (a in Firmware-Einheiten/s²), stock_scale: Original-P sieht Soll × c, Integral
 // das volle Soll, aus/1 = bitgleich.
+// 0036: Integral erst, wenn der Generator kVelSettleS (0,6 s) lang a = 0 hat (kein Windup beim Anfahren); die
+// Integral-Tests setzen dafür vel_settled vorab (settle()).
 // Nach firmware/build.sh (Quellen mit Patches in firmware/build/), im Repo-Root:
 //   S=firmware/build/xgorider2_rl/firmware/src
 //   g++ -std=c++17 -ffp-contract=off -I $S firmware/tests/test_velocity_ctrl.cpp $S/control/rider_motion.cpp $S/control/pid.cpp -o t && ./t
@@ -25,6 +27,7 @@ static void check(bool ok, const char* what) {
 static bool near(float a, float b, float tol) { return std::fabs(a - b) <= tol; }
 
 constexpr float kDt = 0.004f;   // Regeltakt kControlPeriodUs
+static void settle(BalanceState& b) { b.vel_settled = kVelSettleS; }   // Generator ruht schon (0036)
 
 // Ein Reglertakt; gibt den Soll-Nick zurück.
 static float step(BalanceState& b, float target, float speed, float pitch, bool holding, bool drive_int,
@@ -95,6 +98,7 @@ int main() {
         check(near(th, std::atan(500.0f / 9810.0f) * 57.29578f, 2e-3f), "0035: Vorsteuerung mit Einheit 3,9 -> 2,92° bei 0,5 m/s²");
         BalanceState p, q; VelocityControl one; one.on = true; one.dt = kDt;
         VelocityControl sc = one; sc.stock_scale = 0.55f;
+        settle(p); settle(q);
         step(p, 100, 40, 0, false, true, &one); step(q, 100, 40, 0, false, true, &sc);
         BalanceState r; VelocityControl ref = one; step(r, 55, 40, 0, false, true, &ref);
         check(q.speed.output == r.speed.output, "0035: Original-P sieht Soll × 0,55");
@@ -103,9 +107,28 @@ int main() {
         check(step(o1, 100, 40, 0, false, true, &off) == step(o2, 100, 40, 0, false, true, nullptr),
               "0035: Rahmenweg aus -> Vorfaktor wirkt nicht");
     }
+    // --- Patch 0036: Integral erst bei ruhendem Generator
+    {
+        BalanceState b; VelocityControl vc; vc.on = true; vc.dt = kDt; vc.accel = 128;
+        for (int i = 0; i < 500; ++i) step(b, 40, 0, 0, false, true, &vc);   // 2 s Rampe, Ist hängt 40 hinterher
+        check(b.vel_i == 0 && b.vel_settled == 0, "0036: während der Rampe (a ≠ 0) kein Integral");
+        vc.accel = 0;
+        for (int i = 0; i < 149; ++i) step(b, 40, 0, 0, false, true, &vc);   // 0,596 s nach Rampenende
+        check(b.vel_i == 0, "0036: bis 0,6 s nach Rampenende kein Integral");
+        for (int i = 0; i < 26; ++i) step(b, 40, 0, 0, false, true, &vc);
+        check(near(b.vel_i, 0.208f, 0.005f), "0036: danach wächst es (26 Takte × 0,05 × 40 × 0,004 = 0,208°)");
+        vc.accel = -50; step(b, 40, 0, 0, false, true, &vc);
+        const float frozen = b.vel_i;
+        for (int i = 0; i < 100; ++i) step(b, 40, 0, 0, false, true, &vc);
+        check(b.vel_i == frozen && b.vel_settled == 0, "0036: neue Rampe hält das Integral an (bleibt stehen)");
+        VelocityControl off = vc; off.on = false; settle(b);
+        step(b, 40, 0, 0, false, true, &off);
+        check(b.vel_settled == 0, "0036: Rahmenweg aus setzt die Wartezeit zurück");
+    }
     // --- Integral: wächst mit ki·Fehler·dt, Grenze, Vorzeichen
     {
         BalanceState b; VelocityControl vc; vc.on = true; vc.dt = kDt;   // ki 0,05
+        settle(b);
         for (int i = 0; i < 250; ++i) step(b, 30, 0, 0, false, true, &vc);   // 1 s, 30 mm/s Fehler
         check(near(b.vel_i, 1.5f, 0.01f), "Integral: 30 mm/s über 1 s -> 1,5°");
         for (int i = 0; i < 1000; ++i) step(b, 30, 0, 0, false, true, &vc);
@@ -126,11 +149,12 @@ int main() {
     // --- Halten und Ende ohne Sprung
     {
         BalanceState b; VelocityControl vc; vc.on = true; vc.dt = kDt;
+        settle(b);
         for (int i = 0; i < 250; ++i) step(b, 40, 0, 0, false, true, &vc);
         const float i0 = b.vel_i;
         for (int i = 0; i < 375; ++i) step(b, 0, 0, 0, true, true, &vc);   // 1,5 s halten
         check(near(b.vel_i, i0 * std::exp(-1.0f), 0.02f), "Halten: Integral klingt mit 1,5 s ab");
-        BalanceState c;
+        BalanceState c; settle(c);
         for (int i = 0; i < 250; ++i) step(c, 40, 40 - 1e-3f, 0, false, true, &vc);
         for (int i = 0; i < 250; ++i) step(c, 40, 0, 0, false, true, &vc);
         const float before = step(c, 40, 40, 0, false, true, &vc);

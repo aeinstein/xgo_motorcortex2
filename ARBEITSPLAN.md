@@ -156,6 +156,12 @@ Kosten am ESP32: zwei PI-Regler + Rampe je Takt, vernachlässigbar gegen die Lag
   (0031): solange das Ist beim Anfahren hinterherläuft (Gegenschwung des Balancierens), läuft vel_i bis i_max 4° voll
   und treibt danach über das Soll; je kleiner c, desto länger der Nachlauf, desto mehr Windup. Vorschlag: Integral
   nur bei ruhendem Generator (a = 0) bzw. kleinerem Fehler, c zurück auf 0,55.
+- **Firmware 0036 (Nutzer: so vorgehen):** Integral erst, wenn der Generator 0,6 s lang a = 0 hat; c wieder 0,55.
+  Host-Tests grün, Build SHA 8b3e94e2… (`out/app0_0036.bin`).
+- **Geflasht 0001–0036 (2026-11-25), Messfahrt c 0,55:** v 0,2: 90 % nach 1,35 s, dann Ist stetig 38 → 55 bis 3,5 s
+  (Spitze 1,26 × bei 3,7 s, Ende 1,13 ×), Strecke 0,68 m. v 0,3 nach 2,4 s von der Bahnprüfung gebremst: bis dahin
+  Ist 56 → 78 (1,13 ×). Die frühe Spitze ist weg, aber der Bestandsweg kriecht weiter nach oben, auch während das
+  Integral läuft: ki 0,05 (Fehler −8 → −0,4°/s) ist dafür zu schwach. Windup war nur ein Teil.
 
 ### Zu klären
 

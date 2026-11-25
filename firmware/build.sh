@@ -46,6 +46,7 @@
 #   0033 automatische Schräglage des Originals (automatic_lean, nie gesetzt) entfernt
 #   0034 In schnellen Kurven einlegen: Roll halten regelt auf -atan(v·Gierrate/g) (Aktion 232 an / 231 aus, Default aus)
 #   0035 Rahmenweg: Einheit (Vorsteuerung in mm/s²) und Vorfaktor des Bestandswegs über 0x1b mit 10 Byte
+#   0036 Rahmenweg: Integral erst, wenn der Generator 0,6 s am Ziel ist (kein Windup beim Anfahren)
 # Braucht: git, python3 (venv), Internet beim ersten Lauf (PlatformIO lädt Toolchain ~1 GB).
 set -euo pipefail
 

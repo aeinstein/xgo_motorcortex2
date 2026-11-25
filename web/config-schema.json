@@ -149,8 +149,8 @@
       {
        "key": "vel_stock_scale",
        "typ": "float",
-       "default": 0.42,
-       "hilfe": "Firmware 0035: auf dem Rahmenweg sehen Speed-P und Radkorrektur des Originals das Soll × vel_stock_scale, das Integral das volle Soll. Messfahrt 2026-11-25 ohne Vorfaktor: Ist-Spitze 1,8 / 1,9 × Soll nach ~2 s, dann langsam zurück; 0,55 ergab 1,30 × (Messfahrt 2026-11-25), daher 0,42 ≈ 0,55/1,30 (am Rider prüfen). Geht mit Einheit an vel_limits (10 Byte, braucht Firmware 0035)."
+       "default": 0.55,
+       "hilfe": "Firmware 0035: auf dem Rahmenweg sehen Speed-P und Radkorrektur des Originals das Soll × vel_stock_scale, das Integral das volle Soll. Messfahrt 2026-11-25 ohne Vorfaktor: Ist-Spitze 1,8 / 1,9 × Soll nach ~2 s, dann langsam zurück; 0,55 ergab 1,30 × (Messfahrt 2026-11-25), 0,42 war schlechter (längerer Nachlauf, mehr Windup), daher 0,55; Integral seit Firmware 0036 erst bei ruhendem Generator. Geht mit Einheit an vel_limits (10 Byte, braucht Firmware 0035)."
       },
       {
        "key": "level_pulse_s",
