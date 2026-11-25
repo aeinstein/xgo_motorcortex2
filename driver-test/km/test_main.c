@@ -8,7 +8,7 @@ const char *g_serial_path;
 
 /* Text -> Bytes der Fahrrahmen prüfen, ohne Emulator */
 static int vel_case(const char *text, int want_ok, const uint8_t *want, int lim) {
-	uint8_t out[16] = {0};   /* Rahmen 13, Grenzen bis 14 Byte */
+	uint8_t out[16] = {0};   /* Rahmen 13, Grenzen 14 Byte */
 	int r = lim ? vel_limits_encode(text, out) : vel_encode(text, out);
 	int n = lim ? lim : XGO_VEL_FRAME_LEN;   /* lim = erwartete Länge der Grenzen */
 	int ok = want_ok ? (r == (lim ? n : 0) && memcmp(out, want, n) == 0) : r < 0;
@@ -20,7 +20,6 @@ static int test_vel(void) {
 	const uint8_t f1[] = {0, 0xfa, 0x00, 0xf4, 0x01, 0xc4, 0x09, 0x7b, 0x00, 0x78, 0x00, 0x58, 0x02};   /* 250 500 2500 12.3 120 600 */
 	const uint8_t f2[] = {1, 0, 0, 0xd4, 0xfe, 0xd0, 0x07, 0xce, 0xff, 0, 0, 0, 0};                     /* acc -300 2000 -5 0 0 */
 	const uint8_t f3[] = {0, 0x9c, 0xff, 0, 0, 0, 0, 0x05, 0x00, 0, 0, 0, 0};                             /* -100 0 0 0.50 0 0 */
-	const uint8_t l1[] = {0xf4, 0x01, 0x89, 0x03, 0x2c, 0x01};                                             /* 500 90.5 300 */
 	bad += vel_case("250 500 2500 12.3 120 600", 1, f1, 0);
 	bad += vel_case("250 500 2500 12.3 120 600\n", 1, f1, 0);
 	bad += vel_case("acc -300 2000 -5 0 0", 1, f2, 0);
@@ -32,28 +31,17 @@ static int test_vel(void) {
 	bad += vel_case("40000 0 0 0 0 0", 0, NULL, 0);
 	bad += vel_case("acc 1 2 x 4 5", 0, NULL, 0);
 	bad += vel_case("1 2 3 4 -5 6", 0, NULL, 0);
-	bad += vel_case("500 90.5 300", 1, l1, 6);
-	bad += vel_case("500 -1 300", 0, NULL, 6);
-	bad += vel_case("500 90 300 7", 0, NULL, 6);
-	{   /* Firmware 0035: Einheit µm/s und Vorfaktor ‰ */
-		const uint8_t l2[] = {0xe7, 0x00, 0x08, 0x07, 0xf4, 0x01, 0x3c, 0x0f, 0x26, 0x02};   /* 231 180.0 500 3900 550 */
-		bad += vel_case("231 180.0 500 3900 550", 1, l2, 10);
-		bad += vel_case("231 180.0 500 3900 550\n", 1, l2, 10);
-		bad += vel_case("231 180.0 500 3900 2001", 0, NULL, 10);
-		bad += vel_case("231 180.0 500 -1 550", 0, NULL, 10);
-		bad += vel_case("231 180.0 500 3900 550 1", 0, NULL, 10);
-		{   /* Firmware 0037: ki × 10000, i_max × 100 */
-			const uint8_t l3[] = {0xe7, 0x00, 0x08, 0x07, 0xf4, 0x01, 0x3c, 0x0f, 0x26, 0x02, 0xdc, 0x05, 0x90, 0x01};
-			bad += vel_case("231 180.0 500 3900 550 1500 400", 1, l3, 14);
-			bad += vel_case("231 180.0 500 3900 550 10001 400", 0, NULL, 14);
-			bad += vel_case("231 180.0 500 3900 550 1500 1001", 0, NULL, 14);
-			bad += vel_case("231 180.0 500 3900 550 1500 400 2001", 0, NULL, 16);
-			bad += vel_case("231 180.0 500 3900 550 1500 400 9 1", 0, NULL, 16);
-		}
-		{   /* Firmware 0038: kv × 10000 */
-			const uint8_t l4[] = {0xe7, 0x00, 0x08, 0x07, 0xf4, 0x01, 0x3c, 0x0f, 0xe8, 0x03, 0x20, 0x03, 0x58, 0x02, 0xf4, 0x01};
-			bad += vel_case("231 180.0 500 3900 1000 800 600 500", 1, l4, 16);
-		}
+	{   /* Grenzen 0x1b, 14 Byte (Firmware 0035) */
+		const uint8_t l1[] = {0xf4, 0x01, 0x89, 0x03, 0x2c, 0x01, 0x3c, 0x0f, 0x2c, 0x01, 0x58, 0x02, 0xfa, 0x00};   /* 500 90.5 300 3900 300 600 250 */
+		bad += vel_case("500 90.5 300 3900 300 600 250", 1, l1, 14);
+		bad += vel_case("500 90.5 300 3900 300 600 250\n", 1, l1, 14);
+		bad += vel_case("500 90.5 300", 0, NULL, 14);                   /* altes Format */
+		bad += vel_case("500 -1 300 3900 300 600 250", 0, NULL, 14);
+		bad += vel_case("500 90 300 -1 300 600 250", 0, NULL, 14);
+		bad += vel_case("500 90 300 3900 10001 600 250", 0, NULL, 14);
+		bad += vel_case("500 90 300 3900 300 1001 250", 0, NULL, 14);
+		bad += vel_case("500 90 300 3900 300 600 2001", 0, NULL, 14);
+		bad += vel_case("500 90 300 3900 300 600 250 1", 0, NULL, 14);
 	}
 	{
 		const uint8_t d[] = {9, 0, 0xfa, 0x00, 0x85, 0xff, 0xf4, 0x01, 0x84, 0x03, 0x2c, 0x01};
@@ -70,7 +58,7 @@ static int test_vel(void) {
 
 /* mit --vel im Emulator: Grenzen + Rahmen wie /proc schicken, Zustand zurücklesen */
 static void vel_roundtrip(void) {
-	static const char *lim = "450 72.5 300 3900 1000 800 600 500";   /* 16 Byte (Firmware 0038) */
+	static const char *lim = "450 72.5 300 3900 300 600 250";   /* 14 Byte (Firmware 0035) */
 	static const char *frames[] = {"250 500 2500 12.3 120 600", "acc -300 2000 -5 0 0", "-120 800 4000 -30.0 90 400"};
 	uint8_t b[16];   /* Rahmen 13, Grenzen bis 14 Byte */
 	char hex[64], t[80];

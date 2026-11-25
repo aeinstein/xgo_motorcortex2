@@ -8,7 +8,7 @@ python3 esp32_emu.py <harness> <sekunden> <imu_hz> [--faults] [--wheels --combo]
 Typ 0x14 (seq, t_us der Messung nach eigener, driftender ESP-Uhr, Winkel, Ticks) mit zufälligem Sendeverzug
 (Firmware-loop); aus nach 5 s ohne Byte vom Host. Das Testprogramm bekommt HZ (Standard 100) als Strom-Rate.
 --stream-off: wie --stream, aber die Firmware kennt 0x11 nicht (Rückfall auf Abfrage prüfen).
---vel: Firmware 0029. Der Emulator nimmt Fahrrahmen (0x1a, 13 Byte) und Grenzen (0x1b, 6 oder 10 Byte, 0035) an, prüft Länge und
+--vel: Firmware 0029. Der Emulator nimmt Fahrrahmen (0x1a, 13 Byte) und Grenzen (0x1b, 14 Byte, Firmware 0035) an, prüft Länge und
 Prüfsumme und beantwortet 0x1a lesen mit dem Zustand des letzten Rahmens; am Ende vergleicht er die empfangenen Bytes
 mit denen, die das Testprogramm laut VELSENT/VELLIM geschickt hat, und dessen VELDIAG mit dem erwarteten Text.
 --tunnel: Firmware 0025. Der Emulator schickt wie ein BLE-Client Daten durch den Tunnel (Rahmen Typ 0x15, Register
@@ -37,7 +37,7 @@ IMU65 = "--imu65" in args
 WHEELS = "--wheels" in args
 COMBO = "--combo" in args
 TUNNEL = "--tunnel" in args
-VEL = "--vel" in args   # Firmware 0029: Fahrrahmen 0x1a (13 Byte) / Grenzen 0x1b (6 Byte), 0x1a lesen = Zustand
+VEL = "--vel" in args   # Firmware 0029: Fahrrahmen 0x1a (13 Byte) / Grenzen 0x1b (14 Byte), 0x1a lesen = Zustand
 _st = [a for a in args if a.startswith("--stream")]
 STREAM = bool(_st) and "--stream-off" not in args
 STREAM_HZ = int(_st[0].split("=")[1]) if _st and "=" in _st[0] else 100
@@ -204,7 +204,7 @@ def serve():
                 if VEL and addr in (0x1a, 0x1b):
                     data = fr[5:ln - 3]
                     ok = fr[ln - 3] == 255 - ((ln + mode + addr + sum(data)) % 256)
-                    want = (13,) if addr == 0x1a else (6, 10, 14, 16)   # 0x1b: 10 Byte 0035, 14 0037, 16 0038
+                    want = (13,) if addr == 0x1a else (14,)   # 0x1b: 14 Byte (Firmware 0035)
                     if not ok or len(data) not in want:
                         stats["vel_bad"] = stats.get("vel_bad", 0) + 1
                     else:

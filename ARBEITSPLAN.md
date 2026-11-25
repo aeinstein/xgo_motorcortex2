@@ -217,6 +217,10 @@ Kosten am ESP32: zwei PI-Regler + Rampe je Takt, vernachlässigbar gegen die Lag
   Ist-Rate im Halten 0,96 / 1,01 / 1,01 ×, 90 % nach 0,25–0,4 s, Winkel Soll +108 / −218 / +330°, IMU +102 / −217 /
   +332°. Kurve v 0,2 + w 0,3 (+54 °/s): 1,01 ×, Winkel 163 / 163°. Kurzes Überschwingen der Rate nach dem
   Rampenende (Spitzen über 0,25 s: 1,22–1,36 ×). Das Drehen stimmt; im Original drehte er 1,25 × zu schnell.
+- **Patches zusammengefasst (2026-11-25, Nutzer: „alter Scheiß raus“):** 0035–0039 → ein Patch
+  `0035-velocity-tuning`: 0x1b fest 14 Byte (Einheit, ki, i_max, kv), Vorsteuerung in mm/s², −kv·v_ist, Integral
+  erst nach der Rampe. Entfernt: Vorfaktor des Bestandswegs (`vel_stock_scale`), kv auf das Soll, die 6/10/16-Byte-
+  Varianten. Treiber `vel_limits` nur noch 7 Felder. Verhalten gleich dem gefahrenen Stand (c 1, kv 0,025, ki 0,03).
 
 ### Zu klären
 

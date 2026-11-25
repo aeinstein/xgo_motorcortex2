@@ -64,9 +64,8 @@ RiderPi = `deploy/config.example.toml` where it still differs (blank = default).
 | `vel_brake_mps2` / `vel_brake_jerk_mps3` | 1.5 / 10 | | `drive(brake=True)` |
 | `vel_alpha_dps2` / `vel_jerk_w_dps3` | 360 / 1800 | | turning |
 | `vel_timeout_ms` / `vel_limits_s` | 500 / 2.0 | | firmware watchdog (no frame → ramp to 0; above `keepalive_s`); `vel_limits` (v_max = `max_v` × `vx_limit`, w_max = `max_w` × `vyaw_limit_dps`) rewritten this often (an ESP restart loses it) |
-| `vel_stock_scale` | 1.0 | | firmware 0035: on the drive frame the stock speed P and wheel correction see target × this, the integral the full target (2026-11-25 without it: actual peaked at 1.8–1.9 × target, with 0.55 at 1.30 ×; 0.42 was worse); sent with `fw_speed_unit_mm` in `vel_limits` (10 bytes, needs firmware 0035) |
-| `vel_ki` / `vel_i_max_deg` | 0.03 / 6.0 | | firmware 0037: integral of the frame speed controller in ° pitch per (firmware unit error · s) and its limit; sent in `vel_limits` (14 bytes). With 0036 and ki 0.05 the stock path still crept to 1.13–1.26 × target |
-| `vel_kv` | 0.025 | | firmware 0038/0039: pitch-target feed-forward −kv·v_measured (° per firmware speed unit; on the target it braked after the ramp); the pitch loop needs ~−0.05° per unit to hold a speed (2026-11-25). Sent in `vel_limits` (16 bytes) |
+| `vel_ki` / `vel_i_max_deg` | 0.03 / 6.0 | | firmware 0035: integral of the frame speed controller in ° pitch per (firmware unit error · s) and its limit, runs only 0.6 s after the ramp; covers what `vel_kv` leaves (0.08–0.15 oscillated). Sent in `vel_limits` |
+| `vel_kv` | 0.025 | | firmware 0035: pitch-target feed-forward −kv·v_measured (° per firmware speed unit): the pitch loop needs a speed-proportional deviation, without it the stock P drives ~1.8 × target. Holds v 0.2 / 0.4 within ±4 %, v 0.3 / 0.5 at +11 % (2026-11-25). Sent in `vel_limits` |
 | `keepalive_s` | 0.3 | | s |
 | `stall_timeout_s` | 0.5 | | s, userspace watchdog |
 | `kernel_watchdog_ms` | 1000 | 1000 | `settings/motion_timeout_ms` |

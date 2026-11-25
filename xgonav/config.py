@@ -68,21 +68,13 @@ class RobotCfg:
     vel_jerk_w_dps3: float = 1800.0
     vel_timeout_ms: int = 500
     vel_limits_s: float = 2.0      # vel_limits so oft neu schreiben (ESP-Neustart verliert sie)
-    # Firmware 0035: auf dem Rahmenweg sehen Speed-P und Radkorrektur des Originals das Soll × vel_stock_scale, das
-    # Integral das volle Soll. Messfahrt 2026-11-25 ohne Vorfaktor: Ist-Spitze 1,8 / 1,9 × Soll nach ~2 s, dann langsam
-    # zurück; 0,55 ergab 1,30 × (Messfahrt 2026-11-25), 0,42 war schlechter (längerer Nachlauf, mehr Windup), daher 0,55; Integral seit Firmware 0036 erst bei ruhendem Generator. Geht mit Einheit an vel_limits (10 Byte, braucht Firmware 0035).
-    vel_stock_scale: float = 1.0
-    # Firmware 0037: Integral des Tempo-Reglers (0031) in ° Soll-Nick je (Firmware-Einheit Fehler · s) und seine Grenze.
-    # Messfahrt mit 0036 und ki 0,05: der Bestandsweg kroch weiter auf 1,13–1,26 × Soll (Fehler −8 → nur −0,4°/s);
-    # ki 0,15 schwang (1,37 ×, ~3 s), daher 0,08 mit c 0,8 (Plateau lag bei Soll × c). Geht mit vel_limits (14 Byte).
+    # Firmware 0035 (Messfahrten 2026-11-25, ARBEITSPLAN.md), gehen mit vel_limits an die Firmware: Der Original-P
+    # treibt den Rider auf ~1,8 × Soll, weil er beim Fahren eine Nick-Abweichung proportional zum Tempo braucht;
+    # vel_kv liefert sie (Soll-Nick −kv · gemessenes Tempo, ° je Firmware-Einheit). 0,05 gab 0,8 × Soll, 0,025 hält
+    # v 0,2 / 0,4 auf ±4 %, v 0,3 / 0,5 auf +11 %. Das Integral (vel_ki ° je Einheit Fehler · s, Grenze
+    # vel_i_max_deg) gleicht nur den Rest aus; ki 0,08–0,15 schwang.
     vel_ki: float = 0.03
     vel_i_max_deg: float = 6.0
-    # Firmware 0038: Tempo-Vorsteuerung des Soll-Nicks −vel_kv · v_soll (° je Firmware-Einheit). Messfahrt mit Nick
-    # 2026-11-25: beim Fahren hält der Nick-Regler das Tempo nur mit ~−0,05° je Einheit Abweichung (−2,2° bei 46,
-    # −3,3° bei 73), die sonst das Integral lernen musste (Nachlauf, Schwingen; i_max 4° reichte nur bis ~80).
-    # Damit c (vel_stock_scale) wieder 1 und i_max 6°. Seit Firmware 0039 auf dem gemessenen Tempo (auf dem Soll
-    # bremste es nach der Rampe, das Integral lud sich auf). 0,05 auf dem Ist: ruhig, aber nur 0,8 × Soll (Soll-Nick ≈ 0
-    # beim Halten) -> Bedarf eher 0,02–0,025; daher kv 0,025, ki 0,03 (2026-11-25).
     vel_kv: float = 0.025
     # Die Beine haben eine Totzone: bei gleichem Befehl steht der Rider je nach Vorgeschichte bei
     # +0,7..+3,4° Roll (2026-11-05). Ein kurzer Impuls der Nivellierung in der Firmware richtet ihn
@@ -1266,7 +1258,8 @@ ENTFERNT.update({f"pet.{k}": "pet folgt seit 2026-11-22 mit der Routine des Modu
                            "follow_settle_s", "follow_block_s")})
 ENTFERNT.update({"robot.max_sent": "seit 2026-11-23: Grenze ist robot.max_v/max_w, gesendet wird höchstens ±1",
                  "robot.manual_forward_gain": "seit 2026-11-23: Handsteuerung = max_v x tempo x 1",
-                 "robot.reverse_gain": "seit 2026-11-23: Firmware fährt seit 2026-11-05 symmetrisch"})
+                 "robot.reverse_gain": "seit 2026-11-23: Firmware fährt seit 2026-11-05 symmetrisch",
+                 "robot.vel_stock_scale": "seit 2026-11-25: Vorfaktor des Bestandswegs entfernt (Firmware 0035, vel_kv)"})
 ENTFERNT.update({k: "eine Untergrenze für alle Drehungen seit 2026-11-23 ([robot] turn_min_w)"
                  for k in ("pet.turn_min_w", "dunkel.turn_min_w")})
 UMBENANNT = {"freespace.shadow_net": "freespace.net"}

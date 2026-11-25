@@ -4,8 +4,7 @@
 // dass der Rahmenweg in updateCommandTargets ohne Byte-Totband ankommt, der alte Weg aber unverändert bleibt.
 // 0030: Sollwertgenerator (S-Kurve): Beschleunigung ≤ a, Ruck ≤ Ruckgrenze, kein Überschwingen, Dauer wie gerechnet,
 // Umkehr, Beschleunigungsbetrieb mit Ruck, Wächter mit den Rahmengrenzen, Übernahme aus der Fahrt, Drehachse.
-// 0035: 0x1b mit 10 Byte (Einheit, Vorfaktor), 6 Byte wie vorher, Vorfaktor begrenzt.
-// 0037: 0x1b mit 14 Byte (ki, i_max), 0 = nicht gesendet, Grenzen. 0038: 16 Byte mit kv.
+// 0035: 0x1b mit 14 Byte (Einheit, ki, i_max, kv), 0 = Standard, Grenzen; andere Längen verworfen.
 // Nach firmware/build.sh (Quellen mit Patches in firmware/build/), im Repo-Root:
 //   S=firmware/build/xgorider2_rl/firmware/src
 //   g++ -std=c++17 -ffp-contract=off -I $S firmware/tests/test_velocity_cmd.cpp $S/control/rider_motion.cpp $S/control/pid.cpp $S/command_protocol.cpp -o t && ./t
@@ -34,7 +33,7 @@ static void frameBytes(std::uint8_t* d, bool speed, int v, int a, int j, int w10
     V::put16(d + 9, std::uint16_t(alpha)); V::put16(d + 11, std::uint16_t(jw));
 }
 static V::Limits limits(int vmax, int wmax10, int timeout) {
-    std::uint8_t d[V::kLimitsLen];
+    std::uint8_t d[V::kLimitsLen] = {};
     V::put16(d, std::uint16_t(vmax)); V::put16(d + 2, std::uint16_t(wmax10)); V::put16(d + 4, std::uint16_t(timeout));
     V::Limits l; V::parseLimits(d, sizeof d, l); return l;
 }
@@ -149,7 +148,7 @@ int main() {
         frameBytes(d, false, 0, -300, 0, 0, 0, 0); V::parseFrame(d, V::kFrameLen, f);
         check(!f.has_speed && f.a == -300, "Beschleunigungsbetrieb: Flag und negatives a");
         V::Limits l = limits(500, 900, 250);
-        check(l.set && l.v_max == 500 && near(l.w_max, 90.0f) && l.timeout_ms == 250, "Grenzen 6 Byte gelesen");
+        check(l.set && l.v_max == 500 && near(l.w_max, 90.0f) && l.timeout_ms == 250, "Grenzen gelesen");
     }
     // --- ohne Grenzen kein Rahmen
     {
@@ -227,11 +226,10 @@ int main() {
         CommandEvent e; e.type = 0; e.reg = 0x1a; e.length = 13;
         check(validCommand(e) && commandKind(e) == CommandKind::Velocity, "0x1a mit 13 Byte gültig");
         e.length = 1; check(!validCommand(e), "0x1a mit 1 Byte ungültig");
-        e.reg = 0x1b; e.length = 6; check(validCommand(e) && commandKind(e) == CommandKind::VelocityLimits, "0x1b mit 6 Byte gültig");
-        e.length = 10; check(validCommand(e), "0x1b mit 10 Byte gültig (0035)");
-        e.length = 8; check(!validCommand(e), "0x1b mit 8 Byte ungültig");
-        e.length = 14; check(validCommand(e), "0x1b mit 14 Byte gültig (0037)");
-        e.length = 16; check(validCommand(e), "0x1b mit 16 Byte gültig (0038)");
+        e.reg = 0x1b; e.length = 14; check(validCommand(e) && commandKind(e) == CommandKind::VelocityLimits, "0x1b mit 14 Byte gültig (0035)");
+        e.length = 6; check(!validCommand(e), "0x1b mit 6 Byte ungültig (altes Format, 0035)");
+        e.length = 16; check(!validCommand(e), "0x1b mit 16 Byte ungültig");
+        e.length = 14;
         e.length = 6;
         e.reg = 0xa0; e.length = 1; check(!validCommand(e), "0xa0 (max_forward) entfernt");
         e.reg = 0xa1; check(!validCommand(e), "0xa1 (max_turn) entfernt");
@@ -258,45 +256,19 @@ int main() {
         check(x.filtered_forward == y.filtered_forward && x.filtered_turn == y.filtered_turn && x.forward == y.forward,
               "velocity = false: bitgleich zum alten Weg");
     }
-    {   // Patch 0035: Einheit und Vorfaktor
-        const V::Limits old = limits(231, 1800, 500);
-        check(old.unit_mm == 1.0f && old.stock_scale == 1.0f, "0x1b 6 Byte: Einheit 1, kein Vorfaktor (wie vorher)");
-        std::uint8_t d[V::kLimitsLenExt];
-        V::put16(d, 231); V::put16(d + 2, 1800); V::put16(d + 4, 500); V::put16(d + 6, 3900); V::put16(d + 8, 550);
-        V::Limits l; check(V::parseLimits(d, sizeof d, l), "0x1b 10 Byte angenommen");
-        check(l.v_max == 231 && near(l.w_max, 180.0f, 1e-4f) && l.timeout_ms == 500, "0x1b 10 Byte: Grenzen wie bei 6 Byte");
-        check(near(l.unit_mm, 3.9f, 1e-5f) && near(l.stock_scale, 0.55f, 1e-5f), "0x1b 10 Byte: Einheit 3,9 mm/s, Vorfaktor 0,55");
-        V::put16(d + 6, 0); V::put16(d + 8, 0); V::parseLimits(d, sizeof d, l);
-        check(l.unit_mm == 1.0f && l.stock_scale == 1.0f, "0x1b 10 Byte mit 0: Standardwerte");
-        V::put16(d + 8, 50); V::parseLimits(d, sizeof d, l);
-        check(near(l.stock_scale, 0.1f, 1e-6f), "Vorfaktor unten auf 0,1 begrenzt");
-        V::put16(d + 8, 9000); V::parseLimits(d, sizeof d, l);
-        check(near(l.stock_scale, 2.0f, 1e-6f), "Vorfaktor oben auf 2 begrenzt");
-        check(!V::parseLimits(d, 8, l), "0x1b mit 8 Byte verworfen");
-        check(l.ki < 0 && l.i_max < 0, "0x1b 10 Byte: ki/i_max nicht gesendet");
-    }
-    {   // Patch 0037: ki und i_max
-        std::uint8_t d[V::kLimitsLenCtl];
-        V::put16(d, 231); V::put16(d + 2, 1800); V::put16(d + 4, 500); V::put16(d + 6, 3900); V::put16(d + 8, 550);
-        V::put16(d + 10, 1500); V::put16(d + 12, 400);
+    {   // Patch 0035: Einheit, ki, i_max, kv
+        const V::Limits z = limits(231, 1800, 500);
+        check(z.unit_mm == 1.0f && z.ki < 0 && z.i_max < 0 && z.kv == 0, "0x1b mit 0: Einheit 1, ki/i_max von !velctl, kv aus");
+        std::uint8_t d[V::kLimitsLen];
+        V::put16(d, 231); V::put16(d + 2, 1800); V::put16(d + 4, 500); V::put16(d + 6, 3900);
+        V::put16(d + 8, 300); V::put16(d + 10, 600); V::put16(d + 12, 250);
         V::Limits l; check(V::parseLimits(d, sizeof d, l), "0x1b 14 Byte angenommen");
-        check(near(l.unit_mm, 3.9f, 1e-5f) && near(l.stock_scale, 0.55f, 1e-5f), "0x1b 14 Byte: Einheit und Vorfaktor wie bei 10");
-        check(near(l.ki, 0.15f, 1e-6f) && near(l.i_max, 4.0f, 1e-5f), "0x1b 14 Byte: ki 0,15, i_max 4°");
-        V::put16(d + 10, 0); V::put16(d + 12, 0); V::parseLimits(d, sizeof d, l);
-        check(l.ki < 0 && l.i_max < 0, "0x1b 14 Byte mit 0: Konsolenwerte gelten");
-        V::put16(d + 10, 60000); V::put16(d + 12, 60000); V::parseLimits(d, sizeof d, l);
-        check(l.ki == 1.0f && l.i_max == 10.0f, "ki ≤ 1, i_max ≤ 10°");
-        check(l.kv == 0, "0x1b 14 Byte: kv aus");
-    }
-    {   // Patch 0038: kv
-        std::uint8_t d[V::kLimitsLenKv];
-        V::put16(d, 231); V::put16(d + 2, 1800); V::put16(d + 4, 500); V::put16(d + 6, 3900); V::put16(d + 8, 1000);
-        V::put16(d + 10, 800); V::put16(d + 12, 600); V::put16(d + 14, 500);
-        V::Limits l; check(V::parseLimits(d, sizeof d, l), "0x1b 16 Byte angenommen");
-        check(near(l.ki, 0.08f, 1e-6f) && near(l.i_max, 6.0f, 1e-5f) && near(l.kv, 0.05f, 1e-6f),
-              "0x1b 16 Byte: ki 0,08, i_max 6°, kv 0,05");
-        V::put16(d + 14, 9000); V::parseLimits(d, sizeof d, l);
-        check(near(l.kv, 0.2f, 1e-6f), "kv ≤ 0,2");
+        check(l.v_max == 231 && near(l.w_max, 180.0f, 1e-4f) && l.timeout_ms == 500, "0x1b: Grenzen");
+        check(near(l.unit_mm, 3.9f, 1e-5f) && near(l.ki, 0.03f, 1e-6f) && near(l.i_max, 6.0f, 1e-5f) && near(l.kv, 0.025f, 1e-6f),
+              "0x1b: Einheit 3,9 mm/s, ki 0,03, i_max 6°, kv 0,025");
+        V::put16(d + 8, 60000); V::put16(d + 10, 60000); V::put16(d + 12, 60000); V::parseLimits(d, sizeof d, l);
+        check(l.ki == 1.0f && l.i_max == 10.0f && near(l.kv, 0.2f, 1e-6f), "ki ≤ 1, i_max ≤ 10°, kv ≤ 0,2");
+        check(!V::parseLimits(d, 6, l), "0x1b mit 6 Byte verworfen");
     }
     std::printf(fail ? "\nFEHLER\n" : "\nalle ok\n");
     return fail;

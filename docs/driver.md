@@ -24,7 +24,7 @@ cat /proc/XGORider/serial_stats; cat /proc/XGORider/imu
 | later | wheel encoders (combined register 0x0d) → `wheels`, `wheels_log`; `raw_reg` diagnostics; `calibration` sends bytes 0/1 (was ASCII, inverted); `pitch_calibration` |
 | stream | IMU/wheel stream of firmware patch 0014 (2026-11-08): `settings/imu_stream_hz`, frames type 0x14 → `imu_log`/`wheels_log` with the firmware's sample time; polling only as fallback |
 | 2026-11-17 | read paths for firmware without firmware patch 0001 removed (IMU modes 0/1/2, wheel register 0x0c, `settings/wheel_hz`); `yaw` from the stream; `force_yaw` removed; dead code removed (`xgo-lcd.c`, `xgo-lcd.h`). **Not installed on the Rider** |
-| 2026-11-25 | drive frame of firmware patches 0029–0032: `vel`, `vel_limits` (text ↔ bytes in `xgo-vel.h`, shared with the driver test). **Not installed on the Rider** |
+| 2026-11-25 | drive frame of firmware patches 0029–0032: `vel`, `vel_limits` (text ↔ bytes in `xgo-vel.h`, shared with the driver test); installed on the Rider 2026-11-25, `vel_limits` with 7 fields (14 bytes) since firmware 0035 |
 
 ## IMU / wheel read path (auto-detected at load)
 
@@ -59,7 +59,7 @@ cat /proc/XGORider/serial_stats; cat /proc/XGORider/imu
 | `speed_x` | w | u8 0..255, 128 = stop; arms motion watchdog | 0x30 |
 | `speed_z` | w | u8 0..255, 128 = stop; arms watchdog | 0x32 |
 | `vel` | rw | write one drive frame (firmware 0029–0032): `V A J W ALPHA JW` = mm/s, mm/s² (≥ 0), mm/s³, °/s (one decimal), °/s², °/s³ (0 = no limit), or `acc A J W ALPHA JW` = acceleration mode (A signed, up to ±v_max); arms the motion watchdog (it writes 128 to 0x30/0x32, which also ends the frame path). Read = firmware state, fresh from the ESP32: `active accel_mode watchdog_fired limits_set v w v_max w_max timeout_ms` (e.g. `1 0 0 1 250 -12.3 500 90.0 300`); old firmware: `Fehler <n>`. Without `vel_limits` the firmware drops every frame | 0x1a |
-| `vel_limits` | rw | write `V_MAX W_MAX TIMEOUT_MS` (firmware speed units, °/s with one decimal, firmware watchdog ms, 0 = off) → 6 bytes, or `V_MAX W_MAX TIMEOUT_MS UNIT_UM SCALE_PERMILLE` → 10 bytes (firmware 0035: µm/s per firmware speed unit, stock-path scale in ‰; older firmware rejects 10 bytes), or plus `KI_E4 IMAX_CENTI` → 14 bytes (firmware 0037: integral gain × 10000, limit in 0.01°), or plus `KV_E4` → 16 bytes (firmware 0038: pitch feed-forward per firmware speed unit × 10000); xgonav writes it at start. Read = last written text | 0x1b |
+| `vel_limits` | rw | write `V_MAX W_MAX TIMEOUT_MS UNIT_UM KI_E4 IMAX_CENTI KV_E4` → 14 bytes (firmware 0035): v_max in firmware speed units, °/s with one decimal, firmware watchdog ms (0 = off), µm/s per firmware unit, integral gain × 10000, its limit in 0.01° (both 0 = console value), pitch feed-forward per unit of measured speed × 10000 (0 = off); xgonav writes it at start and every 2 s. Read = last written text | 0x1b |
 | `height` | rw | u8 0..255 (web UI min 43); read: last written value, empty until first write; not reset when the firmware stands up at 128 | 0x35 |
 | `roll` | rw | int −20..20 °, mapped linearly to 0..255; read: last written value, empty until first write | 0x36 |
 | `roll_balance` | w | 0/1 | 0x61 |
