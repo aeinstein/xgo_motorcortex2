@@ -2950,6 +2950,10 @@ def test_home_startbild_endkurs_eng():
     b.step(w(1.0, -9.5))
     b.step(w(1.0 + cfg.startbild.end_s + 0.1, -6.0))                      # dreht nicht: nach end_s fertig
     assert b.done
+    b = neu()
+    b.step(w(1.0, 179.5))                                                 # Startkurs fast genau hinter ihm
+    c = b.step(w(1.2, -179.6))                                            # Zittern über ±180°: kein „übergedreht“
+    assert not b.done and c.w != 0.0
 
 
 def test_home_startbild_rejected_and_stuck():

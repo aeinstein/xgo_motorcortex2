@@ -1277,7 +1277,9 @@ class Home(Behavior):
         # nach end_s: stehen bleiben statt pendeln
         err = _wrap(gth - th)
         vz = math.copysign(1.0, err)
-        ueber = self._end_vz != 0.0 and vz != self._end_vz
+        # übergedreht nur bei kleinem Fehler: um ±180° wechselt das Vorzeichen schon durch das Zittern des Kurses (Rider
+        # 2026-11-25: nach dem Umdrehen zum Nachfahren stand er 180° falsch und richtete sich nicht mehr aus)
+        ueber = self._end_vz != 0.0 and vz != self._end_vz and abs(err) < math.pi / 2
         if (self.h.align_heading and abs(err) > math.radians(sb.end_deg) and not ueber
                 and w.t - self.t_phase < sb.end_s):
             self._end_vz = vz
