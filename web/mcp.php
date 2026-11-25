@@ -182,6 +182,13 @@ function halt(): void
     }
     http('POST', '/stop', 1.0);                 // idle + Stillstand
     $GLOBALS['faehrt'] = false;
+    // xgonav schaltet erst im nächsten Schritt auf idle: bis dahin warten, sonst sieht die nächste Bewegung noch
+    // „manual“, schaltet nicht um und wird vom späten idle abgelehnt („Drehen nur im Modus manual“, 2026-11-25)
+    try {
+        warte(fn() => (status()['mode'] ?? '') === 'idle', 2.0);
+    } catch (Fehler $e) {
+        // xgonav nicht erreichbar: nichts zu warten
+    }
 }
 
 // Bricht die Anfrage ab (Zeitlimit, Fehler), darf kein Sollwert stehen bleiben; xgonav hält ohnehin nach 0,5 s an.

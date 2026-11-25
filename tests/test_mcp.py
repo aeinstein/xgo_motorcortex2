@@ -38,6 +38,8 @@ class Xgonav:
         self.meldung = ""
         self.neu = True           # kennt /drive?sicher=1
         self.turn = None          # /status turn (POST /turn dreht sofort, Nachlauf 2°)
+        self.idle_nach = 0        # /stop wird erst nach so vielen weiteren Anfragen idle (xgonav: nächster Schritt)
+        self._idle_in = 0
         x = self
 
         class H(BaseHTTPRequestHandler):
@@ -53,9 +55,16 @@ class Xgonav:
                 self.end_headers()
                 self.wfile.write(body)
 
+            def _tick(self):
+                if x._idle_in:
+                    x._idle_in -= 1
+                    if not x._idle_in:
+                        x.mode = "idle"
+
             def do_GET(self):
                 u = urlparse(self.path)
                 x.calls.append("GET " + self.path)
+                self._tick()
                 if u.path == "/":
                     return self._send(200, json.dumps({"api": {"POST": ["/drive?v=..&w=..&sicher=0|1" if x.neu else "/drive?v=..&w=.."]}}).encode())
                 if u.path == "/status":
@@ -81,10 +90,15 @@ class Xgonav:
                 u = urlparse(self.path)
                 q = parse_qs(u.query)
                 x.calls.append("POST " + self.path)
+                if u.path != "/stop":
+                    self._tick()
                 if u.path == "/mode":
                     x.mode = q["name"][0]
                 elif u.path == "/stop":
-                    x.mode = "idle"
+                    if x.idle_nach:
+                        x._idle_in = x.idle_nach
+                    else:
+                        x.mode = "idle"
                 elif u.path == "/pipeline":
                     x.pipeline = q["on"][0] == "1"
                 elif u.path == "/turn":
@@ -231,6 +245,17 @@ def test_freigabe_drehen_ohne_fahren(mcp):
     antrieb = [c for c in x.calls if c.startswith("POST /drive") or c.startswith("POST /turn")]
     assert any(c.startswith("POST /turn?deg=45") for c in antrieb)                # xgonav regelt (seit 2026-11-23)
     assert all("v=0&" in c for c in antrieb if c.startswith("POST /drive")) and "w=0" in antrieb[-1].split("&")[-1]
+
+
+def test_drehen_direkt_nacheinander(mcp):
+    """Am Rider 2026-11-25: /stop wird erst im nächsten Schritt idle; die direkt folgende Drehung sah noch manual,
+    schaltete nicht um und bekam dann „Drehen nur im Modus manual“. halt() wartet jetzt auf idle."""
+    m, x, _ = mcp()
+    x.idle_nach = 2
+    for g in (90, -45, 180):
+        r = m.call("drehen", grad=g, bild=False)
+        assert not r["isError"], (g, r)
+    assert abs(x.yaw - 225) <= 10 and x.mode == "idle"
 
 
 def test_rundblick(mcp):
