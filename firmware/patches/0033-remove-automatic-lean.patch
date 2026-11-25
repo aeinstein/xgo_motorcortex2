@@ -1,0 +1,112 @@
+diff --git a/firmware/src/action_engine.cpp b/firmware/src/action_engine.cpp
+index 239f43c..bef9d31 100644
+--- a/firmware/src/action_engine.cpp
++++ b/firmware/src/action_engine.cpp
+@@ -62,7 +62,7 @@ void ActionEngine::clearCounters() {
+     for(auto &value:counters_) value=0;
+ }
+ void ActionEngine::resetCommands(uint32_t now_ms) {
+-    // 0x400d4740. Limits, periods, heading hold and automatic lean are retained.
++    // 0x400d4740. Limits, periods and heading hold are retained.
+     state_.last_reset_ms=now_ms;
+     state_.leveling=false; state_.hold_protection=true;
+     state_.roll_phase=0; state_.height_phase=0;
+diff --git a/firmware/src/control/rider_motion.cpp b/firmware/src/control/rider_motion.cpp
+index 7a9881a..8060355 100644
+--- a/firmware/src/control/rider_motion.cpp
++++ b/firmware/src/control/rider_motion.cpp
+@@ -33,13 +33,8 @@ void updateCommandTargets(CommandState &s,const MotionCommand &c) {
+     // 0x400d4248: each wave period is 2000..4000 phase units.
+     const float roll_period=std::fma(static_cast<float>(c.roll_period)/255.0f,2000.0f,2000.0f);
+     const float height_period=std::fma(static_cast<float>(c.height_period)/255.0f,2000.0f,2000.0f);
+-    if(c.automatic_lean) {
+-        if(static_cast<double>(std::fabs(s.filtered_forward))>static_cast<double>(c.max_forward)*.1) {
+-            const float ratio=static_cast<float>(static_cast<double>(std::fabs(s.filtered_forward))*.6/c.max_forward+.4);
+-            const float turn_ratio=-s.filtered_turn/c.max_turn;
+-            s.roll=static_cast<float>(static_cast<double>(ratio)*20.0*turn_ratio);
+-        }
+-    } else if(s.roll_phase!=0) {
++    // Patch 0033: automatische Schräglage des Originals (Roll aus Fahr- und Drehbefehl) entfernt, nie gesetzt.
++    if(s.roll_phase!=0) {
+         const float phase=s.roll_phase/roll_period;
+         s.roll=static_cast<float>(std::sin(static_cast<double>(phase+phase)*pi)*15.0);
+         s.roll_phase+=10;
+diff --git a/firmware/src/control/rider_motion.h b/firmware/src/control/rider_motion.h
+index 753d580..ac2c267 100644
+--- a/firmware/src/control/rider_motion.h
++++ b/firmware/src/control/rider_motion.h
+@@ -10,7 +10,6 @@ struct MotionCommand {
+     std::uint8_t forward=128, turn=128, height=128, roll=128;
+     std::uint8_t roll_period=128, height_period=128;
+     float max_forward=210, max_turn=300;   // Patch 0029: fest (0xa0/0xa1 entfernt)
+-    bool automatic_lean=false;
+     // Patch 0029: Rahmenweg (velocity_cmd.h). velocity = true ersetzt die Bytes forward/turn durch Sollwerte in
+     // mm/s und °/s (ohne Byte-Totband); die Bytes bleiben für Positionshalten und LEDs auf dem Gegenwert.
+     // Patch 0030: die Sollwerte sind schon gerampt, filtered_forward/turn übernehmen sie unverändert.
+diff --git a/firmware/src/leg_position_controller.cpp b/firmware/src/leg_position_controller.cpp
+index 47fdc00..6809371 100644
+--- a/firmware/src/leg_position_controller.cpp
++++ b/firmware/src/leg_position_controller.cpp
+@@ -20,7 +20,6 @@ MotionResult LegPositionController::step(const MotionInput& i,MotionRequest& req
+     auto command=request.command;
+     command.max_forward=std::min(command.max_forward,policy::kMaxForwardMmS);
+     command.max_turn=std::min(command.max_turn,policy::kMaxTurnDegS);
+-    if(command.max_forward==0||command.max_turn==0)command.automatic_lean=false;
+     command_.roll_phase=request.roll_phase;command_.height_phase=request.height_phase;
+     // Clamp the mapped targets BEFORE filtering, so a phone action cannot wind
+     // the filters outside the actor's qualified reference profile.
+diff --git a/firmware/src/main.cpp b/firmware/src/main.cpp
+index 3cd1991..9425708 100644
+--- a/firmware/src/main.cpp
++++ b/firmware/src/main.cpp
+@@ -761,8 +761,8 @@ public:
+ #endif
+         request.roll_phase=a.roll_phase;request.height_phase=a.height_phase;
+         request.leveling=a.leveling;request.heading_hold=a.heading_hold;request.hold_protection=a.hold_protection;request.turn_hold=turn_hold_enabled;request.drive_integral=drive_integral_enabled;
+-        // patch 0028: Roll halten nur balancierend und ohne eigenen Rollbefehl (Gesten, Rollwelle, automatische Schräglage)
+-        request.roll_hold=roll_hold_enabled&&a.mode==1&&!standup_phase&&a.command.roll==128&&a.roll_phase==0&&!a.command.automatic_lean;request.heading_term_limit=heading_limit;
++        // patch 0028: Roll halten nur balancierend und ohne eigenen Rollbefehl (Gesten, Rollwelle)
++        request.roll_hold=roll_hold_enabled&&a.mode==1&&!standup_phase&&a.command.roll==128&&a.roll_phase==0;request.heading_term_limit=heading_limit;
+         s.motion=controller.step(in,request);a.roll_phase=request.roll_phase;a.height_phase=request.height_phase;
+         diag_ctrl11=s.motion.wheels.id11;diag_ctrl21=s.motion.wheels.id21;
+         if(!s.motion.valid){actions.requestMode(252,true);stop(StopReason::InvalidControl,true);result("invalid control output; stop latched");}
+diff --git a/firmware/src/motion_controller.cpp b/firmware/src/motion_controller.cpp
+index f8c6153..d0878a1 100644
+--- a/firmware/src/motion_controller.cpp
++++ b/firmware/src/motion_controller.cpp
+@@ -29,9 +29,6 @@ MotionResult MotionController::step(const MotionInput& i,MotionRequest& request)
+         reset(i.now_ms,std::isfinite(i.yaw_deg)?i.yaw_deg:0);return o;
+     }
+     auto command=request.command;
+-    // A zero speed-limit byte is legal. Avoid dividing by zero in the dormant
+-    // automatic lean branch while retaining the zero movement limit.
+-    if(command.max_forward==0||command.max_turn==0)command.automatic_lean=false;
+     command_.roll_phase=request.roll_phase;command_.height_phase=request.height_phase;
+     o.physical_position=control::wheelDistance(i.encoder11,i.encoder21);
+     o.position=control::wheelDistance(i.encoder11,request.original_position_feedback?int32_t(i.leg12_position):i.encoder21);
+diff --git a/firmware/tests/test_leg_position_controller.cpp b/firmware/tests/test_leg_position_controller.cpp
+index 47b6842..e8fef76 100644
+--- a/firmware/tests/test_leg_position_controller.cpp
++++ b/firmware/tests/test_leg_position_controller.cpp
+@@ -45,7 +45,7 @@ int main() {
+     // Wheel feedback and pitch cannot create a wheel command in this module.
+     i.pitch_deg=30;i.pitch_rate_rad_s=20;i.speed11=10000;i.speed21=-10000;
+     out=legs.step(i,a);assert(out.valid&&out.wheels.id11==0&&out.wheels.id21==0);
+-    a.command.max_forward=a.command.max_turn=0;a.command.automatic_lean=true;assert(legs.step(i,a).valid);
++    a.command.max_forward=a.command.max_turn=0;assert(legs.step(i,a).valid);
+     i.roll_deg=std::numeric_limits<float>::quiet_NaN();assert(!legs.step(i,a).valid);i.roll_deg=0;
+     a.roll_phase=std::numeric_limits<float>::infinity();assert(!legs.step(i,a).valid);a.roll_phase=0;
+     i.zero_a=1024;assert(!legs.step(i,a).valid);i.zero_a=601;
+diff --git a/firmware/tests/test_motion_controller.cpp b/firmware/tests/test_motion_controller.cpp
+index 082d04c..2b2421d 100644
+--- a/firmware/tests/test_motion_controller.cpp
++++ b/firmware/tests/test_motion_controller.cpp
+@@ -13,7 +13,7 @@ int main() {
+     i.mode=0;CHECK(!c.step(i,r).valid);
+     i.mode=1;auto fresh=c.step(i,r);CHECK(fresh.valid&&fresh.balance==first.balance);
+     i.speed11=std::numeric_limits<float>::quiet_NaN();CHECK(!c.step(i,r).valid);i.speed11=0;
+-    r.command.max_forward=0;r.command.max_turn=0;r.command.automatic_lean=true;CHECK(c.step(i,r).valid);
++    r.command.max_forward=0;r.command.max_turn=0;CHECK(c.step(i,r).valid);
+     r={};r.roll_phase=std::numeric_limits<float>::quiet_NaN();CHECK(!c.step(i,r).valid);
+     r={};r.height_phase=std::numeric_limits<float>::infinity();CHECK(!c.step(i,r).valid);
+     r={};c.reset();i.encoder11=100;i.encoder21=200;i.leg12_position=400;
