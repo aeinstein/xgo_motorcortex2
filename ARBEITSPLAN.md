@@ -125,7 +125,7 @@ Kosten am ESP32: zwei PI-Regler + Rampe je Takt, vernachlässigbar gegen die Lag
   standardmäßig den Rahmenweg (Nachlauf 0,15 / 0,1 s angenommen). Unit-Tests 569 grün (Bytewege-Tests auf
   `vel_frame = False`, neu `tests/test_fahrrahmen.py`). Am Rider eingespielt 11:27: dort noch Bytes (Treiber ohne `vel`).
   Treiber 12:04 eingespielt: xgonav fährt jetzt den Rahmenweg (Log „Fahrrahmen aktiv … 3.90 mm/s je Einheit“,
-  `vel_limits` 231 180.0 500), noch nicht gefahren. Offen: Messfahrt auf dem Rahmenweg; `turn_min_w` in `behaviors.dreh_w`, `speed_ctrl` und Pi-Rampe
+  `vel_limits` 231 180.0 500), gefahren (Messfahrt Rahmenweg oben). Offen: Überschwingen; `turn_min_w` in `behaviors.dreh_w`, `speed_ctrl` und Pi-Rampe
   nach der Messfahrt entfernen.
 
 - **Messfahrt 2026-11-25** (Byteweg, `tools/fw_einheit.py`, MCP geprüft geradeaus): v 0,2 / 0,3 je 3,5 s,
@@ -135,6 +135,12 @@ Kosten am ESP32: zwei PI-Regler + Rampe je Takt, vernachlässigbar gegen die Lag
   8,4 war der Faktor zum Soll, nicht zur Einheit. `fw_speed_unit_mm` = 3,9; Höchsttempo des Rahmens damit
   210 × 3,9 ≈ 0,82 m/s (v_max aus `vx_limit` × `max_v` = 0,9 m/s wird in der Firmware nicht geklemmt, fährt aber
   bei normierten Werten ≤ 0,5 nie dorthin).
+- **Messfahrt Rahmenweg 2026-11-25** (Treiber `vel`, MCP geprüft geradeaus, `fw_rahmen.csv`): Soll kommt richtig an
+  (v 0,2 → 46 Einheiten = 0,18 m/s, v 0,3 → 69 = 0,27 m/s, Rampe 0,4 s), aber das Ist schießt über: 46 → Spitze 83
+  (≈ 0,32 m/s) nach 1,8 s, am Ende (3,5 s) 50; 69 → Spitze 132 (≈ 0,51 m/s) nach 2 s, am Ende 72. Strecke 0,85 /
+  1,28 m statt ~0,6 / 0,9 m. Anhalten sauber. Deutung: der Bestandsregler fährt von sich aus 1,4–1,9 × Soll (wie im
+  Byteweg), das Integral (ki 0,05, i_max 4°) holt das erst in ~2 s zurück. Dazu Einheitenfehler in 0031: die
+  Vorsteuerung rechnet atan(a/9810 mm/s²) mit a in Firmware-Einheiten/s², also 3,9-mal zu klein (0,7° statt 2,9°).
 
 ### Zu klären
 
@@ -151,7 +157,7 @@ Kosten am ESP32: zwei PI-Regler + Rampe je Takt, vernachlässigbar gegen die Lag
 - Höchstwerte (größtes `a_max` ohne Kippen, größte Drehrate und Drehbeschleunigung) werden am Rider gemessen
   (Stufe 9), danach in `config.py` eingetragen.
 - Register 0xa0/0xa1 (`max_forward`/`max_turn`, Bereich der Bytes 0x30/0x32) kommen raus. Der alte Byteweg
-  rechnet fest mit 210 mm/s / 300 °/s, `automatic_lean` ebenso; die Konsolenbefehle `!maxforward`/`!maxturn`
+  rechnet fest mit 210 mm/s / 300 °/s (`automatic_lean` ist seit 0033 entfernt); die Konsolenbefehle `!maxforward`/`!maxturn`
   entfallen mit. Am Pi schreibt sie heute niemand.
 - Ruckbegrenzung kommt rein (Sollwertgenerator Stufe 2: S-Kurve für v und w). Rahmen in Stufe 1 um Ruck
   (mm/s³, °/s³) erweitern; Höchstwerte wie `a_max` in xgonav, gemessen in Stufe 9.
