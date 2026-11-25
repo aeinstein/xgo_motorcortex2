@@ -443,3 +443,19 @@ def test_handsteuerung_im_bogen_setzt_kruemmung():
     assert m.step(None, now=t).kappa is None
     m.set(0.0, 0.3, t, bogen=True)
     assert m.step(None, now=t).kappa is None                              # auf der Stelle: kein Bogen
+
+
+def test_handdrehung_schickt_kursziel_im_nachlauf():
+    """POST /turn: Nach der Ankunft schickt die Handsteuerung turn_settle_s lang weiter das Kursziel (Firmware 3c9f6fc0
+    hält den Kurs nur, solange Kursziel-Rahmen kommen), danach Stillstand ohne Kursziel."""
+    from xgonav.behaviors import Manual
+    cfg = Config.neutral()
+    m = Manual(cfg.behavior, cfg.robot)
+    t = 100.0
+    m.turn(90.0, 0.25, 3.0, t, 0.0, 10.0)
+    c = m.step(None, yaw=math.radians(88.5), now=t + 1.0)                 # innerhalb tol: angekommen
+    assert c.w == 0.0 and c.kurs is not None and c.kurs[0] == pytest.approx(math.radians(1.5))
+    c = m.step(None, yaw=math.radians(89.5), now=t + 1.5)                 # Nachlauf: weiter Kursziel
+    assert c.kurs is not None
+    c = m.step(None, yaw=math.radians(90.0), now=t + 1.0 + cfg.behavior.turn_settle_s + 0.01)
+    assert c.kurs is None and m.turn_info["fertig"]

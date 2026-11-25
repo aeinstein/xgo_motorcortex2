@@ -15,7 +15,7 @@ Planer, der Planer fährt den Rider, nach der Sicherheitsprüfung.
 | 2 | **Test: Anfahren an eine Wand** | geradeaus geprüft gefahren 2026-11-25 (unten) |
 | 3 | **Test: Fahren einer Bahn entlang.** Kurven glätten, Drehungen auf der Stelle vermeiden (Hauptgrund der Drift) | offen |
 | 4 | **Fahrregler in die Firmware.** Pi sendet Sollgeschwindigkeit und Drehrate in echten Einheiten, die Firmware regelt | erledigt, gefahren (unten) |
-| 5 | **Bahnbefehle für die Navigation.** Krümmung statt Drehrate, Drehen auf Kurs, Strecke mit Halt, Rückmeldung im Strom (Plan unten) | Stufe 0 fertig. Stufe 1: fertig, `vel_kappa` aus, nicht gefahren (MCP `fahren`/`folge` mit `bogen` dafür). Stufe 2: gefahren 2026-11-25 (±90°/±180°, Sollwinkel auf 0,5°, IMU-Kurs 2–4 % kürzer; Firmware-Fix 33a7c5a/3c9f6fc0 Kurs halten im Stand, geflasht, Pi-Seite und Nachfahrt offen), `vel_kurs` aus |
+| 5 | **Bahnbefehle für die Navigation.** Krümmung statt Drehrate, Drehen auf Kurs, Strecke mit Halt, Rückmeldung im Strom (Plan unten) | Stufe 0 fertig. Stufe 1: fertig, `vel_kappa` aus, nicht gefahren (MCP `fahren`/`folge` mit `bogen` dafür). Stufe 2: gefahren 2026-11-25 (±90°/±180°, Sollwinkel auf 0,5°, IMU-Kurs 2–4 % kürzer; Firmware-Fix 33a7c5a/3c9f6fc0 Kurs halten im Stand, geflasht, Pi-Seite fertig, Nachfahrt offen), `vel_kurs` aus |
 
 ## Bahnbefehle (Punkt 5, Plan 2026-11-25)
 
@@ -213,8 +213,8 @@ der Soll-Nick ab 1,4 s negativ, der Ist-Nick bis 2,1 s über 1,5°) – also meh
 - IMU-Kurs 2–4 % kürzer: kein Maßstabsfehler (Kurs-PID und Strom nutzen beide `imu.yaw_deg`). Original-Logik
   `addHeadingCorrection`: im Stand korrigiert der Kurs-PID nicht und setzt das Kursziel nach 200 ms auf den Ist-Kurs; der
   Nachlauf am Ende bleibt stehen. Firmware-Fix 33a7c5a (SHA 3c9f6fc0, `TurnControl::hold` solange Kursziel-Rahmen
-  kommen), geflasht 2026-11-25. Pi-Seite dazu offen: nach der Ankunft ~1 s weiter Kursziel-Rahmen schicken (Handdrehung
-  schaltet heute sofort auf Drehratenweg v 0), Nachkorrektur `KURS_NACH_*` dann entfernen (korrigierte doppelt).
+  kommen), geflasht 2026-11-25. Pi-Seite dazu: Handdrehung schickt im Nachlauf (`turn_settle_s` 1 s) weiter das
+  Kursziel, Nachkorrektur `KURS_NACH_*` entfernt (korrigierte doppelt).
 
 Stufe 1 (Bogen) von Hand: `/drive?bogen=1` bzw. MCP `fahren`/`folge` mit `bogen` setzt `Command.kappa` = w/v
 (seit 2026-11-25); mit `vel_kappa` fährt die Firmware diesen Kreis. Noch nicht gefahren.

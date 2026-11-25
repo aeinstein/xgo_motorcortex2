@@ -198,7 +198,11 @@ class Manual(Behavior):
             self.turn_info["grund"] = "angekommen" if ok else "Zeit abgelaufen"
         if now - t["ende"] >= self.cfg.turn_settle_s:       # Nachlauf mitgezählt
             self.turn_ende(self.turn_info["grund"])
-        return Command(0.0, 0.0, None, "Handsteuerung – gedreht %+.0f°" % math.degrees(t["summe"]))
+            return Command(0.0, 0.0, None, "Handsteuerung – gedreht %+.0f°" % math.degrees(t["summe"]))
+        # Nachlauf: weiter das Kursziel schicken (w 0 auf dem Drehratenweg). Mit Firmware 3c9f6fc0 hält der Kurs-Regler
+        # das Ziel nur, solange Kursziel-Rahmen kommen, und holt so den Rest auf (vorher blieben 2–4 % stehen)
+        return Command(0.0, 0.0, None, "Handsteuerung – gedreht %+.0f°" % math.degrees(t["summe"]),
+                       kurs=(t["soll"] - t["summe"], self.rcfg.w_of(t["w"])))
 
     def step(self, wd: World | None, yaw: float | None = None, now: float | None = None) -> Command:
         import time as _time                          # braucht keine Weltdaten (auch ohne Kamera)
