@@ -15,7 +15,7 @@ Planer, der Planer fährt den Rider, nach der Sicherheitsprüfung.
 | 2 | **Test: Anfahren an eine Wand** | geradeaus geprüft gefahren 2026-11-25 (unten) |
 | 3 | **Test: Fahren einer Bahn entlang.** Kurven glätten, Drehungen auf der Stelle vermeiden (Hauptgrund der Drift) | offen |
 | 4 | **Fahrregler in die Firmware.** Pi sendet Sollgeschwindigkeit und Drehrate in echten Einheiten, die Firmware regelt | erledigt, gefahren (unten) |
-| 5 | **Bahnbefehle für die Navigation.** Krümmung statt Drehrate, Drehen auf Kurs, Strecke mit Halt, Rückmeldung im Strom (Plan unten) | Stufe 1: Firmware geflasht (2a7f213d), Treiber geladen, xgonav eingespielt, `vel_kappa` aus, nicht gefahren |
+| 5 | **Bahnbefehle für die Navigation.** Krümmung statt Drehrate, Drehen auf Kurs, Strecke mit Halt, Rückmeldung im Strom (Plan unten) | Stufe 1: Firmware geflasht (2a7f213d), Treiber geladen, xgonav eingespielt, `vel_kappa` aus, nicht gefahren. Stufe 2: Firmware gebaut (ad2f52e, 4aabe9f6, nicht geflasht), Pi-Seite offen |
 
 ## Bahnbefehle (Punkt 5, Plan 2026-11-25)
 
@@ -67,6 +67,16 @@ Byte-Vertrag: Kopfkommentar in `firmware/src/velocity_cmd.h` und dieser Abschnit
   im Log und Drehratenweg.
 - Einheiten: κ 0,001 1/m, Δψ 0,1° (relativ zum Generatorwinkel bei Empfang), s mm (echte mm, Umrechnung über
   `unit_mm` aus 0x1b in der Firmware).
+- **Wechselbit (Ergänzung 2026-11-25, Stufe 2):** bit4 in 0x1a schreiben, nur mit bit2. Der Pi schickt Rahmen laufend
+  nach (Wächter); ein Kursziel-Rahmen setzt nur dann ein neues Ziel (Rest = Δψ, erreicht = 0), wenn vorher kein
+  Kursziel lief oder bit4 anders ist als im letzten Kursziel-Rahmen. Gleiche Rahmen = nur Wächter. Für ein neues Ziel
+  bit4 umschalten (auch nach Ankunft). Verworfen: bit1+bit2, bit4 ohne bit2, bit3 (bis Stufe 3), unbekannte Bits.
+- Kursziel: Feld v gilt wie im Geschwindigkeitsbetrieb (Drehen im Fahren = Bogen), alpha/Drehruck aus dem Rahmen,
+  w_max aus 0x1b. Die Firmware bremst mit Vorausschau (Bremswinkel aus `approach` auf 0), angekommen bei w = 0,
+  a = 0, |Rest| < 0,5°, danach hält der Kurs-PID. Wächter: v und w auf 0, Ziel bleibt offen, ein gleicher Rahmen
+  setzt fort. Drehraten- oder Krümmungsrahmen beenden das Kursziel; aus der Kurve ins Kursziel ohne Sprung.
+- **0x1a lesen, Flags (Ergänzung Stufe 2):** bit4 Krümmung läuft, bit5 Kursziel läuft, bit6 Kursziel erreicht;
+  Fähigkeiten 0x03 mit Stufe 2. Prüfvektoren haben seitdem zwei Spalten mehr: `rest` (°) und `done`.
 - Alte Rahmen (bit1–3 = 0) verhalten sich exakt wie geflasht; xgonav schaltet Stufe für Stufe um
   (`[robot] vel_kappa`, `vel_kurs`, `vel_strecke`, Default aus bis zur Fahrt).
 - Rückmeldung: Stromtyp 0x16 (Stufe 4), 0x14 bleibt unverändert.
