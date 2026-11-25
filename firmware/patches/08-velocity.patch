@@ -283,7 +283,7 @@ index 776c330..daa174a 100644
  void addWheelFriction(Wheels &);
  
 diff --git a/firmware/src/main.cpp b/firmware/src/main.cpp
-index 75d1306..504137f 100644
+index 75d1306..64dfa3d 100644
 --- a/firmware/src/main.cpp
 +++ b/firmware/src/main.cpp
 @@ -28,6 +28,7 @@ extern "C" {extern const volatile uint32_t rider_rl_only_build=0x524c4f31;}
@@ -445,7 +445,7 @@ index 75d1306..504137f 100644
          t.leg12_zero=s.calibration.zero_a;t.leg22_zero=s.calibration.zero_b;
          t.policy_mode=uint8_t(s.policy.mode);t.policy_model_id=policy.model().id;
          t.policy_trained=s.policy.trained;t.policy_valid=s.policy.model_valid;
-@@ -1100,6 +1137,30 @@ void console(const char* line,Print& out) {
+@@ -1100,6 +1137,33 @@ void console(const char* line,Print& out) {
      {float g=0;if(sscanf(line,"!gain %f",&g)==1){wheel_gain=g;out.printf("wheel gain %.3f\n",g);return;}}
      {float g=0;if(sscanf(line,"!speedcal %f",&g)==1){if(g>=.2f&&g<=4.f&&!shared.driving){speed_cal=g;out.printf("policy speed scale %.3f\n",g);}else out.println("ERR speedcal 0.2..4.0 and standstill");return;}}
      {int ms=0;if(sscanf(line,"!smooth %d",&ms)==1&&ms>=0){wheel_smooth_ms=unsigned(ms);out.printf("wheel smoothing %d ms\n",ms);return;}}
@@ -464,19 +464,22 @@ index 75d1306..504137f 100644
 +            if(x<0||x>20||y<0||y>5||vk<0||vk>5){out.println("ERR !turnctl KP(0..20) KD(0..5) FF(0..5 wheel units per deg/s)");return;}
 +            turn_kp=x;turn_kd=y;turn_ff=vk;out.printf("turn control kp %.2f kd %.2f ff %.2f\n",double(x),double(y),double(vk));return;}
 +        if(!strcmp(line,"!vel status")){const auto snap=snapshot();const uint8_t* d=snap.telemetry.veldiag;
-+            out.printf("velocity %s%s%s, limits %s: v %d mm/s, w %.1f deg/s, v_max %u mm/s, w_max %.1f deg/s, timeout %u ms\n",
-+                d[0]&1?"active":"off",d[0]&2?" (accel)":"",d[0]&4?" (timed out)":"",d[0]&8?"set":"missing",
-+                int(V::i16(d+2)),double(V::i16(d+4))*.1,unsigned(V::u16(d+6)),double(V::u16(d+8))*.1,unsigned(V::u16(d+10)));return;}
++            out.printf("velocity %s%s%s%s, limits %s: v %d mm/s, w %.1f deg/s, v_max %u mm/s, w_max %.1f deg/s, timeout %u ms, caps 0x%02x\n",
++                d[0]&1?"active":"off",d[0]&2?" (accel)":"",d[0]&4?" (timed out)":"",d[0]&16?" (kappa)":"",d[0]&8?"set":"missing",
++                int(V::i16(d+2)),double(V::i16(d+4))*.1,unsigned(V::u16(d+6)),double(V::u16(d+8))*.1,unsigned(V::u16(d+10)),unsigned(d[1]));return;}
 +        auto frame=[&](bool speed,float v,float acc,float w){uint8_t d[V::kFrameLen]={};d[0]=speed?0:V::kFlagNoSpeed;
 +            V::put16(d+1,uint16_t(V::sat16(v)));V::put16(d+3,uint16_t(V::sat16(acc)));V::put16(d+7,uint16_t(V::sat16(w*10)));
 +            protocolCommand(CommandKind::Velocity,d,sizeof d,out);};
++        if(sscanf(line,"!vel kappa %f %f",&x,&y)==2){   // V mm/s, κ 1/m (Krümmungsbetrieb, ohne Grenzen = Sprung)
++            uint8_t d[V::kFrameLen]={};d[0]=V::kFlagKappa;V::put16(d+1,uint16_t(V::sat16(x)));V::put16(d+7,uint16_t(V::sat16(y*1000)));
++            protocolCommand(CommandKind::Velocity,d,sizeof d,out);return;}
 +        if(sscanf(line,"!vel accel %f %f",&x,&y)==2){frame(false,0,x,y);return;}
 +        if(sscanf(line,"!vel %f %f",&x,&y)==2){frame(true,x,0,y);return;}
 +    }
      char cmd[20]={};int a=0,b=0,c=0,d=0;
      const int count=sscanf(line,"%19s %d %d %d %d",cmd,&a,&b,&c,&d);
      if(count==3&&!strcmp(cmd,"!move")){if(a<0||a>255||b<0||b>255){out.println("ERR expected bytes 0..255");return;}valueCommand(CommandKind::Forward,a,out);valueCommand(CommandKind::Turn,b,out);return;}
-@@ -1108,14 +1169,14 @@ void console(const char* line,Print& out) {
+@@ -1108,14 +1172,14 @@ void console(const char* line,Print& out) {
          const struct{const char* text;CommandKind kind;} maps[]={
              {"!action",CommandKind::Action},{"!loop",CommandKind::ActionLoop},{"!height",CommandKind::Height},
              {"!roll",CommandKind::Roll},{"!level",CommandKind::Leveling},{"!heading",CommandKind::HeadingHold},
@@ -490,7 +493,7 @@ index 75d1306..504137f 100644
      out.print(" | !standup | !restart");
      out.print(" | !led BYTE | !shutdown on/off");
      out.print(" | !lean on/off");
-+    out.print(" | !vel limits VMAX_mm_s WMAX_deg_s TIMEOUT_ms | !vel V_mm_s W_deg_s | !vel accel A_mm_s2 W_deg_s | !vel status | !velctl KI FF IMAX [KP] | !turnctl KP KD FF");
++    out.print(" | !vel limits VMAX_mm_s WMAX_deg_s TIMEOUT_ms | !vel V_mm_s W_deg_s | !vel accel A_mm_s2 W_deg_s | !vel kappa V_mm_s K_1_per_m | !vel status | !velctl KI FF IMAX [KP] | !turnctl KP KD FF");
      out.println();
  }
  }
@@ -542,10 +545,10 @@ index 8cf9b55..a85dbbb 100644
      uint32_t now_ms=0;
 diff --git a/firmware/src/velocity_cmd.h b/firmware/src/velocity_cmd.h
 new file mode 100644
-index 0000000..0174572
+index 0000000..4513f61
 --- /dev/null
 +++ b/firmware/src/velocity_cmd.h
-@@ -0,0 +1,176 @@
+@@ -0,0 +1,236 @@
 +#pragma once
 +// Fahrbefehl in echten Einheiten (Rahmenweg) mit Sollwertgenerator: Rampe mit Ruckbegrenzung (S-Kurve) statt Tiefpass.
 +//
@@ -564,18 +567,29 @@ index 0000000..0174572
 +//   baut sich mit dem Ruck ab). Ausgegeben werden v/w und die Soll-Beschleunigungen (für die Vorsteuerung des Reglers).
 +//   Die Sollwerte ersetzen in updateCommandTargets Tiefpass und 5er-Schritt (filtered_forward/turn = Sollwert).
 +//   Start aus der Fahrt: der Generator beginnt beim aktuellen filtered_forward/turn.
++// Krümmungsbetrieb (Flag bit1): Das Feld w trägt die Bahnkrümmung κ in 0,001 1/m statt der Drehrate. Im Takt
++//   w_soll = κ · v_soll · 180/π (aus dem Sollwert des Generators, nicht dem Ist: Kurs = ∫κ·v_soll dt, rauschfrei, am Pi
++//   nachrechenbar; keine Schwelle, w → 0 von selbst). Bahntreue unter den Grenzen: nicht w kappen, sondern die Fahrachse
++//   begrenzen: |v| ≤ w_max/|κ|, a ≤ alpha/|κ|, Ruck ≤ Drehruck/|κ| (alpha/Drehruck 0 = ohne Grenze). Ein neues κ läuft mit
++//   |dκ/dt| ≤ alpha/|v| nach (Klothoide), steht er (v = 0) oder ist alpha 0, springt es. Beim Wechsel in den Betrieb
++//   beginnt κ bei w/v des laufenden Sollwerts (aus dem Stand beim Ziel-κ). Rückwärts gleiches κ: derselbe Kreis
++//   rückwärts (w = κ·v < 0 bei κ > 0). Auch im Beschleunigungsbetrieb und beim Wächter: w folgt κ·v, die Bahn bleibt.
++//   Drehen auf der Stelle geht damit nicht (v = 0 -> w = 0). bit1 und bit2 (Kursziel, kommt noch) schließen sich aus;
++//   unbekannte Bits -> Rahmen verworfen (Zähler rejected_commands).
 +// Der zuletzt beschriebene Weg gilt: ein Byte 0x30/0x32, Neutral, Stopp, Aktion oder Armen beenden den Rahmenweg.
 +// Wächter: kommt timeout_ms lang kein Rahmen, rampt er v und w mit den Grenzen des letzten Rahmens auf 0
 +// (ohne Grenze mit kWatchdogAccel/kWatchdogAlpha), Beschleunigungsbetrieb aus.
 +//
 +// Register (little-endian):
-+//   0x1a schreiben, 13 Byte: 0 u8 Flags (bit0 = ohne Geschwindigkeit) | 1 i16 v mm/s | 3 i16 a mm/s² (Vorzeichen
-+//        nur im Beschleunigungsbetrieb) | 5 u16 Ruck mm/s³ | 7 i16 w 0,1 °/s | 9 u16 alpha °/s² | 11 u16 Drehruck °/s³
++//   0x1a schreiben, 13 Byte: 0 u8 Flags (bit0 = ohne Geschwindigkeit, bit1 = Krümmung) | 1 i16 v mm/s | 3 i16 a mm/s²
++//        (Vorzeichen nur im Beschleunigungsbetrieb) | 5 u16 Ruck mm/s³ | 7 i16 w 0,1 °/s, mit bit1 κ 0,001 1/m
++//        | 9 u16 alpha °/s² | 11 u16 Drehruck °/s³
 +//   0x1b schreiben, 14 Byte: 0 u16 v_max | 2 u16 w_max 0,1 °/s | 4 u16 Wächter ms (0 = aus)
 +//        | 6 u16 Einheit µm/s je Firmware-Einheit der Radgeschwindigkeit (0 = 1 mm/s; am Rider 3900)
 +//        | 8..13 ohne Bedeutung (xgonav schreibt dort ki, i_max, kv; der Regler nimmt eigene Werte, `!velctl`)
 +//   0x1a lesen, 12 Byte: 0 u8 Flags (bit0 Rahmenweg aktiv, bit1 Beschleunigungsbetrieb, bit2 Wächter hat gegriffen,
-+//        bit3 Grenzen gesetzt) | 1 u8 0 | 2 i16 v-Soll mm/s | 4 i16 w-Soll 0,1 °/s | 6 u16 v_max | 8 u16 w_max 0,1 °/s
++//        bit3 Grenzen gesetzt, bit4 Krümmungsbetrieb) | 1 u8 Fähigkeiten (bit0 Krümmung; bit1 Kursziel, bit2 Strecke,
++//        bit3 Strom 0x16 kommen noch; die Pi-Seite schaltet einen Betrieb nur bei gesetztem Bit ein) | 2 i16 v-Soll mm/s | 4 i16 w-Soll 0,1 °/s | 6 u16 v_max | 8 u16 w_max 0,1 °/s
 +//        | 10 u16 Wächter ms
 +//
 +// Header-only und ohne Hardware, damit tests/test_velocity_cmd.cpp es am Host prüfen kann.
@@ -586,7 +600,10 @@ index 0000000..0174572
 +namespace rider2 { namespace velocity {
 +
 +constexpr std::uint8_t kFrameLen = 13, kLimitsLen = 14, kDiagLen = 12;
-+constexpr std::uint8_t kFlagNoSpeed = 1;
++constexpr std::uint8_t kFlagNoSpeed = 1, kFlagKappa = 2, kFlagsKnown = kFlagNoSpeed | kFlagKappa;
++constexpr std::uint8_t kCaps = 1;            // Fähigkeitsbyte 0x1a lesen: bit0 Krümmung
++constexpr float kDeg = 57.29578f;            // ° je rad
++constexpr float kKappaMax = 32.767f;         // 1/m, Bereich des i16-Felds
 +// Byte-Bereich des alten Wegs (vorher 0xa0/0xa1, jetzt fest): für Positionshalten und LEDs, die noch Bytes lesen
 +constexpr float kByteForward = 210.0f, kByteTurn = 300.0f;
 +// Wächter ohne Grenze im letzten Rahmen: damit bremst er
@@ -600,6 +617,7 @@ index 0000000..0174572
 +    bool has_speed = true;
 +    float v = 0, a = 0, jerk = 0;        // mm/s, mm/s², mm/s³
 +    float w = 0, alpha = 0, jerk_w = 0;  // °/s, °/s², °/s³
++    bool kappa_mode = false; float kappa = 0;   // Krümmungsbetrieb (bit1): κ in 1/m, w dann 0
 +};
 +struct Axis { float x = 0, a = 0; };     // Sollwert und Soll-Beschleunigung einer Achse
 +struct State {
@@ -609,6 +627,7 @@ index 0000000..0174572
 +    bool ticked = false;
 +    Axis fwd{}, turn{};                  // mm/s + mm/s², °/s + °/s²
 +    float v = 0, w = 0;                  // ausgegebene Sollwerte mm/s, °/s (= fwd.x, turn.x)
++    bool kappa_on = false; float kappa = 0;   // Krümmungsbetrieb läuft, nachgeführtes κ in 1/m
 +};
 +
 +inline std::int16_t i16(const std::uint8_t* d) { return std::int16_t(std::uint16_t(d[0] | (d[1] << 8))); }
@@ -621,9 +640,12 @@ index 0000000..0174572
 +
 +inline bool parseFrame(const std::uint8_t* d, std::uint8_t len, Frame& f) {
 +    if (len != kFrameLen) return false;
++    if (d[0] & ~kFlagsKnown) return false;   // unbekannte Betriebsart: nicht raten
 +    f.has_speed = (d[0] & kFlagNoSpeed) == 0;
++    f.kappa_mode = (d[0] & kFlagKappa) != 0;
 +    f.v = i16(d + 1); f.a = i16(d + 3); f.jerk = u16(d + 5);
-+    f.w = i16(d + 7) * 0.1f; f.alpha = u16(d + 9); f.jerk_w = u16(d + 11);
++    if (f.kappa_mode) { f.kappa = i16(d + 7) * 0.001f; f.w = 0; } else { f.kappa = 0; f.w = i16(d + 7) * 0.1f; }
++    f.alpha = u16(d + 9); f.jerk_w = u16(d + 11);
 +    return true;
 +}
 +inline bool parseLimits(const std::uint8_t* d, std::uint8_t len, Limits& l) {
@@ -645,10 +667,12 @@ index 0000000..0174572
 +// Rahmenweg beenden (Byte-Befehl, Neutral, Stopp, Aktion, Armen).
 +inline void cancel(State& s) {
 +    s.active = false; s.accel_mode = false; s.timed_out = false; s.v = 0; s.w = 0; s.ticked = false;
-+    s.fwd = Axis{}; s.turn = Axis{};
++    s.fwd = Axis{}; s.turn = Axis{}; s.kappa_on = false; s.kappa = 0;
 +}
 +
 +inline float clampAbs(float x, float m) { return std::max(-m, std::min(m, x)); }
++// kleinere zweier Grenzen, 0 = ohne Grenze
++inline float minLimit(float a, float b) { return a <= 0 ? b : (b <= 0 ? a : std::min(a, b)); }
 +
 +// Eine Achse einen Schritt dt auf target zu, Beschleunigung ≤ amax, Ruck ≤ jmax (0 = ohne Grenze).
 +inline void approach(Axis& s, float target, float amax, float jmax, float dt) {
@@ -680,6 +704,42 @@ index 0000000..0174572
 +    s.x = clampAbs(s.x + s.a * dt, vmax);
 +}
 +
++// Krümmungsbetrieb (Kopfkommentar): Generator nur auf der Fahrachse, w = κ·v_soll. m = m/s je Einheit von v.
++inline void tickKappa(State& s, const Limits& l, std::uint32_t now_us, float dt) {
++    const Frame& f = s.frame;
++    const float m = l.unit_mm * 1e-3f;
++    const float target_k = clampAbs(f.kappa, kKappaMax);
++    if (!s.kappa_on) {   // Übernahme aus der Fahrt: κ aus dem laufenden w/v, sonst springt w
++        const float vm = s.fwd.x * m;
++        s.kappa = std::fabs(vm) > 1e-3f ? clampAbs(s.turn.x / kDeg / vm, kKappaMax) : target_k;
++        s.kappa_on = true;
++    }
++    // κ nachführen: |dκ/dt| ≤ alpha/|v| (Drehbeschleunigung aus der κ-Änderung ≤ alpha)
++    const float vm = std::fabs(s.fwd.x * m), al = f.alpha / kDeg;
++    if (al <= 0 || vm < 1e-6f) s.kappa = target_k;
++    else s.kappa += clampAbs(target_k - s.kappa, al / vm * dt);
++    // Grenzen der Fahrachse aus den Drehgrenzen (größeres von laufendem und Ziel-κ): rad/s je Einheit = |κ|·m
++    const float kk = std::max(std::fabs(s.kappa), std::fabs(target_k)) * m;
++    const float v_lim = kk > 0 ? std::min(l.v_max, l.w_max / kDeg / kk) : l.v_max;
++    const float a_lim = kk > 0 && f.alpha > 0 ? f.alpha / kDeg / kk : 0.0f;
++    const float j_lim = kk > 0 && f.jerk_w > 0 ? f.jerk_w / kDeg / kk : 0.0f;
++    if (l.timeout_ms && std::uint32_t(now_us - s.last_rx_us) > std::uint32_t(l.timeout_ms) * 1000u) {
++        if (!s.timed_out) { s.timed_out = true; s.accel_mode = false; }
++        const float a = std::fabs(f.a) > 0 ? std::fabs(f.a) : kWatchdogAccel;
++        approach(s.fwd, 0, minLimit(a, a_lim), minLimit(f.jerk, j_lim), dt);
++    } else if (s.accel_mode) {
++        const float a = minLimit(std::fabs(f.a), a_lim);
++        accelerate(s.fwd, f.a == 0 ? 0.0f : std::copysign(a, f.a), minLimit(f.jerk, j_lim), v_lim, dt);
++    } else {
++        approach(s.fwd, clampAbs(f.v, v_lim), minLimit(std::fabs(f.a), a_lim), minLimit(f.jerk, j_lim), dt);
++    }
++    // |v| ≤ w_max/|κ| auch, wenn κ gerade gewachsen ist (Bahn bleibt, w wird nie gekappt)
++    s.fwd.x = clampAbs(s.fwd.x, std::min(l.v_max, std::fabs(s.kappa) * m > 0 ? l.w_max / kDeg / (std::fabs(s.kappa) * m) : l.v_max));
++    s.turn.x = s.kappa * m * s.fwd.x * kDeg;
++    s.turn.a = s.kappa * m * s.fwd.a * kDeg;
++    s.v = s.fwd.x; s.w = s.turn.x;
++}
++
 +// Je Regeltakt, solange der Rahmenweg aktiv ist: Wächter, Generator, Grenzen. Ergebnis in s.v/s.w und s.fwd/s.turn.
 +// v_now/w_now: aktuelle gefilterte Sollwerte der Kaskade, Startwert beim ersten Takt (Übernahme aus der Fahrt).
 +inline void tick(State& s, const Limits& l, std::uint32_t now_us, float v_now = 0, float w_now = 0) {
@@ -691,6 +751,8 @@ index 0000000..0174572
 +    } else dt = std::min(0.05f, float(std::uint32_t(now_us - s.last_tick_us)) * 1e-6f);
 +    s.last_tick_us = now_us; s.ticked = true;
 +    const Frame& f = s.frame;
++    if (f.kappa_mode) { tickKappa(s, l, now_us, dt); return; }
++    s.kappa_on = false;
 +    if (l.timeout_ms && std::uint32_t(now_us - s.last_rx_us) > std::uint32_t(l.timeout_ms) * 1000u) {
 +        if (!s.timed_out) { s.timed_out = true; s.accel_mode = false; }
 +        const float a = std::fabs(f.a) > 0 ? std::fabs(f.a) : kWatchdogAccel;
@@ -714,8 +776,9 @@ index 0000000..0174572
 +}
 +
 +inline void fillDiag(std::uint8_t* d, const State& s, const Limits& l) {
-+    d[0] = std::uint8_t((s.active ? 1 : 0) | (s.accel_mode ? 2 : 0) | (s.timed_out ? 4 : 0) | (l.set ? 8 : 0));
-+    d[1] = 0;
++    d[0] = std::uint8_t((s.active ? 1 : 0) | (s.accel_mode ? 2 : 0) | (s.timed_out ? 4 : 0) | (l.set ? 8 : 0)
++                        | (s.active && s.kappa_on ? 16 : 0));
++    d[1] = kCaps;
 +    put16(d + 2, std::uint16_t(sat16(s.v))); put16(d + 4, std::uint16_t(sat16(s.w * 10.0f)));
 +    put16(d + 6, std::uint16_t(std::min(65535.0f, l.v_max))); put16(d + 8, std::uint16_t(std::min(65535.0f, l.w_max * 10.0f)));
 +    put16(d + 10, l.timeout_ms);

@@ -5,13 +5,18 @@
 // updateCommandTargets ohne Byte-Totband ankommt, der Byteweg aber unverändert bleibt.
 // Sollwertgenerator (S-Kurve): Beschleunigung ≤ a, Ruck ≤ Ruckgrenze, kein Überschwingen, Dauer wie gerechnet,
 // Umkehr, Beschleunigungsbetrieb mit Ruck, Wächter mit den Rahmengrenzen, Übernahme aus der Fahrt, Drehachse.
+// Krümmungsbetrieb (bit1): Format, Fähigkeitsbyte, w = κ·v_soll, Bahn auf dem Kreis (Anfahren/Bremsen/rückwärts/
+// Wächter), v/a durch w_max/alpha begrenzt, κ-Nachführung, Übernahme aus dem Drehratenweg; Prüfvektoren (XGO_VECTORS=1).
 // Aufruf: firmware/tests/run.sh test_velocity_cmd
 #include "velocity_cmd.h"
 #include "command_protocol.h"
 #include "control/rider_motion.h"
 #include <cmath>
 #include <cstdio>
+#include <cstdint>
+#include <cstdlib>
 #include <cstring>
+#include <vector>
 
 namespace V = rider2::velocity;
 using namespace rider2::protocol;
@@ -133,8 +138,182 @@ static void generatorTests() {
     }
 }
 
+
+// --- Krümmungsbetrieb (bit1): Szenarien als Folge von Rahmen, je Takt ausgewertet. Mit XGO_VECTORS=1 schreibt jedes
+// Szenario firmware/tests/vectors/<name>.csv (Lauf aus dem Repo-Root, run.sh), für den Nachbau am Pi
+// (tests/test_fahrrahmen.py): je Takt t_us, rx (1 = in diesem Takt neuer Rahmen, vor dem Takt angenommen), die 13
+// Rahmenbytes als Hex, Grenzen (v_max, w_max, Wächter, unit_mm) und danach v, w, a (Fahrachse), κ und timed_out.
+struct KEv { std::uint32_t t_us; std::uint8_t d[V::kFrameLen]; };
+struct KStep { std::uint32_t t_us; float v, w, a, kappa; bool timed_out, kappa_on; };
+static void kappaBytes(std::uint8_t* d, bool speed, int v, int a, int j, float kappa, int alpha, int jw) {
+    frameBytes(d, speed, v, a, j, 0, alpha, jw);
+    d[0] |= V::kFlagKappa; V::put16(d + 7, std::uint16_t(std::int16_t(std::lround(kappa * 1000.0f))));
+}
+static KEv kev(std::uint32_t t_us, const std::uint8_t* d) { KEv e; e.t_us = t_us; std::memcpy(e.d, d, V::kFrameLen); return e; }
+static constexpr std::uint32_t kTickUs = 4000;   // Regeltakt am Rider
+static std::vector<KStep> runScenario(const char* name, const V::Limits& l, const std::vector<KEv>& evs, float seconds) {
+    V::State s; std::vector<KStep> out; std::size_t next = 0;
+    FILE* csv = nullptr;
+    if (const char* env = std::getenv("XGO_VECTORS"); env && *env == '1') {
+        char path[256]; std::snprintf(path, sizeof path, "firmware/tests/vectors/%s.csv", name);
+        csv = std::fopen(path, "w");
+        if (!csv) std::printf("FEHLER Vektor %s nicht schreibbar\n", path);
+        else std::fprintf(csv, "t_us,rx,frame_hex,v_max,w_max,timeout_ms,unit_mm,v,w,a,kappa,timed_out\n");
+    }
+    const std::uint8_t* last = nullptr;
+    for (std::uint32_t t = 0; t <= std::uint32_t(seconds * 1e6f); t += kTickUs) {
+        bool rx = false;
+        while (next < evs.size() && evs[next].t_us <= t) {
+            V::Frame f; if (V::parseFrame(evs[next].d, V::kFrameLen, f)) V::receive(s, l, f, t);
+            last = evs[next].d; rx = true; ++next;
+        }
+        V::tick(s, l, t);
+        out.push_back({t, s.v, s.w, s.fwd.a, s.kappa, s.timed_out, s.kappa_on});
+        if (csv) {
+            char hex[2 * V::kFrameLen + 1] = {};
+            if (last) for (int i = 0; i < V::kFrameLen; ++i) std::snprintf(hex + 2 * i, 3, "%02x", last[i]);
+            std::fprintf(csv, "%u,%d,%s,%.9g,%.9g,%u,%.9g,%.9g,%.9g,%.9g,%.9g,%d\n", unsigned(t), rx ? 1 : 0, hex,
+                         double(l.v_max), double(l.w_max), unsigned(l.timeout_ms), double(l.unit_mm),
+                         double(s.v), double(s.w), double(s.fwd.a), double(s.kappa), s.timed_out ? 1 : 0);
+        }
+    }
+    if (csv) std::fclose(csv);
+    return out;
+}
+// Bahn aus v (Einheiten) und w (°/s): größter Abstand vom Kreis um (0, 1/κ) mit Radius 1/|κ|, in m.
+static float circleError(const std::vector<KStep>& tr, float kappa, float m, std::size_t from = 0, std::size_t to = SIZE_MAX) {
+    double x = 0, y = 0, psi = 0, worst = 0; const double r = 1.0 / kappa;
+    for (std::size_t i = 1; i < tr.size() && i < to; ++i) {
+        const double dt = (tr[i].t_us - tr[i - 1].t_us) * 1e-6;
+        const double pm = psi + 0.5 * tr[i].w / V::kDeg * dt;   // Mittelpunktregel
+        x += tr[i].v * m * dt * std::cos(pm); y += tr[i].v * m * dt * std::sin(pm);
+        psi += tr[i].w / V::kDeg * dt;
+        if (i >= from) worst = std::max(worst, std::fabs(std::hypot(x, y - r) - std::fabs(r)));
+    }
+    return float(worst);
+}
+static V::Limits kLimits(int timeout = 300) { V::Limits l = limits(600, 3000, timeout); l.unit_mm = 3.9f; return l; }
+
+static void kappaTests() {
+    const float m = 3.9e-3f;   // m/s je Einheit am Rider
+    // Format
+    {
+        std::uint8_t d[V::kFrameLen]; kappaBytes(d, true, 46, 128, 641, 2.0f, 360, 1800);
+        V::Frame f; check(V::parseFrame(d, sizeof d, f) && f.kappa_mode && near(f.kappa, 2.0f, 1e-6f) && f.w == 0,
+                          "Krümmung: bit1, Feld w = κ 0,001 1/m");
+        kappaBytes(d, true, 46, 128, 641, -32.767f, 360, 1800); V::parseFrame(d, sizeof d, f);
+        check(near(f.kappa, -32.767f, 1e-5f), "κ-Bereich ±32,767 1/m");
+        std::uint8_t u[V::kFrameLen]; frameBytes(u, true, 46, 0, 0, 100, 0, 0);
+        u[0] = 4; check(!V::parseFrame(u, sizeof u, f), "unbekanntes Bit (bit2) -> verworfen");
+        u[0] = 0x80; check(!V::parseFrame(u, sizeof u, f), "unbekanntes Bit (bit7) -> verworfen");
+        u[0] = 0; check(V::parseFrame(u, sizeof u, f) && !f.kappa_mode && near(f.w, 10.0f, 1e-5f), "ohne bit1: w wie bisher");
+        V::State s; V::Limits l = kLimits(); V::Frame k; k.kappa_mode = true; k.kappa = 1; k.v = 20;
+        V::receive(s, l, k, 0); V::tick(s, l, 0);
+        std::uint8_t g[V::kDiagLen]; V::fillDiag(g, s, l);
+        check(g[1] == V::kCaps && (g[1] & 1) && (g[0] & 16), "0x1a lesen: Fähigkeitsbyte bit0 Krümmung, Flag bit4 Krümmungsbetrieb");
+        V::cancel(s); V::fillDiag(g, s, l);
+        check(!(g[0] & 16) && !s.kappa_on && g[1] == V::kCaps, "nach Abbruch kein Krümmungsbetrieb, Fähigkeiten bleiben");
+    }
+    // Kreis v 46 (0,18 m/s), κ 2 1/m: Anfahren, 2,5 s, Bremsen auf 0; Bahn liegt auf dem Kreis
+    {
+        std::uint8_t a[V::kFrameLen], b[V::kFrameLen];
+        kappaBytes(a, true, 46, 128, 641, 2.0f, 360, 1800); kappaBytes(b, true, 0, 128, 641, 2.0f, 360, 1800);
+        std::vector<KEv> ev; for (std::uint32_t t = 0; t < 3000000; t += 100000) ev.push_back(kev(t, a));
+        for (std::uint32_t t = 3000000; t < 5000000; t += 100000) ev.push_back(kev(t, b));
+        const auto tr = runScenario("kappa_kreis", kLimits(), ev, 5.0f);
+        bool coupled = true, alpha_ok = true; float wpk = 0;
+        for (std::size_t i = 1; i < tr.size(); ++i) {
+            if (std::fabs(tr[i].w - 2.0f * m * tr[i].v * V::kDeg) > 1e-4f) coupled = false;
+            if (std::fabs(tr[i].w - tr[i - 1].w) > 360.0f * kTickUs * 1e-6f * 1.01f + 1e-4f) alpha_ok = false;
+            wpk = std::max(wpk, std::fabs(tr[i].w));
+        }
+        const float err = circleError(tr, 2.0f, m);
+        std::printf("       Kreis κ 2: größte Abweichung %.2f mm, w bis %.1f °/s, Ende v %.2f\n", double(err * 1000), double(wpk), double(tr.back().v));
+        check(coupled, "Kreis: w = κ · v_soll · 180/π in jedem Takt");
+        check(alpha_ok, "Kreis: Drehbeschleunigung ≤ alpha");
+        check(err < 0.01f, "Kreis: Bahn beim Anfahren, Fahren und Bremsen < 1 cm vom Kreis");
+        check(tr.back().v == 0 && tr.back().w == 0, "Kreis: steht am Ende (v = w = 0)");
+    }
+    // rückwärts mit gleichem κ: derselbe Kreis rückwärts (w < 0)
+    {
+        std::uint8_t a[V::kFrameLen]; kappaBytes(a, true, -46, 128, 641, 2.0f, 360, 1800);
+        std::vector<KEv> ev; for (std::uint32_t t = 0; t < 3000000; t += 100000) ev.push_back(kev(t, a));
+        const auto tr = runScenario("kappa_rueck", kLimits(), ev, 3.0f);
+        check(tr.back().w < 0 && near(tr.back().w, 2.0f * m * -46 * V::kDeg, 1e-3f), "rückwärts: w = κ·v < 0");
+        check(circleError(tr, 2.0f, m) < 0.01f, "rückwärts: derselbe Kreis");
+    }
+    // Grenze: κ 10 1/m, w_max 60 °/s -> |v| ≤ w_max/|κ| = 26,85 Einheiten, w nie über w_max
+    {
+        V::Limits l = limits(600, 600, 300); l.unit_mm = 3.9f;
+        std::uint8_t a[V::kFrameLen]; kappaBytes(a, true, 46, 128, 641, 10.0f, 360, 1800);
+        std::vector<KEv> ev; for (std::uint32_t t = 0; t < 3000000; t += 100000) ev.push_back(kev(t, a));
+        const auto tr = runScenario("kappa_grenze", l, ev, 3.0f);
+        float wpk = 0; for (const auto& x : tr) wpk = std::max(wpk, std::fabs(x.w));
+        const float vlim = 60.0f / V::kDeg / (10.0f * m);
+        check(near(tr.back().v, vlim, 0.01f) && wpk <= 60.0f + 1e-3f, "Grenze: v auf w_max/|κ| begrenzt, w ≤ w_max");
+        check(circleError(tr, 10.0f, m) < 0.01f, "Grenze: Bahn bleibt auf dem Kreis (r 10 cm)");
+    }
+    // S-Kurve: κ 2 -> -2 bei v 46: κ läuft mit |dκ/dt| ≤ alpha/|v| nach, w ohne Sprung
+    {
+        std::uint8_t a[V::kFrameLen], b[V::kFrameLen];
+        kappaBytes(a, true, 46, 128, 641, 2.0f, 360, 1800); kappaBytes(b, true, 46, 128, 641, -2.0f, 360, 1800);
+        std::vector<KEv> ev; for (std::uint32_t t = 0; t < 2000000; t += 100000) ev.push_back(kev(t, a));
+        for (std::uint32_t t = 2000000; t < 4000000; t += 100000) ev.push_back(kev(t, b));
+        const auto tr = runScenario("kappa_s", kLimits(), ev, 4.0f);
+        bool rate_ok = true, smooth = true;
+        for (std::size_t i = 1; i < tr.size(); ++i) {
+            const float vm = std::fabs(tr[i - 1].v * m);
+            if (vm > 1e-3f && std::fabs(tr[i].kappa - tr[i - 1].kappa) > 360.0f / V::kDeg / vm * kTickUs * 1e-6f * 1.001f + 1e-6f) rate_ok = false;
+            if (tr[i].t_us > 1000000 && std::fabs(tr[i].w - tr[i - 1].w) > 360.0f * kTickUs * 1e-6f * 1.01f) smooth = false;
+        }
+        check(rate_ok, "S-Kurve: |dκ/dt| ≤ alpha/|v|");
+        check(smooth, "S-Kurve: w ohne Sprung (Änderung je Takt ≤ alpha·dt)");
+        check(near(tr.back().kappa, -2.0f, 1e-6f) && tr.back().w < 0, "S-Kurve: am Ende κ -2, Rechtskurve");
+    }
+    // Übernahme: aus einer Fahrt mit w (alter Rahmen) in den Krümmungsbetrieb ohne Sprung in w
+    {
+        std::uint8_t a[V::kFrameLen], b[V::kFrameLen];
+        frameBytes(a, true, 46, 128, 641, 200, 360, 1800); kappaBytes(b, true, 46, 128, 641, 1.0f, 360, 1800);
+        std::vector<KEv> ev; for (std::uint32_t t = 0; t < 2000000; t += 100000) ev.push_back(kev(t, a));
+        for (std::uint32_t t = 2000000; t < 4000000; t += 100000) ev.push_back(kev(t, b));
+        const auto tr = runScenario("kappa_uebernahme", kLimits(), ev, 4.0f);
+        const std::size_t k = 2000000 / kTickUs;
+        check(!tr[k - 1].kappa_on && tr[k].kappa_on && std::fabs(tr[k].w - tr[k - 1].w) <= 360.0f * kTickUs * 1e-6f * 1.01f,
+              "Übernahme: Wechsel w -> κ ohne Sprung in w (κ beginnt bei w/v, dann ≤ alpha·dt je Takt)");
+        check(near(tr.back().kappa, 1.0f, 1e-6f) && near(tr.back().w, 1.0f * m * 46 * V::kDeg, 1e-3f), "Übernahme: am Ende κ 1");
+    }
+    // Wächter im Krümmungsbetrieb: bremst auf 0, w folgt κ·v, Bahn bleibt
+    {
+        std::uint8_t a[V::kFrameLen]; kappaBytes(a, true, 46, 128, 641, 2.0f, 360, 1800);
+        std::vector<KEv> ev; for (std::uint32_t t = 0; t < 1500000; t += 100000) ev.push_back(kev(t, a));
+        const auto tr = runScenario("kappa_waechter", kLimits(300), ev, 3.5f);
+        check(tr.back().timed_out && tr.back().v == 0 && tr.back().w == 0, "Wächter: steht, w = 0");
+        check(circleError(tr, 2.0f, m) < 0.01f, "Wächter: Bremsen auf dem Kreis");
+    }
+    // Beschleunigungsbetrieb mit κ: w = κ·v, a ≤ alpha/|κ|
+    {
+        std::uint8_t a[V::kFrameLen]; kappaBytes(a, false, 0, 2000, 0, 5.0f, 360, 0);
+        std::vector<KEv> ev; for (std::uint32_t t = 0; t < 1000000; t += 100000) ev.push_back(kev(t, a));
+        const auto tr = runScenario("kappa_accel", kLimits(), ev, 1.0f);
+        const float alim = 360.0f / V::kDeg / (5.0f * m);
+        bool ok = true; for (const auto& x : tr) if (std::fabs(x.a) > alim * 1.001f || std::fabs(x.w - 5.0f * m * x.v * V::kDeg) > 1e-3f) ok = false;
+        check(ok && tr.back().v > 0, "Beschleunigungsbetrieb: a ≤ alpha/|κ|, w = κ·v");
+    }
+    // Drehratenweg als Bezug für den Nachbau (alte Rahmen unverändert): v 46 + w 20 °/s, dann 0
+    {
+        std::uint8_t a[V::kFrameLen], b[V::kFrameLen];
+        frameBytes(a, true, 46, 128, 641, 200, 360, 1800); frameBytes(b, true, 0, 128, 641, 0, 360, 1800);
+        std::vector<KEv> ev; for (std::uint32_t t = 0; t < 2000000; t += 100000) ev.push_back(kev(t, a));
+        for (std::uint32_t t = 2000000; t < 3500000; t += 100000) ev.push_back(kev(t, b));
+        const auto tr = runScenario("rate_bezug", kLimits(), ev, 3.5f);
+        bool none = true; for (const auto& x : tr) if (x.kappa_on) none = false;
+        check(none && tr[1999999 / kTickUs].w == 20.0f && tr.back().v == 0, "Drehratenweg: kein Krümmungsbetrieb, w 20 °/s wie bisher");
+    }
+}
+
 int main() {
     generatorTests();
+    kappaTests();
     // --- Format
     {
         std::uint8_t d[V::kFrameLen]; frameBytes(d, true, -350, 800, 4000, -455, 120, 900);
@@ -216,6 +395,7 @@ int main() {
         V::Frame f; f.v = -120; f.w = 12.3f; V::receive(s, l, f, 0); V::tick(s, l, 0);
         std::uint8_t d[V::kDiagLen]; V::fillDiag(d, s, l);
         check(d[0] == (1 | 8), "Flags: aktiv, Grenzen gesetzt");
+        check(d[1] == V::kCaps, "Byte 1: Fähigkeiten");
         check(V::i16(d + 2) == -120 && V::i16(d + 4) == 123, "v und w x10 im Diagnose-Register");
         check(V::u16(d + 6) == 450 && V::u16(d + 8) == 725 && V::u16(d + 10) == 300, "Grenzen im Diagnose-Register");
     }

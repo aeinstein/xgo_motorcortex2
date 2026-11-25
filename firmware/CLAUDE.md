@@ -32,11 +32,11 @@ firmware/tests/run.sh [filter]        # Host-Tests (g++, nach build.sh); am PC k
 | 05-actions | Not-Aus, Aufstehen, Neustart, Aktionstabelle, Akku-Warnung hebt sich auf, kein Selbststart nach Sturz | 254, 253, 237 |
 | 06-leds | Helligkeit, Lauflicht beim Kalibrieren, LEDs Sache des Clients, Blau beim Herunterfahren | 0x12, 234/233 |
 | 07-balance | Positionshalten beim Drehen, Roll-Trimm, Roll halten, Fahr-Integral, Einlegen in Kurven (aus) | 232/231 |
-| 08-velocity | Fahrrahmen in mm/s und °/s, Sollwertgenerator, Geschwindigkeits- und Drehratenregler | 0x1a, 0x1b |
+| 08-velocity | Fahrrahmen in mm/s und °/s, Sollwertgenerator, Krümmungsbetrieb, Geschwindigkeits- und Drehratenregler | 0x1a, 0x1b |
 
 ## Stand am Rider
 
-Geflasht 2026-11-25 die Serie 01–08 (SHA 12556176…), Rückfallstand `out/app0_0035neu.bin` (0001–0035, SHA ef2a2894…). Gegenüber 0035 ohne Totcode und mit Tempo-Regelung nur über Soll − Ist (kv raus, kp 0,3, ki 0,15, i_max 8° in der Firmware, ki/i_max/kv aus 0x1b ignoriert); **noch nicht gefahren**. Einlegen in Kurven (232) war nie an; erst Vorzeichen in einer Kurve prüfen.
+Geflasht 2026-11-25 die Serie 01–08 (SHA 12556176…), Rückfallstand `out/app0_0035neu.bin` (0001–0035, SHA ef2a2894…). Gegenüber 0035 ohne Totcode und mit Tempo-Regelung nur über Soll − Ist (kv raus, kp 0,3, ki 0,15, i_max 8° in der Firmware, ki/i_max/kv aus 0x1b ignoriert); **noch nicht gefahren**. Gebaut, nicht geflasht: Krümmungsbetrieb (Stufe 1 aus ARBEITSPLAN.md Punkt 5, SHA 2a7f213d…). Byte-Vertrag: Kopfkommentar `velocity_cmd.h` + ARBEITSPLAN.md Punkt 5, Änderungen an beiden Stellen und an die xgonav-Sitzung melden; Prüfvektoren `tests/vectors/*.csv` neu schreiben (`XGO_VECTORS=1 firmware/tests/run.sh velocity_cmd` auf kimmy). Einlegen in Kurven (232) war nie an; erst Vorzeichen in einer Kurve prüfen.
 
 ## Schnittstelle zum Pi
 
