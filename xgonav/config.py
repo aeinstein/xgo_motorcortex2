@@ -75,12 +75,13 @@ class RobotCfg:
     # Firmware 0037: Integral des Tempo-Reglers (0031) in ° Soll-Nick je (Firmware-Einheit Fehler · s) und seine Grenze.
     # Messfahrt mit 0036 und ki 0,05: der Bestandsweg kroch weiter auf 1,13–1,26 × Soll (Fehler −8 → nur −0,4°/s);
     # ki 0,15 schwang (1,37 ×, ~3 s), daher 0,08 mit c 0,8 (Plateau lag bei Soll × c). Geht mit vel_limits (14 Byte).
-    vel_ki: float = 0.08
+    vel_ki: float = 0.02
     vel_i_max_deg: float = 6.0
     # Firmware 0038: Tempo-Vorsteuerung des Soll-Nicks −vel_kv · v_soll (° je Firmware-Einheit). Messfahrt mit Nick
     # 2026-11-25: beim Fahren hält der Nick-Regler das Tempo nur mit ~−0,05° je Einheit Abweichung (−2,2° bei 46,
     # −3,3° bei 73), die sonst das Integral lernen musste (Nachlauf, Schwingen; i_max 4° reichte nur bis ~80).
-    # Damit c (vel_stock_scale) wieder 1 und i_max 6°.
+    # Damit c (vel_stock_scale) wieder 1 und i_max 6°. Seit Firmware 0039 auf dem gemessenen Tempo (auf dem Soll
+    # bremste es nach der Rampe, das Integral lud sich auf); das Integral nur noch für den Rest, ki 0,02.
     vel_kv: float = 0.05
     # Die Beine haben eine Totzone: bei gleichem Befehl steht der Rider je nach Vorgeschichte bei
     # +0,7..+3,4° Roll (2026-11-05). Ein kurzer Impuls der Nivellierung in der Firmware richtet ihn

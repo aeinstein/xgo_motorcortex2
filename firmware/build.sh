@@ -49,6 +49,7 @@
 #   0036 Rahmenweg: Integral erst, wenn der Generator 0,6 s am Ziel ist (kein Windup beim Anfahren)
 #   0037 Rahmenweg: ki und i_max des Tempo-Integrals über 0x1b (14 Byte), damit xgonav sie einstellt
 #   0038 Rahmenweg: Tempo-Vorsteuerung des Soll-Nicks −kv·v_soll, kv über 0x1b (16 Byte)
+#   0039 Rahmenweg: Tempo-Vorsteuerung kv auf das gemessene Tempo statt aufs Soll
 # Braucht: git, python3 (venv), Internet beim ersten Lauf (PlatformIO lädt Toolchain ~1 GB).
 set -euo pipefail
 

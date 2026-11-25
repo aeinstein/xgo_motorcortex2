@@ -1,0 +1,28 @@
+diff --git a/firmware/src/control/rider_motion.cpp b/firmware/src/control/rider_motion.cpp
+index 3408b12..8628e78 100644
+--- a/firmware/src/control/rider_motion.cpp
++++ b/firmware/src/control/rider_motion.cpp
+@@ -108,7 +108,7 @@ float updateBalance(BalanceState &s,float target,float speed11,float speed21,
+         const float lim=s.speed.output_limit;
+         const float err=target-s.speed.measurement;
+         const float ff=vc->ff_gain*std::atan(vc->accel*vc->unit_mm/kGravityMmS2)*57.29578f   // 0035: a in mm/s²
+-                       -vc->kv*target;   // Patch 0038: Tempo-Vorsteuerung (Nick-Abweichung, die das Tempo hält)
++                       -vc->kv*s.speed.measurement;   // 0038/0039: Nick-Abweichung, die das gemessene Tempo hält
+         const float dt=std::max(0.0f,std::min(0.05f,vc->dt));
+         s.vel_settled=vc->accel==0?std::min(kVelSettleS,s.vel_settled+dt):0.0f;   // Patch 0036
+         if(holding)s.vel_i*=std::exp(-dt/kVelHoldTau);
+diff --git a/firmware/src/control/rider_motion.h b/firmware/src/control/rider_motion.h
+index 1bea734..b066a67 100644
+--- a/firmware/src/control/rider_motion.h
++++ b/firmware/src/control/rider_motion.h
+@@ -60,7 +60,9 @@ struct VelocityControl {
+     bool freeze=false;      // Integral anhalten (Hebeschutz)
+     float unit_mm=1.0f;     // Patch 0035: mm/s je Firmware-Einheit (für atan(a/g))
+     float stock_scale=1.0f; // Patch 0035: Speed-P und Radkorrektur des Originals sehen Soll × stock_scale
+-    float kv=0;             // Patch 0038: Soll-Nick −kv·Soll-Tempo (° je Firmware-Einheit), 0 = aus
++    float kv=0;             // Patch 0038/0039: Soll-Nick −kv·gemessenes Tempo (° je Firmware-Einheit), 0 = aus. Der Rider
++                            // braucht ~−0,05° je Einheit, um ein Tempo zu halten; auf das Soll gelegt (0038) bremste es
++                            // nach der Rampe, solange das Ist noch tief war. Auf dem Ist ist es genau dieser Bedarf.
+ };
+ constexpr float kVelHoldTau=1.5f, kVelOffTau=0.3f;   // s
+ // Patch 0036: das Integral läuft erst, wenn die Soll-Beschleunigung des Generators kVelSettleS lang 0 ist. Beim

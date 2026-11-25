@@ -60,6 +60,7 @@ Runs on Linux/macOS and on Windows in Git Bash (Python ≥ 3.8 as `python3` or `
 | 0036-velocity-integral-settle | `control/rider_motion.h/.cpp` | Drive frame: the 0031 integral only runs once the generator acceleration has been 0 for 0.6 s (`kVelSettleS`); a new ramp holds it, leaving the frame path resets the wait. Against windup while the actual speed lags the ramp (2026-11-25: 1.3–1.4 × target). Bit-identical off the frame path |
 | 0037-velocity-ki-limits | `velocity_cmd.h`, `command_protocol.cpp`, `main.cpp` | Drive frame: `0x1b` also takes 14 bytes: plus u16 ki in 1/10000 ° pitch per (firmware unit error · s) and u16 i_max in 0.01° (0 = console `!velctl` value; clamped ≤ 1 / ≤ 10°). When sent they override `!velctl` on every limits write |
 | 0038-velocity-speed-feedforward | `velocity_cmd.h`, `command_protocol.cpp`, `control/rider_motion.h/.cpp`, `main.cpp` | Drive frame: pitch-target feed-forward −kv·v_target in addition to atan(a/g); kv via `0x1b` with 16 bytes (u16 in 1/10000 ° per firmware unit, 0 = off, ≤ 0.2). The pitch loop needs a speed-proportional deviation (~−0.05° per unit, 2026-11-25) that the integral otherwise has to learn |
+| 0039-velocity-kv-measured | `control/rider_motion.h/.cpp` | Drive frame: the 0038 feed-forward uses the measured speed (−kv·v_actual) instead of the target; on the target it braked after the ramp while the actual speed was still low (2026-11-25) |
 
 Wheel 11 = left, 21 = right, 1024 ticks/rev, both positive forward. Host side: `xgo-drv` auto-detects 0x0d/0x0c ([../docs/driver.md](../docs/driver.md)).
 

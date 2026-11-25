@@ -194,6 +194,8 @@ Kosten am ESP32: zwei PI-Regler + Rampe je Takt, vernachlässigbar gegen die Lag
   −kv·v_soll (−2,3° / −3,5°) setzt voll ein, solange das Ist noch weit unter dem Soll ist -> er bremst; das Integral
   lädt sich in dieser Delle auf (+2,1° bei 1,8 s) und treibt danach über das Soll. Erklärt auch den Bestandsweg:
   Gleichgewicht 0,11·(s − v) = −0,05·v ergibt v = 1,83 · s (gemessen 1,8–1,9 ×).
+- **Firmware 0039 (Nutzer: so vorgehen):** kv auf das gemessene Tempo (−kv·v_ist): gleicht genau den Bedarf aus,
+  ohne Integral rechnerisch v = s, keine Delle; ki 0,02 nur für den Rest.
 
 ### Zu klären
 

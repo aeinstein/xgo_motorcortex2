@@ -7,7 +7,7 @@
 // 0035: Vorsteuerung mit unit_mm (a in Firmware-Einheiten/s²), stock_scale: Original-P sieht Soll × c, Integral
 // das volle Soll, aus/1 = bitgleich.
 // 0036: Integral erst, wenn der Generator kVelSettleS (0,6 s) lang a = 0 hat (kein Windup beim Anfahren); die
-// Integral-Tests setzen dafür vel_settled vorab (settle()). 0038: Tempo-Vorsteuerung −kv·v_soll.
+// Integral-Tests setzen dafür vel_settled vorab (settle()). 0038/0039: Tempo-Vorsteuerung −kv·v_ist.
 // Nach firmware/build.sh (Quellen mit Patches in firmware/build/), im Repo-Root:
 //   S=firmware/build/xgorider2_rl/firmware/src
 //   g++ -std=c++17 -ffp-contract=off -I $S firmware/tests/test_velocity_ctrl.cpp $S/control/rider_motion.cpp $S/control/pid.cpp -o t && ./t
@@ -134,6 +134,9 @@ int main() {
         BalanceState c, d2; VelocityControl rev = v1;
         const float r0 = step(c, -40, -40, 0, false, true, &v0), r1 = step(d2, -40, -40, 0, false, true, &rev);
         check(near(r1 - r0, 2.0f, 1e-4f), "0038: rückwärts mit umgekehrtem Vorzeichen");
+        BalanceState g0, g1;
+        const float m0 = step(g0, 60, 20, 0, false, true, &v0), m1 = step(g1, 60, 20, 0, false, true, &v1);
+        check(near(m1 - m0, -1.0f, 1e-4f), "0039: kv wirkt auf das gemessene Tempo (20 -> −1°), nicht aufs Soll");
         BalanceState e0, e1; VelocityControl off = v1; off.on = false;
         check(step(e0, 60, 60, 0, false, true, &off) == step(e1, 60, 60, 0, false, true, nullptr), "0038: ohne Rahmenweg keine Wirkung");
     }
