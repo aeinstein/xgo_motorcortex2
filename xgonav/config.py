@@ -25,7 +25,7 @@ class RobotCfg:
     # damit malgenommen (Robot.drive). Startwert; zur Laufzeit über den Temporegler im Web (POST /tempo),
     # gilt bis zum Neustart. Firmware-Aktionen (POST /action) fahren mit eigener Geschwindigkeit.
     tempo: float = 1.0
-    # Fahrrahmen (Firmware 0029–0032, xgonav/fahrrahmen.py, ARBEITSPLAN.md Punkt 4): Kennt der Treiber
+    # Fahrrahmen (Firmware-Patch 08-velocity, xgonav/fahrrahmen.py, ARBEITSPLAN.md Punkt 4): Kennt der Treiber
     # /proc/XGORider/vel und antwortet die Firmware, schickt Robot statt speed_x/speed_z Sollwerte in echten Einheiten
     # (normiert x vx_limit bzw. x vyaw_limit_dps) mit Beschleunigung und Ruck; die Firmware rampt (S-Kurve) und regelt
     # Tempo und Drehrate selbst (Rampe am Pi, speed_ctrl und turn_min_w seit 2026-11-25 entfernt; auf dem Byteweg
@@ -47,7 +47,7 @@ class RobotCfg:
     vel_jerk_w_dps3: float = 1800.0
     vel_timeout_ms: int = 500
     vel_limits_s: float = 2.0      # vel_limits so oft neu schreiben (ESP-Neustart verliert sie)
-    # Firmware 0035 (Messfahrten 2026-11-25, ARBEITSPLAN.md), gehen mit vel_limits an die Firmware: Der Original-P
+    # Firmware-Patch 08-velocity (Messfahrten 2026-11-25, ARBEITSPLAN.md), gehen mit vel_limits an die Firmware: Der Original-P
     # treibt den Rider auf ~1,8 × Soll, weil er beim Fahren eine Nick-Abweichung proportional zum Tempo braucht;
     # vel_kv liefert sie (Soll-Nick −kv · gemessenes Tempo, ° je Firmware-Einheit). 0,05 gab 0,8 × Soll, 0,025 hält
     # v 0,2 / 0,4 auf ±4 %, v 0,3 / 0,5 auf +11 %. Das Integral (vel_ki ° je Einheit Fehler · s, Grenze
@@ -64,7 +64,7 @@ class RobotCfg:
     # Nivellieren beim Fahren (Nutzer 2026-11-24: nach dem Drehen auf der Stelle bleibt ein Roll stehen): Fährt er
     # level_drive_delay_s lang geradeaus (|v| über dem Totband, |w| <= level_drive_w_max, Rollbefehl 0), bleibt die
     # Nivellierung der Firmware an, bis er dreht, anhält oder ein Rollbefehl kommt; der gefundene Trimm bleibt
-    # danach stehen (Patch 0012). Im Drehen nie: Fliehkraft und Dreh-Effekt (+1,8° links) wären sonst der Sollwert,
+    # danach stehen (Firmware-Patch 07-balance). Im Drehen nie: Fliehkraft und Dreh-Effekt (+1,8° links) wären sonst der Sollwert,
     # die Firmware schaltet sie selbst ab ab Drehbefehl 128±16. Kosten am Pi: ein Vergleich je 0,2 s, Schreiben nur
     # beim Wechsel.
     level_while_driving: bool = True
@@ -83,7 +83,7 @@ class RobotCfg:
     height_min_mm: float = 60.0
     height_max_mm: float = 120.0   # min/max legen nur die Skala mm -> u8 fest
     height_limit_u8: int = 205     # höchster Sollwert; bei 235 Stopp 252 (2026-11-06, Ursache offen)
-    # LED-Helligkeit (Firmware-Patch 0016, n/256, settings/led_brightness). Das Web speichert sie in led_file,
+    # LED-Helligkeit (Firmware-Patch 06-leds, n/256, settings/led_brightness). Das Web speichert sie in led_file,
     # rc.local setzt sie beim Booten. Beim Start blitzt xgonav led_start_s lang mit 255 (Zeichen „läuft“),
     # danach wieder der gespeicherte Wert; 0 = ohne Blitz, nur setzen.
     led_file: str = "/var/lib/xgonav/led_brightness"
@@ -189,7 +189,7 @@ class ImuCfg:
     enabled: bool = True
     proc_dir: str = "/proc/XGORider"
     imu_hz: int = 50               # wird beim Start nach settings/imu_hz geschrieben
-    # IMU/Rad-Strom der Firmware (Patch 0014) mit eigener Messzeit statt Abfrage; > 0 wird beim Start nach
+    # IMU/Rad-Strom der Firmware (Patch 02-pi-interface) mit eigener Messzeit statt Abfrage; > 0 wird beim Start nach
     # settings/imu_stream_hz geschrieben (Treiber mit Strom-Unterstützung). Ohne Strom fragt der Treiber wie bisher ab.
     stream_hz: int = 100
     # Abgesetzt (Rider balanciert nicht) braucht niemand 100 Hz: Strom und Lesen auf diese Rate, beim Aufstehen wieder
@@ -202,7 +202,7 @@ class ImuCfg:
     time_offset_ms: float | None = 10.5   # IMU-Zeit = Bildzeit + dies; None = automatisch
     # IMU-Rohpitch bei der Kamerakalibrierung (calibrate.py wall): -4.43; seit 2026-11-17 -4.23 (Nick +0,2°): Flur
     # mit 2,04 m befahrbarer Breite (Nutzer) kam in drei Rundumblicken mit Roll-Korrektur auf 1,98 m, mit +0,25° auf 2,03-2,05 m.
-    # Seit 2026-11-18 -6.23: Firmware 0021 (Lage aus dem Schwerkraftvektor, Nick-Kreisel kalibriert) liefert den Nick ~2° tiefer
+    # Seit 2026-11-18 -6.23: Lagefusion 04-attitude (Lage aus dem Schwerkraftvektor, Nick-Kreisel kalibriert) liefert den Nick ~2° tiefer
     # (vorher stand er wegen des unkalibrierten Nick-Kreisels ~2,3° zu hoch); Nutzer am Bild im Browser geprüft.
     # Seit 2026-11-19 -5.0: Flurfahrt 20261119-122328 (Flur 2,04 m) kam mit -6.23 auf 1,53 (hin) / 1,67 m (zurück),
     # 2,04 m bei +1,4° / +1,0°.
@@ -461,7 +461,7 @@ class EmotionCfg:
 
 @dataclass
 class OdomCfg:
-    # Rad-Odometrie aus /proc/XGORider/wheels_log: die Radhälfte des IMU-Stroms (Firmware 0014), ohne Strom aus 0x0d.
+    # Rad-Odometrie aus /proc/XGORider/wheels_log: die Radhälfte des IMU-Stroms (Firmware-Patch 02-pi-interface), ohne Strom aus 0x0d.
     # source: "auto" = Räder, wenn vorhanden und frisch, sonst Fahrbefehl x vx_limit;
     # "command" = immer Fahrbefehl (wie früher).
     enabled: bool = True
@@ -1237,10 +1237,10 @@ ENTFERNT.update({f"pet.{k}": "pet folgt seit 2026-11-22 mit der Routine des Modu
 ENTFERNT.update({"robot.max_sent": "seit 2026-11-23: Grenze ist robot.max_v/max_w, gesendet wird höchstens ±1",
                  "robot.manual_forward_gain": "seit 2026-11-23: Handsteuerung = max_v x tempo x 1",
                  "robot.reverse_gain": "seit 2026-11-23: Firmware fährt seit 2026-11-05 symmetrisch",
-                 "robot.vel_stock_scale": "seit 2026-11-25: Vorfaktor des Bestandswegs entfernt (Firmware 0035, vel_kv)"})
-ENTFERNT.update({k: "seit 2026-11-25 keine Untergrenze mehr, die Firmware regelt kleine Drehraten (Patch 0032)"
+                 "robot.vel_stock_scale": "seit 2026-11-25: Vorfaktor des Bestandswegs entfernt (Firmware-Patch 08-velocity, vel_kv)"})
+ENTFERNT.update({k: "seit 2026-11-25 keine Untergrenze mehr, die Firmware regelt kleine Drehraten (Firmware-Patch 08-velocity)"
                  for k in ("pet.turn_min_w", "dunkel.turn_min_w", "robot.turn_min_w")})
-ENTFERNT.update({f"robot.{k}": "seit 2026-11-25: Tempo regelt und rampt die Firmware (Fahrrahmen, Patch 0030/0035)"
+ENTFERNT.update({f"robot.{k}": "seit 2026-11-25: Tempo regelt und rampt die Firmware (Fahrrahmen, Firmware-Patch 08-velocity)"
                  for k in ("speed_ctrl", "speed_ctrl_window_s", "speed_ctrl_ti_s", "speed_ctrl_lag_s",
                            "speed_ctrl_max", "accel_v", "accel_w")})
 UMBENANNT = {"freespace.shadow_net": "freespace.net"}

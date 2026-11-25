@@ -1,0 +1,419 @@
+attitude: Lagefusion als Richtungsvektor, Kreisel-Nullpunkte, Startkalibrierung im Stillstand
+
+diff --git a/firmware/src/control/rider_leg_imu.cpp b/firmware/src/control/rider_leg_imu.cpp
+index 6b434d4..24d302f 100644
+--- a/firmware/src/control/rider_leg_imu.cpp
++++ b/firmware/src/control/rider_leg_imu.cpp
+@@ -116,41 +116,147 @@ bool updateImu(ImuState &s, const std::uint8_t *raw, std::size_t size,
+     // 0x400d3110 called before filtering. Firmware adds 251 readings /250,
+     // then arms on the following successful sample; do not silently correct it.
+     if (uptime_ms > 750 && !s.calibrated) {
+-        if (s.calibration_count > 250) s.calibrated = s.just_calibrated = true;
+-        else {
++        if (s.calibration_count > 250) {
++            // Die Messung gilt nur, wenn der Rider dabei still lag. Das Original prüft das nicht; wird er
++            // beim Einschalten noch bewegt (Hand am Schalter), steht der Gier-Nullpunkt um 12-20 °/s daneben,
++            // und trackYawBias holt das nicht zurück (verwirft alle Fenster). Still heißt: Spanne je
++            // Kreiselachse < 1,5 °/s (in Ruhe 0,3-0,43) und je Beschleunigungsachse < 0,5 m/s^2.
++            // Sonst von vorn. Nach kCalibrationMaxTries Versuchen (~15 s) gilt die Messung wie im
++            // Original, damit er auch auf unruhigem Grund startet.
++            bool still = true;
++            for (int n = 0; n < 3; ++n)
++                still = still && s.cal_gyro_max[n] - s.cal_gyro_min[n] < kCalibrationGyroSpan &&
++                        s.cal_accel_max[n] - s.cal_accel_min[n] < kCalibrationAccelSpan;
++            // Die Nullpunkte von Roll- und Nick-Kreisel kommen aus demselben Fenster. Lag er
++            // nicht still (Annahme nach kCalibrationMaxTries), bleiben sie 0 und die Fusion führt sie nach.
++            if (still || s.calibration_tries >= kCalibrationMaxTries) {
++                s.calibrated = s.just_calibrated = true;
++                s.bias_from_boot = still;
++                s.bias_settle_s = still ? 0.0f : float(kBiasSettleTime);
++                if (!still) s.gyro_bias[0] = s.gyro_bias[1] = 0;
++            } else {
++                ++s.calibration_tries;
++                s.calibration_count = 0;
++                s.gyro_bias[0] = s.gyro_bias[1] = s.gyro_bias[2] = 0;
++            }
++        } else {
+             if (std::fabs(s.roll_deg) < 4.0f) {
++                for (int n = 0; n < 3; ++n) {   // Spannen über das Messfenster
++                    if (s.calibration_count == 0 || s.gyro_deg_s[n] < s.cal_gyro_min[n]) s.cal_gyro_min[n] = s.gyro_deg_s[n];
++                    if (s.calibration_count == 0 || s.gyro_deg_s[n] > s.cal_gyro_max[n]) s.cal_gyro_max[n] = s.gyro_deg_s[n];
++                    if (s.calibration_count == 0 || s.acceleration[n] < s.cal_accel_min[n]) s.cal_accel_min[n] = s.acceleration[n];
++                    if (s.calibration_count == 0 || s.acceleration[n] > s.cal_accel_max[n]) s.cal_accel_max[n] = s.acceleration[n];
++                }
+                 ++s.calibration_count;
+-                s.gyro_bias[2] += s.gyro_deg_s[2] / 250.0f;
++                for (int n = 0; n < 3; ++n) s.gyro_bias[n] += s.gyro_deg_s[n] / 250.0f;
+             } else {
+                 s.calibration_count = 0;
+-                s.gyro_bias[2] = 0;
++                s.gyro_bias[0] = s.gyro_bias[1] = s.gyro_bias[2] = 0;
+             }
+             s.calibration_yaw_deg = s.yaw_deg;
+         }
+     }
+     const float yaw_rate = s.gyro_deg_s[2] - s.gyro_bias[2];
++    // Lage als Richtung "oben" in Körperachsen (s.up, Einheitsvektor, Achsen wie acceleration).
++    //  - Der Kreisel dreht den Vektor weiter (du/dt = -w x u). Das ist die vollständige Kinematik: Der Anteil
++    //    einer Drehung um die Senkrechte in Nick- und Rollrate steckt darin, für jede Lage, ohne dass ein
++    //    Winkel aus dem Beschleunigungssensor dafür gebraucht wird.
++    //  - Alle drei Nullpunkte sind abgezogen (Startkalibrierung; Nick und Roll laufen unten langsam nach).
++    //    Im Original war der Nick-Kreisel nie kalibriert (RiderPi -1,15 °/s): der Nick stand ~2° zu hoch.
++    //  - Roll- und Nick-Kreisel sehen einen kleinen Teil der Gierrate mit (Achsen nicht genau rechtwinklig
++    //    zur Beschleunigung): kGyroNickGier, kGyroRollGier, gemessen 2026-11-18.
++    //  - Der Beschleunigungssensor zieht den Vektor nur langsam nach (kFusionTau) und mit weniger Gewicht,
++    //    wenn sein Betrag nicht zu 1 g passt oder schnell gedreht wird. Die Querbeschleunigung der
++    //    Kurvenfahrt (v * Gierrate, v aus den Rädern) ist vorher abgezogen. Nichts wird festgehalten.
++    // Messung RiderPi 2026-11-18 (Register 0x15, Bremsdrehungen aus 0,5 m/s mit 90 °/s): Roll-Fehler
++    // vorher bis 4,9°, so <= 0,9°; Nick nach der Drehung vorher bis 4° daneben, so bei der Kamera.
++    constexpr double kD2R = 0.017453292519943295, kR2D = 57.29577951308232;
++    const bool cal = s.calibrated;
++    double w[3] = {-(double(s.gyro_deg_s[1]) - (cal ? double(s.gyro_bias[1]) : 0.0)) * kD2R,
++                   (double(s.gyro_deg_s[0]) - (cal ? double(s.gyro_bias[0]) : 0.0)) * kD2R,
++                   double(yaw_rate) * kD2R};
++    w[0] += kGyroNickGier * w[2];
++    w[1] += kGyroRollGier * w[2];
++    const double dt = double(std::uint32_t(now_us - s.last_us)) * 0.000001;
++    s.last_us = now_us;
++    // Fahrgeschwindigkeit aus den Radticks (Mittel beider Räder), geglättet mit kSpeedTau
++    if (s.wheels_fresh && s.ticks_seen && dt > 0.0 && dt < 0.05) {
++        const double ticks = 0.5 * (double(std::int32_t(std::uint32_t(s.wheel_ticks[0]) - std::uint32_t(s.last_ticks[0]))) +
++                                    double(std::int32_t(std::uint32_t(s.wheel_ticks[1]) - std::uint32_t(s.last_ticks[1]))));
++        const double k = dt < kSpeedTau ? dt / kSpeedTau : 1.0;
++        s.speed_m_s = float(double(s.speed_m_s) + (ticks * kMeterPerTick / dt - double(s.speed_m_s)) * k);
++    } else if (!s.wheels_fresh) s.speed_m_s = 0;
++    s.ticks_seen = s.wheels_fresh;
++    s.last_ticks[0] = s.wheel_ticks[0]; s.last_ticks[1] = s.wheel_ticks[1];
++
++    const double a[3] = {double(s.acceleration[0]) - double(s.speed_m_s) * w[2], double(s.acceleration[1]),
++                         double(s.acceleration[2])};
++    const double a_norm = std::sqrt(a[0] * a[0] + a[1] * a[1] + a[2] * a[2]);
++    double u[3] = {double(s.up[0]), double(s.up[1]), double(s.up[2])};
++    if (!s.up_valid && a_norm > 1.0) {
++        for (int n = 0; n < 3; ++n) u[n] = a[n] / a_norm;
++        s.up_valid = true;
++    }
++    auto normalize = [](double *v) {
++        const double len = std::sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
++        if (len > 1e-9) { v[0] /= len; v[1] /= len; v[2] /= len; }
++    };
++    // Kreisel: zweite Ordnung in dt, danach auf Länge 1
++    const double c1[3] = {w[1] * u[2] - w[2] * u[1], w[2] * u[0] - w[0] * u[2], w[0] * u[1] - w[1] * u[0]};   // w x u
++    if (dt > 0.0 && dt < 0.05) {
++        const double c2[3] = {w[1] * c1[2] - w[2] * c1[1], w[2] * c1[0] - w[0] * c1[2], w[0] * c1[1] - w[1] * c1[0]};
++        for (int n = 0; n < 3; ++n) u[n] += -c1[n] * dt + 0.5 * c2[n] * dt * dt;
++        normalize(u);
++    }
++    // Nick- und Rollrate der Lagewinkel (nicht der Körperachsen) für Regler und Diagnose, Vorzeichen wie
++    // bisher: der Winkel nimmt mit positiver Rate ab.
++    const double den_p = u[1] * u[1] + u[2] * u[2], den_r = u[0] * u[0] + u[2] * u[2];
++    const float pitch_gyro = den_p > 1e-6 ? float((-c1[1] * u[2] + u[1] * c1[2]) / den_p * -kR2D) : 0.0f;
++    const float roll_gyro = den_r > 1e-6 ? float((-c1[0] * u[2] + u[0] * c1[2]) / den_r * -kR2D) : 0.0f;
+     if (std::fabs(s.gyro_pitch_filtered - s.gyro_deg_s[1]) < 1400.0f)
+-        s.gyro_pitch_filtered = float(double(s.gyro_deg_s[1] - s.gyro_bias[1]) * 0.7 +
++        s.gyro_pitch_filtered = float(double(pitch_gyro) * 0.7 +
+                                       double(s.gyro_pitch_filtered) * 0.3);
+     if (std::fabs(s.gyro_roll_filtered - s.gyro_deg_s[0]) < 1800.0f)
+-        s.gyro_roll_filtered = float(double(s.gyro_deg_s[0] - s.gyro_bias[0]) * 0.93 +
++        s.gyro_roll_filtered = float(double(roll_gyro) * 0.93 +
+                                      double(s.gyro_roll_filtered) * 0.07);
+     s.pitch_rate_rad_s = float(double(s.gyro_pitch_filtered) / 57.3);
+-    // Firmware uses atanf(y/z), not atan2. Keep the float intermediate.
+-    const float accel_pitch = float(double(std::atan(s.acceleration[1] / s.acceleration[2])) * 57.2958);
+-    const float accel_roll = float(double(std::atan(s.acceleration[0] / s.acceleration[2])) * 57.2958);
+-    s.accel_pitch_filtered = float(double(s.accel_pitch_filtered) * 0.97 + double(accel_pitch) * 0.03);
+-    s.accel_roll_filtered = float(double(s.accel_roll_filtered) * 0.92 + double(accel_roll) * 0.08);
+-    const double dt = double(std::uint32_t(now_us - s.last_us)) * 0.000001;
+-    s.last_us = now_us;
+-    const double pitch_weight = s.calibrated ? 1.0 / (double(std::fabs(s.gyro_pitch_filtered)) + 500.0) : 0.05;
+-    const double roll_weight = 1.0 / (double(std::fabs(s.gyro_roll_filtered)) + 200.0);
+-    s.pitch_deg = float((double(s.pitch_deg) - double(s.gyro_pitch_filtered) * dt) * (1.0 - pitch_weight) +
+-                        double(s.accel_pitch_filtered) * pitch_weight);
++    // Beschleunigung: vor der Startkalibrierung schnell folgen (wie das Original mit Gewicht 0,05), danach
++    // langsam und gewichtet. Die Nullpunkte von Nick und Roll laufen mit kFusionBiasTau nach, aber nur bei
++    // kleinem Abstand (sonst würde eine grobe Abweichung, etwa nach einem Neustart, sie verstellen).
++    // Wurde die Startkalibrierung bewegt angenommen, sind die Nullpunkte von Nick und Roll unbekannt (0). Mit
++    // den langsamen Zeitkonstanten stünde der Nick dann lange um Nullpunkt * kFusionTau daneben (RiderPi ~9°);
++    // deshalb kBiasSettleTime lang schnell nachziehen und nachführen.
++    const bool settle = cal && s.bias_settle_s > 0.0f;
++    if (settle && dt > 0.0 && dt < 0.05) s.bias_settle_s -= float(dt);
++    double weight = 0.0;
++    if (a_norm > 1.0 && s.up_valid) {
++        double alpha = 0.05;
++        if (cal) {
++            const double am = (a_norm - kGravity) / kAccelTrust;
++            const double wm = std::sqrt(w[0] * w[0] + w[1] * w[1] + w[2] * w[2]) / (kRateTrust * kD2R);
++            weight = 1.0 / (1.0 + am * am) / (1.0 + wm * wm);
++            alpha = dt > 0.0 && dt < 0.05 ? weight * dt / (settle ? kFusionTauSettle : kFusionTau) : 0.0;
++        }
++        double d[3], err2 = 0.0;
++        for (int n = 0; n < 3; ++n) { d[n] = a[n] / a_norm - u[n]; err2 += d[n] * d[n]; d[n] *= alpha; }
++        if (cal && err2 < kBiasMaxError * kBiasMaxError) {
++            const double tau_b = settle ? kFusionBiasTauSettle : kFusionBiasTau;
++            const double bx = (u[1] * d[2] - u[2] * d[1]) / tau_b;   // (u x d), Drehraten-Nullpunkt rad/s
++            const double by = (u[2] * d[0] - u[0] * d[2]) / tau_b;
++            s.gyro_bias[1] = clamp(float(double(s.gyro_bias[1]) - bx * kR2D), -kBiasLimit, kBiasLimit);
++            s.gyro_bias[0] = clamp(float(double(s.gyro_bias[0]) + by * kR2D), -kBiasLimit, kBiasLimit);
++        }
++        for (int n = 0; n < 3; ++n) u[n] += d[n];
++        normalize(u);
++    }
++    for (int n = 0; n < 3; ++n) s.up[n] = float(u[n]);
++    s.pitch_deg = float(std::atan(u[1] / u[2]) * 57.2958);
+     s.pitch_rad = float(double(s.pitch_deg) / 57.3);
+-    s.roll_deg = float((double(s.roll_deg) - double(s.gyro_roll_filtered) * dt) * (1.0 - roll_weight) +
+-                       double(s.accel_roll_filtered) * roll_weight);
+-    if (std::fabs(yaw_rate) > 2.0f) s.yaw_deg = float(double(s.yaw_deg) + double(yaw_rate) * dt);
++    s.roll_deg = float(std::atan(u[0] / u[2]) * 57.2958);
++    // Kurs: Drehrate um die Senkrechte (w . u), nicht nur die Hochachse des Sensors; erst nach der
++    // Startkalibrierung integrieren (ohne Totband): vorher ist gyro_bias[2] eine Teilsumme.
++    if (s.calibrated && dt > 0.0 && dt < 0.05)
++        s.yaw_deg = float(double(s.yaw_deg) + (w[0] * u[0] + w[1] * u[1] + w[2] * u[2]) * kR2D * dt);
+ 
+     // 0x400d37b1..3839: preserve the firmware's AND between pitch and roll tests.
+     // Calling code changes mode to 1 immediately on calibration completion.
+@@ -163,4 +269,53 @@ bool updateImu(ImuState &s, const std::uint8_t *raw, std::size_t size,
+     s.tilt_fault = s.tilt_count > 165;
+     return true;
+ }
++
++// Kommentar in rider_leg_imu.h. Fenster von 1 s: mittlere Abweichung Gyro - Referenz,
++// Nullpunkt mit Zeitkonstante 5 s (Still) bzw. 15 s (Räder) nachziehen. Schnelle Drehungen
++// (Räder rutschen) und unruhige Lage (getragen) verwerfen das Fenster.
++void trackYawBias(ImuState &s, YawBiasTracker &t, YawReference ref,
++                  std::int32_t e11, std::int32_t e21, std::uint32_t now_us) {
++    const double dt = double(std::uint32_t(now_us - t.last_us)) * 0.000001;
++    t.last_us = now_us;
++    const float rate = s.gyro_deg_s[2] - s.gyro_bias[2];
++    bool calm = s.calibrated && ref != YawReference::None && std::fabs(rate) < 6.0f && dt > 0.0 && dt < 0.02;
++    // Still: nur kleine Restdrehung zulassen (Nullpunktfehler durch Erwärmung ~0,5 °/s); getragen
++    // oder bewegt erkennt die Beschleunigungsspanne im Fenster (0,5 m/s^2 ~ 3° Kippen).
++    if (calm && ref == YawReference::Still) calm = std::fabs(rate) < 1.5f;
++    if (!calm || !t.open || ref != t.ref) {
++        t.open = calm;
++        t.ref = ref;
++        t.gyro_deg = t.window_s = 0;
++        t.e11 = e11; t.e21 = e21;
++        for (int n = 0; n < 3; ++n) t.accel_min[n] = t.accel_max[n] = s.acceleration[n];
++        return;
++    }
++    t.gyro_deg += double(rate) * dt;
++    t.window_s += dt;
++    for (int n = 0; n < 3; ++n) {
++        if (s.acceleration[n] < t.accel_min[n]) t.accel_min[n] = s.acceleration[n];
++        if (s.acceleration[n] > t.accel_max[n]) t.accel_max[n] = s.acceleration[n];
++    }
++    if (t.window_s < 1.0) return;
++    double ref_deg = 0, tau_s = 5.0;
++    bool use = true;
++    if (ref == YawReference::Wheels) {
++        const std::int32_t d11 = std::int32_t(std::uint32_t(e11) - std::uint32_t(t.e11));
++        const std::int32_t d21 = std::int32_t(std::uint32_t(e21) - std::uint32_t(t.e21));
++        ref_deg = double(d21 - d11) * kWheelYawDegPerTick;
++        tau_s = 15.0;
++        use = std::fabs(ref_deg) < 5.0 * t.window_s;
++    } else {
++        for (int n = 0; n < 3; ++n) use = use && t.accel_max[n] - t.accel_min[n] < 0.5f;
++    }
++    if (use) {
++        const double err = (t.gyro_deg - ref_deg) / t.window_s;
++        const double step = (err > 2.0 ? 2.0 : err < -2.0 ? -2.0 : err) * t.window_s / tau_s;
++        s.gyro_bias[2] = float(double(s.gyro_bias[2]) + step);
++        ++t.updates;
++    }
++    t.gyro_deg = t.window_s = 0;
++    t.e11 = e11; t.e21 = e21;
++    for (int n = 0; n < 3; ++n) t.accel_min[n] = t.accel_max[n] = s.acceleration[n];
++}
+ }} // namespace rider::control
+diff --git a/firmware/src/control/rider_leg_imu.h b/firmware/src/control/rider_leg_imu.h
+index 9d17310..faadf8e 100644
+--- a/firmware/src/control/rider_leg_imu.h
++++ b/firmware/src/control/rider_leg_imu.h
+@@ -38,16 +38,29 @@ float updateBalanceBias(BalanceBiasState &state, std::uint8_t previous_mode,
+ struct ImuState {
+     float acceleration[3]{}; // body axes: [-raw AX,-raw AY,+raw AZ], m/s^2
+     float gyro_deg_s[3]{};   // body axes: [-raw GY,+raw GX,+raw GZ]
+-    float gyro_bias[3]{};    // original IMU +60,+64,+68; only yaw calibrated here
++    float gyro_bias[3]{};    // original IMU +60,+64,+68; all three from the boot calibration, roll/pitch tracked
+     float roll_deg = 0, pitch_deg = 0, yaw_deg = 0; // IMU +96,+100,+104
+     float pitch_rad = 0, pitch_rate_rad_s = 0;    // 3ffc3080 +8,+12
+     float calibration_yaw_deg = 0;               // 3ffc3064
+     float gyro_roll_filtered = 0, gyro_pitch_filtered = 0;
+-    float accel_roll_filtered = 0, accel_pitch_filtered = 0;
++    // Lage als Richtung "oben" in Körperachsen (Einheitsvektor, Achsen wie acceleration);
++    // roll_deg/pitch_deg werden daraus gebildet. wheel_ticks/wheels_fresh setzt der Aufrufer vor updateImu
++    // (Räder 11, 21; nicht frisch -> Geschwindigkeit 0, kein Abzug der Querbeschleunigung).
++    float up[3]{0, 0, 1};
++    bool up_valid = false;
++    std::int32_t wheel_ticks[2]{}, last_ticks[2]{};
++    bool wheels_fresh = false, ticks_seen = false;
++    float speed_m_s = 0;
++    bool bias_from_boot = false;                         // Nullpunkte Roll/Nick aus der Startkalibrierung
++    float bias_settle_s = 0;                             // Restzeit der schnellen Nachführung (Kalibrierung bewegt angenommen)
+     float last_accel_x = 0, last_accel_y = 0;
+     std::uint16_t identical_samples = 0, calibration_count = 0, tilt_count = 0;
+     std::uint32_t last_us = 0;
+     bool calibrated = false, just_calibrated = false, tilt_fault = false;
++    // Startkalibrierung nur im Stillstand. Spannen von Kreisel und Beschleunigung über das
++    // laufende Messfenster und die Zahl der verworfenen Fenster.
++    float cal_gyro_min[3]{}, cal_gyro_max[3]{}, cal_accel_min[3]{}, cal_accel_max[3]{};
++    std::uint8_t calibration_tries = 0;
+     // Diagnose-Register 0x15: laufende Summen der Rohwerte jeder Probe, in Körperachsen wie
+     // acceleration/gyro_deg_s, aber als Sensor-Zählwerte vor jeder Rechnung (Beschleunigung 19,6/32768
+     // m/s^2 je Zählwert, Kreisel 2000/32768 °/s). Laufen über (mod 2^32); wer zweimal liest, bekommt aus
+@@ -57,6 +70,23 @@ struct ImuState {
+     std::uint16_t raw_samples = 0;
+     std::uint32_t raw_us = 0;
+ };
++// Grenzen der Stillstandsprüfung (Kommentar in updateImu).
++constexpr float kCalibrationGyroSpan = 1.5f;    // °/s je Achse
++constexpr float kCalibrationAccelSpan = 0.5f;   // m/s^2 je Achse
++constexpr std::uint8_t kCalibrationMaxTries = 20;   // danach gilt die Messung wie im Original (~15 s)
++// Größen der Lagefusion (Kommentar in updateImu), gemessen am RiderPi 2026-11-18.
++constexpr double kGyroNickGier = -0.0124;  // Anteil der Gierrate in der Drehrate um die Körper-x-Achse (Nick)
++constexpr double kGyroRollGier = 0.0099;   // Anteil der Gierrate in der Drehrate um die Körper-y-Achse (Roll)
++constexpr double kFusionTau = 8.0;         // s, Nachziehen zur Beschleunigung bei vollem Gewicht
++constexpr double kFusionBiasTau = 40.0;    // s, Nachführen der Nullpunkte Nick/Roll
++constexpr double kFusionTauSettle = 2.0, kFusionBiasTauSettle = 4.0, kBiasSettleTime = 30.0;   // s, nach bewegter Startkalibrierung
++constexpr double kBiasMaxError = 0.05;     // rad (~2,9°): darüber kein Nachführen der Nullpunkte
++constexpr float kBiasLimit = 5.0f;         // °/s, Grenze der Nullpunkte Nick/Roll
++constexpr double kGravity = 9.99;          // m/s^2, Betrag der Beschleunigung in Ruhe (Maßstab dieses Sensors)
++constexpr double kAccelTrust = 0.5;        // m/s^2 Abweichung des Betrags -> halbes Gewicht
++constexpr double kRateTrust = 60.0;        // °/s Drehrate -> halbes Gewicht
++constexpr double kSpeedTau = 0.05;         // s, Glättung der Fahrgeschwindigkeit aus den Radticks
++constexpr double kMeterPerTick = 3.14159265358979 * 0.060 / 1024.0;
+ // raw: 12-byte big-endian sensor register window 0x0b..0x16.
+ // Returns false only for an invalid caller buffer; performs no I2C or motor I/O.
+ // just_calibrated requests mode=1; tilt_fault requests the original stop action.
+@@ -64,4 +94,24 @@ bool updateImu(ImuState &state, const std::uint8_t *raw, std::size_t size,
+                std::uint32_t now_us, std::uint32_t uptime_ms,
+                std::uint8_t robot_mode);
+ 
++// Gyro-z-Nullpunkt laufend nachführen. R-1.1.6 misst ihn nur einmal 0,5 s nach dem
++// Start und integriert die Gier erst ab 2 °/s; erwärmt sich der Sensor, liegt der Nullpunkt
++// daneben (0,48 °/s, nach 75 s Drehprobe 31° Kursfehler). Hier ohne Totband. Referenz je
++// IMU-Probe: Wheels = balanciert, Drehung aus der Encoder-Differenz; Still = liegt/steht still
++// (Drehung 0, nur wenn Gyro und Beschleunigung ruhig sind); None = keine (Fenster verwerfen).
++enum class YawReference : std::uint8_t { None = 0, Wheels = 1, Still = 2 };
++struct YawBiasTracker {
++    double gyro_deg = 0, window_s = 0;   // Integral (gz - Nullpunkt) im laufenden Fenster, ohne Totband
++    std::int32_t e11 = 0, e21 = 0;       // Encoder bei Fensterbeginn
++    float accel_min[3]{}, accel_max[3]{};
++    std::uint32_t last_us = 0;
++    YawReference ref = YawReference::None;
++    bool open = false;
++    std::uint16_t updates = 0;           // Zahl der Nachführungen
++};
++constexpr double kWheelYawDegPerTick = 0.1170;  // (pi*0,060 m/1024)/0,090 m in Grad, am Rider gegen IMU gemessen
++// Nach updateImu je Probe aufrufen; encoder11/21 vorwärts positiv (11 = links), Drehung links +.
++void trackYawBias(ImuState &state, YawBiasTracker &tracker, YawReference ref,
++                  std::int32_t encoder11, std::int32_t encoder21, std::uint32_t now_us);
++
+ }} // namespace rider::control
+diff --git a/firmware/src/main.cpp b/firmware/src/main.cpp
+index f7057a7..61fd8dd 100644
+--- a/firmware/src/main.cpp
++++ b/firmware/src/main.cpp
+@@ -86,6 +86,10 @@ volatile uint32_t dz_reset_request=0;
+ constexpr const char* kBuildId="rider2-rl-only | rider_balance_v6 | lift guard v4 | dead-zone preload v3 | free-fall guard 60 ms + low-g = fall (v3) + LED fault codes | servo-dropout auto re-arm | 2026-10-24";
+ volatile uint32_t wheel_smooth_ms=0;
+ volatile float yaw_slew_per_second=20000.0f;
++// Ausgleich des Gleichgewichtspunkts: Die Lagefusion liefert den wahren Nick, der gespeicherte Nick-Trimm ist
++// aber mit dem ~2° zu hohen Nick des Originals eingelernt (Nullpunkt des Nick-Kreisels nie abgezogen). Regler,
++// Aufstehen und Wächter bekommen Nick + kBalanceOffsetDeg; nach außen (Register, Datenstrom, Status) geht der wahre.
++constexpr float kBalanceOffsetDeg=2.05f;   // RiderPi 2026-11-18: hält im Stand die Stelle auf 3 mm
+ float yaw_command_filtered=0;
+ bool yaw_filter_init=false;
+ uint32_t last_filter_us=0;
+@@ -173,6 +177,8 @@ public:
+     rider2::lift::State lift_state;rider2::lift::Config lift_config;bool lift_acting=false;uint32_t control_dt_us=0;
+     rider2::lift::Log lift_log;   // überlebt stop(), Register 0x19
+     int16_t diag_ctrl11=0,diag_ctrl21=0;   // classic controller output before gain/smoothing/slew (0x0e)
++    rider::control::YawBiasTracker yaw_bias_tracker;   // gyro-z bias tracking
++    float ctrlPitch() const {return s.imu.pitch_deg+kBalanceOffsetDeg;}   // Nick für Regler und Wächter
+     rider2::imustream::Producer imu_stream_prod;
+     rider2::fall::State fall_state,fall_deep_state;rider2::fall::Config fall_config,fall_deep_config=rider2::fall::deepConfig();uint32_t fall_last_us=0;
+     double trim_to_save=0;
+@@ -352,7 +358,7 @@ public:
+     }
+     GuardInput guard(uint32_t now,bool overrun=false) {
+         GuardInput g;g.now_ms=now;g.imu_ms=s.imu_ms;g.imu_valid=imu_valid;
+-        g.imu_calibrated=s.imu.calibrated;g.pitch=s.imu.pitch_deg;g.roll=s.imu.roll_deg;
++        g.imu_calibrated=s.imu.calibrated;g.pitch=ctrlPitch();g.roll=s.imu.roll_deg;
+         g.calibration_valid=s.calibration.flash_read_ok&&s.calibration.marker_valid&&s.calibration.zeros_valid&&s.calibration.pitch_trim_valid;
+         g.manual_stop=manual_stop;g.calibrating=leg_calibrating||save_trim_pending||board.state().calibration_pressed;
+         g.low_battery=board.state().stop_required;g.control_overrun=overrun;
+@@ -382,6 +388,10 @@ public:
+                 fall_state=rider2::fall::update(fall_state,fall_config,fin);
+                 fall_deep_state=rider2::fall::update(fall_deep_state,fall_deep_config,fin);
+             }
++            {   // Radticks für die Fahrgeschwindigkeit der Lagefusion (Querbeschleunigung v * Gierrate)
++                const auto& r11=bus.sample(11);const auto& r21=bus.sample(21);
++                s.imu.wheel_ticks[0]=r11.encoder_ticks;s.imu.wheel_ticks[1]=r21.encoder_ticks;s.imu.wheels_fresh=r11.fresh(now,40)&&r21.fresh(now,40);
++            }
+             const bool low_g_read=norm<=1000000&&imu_board.diagnostics().identical_samples<250;   // the chip answered, the acceleration is ~0: a fall, not a fault
+             imu_valid=norm>1000000&&imu_board.diagnostics().identical_samples<250&&
+                 rider::control::updateImu(s.imu,raw,12,sample_us,now,actions.state().mode)&&
+@@ -397,6 +407,16 @@ public:
+                     imuStreamRing.push(x);
+                 }
+             }
++            // Gyro-z-Nullpunkt nachführen. Referenz beim Balancieren die Encoder-Differenz
++            // (beide Räder frisch), sonst Stillstand (liegt/sitzt; Bewegung verwirft trackYawBias selbst).
++            if(imu_valid) {
++                using rider::control::YawReference;
++                const auto& w11=bus.sample(11);const auto& w21=bus.sample(21);
++                YawReference ref=YawReference::None;
++                if(driving&&actions.state().mode==1&&!lift_acting&&w11.fresh(now,40)&&w21.fresh(now,40))ref=YawReference::Wheels;
++                else if(!driving&&!leg_calibrating)ref=YawReference::Still;
++                rider::control::trackYawBias(s.imu,yaw_bias_tracker,ref,w11.encoder_ticks,w21.encoder_ticks,sample_us);
++            }
+             if(imu_valid)s.imu_ms=now;else ++s.imu_rejected;
+             // A tilt while already stopped is only the operator handling the
+             // robot. Requesting mode 0 here would strand it (no arm button in
+@@ -471,7 +491,7 @@ public:
+         state.fresh=(imu_valid||deep_low)&&(uint32_t(now-s.imu_ms)<=30||deep_low)&&
+             bus.sample(11).fresh(now,100)&&bus.sample(21).fresh(now,100)&&
+             bus.sample(12).fresh(now,250)&&bus.sample(22).fresh(now,250);
+-        state.pitch_deg=s.imu.pitch_deg;state.roll_deg=s.imu.roll_deg;
++        state.pitch_deg=ctrlPitch();state.roll_deg=s.imu.roll_deg;
+         state.pitch_rate_rad_s=s.imu.pitch_rate_rad_s;
+         state.roll_rate_deg_s=s.imu.gyro_roll_filtered;
+         state.yaw_rate_deg_s=s.imu.gyro_deg_s[2]-s.imu.gyro_bias[2];
+@@ -583,7 +603,7 @@ public:
+             else if(reason==StopReason::Actuators)actions.requestMode(251,true);
+             else if(reason!=StopReason::Calibration&&reason!=StopReason::Manual)actions.requestMode(252,true);
+         }
+-        if(reason==StopReason::None&&!manual_stop&&!leg_calibrating)actions.controlTick(now,s.imu.pitch_deg,s.imu.roll_deg);
++        if(reason==StopReason::None&&!manual_stop&&!leg_calibrating)actions.controlTick(now,ctrlPitch(),s.imu.roll_deg);
+         const auto ev=actions.takeEvents();
+ #if !RIDER2_RL_ONLY
+         if(ev.has(rider2::HoldReset))controller.resetHold(a.last_reset_ms);
+@@ -603,7 +623,7 @@ public:
+             s.control_timing.end(micros());return;
+         }
+         MotionInput in;in.now_ms=now;in.mode=a.mode;in.calibrated=s.imu.calibrated;
+-        in.pitch_deg=s.imu.pitch_deg;in.roll_deg=s.imu.roll_deg;in.yaw_deg=s.imu.yaw_deg;in.pitch_rate_rad_s=s.imu.pitch_rate_rad_s;
++        in.pitch_deg=ctrlPitch();in.roll_deg=s.imu.roll_deg;in.yaw_deg=s.imu.yaw_deg;in.pitch_rate_rad_s=s.imu.pitch_rate_rad_s;
+         in.speed11=bus.sample(11).filtered_speed_mm_s;in.speed21=bus.sample(21).filtered_speed_mm_s;
+         in.encoder11=bus.sample(11).encoder_ticks;in.encoder21=bus.sample(21).encoder_ticks;in.leg12_position=bus.sample(12).position_ticks;
+         in.zero_a=s.calibration.zero_a;in.zero_b=s.calibration.zero_b;in.pitch_trim=s.calibration.pitch_trim;
+@@ -637,7 +657,7 @@ public:
+             {
+                 rider2::lift::Input lift_in;
+                 lift_in.speed11=bus.sample(11).filtered_speed_mm_s;lift_in.speed21=bus.sample(21).filtered_speed_mm_s;
+-                lift_in.pitch_deg=s.imu.pitch_deg;lift_in.roll_deg=s.imu.roll_deg;
++                lift_in.pitch_deg=ctrlPitch();lift_in.roll_deg=s.imu.roll_deg;
+                 lift_in.pitch_rate_deg_s=s.imu.pitch_rate_rad_s*57.2957795f;lift_in.roll_rate_deg_s=s.imu.gyro_roll_filtered;
+                 lift_state=rider2::lift::update(lift_state,lift_config,lift_in);
+             }
+@@ -669,7 +689,7 @@ public:
+                 rider2::lift::LogSample ls;ls.ms=now;
+                 ls.speed11=bus.sample(11).filtered_speed_mm_s;ls.speed21=bus.sample(21).filtered_speed_mm_s;
+                 ls.raw11=bus.sample(11).raw_speed;ls.raw21=bus.sample(21).raw_speed;
+-                ls.forward=s.motion.command.filtered_forward;ls.pitch=s.imu.pitch_deg;ls.guard_enabled=lift_guard_enabled;
++                ls.forward=s.motion.command.filtered_forward;ls.pitch=ctrlPitch();ls.guard_enabled=lift_guard_enabled;
+                 rider2::lift::logTick(lift_log,lift_state.active,ls);
+             }
+             if(lift_acting){s.motion.wheels.id11=0;s.motion.wheels.id21=0;policy.resetHistory();}

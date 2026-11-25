@@ -1,6 +1,6 @@
 """Rad-Odometrie aus den Encodern der ESP32-Firmware (/proc/XGORider/wheels_log).
 
-Kein eigener Datenweg: Der Treiber teilt jedes Paket des IMU-Stroms (Firmware 0014, stream_hz) in Lage
+Kein eigener Datenweg: Der Treiber teilt jedes Paket des IMU-Stroms (Firmware-Patch 02-pi-interface, stream_hz) in Lage
 (imu_log, imu.py) und Rad-Ticks (wheels_log, hier) mit derselben Messzeit auf; ohne Strom kommen beide aus
 der Abfrage von 0x0d. Format "seq t_ns ticks11 ticks21 fw_ms" (CLOCK_MONOTONIC), 1024 Ticks je
 Umdrehung, beide Räder vorwärts positiv, 11 = links, 21 = rechts.

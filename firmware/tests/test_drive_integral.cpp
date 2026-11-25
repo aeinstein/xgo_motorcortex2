@@ -1,7 +1,5 @@
-// Host-Test für Patch 0015: Integral des Geschwindigkeitsfehlers beim Fahren.
-// Nach firmware/build.sh (Quellen mit Patches in firmware/build/), im Repo-Root:
-//   S=firmware/build/xgorider2_rl/firmware/src
-//   g++ -std=c++17 -ffp-contract=off -I $S firmware/tests/test_drive_integral.cpp $S/control/rider_motion.cpp $S/control/pid.cpp -o t && ./t
+// Host-Test 07-balance: Integral des Geschwindigkeitsfehlers beim Fahren (Byteweg).
+// Aufruf: firmware/tests/run.sh test_drive_integral
 #include "control/rider_motion.h"
 #include <cmath>
 #include <cstdio>

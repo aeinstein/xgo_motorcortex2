@@ -1,0 +1,727 @@
+velocity: Fahrrahmen in mm/s und °/s mit Sollwertgenerator, Geschwindigkeits- und Drehratenregler
+
+diff --git a/firmware/src/command_protocol.cpp b/firmware/src/command_protocol.cpp
+index b828775..d4a6c25 100644
+--- a/firmware/src/command_protocol.cpp
++++ b/firmware/src/command_protocol.cpp
+@@ -20,6 +20,7 @@ uint8_t readLength(uint8_t reg) {
+     case 0x15:return 32;
+     case 0x18:return 4;
+     case 0x19:return 32;
++    case 0x1a:return 12;
+     case 0x62: case 0x63: case 0x64:return 4;
+     case 0x65:return 24;
+     case 0x66: case 0x67: case 0x68:return 2;
+@@ -49,8 +50,9 @@ CommandKind commandKind(const CommandEvent &e) {
+     case 0x11:
+     case 0x12:
+     case 0x17:case 0x18:
++    case 0x1a:case 0x1b:
+     case 0x30:case 0x32:case 0x35:case 0x36:case 0x39:case 0x3e:case 0x60:case 0x61:
+-    case 0x69:case 0x6a:case 0x6b:case 0x6c:case 0x82:case 0xa0:case 0xa1:case 0xb0:
++    case 0x69:case 0x6a:case 0x6b:case 0x6c:case 0x82:case 0xb0:
+     case 0xb4:case 0xb5:case 0xb6:case 0xb7:case 0xb8:
+         return static_cast<CommandKind>(e.reg);
+     default:return CommandKind::Unknown;
+@@ -69,6 +71,8 @@ const char *commandName(CommandKind kind) {
+     case CommandKind::HeadingHold:return "heading_hold";
+     case CommandKind::PiTunnel:return "pi_tunnel";
+     case CommandKind::PiIp:return "pi_ip";
++    case CommandKind::Velocity:return "velocity";
++    case CommandKind::VelocityLimits:return "velocity_limits";
+     case CommandKind::Forward:return "forward";
+     case CommandKind::Turn:return "turn";
+     case CommandKind::Height:return "height";
+@@ -80,8 +84,6 @@ const char *commandName(CommandKind kind) {
+     case CommandKind::Rgb0:return "rgb0";case CommandKind::Rgb1:return "rgb1";
+     case CommandKind::Rgb2:return "rgb2";case CommandKind::Rgb3:return "rgb3";
+     case CommandKind::HeightWave:return "height_wave";
+-    case CommandKind::MaxTurn:return "max_turn";
+-    case CommandKind::MaxForward:return "max_forward";
+     case CommandKind::PolicyMode:return "policy_mode";
+     default:return "unknown";
+     }
+@@ -91,6 +93,8 @@ bool validCommand(const CommandEvent &e) {
+     if(e.type>1 || commandKind(e)==CommandKind::Unknown)return false;
+     if(e.reg==0x17)return e.length>=1 && e.length<=24;   // Pi tunnel: kind + data
+     if(e.reg==0x18)return e.length==4;
++    if(e.reg==0x1a)return e.length==13;   // velocity_cmd.h
++    if(e.reg==0x1b)return e.length==14;
+     if(e.reg>=0x69 && e.reg<=0x6c)return e.length==3 || e.length==12;
+     if(e.reg==0x05)return e.length<=1;
+     if(e.reg==0xb0)return e.length==1&&e.data[0]<=2;
+@@ -179,6 +183,7 @@ size_t buildReadResponse(const CommandEvent &r,const Telemetry &t,uint8_t *out,s
+     case 0x15:std::memcpy(data,t.rawdiag,32);break;    // custom: raw IMU sums, main.cpp fillRawDiag()
+     case 0x19:std::memcpy(data,t.liftdiag,32);break;   // custom: lift-guard log, main.cpp fillLiftDiag()
+     case 0x18:std::memcpy(data,t.pi_ip,4);break;       // custom: IPv4 of the Pi
++    case 0x1a:std::memcpy(data,t.veldiag,12);break;    // custom: velocity_cmd.h fillDiag
+     default:return 0;
+     }
+     return buildFrame(0x12,r.reg,data,n,out,cap);
+diff --git a/firmware/src/command_protocol.h b/firmware/src/command_protocol.h
+index a69366e..e4f1bd0 100644
+--- a/firmware/src/command_protocol.h
++++ b/firmware/src/command_protocol.h
+@@ -11,11 +11,12 @@ enum class CommandKind : uint8_t {
+     ImuStream = 0x11,
+     LedBrightness = 0x12,
+     PiTunnel = 0x17, PiIp = 0x18,
++    Velocity = 0x1a, VelocityLimits = 0x1b,
+     Forward = 0x30,
+     Turn = 0x32, Height = 0x35, Roll = 0x36, RollWave = 0x39,
+     Action = 0x3e, PositionHoldProtection = 0x60, Leveling = 0x61,
+     Rgb0 = 0x69, Rgb1 = 0x6a, Rgb2 = 0x6b, Rgb3 = 0x6c,
+-    HeightWave = 0x82, MaxForward = 0xa0, MaxTurn = 0xa1,
++    HeightWave = 0x82,
+     PolicyMode = 0xb0,
+     WheelGain = 0xb4, WheelSmoothMs = 0xb5,
+     WheelSlew = 0xb6, YawSlew = 0xb7, SpeedCal = 0xb8,
+@@ -63,6 +64,8 @@ struct Telemetry {
+     uint8_t diag[32] = {};
+     uint8_t rawdiag[32] = {};
+     uint8_t liftdiag[32] = {};
++    // Custom reg 0x1a read: velocity-frame state (velocity_cmd.h fillDiag).
++    uint8_t veldiag[12] = {};
+     // Custom reg 0x18 read: IPv4 of the Pi; main.cpp receive() fills it in before answering.
+     uint8_t pi_ip[4] = {};
+     uint8_t policy_mode=0,policy_action_space=0;
+diff --git a/firmware/src/control/rider_motion.cpp b/firmware/src/control/rider_motion.cpp
+index fa7a21b..021701c 100644
+--- a/firmware/src/control/rider_motion.cpp
++++ b/firmware/src/control/rider_motion.cpp
+@@ -25,8 +25,11 @@ float decode(std::uint8_t x,float range) {
+ }
+ 
+ void updateCommandTargets(CommandState &s,const MotionCommand &c) {
+-    s.forward=decode(c.forward,c.max_forward);
+-    s.turn=decode(c.turn,c.max_turn);
++    if(c.velocity){s.forward=c.velocity_forward;s.turn=c.velocity_turn;}   // Rahmenweg, schon in mm/s und °/s
++    else {
++        s.forward=decode(c.forward,c.max_forward);
++        s.turn=decode(c.turn,c.max_turn);
++    }
+     // 0x400d4248: each wave period is 2000..4000 phase units.
+     const float roll_period=std::fma(static_cast<float>(c.roll_period)/255.0f,2000.0f,2000.0f);
+     const float height_period=std::fma(static_cast<float>(c.height_period)/255.0f,2000.0f,2000.0f);
+@@ -47,6 +50,8 @@ void updateCommandTargets(CommandState &s,const MotionCommand &c) {
+     const float delta=forward-s.filtered_forward;
+     s.filtered_forward=std::fabs(delta)<5?forward:s.filtered_forward+(forward<s.filtered_forward?-5.0f:5.0f);
+     s.filtered_turn=std::fma(s.filtered_turn,.949999988079071f,s.turn*.05000001192092896f);
++    // Rahmenweg kommt fertig aus dem Sollwertgenerator (velocity_cmd.h): kein Tiefpass, kein 5er-Schritt
++    if(c.velocity){s.filtered_forward=s.forward;s.filtered_turn=s.turn;}
+     s.filtered_height=static_cast<float>(static_cast<double>(s.filtered_height)*.97+static_cast<double>(s.height)*.03);
+ }
+ 
+@@ -73,7 +78,7 @@ float wheelDistance(std::int32_t first,std::int32_t second) {
+ 
+ float updateBalance(BalanceState &s,float target,float speed11,float speed21,
+                     float pitch,float bias,float pitch_rate,float height,
+-                    bool holding,Wheels &w,bool drive_integral) {
++                    bool holding,Wheels &w,bool drive_integral,const VelocityControl* vc) {
+     s.speed.kp=holding?.140000001f:.109999999f;
+     s.speed.ki=holding?.000736842107f:.000733333349f;
+     s.pitch.kp=37.5f;s.pitch.kd=0;
+@@ -82,8 +87,12 @@ float updateBalance(BalanceState &s,float target,float speed11,float speed21,
+     s.speed.target=target;
+     s.speed.measurement=(speed11+speed21)*.5f;
+     updatePid(s.speed);
++    // Rahmenweg mit eigenem Regler (rider_motion.h VelocityControl), dort ohne das Fahr-Integral des Bytewegs.
++    const bool vel_on=vc!=nullptr&&vc->on;
++    if(!vel_on)s.vel_settled=0;
+     // integral while driving (see rider_motion.h). Off -> bit-identical to stock.
+     if(!drive_integral)s.drive_i=0;
++    else if(vel_on){s.drive_i*=kDriveDecay;if(std::fabs(s.drive_i)<1e-3f)s.drive_i=0;}   // Rest abklingen lassen
+     else {
+         const float dir=target>0?1.0f:-1.0f;
+         // only towards the command, only up to kDriveMinFrac of it; a leftover against the command decays
+@@ -94,6 +103,25 @@ float updateBalance(BalanceState &s,float target,float speed11,float speed21,
+     }
+     s.pitch.target=s.drive_i==0?s.speed.output:
+         std::max(-s.speed.output_limit,std::min(s.speed.output_limit,s.speed.output+s.drive_i));
++    if(vel_on) {
++        const float lim=s.speed.output_limit;
++        const float err=target-s.speed.measurement;
++        // a in echten mm/s² (unit_mm), dazu −kv·v_ist
++        const float ff=vc->ff_gain*std::atan(vc->accel*vc->unit_mm/kGravityMmS2)*57.29578f-vc->kv*s.speed.measurement;
++        const float dt=std::max(0.0f,std::min(0.05f,vc->dt));
++        s.vel_settled=vc->accel==0?std::min(kVelSettleS,s.vel_settled+dt):0.0f;
++        if(holding)s.vel_i*=std::exp(-dt/kVelHoldTau);
++        else if(!vc->freeze&&s.vel_settled>=kVelSettleS) {
++            const float unsat=s.speed.output+s.vel_i+ff;
++            if(!(std::fabs(unsat)>=lim&&err*unsat>0))   // Anti-Windup
++                s.vel_i=std::max(-vc->i_max,std::min(vc->i_max,s.vel_i+vc->ki*err*dt));
++        }
++        s.pitch.target=std::max(-lim,std::min(lim,s.speed.output+s.vel_i+ff+s.drive_i));
++    } else if(s.vel_i!=0) {   // Rahmenweg beendet: Rest weich abbauen
++        const float dt=vc?std::max(0.0f,std::min(0.05f,vc->dt)):0.004f;
++        s.vel_i*=std::exp(-dt/kVelOffTau);if(std::fabs(s.vel_i)<1e-3f)s.vel_i=0;
++        s.pitch.target=std::max(-s.speed.output_limit,std::min(s.speed.output_limit,s.pitch.target+s.vel_i));
++    }
+     s.pitch.measurement=pitch+bias;
+     updatePid(s.pitch);
+     const float output=std::fma(pitch_rate,rate_gain,s.pitch.output);
+@@ -114,16 +142,23 @@ void addWheelSpeedCorrection(Wheels &w,float forward,float turn,float speed11,fl
+ void addHeadingCorrection(HeadingState &s,Wheels &w,std::uint32_t now,
+                           std::uint8_t mode,bool hold_heading,float forward,
+                           float turn,float filtered_turn,float yaw,
+-                          bool leveling,float roll) {
+-    if(std::fabs(forward)>=10 || std::fabs(turn)>=1)s.last_motion_ms=now;
++                          bool leveling,float roll,const TurnControl* tc) {
++    const bool turn_on=tc!=nullptr&&tc->on;
++    s.pid.kp=turn_on?tc->kp:3.0f;s.pid.kd=turn_on?tc->kd:.5f;   // aus: Werte von headingPid
++    // auf dem Rahmenweg zählt schon langsames Fahren/Drehen als Bewegung (sonst setzte das Original das
++    // Kursziel unter 1 °/s immer wieder auf den Ist-Kurs zurück)
++    const bool moving=turn_on?(std::fabs(forward)>=1 || std::fabs(turn)>=0.05f):(std::fabs(forward)>=10 || std::fabs(turn)>=1);
++    if(moving)s.last_motion_ms=now;
+     else {
+         const auto elapsed=std::uint32_t(now-s.last_motion_ms);
+         if((elapsed<600 && elapsed>200)||mode!=1)s.target=yaw;
+     }
+-    if(!(std::fabs(forward)>10 || std::fabs(turn)>1 || (hold_heading && mode==1)))return;
+-    s.target=static_cast<float>(static_cast<double>(filtered_turn)*.005+static_cast<double>(s.target));
++    if(!(std::fabs(forward)>10 || std::fabs(turn)>1 || (hold_heading && mode==1) || (turn_on && moving)))return;
++    if(turn_on)s.target+=filtered_turn*std::max(0.0f,std::min(0.05f,tc->dt));   // genau w · dt
++    else s.target=static_cast<float>(static_cast<double>(filtered_turn)*.005+static_cast<double>(s.target));
+     s.pid.target=s.target;s.pid.measurement=yaw;updatePid(s.pid);
+-    const float demand=static_cast<float>(static_cast<double>(-s.pid.output)-static_cast<double>(turn)*.5);
++    const float demand=turn_on?-s.pid.output-turn*tc->ff_gain:
++        static_cast<float>(static_cast<double>(-s.pid.output)-static_cast<double>(turn)*.5);
+     const int offset=demand<0?1023:-1023;
+     const float room=static_cast<float>(std::min(std::abs(static_cast<int>(w.id11)+offset),std::abs(static_cast<int>(w.id21)+offset)));
+     const float magnitude=std::min(room,std::fabs(demand));
+diff --git a/firmware/src/control/rider_motion.h b/firmware/src/control/rider_motion.h
+index 776c330..34a77da 100644
+--- a/firmware/src/control/rider_motion.h
++++ b/firmware/src/control/rider_motion.h
+@@ -9,7 +9,12 @@ namespace rider { namespace control {
+ struct MotionCommand {
+     std::uint8_t forward=128, turn=128, height=128, roll=128;
+     std::uint8_t roll_period=128, height_period=128;
+-    float max_forward=210, max_turn=300;
++    float max_forward=210, max_turn=300;   // fest (0xa0/0xa1 entfernt)
++    // Rahmenweg (velocity_cmd.h). velocity = true ersetzt die Bytes forward/turn durch Sollwerte in
++    // mm/s und °/s (ohne Byte-Totband); die Bytes bleiben für Positionshalten und LEDs auf dem Gegenwert.
++    // Die Sollwerte sind schon gerampt, filtered_forward/turn übernehmen sie unverändert.
++    bool velocity=false;
++    float velocity_forward=0, velocity_turn=0;
+ };
+ struct CommandState {
+     float forward=0, turn=0, height=0, roll=0; // mapped requests, 3ffc30d8
+@@ -36,6 +41,7 @@ void updatePositionHold(HoldState &, std::uint32_t now_ms,
+ 
+ struct BalanceState { Pid speed=speedPid(), pitch=pitchPid();
+                       float drive_i=0;   // integral of the speed error while driving, byte path (deg of pitch target)
++                      float vel_i=0, vel_settled=0;   // velocity frame: integral (deg), s the generator has been at its target
+ };
+ // The stock speed PI clamps its integral at 100 (ki 0.00073 -> at most 0.07 deg), so it is effectively P only:
+ // pitch target = 0.11 x (target - speed), at most ~3.5 deg at full command. A constant load (slight slope, rolling
+@@ -48,6 +54,27 @@ constexpr float kDriveKi=0.0003f;    // deg per control call (~3 ms) and unit of
+ constexpr float kDriveIMax=3.0f;     // deg
+ constexpr float kDriveMinFrac=0.3f;  // floor speed as a fraction of the command
+ constexpr float kDriveDecay=0.99f;   // per call without forward command (~0.3 s)
++// Geschwindigkeitsregler für den Rahmenweg (velocity_cmd.h). Soll-Nick = Original-P (0,11 bzw. 0,14 beim Halten)
++// + Integral + Vorsteuerung atan(a_soll/g) − kv·v_ist. Echtes Integral mit Anti-Windup: es wächst nicht weiter,
++// solange der Soll-Nick in der Grenze (output_limit) steht und der Fehler weiter hinein zeigt, nicht bei freeze
++// (Hebeschutz greift) und erst, wenn die Soll-Beschleunigung kVelSettleS lang 0 ist (beim Anfahren hängt das Ist
++// hinterher, es lud sich sonst bis i_max auf). Beim Halten (Stand, Positionshalten) klingt es mit kVelHoldTau ab,
++// ohne Rahmenweg mit kVelOffTau (kein Sprung). kv: Der Original-P treibt den Rider sonst auf ~1,8 × Soll, weil er
++// beim Fahren eine Nick-Abweichung proportional zum Tempo braucht; kv·v_ist liefert sie direkt.
++struct VelocityControl {
++    bool on=false;          // Rahmenweg aktiv; aus = Originalweg bitgleich
++    float accel=0;          // Soll-Beschleunigung aus dem Generator, Firmware-Einheiten/s²
++    float ki=0.05f;         // ° Soll-Nick je (Firmware-Einheit Fehler · s)
++    float i_max=4.0f;       // ° Betragsgrenze des Integrals
++    float ff_gain=1.0f;     // Anteil der Vorsteuerung atan(a/g)
++    float dt=0.004f;        // s seit dem letzten Regeltakt
++    bool freeze=false;      // Integral anhalten (Hebeschutz)
++    float unit_mm=1.0f;     // mm/s je Firmware-Einheit, für atan(a/g) in echten mm/s²
++    float kv=0;             // Soll-Nick −kv·gemessenes Tempo (° je Firmware-Einheit), 0 = aus
++};
++constexpr float kVelHoldTau=1.5f, kVelOffTau=0.3f;   // s
++constexpr float kVelSettleS=0.6f;   // s Soll-Beschleunigung 0, bevor das Integral läuft (im Beschleunigungsbetrieb nie)
++constexpr float kGravityMmS2=9810.0f;
+ struct Wheels { std::int16_t id11=0, id21=0; };
+ float wheelDistance(std::int32_t id11_encoder, std::int32_t second_encoder);
+ // 0x400d582c numeric portion. Set forward_target from the PREVIOUS cycle's
+@@ -57,7 +84,8 @@ float updateBalance(BalanceState &, float forward_target,
+                     float speed11, float speed21, float pitch_deg,
+                     float pitch_bias, float pitch_rate_rad_s,
+                     float filtered_height, bool holding, Wheels &,
+-                    bool drive_integral=false);
++                    bool drive_integral=false,
++                    const VelocityControl* vc=nullptr);
+ // 0x400d4fd4; called before the command filters are advanced.
+ void addWheelSpeedCorrection(Wheels &, float filtered_forward,
+                              float filtered_turn, float speed11, float speed21);
+@@ -67,12 +95,25 @@ struct HeadingState {
+     float target=0;
+     std::uint32_t last_motion_ms=0;
+ };
++// Drehratenregler für den Rahmenweg (velocity_cmd.h). Das Original erhöht das Kursziel je Regeltakt um filtered_turn × 0,005, bei 4 ms Takt also um 1,25 × w je Sekunde
++// und abhängig vom Takt; daneben die Vorsteuerung −turn × 0,5 auf die Räder. Mit on läuft das Kursziel genau mit
++// w_soll · dt (w_soll = gerampter Sollwert des Generators): P auf den Kurs wirkt dann als Integral auf die Drehrate, D auf
++// den Kurs als P auf die Drehrate, die Drehrate stimmt im Mittel, und bei w = 0 hält er den Kurs wie bisher.
++// kp/kd/ff zur Laufzeit (Konsole !turnctl). Aus = Original bitgleich.
++struct TurnControl {
++    bool on=false;
++    float dt=0.004f;        // s seit dem letzten Regeltakt
++    float kp=3.0f;          // Kurs-PID wie headingPid
++    float kd=0.5f;
++    float ff_gain=0.5f;     // Radeinheiten je °/s Soll-Drehrate (Original 0,5)
++};
+ // 0x400d53a4; called after command filtering and leg roll calculation.
+ void addHeadingCorrection(HeadingState &, Wheels &, std::uint32_t now_ms,
+                           std::uint8_t robot_mode, bool hold_heading,
+                           float forward_request, float turn_request,
+                           float filtered_turn, float yaw_deg,
+-                          bool leveling, float filtered_roll_deg);
++                          bool leveling, float filtered_roll_deg,
++                          const TurnControl* tc=nullptr);
+ // 0x400d5238. Final +/-15 friction compensation outside strict +/-10.
+ void addWheelFriction(Wheels &);
+ 
+diff --git a/firmware/src/main.cpp b/firmware/src/main.cpp
+index 75d1306..89d7205 100644
+--- a/firmware/src/main.cpp
++++ b/firmware/src/main.cpp
+@@ -28,6 +28,7 @@ extern "C" {extern const volatile uint32_t rider_rl_only_build=0x524c4f31;}
+ #include "trace.h"
+ #include "lift_guard.h"
+ #include "lift_log.h"
++#include "velocity_cmd.h"
+ #include "fall_guard.h"
+ #include "led_status.h"
+ #include "policy/policy.h"
+@@ -99,6 +100,10 @@ constexpr const char* kBuildId="rider2-rl-only | rider_balance_v6 | lift guard v
+ volatile uint32_t wheel_smooth_ms=0;
+ volatile float yaw_slew_per_second=20000.0f;
+ bool battery_low_seen=false;   // Akku-Warnung war aktiv (nur Robot-Task)
++// Geschwindigkeitsregler des Rahmenwegs, Konsole !velctl KI FF IMAX (nur RAM; 0x1b von xgonav geht vor)
++volatile float vel_ki=0.05f,vel_ff=1.0f,vel_i_max=4.0f;
++// Drehratenregler des Rahmenwegs, Konsole !turnctl KP KD FF (nur RAM)
++volatile float turn_kp=3.0f,turn_kd=0.5f,turn_ff=0.5f;
+ // In schnellen Kurven einlegen (Aktion 232 an / 231 aus, !lean on|off): Roll halten regelt auf
+ // -atan(v * Gierrate / g) statt auf 0 (control::updateCurveLean). Default aus, nicht gespeichert.
+ volatile bool curve_lean_enabled=false;
+@@ -198,6 +203,9 @@ public:
+     uint8_t sensor_loops=0,trim_stage=0;
+     rider2::lift::State lift_state;rider2::lift::Config lift_config;bool lift_acting=false;uint32_t control_dt_us=0;
+     rider2::lift::Log lift_log;   // überlebt stop(), Register 0x19
++    rider2::velocity::State vel;    // Rahmenweg 0x1a (velocity_cmd.h)
++    rider2::velocity::Limits vel_limits;   // 0x1b, schreibt xgonav beim Start
++    uint32_t vel_ctrl_us=0;   // letzter Regeltakt des Geschwindigkeitsreglers
+     rider::control::CurveLean curve_lean{};uint32_t lean_us=0;
+     int16_t diag_ctrl11=0,diag_ctrl21=0;   // classic controller output before gain/smoothing/slew (0x0e)
+     rider::control::YawBiasTracker yaw_bias_tracker;   // gyro-z bias tracking
+@@ -206,7 +214,6 @@ public:
+     rider2::fall::State fall_state,fall_deep_state;rider2::fall::Config fall_config,fall_deep_config=rider2::fall::deepConfig();uint32_t fall_last_us=0;
+     double trim_to_save=0;
+     bool save_trim_pending=false;
+-    float heading_limit=300;
+     void result(const char* text){std::snprintf(s.last_result,sizeof s.last_result,"%s",text);}
+     void resetFusion(){s.imu={};s.imu.last_us=micros();imu_valid=false;imu_low_g_only=false;controller.reset(millis());policy.resetHistory();}
+     bool prepareMotorBus() {
+@@ -249,6 +256,7 @@ public:
+         loadExtendedTrim();
+     }
+     void stop(StopReason reason,bool latch) {
++        rider2::velocity::cancel(vel);   // nach jedem Stopp gilt kein alter Fahrrahmen
+         if(!manual_stop||latch)s.last_stop_reason=reason;
+         if(driving)standup_phase=false;
+         if(latch)standup_requested=false;
+@@ -304,6 +312,7 @@ public:
+         {auto& st=actions.state();if(st.command.height==0)st.command.height=128;}
+ #endif
+         cancelTrim();
++        rider2::velocity::cancel(vel);
+         manual_stop=false;actions.cancel(millis());actions.requestMode(253,true);
+         controller.reset(millis(),s.imu.yaw_deg);policy.resetHistory();stop_sent=false;
+         auto_rearm_ticks=0;
+@@ -379,13 +388,25 @@ public:
+         case CommandKind::YawSlew:yaw_slew_per_second=1000.0f+float(value)*18000.0f/255.0f;result("yaw slew updated");break;
+         case CommandKind::HeadingHold:a.heading_hold=value!=0;break;
+         case CommandKind::LedBrightness:rider::board::setLedBrightness(value);result("led brightness updated");break;   // n/256
+-        case CommandKind::Forward:a.command.forward=value;break;
+-        case CommandKind::Turn:a.command.turn=value;if(std::abs(int(value)-128)>16)a.leveling=false;break;
++        case CommandKind::Forward:rider2::velocity::cancel(vel);a.command.forward=value;break;   // der zuletzt beschriebene Weg gilt
++        case CommandKind::Turn:rider2::velocity::cancel(vel);a.command.turn=value;if(std::abs(int(value)-128)>16)a.leveling=false;break;
++        case CommandKind::Velocity: {   // Fahrrahmen in mm/s und °/s
++            rider2::velocity::Frame f;
++            if(!rider2::velocity::parseFrame(e.data,e.length,f)||!rider2::velocity::receive(vel,vel_limits,f,micros())){
++                ++s.rejected_commands;result("velocity: set limits (0x1b) first");break;}
++            a.command.forward=a.command.turn=128;   // der Rahmenweg ersetzt die Bytes
++            // wie das Drehbyte (|Byte-128| > 16): Nivellieren beim Drehen aus
++            if(std::fabs(f.w)>16.0f/127.5f*rider2::velocity::kByteTurn)a.leveling=false;
++            break;}
++        case CommandKind::VelocityLimits:
++            if(!rider2::velocity::parseLimits(e.data,e.length,vel_limits)){++s.rejected_commands;break;}
++            result("velocity limits updated");break;
+         case CommandKind::Height:a.command.height=value;break;
+         case CommandKind::Roll:a.command.roll=value;break;
+         case CommandKind::RollWave:a.command.roll_period=value;a.roll_phase=value?10:0;break;
+         case CommandKind::HeightWave:a.command.height_period=value;a.height_phase=value?10:0;break;
+         case CommandKind::Action:
++            if(value<=230||value==253)rider2::velocity::cancel(vel);   // Aktion/Aufstehen beendet den Rahmenweg
+             if(value==255)arm();else if(value==254)emergencyStop();
+             else if(value==253)standup();
+             else if(value==237)restart();
+@@ -395,10 +416,6 @@ public:
+             break;
+         case CommandKind::PositionHoldProtection:a.hold_protection=value!=0;break;
+         case CommandKind::Leveling:a.leveling=value!=0;break;
+-        case CommandKind::MaxForward:a.command.max_forward=float(double(value)/255.0*210.0);break;
+-        case CommandKind::MaxTurn:
+-            a.command.max_turn=float(double(value)/255.0*300.0);
+-            heading_limit=float((double(value)*.75/255.0+.25)*300.0);break;
+         case CommandKind::Rgb0:case CommandKind::Rgb1:case CommandKind::Rgb2:case CommandKind::Rgb3:
+             if(e.length==12){for(uint8_t n=0;n<4;++n)board.setUserLed(n,e.data[n*3],e.data[n*3+1],e.data[n*3+2]);}
+             else board.setUserLed(uint8_t(e.reg-0x69),e.data[0],e.data[1],e.data[2]);
+@@ -420,7 +437,7 @@ public:
+         for(unsigned n=0;n<4&&xQueueReceive(commands,&event,0)==pdTRUE;++n) {
+             switch(event.kind){
+             case EventKind::Arm:arm();break;
+-            case EventKind::Neutral:actions.cancel(millis());actions.state().command.forward=128;actions.state().command.turn=128;break;
++            case EventKind::Neutral:rider2::velocity::cancel(vel);actions.cancel(millis());actions.state().command.forward=128;actions.state().command.turn=128;break;
+             case EventKind::ResetOdometry:odometry={};odometry.last_ms=millis();break;
+             case EventKind::Protocol:dispatch(event.command);break;
+             }
+@@ -504,7 +521,7 @@ public:
+         default:break;
+         }
+         const auto power=board.state();
+-        if(power.neutralize){auto& a=actions.state();a.command.forward=a.command.turn=a.command.roll=128;a.command.height=0;a.height_phase=a.roll_phase=0;actions.cancel(millis());a.command.height=0;}
++        if(power.neutralize){rider2::velocity::cancel(vel);auto& a=actions.state();a.command.forward=a.command.turn=a.command.roll=128;a.command.height=0;a.height_phase=a.roll_phase=0;actions.cancel(millis());a.command.height=0;}
+         if(power.stop_required)actions.requestMode(250,true);
+         // Akku-Warnung aufgehoben -> aus 250 nach 253 (disarmed, bereit; Aufstehen mit 253/255)
+         if(battery_low_seen&&!power.low_stage){
+@@ -524,6 +541,7 @@ public:
+ #if !RIDER2_RL_ONLY
+         if(!trim_stage)return;
+         if(trim_stage==1){actions.enable(millis());s.calibration.pitch_trim=0;trim_stage=2;trim_stable=0;}
++        rider2::velocity::cancel(vel);
+         auto& a=actions.state();a.command.forward=a.command.turn=a.command.roll=128;a.command.height=144;
+         a.action_id=0;a.roll_phase=a.height_phase=0;
+         if(!driving||a.mode!=1||outputGuard(guard(millis()))!=StopReason::None){trim_stable=0;return;}
+@@ -707,13 +725,32 @@ public:
+         in.encoder11=bus.sample(11).encoder_ticks;in.encoder21=bus.sample(21).encoder_ticks;in.leg12_position=bus.sample(12).position_ticks;
+         in.zero_a=s.calibration.zero_a;in.zero_b=s.calibration.zero_b;in.pitch_trim=s.calibration.pitch_trim;
+         request.command=a.command;
++        if(vel.active&&a.action_id==0) {   // Rahmenweg; eine laufende Aktion geht vor
++            // Generator startet beim aktuellen gefilterten Sollwert (Übernahme aus der Fahrt); nur wenn er
++            // schon balanciert fährt, sonst stünde in s.motion noch der Stand vor dem letzten Stopp (z. B. Sturz)
++            const bool take=driving&&s.motion.valid;
++            rider2::velocity::tick(vel,vel_limits,us,take?s.motion.command.filtered_forward:0.0f,take?s.motion.command.filtered_turn:0.0f);
++            request.command.velocity=true;request.command.velocity_forward=vel.v;request.command.velocity_turn=vel.w;
++            // Bytes auf den Gegenwert: Positionshalten (Drehen 113..143) rechnet weiter damit
++            request.command.forward=rider2::velocity::toByte(vel.v,rider2::velocity::kByteForward);
++            request.command.turn=rider2::velocity::toByte(vel.w,rider2::velocity::kByteTurn);
++        }
++        {   // Regler des Rahmenwegs; Takt aus dem Regeltakt, Integral steht, solange der Hebeschutz greift
++            auto& vc=request.velocity_control;
++            vc.on=vel.active&&a.action_id==0;vc.accel=vel.fwd.a;vc.ki=vel_ki;vc.ff_gain=vel_ff;vc.i_max=vel_i_max;
++            vc.unit_mm=vel_limits.unit_mm;vc.kv=vel_limits.kv;   // Werte aus 0x1b (xgonav)
++            if(vel_limits.ki>=0)vc.ki=vel_limits.ki;if(vel_limits.i_max>=0)vc.i_max=vel_limits.i_max;
++            vc.dt=float(uint32_t(us-vel_ctrl_us))*1e-6f;vel_ctrl_us=us;vc.freeze=lift_acting;
++            auto& tc=request.turn_control;
++            tc.on=vc.on;tc.dt=vc.dt;tc.kp=turn_kp;tc.kd=turn_kd;tc.ff_gain=turn_ff;
++        }
+ #if RIDER2_RL_ONLY
+         // Training saw height bytes 55..200; keep the phone slider inside that band.
+         if(request.command.height<55)request.command.height=55;
+         else if(request.command.height>200)request.command.height=200;
+ #endif
+         request.roll_phase=a.roll_phase;request.height_phase=a.height_phase;
+-        request.leveling=a.leveling;request.heading_hold=a.heading_hold;request.hold_protection=a.hold_protection;request.heading_term_limit=heading_limit;
++        request.leveling=a.leveling;request.heading_hold=a.heading_hold;request.hold_protection=a.hold_protection;
+         // Positionshalten auch beim Drehen auf der Stelle, Integral beim Fahren (Byteweg)
+         request.turn_hold=true;request.drive_integral=true;
+         // Roll laufend auf 0 halten, nur balancierend und ohne eigenen Rollbefehl (Gesten, Rollwelle)
+@@ -897,6 +934,7 @@ public:
+         fillDiag(t.diag);
+         fillRawDiag(t.rawdiag);
+         fillLiftDiag(t.liftdiag);
++        rider2::velocity::fillDiag(t.veldiag,vel,vel_limits);
+         t.leg12_zero=s.calibration.zero_a;t.leg22_zero=s.calibration.zero_b;
+         t.policy_mode=uint8_t(s.policy.mode);t.policy_model_id=policy.model().id;
+         t.policy_trained=s.policy.trained;t.policy_valid=s.policy.model_valid;
+@@ -1100,6 +1138,29 @@ void console(const char* line,Print& out) {
+     {float g=0;if(sscanf(line,"!gain %f",&g)==1){wheel_gain=g;out.printf("wheel gain %.3f\n",g);return;}}
+     {float g=0;if(sscanf(line,"!speedcal %f",&g)==1){if(g>=.2f&&g<=4.f&&!shared.driving){speed_cal=g;out.printf("policy speed scale %.3f\n",g);}else out.println("ERR speedcal 0.2..4.0 and standstill");return;}}
+     {int ms=0;if(sscanf(line,"!smooth %d",&ms)==1&&ms>=0){wheel_smooth_ms=unsigned(ms);out.printf("wheel smoothing %d ms\n",ms);return;}}
++    {   // Rahmenweg von Hand (velocity_cmd.h); Grenzen zuerst
++        namespace V=rider2::velocity;
++        float x=0,y=0,vk=0;int ms=0;
++        if(sscanf(line,"!vel limits %f %f %d",&x,&y,&ms)==3){
++            if(x<0||x>65535||y<0||y>6553||ms<0||ms>65535){out.println("ERR !vel limits VMAX_mm_s WMAX_deg_s TIMEOUT_ms");return;}
++            uint8_t d[V::kLimitsLen]={};V::put16(d,uint16_t(x));V::put16(d+2,uint16_t(std::lround(y*10)));V::put16(d+4,uint16_t(ms));   // Rest 0 = Standard
++            protocolCommand(CommandKind::VelocityLimits,d,sizeof d,out);return;}
++        if(sscanf(line,"!velctl %f %f %f",&x,&y,&vk)==3){
++            if(x<0||x>1||y<0||y>2||vk<0||vk>10){out.println("ERR !velctl KI(0..1 deg per mm/s*s) FF(0..2) IMAX(0..10 deg)");return;}
++            vel_ki=x;vel_ff=y;vel_i_max=vk;out.printf("velocity control ki %.4f ff %.2f imax %.1f\n",double(x),double(y),double(vk));return;}
++        if(sscanf(line,"!turnctl %f %f %f",&x,&y,&vk)==3){
++            if(x<0||x>20||y<0||y>5||vk<0||vk>5){out.println("ERR !turnctl KP(0..20) KD(0..5) FF(0..5 wheel units per deg/s)");return;}
++            turn_kp=x;turn_kd=y;turn_ff=vk;out.printf("turn control kp %.2f kd %.2f ff %.2f\n",double(x),double(y),double(vk));return;}
++        if(!strcmp(line,"!vel status")){const auto snap=snapshot();const uint8_t* d=snap.telemetry.veldiag;
++            out.printf("velocity %s%s%s, limits %s: v %d mm/s, w %.1f deg/s, v_max %u mm/s, w_max %.1f deg/s, timeout %u ms\n",
++                d[0]&1?"active":"off",d[0]&2?" (accel)":"",d[0]&4?" (timed out)":"",d[0]&8?"set":"missing",
++                int(V::i16(d+2)),double(V::i16(d+4))*.1,unsigned(V::u16(d+6)),double(V::u16(d+8))*.1,unsigned(V::u16(d+10)));return;}
++        auto frame=[&](bool speed,float v,float acc,float w){uint8_t d[V::kFrameLen]={};d[0]=speed?0:V::kFlagNoSpeed;
++            V::put16(d+1,uint16_t(V::sat16(v)));V::put16(d+3,uint16_t(V::sat16(acc)));V::put16(d+7,uint16_t(V::sat16(w*10)));
++            protocolCommand(CommandKind::Velocity,d,sizeof d,out);};
++        if(sscanf(line,"!vel accel %f %f",&x,&y)==2){frame(false,0,x,y);return;}
++        if(sscanf(line,"!vel %f %f",&x,&y)==2){frame(true,x,0,y);return;}
++    }
+     char cmd[20]={};int a=0,b=0,c=0,d=0;
+     const int count=sscanf(line,"%19s %d %d %d %d",cmd,&a,&b,&c,&d);
+     if(count==3&&!strcmp(cmd,"!move")){if(a<0||a>255||b<0||b>255){out.println("ERR expected bytes 0..255");return;}valueCommand(CommandKind::Forward,a,out);valueCommand(CommandKind::Turn,b,out);return;}
+@@ -1108,14 +1169,14 @@ void console(const char* line,Print& out) {
+         const struct{const char* text;CommandKind kind;} maps[]={
+             {"!action",CommandKind::Action},{"!loop",CommandKind::ActionLoop},{"!height",CommandKind::Height},
+             {"!roll",CommandKind::Roll},{"!level",CommandKind::Leveling},{"!heading",CommandKind::HeadingHold},
+-            {"!rollwave",CommandKind::RollWave},{"!heightwave",CommandKind::HeightWave},
+-            {"!maxforward",CommandKind::MaxForward},{"!maxturn",CommandKind::MaxTurn}};
++            {"!rollwave",CommandKind::RollWave},{"!heightwave",CommandKind::HeightWave}};
+         for(const auto& m:maps)if(!strcmp(cmd,m.text)){valueCommand(m.kind,a,out);return;}
+     }
+-    out.print("!status | !policy off/shadow/active/status | !stop | !arm | !neutral | !move FORWARD TURN (bytes,128 neutral) | !height BYTE | !roll BYTE | !action 0..6/255 | !loop 0/1 | !level 0/1 | !heading 0/1 | !heightwave BYTE | !rollwave BYTE | !maxforward BYTE | !maxturn BYTE | !rgb INDEX R G B | !cal begin | !cal save | !trim | !odom reset | !trace dump | !trace usb on/off | !liftguard on/off/status | !fallguard on/off/status/clear/ms N | !dzcomp [off|on|reset|MAX [HYST [RAMP [START [GROW]]]]]");
++    out.print("!status | !policy off/shadow/active/status | !stop | !arm | !neutral | !move FORWARD TURN (bytes,128 neutral) | !height BYTE | !roll BYTE | !action 0..6/255 | !loop 0/1 | !level 0/1 | !heading 0/1 | !heightwave BYTE | !rollwave BYTE | !rgb INDEX R G B | !cal begin | !cal save | !trim | !odom reset | !trace dump | !trace usb on/off | !liftguard on/off/status | !fallguard on/off/status/clear/ms N | !dzcomp [off|on|reset|MAX [HYST [RAMP [START [GROW]]]]]");
+     out.print(" | !standup | !restart");
+     out.print(" | !led BYTE | !shutdown on/off");
+     out.print(" | !lean on/off");
++    out.print(" | !vel limits VMAX_mm_s WMAX_deg_s TIMEOUT_ms | !vel V_mm_s W_deg_s | !vel accel A_mm_s2 W_deg_s | !vel status | !velctl KI FF IMAX | !turnctl KP KD FF");
+     out.println();
+ }
+ }
+diff --git a/firmware/src/motion_controller.cpp b/firmware/src/motion_controller.cpp
+index f8f2fe3..e98d586 100644
+--- a/firmware/src/motion_controller.cpp
++++ b/firmware/src/motion_controller.cpp
+@@ -15,6 +15,7 @@ void MotionController::resetStoppedPid() {
+     balance_.speed.previous_error=balance_.speed.integral=0;
+     balance_.pitch.previous_error=balance_.pitch.integral=0;
+     balance_.drive_i=0;
++    balance_.vel_i=0;
+ }
+ MotionResult MotionController::step(const MotionInput& i,MotionRequest& request) {
+     MotionResult o;
+@@ -36,7 +37,7 @@ MotionResult MotionController::step(const MotionInput& i,MotionRequest& request)
+     previous_mode_=i.mode;
+     o.balance=control::updateBalance(balance_,next_forward_,i.speed11,i.speed21,
+               i.pitch_deg,o.bias,i.pitch_rate_rad_s,command_.filtered_height,hold_.mode==2,o.wheels,
+-              request.drive_integral);
++              request.drive_integral,&request.velocity_control);
+     control::addWheelSpeedCorrection(o.wheels,command_.filtered_forward,command_.filtered_turn,i.speed11,i.speed21);
+     control::updateCommandTargets(command_,command);
+     // switching the feedback changes the units of hold_.position -> start over.
+@@ -54,7 +55,8 @@ MotionResult MotionController::step(const MotionInput& i,MotionRequest& request)
+                               roll_increment,i.zero_a,i.zero_b,lean);
+     heading_.pid.p_limit=heading_.pid.i_limit=heading_.pid.d_limit=request.heading_term_limit;
+     control::addHeadingCorrection(heading_,o.wheels,i.now_ms,i.mode,request.heading_hold,
+-        command_.forward,command_.turn,command_.filtered_turn,i.yaw_deg,request.leveling,legs_.roll_target_deg);
++        command_.forward,command_.turn,command_.filtered_turn,i.yaw_deg,request.leveling,legs_.roll_target_deg,
++        &request.turn_control);
+     control::addWheelFriction(o.wheels);
+     o.wheels.id11=std::max<int16_t>(-1023,std::min<int16_t>(1023,o.wheels.id11));
+     o.wheels.id21=std::max<int16_t>(-1023,std::min<int16_t>(1023,o.wheels.id21));
+diff --git a/firmware/src/motion_controller.h b/firmware/src/motion_controller.h
+index 8cf9b55..a85dbbb 100644
+--- a/firmware/src/motion_controller.h
++++ b/firmware/src/motion_controller.h
+@@ -23,6 +23,10 @@ struct MotionRequest {
+     bool turn_hold=false;
+     // Integral of the speed error while driving (rider_motion.h, kDriveKi).
+     bool drive_integral=false;
++    // Geschwindigkeitsregler des Rahmenwegs (control/rider_motion.h); main.cpp setzt on, accel, dt.
++    control::VelocityControl velocity_control{};
++    // Drehratenregler des Rahmenwegs (control/rider_motion.h); main.cpp setzt on und dt.
++    control::TurnControl turn_control{};
+ };
+ struct MotionInput {
+     uint32_t now_ms=0;
+diff --git a/firmware/src/velocity_cmd.h b/firmware/src/velocity_cmd.h
+new file mode 100644
+index 0000000..860c198
+--- /dev/null
++++ b/firmware/src/velocity_cmd.h
+@@ -0,0 +1,181 @@
++#pragma once
++// Fahrbefehl in echten Einheiten (Rahmenweg) mit Sollwertgenerator: Rampe mit Ruckbegrenzung (S-Kurve) statt Tiefpass.
++//
++// Im Original kommen Fahr- und Drehbefehl als Byte (0x30/0x32, 128 = Stillstand, Bereich über 0xa0/0xa1). Hier schreibt
++// der Pi einen Rahmen mit Sollgeschwindigkeit (mm/s), Beschleunigung und Ruck sowie Drehrate (°/s),
++// Drehbeschleunigung und Drehruck. Ohne Geschwindigkeit (Flag bit0) wird die Beschleunigung mit Vorzeichen
++// ausgeführt, ohne Geschwindigkeitsregelung, begrenzt durch v_max (nur Fahren; Drehen braucht immer w).
++// v_max, w_max und der Wächter kommen einmal beim Start von xgonav (0x1b); ohne sie wird 0x1a verworfen.
++//
++// Sollwertgenerator, je Achse (Fahren: v, a, Ruck; Drehen: w, alpha, Drehruck):
++//   Die Soll-Beschleunigung läuft mit höchstens Ruck auf die Wunsch-Beschleunigung zu; die Wunsch-Beschleunigung
++//   ist die größte, die sich mit dem Ruck bis zum Ziel noch auf 0 abbauen lässt: sign(dv)·min(a, sqrt(2·Ruck·|dv|))
++//   (im Takt um den Stufenabbau berichtigt).
++//   Am Ziel rastet der Sollwert ein (a = 0). a = 0 heißt ohne Beschleunigungsgrenze (Sprung), Ruck = 0 ohne
++//   Ruckgrenze (Rampe mit Knicken). Beschleunigungsbetrieb: Ziel ±v_max mit |a|; a = 0 hält das Tempo (Beschleunigung
++//   baut sich mit dem Ruck ab). Ausgegeben werden v/w und die Soll-Beschleunigungen (für die Vorsteuerung des Reglers).
++//   Die Sollwerte ersetzen in updateCommandTargets Tiefpass und 5er-Schritt (filtered_forward/turn = Sollwert).
++//   Start aus der Fahrt: der Generator beginnt beim aktuellen filtered_forward/turn.
++// Der zuletzt beschriebene Weg gilt: ein Byte 0x30/0x32, Neutral, Stopp, Aktion oder Armen beenden den Rahmenweg.
++// Wächter: kommt timeout_ms lang kein Rahmen, rampt er v und w mit den Grenzen des letzten Rahmens auf 0
++// (ohne Grenze mit kWatchdogAccel/kWatchdogAlpha), Beschleunigungsbetrieb aus.
++//
++// Register (little-endian):
++//   0x1a schreiben, 13 Byte: 0 u8 Flags (bit0 = ohne Geschwindigkeit) | 1 i16 v mm/s | 3 i16 a mm/s² (Vorzeichen
++//        nur im Beschleunigungsbetrieb) | 5 u16 Ruck mm/s³ | 7 i16 w 0,1 °/s | 9 u16 alpha °/s² | 11 u16 Drehruck °/s³
++//   0x1b schreiben, 14 Byte: 0 u16 v_max | 2 u16 w_max 0,1 °/s | 4 u16 Wächter ms (0 = aus)
++//        | 6 u16 Einheit µm/s je Firmware-Einheit der Radgeschwindigkeit (0 = 1 mm/s; am Rider 3900)
++//        | 8 u16 ki in 1/10000 ° Soll-Nick je (Einheit Fehler · s) | 10 u16 i_max in 0,01° (je 0 = `!velctl`)
++//        | 12 u16 kv in 1/10000 ° Soll-Nick je Einheit gemessenes Tempo (0 = aus). Alle Tempi in Firmware-Einheiten.
++//   0x1a lesen, 12 Byte: 0 u8 Flags (bit0 Rahmenweg aktiv, bit1 Beschleunigungsbetrieb, bit2 Wächter hat gegriffen,
++//        bit3 Grenzen gesetzt) | 1 u8 0 | 2 i16 v-Soll mm/s | 4 i16 w-Soll 0,1 °/s | 6 u16 v_max | 8 u16 w_max 0,1 °/s
++//        | 10 u16 Wächter ms
++//
++// Header-only und ohne Hardware, damit tests/test_velocity_cmd.cpp es am Host prüfen kann.
++#include <algorithm>
++#include <cmath>
++#include <cstdint>
++
++namespace rider2 { namespace velocity {
++
++constexpr std::uint8_t kFrameLen = 13, kLimitsLen = 14, kDiagLen = 12;
++constexpr std::uint8_t kFlagNoSpeed = 1;
++// Byte-Bereich des alten Wegs (vorher 0xa0/0xa1, jetzt fest): für Positionshalten und LEDs, die noch Bytes lesen
++constexpr float kByteForward = 210.0f, kByteTurn = 300.0f;
++// Wächter ohne Grenze im letzten Rahmen: damit bremst er
++constexpr float kWatchdogAccel = 500.0f, kWatchdogAlpha = 180.0f;   // mm/s², °/s²
++
++struct Limits {
++    float v_max = 0, w_max = 0; std::uint16_t timeout_ms = 0; bool set = false;
++    // Einheit (mm/s je Firmware-Einheit) für atan(a/g); ki/i_max < 0 = Wert von `!velctl`; kv 0 = aus
++    float unit_mm = 1.0f, ki = -1, i_max = -1, kv = 0;
++};
++struct Frame {
++    bool has_speed = true;
++    float v = 0, a = 0, jerk = 0;        // mm/s, mm/s², mm/s³
++    float w = 0, alpha = 0, jerk_w = 0;  // °/s, °/s², °/s³
++};
++struct Axis { float x = 0, a = 0; };     // Sollwert und Soll-Beschleunigung einer Achse
++struct State {
++    bool active = false, accel_mode = false, timed_out = false;
++    Frame frame{};
++    std::uint32_t last_rx_us = 0, last_tick_us = 0;
++    bool ticked = false;
++    Axis fwd{}, turn{};                  // mm/s + mm/s², °/s + °/s²
++    float v = 0, w = 0;                  // ausgegebene Sollwerte mm/s, °/s (= fwd.x, turn.x)
++};
++
++inline std::int16_t i16(const std::uint8_t* d) { return std::int16_t(std::uint16_t(d[0] | (d[1] << 8))); }
++inline std::uint16_t u16(const std::uint8_t* d) { return std::uint16_t(d[0] | (d[1] << 8)); }
++inline void put16(std::uint8_t* d, std::uint16_t v) { d[0] = std::uint8_t(v); d[1] = std::uint8_t(v >> 8); }
++inline std::int16_t sat16(float v) {
++    if (!std::isfinite(v)) return 0;
++    return std::int16_t(std::max(-32768.0f, std::min(32767.0f, std::round(v))));
++}
++
++inline bool parseFrame(const std::uint8_t* d, std::uint8_t len, Frame& f) {
++    if (len != kFrameLen) return false;
++    f.has_speed = (d[0] & kFlagNoSpeed) == 0;
++    f.v = i16(d + 1); f.a = i16(d + 3); f.jerk = u16(d + 5);
++    f.w = i16(d + 7) * 0.1f; f.alpha = u16(d + 9); f.jerk_w = u16(d + 11);
++    return true;
++}
++inline bool parseLimits(const std::uint8_t* d, std::uint8_t len, Limits& l) {
++    if (len != kLimitsLen) return false;
++    l.v_max = u16(d); l.w_max = u16(d + 2) * 0.1f; l.timeout_ms = u16(d + 4); l.set = true;
++    const std::uint16_t unit = u16(d + 6), ki = u16(d + 8), im = u16(d + 10);
++    l.unit_mm = unit ? unit * 0.001f : 1.0f;
++    l.ki = ki ? std::min(1.0f, ki * 1e-4f) : -1.0f;
++    l.i_max = im ? std::min(10.0f, im * 0.01f) : -1.0f;
++    l.kv = std::min(0.2f, u16(d + 12) * 1e-4f);
++    return true;
++}
++
++// Rahmen annehmen. false = verworfen (Grenzen fehlen).
++inline bool receive(State& s, const Limits& l, const Frame& f, std::uint32_t now_us) {
++    if (!l.set) return false;
++    if (!s.active) { s.v = 0; s.w = 0; s.ticked = false; }
++    s.active = true; s.timed_out = false; s.frame = f; s.last_rx_us = now_us;
++    s.accel_mode = !f.has_speed;
++    return true;
++}
++// Rahmenweg beenden (Byte-Befehl, Neutral, Stopp, Aktion, Armen).
++inline void cancel(State& s) {
++    s.active = false; s.accel_mode = false; s.timed_out = false; s.v = 0; s.w = 0; s.ticked = false;
++    s.fwd = Axis{}; s.turn = Axis{};
++}
++
++inline float clampAbs(float x, float m) { return std::max(-m, std::min(m, x)); }
++
++// Eine Achse einen Schritt dt auf target zu, Beschleunigung ≤ amax, Ruck ≤ jmax (0 = ohne Grenze).
++inline void approach(Axis& s, float target, float amax, float jmax, float dt) {
++    if (amax <= 0) { s.x = target; s.a = 0; return; }   // ohne Grenze: Sprung, auch im ersten Takt
++    if (dt <= 0) return;
++    const float dv = target - s.x;
++    if (jmax <= 0) {
++        const float step = amax * dt;
++        if (std::fabs(dv) <= step) { s.x = target; s.a = 0; }
++        else { s.a = std::copysign(amax, dv); s.x += s.a * dt; }
++        return;
++    }
++    // größte Beschleunigung, die sich mit jmax bis zum Ziel noch auf 0 abbauen lässt. Stetig a²/2j = |dv|; im Takt dt
++    // baut sie sich in Stufen jmax·dt ab und legt dabei a²/2j + a·dt/2 zurück, daraus a (sonst käme er mit Rest-a an)
++    const float jstep = jmax * dt, h = 0.5f * jstep;
++    const float a_des = dv == 0 ? 0.0f : std::copysign(std::min(amax, std::sqrt(h * h + 2.0f * jmax * std::fabs(dv)) - h), dv);
++    s.a += std::max(-jstep, std::min(jstep, a_des - s.a));
++    const float nx = s.x + s.a * dt;
++    if (dv == 0 ? std::fabs(s.a) <= jstep : (target - nx) * dv <= 0) { s.x = target; s.a = 0; }   // am Ziel einrasten
++    else s.x = nx;
++}
++// Beschleunigungsbetrieb ohne Tempoziel: a mit Ruck auf a_cmd, Tempo bis ±vmax (dort einrasten).
++inline void accelerate(Axis& s, float a_cmd, float jmax, float vmax, float dt) {
++    if (dt <= 0) return;
++    if (a_cmd != 0) { approach(s, std::copysign(vmax, a_cmd), std::fabs(a_cmd), jmax, dt); return; }
++    // a = 0: Tempo halten, Beschleunigung mit dem Ruck abbauen
++    if (jmax <= 0) s.a = 0;
++    else { const float jstep = jmax * dt; s.a -= std::max(-jstep, std::min(jstep, s.a)); }
++    s.x = clampAbs(s.x + s.a * dt, vmax);
++}
++
++// Je Regeltakt, solange der Rahmenweg aktiv ist: Wächter, Generator, Grenzen. Ergebnis in s.v/s.w und s.fwd/s.turn.
++// v_now/w_now: aktuelle gefilterte Sollwerte der Kaskade, Startwert beim ersten Takt (Übernahme aus der Fahrt).
++inline void tick(State& s, const Limits& l, std::uint32_t now_us, float v_now = 0, float w_now = 0) {
++    if (!s.active) return;
++    float dt = 0;
++    if (!s.ticked) {
++        s.fwd = Axis{clampAbs(std::isfinite(v_now) ? v_now : 0.0f, l.v_max), 0};
++        s.turn = Axis{clampAbs(std::isfinite(w_now) ? w_now : 0.0f, l.w_max), 0};
++    } else dt = std::min(0.05f, float(std::uint32_t(now_us - s.last_tick_us)) * 1e-6f);
++    s.last_tick_us = now_us; s.ticked = true;
++    const Frame& f = s.frame;
++    if (l.timeout_ms && std::uint32_t(now_us - s.last_rx_us) > std::uint32_t(l.timeout_ms) * 1000u) {
++        if (!s.timed_out) { s.timed_out = true; s.accel_mode = false; }
++        const float a = std::fabs(f.a) > 0 ? std::fabs(f.a) : kWatchdogAccel;
++        const float al = f.alpha > 0 ? f.alpha : kWatchdogAlpha;
++        approach(s.fwd, 0, a, f.jerk, dt);
++        approach(s.turn, 0, al, f.jerk_w, dt);
++    } else {
++        if (s.accel_mode) accelerate(s.fwd, f.a, f.jerk, l.v_max, dt);
++        else approach(s.fwd, clampAbs(f.v, l.v_max), std::fabs(f.a), f.jerk, dt);
++        approach(s.turn, clampAbs(f.w, l.w_max), f.alpha, f.jerk_w, dt);
++    }
++    // Grenzen können während der Fahrt kleiner werden (neues 0x1b): sofort einhalten
++    s.fwd.x = clampAbs(s.fwd.x, l.v_max); s.turn.x = clampAbs(s.turn.x, l.w_max);
++    s.v = s.fwd.x; s.w = s.turn.x;
++}
++
++// Sollwert als Byte des alten Wegs (128 ± 127,5 über den festen Bereich), für Positionshalten und LEDs.
++inline std::uint8_t toByte(float value, float range) {
++    const float b = 128.0f + value / range * 127.5f;
++    return std::uint8_t(std::max(0.0f, std::min(255.0f, std::round(b))));
++}
++
++inline void fillDiag(std::uint8_t* d, const State& s, const Limits& l) {
++    d[0] = std::uint8_t((s.active ? 1 : 0) | (s.accel_mode ? 2 : 0) | (s.timed_out ? 4 : 0) | (l.set ? 8 : 0));
++    d[1] = 0;
++    put16(d + 2, std::uint16_t(sat16(s.v))); put16(d + 4, std::uint16_t(sat16(s.w * 10.0f)));
++    put16(d + 6, std::uint16_t(std::min(65535.0f, l.v_max))); put16(d + 8, std::uint16_t(std::min(65535.0f, l.w_max * 10.0f)));
++    put16(d + 10, l.timeout_ms);
++}
++
++}} // namespace rider2::velocity

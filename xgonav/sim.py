@@ -337,7 +337,7 @@ class SimWorld(FrameSource):
     # bremst in ~0,25 s.
     DYN_TAU_V, DYN_TAU_STOP, DYN_TAU_W, DYN_NMP_S, DYN_W_DEAD = 1.2, 0.25, 0.3, 0.4, 6 / 127.5
 
-    # Fahrrahmen (Firmware 0029–0032, robot.vel): Der Sollwert ist schon gerampt (robot.command = Generator der
+    # Fahrrahmen (Firmware-Patch 08-velocity, robot.vel): Der Sollwert ist schon gerampt (robot.command = Generator der
     # Firmware), die Firmware regelt Tempo und Drehrate darauf; ohne Totband. Annahme bis zur Messfahrt: Nachlauf
     # 0,15 s (Tempo) / 0,1 s (Drehen), wie im Modellkreis von test_velocity_ctrl.cpp. Ohne Zurückrollen: Das Modell
     # dafür (DYN_NMP_S x Änderung) gehört zu Sprüngen im Fahrwert; bei einer Rampe zöge es die ganze

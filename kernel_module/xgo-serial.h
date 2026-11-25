@@ -71,8 +71,8 @@ static struct imu_sample imu_log[IMU_LOG_LEN];
 static u32 imu_seq = 0;
 static DEFINE_SPINLOCK(imu_lock);
 static unsigned int XGO_IMU_HZ = 50;   // 0 = aus
-// Abfrage ohne Strom nur über 0x0d (R-1.1.6 + Firmware-Patch 0001: Winkel + Rad-Ticks + Firmware-Zeit aus einem
-// Snapshot). Die früheren Wege für Firmware ohne 0x0d (0x65, 12-Byte-Block, Einzelregister, Räder 0x0c) sind seit
+// Abfrage ohne Strom nur über 0x0d (R-1.1.6 + Firmware-Patch 02-pi-interface: Winkel + Rad-Ticks + Firmware-Zeit aus einem
+// Snapshot). Die früheren Wege für Firmware ohne 0x0d (0x65, 12-Byte-Block, Einzelregister, altes Radregister) sind seit
 // 2026-11-17 entfernt: ohne 0x0d und ohne Strom gibt es keine IMU- und Radproben.
 static bool combo_supported = false;
 
@@ -90,7 +90,7 @@ static struct wheel_sample wheel_log[WHEEL_LOG_LEN];
 static u32 wheel_seq = 0;
 static struct task_struct *imu_thread;
 
-// IMU/Rad-Strom (Firmware-Patch 0014): die Firmware sendet ohne Anfrage aus ihrer Regelschleife, mit eigener
+// IMU/Rad-Strom (Firmware-Patch 02-pi-interface): die Firmware sendet ohne Anfrage aus ihrer Regelschleife, mit eigener
 // Messzeit t_us. settings/imu_stream_hz > 0 schaltet ihn ein (imu_loop schreibt die Rate jede Sekunde neu, die
 // Firmware schaltet nach 5 s ohne Byte vom Pi und nach Neustart ab); solange Pakete kommen, wird nicht abgefragt.
 static int XGO_LED_BRIGHTNESS_SET = -1;         // zuletzt geschriebene LED-Helligkeit (n/256), -1 = nie: Firmware-Default 32
@@ -113,7 +113,7 @@ static inline bool stream_active(u64 now) {
 static s64 stream_off_ns;                       // CLOCK_MONOTONIC - ESP-Zeit (ns), Minimum über ~2-s-Fenster
 static bool stream_off_ok;
 
-// ---- BLE-Tunnel (Firmware-Patch 0025) ----------------------------------------
+// ---- BLE-Tunnel (Firmware-Patch 01-ble) ----------------------------------------
 // Die Firmware reicht die BLE-Characteristic "PI" durch: Rahmen Typ 0x15, Register 0x17, Nutzlast = Kennung
 // (0 Daten, 1 BLE verbunden, 2 getrennt) + höchstens 23 Byte. Der Reader-Thread legt jede Nutzlast als
 // Datensatz (Längenbyte + Nutzlast) in den Ring und weckt den Leser von /proc/XGORider/ble. Gegenrichtung:

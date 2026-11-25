@@ -64,7 +64,7 @@ static int loop(void *data) {
 
 /*
  * IMU-Thread: hält den Strom der Firmware am Leben (stream_tick). Solange Pakete kommen, fragt er nichts ab;
- * die Proben legt der Reader-Thread ab (stream_frame). Ohne Strom (imu_stream_hz 0, Firmware ohne Patch 0014,
+ * die Proben legt der Reader-Thread ab (stream_frame). Ohne Strom (imu_stream_hz 0, Firmware ohne Strom,
  * ESP-Neustart) fragt er mit XGO_IMU_HZ das Register 0x0d ab: Roll/Nick/Gier und Rad-Ticks aus einem Snapshot,
  * Zeitstempel CLOCK_MONOTONIC (Ende der Antwort minus Übertragungsdauer).
  */
@@ -195,7 +195,7 @@ static void imu_detect_combo(void) {
 	if (combo_supported)
 		pr_info("XGORider: IMU + Räder über 0x0d (24 Byte) abfragbar\n");
 	else
-		pr_warn("XGORider: Firmware ohne 0x0d (Patch 0001): IMU und Räder nur über den Strom (imu_stream_hz)\n");
+		pr_warn("XGORider: Firmware ohne 0x0d (Patch 02-pi-interface): IMU und Räder nur über den Strom (imu_stream_hz)\n");
 }
 
 // Wird bei jedem speed_x/speed_z-Write neu gestartet. Läuft er ab, ist der

@@ -91,12 +91,12 @@ def stopp_text(mode: int | None) -> str:
 # StopReason der Firmware (runtime_guard.h), in der Reihenfolge der Aufzählung
 FW_STOPGRUND = ("keiner", "Start", "Befehl", "Kalibrierung", "Kalibrierung ungültig", "IMU fehlt", "Aktoren fehlen",
                 "gekippt", "Akku", "Taktlücke", "Reglerausgang ungültig", "RL", "freier Fall")
-FW_SHUTDOWN_LEDS_OFF = 233   # Firmware 0028: 234 = LEDs blau (Pi fährt herunter), 233 = normal
+FW_SHUTDOWN_LEDS_OFF = 233   # Firmware-Patch 06-leds: 234 = LEDs blau (Pi fährt herunter), 233 = normal
 LIFT_NAH_S = 3.0      # Auslösung so kurz vor dem Lesen gehört zu diesem Sturz
 
 
 def lift_text(line: str) -> str | None:
-    """Zeile aus /proc/XGORider/lift (Register 0x19, Firmware 0027, Aufbau main.cpp fillLiftDiag) -> Logtext;
+    """Zeile aus /proc/XGORider/lift (Register 0x19, Firmware-Patch 03-diagnostics, Aufbau main.cpp fillLiftDiag) -> Logtext;
     None, wenn der Treiber einen Fehler meldet (alte Firmware) oder die Zeile nicht passt."""
     try:
         kopf, _, rest = line.partition(":")
@@ -466,7 +466,7 @@ class Robot:
 
     def _drive_level(self, now: float) -> None:
         """Nivellieren beim Fahren (robot.level_while_driving): an nach level_drive_delay_s Geradeausfahrt, aus beim
-        Drehen, Anhalten, Rollbefehl oder einer Aktion der Firmware. Der Trimm bleibt danach stehen (Patch 0012)."""
+        Drehen, Anhalten, Rollbefehl oder einer Aktion der Firmware. Der Trimm bleibt danach stehen (Firmware-Patch 07-balance)."""
         if self.cfg.level_always:
             if not self._drive_level_on:
                 self._write("roll_balance", 1)
@@ -602,14 +602,14 @@ class ProcRobot(Robot):
                         "Treiber aus kernel_module/ bauen und laden.")
         self._emergency_stop()
         self._vel_setup()
-        # Firmware 0028: LEDs aus dem Shutdown-Blau zurück (beim Herunterfahren des Pi setzt xgo-shutdown-led 234);
+        # Firmware-Patch 06-leds: LEDs aus dem Shutdown-Blau zurück (beim Herunterfahren des Pi setzt xgo-shutdown-led 234);
         # ältere Firmware kennt 233 nicht als Aktion und tut nichts
         self._write("action", FW_SHUTDOWN_LEDS_OFF)
         self._led_start()
 
     def _vel_setup(self) -> None:
         """Fahrrahmen einschalten, wenn robot.vel_frame, der Treiber /proc/XGORider/vel hat und die Firmware auf 0x1a
-        antwortet (ab 0029); sonst bleibt es bei speed_x/speed_z."""
+        antwortet (Firmware-Patch 08-velocity); sonst bleibt es bei speed_x/speed_z."""
         self.vel = False
         if not self.cfg.vel_frame:
             return
@@ -618,7 +618,7 @@ class ProcRobot(Robot):
             return
         st = zustand(self._read_text("vel") or "")
         if st is None:
-            log.warning("Firmware antwortet nicht auf den Fahrrahmen (0x1a, vor Patch 0029) – Fahrbefehle als Bytes")
+            log.warning("Firmware antwortet nicht auf den Fahrrahmen (0x1a, Firmware ohne Patch 08-velocity) – Fahrbefehle als Bytes")
             return
         self._write_limits(time.monotonic())
         self.vel = True
@@ -704,7 +704,7 @@ class ProcRobot(Robot):
         self.state.t = time.monotonic()
 
     def _lift_nach_sturz(self) -> None:
-        """Nach einem Sturz einmal das Protokoll des Hebeschutzes lesen (Firmware 0027, Treiber /proc/XGORider/lift)
+        """Nach einem Sturz einmal das Protokoll des Hebeschutzes lesen (Firmware-Patch 03-diagnostics, Treiber /proc/XGORider/lift)
         und loggen. Eigener Faden: das Lesen fragt den ESP32 (bis 0,1 s), die Schleife schreibt derweil weiter Stopps."""
         pfad = self._path("lift")
         if not os.path.exists(pfad):
@@ -755,7 +755,7 @@ class SimRobot(Robot):
         self._up_at: float | None = None     # Aufspringen läuft, balanciert ab dann
         self.state.mode = 1
         self.settings: dict[str, str] = {}   # Treiber-Einstellungen (settings/<name>), für Tests vorbelegbar
-        self.vel = cfg.vel_frame             # wie eine Firmware ab 0029 mit passendem Treiber
+        self.vel = cfg.vel_frame             # wie eine Firmware mit 08-velocity und passendem Treiber
 
     def _setup(self) -> None:
         if self.vel:

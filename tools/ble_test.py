@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""BLE-Dienst des Riders vom PC aus prüfen und bedienen (Firmware-Patch 0025, docs/ble.md).
+"""BLE-Dienst des Riders vom PC aus prüfen und bedienen (Firmware-Patch 01-ble, docs/ble.md).
 
 Läuft am PC mit Bluetooth, nicht am Rider. Braucht `pip install bleak`.
 

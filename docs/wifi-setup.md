@@ -65,5 +65,5 @@ Also reachable from the web: `api.php?a=wlan&on=1`; `wlan.php` works in normal o
 
 | Source | Method |
 |---|---|
-| ESP32 firmware (`xgorider2_rl`) | BLE is only a UART channel (fff0/fff1/fff2) for the remote app; no Wi-Fi provisioning, nothing forwarded to the Pi. Replaced by firmware patch 0025: own BLE service with a tunnel to the Pi, `wlan status/scan/rescan/connect` over Bluetooth with the same `xgo-wlan` ([ble.md](ble.md)) |
+| ESP32 firmware (`xgorider2_rl`) | BLE is only a UART channel (fff0/fff1/fff2) for the remote app; no Wi-Fi provisioning, nothing forwarded to the Pi. Replaced by firmware patch 01-ble: own BLE service with a tunnel to the Pi, `wlan status/scan/rescan/connect` over Bluetooth with the same `xgo-wlan` ([ble.md](ble.md)) |
 | Vendor Pi image (`RaspberryPi-CM4-XGO-Rider`) | display menu: `demos/network.py` (QR via pyzbar, overwrites `wpa_supplicant.conf`), `hotspot.py` (`nmcli` hotspot) |

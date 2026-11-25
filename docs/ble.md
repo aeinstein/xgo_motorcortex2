@@ -1,6 +1,6 @@
 # Bluetooth (BLE)
 
-Own GATT service of the ESP32 firmware (patch 0025). Replaces the vendor service `fff0`/`fff1`/`fff2`; the vendor app no longer finds the Rider.
+Own GATT service of the ESP32 firmware (patch 01-ble). Replaces the vendor service `fff0`/`fff1`/`fff2`; the vendor app no longer finds the Rider.
 
 | | |
 |---|---|
@@ -51,13 +51,13 @@ Same protocol as the Pi UART (`docs/driver.md`, `firmware/README.md`).
 | stop / sit down (action 254) | `55 00 09 01 3E FE B9 00 AA` |
 | LED 0 red (`0x69`) | `55 00 0B 01 69 FF 00 00 8B 00 AA` |
 
-Not over BLE: register `0x11` (IMU stream, Pi only), telemetry stream `0x08`, registers `0x17`/`0x18` writes (Pi only). Removed with 0025: `0x13` (name suffix), `0xb3` (trace stream).
+Not over BLE: register `0x11` (IMU stream, Pi only), telemetry stream `0x08`, registers `0x17`/`0x18` writes (Pi only). Removed with 01-ble: `0x13` (name suffix), `0xb3` (trace stream).
 
 Action 254 written directly does not stop xgonav: send `nav POST /stop` first, otherwise mode `pet` makes it jump up again after a faint.
 
 ## `CON`: console
 
-One command per line, terminated by `\n`, at most 95 characters. Same commands as on USB (`!status`, `!stop`, `!arm`, `!standup`, `!restart`, `!move F T`, `!height N`, `!led N`, `!balance N`, `!rgb I R G B`, `!fallguard …`, `!liftguard …`, `!gain X`, …; unknown line → command list). Output of `!trace dump` / `!trace usb on` still goes to USB.
+One command per line, terminated by `\n`, at most 95 characters. Same commands as on USB (`!status`, `!stop`, `!arm`, `!standup`, `!restart`, `!move F T`, `!height N`, `!led N`, `!rgb I R G B`, `!fallguard …`, `!liftguard …`, `!gain X`, …; unknown line → command list). Output of `!trace dump` / `!trace usb on` still goes to USB.
 
 | | |
 |---|---|
@@ -119,7 +119,7 @@ Throughput (by design, not measured): Pi → phone ~4.6 kB/s, phone → Pi a lit
 
 | Part | File | Role |
 |---|---|---|
-| Firmware | `firmware/patches/0025-ble-neu.patch` (`ble_transport.cpp`, `pi_tunnel.h`, `main.cpp`) | GATT service; tunnel frames type `0x15` register `0x17` (payload = kind + ≤ 23 bytes; kind 0 data, 1 connected, 2 disconnected); register `0x18` |
+| Firmware | `firmware/patches/01-ble.patch` (`ble_transport.cpp`, `pi_tunnel.h`, `main.cpp`) | GATT service; tunnel frames type `0x15` register `0x17` (payload = kind + ≤ 23 bytes; kind 0 data, 1 connected, 2 disconnected); register `0x18` |
 | Driver | `kernel_module/` | `/proc/XGORider/ble` (root, blocking read = one record, write = bytes to the client), `settings/ip_dev`, IP report; `serial_stats`: `tunnel_rx`, `tunnel_drop`, `tunnel_tx`, `pi_ip` |
 | Pi service | `deploy/xgo-ble/xgo-ble.c`, `deploy/xgo-ble.service` | C program, root, blocks in `read`; runs `xgo-wlan`, talks HTTP to xgonav |
 | Wi-Fi helper | `deploy/xgo-wlan` | NetworkManager; shared with buttons C+D and `wlan.php` (`docs/wifi-setup.md`) |

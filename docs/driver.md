@@ -22,23 +22,23 @@ cat /proc/XGORider/serial_stats; cat /proc/XGORider/imu
 | 0003 | `settings/force_yaw` (pulsed heading hold): **removed 2026-11-17**, was never tested on the Rider. xgonav writes `force_yaw = 0` only if an old driver still has the entry |
 | 0004 | `roll` = roll angle in degrees (reg 0x36); old function (roll balance, 0x61) → `roll_balance` |
 | later | wheel encoders (combined register 0x0d) → `wheels`, `wheels_log`; `raw_reg` diagnostics; `calibration` sends bytes 0/1 (was ASCII, inverted); `pitch_calibration` |
-| stream | IMU/wheel stream of firmware patch 0014 (2026-11-08): `settings/imu_stream_hz`, frames type 0x14 → `imu_log`/`wheels_log` with the firmware's sample time; polling only as fallback |
-| 2026-11-17 | read paths for firmware without firmware patch 0001 removed (IMU modes 0/1/2, wheel register 0x0c, `settings/wheel_hz`); `yaw` from the stream; `force_yaw` removed; dead code removed (`xgo-lcd.c`, `xgo-lcd.h`). **Not installed on the Rider** |
-| 2026-11-25 | drive frame of firmware patches 0029–0032: `vel`, `vel_limits` (text ↔ bytes in `xgo-vel.h`, shared with the driver test); installed on the Rider 2026-11-25, `vel_limits` with 7 fields (14 bytes) since firmware 0035 |
+| stream | IMU/wheel stream of firmware patch 02-pi-interface (2026-11-08): `settings/imu_stream_hz`, frames type 0x14 → `imu_log`/`wheels_log` with the firmware's sample time; polling only as fallback |
+| 2026-11-17 | read paths for firmware without register 0x0d removed (IMU modes 0/1/2, old wheel register, `settings/wheel_hz`); `yaw` from the stream; `force_yaw` removed; dead code removed (`xgo-lcd.c`, `xgo-lcd.h`). **Not installed on the Rider** |
+| 2026-11-25 | drive frame of firmware patch 08-velocity: `vel`, `vel_limits` (text ↔ bytes in `xgo-vel.h`, shared with the driver test); installed on the Rider 2026-11-25, `vel_limits` with 7 fields (14 bytes) |
 
 ## IMU / wheel read path (auto-detected at load)
 
 | Path | Register | Content | Firmware |
 |---|---|---|---|
-| Stream | type 0x14 (see below) | roll, pitch, yaw + wheel ticks with the firmware's sample time | R-1.1.6 + firmware patch 0014 |
-| Polling (only without stream) | 0x0d | roll, pitch, yaw (float) + left/right ticks (int32) + t_ms (uint32), 24 B, at `imu_hz` | R-1.1.6 + firmware patch 0001 |
+| Stream | type 0x14 (see below) | roll, pitch, yaw + wheel ticks with the firmware's sample time | R-1.1.6 + firmware patch 02-pi-interface |
+| Polling (only without stream) | 0x0d | roll, pitch, yaw (float) + left/right ticks (int32) + t_ms (uint32), 24 B, at `imu_hz` | R-1.1.6 + firmware patch 02-pi-interface |
 
 - Detection of 0x0d at load compares against fresh single-register reads (roll/pitch within 2°, yaw within 10°).
-- Firmware without 0x0d: IMU and wheels only via the stream, warning in the kernel log. The older read paths (single registers 0x62–0x64, 12-byte block from 0x62, 0x65, wheels via 0x0c) were removed 2026-11-17.
+- Firmware without 0x0d: IMU and wheels only via the stream, warning in the kernel log. The older read paths (single registers 0x62–0x64, 12-byte block from 0x62, 0x65, old wheel register) were removed 2026-11-17.
 - `serial_stats`: `imu_block` = 3 (0x0d can be polled) or 0; `wheels` = wheel ticks available (0x0d or stream seen).
-- Timestamp: CLOCK_MONOTONIC, end of reply minus transfer time ((n + 8) × 10 bits at 115200). Firmware 0014: a 0x0d reply comes from a snapshot renewed every 10 ms, so the value can be up to 10 ms older than this.
+- Timestamp: CLOCK_MONOTONIC, end of reply minus transfer time ((n + 8) × 10 bits at 115200). Firmware patch 02-pi-interface: a 0x0d reply comes from a snapshot renewed every 10 ms, so the value can be up to 10 ms older than this.
 
-## IMU/wheel stream (firmware patch 0014)
+## IMU/wheel stream (firmware patch 02-pi-interface)
 
 | Item | Value |
 |---|---|
@@ -58,15 +58,15 @@ cat /proc/XGORider/serial_stats; cat /proc/XGORider/imu
 |---|---|---|---|
 | `speed_x` | w | u8 0..255, 128 = stop; arms motion watchdog | 0x30 |
 | `speed_z` | w | u8 0..255, 128 = stop; arms watchdog | 0x32 |
-| `vel` | rw | write one drive frame (firmware 0029–0032): `V A J W ALPHA JW` = mm/s, mm/s² (≥ 0), mm/s³, °/s (one decimal), °/s², °/s³ (0 = no limit), or `acc A J W ALPHA JW` = acceleration mode (A signed, up to ±v_max); arms the motion watchdog (it writes 128 to 0x30/0x32, which also ends the frame path). Read = firmware state, fresh from the ESP32: `active accel_mode watchdog_fired limits_set v w v_max w_max timeout_ms` (e.g. `1 0 0 1 250 -12.3 500 90.0 300`); old firmware: `Fehler <n>`. Without `vel_limits` the firmware drops every frame | 0x1a |
-| `vel_limits` | rw | write `V_MAX W_MAX TIMEOUT_MS UNIT_UM KI_E4 IMAX_CENTI KV_E4` → 14 bytes (firmware 0035): v_max in firmware speed units, °/s with one decimal, firmware watchdog ms (0 = off), µm/s per firmware unit, integral gain × 10000, its limit in 0.01° (both 0 = console value), pitch feed-forward per unit of measured speed × 10000 (0 = off); xgonav writes it at start and every 2 s. Read = last written text | 0x1b |
+| `vel` | rw | write one drive frame (firmware patch 08-velocity): `V A J W ALPHA JW` = mm/s, mm/s² (≥ 0), mm/s³, °/s (one decimal), °/s², °/s³ (0 = no limit), or `acc A J W ALPHA JW` = acceleration mode (A signed, up to ±v_max); arms the motion watchdog (it writes 128 to 0x30/0x32, which also ends the frame path). Read = firmware state, fresh from the ESP32: `active accel_mode watchdog_fired limits_set v w v_max w_max timeout_ms` (e.g. `1 0 0 1 250 -12.3 500 90.0 300`); old firmware: `Fehler <n>`. Without `vel_limits` the firmware drops every frame | 0x1a |
+| `vel_limits` | rw | write `V_MAX W_MAX TIMEOUT_MS UNIT_UM KI_E4 IMAX_CENTI KV_E4` → 14 bytes (firmware patch 08-velocity): v_max in firmware speed units, °/s with one decimal, firmware watchdog ms (0 = off), µm/s per firmware unit, integral gain × 10000, its limit in 0.01° (both 0 = console value), pitch feed-forward per unit of measured speed × 10000 (0 = off); xgonav writes it at start and every 2 s. Read = last written text | 0x1b |
 | `height` | rw | u8 0..255 (web UI min 43); read: last written value, empty until first write; not reset when the firmware stands up at 128 | 0x35 |
 | `roll` | rw | int −20..20 °, mapped linearly to 0..255; read: last written value, empty until first write | 0x36 |
 | `roll_balance` | w | 0/1 | 0x61 |
-| `action` | w | u8; R-1.1.6+patch: 1..6 actions, 237 restart the ESP32 (firmware patch 0018, refused while balancing), 253 stand up from lying, 254 disarm/emergency stop, 255 arm, 0 = no action | 0x3e |
+| `action` | w | u8; R-1.1.6+patch: 1..6 actions, 237 restart the ESP32 (firmware patch 05-actions, refused while balancing), 253 stand up from lying, 254 disarm/emergency stop, 255 arm, 0 = no action | 0x3e |
 | `leds/0`..`leds/3` | w | `#RRGGBB` | 0x69..0x6c |
 | `battery` | r | % | 0x01 |
-| `state` | r | firmware state: 1 = balancing, 254 = lying (set down by action 254, LEDs orange), 0 = fallen (tilt, LEDs red; since firmware 0027 stays until a command, also upright), 253 = ready (disarmed, starts when upright), 250 = low battery, 251 = actuator fault, 252 = other fault; names in `robot.FW_ZUSTAND` | |
+| `state` | r | firmware state: 1 = balancing, 254 = lying (set down by action 254, LEDs orange), 0 = fallen (tilt, LEDs red; with firmware patch 05-actions stays until a command, also upright), 253 = ready (disarmed, starts when upright), 250 = low battery, 251 = actuator fault, 252 = other fault; names in `robot.FW_ZUSTAND` | |
 | `yaw` | r | integer degrees, only updated while balancing; from the stream, without stream from register 0x68 every `sleep_ms_on_loop` | |
 | `buttons` | r | bit mask, 1 = pressed: A = 1 (GPIO 17), B = 2 (22), C = 4 (23), D = 8 (24); polled every `sleep_ms_on_loop`. **A+B together = `orderly_poweroff`** (driver). C+D held 3 s = Wi-Fi setup ([wifi-setup.md](wifi-setup.md)) | |
 | `imu` | r | `seq t_ns roll pitch yaw` (millidegrees), newest sample | |
@@ -75,8 +75,8 @@ cat /proc/XGORider/serial_stats; cat /proc/XGORider/imu
 | `wheels_log` | r | last 64 samples | |
 | `serial_stats` | r | `frames bad timeouts unsolicited imu_seq imu_hz imu_block wheels wheel_seq stream stream_gaps stream_hz stream_active stream_offset_us tunnel_rx tunnel_drop tunnel_tx pi_ip` (one per line) | |
 | `raw_reg` | rw, root | write `"0x0b 16"` (addr, len), read `"0x0b 16: 00 11 .."`; read-only diagnostics | any |
-| `lift` | r | lift-guard log of firmware patch 0027, read from the ESP32 on every open, format as `raw_reg` (`"0x19 32: .."`, layout `firmware/README.md`); old firmware: `Fehler <n>`. xgonav reads it once after a fall (`robot.lift_text`) | 0x19 |
-| `ble` | rw, root | BLE tunnel of firmware patch 0025 ([ble.md](ble.md)). Blocking read (or `poll`) = one record: byte 0 kind (0 data, 1 BLE connected, 2 disconnected) + ≤ 23 bytes, buffer ≥ 24 bytes; returns 0 when the module unloads. Write = bytes to the BLE client, sent in 23-byte chunks every 4 ms. Reader: `xgo-ble` | 0x17, frames type 0x15 |
+| `lift` | r | lift-guard log of firmware patch 03-diagnostics, read from the ESP32 on every open, format as `raw_reg` (`"0x19 32: .."`, layout `firmware/README.md`); old firmware: `Fehler <n>`. xgonav reads it once after a fall (`robot.lift_text`) | 0x19 |
+| `ble` | rw, root | BLE tunnel of firmware patch 01-ble ([ble.md](ble.md)). Blocking read (or `poll`) = one record: byte 0 kind (0 data, 1 BLE connected, 2 disconnected) + ≤ 23 bytes, buffer ≥ 24 bytes; returns 0 when the module unloads. Write = bytes to the BLE client, sent in 23-byte chunks every 4 ms. Reader: `xgo-ble` | 0x17, frames type 0x15 |
 
 ### `/proc/XGORider/settings`
 
@@ -84,9 +84,9 @@ cat /proc/XGORider/serial_stats; cat /proc/XGORider/imu
 |---|---|---|
 | `motion_timeout_ms` | 0 (off) | 0..60000; no `speed_x`/`speed_z` write for this long → stop |
 | `imu_hz` | 50 | 0..200, 0 = off; polling rate of 0x0d, used only without stream |
-| `imu_stream_hz` | 0 | 0..250; > 0 = firmware stream (0014), polling only as fallback |
-| `led_brightness` | −1 (never written) | 0..255: global LED multiplier n/256 of firmware patch 0016 (reg 0x12; firmware default 32, former fixed value 64). Sent once on write; the firmware forgets it on an ESP restart, the file then still shows the last written value. Older firmware ignores it |
-| `ip_dev` | `wlan0` | network interface (name ≤ 8 characters) whose first IPv4 the driver reports to the ESP32 for BLE (firmware patch 0025, reg 0x18): on change and every 3 s from the main loop; `0.0.0.0` without address. Older firmware ignores it |
+| `imu_stream_hz` | 0 | 0..250; > 0 = firmware stream (02-pi-interface), polling only as fallback |
+| `led_brightness` | −1 (never written) | 0..255: global LED multiplier n/256 of firmware patch 06-leds (reg 0x12; firmware default 32). Sent once on write; the firmware forgets it on an ESP restart, the file then still shows the last written value. Older firmware ignores it |
+| `ip_dev` | `wlan0` | network interface (name ≤ 8 characters) whose first IPv4 the driver reports to the ESP32 for BLE (firmware patch 01-ble, reg 0x18): on change and every 3 s from the main loop; `0.0.0.0` without address. Older firmware ignores it |
 | `low_batt_level` | 8 | 0..100 % |
 | `shutdown_on_low_batt` | 1 | battery < level → `orderly_poweroff` |
 | `sleep_ms_on_loop` | 200 | main loop sleep (battery, state; yaw polling only without stream) |
@@ -116,7 +116,7 @@ stty -F /dev/ttyAMA0 115200 cs8 -cstopb -parenb -brkint -imaxbel -opost -onlcr -
 ```
 driver-test/run.sh kernel_module [seconds=6] [imu_hz=50] [--wheels --combo] [--stream[=HZ] | --stream-off] [--tunnel] [--faults]
 ```
-`--tunnel` (firmware 0025): the emulator sends data through the BLE tunnel (frames type 0x15), the harness echoes it via register 0x17; checked complete and in order next to polling and stream (2026-11-20 with `--stream --faults`: 892 bytes in 45 records, none dropped).
+`--tunnel` (firmware patch 01-ble): the emulator sends data through the BLE tunnel (frames type 0x15), the harness echoes it via register 0x17; checked complete and in order next to polling and stream (2026-11-20 with `--stream --faults`: 892 bytes in 45 records, none dropped).
 Compiles the real `xgo-serial.c` and IMU code against `kshim.h`, runs it against `esp32_emu.py`. Without `--wheels --combo` the emulator has no 0x0d and the driver does not poll IMU/wheels (stream only).
 Result (polling 0x0d): 49 Hz at target 50, pitch error 0.06° median, parser recovers from drops, noise bytes, bad checksums.
 Stream (emulator with its own ESP clock, 40 ppm, 0–8 ms send delay): 100 Hz without gaps, timestamp error −0.25 ms median (polling 0x0d: −1.3 ms), 0 unsolicited; with `--faults` gaps counted, polling only for the other registers; `--stream-off` falls back to polling.

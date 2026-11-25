@@ -1,13 +1,11 @@
-// Host-Test für Patch 0029/0030: Fahrrahmen in mm/s und °/s (Register 0x1a/0x1b, velocity_cmd.h), 0xa0/0xa1 entfernt.
-// Prüft: Rahmen- und Grenzen-Format, Ablehnung ohne Grenzen, Begrenzung auf v_max/w_max, Beschleunigungsbetrieb
-// (Vorzeichen, Grenze), Wächter, Abbruch, Byte-Gegenwert, Protokoll (Längen, Lesen 0x1a, 0xa0/0xa1 unbekannt) und
-// dass der Rahmenweg in updateCommandTargets ohne Byte-Totband ankommt, der alte Weg aber unverändert bleibt.
-// 0030: Sollwertgenerator (S-Kurve): Beschleunigung ≤ a, Ruck ≤ Ruckgrenze, kein Überschwingen, Dauer wie gerechnet,
+// Host-Test 08-velocity: Fahrrahmen in mm/s und °/s (Register 0x1a/0x1b, velocity_cmd.h), 0xa0/0xa1 entfernt.
+// Prüft: Rahmen- und Grenzen-Format (0x1b 14 Byte: Einheit, ki, i_max, kv; 0 = Standard; andere Längen verworfen),
+// Ablehnung ohne Grenzen, Begrenzung auf v_max/w_max, Beschleunigungsbetrieb (Vorzeichen, Grenze), Wächter,
+// Abbruch, Byte-Gegenwert, Protokoll (Längen, Lesen 0x1a, 0xa0/0xa1 unbekannt) und dass der Rahmenweg in
+// updateCommandTargets ohne Byte-Totband ankommt, der Byteweg aber unverändert bleibt.
+// Sollwertgenerator (S-Kurve): Beschleunigung ≤ a, Ruck ≤ Ruckgrenze, kein Überschwingen, Dauer wie gerechnet,
 // Umkehr, Beschleunigungsbetrieb mit Ruck, Wächter mit den Rahmengrenzen, Übernahme aus der Fahrt, Drehachse.
-// 0035: 0x1b mit 14 Byte (Einheit, ki, i_max, kv), 0 = Standard, Grenzen; andere Längen verworfen.
-// Nach firmware/build.sh (Quellen mit Patches in firmware/build/), im Repo-Root:
-//   S=firmware/build/xgorider2_rl/firmware/src
-//   g++ -std=c++17 -ffp-contract=off -I $S firmware/tests/test_velocity_cmd.cpp $S/control/rider_motion.cpp $S/control/pid.cpp $S/command_protocol.cpp -o t && ./t
+// Aufruf: firmware/tests/run.sh test_velocity_cmd
 #include "velocity_cmd.h"
 #include "command_protocol.h"
 #include "control/rider_motion.h"
@@ -188,7 +186,7 @@ int main() {
         V::receive(s, l, f, 0); V::tick(s, l, 150000);
         check(near(s.v, 250) && !s.timed_out, "innerhalb des Wächters gehalten");
         V::tick(s, l, 201000);
-        check(s.timed_out && s.active && s.v < 250 && s.v > 200, "nach 200 ms ohne Rahmen: bremst (Rampe, 0030)");
+        check(s.timed_out && s.active && s.v < 250 && s.v > 200, "nach 200 ms ohne Rahmen: bremst (Rampe)");
         std::uint32_t t = 201000;
         for (int i = 0; i < 200; ++i) { t += 3000; V::tick(s, l, t); }
         check(s.v == 0 && s.w == 0, "Wächter: nach 0,6 s mit 500 mm/s² / 180 °/s² auf 0");
@@ -226,8 +224,8 @@ int main() {
         CommandEvent e; e.type = 0; e.reg = 0x1a; e.length = 13;
         check(validCommand(e) && commandKind(e) == CommandKind::Velocity, "0x1a mit 13 Byte gültig");
         e.length = 1; check(!validCommand(e), "0x1a mit 1 Byte ungültig");
-        e.reg = 0x1b; e.length = 14; check(validCommand(e) && commandKind(e) == CommandKind::VelocityLimits, "0x1b mit 14 Byte gültig (0035)");
-        e.length = 6; check(!validCommand(e), "0x1b mit 6 Byte ungültig (altes Format, 0035)");
+        e.reg = 0x1b; e.length = 14; check(validCommand(e) && commandKind(e) == CommandKind::VelocityLimits, "0x1b mit 14 Byte gültig");
+        e.length = 6; check(!validCommand(e), "0x1b mit 6 Byte ungültig (altes Format)");
         e.length = 16; check(!validCommand(e), "0x1b mit 16 Byte ungültig");
         e.length = 14;
         e.length = 6;
@@ -249,14 +247,14 @@ int main() {
         c.velocity = true; c.velocity_forward = 8; c.velocity_turn = -4;
         updateCommandTargets(b, c);
         check(b.forward == 8 && b.turn == -4, "Rahmenweg: 8 mm/s / -4 °/s ohne Totband");
-        check(b.filtered_forward == 8 && b.filtered_turn == -4, "Rahmenweg: kein Tiefpass, filtered = Sollwert (0030)");
+        check(b.filtered_forward == 8 && b.filtered_turn == -4, "Rahmenweg: kein Tiefpass, filtered = Sollwert");
         CommandState x, y; MotionCommand old; old.forward = 200; old.turn = 60;
         MotionCommand same = old; same.velocity_forward = 999; same.velocity_turn = 999;   // velocity = false
         for (int i = 0; i < 50; ++i) { updateCommandTargets(x, old); updateCommandTargets(y, same); }
         check(x.filtered_forward == y.filtered_forward && x.filtered_turn == y.filtered_turn && x.forward == y.forward,
               "velocity = false: bitgleich zum alten Weg");
     }
-    {   // Patch 0035: Einheit, ki, i_max, kv
+    {   // Einheit, ki, i_max, kv
         const V::Limits z = limits(231, 1800, 500);
         check(z.unit_mm == 1.0f && z.ki < 0 && z.i_max < 0 && z.kv == 0, "0x1b mit 0: Einheit 1, ki/i_max von !velctl, kv aus");
         std::uint8_t d[V::kLimitsLen];

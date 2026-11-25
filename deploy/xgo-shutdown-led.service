@@ -1,5 +1,5 @@
 [Unit]
-Description=xgo shutdown-led - beim Herunterfahren des Pi LEDs des Riders blau (Firmware 0028, Aktion 234); xgonav setzt sie beim Start zurück (233)
+Description=xgo shutdown-led - beim Herunterfahren des Pi LEDs des Riders blau (Firmware-Patch 06-leds, Aktion 234); xgonav setzt sie beim Start zurück (233)
 # Nach rc-local (lädt den Treiber) und xgonav gestartet, also beim Herunterfahren vor beiden gestoppt: der Treiber ist noch da.
 After=rc-local.service xgonav.service
 

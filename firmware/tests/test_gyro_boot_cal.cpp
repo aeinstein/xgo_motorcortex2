@@ -1,10 +1,7 @@
-// Host-Test für Patch 0019: Die Startkalibrierung des Gier-Nullpunkts gilt nur im Stillstand.
+// Host-Test 04-attitude: Die Startkalibrierung der Kreisel-Nullpunkte gilt nur im Stillstand.
 // updateImu mit synthetischen Rohdaten (500 Hz, Rauschen ±0,2 °/s je Kreiselachse wie am RiderPi im
-// Liegen gemessen: Spanne 0,3-0,43 °/s). Fall wie am RiderPi 2026-11-17: beim Einschalten bewegt,
-// der Nullpunkt stand um 12-20 °/s daneben.
-// Nach firmware/build.sh (Quellen mit Patches in firmware/build/), im Repo-Root:
-//   S=firmware/build/xgorider2_rl/firmware/src
-//   g++ -std=c++17 -ffp-contract=off -I $S firmware/tests/test_gyro_boot_cal.cpp $S/control/rider_leg_imu.cpp -o t && ./t
+// Liegen gemessen: Spanne 0,3-0,43 °/s). Fall: beim Einschalten bewegt, der Nullpunkt stand um 12-20 °/s daneben.
+// Aufruf: firmware/tests/run.sh test_gyro_boot_cal
 #include "control/rider_leg_imu.h"
 #include <cmath>
 #include <cstdint>

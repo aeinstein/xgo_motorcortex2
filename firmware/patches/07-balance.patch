@@ -1,0 +1,385 @@
+balance: Positionshalten beim Drehen, Roll-Trimm, Roll halten, Fahr-Integral, Einlegen in Kurven
+
+diff --git a/firmware/src/control/rider_leg_imu.cpp b/firmware/src/control/rider_leg_imu.cpp
+index 24d302f..acbf10f 100644
+--- a/firmware/src/control/rider_leg_imu.cpp
++++ b/firmware/src/control/rider_leg_imu.cpp
+@@ -27,12 +27,16 @@ std::uint32_t extensionTicks(float extension) {
+ 
+ void updateLegTargets(LegState &s, float height, float command_roll_deg,
+                       bool leveling, float roll_pid_increment,
+-                      std::uint16_t zero_a, std::uint16_t zero_b) {
++                      std::uint16_t zero_a, std::uint16_t zero_b, float lean_deg) {
+     // 0x400d4514; float stores are retained at original rounding boundaries.
++    // Im Original klang das Ziel nach dem Nivellieren wieder auf den Rollbefehl ab; gerade blieb der Rider
++    // nur, solange die Beinservos in ihrer Totzone standen, jede Höhenänderung machte ihn wieder schief (~2°).
++    // Hier bleibt die gefundene Differenz als Trimm stehen. Ohne Nivellieren ist roll_trim_deg 0 = Original.
+     if (leveling) s.roll_target_deg += roll_pid_increment;
+     else s.roll_target_deg = float(double(s.roll_target_deg) * 0.95 +
+-                                  double(command_roll_deg) * 0.050000000000000044);
++                                  double(command_roll_deg + s.roll_trim_deg) * 0.050000000000000044);
+     s.roll_target_deg = clamp(s.roll_target_deg, -20.0f, 20.0f);
++    if (leveling) s.roll_trim_deg = clamp(s.roll_target_deg - command_roll_deg - lean_deg, -10.0f, 10.0f);   // ohne Einlegen
+     const double difference = std::sin(double(s.roll_target_deg) / 57.3) * 43.0;
+     const float a = float(double(height) + difference);
+     const float b = float(double(height) - difference);
+@@ -42,6 +46,26 @@ void updateLegTargets(LegState &s, float height, float command_roll_deg,
+     s.servo_b = std::uint16_t(std::uint32_t(zero_b) + extensionTicks(s.extension_b));
+ }
+ 
++// Kommentar in rider_leg_imu.h
++float updateCurveLean(CurveLean &s, bool on, float speed_m_s, float yaw_rate_deg_s, float height, float dt) {
++    if (!(dt > 0.0f && dt <= 0.1f)) return s.target_deg;
++    float want = 0.0f;
++    if (on && std::isfinite(speed_m_s) && std::isfinite(yaw_rate_deg_s)) {
++        const float lateral = speed_m_s * yaw_rate_deg_s * 0.017453292f;
++        want = -std::atan(lateral / kLeanGravity) * 57.29578f;
++        // Beingrenzen: Differenz sin(Roll) * 43 darf keinem Bein mehr als bis kLeanLegMargin vor 0 bzw. 36 nehmen
++        const float room = std::fmin(height, 36.0f - height) - kLeanLegMargin;
++        const float leg_max = room > 0.0f ? std::asin(clamp(room / 43.0f, 0.0f, 1.0f)) * 57.29578f : 0.0f;
++        const float limit = std::fmin(kLeanMaxDeg, leg_max);
++        want = clamp(want, -limit, limit);
++    }
++    const float filtered = s.target_deg + (want - s.target_deg) * (dt < kLeanTau ? dt / kLeanTau : 1.0f);
++    const float step = kLeanRateDegS * dt;
++    s.target_deg = clamp(filtered, s.target_deg - step, s.target_deg + step);
++    if (!std::isfinite(s.target_deg)) s.target_deg = 0.0f;
++    return s.target_deg;
++}
++
+ void offsetLegExtension(LegState &s, float offset_a_m, float offset_b_m,
+                         std::uint16_t zero_a, std::uint16_t zero_b) {
+     // Convert the actor's metric extension offsets to the firmware's length
+@@ -255,6 +279,7 @@ bool updateImu(ImuState &s, const std::uint8_t *raw, std::size_t size,
+     s.roll_deg = float(std::atan(u[0] / u[2]) * 57.2958);
+     // Kurs: Drehrate um die Senkrechte (w . u), nicht nur die Hochachse des Sensors; erst nach der
+     // Startkalibrierung integrieren (ohne Totband): vorher ist gyro_bias[2] eine Teilsumme.
++    s.yaw_rate_vertical_deg_s = s.calibrated ? float((w[0] * u[0] + w[1] * u[1] + w[2] * u[2]) * kR2D) : 0.0f;
+     if (s.calibrated && dt > 0.0 && dt < 0.05)
+         s.yaw_deg = float(double(s.yaw_deg) + (w[0] * u[0] + w[1] * u[1] + w[2] * u[2]) * kR2D * dt);
+ 
+diff --git a/firmware/src/control/rider_leg_imu.h b/firmware/src/control/rider_leg_imu.h
+index faadf8e..01f6a03 100644
+--- a/firmware/src/control/rider_leg_imu.h
++++ b/firmware/src/control/rider_leg_imu.h
+@@ -10,12 +10,35 @@ struct LegState {
+     float roll_target_deg = 0;              // command structure 3ffc30b4 +12
+     float extension_a = 45, extension_b = 45; // +16,+20; firmware length units
+     std::uint16_t servo_a = 0, servo_b = 0; // 3ffbe170+2, 3ffbe15c+2
++    // Rolldifferenz, die das Nivellieren gefunden hat (Ziel - Rollbefehl, ±10°). Sie bleibt nach
++    // dem Abschalten stehen, auch über Höhenänderungen; zurückgesetzt nur mit dem LegState (Aufstehen, Fallen).
++    float roll_trim_deg = 0;
+ };
+ // roll_pid_increment is updatePid(roll PID)'s output when leveling is enabled.
+ // The caller sets its target=0 and feedback=measured roll (IMU +96).
++// lean_deg = Sollroll des Einlegens (curveLean), wenn der Roll-PID darauf statt auf 0 regelt. Er geht
++// nicht in den Roll-Trimm ein (sonst bliebe die Schräglage stehen, wenn das Nivellieren mitten in der Kurve endet).
++// 0 = bitgleich zum Original.
+ void updateLegTargets(LegState &state, float height, float command_roll_deg,
+                       bool leveling, float roll_pid_increment,
+-                      std::uint16_t zero_a, std::uint16_t zero_b);
++                      std::uint16_t zero_a, std::uint16_t zero_b, float lean_deg = 0);
++
++// In schnellen Kurven einlegen. Sollroll = Richtung der scheinbaren Schwerkraft, -atan(v * Gierrate / g)
++// (Vorzeichen wie der Abzug der Querbeschleunigung in updateImu: dort zeigt v*w[2] > 0 die Kurvenmitte bei +x,
++// nach innen geneigt ist roll_deg dann negativ). v aus den Rädern (ImuState::speed_m_s), Gierrate um die Senkrechte
++// (ImuState::yaw_rate_vertical_deg_s). Auf der Stelle (v = 0) ergibt das 0. Das Ziel folgt mit kLeanTau und höchstens
++// kLeanRateDegS, Betrag <= kLeanMaxDeg und so, dass kein Bein näher als kLeanLegMargin an seine Grenze kommt
++// (Beinrechnung updateLegTargets: Differenz sin(Roll) * 43, Höhe 0..36). Nur die Lageschätzung bleibt unberührt.
++struct CurveLean {
++    float target_deg = 0;   // Sollroll für den Roll-PID (°)
++};
++constexpr float kLeanMaxDeg = 6.0f;      // ° Betrag
++constexpr float kLeanTau = 0.25f;        // s, Tiefpass des Ziels
++constexpr float kLeanRateDegS = 20.0f;   // °/s, Ratenbegrenzung des Ziels
++constexpr float kLeanLegMargin = 10.0f;  // Längeneinheiten (mm) Abstand jedes Beins zu 0 bzw. 36
++constexpr float kLeanGravity = 9.81f;    // m/s^2
++// on = false: Ziel läuft mit der Rate auf 0 zurück. dt außerhalb (0, 0,1 s]: keine Änderung. Gibt target_deg zurück.
++float updateCurveLean(CurveLean &state, bool on, float speed_m_s, float yaw_rate_deg_s, float height, float dt);
+ // Actor leg channels: add a metric extension offset to each leg target and
+ // recompute the servo tick values with the original acos linkage mapping.
+ // Offsets are clamped so the extension stays inside the 45..81 mm range.
+@@ -51,6 +74,7 @@ struct ImuState {
+     std::int32_t wheel_ticks[2]{}, last_ticks[2]{};
+     bool wheels_fresh = false, ticks_seen = false;
+     float speed_m_s = 0;
++    float yaw_rate_vertical_deg_s = 0;   // Drehrate um die Senkrechte (w . up), nach Nullpunktabzug
+     bool bias_from_boot = false;                         // Nullpunkte Roll/Nick aus der Startkalibrierung
+     float bias_settle_s = 0;                             // Restzeit der schnellen Nachführung (Kalibrierung bewegt angenommen)
+     float last_accel_x = 0, last_accel_y = 0;
+diff --git a/firmware/src/control/rider_motion.cpp b/firmware/src/control/rider_motion.cpp
+index 38ec416..fa7a21b 100644
+--- a/firmware/src/control/rider_motion.cpp
++++ b/firmware/src/control/rider_motion.cpp
+@@ -52,14 +52,14 @@ void updateCommandTargets(CommandState &s,const MotionCommand &c) {
+ 
+ void updatePositionHold(HoldState &s,std::uint32_t now,std::uint8_t mode,
+                         float forward,std::uint8_t turn,float position,
+-                        float pitch,bool protection) {
++                        float pitch,bool protection,bool allow_turn,float gain) {
+     if(std::uint32_t(now-s.last_disabled_ms)<750)s.correction=0;
+     if(mode!=1){s.correction=0;return;} // firmware leaves hold mode untouched here
+-    if(std::fabs(forward)<1 && now>2000 && turn>=113 && turn<=143) {
++    if(std::fabs(forward)<1 && now>2000 && (allow_turn || (turn>=113 && turn<=143))) {
+         if(s.mode==0){s.mode=1;s.began_ms=now;}
+     } else s.mode=0;
+     if(std::uint32_t(now-s.began_ms)>500 && s.mode==1)s.mode=2;
+-    if(s.mode==2)s.correction=(s.position-position)*1350.0f;
++    if(s.mode==2)s.correction=(s.position-position)*gain;
+     else {s.position=position;s.correction=0;}
+     if(protection && (static_cast<double>(std::fabs(s.position-position))>.2 || std::fabs(pitch)>20) && s.mode==2)
+         s.mode=0; // correction is intentionally retained until next call
+@@ -73,7 +73,7 @@ float wheelDistance(std::int32_t first,std::int32_t second) {
+ 
+ float updateBalance(BalanceState &s,float target,float speed11,float speed21,
+                     float pitch,float bias,float pitch_rate,float height,
+-                    bool holding,Wheels &w) {
++                    bool holding,Wheels &w,bool drive_integral) {
+     s.speed.kp=holding?.140000001f:.109999999f;
+     s.speed.ki=holding?.000736842107f:.000733333349f;
+     s.pitch.kp=37.5f;s.pitch.kd=0;
+@@ -82,7 +82,18 @@ float updateBalance(BalanceState &s,float target,float speed11,float speed21,
+     s.speed.target=target;
+     s.speed.measurement=(speed11+speed21)*.5f;
+     updatePid(s.speed);
+-    s.pitch.target=s.speed.output;
++    // integral while driving (see rider_motion.h). Off -> bit-identical to stock.
++    if(!drive_integral)s.drive_i=0;
++    else {
++        const float dir=target>0?1.0f:-1.0f;
++        // only towards the command, only up to kDriveMinFrac of it; a leftover against the command decays
++        if(!holding && std::fabs(target)>=1.0f && s.drive_i*dir>=0)
++            s.drive_i=dir*std::max(0.0f,std::min(kDriveIMax,
++                s.drive_i*dir+(kDriveMinFrac*target-s.speed.measurement)*dir*kDriveKi));
++        else {s.drive_i*=kDriveDecay;if(std::fabs(s.drive_i)<1e-3f)s.drive_i=0;}
++    }
++    s.pitch.target=s.drive_i==0?s.speed.output:
++        std::max(-s.speed.output_limit,std::min(s.speed.output_limit,s.speed.output+s.drive_i));
+     s.pitch.measurement=pitch+bias;
+     updatePid(s.pitch);
+     const float output=std::fma(pitch_rate,rate_gain,s.pitch.output);
+diff --git a/firmware/src/control/rider_motion.h b/firmware/src/control/rider_motion.h
+index ac41710..776c330 100644
+--- a/firmware/src/control/rider_motion.h
++++ b/firmware/src/control/rider_motion.h
+@@ -26,12 +26,28 @@ struct HoldState {
+     float position=0, correction=0;
+ };
+ // 0x400d5288. Feedback position uses wheelDistance(), in metres.
++// allow_turn keeps holding while turning on the spot (turn byte outside
++// 113..143); gain is the correction per metre (original 1350 on half the travel).
+ void updatePositionHold(HoldState &, std::uint32_t now_ms,
+                         std::uint8_t robot_mode, float forward_request,
+                         std::uint8_t turn_byte, float position_m,
+-                        float pitch_deg, bool protection=true);
++                        float pitch_deg, bool protection=true,
++                        bool allow_turn=false, float gain=1350.0f);
+ 
+-struct BalanceState { Pid speed=speedPid(), pitch=pitchPid(); };
++struct BalanceState { Pid speed=speedPid(), pitch=pitchPid();
++                      float drive_i=0;   // integral of the speed error while driving, byte path (deg of pitch target)
++};
++// The stock speed PI clamps its integral at 100 (ki 0.00073 -> at most 0.07 deg), so it is effectively P only:
++// pitch target = 0.11 x (target - speed), at most ~3.5 deg at full command. A constant load (slight slope, rolling
++// resistance) then stops the Rider although the full forward command arrives. While driving, a separate integral
++// is added, but only as a floor: it integrates (kDriveMinFrac x target - speed), acts only in the direction of the
++// command (0..kDriveIMax) and is zero again as soon as the Rider rolls faster than kDriveMinFrac of the command
++// (integrating the full error wound up at every start and made the speed swing with ~5 s). A leftover against a
++// reversed command and the integral without a command decay smoothly (no jump).
++constexpr float kDriveKi=0.0003f;    // deg per control call (~3 ms) and unit of speed error
++constexpr float kDriveIMax=3.0f;     // deg
++constexpr float kDriveMinFrac=0.3f;  // floor speed as a fraction of the command
++constexpr float kDriveDecay=0.99f;   // per call without forward command (~0.3 s)
+ struct Wheels { std::int16_t id11=0, id21=0; };
+ float wheelDistance(std::int32_t id11_encoder, std::int32_t second_encoder);
+ // 0x400d582c numeric portion. Set forward_target from the PREVIOUS cycle's
+@@ -40,7 +56,8 @@ float wheelDistance(std::int32_t id11_encoder, std::int32_t second_encoder);
+ float updateBalance(BalanceState &, float forward_target,
+                     float speed11, float speed21, float pitch_deg,
+                     float pitch_bias, float pitch_rate_rad_s,
+-                    float filtered_height, bool holding, Wheels &);
++                    float filtered_height, bool holding, Wheels &,
++                    bool drive_integral=false);
+ // 0x400d4fd4; called before the command filters are advanced.
+ void addWheelSpeedCorrection(Wheels &, float filtered_forward,
+                              float filtered_turn, float speed11, float speed21);
+diff --git a/firmware/src/leg_position_controller.cpp b/firmware/src/leg_position_controller.cpp
+index e6276d0..f50eb2e 100644
+--- a/firmware/src/leg_position_controller.cpp
++++ b/firmware/src/leg_position_controller.cpp
+@@ -29,12 +29,14 @@ MotionResult LegPositionController::step(const MotionInput& i,MotionRequest& req
+     command_.height=std::clamp(command_.height,0.0f,policy::kMaxHeightUnits);
+     command_.filtered_height=static_cast<float>(double(previous_height)*.97+double(command_.height)*.03);
+     float roll_increment=0;
+-    if(request.leveling) {
+-        roll_pid_.target=0;roll_pid_.measurement=i.roll_deg;
++    const bool level_legs=request.leveling||request.roll_hold;
++    const float lean=level_legs?request.roll_target_deg:0.0f;
++    if(level_legs) {
++        roll_pid_.target=lean;roll_pid_.measurement=i.roll_deg;
+         roll_increment=control::updatePid(roll_pid_);
+     }
+-    control::updateLegTargets(legs_,command_.filtered_height,command_.roll,request.leveling,
+-                              roll_increment,i.zero_a,i.zero_b);
++    control::updateLegTargets(legs_,command_.filtered_height,command_.roll,level_legs,
++                              roll_increment,i.zero_a,i.zero_b,lean);
+     o.legs=legs_;o.command=command_;
+     o.position=o.physical_position=control::wheelDistance(i.encoder11,i.encoder21);
+     o.valid=std::isfinite(o.command.filtered_forward)&&std::isfinite(o.command.filtered_turn)&&
+diff --git a/firmware/src/main.cpp b/firmware/src/main.cpp
+index 7be19d8..75d1306 100644
+--- a/firmware/src/main.cpp
++++ b/firmware/src/main.cpp
+@@ -99,6 +99,9 @@ constexpr const char* kBuildId="rider2-rl-only | rider_balance_v6 | lift guard v
+ volatile uint32_t wheel_smooth_ms=0;
+ volatile float yaw_slew_per_second=20000.0f;
+ bool battery_low_seen=false;   // Akku-Warnung war aktiv (nur Robot-Task)
++// In schnellen Kurven einlegen (Aktion 232 an / 231 aus, !lean on|off): Roll halten regelt auf
++// -atan(v * Gierrate / g) statt auf 0 (control::updateCurveLean). Default aus, nicht gespeichert.
++volatile bool curve_lean_enabled=false;
+ // Pi fährt herunter (Aktion 234 an / 233 aus, !shutdown on|off): LEDs blau, sonst nichts. Nicht gespeichert.
+ volatile bool shutdown_leds=false;
+ // Ausgleich des Gleichgewichtspunkts: Die Lagefusion liefert den wahren Nick, der gespeicherte Nick-Trimm ist
+@@ -195,6 +198,7 @@ public:
+     uint8_t sensor_loops=0,trim_stage=0;
+     rider2::lift::State lift_state;rider2::lift::Config lift_config;bool lift_acting=false;uint32_t control_dt_us=0;
+     rider2::lift::Log lift_log;   // überlebt stop(), Register 0x19
++    rider::control::CurveLean curve_lean{};uint32_t lean_us=0;
+     int16_t diag_ctrl11=0,diag_ctrl21=0;   // classic controller output before gain/smoothing/slew (0x0e)
+     rider::control::YawBiasTracker yaw_bias_tracker;   // gyro-z bias tracking
+     float ctrlPitch() const {return s.imu.pitch_deg+kBalanceOffsetDeg;}   // Nick für Regler und Wächter
+@@ -386,6 +390,7 @@ public:
+             else if(value==253)standup();
+             else if(value==237)restart();
+             else if(value==234||value==233){shutdown_leds=value==234;result(value==234?"shutdown leds on":"shutdown leds off");}
++            else if(value==232||value==231){curve_lean_enabled=value==232;result(value==232?"curve lean on":"curve lean off");}
+             else if(!leg_calibrating)actions.request(value,now);
+             break;
+         case CommandKind::PositionHoldProtection:a.hold_protection=value!=0;break;
+@@ -709,6 +714,16 @@ public:
+ #endif
+         request.roll_phase=a.roll_phase;request.height_phase=a.height_phase;
+         request.leveling=a.leveling;request.heading_hold=a.heading_hold;request.hold_protection=a.hold_protection;request.heading_term_limit=heading_limit;
++        // Positionshalten auch beim Drehen auf der Stelle, Integral beim Fahren (Byteweg)
++        request.turn_hold=true;request.drive_integral=true;
++        // Roll laufend auf 0 halten, nur balancierend und ohne eigenen Rollbefehl (Gesten, Rollwelle)
++        request.roll_hold=a.mode==1&&!standup_phase&&a.command.roll==128&&a.roll_phase==0;
++        {   // Einlegen in Kurven, nur zusammen mit Roll halten; sonst Ziel sofort 0
++            const float dt=float(uint32_t(us-lean_us))*1e-6f;lean_us=us;
++            if(request.roll_hold)request.roll_target_deg=rider::control::updateCurveLean(curve_lean,curve_lean_enabled,
++                s.imu.speed_m_s,s.imu.yaw_rate_vertical_deg_s,s.motion.command.filtered_height,dt);
++            else {curve_lean={};request.roll_target_deg=0;}
++        }
+         s.motion=controller.step(in,request);a.roll_phase=request.roll_phase;a.height_phase=request.height_phase;
+         diag_ctrl11=s.motion.wheels.id11;diag_ctrl21=s.motion.wheels.id21;
+         if(!s.motion.valid){actions.requestMode(252,true);stop(StopReason::InvalidControl,true);result("invalid control output; stop latched");}
+@@ -809,7 +824,7 @@ public:
+     // 6/8 i16 Reglerausgang 11/21 | 10/12 i16 an den Bus 11/21 | 14 i16 Balance-Ausgang |
+     // 16 i16 Soll-Nick x100 (°) | 18 i16 gemessener Nick + Bias x100 (°) |
+     // 20 i16 Positionshalten-Korrektur x10 | 22 u8 Haltemodus | 23 u8 Flags (bit0 fährt,
+-    // bit1 Hebeschutz greift) | 24 i16 Position Radmitte (mm, läuft über) |
++    // bit1 Hebeschutz greift, bit4 Einlegen in Kurven an) | 24 i16 Position Radmitte (mm, läuft über) |
+     // 26 i16 Halteposition (mm, läuft über) | 28 i16 gefiltert vorwärts x10 | 30 i16 gefiltert Drehung x10
+     void fillDiag(uint8_t* d) {
+         auto i16=[](float v){return int16_t(std::max(-32768.0f,std::min(32767.0f,std::isfinite(v)?std::round(v):0.0f)));};
+@@ -824,6 +839,7 @@ public:
+         put(20,i16(s.motion.hold.correction*10.0f));
+         d[22]=s.motion.hold.mode;
+         d[23]=uint8_t((driving?1:0)|(lift_acting?2:0)
++            |(curve_lean_enabled?16:0)
+             );
+         put(24,wrap_mm(s.motion.physical_position));put(26,wrap_mm(controller.holdPosition()));
+         put(28,i16(s.motion.command.filtered_forward*10.0f));put(30,i16(s.motion.command.filtered_turn*10.0f));
+@@ -1021,6 +1037,8 @@ void console(const char* line,Print& out) {
+     Event e;
+     if(!strcmp(line,"!arm")){e.kind=EventKind::Arm;enqueue(e);return;}
+     if(!strcmp(line,"!standup")){valueCommand(CommandKind::Action,253,out);return;}
++    if(!strcmp(line,"!lean on")){valueCommand(CommandKind::Action,232,out);return;}
++    if(!strcmp(line,"!lean off")){valueCommand(CommandKind::Action,231,out);return;}
+     if(!strcmp(line,"!shutdown on")){valueCommand(CommandKind::Action,234,out);return;}
+     if(!strcmp(line,"!shutdown off")){valueCommand(CommandKind::Action,233,out);return;}
+     if(!strcmp(line,"!restart")){valueCommand(CommandKind::Action,237,out);return;}   // nur wenn er nicht balanciert
+@@ -1097,6 +1115,7 @@ void console(const char* line,Print& out) {
+     out.print("!status | !policy off/shadow/active/status | !stop | !arm | !neutral | !move FORWARD TURN (bytes,128 neutral) | !height BYTE | !roll BYTE | !action 0..6/255 | !loop 0/1 | !level 0/1 | !heading 0/1 | !heightwave BYTE | !rollwave BYTE | !maxforward BYTE | !maxturn BYTE | !rgb INDEX R G B | !cal begin | !cal save | !trim | !odom reset | !trace dump | !trace usb on/off | !liftguard on/off/status | !fallguard on/off/status/clear/ms N | !dzcomp [off|on|reset|MAX [HYST [RAMP [START [GROW]]]]]");
+     out.print(" | !standup | !restart");
+     out.print(" | !led BYTE | !shutdown on/off");
++    out.print(" | !lean on/off");
+     out.println();
+ }
+ }
+diff --git a/firmware/src/motion_controller.cpp b/firmware/src/motion_controller.cpp
+index 7021d0b..f8f2fe3 100644
+--- a/firmware/src/motion_controller.cpp
++++ b/firmware/src/motion_controller.cpp
+@@ -14,6 +14,7 @@ void MotionController::resetHold(uint32_t now) {
+ void MotionController::resetStoppedPid() {
+     balance_.speed.previous_error=balance_.speed.integral=0;
+     balance_.pitch.previous_error=balance_.pitch.integral=0;
++    balance_.drive_i=0;
+ }
+ MotionResult MotionController::step(const MotionInput& i,MotionRequest& request) {
+     MotionResult o;
+@@ -34,16 +35,23 @@ MotionResult MotionController::step(const MotionInput& i,MotionRequest& request)
+                                     i.pitch_deg,i.roll_deg,command_.filtered_height,i.pitch_trim);
+     previous_mode_=i.mode;
+     o.balance=control::updateBalance(balance_,next_forward_,i.speed11,i.speed21,
+-              i.pitch_deg,o.bias,i.pitch_rate_rad_s,command_.filtered_height,hold_.mode==2,o.wheels);
++              i.pitch_deg,o.bias,i.pitch_rate_rad_s,command_.filtered_height,hold_.mode==2,o.wheels,
++              request.drive_integral);
+     control::addWheelSpeedCorrection(o.wheels,command_.filtered_forward,command_.filtered_turn,i.speed11,i.speed21);
+     control::updateCommandTargets(command_,command);
+-    control::updatePositionHold(hold_,i.now_ms,i.mode,command_.forward,command.turn,o.position,
+-                                i.pitch_deg,request.hold_protection);
++    // switching the feedback changes the units of hold_.position -> start over.
++    if(request.turn_hold!=previous_turn_hold_){hold_.mode=0;hold_.correction=0;previous_turn_hold_=request.turn_hold;}
++    control::updatePositionHold(hold_,i.now_ms,i.mode,command_.forward,command.turn,
++                                request.turn_hold?o.physical_position:o.position,
++                                i.pitch_deg,request.hold_protection,
++                                request.turn_hold,request.turn_hold?675.0f:1350.0f);
+     next_forward_=command_.filtered_forward+hold_.correction;
+     float roll_increment=0;
+-    if(request.leveling){roll_pid_.target=0;roll_pid_.measurement=i.roll_deg;roll_increment=control::updatePid(roll_pid_);}
+-    control::updateLegTargets(legs_,command_.filtered_height,command_.roll,request.leveling,
+-                              roll_increment,i.zero_a,i.zero_b);
++    const bool level_legs=request.leveling||request.roll_hold;
++    const float lean=level_legs?request.roll_target_deg:0.0f;
++    if(level_legs){roll_pid_.target=lean;roll_pid_.measurement=i.roll_deg;roll_increment=control::updatePid(roll_pid_);}
++    control::updateLegTargets(legs_,command_.filtered_height,command_.roll,level_legs,
++                              roll_increment,i.zero_a,i.zero_b,lean);
+     heading_.pid.p_limit=heading_.pid.i_limit=heading_.pid.d_limit=request.heading_term_limit;
+     control::addHeadingCorrection(heading_,o.wheels,i.now_ms,i.mode,request.heading_hold,
+         command_.forward,command_.turn,command_.filtered_turn,i.yaw_deg,request.leveling,legs_.roll_target_deg);
+diff --git a/firmware/src/motion_controller.h b/firmware/src/motion_controller.h
+index ffdeb97..8cf9b55 100644
+--- a/firmware/src/motion_controller.h
++++ b/firmware/src/motion_controller.h
+@@ -7,10 +7,22 @@ struct MotionRequest {
+     control::MotionCommand command{};
+     float roll_phase=0,height_phase=0;
+     bool leveling=false,heading_hold=true,hold_protection=true;
++    // Roll laufend auf 0 halten (Beine), auch beim Drehen. Anders als leveling (0x61) ohne den
++    // rollabhängigen Anteil der Kurskorrektur an einem Rad. main.cpp setzt es nur balancierend ohne Rollbefehl.
++    bool roll_hold=false;
++    // Sollroll des Roll-PID (°), wenn leveling oder roll_hold gilt: Einlegen in Kurven (control::updateCurveLean).
++    // 0 = aufrecht wie bisher. Geht nicht in den Roll-Trimm (LegState::roll_trim_deg) ein.
++    float roll_target_deg=0;
+     float heading_term_limit=300;
+     // The original 0x400d58fc uses leg12.position, not wheel21.encoder.
+     // Keep the known instruction behavior explicit instead of silently fixing it.
+     bool original_position_feedback=true;
++    // Hold the wheel centre (both encoders) also while turning on the spot, so the
++    // Rider turns in place instead of drifting (up to 27 cm per 3 s turn without it).
++    // Effective gain unchanged: 675 per metre of real travel = original 1350 on half the travel.
++    bool turn_hold=false;
++    // Integral of the speed error while driving (rider_motion.h, kDriveKi).
++    bool drive_integral=false;
+ };
+ struct MotionInput {
+     uint32_t now_ms=0;
+@@ -58,5 +70,6 @@ private:
+     control::Pid roll_pid_=control::rollPid();
+     float next_forward_=0;
+     uint8_t previous_mode_=0;
++    bool previous_turn_hold_=false;
+ };
+ }}

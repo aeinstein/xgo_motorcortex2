@@ -2174,7 +2174,7 @@ function arm() {
 function aufspringen() {
   if (confirm(tr('Aufspringen? Der Rider muss auf den Rädern stehen und rundherum Platz haben – er springt hoch und schwingt dabei aus.'))) befehl('action', {n: 253});
 }
-// Aktion 237 = ESP32 neu starten (Firmware-Patch 0018); die Firmware lehnt ab, solange er balanciert
+// Aktion 237 = ESP32 neu starten (Firmware-Patch 05-actions); die Firmware lehnt ab, solange er balanciert
 function espNeustart() {
   if (confirm(tr('ESP32 neu starten? Geht nur, wenn der Rider nicht balanciert. Danach wie nach dem Einschalten: Steht er aufrecht, balanciert er von selbst los.'))) befehl('action', {n: 237});
 }

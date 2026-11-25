@@ -18,8 +18,8 @@ Alles uncommittet, am Rider nicht eingespielt, nicht gefahren. Diese Punkte brau
 - `/opt/xgonav/config.toml` am Rider: entfernte Schlüssel streichen (`[horizon]`, `turn_settle_*`, `weak_wall_l`, `pass_turn_max_deg`, reloc `scan_extra_deg`/`max_shift_m`/`tries`), sonst `KeyError` beim Start; `control_hz` prüfen.
 - `freespace.net_smooth_n = 3`: Zacken evtl. seit IMU je Bild / 36094d2 weg; kostet ein Netzbild Verzögerung.
 - `reloc.track`: Default an, am Rider aus; alle 10 s Kopie der 48-m-Karte.
-- `home.turn_w_max = 0.25`: mit Firmware 0017 neu messen.
-- Anschub `behavior.push_*` + Firmware 0015: zwei Mechanismen für dasselbe (`robot.speed_ctrl` ist seit 2026-11-25 raus, die Firmware regelt das Tempo auf dem Fahrrahmen), nach einer Fahrt entscheiden.
+- `home.turn_w_max = 0.25`: mit Firmware-Patch 04-attitude neu messen.
+- Anschub `behavior.push_*` + Fahr-Integral der Firmware (07-balance): zwei Mechanismen für dasselbe (`robot.speed_ctrl` ist seit 2026-11-25 raus, die Firmware regelt das Tempo auf dem Fahrrahmen), nach einer Fahrt entscheiden.
 - `freespace.restart_hold_s` (1 s ohne Freiraum nach dem Aufstehen): Anlass war das Farbmodell (seit 2026-11-18 entfernt), das Netz lernt nichts; prüfen, ob die Haltezeit noch nötig ist.
 - Raumkarte im Web holt `map.png` je Sekunde (Anzeige kostet Pi-Zeit).
 - `localmap.py`: zweimal `rebase` je Bodenergebnis in Python, Kandidat für C++.

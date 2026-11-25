@@ -1,15 +1,11 @@
-// Host-Test für Patch 0031: Geschwindigkeitsregler des Fahrrahmens (control/rider_motion.h VelocityControl).
-// Prüft am Regler: aus = Originalweg bitgleich (auch mit 0015), Vorsteuerung atan(a/g), Integral (Vorzeichen, Grenze,
-// Anti-Windup, freeze, Abklingen beim Halten und nach dem Ende ohne Sprung), Rest von 0015 klingt ab.
+// Host-Test 08-velocity: Geschwindigkeitsregler des Fahrrahmens (control/rider_motion.h VelocityControl).
+// Prüft am Regler: aus = Byteweg bitgleich (auch mit Fahr-Integral), Vorsteuerung atan(a·unit_mm/g) − kv·v_ist,
+// Integral (Vorzeichen, Grenze, Anti-Windup, freeze, erst nach kVelSettleS mit a = 0, Abklingen beim Halten und
+// nach dem Ende ohne Sprung), Rest des Fahr-Integrals klingt ab; die Integral-Tests setzen vel_settled vorab (settle()).
 // Dazu ein geschlossener Kreis mit einem einfachen Fahrmodell (NICHT der echte Rider): Beschleunigung
 // g·tan(Nick − Last), Nick folgt dem Soll-Nick mit 0,1 s Verzögerung. Damit: bleibende Abweichung unter Last mit dem
 // Original-P gegen ~0 mit Integral, kein Aufschaukeln, Vorsteuerung verkleinert den Schleppfehler beim Anfahren.
-// 0035: Vorsteuerung mit unit_mm (a in Firmware-Einheiten/s²) und −kv·v_ist; Integral erst, wenn der Generator
-// kVelSettleS (0,6 s) lang a = 0 hat (kein Windup beim Anfahren), die Integral-Tests setzen dafür vel_settled
-// vorab (settle()).
-// Nach firmware/build.sh (Quellen mit Patches in firmware/build/), im Repo-Root:
-//   S=firmware/build/xgorider2_rl/firmware/src
-//   g++ -std=c++17 -ffp-contract=off -I $S firmware/tests/test_velocity_ctrl.cpp $S/control/rider_motion.cpp $S/control/pid.cpp -o t && ./t
+// Aufruf: firmware/tests/run.sh test_velocity_ctrl
 #include "control/rider_motion.h"
 #include "velocity_cmd.h"
 #include <cmath>
@@ -26,7 +22,7 @@ static void check(bool ok, const char* what) {
 static bool near(float a, float b, float tol) { return std::fabs(a - b) <= tol; }
 
 constexpr float kDt = 0.004f;   // Regeltakt kControlPeriodUs
-static void settle(BalanceState& b) { b.vel_settled = kVelSettleS; }   // Generator ruht schon (0035)
+static void settle(BalanceState& b) { b.vel_settled = kVelSettleS; }   // Generator ruht schon
 
 // Ein Reglertakt; gibt den Soll-Nick zurück.
 static float step(BalanceState& b, float target, float speed, float pitch, bool holding, bool drive_int,
@@ -44,7 +40,7 @@ static void plantStep(Plant& p, float theta_target, float load_deg, float tau = 
 }
 
 struct LoopResult { float err_end = 0, err_peak = 0, osc_late = 0; };
-// Fährt target(t) mit Last; vc == nullptr = Originalweg ohne 0015.
+// Fährt target(t) mit Last; vc == nullptr = Originalweg ohne Fahr-Integral.
 static LoopResult loop(float seconds, float load_deg, VelocityControl* vc, float v_target, const V::Frame* frame = nullptr) {
     BalanceState b; Plant p; LoopResult r;
     V::State gs; V::Limits gl; gl.v_max = 600; gl.w_max = 300; gl.set = true;
@@ -67,7 +63,7 @@ static LoopResult loop(float seconds, float load_deg, VelocityControl* vc, float
 }
 
 int main() {
-    // --- aus = Originalweg bitgleich (mit 0015)
+    // --- aus = Originalweg bitgleich (mit Fahr-Integral)
     {
         BalanceState a, b; VelocityControl off; off.on = false;
         bool same = true; float v = 0;
@@ -78,7 +74,7 @@ int main() {
             if (ta != tb || a.drive_i != b.drive_i) same = false;
             v += (tgt - v) * 0.002f;
         }
-        check(same && b.vel_i == 0, "Rahmenweg aus: Soll-Nick und 0015 bitgleich zum Original");
+        check(same && b.vel_i == 0, "Rahmenweg aus: Soll-Nick und Fahr-Integral bitgleich zum Original");
     }
     // --- Vorsteuerung
     {
@@ -89,45 +85,45 @@ int main() {
         const float th2 = step(b, 100, 100, 0, false, true, &vc);
         check(near(th2, -0.5f * std::atan(800.0f / 9810.0f) * 57.29578f, 1e-3f), "Vorsteuerung: Vorzeichen und Anteil ff_gain");
     }
-    // --- Patch 0035: Einheit in der Vorsteuerung
+    // --- Einheit in der Vorsteuerung
     {
         BalanceState b; VelocityControl vc; vc.on = true; vc.ki = 0; vc.dt = kDt;
         vc.accel = 128.2f; vc.unit_mm = 3.9f;   // 0,5 m/s² in Einheiten von 3,9 mm/s
         const float th = step(b, 100, 100, 0, false, true, &vc);
-        check(near(th, std::atan(500.0f / 9810.0f) * 57.29578f, 2e-3f), "0035: Vorsteuerung mit Einheit 3,9 -> 2,92° bei 0,5 m/s²");
+        check(near(th, std::atan(500.0f / 9810.0f) * 57.29578f, 2e-3f), "Vorsteuerung mit Einheit 3,9 -> 2,92° bei 0,5 m/s²");
     }
-    // --- Patch 0035: Integral erst bei ruhendem Generator
+    // --- Integral erst bei ruhendem Generator
     {
         BalanceState b; VelocityControl vc; vc.on = true; vc.dt = kDt; vc.accel = 128;
         for (int i = 0; i < 500; ++i) step(b, 40, 0, 0, false, true, &vc);   // 2 s Rampe, Ist hängt 40 hinterher
-        check(b.vel_i == 0 && b.vel_settled == 0, "0035: während der Rampe (a ≠ 0) kein Integral");
+        check(b.vel_i == 0 && b.vel_settled == 0, "während der Rampe (a ≠ 0) kein Integral");
         vc.accel = 0;
         for (int i = 0; i < 149; ++i) step(b, 40, 0, 0, false, true, &vc);   // 0,596 s nach Rampenende
-        check(b.vel_i == 0, "0035: bis 0,6 s nach Rampenende kein Integral");
+        check(b.vel_i == 0, "bis 0,6 s nach Rampenende kein Integral");
         for (int i = 0; i < 26; ++i) step(b, 40, 0, 0, false, true, &vc);
-        check(near(b.vel_i, 0.208f, 0.005f), "0035: danach wächst es (26 Takte × 0,05 × 40 × 0,004 = 0,208°)");
+        check(near(b.vel_i, 0.208f, 0.005f), "danach wächst es (26 Takte × 0,05 × 40 × 0,004 = 0,208°)");
         vc.accel = -50; step(b, 40, 0, 0, false, true, &vc);
         const float frozen = b.vel_i;
         for (int i = 0; i < 100; ++i) step(b, 40, 0, 0, false, true, &vc);
-        check(b.vel_i == frozen && b.vel_settled == 0, "0035: neue Rampe hält das Integral an (bleibt stehen)");
+        check(b.vel_i == frozen && b.vel_settled == 0, "neue Rampe hält das Integral an (bleibt stehen)");
         VelocityControl off = vc; off.on = false; settle(b);
         step(b, 40, 0, 0, false, true, &off);
-        check(b.vel_settled == 0, "0035: Rahmenweg aus setzt die Wartezeit zurück");
+        check(b.vel_settled == 0, "Rahmenweg aus setzt die Wartezeit zurück");
     }
-    // --- Patch 0035: Tempo-Vorsteuerung des Soll-Nicks auf das gemessene Tempo
+    // --- Tempo-Vorsteuerung des Soll-Nicks auf das gemessene Tempo
     {
         BalanceState a, b; VelocityControl v0; v0.on = true; v0.dt = kDt; v0.ki = 0;
         VelocityControl v1 = v0; v1.kv = 0.05f;
         const float t0 = step(a, 60, 60, 0, false, true, &v0), t1 = step(b, 60, 60, 0, false, true, &v1);
-        check(near(t1 - t0, -3.0f, 1e-4f), "0035: kv 0,05 bei 60 Einheiten Ist -> Soll-Nick −3°");
+        check(near(t1 - t0, -3.0f, 1e-4f), "kv 0,05 bei 60 Einheiten Ist -> Soll-Nick −3°");
         BalanceState c, d2; VelocityControl rev = v1;
         const float r0 = step(c, -40, -40, 0, false, true, &v0), r1 = step(d2, -40, -40, 0, false, true, &rev);
-        check(near(r1 - r0, 2.0f, 1e-4f), "0035: rückwärts mit umgekehrtem Vorzeichen");
+        check(near(r1 - r0, 2.0f, 1e-4f), "rückwärts mit umgekehrtem Vorzeichen");
         BalanceState g0, g1;
         const float m0 = step(g0, 60, 20, 0, false, true, &v0), m1 = step(g1, 60, 20, 0, false, true, &v1);
-        check(near(m1 - m0, -1.0f, 1e-4f), "0035: kv wirkt auf das gemessene Tempo (20 -> −1°), nicht aufs Soll");
+        check(near(m1 - m0, -1.0f, 1e-4f), "kv wirkt auf das gemessene Tempo (20 -> −1°), nicht aufs Soll");
         BalanceState e0, e1; VelocityControl off = v1; off.on = false;
-        check(step(e0, 60, 60, 0, false, true, &off) == step(e1, 60, 60, 0, false, true, nullptr), "0035: ohne Rahmenweg keine Wirkung");
+        check(step(e0, 60, 60, 0, false, true, &off) == step(e1, 60, 60, 0, false, true, nullptr), "ohne Rahmenweg keine Wirkung");
     }
     // --- Integral: wächst mit ki·Fehler·dt, Grenze, Vorzeichen
     {
@@ -139,7 +135,7 @@ int main() {
         check(near(b.vel_i, 4.0f, 1e-4f), "Integral: Grenze i_max 4°");
         for (int i = 0; i < 250; ++i) step(b, 0, 60, 0, false, true, &vc);
         check(near(b.vel_i, 1.0f, 0.01f), "Integral: negativer Fehler baut ab");
-        check(b.drive_i == 0, "0015 ist auf dem Rahmenweg aus");
+        check(b.drive_i == 0, "Fahr-Integral ist auf dem Rahmenweg aus");
     }
     // --- Anti-Windup und freeze
     {
@@ -168,16 +164,16 @@ int main() {
         for (int i = 0; i < 250; ++i) step(c, 40, 40, 0, false, true, &off);
         check(std::fabs(c.vel_i) < 0.1f, "Rahmenweg endet: Integral nach 1 s unter 5 % (Zeitkonstante 0,3 s)");
     }
-    // --- Rest von 0015 klingt beim Wechsel ab
+    // --- Rest des Fahr-Integrals klingt beim Wechsel ab
     {
         BalanceState b;
-        for (int i = 0; i < 1000; ++i) step(b, 200, 0, 0, false, true, nullptr);   // 0015 baut auf
+        for (int i = 0; i < 1000; ++i) step(b, 200, 0, 0, false, true, nullptr);   // Fahr-Integral baut auf
         const float d0 = b.drive_i;
         VelocityControl vc; vc.on = true; vc.dt = kDt; vc.ki = 0;
         const float t0 = step(b, 200, 0, 0, false, true, &vc);
-        check(d0 > 0.5f && b.drive_i > 0.9f * d0 && near(t0, b.speed.output + b.drive_i, 1e-3f), "Wechsel auf den Rahmenweg: 0015-Rest bleibt erst stehen");
+        check(d0 > 0.5f && b.drive_i > 0.9f * d0 && near(t0, b.speed.output + b.drive_i, 1e-3f), "Wechsel auf den Rahmenweg: Rest des Fahr-Integrals bleibt erst stehen");
         for (int i = 0; i < 1000; ++i) step(b, 200, 0, 0, false, true, &vc);
-        check(b.drive_i == 0, "0015-Rest klingt ab (4 s)");
+        check(b.drive_i == 0, "Rest des Fahr-Integrals klingt ab (4 s)");
     }
     // --- geschlossener Kreis (Modell)
     {
@@ -189,7 +185,7 @@ int main() {
         check(orig.err_end > 15.0f, "Modell: Original-P lässt unter Last ~18 mm/s Abweichung");
         check(std::fabs(pi.err_end) < 1.0f, "Modell: mit Integral nach 8 s < 1 mm/s");
         check(pi.osc_late < 1.0f, "Modell: kein Aufschaukeln");
-        VelocityControl hk; hk.on = true; hk.ki = 0.2f;   // 0035: ki kommt von xgonav
+        VelocityControl hk; hk.on = true; hk.ki = 0.2f;   // ki kommt von xgonav
         const LoopResult pi2 = loop(8, 2.0f, &hk, 200);
         std::printf("       Modell, Last 2°, ki 0,2: Restfehler %.2f mm/s (Schwankung zuletzt %.2f)\n",
                     double(pi2.err_end), double(pi2.osc_late));

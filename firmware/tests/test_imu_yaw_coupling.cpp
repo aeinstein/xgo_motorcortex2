@@ -1,15 +1,10 @@
-// Host-Test für Drehungen um die Senkrechte (früher Patches 0005/0006, seit Patch 0021 die Lagefusion als
-// Richtungsvektor): updateImu mit synthetischen Rohdaten. Sensor gekippt wie beim balancierenden RiderPi
-// (Roll +2,2°, Nick -1,1°) und nicht genau auf der Drehachse (wirksam ~4 cm vor/hinter, 4 mm seitlich:
-// Fliehkraft auf den Beschleunigungssensor), Roll- und Nick-Kreisel mit den am RiderPi gemessenen
-// Achsfehlern gegen die Gierrate (2026-11-18). 5 s Stillstand (Kalibrierung), 3 s Drehung um die
-// Senkrechte mit 40 bzw. 85 °/s in beide Richtungen, 3 s Stillstand. Die wahre Lage ändert sich nicht.
-//   Original: Nick bis 5,6° daneben
-//   0021: Grenze 0,25° (kein Winkel wird festgehalten; die Fliehkraft zählt wegen des langsamen
-//   Nachziehens und des kleineren Gewichts beim Drehen kaum)
-// Nach firmware/build.sh (Quellen mit Patches in firmware/build/), im Repo-Root:
-//   S=firmware/build/xgorider2_rl/firmware/src
-//   g++ -std=c++17 -ffp-contract=off -I $S firmware/tests/test_imu_yaw_coupling.cpp $S/control/rider_leg_imu.cpp -o t && ./t
+// Host-Test 04-attitude: Drehungen um die Senkrechte. updateImu mit synthetischen Rohdaten. Sensor gekippt wie
+// beim balancierenden RiderPi (Roll +2,2°, Nick -1,1°) und nicht genau auf der Drehachse (wirksam ~4 cm vor/hinter,
+// 4 mm seitlich: Fliehkraft auf den Beschleunigungssensor), Roll- und Nick-Kreisel mit den am RiderPi gemessenen
+// Achsfehlern gegen die Gierrate. 5 s Stillstand (Kalibrierung), 3 s Drehung um die Senkrechte mit 40 bzw. 85 °/s
+// in beide Richtungen, 3 s Stillstand. Die wahre Lage ändert sich nicht.
+//   Original: Nick bis 5,6° daneben; Grenze hier 0,25°.
+// Aufruf: firmware/tests/run.sh test_imu_yaw_coupling
 #include "control/rider_leg_imu.h"
 #include <cmath>
 #include <cstdio>

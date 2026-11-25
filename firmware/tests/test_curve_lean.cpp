@@ -1,10 +1,8 @@
-// Host-Test für Patch 0034: In schnellen Kurven einlegen (control::updateCurveLean, MotionRequest::roll_target_deg).
+// Host-Test 07-balance: In schnellen Kurven einlegen (control::updateCurveLean, MotionRequest::roll_target_deg).
 // Ziel = -atan(v * Gierrate / g): Vorzeichen, Betrag, Grenzen (6°, Beine), Tiefpass + Rate, aus = zurück auf 0.
 // Regelkreis wie test_roll_hold.cpp: Körper-Roll = Störung + Vorzeichen * Roll-Sollwert der Beine; mit Ziel geht
-// der Körper-Roll auf das Ziel, der Trimm 0012 nimmt die Schräglage nicht auf, Ziel 0 ist bitgleich zu vorher.
-// Nach firmware/build.sh (Quellen mit Patches in firmware/build/), im Repo-Root:
-//   S=firmware/build/xgorider2_rl/firmware/src
-//   g++ -std=c++17 -ffp-contract=off -I $S firmware/tests/test_curve_lean.cpp $S/motion_controller.cpp $S/control/rider_motion.cpp $S/control/pid.cpp $S/control/rider_leg_imu.cpp -o t && ./t
+// der Körper-Roll auf das Ziel, der Roll-Trimm nimmt die Schräglage nicht auf, Ziel 0 ist bitgleich zu ohne.
+// Aufruf: firmware/tests/run.sh test_curve_lean
 #include "motion_controller.h"
 #include <cmath>
 #include <cstdint>
@@ -95,7 +93,7 @@ static void testClosedLoop() {
     Run lean;
     for (std::uint32_t k = 0; k < 2000; ++k) step(lean, k, true, -4.5f, 2.0f, sign);
     check(std::fabs(lean.roll + 4.5f) < 0.2f, "mit Ziel -4,5°: Körper-Roll geht auf -4,5°");
-    // Trimm 0012 = Beine - Rollbefehl - Einlegen = nur der Ausgleich der Störung, nicht die Schräglage
+    // Roll-Trimm = Beine - Rollbefehl - Einlegen = nur der Ausgleich der Störung, nicht die Schräglage
     Run upright;
     for (std::uint32_t k = 0; k < 2000; ++k) step(upright, k, true, 0, 2.0f, sign);
     std::printf("       Trimm aufrecht %.3f°, eingelegt %.3f°\n", upright.r.legs.roll_trim_deg, lean.r.legs.roll_trim_deg);
@@ -104,7 +102,7 @@ static void testClosedLoop() {
     for (std::uint32_t k = 2000; k < 2600; ++k) step(lean, k, false, -4.5f, 2.0f, sign);
     check(std::fabs(lean.roll) < 0.3f, "Roll halten aus mitten in der Kurve: Rider richtet sich auf");
 
-    // Ziel 0: bitgleich zum Stand vor 0034 (Ziel 0, Trimm - 0)
+    // Ziel 0: bitgleich zum Stand ohne Einlegen (Ziel 0, Trimm - 0)
     Run a, b;
     bool same = true;
     for (std::uint32_t k = 0; k < 2000; ++k) {

@@ -1173,10 +1173,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#pi-shutdown-patch-0028" class="md-nav__link">
+  <a href="#pi-shutdown-patch-06-leds" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Pi shutdown (patch 0028)
+        Pi shutdown (patch 06-leds)
       
     </span>
   </a>
@@ -1381,10 +1381,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#pi-shutdown-patch-0028" class="md-nav__link">
+  <a href="#pi-shutdown-patch-06-leds" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Pi shutdown (patch 0028)
+        Pi shutdown (patch 06-leds)
       
     </span>
   </a>
@@ -1470,16 +1470,16 @@ Stock firmware R-1.1.3 may differ (not analysed).</p>
 <h2 id="hardware">Hardware<a class="headerlink" href="#hardware" title="Permanent link">&para;</a></h2>
 <ul>
 <li><strong>4 RGB LEDs</strong> (WS2812/NeoPixel) on <strong>GPIO27</strong> (RMT channel 0), index 0..3.</li>
-<li>Brightness: every output is multiplied by n/256. Stock ~0.5 (129), patch 0003 fixed 64, patch 0016: n settable at runtime (reg <code>0x12</code>, <code>!led &lt;n&gt;</code>, Pi: <code>settings/led_brightness</code>), default 32, not stored across an ESP restart. Pi side stores the web value in <code>/var/lib/xgonav/led_brightness</code> (default 20 % = 51); <code>rc.local</code> sets it at boot, xgonav on start flashes 255 for 0.2 s, then sets it. "Full" colour values are usually 200–255.</li>
+<li>Brightness: every output is multiplied by n/256. Stock ~0.5 (129); patch 06-leds: n settable at runtime (reg <code>0x12</code>, <code>!led &lt;n&gt;</code>, Pi: <code>settings/led_brightness</code>), default 32, not stored across an ESP restart. Pi side stores the web value in <code>/var/lib/xgonav/led_brightness</code> (default 20 % = 51); <code>rc.local</code> sets it at boot, xgonav on start flashes 255 for 0.2 s, then sets it. "Full" colour values are usually 200–255.</li>
 </ul>
 <h2 id="priority">Priority<a class="headerlink" href="#priority" title="Permanent link">&para;</a></h2>
 <p>Per frame <code>renderFaultLeds</code> is tried first, otherwise <code>renderLeds</code>:</p>
 <ol>
 <li><strong>Fault colour</strong> is shown <strong>unless</strong> <code>robot_mode==1</code> (balancing) or <code>robot_mode==250</code> (low battery), or there is no fault.</li>
 <li>Otherwise normal display (low-battery blink, gyro calibration, pitch trim, driving direction).</li>
-<li>Otherwise the <strong>user LEDs</strong> (patch 0023), balancing or not; redrawn when they or the brightness change.</li>
+<li>Otherwise the <strong>user LEDs</strong> (patch 06-leds), balancing or not; redrawn when they or the brightness change.</li>
 </ol>
-<p>LED effects are the client's business: the firmware shows states only. The colour gradients of the roll/height wave (actions 1, 2, 5, 6, registers 0x39/0x82) were removed with patch 0023.</p>
+<p>LED effects are the client's business: the firmware shows states only. The colour gradients of the roll/height wave (actions 1, 2, 5, 6, registers 0x39/0x82) were removed with patch 06-leds.</p>
 <p>Fault colour depends on <code>last_stop_reason</code> (<code>ledFaultFor(driving,last_stop)</code>), normal display on
 <code>mode</code> and drive/action values. All fields are in <code>!status</code> (<code>mode</code>, <code>reason</code>, <code>last_stop_reason</code>, <code>driving</code>).</p>
 <h2 id="power-on-esp-reset">Power-on / ESP reset<a class="headerlink" href="#power-on-esp-reset" title="Permanent link">&para;</a></h2>
@@ -1495,12 +1495,12 @@ Stock firmware R-1.1.3 may differ (not analysed).</p>
 <tr>
 <td><strong>Pink</strong> (R192 G0 B63), circling</td>
 <td>bright spot runs 0 → 1 → 2 → 3 (front left, rear left, rear right, front right), 0.4 s per turn, the others at 12 %</td>
-<td><strong>Gyro boot calibration running</strong> (patch 0022, <code>!ImuState::calibrated</code>): keep the Rider still. ~1.5 s after power-on at standstill, up to ~15 s when moved, forever while <code>\|roll\| ≥ 4°</code>; again after an IMU fusion restart (then in the current user colours). Low battery, mode 0 and fault colours go first.</td>
+<td><strong>Gyro boot calibration running</strong> (patch 06-leds, <code>!ImuState::calibrated</code>): keep the Rider still. ~1.5 s after power-on at standstill, up to ~15 s when moved, forever while <code>\|roll\| ≥ 4°</code>; again after an IMU fusion restart (then in the current user colours). Low battery, mode 0 and fault colours go first.</td>
 </tr>
 <tr>
 <td><strong>Pink</strong> (R192 G0 B63), steady, all 4</td>
 <td>constant</td>
-<td><strong>Powered on / ESP reset / armed, gyro calibrated.</strong> <code>begin()</code> and <code>arm()</code> (action 255, stand-up 253, <code>!arm</code>) set the user LEDs to palette index 234; arming overwrites colours written by the client (patch 0023). Shown whenever no fault/stop colour, low battery, driving (green) or trim display is due.</td>
+<td><strong>Powered on / ESP reset / armed, gyro calibrated.</strong> <code>begin()</code> and <code>arm()</code> (action 255, stand-up 253, <code>!arm</code>) set the user LEDs to palette index 234; arming overwrites colours written by the client (patch 06-leds). Shown whenever no fault/stop colour, low battery, driving (green) or trim display is due.</td>
 </tr>
 </tbody>
 </table>
@@ -1517,7 +1517,7 @@ Stock firmware R-1.1.3 may differ (not analysed).</p>
 <tr>
 <td><strong>Red, steady</strong></td>
 <td>constant</td>
-<td><strong>Tipped over / tilt fault</strong>. Also <code>mode 0</code>, upright too. Patch 0027: no self-start from mode 0 (stock: balanced again after ~500 upright control ticks while still red); only a command arms it (255, stand-up 253), then pink.</td>
+<td><strong>Tipped over / tilt fault</strong>. Also <code>mode 0</code>, upright too. Patch 05-actions: no self-start from mode 0 (stock: balanced again after ~500 upright control ticks while still red); only a command arms it (255, stand-up 253), then pink.</td>
 </tr>
 <tr>
 <td><strong>Red, fast blink</strong> (~5 Hz)</td>
@@ -1536,7 +1536,7 @@ Stock firmware R-1.1.3 may differ (not analysed).</p>
 </tr>
 </tbody>
 </table>
-<h2 id="pi-shutdown-patch-0028">Pi shutdown (patch 0028)<a class="headerlink" href="#pi-shutdown-patch-0028" title="Permanent link">&para;</a></h2>
+<h2 id="pi-shutdown-patch-06-leds">Pi shutdown (patch 06-leds)<a class="headerlink" href="#pi-shutdown-patch-06-leds" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
 <tr>
@@ -1566,7 +1566,7 @@ Stock firmware R-1.1.3 may differ (not analysed).</p>
 <tr>
 <td><strong>Red, blinking</strong> (battery timing)</td>
 <td>on/off with <code>low_blink</code></td>
-<td><strong>Battery empty / shutdown imminent</strong> (<code>mode 250</code>, <code>stop_required</code>). Own blink timing, not the fault patterns above. Stock: latched until power-off, all commands rejected. Patch 0026: clears after 5 s at ≥ 15 % (then mode 253), action 237 (ESP restart) accepted meanwhile.</td>
+<td><strong>Battery empty / shutdown imminent</strong> (<code>mode 250</code>, <code>stop_required</code>). Own blink timing, not the fault patterns above. Stock: latched until power-off, all commands rejected. Patch 05-actions: clears after 5 s at ≥ 15 % (then mode 253), action 237 (ESP restart) accepted meanwhile.</td>
 </tr>
 </tbody>
 </table>
@@ -1626,7 +1626,7 @@ Stock firmware R-1.1.3 may differ (not analysed).</p>
 </tr>
 <tr>
 <td style="text-align: right;">0</td>
-<td>tilt/fall fault, "stranded", runaway protection; stays until a command (patch 0027)</td>
+<td>tilt/fall fault, "stranded", runaway protection; stays until a command (patch 05-actions)</td>
 <td>red (tilt = steady, fall = fast blink)</td>
 </tr>
 <tr>
@@ -1663,10 +1663,10 @@ Stock firmware R-1.1.3 may differ (not analysed).</p>
 </table>
 <h2 id="cheat-sheet">Cheat sheet<a class="headerlink" href="#cheat-sheet" title="Permanent link">&para;</a></h2>
 <ul>
-<li><strong>Red</strong> = problem/stopped (pattern gives cause: steady = tip, fast = fall, slow = fault, battery timing = battery). Does not balance by itself (patch 0027).</li>
+<li><strong>Red</strong> = problem/stopped (pattern gives cause: steady = tip, fast = fall, slow = fault, battery timing = battery). Does not balance by itself (patch 05-actions).</li>
 <li><strong>Amber</strong> = deliberately stopped.</li>
 <li><strong>Green</strong> = driving (direction).</li>
-<li><strong>Blue</strong> = pitch trim (blinking); steady blue = Pi shut down (patch 0028).</li>
+<li><strong>Blue</strong> = pitch trim (blinking); steady blue = Pi shut down (patch 06-leds).</li>
 <li><strong>Pink circling</strong> = gyro calibrating, keep still.</li>
 <li><strong>Pink</strong> = powered on / armed (mode 253 balances by itself once upright), or idle with default user LEDs.</li>
 <li><strong>Other steady colour</strong> = idle (user LEDs set via <code>!rgb</code> / <code>leds/0..3</code>).</li>

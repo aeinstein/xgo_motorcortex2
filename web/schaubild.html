@@ -100,7 +100,7 @@ ul.k li { margin:3px 0; }
 <rect x="10" y="20" width="1440" height="200" rx="10" class="band b-snap"/>
 <text x="22" y="40" class="bandl" text-anchor="start">Hardware · am ESP32 angeschlossen (Taster A–D am Pi)</text>
 <rect x="330" y="255" width="1460" height="455" rx="10" class="band b-work"/>
-<text x="1778" y="275" class="bandl" text-anchor="end">ESP32-Firmware R-1.1.6 · Patches 0001–0019 · am Rider geflasht</text>
+<text x="1778" y="275" class="bandl" text-anchor="end">ESP32-Firmware R-1.1.6 · Patches 01–08 · am Rider geflasht</text>
 <rect x="330" y="740" width="1120" height="240" rx="10" class="band b-cam"/>
 <text x="342" y="760" class="bandl" text-anchor="start">Leitung · UART1 ↔ /dev/ttyAMA0</text>
 <rect x="10" y="1000" width="1780" height="280" rx="10" class="band b-main"/>
@@ -259,26 +259,25 @@ ul.k li { margin:3px 0; }
 <text x="719" y="351.5" class="bl" xml:space="preserve">sensor() alle 2 ms: IMU (real ~3 ms,</text>
 <text x="719" y="367.0" class="bl" xml:space="preserve">  ~333 Hz), Akku, Radweg</text>
 <text x="719" y="382.5" class="bl" xml:space="preserve">Lagefusion → roll, pitch, yaw:</text>
-<text x="719" y="398.0" class="bl" xml:space="preserve">  0005 Gier aus Nick-/Rollrate herausgerechnet</text>
-<text x="719" y="413.5" class="bl" xml:space="preserve">  0006 Beschl.-Winkel ab 25 °/s eingefroren</text>
-<text x="719" y="429.0" class="bl" xml:space="preserve">  0009 Gier-Nullpunkt laufend nachgeführt</text>
-<text x="719" y="444.5" class="bl" xml:space="preserve">  0017 Nick ungefiltert, 0019 Startkalibrierung</text>
+<text x="719" y="398.0" class="bl" xml:space="preserve">  04-attitude: Lage als Richtungsvektor,</text>
+<text x="719" y="413.5" class="bl" xml:space="preserve">  vom Kreisel weitergedreht, Beschl. 8 s</text>
+<text x="719" y="429.0" class="bl" xml:space="preserve">  Kreisel-Nullpunkte aus Startkalibrierung</text>
+<text x="719" y="444.5" class="bl" xml:space="preserve">  Kurs aus der Drehrate um die Senkrechte</text>
 <text x="719" y="460.0" class="bl" xml:space="preserve">control() alle 4 ms (250 Hz): Balance,</text>
-<text x="719" y="475.5" class="bl" xml:space="preserve">  Fahren (0015), Halten (0008), Beine</text>
+<text x="719" y="475.5" class="bl" xml:space="preserve">  Fahren, Halten, Roll (07-balance), Beine</text>
 <text x="719" y="491.0" class="bl" xml:space="preserve">publish() alle 10 ms: Register-Schnappschuss</text>
 </g>
 <g class="box k-mix" id="e_reg">
-<rect x="1120" y="300" width="320" height="145.0" rx="7"/>
+<rect x="1120" y="300" width="320" height="129.5" rx="7"/>
 <text x="1129" y="318" class="bt">Register (aus dem Schnappschuss)</text>
 <rect x="1394.0" y="306" width="40.0" height="16" rx="8" class="tag tag-mix"/>
 <text x="1414.0" y="318" class="tagt" text-anchor="middle">ESP32</text>
 <text x="1129" y="336.0" class="bl" xml:space="preserve">0x0d 24 B: roll, pitch, yaw, Ticks, t_ms</text>
-<text x="1129" y="351.5" class="bl" xml:space="preserve">0x0c 16 B: Ticks + Rohposition</text>
-<text x="1129" y="367.0" class="bl" xml:space="preserve">0x0e / 0x0f / 0x10 Diagnose (raw_reg)</text>
-<text x="1129" y="382.5" class="bl" xml:space="preserve">0x01 Akku %, 0x02 Zustand, 0x68 Gier</text>
-<text x="1129" y="398.0" class="bl" xml:space="preserve">Schreiben: 0x30 vor, 0x32 drehen,</text>
-<text x="1129" y="413.5" class="bl" xml:space="preserve">0x35 Höhe, 0x36 Roll, 0x61 Nivellieren,</text>
-<text x="1129" y="429.0" class="bl" xml:space="preserve">0x69–0x6c LEDs, 0x12 Helligkeit, 0x11 Strom</text>
+<text x="1129" y="351.5" class="bl" xml:space="preserve">0x0e / 0x15 / 0x19 Diagnose (raw_reg)</text>
+<text x="1129" y="367.0" class="bl" xml:space="preserve">0x01 Akku %, 0x02 Zustand, 0x68 Gier</text>
+<text x="1129" y="382.5" class="bl" xml:space="preserve">Schreiben: 0x30 vor, 0x32 drehen,</text>
+<text x="1129" y="398.0" class="bl" xml:space="preserve">0x35 Höhe, 0x36 Roll, 0x61 Nivellieren,</text>
+<text x="1129" y="413.5" class="bl" xml:space="preserve">0x69–0x6c LEDs, 0x12 Helligkeit, 0x11 Strom</text>
 </g>
 <g class="box k-mix" id="e_akt">
 <rect x="1480" y="300" width="300" height="83.0" rx="7"/>
@@ -287,7 +286,7 @@ ul.k li { margin:3px 0; }
 <text x="1754.0" y="318" class="tagt" text-anchor="middle">ESP32</text>
 <text x="1489" y="336.0" class="bl" xml:space="preserve">255 scharf, 254 Not-Aus,</text>
 <text x="1489" y="351.5" class="bl" xml:space="preserve">253 Aufstehen, 237 Neustart,</text>
-<text x="1489" y="367.0" class="bl" xml:space="preserve">241/240 Halten, 239/238 Integral</text>
+<text x="1489" y="367.0" class="bl" xml:space="preserve">234/233 LEDs blau, 232/231 Kurve</text>
 </g>
 <g class="box k-mix" id="e_loop">
 <rect x="710" y="550" width="370" height="129.5" rx="7"/>
@@ -408,7 +407,7 @@ ul.k li { margin:3px 0; }
 <text x="1129" y="1391.5" class="bl" xml:space="preserve">height → 0x35, roll → 0x36</text>
 <text x="1129" y="1407.0" class="bl" xml:space="preserve">roll_balance → 0x61, action → 0x3e</text>
 <text x="1129" y="1422.5" class="bl" xml:space="preserve">leds/0..3 → 0x69–0x6c</text>
-<text x="1129" y="1438.0" class="bl" xml:space="preserve">vel → 0x1a, vel_limits → 0x1b (0029)</text>
+<text x="1129" y="1438.0" class="bl" xml:space="preserve">vel → 0x1a, vel_limits → 0x1b (08-velocity)</text>
 <text x="1129" y="1438.0" class="bl" xml:space="preserve">settings/led_brightness → 0x12</text>
 <text x="1129" y="1453.5" class="bl" xml:space="preserve">settings/imu_stream_hz → 0x11</text>
 <text x="1129" y="1469.0" class="bl" xml:space="preserve">settings/calibration 0x04, pitch_cal. 0x09</text>
@@ -764,8 +763,8 @@ ul.k li { margin:3px 0; }
 <tr><td>IMU-Leser</td><td>xgonav ProcImu</td><td>je Bild aus der Bildschleife (refresh, direkt vor imu_frame); Faden alle 50 ms nur, wenn sonst niemand liest</td><td>imu_log</td><td><code>xgonav/imu.py</code></td></tr>
 <tr><td>Rad-Leser</td><td>xgonav ProcWheels</td><td>25 Hz (abgesetzt 5 Hz)</td><td>wheels_log</td><td><code>xgonav/wheels.py</code></td></tr>
 <tr><td>Fahrbefehle, Zustand</td><td>xgonav ProcRobot</td><td>schreibt 50 Hz, liest 0,2 s</td><td>Fahrrahmen <code>vel</code> (m/s → Firmware-Einheiten ÷ 3,9 mm/s, °/s, a, Ruck; Grenzen <code>vel_limits</code> alle 2 s), sonst speed_x/z u8, 128 = Stand</td><td><code>xgonav/robot.py</code></td></tr>
-<tr><td>BLE-Tunnel (0025)</td><td>Telefon ↔ ESP32 loop() ↔ Kernel ↔ xgo-ble</td><td>nur bei Anfragen; zum Pi je Durchlauf ein Rahmen, vom Pi ein Rahmen je 4 ms (≈ 4,6 kB/s)</td><td>Typ 0x15 / Reg 0x17, Kennung + ≤ 23 B; Ring 4 KB im Treiber, 2 KB im ESP32</td><td><code>pi_tunnel.h, xgo-serial.c tunnel_frame, deploy/xgo-ble/</code></td></tr>
-<tr><td>IP des Pi für BLE (0025)</td><td>Kernel, xgo_main → ESP32</td><td>bei Änderung und alle 3 s</td><td>Reg 0x18, 4 B; ESP32 zeigt nach 10 s ohne Meldung 0.0.0.0</td><td><code>xgo-drv.c pi_ip_tick</code></td></tr>
+<tr><td>BLE-Tunnel (01-ble)</td><td>Telefon ↔ ESP32 loop() ↔ Kernel ↔ xgo-ble</td><td>nur bei Anfragen; zum Pi je Durchlauf ein Rahmen, vom Pi ein Rahmen je 4 ms (≈ 4,6 kB/s)</td><td>Typ 0x15 / Reg 0x17, Kennung + ≤ 23 B; Ring 4 KB im Treiber, 2 KB im ESP32</td><td><code>pi_tunnel.h, xgo-serial.c tunnel_frame, deploy/xgo-ble/</code></td></tr>
+<tr><td>IP des Pi für BLE (01-ble)</td><td>Kernel, xgo_main → ESP32</td><td>bei Änderung und alle 3 s</td><td>Reg 0x18, 4 B; ESP32 zeigt nach 10 s ohne Meldung 0.0.0.0</td><td><code>xgo-drv.c pi_ip_tick</code></td></tr>
 <tr><td>Live-Anzeige</td><td>live.php</td><td>0,3 s balancierend, sonst 1 s</td><td>imu_log, wheels_log</td><td><code>tools/live.php</code></td></tr>
 <tr><td>Gegensprechen</td><td>sprech.php, arecord/aplay</td><td>nur im Modus Hand während eines Gesprächs; 40-ms-Rahmen, /status je Sekunde; Echo-Sperre (Verzögerung aus Pegel-Korrelation) nur im Browser</td><td>8 kHz mono S16 je Richtung (16 kB/s); ≲ 1 % eines Kerns. Bild: RGB565 320×240 vom Browser ins FIFO /tmp/lcd0, 5/s ≈ 9 % eines Kerns (nginx-TLS 4,9, PHP 3,3, Display 1,0), 10/s ≈ 17 %</td><td><code>tools/sprech.php</code></td></tr>
 </tbody></table></div>

@@ -1,11 +1,9 @@
-// Host-Test für Patch 0027: Protokoll des Hebeschutzes (lift_log.h) und kein Selbststart aus Zustand 0.
+// Host-Test 03-diagnostics / 05-actions: Protokoll des Hebeschutzes (lift_log.h) und kein Selbststart aus Zustand 0.
 // Prüft: Auslösung samt Messwerten festhalten, Dauer und betragsgrößtes Rohfeld, Ende frei gegeben bzw. durch
 // Stopp, dass ein Stopp nichts löscht (anders als lift::State), den letzten Stopp aus dem Balancieren; dazu
 // ActionEngine in Zustand 0: mit auto_recover = false bleibt er auch nach langem Aufrechtstehen liegen, mit true
 // (Original R-1.1.6) geht er nach > 500 Takten auf 1.
-// Nach firmware/build.sh (Quellen mit Patches in firmware/build/), im Repo-Root:
-//   S=firmware/build/xgorider2_rl/firmware/src
-//   g++ -std=c++17 -ffp-contract=off -I $S firmware/tests/test_lift_log.cpp $S/action_engine.cpp -o t && ./t
+// Aufruf: firmware/tests/run.sh test_lift_log
 #include "lift_log.h"
 #include "lift_guard.h"
 #include "action_engine.h"
@@ -90,7 +88,7 @@ static void testNoAutoRecover() {
         bool armed = false;
         for (int k = 0; k < 1000; ++k) { t += 3; armed = e.controlTick(t, 1.0f, 0.5f) || armed; }
         if (recover) check(armed && e.state().mode == 1, "Original: aufrecht nach > 500 Takten von selbst Zustand 1");
-        else check(!armed && e.state().mode == 0, "0027: 1000 aufrechte Takte, bleibt in Zustand 0");
+        else check(!armed && e.state().mode == 0, "1000 aufrechte Takte, bleibt in Zustand 0");
     }
     ActionEngine e;
     e.state().auto_recover = false;

@@ -1,5 +1,7 @@
+ble: BLE-Dienst RiderKerk, Tunnel zum Pi, Konsole an den Kanal der Zeile
+
 diff --git a/firmware/src/ble_transport.cpp b/firmware/src/ble_transport.cpp
-index cc06208..ce0e149 100644
+index cc06208..722b692 100644
 --- a/firmware/src/ble_transport.cpp
 +++ b/firmware/src/ble_transport.cpp
 @@ -1,4 +1,5 @@
@@ -20,7 +22,7 @@ index cc06208..ce0e149 100644
 -constexpr const char *kNotify="0000fff1-0000-1000-8000-00805f9b34fb";
 -constexpr const char *kWrite="0000fff2-0000-1000-8000-00805f9b34fb";
 -QueueHandle_t rxQueue=nullptr;
-+// Patch 0025: eigene UUIDs (zufällig erzeugt), letzte Stelle = Kanal.
++// eigene UUIDs (zufällig erzeugt), letzte Stelle = Kanal.
 +constexpr const char *kService="fdacc797-7e1d-4d87-9205-64ca79f74500";
 +constexpr const char *kUuid[3]={
 +    "fdacc797-7e1d-4d87-9205-64ca79f74501",   // Cmd
@@ -173,7 +175,7 @@ index cc06208..ce0e149 100644
 +}
  }
 diff --git a/firmware/src/ble_transport.h b/firmware/src/ble_transport.h
-index 4ff35f0..298ee78 100644
+index 4ff35f0..175eff1 100644
 --- a/firmware/src/ble_transport.h
 +++ b/firmware/src/ble_transport.h
 @@ -2,13 +2,25 @@
@@ -182,7 +184,7 @@ index 4ff35f0..298ee78 100644
  namespace rider2 {
 -// Must be called outside the time-critical control loop. BLE callback only
 -// enqueues RX bytes; all parser, motion and flash operations run in caller task.
-+// Patch 0025: eigener BLE-Dienst (ersetzt fff0/fff1/fff2 der Hersteller-App). Ein Service, vier
++// eigener BLE-Dienst (ersetzt fff0/fff1/fff2 der Hersteller-App). Ein Service, vier
 +// Characteristics (UUIDs in ble_transport.cpp und docs/ble.md):
 +//   Cmd  Write/Notify  Binärrahmen wie am Pi-Kanal, Antworten sofort per Notify
 +//   Con  Write/Notify  Textkonsole: Zeilen "!befehl\n" hinein, Text heraus
@@ -208,24 +210,24 @@ index 4ff35f0..298ee78 100644
 +void pollBle(uint32_t now_ms);
  }
 diff --git a/firmware/src/command_protocol.cpp b/firmware/src/command_protocol.cpp
-index 13577fb..ea0aea1 100644
+index 660065a..f95d26d 100644
 --- a/firmware/src/command_protocol.cpp
 +++ b/firmware/src/command_protocol.cpp
-@@ -21,6 +21,8 @@ uint8_t readLength(uint8_t reg) {
-     case 0x0f:return 12;
-     case 0x10:return 32;
-     case 0x15:return 32;
-+    case 0x17:return 1;
+@@ -15,6 +15,7 @@ uint8_t readLength(uint8_t reg) {
+     case 0xb2:return 16;
+     case 0x07:return 10;
+     case 0x0b:return 16;
 +    case 0x18:return 4;
      case 0x62: case 0x63: case 0x64:return 4;
      case 0x65:return 24;
      case 0x66: case 0x67: case 0x68:return 2;
-@@ -46,10 +48,10 @@ void putAngle(uint8_t *out, float value) {
+@@ -36,10 +37,11 @@ void putAngle(uint8_t *out, float value) {
  CommandKind commandKind(const CommandEvent &e) {
      if(e.isRead())return CommandKind::Unknown;
      switch(e.reg) {
--    case 0x03:case 0x04:case 0x05:case 0x06:case 0x08:case 0x09:case 0x0a:case 0x11:case 0x16:case 0x12:case 0x13:
-+    case 0x03:case 0x04:case 0x05:case 0x06:case 0x08:case 0x09:case 0x0a:case 0x11:case 0x16:case 0x12:case 0x17:case 0x18:
+-    case 0x03:case 0x04:case 0x05:case 0x06:case 0x08:case 0x09:case 0x0a:case 0x13:
++    case 0x03:case 0x04:case 0x05:case 0x06:case 0x08:case 0x09:case 0x0a:
++    case 0x17:case 0x18:
      case 0x30:case 0x32:case 0x35:case 0x36:case 0x39:case 0x3e:case 0x60:case 0x61:
      case 0x69:case 0x6a:case 0x6b:case 0x6c:case 0x82:case 0xa0:case 0xa1:case 0xb0:
 -    case 0xb3:case 0xb4:case 0xb5:case 0xb6:case 0xb7:case 0xb8:
@@ -233,8 +235,8 @@ index 13577fb..ea0aea1 100644
          return static_cast<CommandKind>(e.reg);
      default:return CommandKind::Unknown;
      }
-@@ -66,7 +68,8 @@ const char *commandName(CommandKind kind) {
-     case CommandKind::BalanceOffset:return "balance_offset";
+@@ -53,7 +55,8 @@ const char *commandName(CommandKind kind) {
+     case CommandKind::TelemetryStream:return "telemetry_stream";
      case CommandKind::PitchCalibration:return "pitch_calibration";
      case CommandKind::HeadingHold:return "heading_hold";
 -    case CommandKind::BleSuffix:return "ble_suffix";
@@ -243,35 +245,36 @@ index 13577fb..ea0aea1 100644
      case CommandKind::Forward:return "forward";
      case CommandKind::Turn:return "turn";
      case CommandKind::Height:return "height";
-@@ -87,7 +90,8 @@ const char *commandName(CommandKind kind) {
+@@ -74,7 +77,8 @@ const char *commandName(CommandKind kind) {
  bool validCommand(const CommandEvent &e) {
      if(e.type==2)return e.length==1 && readLength(e.reg)!=0;
      if(e.type>1 || commandKind(e)==CommandKind::Unknown)return false;
 -    if(e.reg==0x13)return e.length>=1 && e.length<=20;
-+    if(e.reg==0x17)return e.length>=1 && e.length<=24;   // patch 0025: Kennung + Daten
++    if(e.reg==0x17)return e.length>=1 && e.length<=24;   // Pi tunnel: kind + data
 +    if(e.reg==0x18)return e.length==4;
      if(e.reg>=0x69 && e.reg<=0x6c)return e.length==3 || e.length==12;
      if(e.reg==0x05)return e.length<=1;
      if(e.reg==0xb0)return e.length==1&&e.data[0]<=2;
-@@ -183,6 +187,8 @@ size_t buildReadResponse(const CommandEvent &r,const Telemetry &t,uint8_t *out,s
-         std::memcpy(data,t.imudiag,32);break;
-     case 0x15:  // custom (patch 0020): raw IMU sums, layout in main.cpp fillRawDiag()
-         std::memcpy(data,t.rawdiag,32);break;
-+    case 0x17:data[0]=t.ble_connected;break;   // custom (patch 0025)
-+    case 0x18:std::memcpy(data,t.pi_ip,4);break;   // custom (patch 0025): IPv4 des Pi
+@@ -155,6 +159,7 @@ size_t buildReadResponse(const CommandEvent &r,const Telemetry &t,uint8_t *out,s
+     case 0x66:putAngle(data,t.roll_deg);break;
+     case 0x67:putAngle(data,t.pitch_deg);break;
+     case 0x68:putAngle(data,t.yaw_deg);break;
++    case 0x18:std::memcpy(data,t.pi_ip,4);break;       // custom: IPv4 of the Pi
      default:return 0;
      }
      return buildFrame(0x12,r.reg,data,n,out,cap);
 diff --git a/firmware/src/command_protocol.h b/firmware/src/command_protocol.h
-index e94cc5a..1a0c08f 100644
+index fbd36c6..1453ec0 100644
 --- a/firmware/src/command_protocol.h
 +++ b/firmware/src/command_protocol.h
-@@ -7,13 +7,13 @@ enum class Source : uint8_t { Usb = 0, Aux = 1, Ble = 3 };
+@@ -7,13 +7,15 @@ enum class Source : uint8_t { Usb = 0, Aux = 1, Ble = 3 };
  enum class CommandKind : uint8_t {
      ActionLoop = 0x03, LegCalibration = 0x04, ReservedNoop = 0x05,
      UnknownSetting06 = 0x06, TelemetryStream = 0x08, PitchCalibration = 0x09,
--    HeadingHold = 0x0a, ImuStream = 0x11 /* Patch 0014 */, LedBrightness = 0x12 /* Patch 0016 */, BalanceOffset = 0x16 /* Patch 0021 */, BleSuffix = 0x13, Forward = 0x30,
-+    HeadingHold = 0x0a, ImuStream = 0x11 /* Patch 0014 */, LedBrightness = 0x12 /* Patch 0016 */, BalanceOffset = 0x16 /* Patch 0021 */, PiTunnel = 0x17 /* Patch 0025 */, PiIp = 0x18 /* Patch 0025 */, Forward = 0x30,
+-    HeadingHold = 0x0a, BleSuffix = 0x13, Forward = 0x30,
++    HeadingHold = 0x0a,
++    PiTunnel = 0x17, PiIp = 0x18,
++    Forward = 0x30,
      Turn = 0x32, Height = 0x35, Roll = 0x36, RollWave = 0x39,
      Action = 0x3e, PositionHoldProtection = 0x60, Leveling = 0x61,
      Rgb0 = 0x69, Rgb1 = 0x6a, Rgb2 = 0x6b, Rgb3 = 0x6c,
@@ -282,12 +285,11 @@ index e94cc5a..1a0c08f 100644
      WheelSlew = 0xb6, YawSlew = 0xb7, SpeedCal = 0xb8,
      Unknown = 0xff
  };
-@@ -64,6 +64,9 @@ struct Telemetry {
-     uint8_t imudiag[32] = {};
-     // Custom reg 0x15 (patch 0020): 32-byte raw IMU sums, filled by main.cpp publish().
-     uint8_t rawdiag[32] = {};
-+    // Custom reg 0x17/0x18 (patch 0025): BLE verbunden, IPv4 des Pi; main.cpp receive() trägt sie vor der Antwort ein.
-+    uint8_t ble_connected = 0;
+@@ -52,6 +54,8 @@ struct Telemetry {
+     float odometry[4] = {};  // x, y, heading, integrated distance
+     int32_t leg12_position = 512, leg22_position = 512;
+     uint16_t leg12_zero = 512, leg22_zero = 512;
++    // Custom reg 0x18 read: IPv4 of the Pi; main.cpp receive() fills it in before answering.
 +    uint8_t pi_ip[4] = {};
      uint8_t policy_mode=0,policy_action_space=0;
      uint8_t policy_contract=6;
@@ -351,7 +353,7 @@ index 33661f5..4d5a843 100644
 -}
  }
 diff --git a/firmware/src/device_settings.h b/firmware/src/device_settings.h
-index 58d84f8..d212d5c 100644
+index 58d84f8..e021490 100644
 --- a/firmware/src/device_settings.h
 +++ b/firmware/src/device_settings.h
 @@ -2,14 +2,6 @@
@@ -374,7 +376,7 @@ index 58d84f8..d212d5c 100644
  // Invalid/missing extension falls back to the original low32 + zero-high32.
  TrimSetting loadPitchTrim();
 -// Read/modify/erase/write/verify only the three original settings sectors.
-+// Read/modify/erase/write/verify only the leg and trim settings sectors (patch 0025: the name sector
++// Read/modify/erase/write/verify only the leg and trim settings sectors (the vendor BLE name sector
 +// 0x320000 is no longer read or written).
  // Caller must stop motors before invoking these synchronous flash operations.
  // False means validation, partition overlap, I/O, or verification failed.
@@ -383,25 +385,24 @@ index 58d84f8..d212d5c 100644
 -bool saveBleSuffix(const uint8_t *suffix, size_t length);
  }
 diff --git a/firmware/src/main.cpp b/firmware/src/main.cpp
-index 678e7b9..d405a98 100644
+index c873370..784e9c7 100644
 --- a/firmware/src/main.cpp
 +++ b/firmware/src/main.cpp
-@@ -24,6 +24,7 @@ extern "C" {extern const volatile uint32_t rider_rl_only_build=0x524c4f31;}
+@@ -23,6 +23,7 @@ extern "C" {extern const volatile uint32_t rider_rl_only_build=0x524c4f31;}
+ #include "odometry.h"
  #include "command_protocol.h"
- #include "imu_stream.h"
  #include "ble_transport.h"
 +#include "pi_tunnel.h"
  #include "trace.h"
  #include "lift_guard.h"
  #include "fall_guard.h"
-@@ -63,14 +64,13 @@ constexpr uint16_t kStandupUprightTicks=40;  // ~160 ms with |pitch|<8, |roll|<5
+@@ -50,14 +51,12 @@ constexpr uint16_t kAutoRearmTicks=250;
  constexpr uint8_t kIds[]={11,21,12,22};
  // Diagnostic trace: 28-byte samples, about 55 Hz for 20 seconds. The control
  // task fills the ring (sample + USB-only companion record); the application
 -// task streams it over BLE on request (0xb3) or exports it as text over USB
 -// (!trace dump, !trace usb on) -- the USB route leaves Bluetooth free for the phone.
-+// task exports it as text over USB (!trace dump, !trace usb on). Patch 0025:
-+// the BLE trace stream (register 0xb3, !trace on) is gone.
++// task exports it as text over USB (!trace dump, !trace usb on).
  using TraceSample=rider2::trace::Sample;
  constexpr uint32_t kTraceCapacity=1000;   // the static DRAM region is nearly full: 1200 entries with the 40-byte companion record overflowed it by 1.2 KB
  TraceSample trace_samples[kTraceCapacity];
@@ -411,17 +412,17 @@ index 678e7b9..d405a98 100644
  rider2::trace::UsbCursor trace_usb;   // only the application task (console + loop) touches it
  volatile float wheel_gain=1.0f;
  // Scale applied to the wheel speeds the *policy* sees. The training simulator assumes the speed register
-@@ -162,6 +162,9 @@ volatile uint8_t imuStreamSource=uint8_t(Source::Aux);
- volatile uint32_t lastAuxRxMs=0;
+@@ -131,6 +130,9 @@ QueueHandle_t commands=nullptr;
+ HardwareSerial commandSerial(1);
  StreamParser parser;
  bool bleReady=false;
-+// Patch 0025: eigener BLE-Dienst (ble_transport.h, pi_tunnel.h). Fester Name; der Namenssektor 0x320000 bleibt unberührt.
++// Eigener BLE-Dienst (ble_transport.h, pi_tunnel.h). Fester Name; der Namenssektor 0x320000 bleibt unberührt.
 +constexpr const char* kBleName="RiderKerk";
 +rider2::tunnel::PiIp piIp;   // nur loop() fasst sie an
  bool robotTaskStarted=false;
  uint32_t policyClock(){return micros();}
  
-@@ -363,7 +366,6 @@ public:
+@@ -283,7 +285,6 @@ public:
              if(!policy.setMode(static_cast<rl::Mode>(value))){++s.rejected_commands;result(policy.status().model_valid?"policy rejected: trained model required":"policy rejected: invalid model");}
              else result(value==2?"policy active selected; arm explicitly":"policy mode selected");
              break;
@@ -429,10 +430,10 @@ index 678e7b9..d405a98 100644
          case CommandKind::WheelGain:wheel_gain=float(value)/100.0f;result("wheel gain updated");break;
          case CommandKind::SpeedCal:
              if(driving||value<13){++s.rejected_commands;result("policy speed scale rejected (needs standstill, value 13..255 = 0.2..3.98)");break;}
-@@ -374,13 +376,6 @@ public:
+@@ -292,13 +293,6 @@ public:
+         case CommandKind::WheelSlew:policy.setSlewRate(1000.0f+float(value)*18000.0f/255.0f);result("wheel slew updated");break;
+         case CommandKind::YawSlew:yaw_slew_per_second=1000.0f+float(value)*18000.0f/255.0f;result("yaw slew updated");break;
          case CommandKind::HeadingHold:a.heading_hold=value!=0;break;
-         case CommandKind::LedBrightness:rider::board::setLedBrightness(value);result("led brightness updated");break;   // patch 0016: n/256
-         case CommandKind::BalanceOffset:balance_offset_deg=float(int(value)-128)*0.05f;result("balance offset updated");break;   // patch 0021
 -        case CommandKind::BleSuffix:
 -            cancelTrim();
 -            stop(StopReason::Manual,true);
@@ -443,23 +444,23 @@ index 678e7b9..d405a98 100644
          case CommandKind::Forward:a.command.forward=value;break;
          case CommandKind::Turn:a.command.turn=value;if(std::abs(int(value)-128)>16)a.leveling=false;break;
          case CommandKind::Height:a.command.height=value;break;
-@@ -939,150 +934,162 @@ void receive(Source source,uint8_t byte) {
+@@ -718,141 +712,154 @@ void receive(Source source,uint8_t byte) {
      CommandEvent c;
      if(!parser.feed(source,byte,millis(),c))return;
      if(c.isRead()) {
 -        const auto s=snapshot();uint8_t out[64];const size_t n=buildReadResponse(c,s.telemetry,out,sizeof out);route(source,out,n);
 +        auto s=snapshot();uint8_t out[64];
-+        s.telemetry.ble_connected=rider2::bleConnected()?1:0;std::memcpy(s.telemetry.pi_ip,piIp.ip,4);   // patch 0025
++        std::memcpy(s.telemetry.pi_ip,piIp.ip,4);
 +        const size_t n=buildReadResponse(c,s.telemetry,out,sizeof out);route(source,out,n);
 +    } else if(c.reg==rider2::tunnel::kReg||c.reg==rider2::tunnel::kIpReg) {
-+        // Patch 0025: Tunnel und IP des Pi gleich hier, nicht über die Befehlsschlange der Regelung; nur vom Pi.
++        // Tunnel und IP des Pi gleich hier, nicht über die Befehlsschlange der Regelung; nur vom Pi.
 +        if(source!=Source::Aux)return;
 +        if(c.reg==rider2::tunnel::kIpReg){if(piIp.set(c.data,millis()))rider2::setBleIp(piIp.ip);}
 +        else if(c.data[0]==rider2::tunnel::kData&&c.length>1)rider2::queueBle(rider2::BleChannel::Pi,c.data+1,size_t(c.length-1));
      } else {Event event;event.command=c;enqueue(event);}
  }
 -void printStatus() {
-+// Patch 0025: Ausgabe der Konsole über BLE (Characteristic Con); pollBle() sendet stückweise.
++// Ausgabe der Konsole über BLE (Characteristic Con); pollBle() sendet stückweise.
 +class BlePrint final:public Print {
 +public:
 +    size_t write(uint8_t c) override {rider2::queueBle(rider2::BleChannel::Con,&c,1);return 1;}
@@ -518,9 +519,7 @@ index 678e7b9..d405a98 100644
 +    out.printf(",\"dzcomp\":{\"max\":%.1f,\"hysteresis\":%.1f,\"ramp\":%.2f,\"initial\":%.1f,\"grow_mean\":%.1f,\"preload\":%.2f,\"sign\":%d,\"flip_rate\":%.2f,\"trips\":%u,\"locked\":%s}",
          printable(dz_max_units),printable(dz_hysteresis),printable(dz_ramp),printable(dz_initial),printable(dz_grow_mean),printable(s.policy.dz_preload),int(s.policy.dz_sign),
          printable(s.policy.dz_flip_rate),s.policy.dz_trips,s.policy.dz_locked?"true":"false");
--    {static const char* const kStandupNames[]={"idle","requested","active"};Serial.printf(",\"standup\":\"%s\"",kStandupNames[s.standup<3?s.standup:0]);}
 -    Serial.printf(",\"policy\":{\"mode\":\"%s\",\"error\":\"%s\",\"model\":\"%s\",\"model_id\":%u,\"trained\":%s,\"model_valid\":%s,\"action_space\":\"%s\",\"action_scale\":%.3f,\"calls\":%u,\"failures\":%u,\"last_us\":%u,\"max_us\":%u,\"last_interval_us\":%u,\"action\":[%.6f,%.6f],\"command\":[%.3f,%.3f],\"yaw_integral\":%.6f,\"yaw_integral_gain\":%.6f,\"observation\":[",
-+    {static const char* const kStandupNames[]={"idle","requested","active"};out.printf(",\"standup\":\"%s\"",kStandupNames[s.standup<3?s.standup:0]);}
 +    out.printf(",\"policy\":{\"mode\":\"%s\",\"error\":\"%s\",\"model\":\"%s\",\"model_id\":%u,\"trained\":%s,\"model_valid\":%s,\"action_space\":\"%s\",\"action_scale\":%.3f,\"calls\":%u,\"failures\":%u,\"last_us\":%u,\"max_us\":%u,\"last_interval_us\":%u,\"action\":[%.6f,%.6f],\"command\":[%.3f,%.3f],\"yaw_integral\":%.6f,\"yaw_integral_gain\":%.6f,\"observation\":[",
          rl::modeName(p.mode),rl::errorName(p.error),p.model_valid?model.name:"invalid",model.id,
          p.trained?"true":"false",p.model_valid?"true":"false",rl::actionSpaceName(model.action_space),printable(model.action_scale),
@@ -549,7 +548,7 @@ index 678e7b9..d405a98 100644
 -    if(!strcmp(line,"!policy active")){valueCommand(CommandKind::PolicyMode,2);return;}
 -    if(!strcmp(line,"!stop")){emergencyStop();Serial.println("stop requested");return;}
 +void valueCommand(CommandKind kind,int value,Print& out){if(value<0||value>255){out.println("ERR expected byte 0..255");return;}uint8_t v=uint8_t(value);protocolCommand(kind,&v,1,out);}
-+// Patch 0025: Ausgabe geht an den Kanal, von dem die Zeile kam (USB oder BLE-Characteristic Con).
++// Ausgabe geht an den Kanal, von dem die Zeile kam (USB oder BLE-Characteristic Con).
 +void console(const char* line,Print& out) {
 +    if(!strcmp(line,"!status")){printStatus(out);return;}
 +    if(!strcmp(line,"!policy status")){printStatus(out);return;}
@@ -559,22 +558,6 @@ index 678e7b9..d405a98 100644
 +    if(!strcmp(line,"!stop")){emergencyStop();out.println("stop requested");return;}
      Event e;
      if(!strcmp(line,"!arm")){e.kind=EventKind::Arm;enqueue(e);return;}
--    if(!strcmp(line,"!standup")){valueCommand(CommandKind::Action,253);return;}
--    if(!strcmp(line,"!turnhold on")){valueCommand(CommandKind::Action,241);return;}
--    if(!strcmp(line,"!turnhold off")){valueCommand(CommandKind::Action,240);return;}
--    if(!strcmp(line,"!driveint on")){valueCommand(CommandKind::Action,239);return;}
--    if(!strcmp(line,"!driveint off")){valueCommand(CommandKind::Action,238);return;}
--    if(!strcmp(line,"!restart")){valueCommand(CommandKind::Action,237);return;}   // patch 0018: nur wenn er nicht balanciert
--    if(!strncmp(line,"!balance ",9)){valueCommand(CommandKind::BalanceOffset,int(strtol(line+9,nullptr,10)));return;}   // patch 0021: (n-128)*0.05 deg
--    if(!strncmp(line,"!led ",5)){valueCommand(CommandKind::LedBrightness,int(strtol(line+5,nullptr,10)));return;}   // patch 0016: global LED multiplier n/256
-+    if(!strcmp(line,"!standup")){valueCommand(CommandKind::Action,253,out);return;}
-+    if(!strcmp(line,"!turnhold on")){valueCommand(CommandKind::Action,241,out);return;}
-+    if(!strcmp(line,"!turnhold off")){valueCommand(CommandKind::Action,240,out);return;}
-+    if(!strcmp(line,"!driveint on")){valueCommand(CommandKind::Action,239,out);return;}
-+    if(!strcmp(line,"!driveint off")){valueCommand(CommandKind::Action,238,out);return;}
-+    if(!strcmp(line,"!restart")){valueCommand(CommandKind::Action,237,out);return;}   // patch 0018: nur wenn er nicht balanciert
-+    if(!strncmp(line,"!balance ",9)){valueCommand(CommandKind::BalanceOffset,int(strtol(line+9,nullptr,10)),out);return;}   // patch 0021: (n-128)*0.05 deg
-+    if(!strncmp(line,"!led ",5)){valueCommand(CommandKind::LedBrightness,int(strtol(line+5,nullptr,10)),out);return;}   // patch 0016: global LED multiplier n/256
      if(!strcmp(line,"!neutral")){e.kind=EventKind::Neutral;enqueue(e);return;}
      if(!strcmp(line,"!odom reset")){e.kind=EventKind::ResetOdometry;enqueue(e);return;}
 -    if(!strcmp(line,"!cal begin")){valueCommand(CommandKind::LegCalibration,1);return;}
@@ -666,17 +649,18 @@ index 678e7b9..d405a98 100644
 -        for(const auto& m:maps)if(!strcmp(cmd,m.text)){valueCommand(m.kind,a);return;}
 +        for(const auto& m:maps)if(!strcmp(cmd,m.text)){valueCommand(m.kind,a,out);return;}
      }
--    Serial.println("!status | !policy off/shadow/active/status | !stop | !arm | !standup | !neutral | !move FORWARD TURN (bytes,128 neutral) | !height BYTE | !roll BYTE | !action 0..6/255 | !loop 0/1 | !level 0/1 | !heading 0/1 | !heightwave BYTE | !rollwave BYTE | !maxforward BYTE | !maxturn BYTE | !rgb INDEX R G B | !cal begin | !cal save | !trim | !name SUFFIX | !odom reset | !trace dump | !trace usb on/off | !liftguard on/off/status | !fallguard on/off/status/clear/ms N | !dzcomp [off|on|reset|MAX [HYST [RAMP [START [GROW]]]]]");
-+    out.println("!status | !policy off/shadow/active/status | !stop | !arm | !standup | !restart | !neutral | !balance BYTE | !led BYTE | !turnhold on/off | !driveint on/off | !move FORWARD TURN (bytes,128 neutral) | !height BYTE | !roll BYTE | !action 0..6/255 | !loop 0/1 | !level 0/1 | !heading 0/1 | !heightwave BYTE | !rollwave BYTE | !maxforward BYTE | !maxturn BYTE | !rgb INDEX R G B | !cal begin | !cal save | !trim | !odom reset | !trace dump | !trace usb on/off | !liftguard on/off/status | !fallguard on/off/status/clear/ms N | !dzcomp [off|on|reset|MAX [HYST [RAMP [START [GROW]]]]]");
+-    Serial.println("!status | !policy off/shadow/active/status | !stop | !arm | !neutral | !move FORWARD TURN (bytes,128 neutral) | !height BYTE | !roll BYTE | !action 0..6/255 | !loop 0/1 | !level 0/1 | !heading 0/1 | !heightwave BYTE | !rollwave BYTE | !maxforward BYTE | !maxturn BYTE | !rgb INDEX R G B | !cal begin | !cal save | !trim | !name SUFFIX | !odom reset | !trace dump | !trace usb on/off | !liftguard on/off/status | !fallguard on/off/status/clear/ms N | !dzcomp [off|on|reset|MAX [HYST [RAMP [START [GROW]]]]]");
++    out.print("!status | !policy off/shadow/active/status | !stop | !arm | !neutral | !move FORWARD TURN (bytes,128 neutral) | !height BYTE | !roll BYTE | !action 0..6/255 | !loop 0/1 | !level 0/1 | !heading 0/1 | !heightwave BYTE | !rollwave BYTE | !maxforward BYTE | !maxturn BYTE | !rgb INDEX R G B | !cal begin | !cal save | !trim | !odom reset | !trace dump | !trace usb on/off | !liftguard on/off/status | !fallguard on/off/status/clear/ms N | !dzcomp [off|on|reset|MAX [HYST [RAMP [START [GROW]]]]]");
++    out.println();
  }
  }
  void setup() {
-@@ -1093,14 +1100,14 @@ void setup() {
+@@ -863,14 +870,14 @@ void setup() {
      commands=xQueueCreate(24,sizeof(Event));
      if(!commands){Serial.println("FATAL command queue allocation; control task disabled");return;}
      // BLE initialization must finish before starting the time-critical task.
 -    const auto name=rider2::readBleName();bleReady=rider2::beginBle(name.full_name);
-+    bleReady=rider2::beginBle(kBleName);   // patch 0025
++    bleReady=rider2::beginBle(kBleName);
      Serial.printf("Rider2 application; wheel controller=%s; BLE=%s name=%s. !help for console.\n",
  #if RIDER2_RL_ONLY
          "RL only; leg position control retained",
@@ -688,7 +672,7 @@ index 678e7b9..d405a98 100644
      robotTaskStarted=xTaskCreatePinnedToCore(robotTask,"rider_control",16384,nullptr,3,nullptr,1)==pdPASS;
      if(!robotTaskStarted)Serial.println("FATAL robot task creation; control task disabled");
  }
-@@ -1115,34 +1122,39 @@ void loop() {
+@@ -885,32 +892,37 @@ void loop() {
          const uint8_t b=uint8_t(Serial.read());
          if(!lineMode&&b=='!'&&!parser.receiving(Source::Usb)){lineMode=true;used=0;overflow=false;}
          if(lineMode){
@@ -697,11 +681,9 @@ index 678e7b9..d405a98 100644
              else if(used<sizeof(line)-1)line[used++]=char(b);else overflow=true;
          }else receive(Source::Usb,b);
      }
-     budget=256;
-     if(commandSerial.available())lastAuxRxMs=millis();   // patch 0014: Pi lebt
-     while(commandSerial.available()&&budget--)receive(Source::Aux,uint8_t(commandSerial.read()));
+     budget=256;while(commandSerial.available()&&budget--)receive(Source::Aux,uint8_t(commandSerial.read()));
 -    static bool previousBle=false;static uint32_t previousDrops=0;
-+    // Patch 0025: BLE. Cmd = Binärrahmen, Con = Konsole, Pi = Tunnel zum Pi (pi_tunnel.h).
++    // BLE: Cmd = Binärrahmen, Con = Konsole, Pi = Tunnel zum Pi (pi_tunnel.h).
 +    static bool previousBle=false;static uint32_t previousDrops=0;static uint8_t tunnelState=0;
 +    static rider2::tunnel::LineBuffer<96> bleLine;
      const bool connected=rider2::bleConnected();const uint32_t dropped=rider2::bleDroppedBytes();
@@ -749,12 +731,12 @@ index 678e7b9..d405a98 100644
      {
 diff --git a/firmware/src/pi_tunnel.h b/firmware/src/pi_tunnel.h
 new file mode 100644
-index 0000000..ad9753b
+index 0000000..723329d
 --- /dev/null
 +++ b/firmware/src/pi_tunnel.h
-@@ -0,0 +1,111 @@
+@@ -0,0 +1,110 @@
 +#pragma once
-+// Patch 0025: Bausteine des neuen BLE-Dienstes, ohne Arduino (Host-Test firmware/tests/test_ble_tunnel.cpp).
++// Bausteine des neuen BLE-Dienstes, ohne Arduino (Host-Test firmware/tests/test_ble_tunnel.cpp).
 +//
 +// Tunnel BLE <-> Pi: Die Characteristic PI reicht Bytes unverändert durch.
 +//   ESP32 -> Pi: Rahmen (buildFrame) Typ 0x15, Register 0x17, Nutzlast = Kennung + höchstens 23 Byte
@@ -762,7 +744,6 @@ index 0000000..ad9753b
 +//   Kennung 0 = Daten, 1 = BLE verbunden, 2 = BLE getrennt (1/2 ohne Daten, nur ESP32 -> Pi)
 +// Register 0x18: IPv4 des Pi, 4 Byte. Der Pi schreibt sie alle paar Sekunden (nur über Aux angenommen),
 +// lesbar von überall; kommt kPiIpTimeoutMs lang nichts, gilt 0.0.0.0.
-+// Register 0x17 lesen: 1 Byte, 1 = BLE verbunden.
 +#include <cstddef>
 +#include <cstdint>
 +#include <cstring>

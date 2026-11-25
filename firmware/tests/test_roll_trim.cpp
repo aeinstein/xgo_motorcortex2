@@ -1,9 +1,7 @@
-// Host-Test für Patch 0012: Roll-Trimm aus dem Nivellieren bleibt stehen, auch über Höhenänderungen.
-// RiderPi 2026-11-07: nach jeder Höhenänderung wieder ~2° Roll, weil das Rollziel nach dem Nivellieren auf
-// den Rollbefehl abklang und nur die Totzone der Beinservos ihn gerade hielt.
-// Nach firmware/build.sh (Quellen mit Patches in firmware/build/), im Repo-Root:
-//   S=firmware/build/xgorider2_rl/firmware/src
-//   g++ -std=c++17 -ffp-contract=off -I $S firmware/tests/test_roll_trim.cpp $S/control/rider_leg_imu.cpp -o t && ./t
+// Host-Test 07-balance: Roll-Trimm aus dem Nivellieren bleibt stehen, auch über Höhenänderungen.
+// Im Original klang das Rollziel nach dem Nivellieren auf den Rollbefehl ab, nur die Totzone der Beinservos
+// hielt ihn gerade; nach jeder Höhenänderung stand er wieder ~2° schief.
+// Aufruf: firmware/tests/run.sh test_roll_trim
 #include "control/rider_leg_imu.h"
 #include <cmath>
 #include <cstdint>
@@ -19,7 +17,7 @@ static void check(bool ok, const char* what) {
 
 static const std::uint16_t ZA = 600, ZB = 400;   // Beinnullpunkte (beliebig, gleich für Referenz und Patch)
 
-// Originalformel R-1.1.6 (vor 0012) für den Vergleich ohne Nivellieren
+// Originalformel R-1.1.6 (ohne Roll-Trimm) für den Vergleich ohne Nivellieren
 static float clampf(float v, float lo, float hi) { return v < lo ? lo : (hi < v ? hi : v); }
 static std::uint32_t ticks(float e) {
     const double angle = std::acos((double(e) * 0.5) / 48.0);

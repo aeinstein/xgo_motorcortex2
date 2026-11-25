@@ -1,12 +1,9 @@
-// Host-Test für Patch 0022 und 0023 (LEDs):
-// 0022: Solange der Kreisel beim Start kalibriert, läuft ein heller Punkt in der Nutzerfarbe über die
-//       vier LEDs im Kreis (0 -> 1 -> 2 -> 3, Umlauf 0,4 s, weich überblendet). Akku-Warnung, Modus 0
-//       und Fehleranzeige haben Vorrang.
-// 0023: Keine Farbverläufe der Roll-/Höhenwelle mehr; ohne eigenes Bild liefert renderLeds false
-//       (updateLeds zeigt dann die Nutzerfarben).
-// Nach firmware/build.sh (Quellen mit Patches in firmware/build/), im Repo-Root:
-//   S=firmware/build/xgorider2_rl/firmware/src
-//   g++ -std=c++17 -ffp-contract=off -I $S firmware/tests/test_led_calibrating.cpp $S/board_support.cpp -o t && ./t
+// Host-Test 06-leds:
+// Solange der Kreisel beim Start kalibriert, läuft ein heller Punkt in der Nutzerfarbe über die vier LEDs im
+// Kreis (0 -> 1 -> 2 -> 3, Umlauf 0,4 s, weich überblendet). Akku-Warnung, Modus 0 und Fehleranzeige haben Vorrang.
+// Keine Farbverläufe der Roll-/Höhenwelle; ohne eigenes Bild liefert renderLeds false (updateLeds zeigt dann
+// die Nutzerfarben).
+// Aufruf: firmware/tests/run.sh test_led_calibrating
 #include "board_support.h"
 #include <algorithm>
 #include <cstdint>
@@ -94,7 +91,7 @@ int main() {
     renderLeds(c, 0, user, out);
     check(out[1].r < pink.r / 4 && std::abs(int(out[0].r) - int(pink.r)) <= 1, "Modus 1, nicht kalibriert: Lauflicht");
 
-    // 0023: Balancieren zeigt die Nutzerfarben, beim Fahren Grün, beim Nick-Trimm Blau; keine Wellenfarben
+    // Balancieren zeigt die Nutzerfarben, beim Fahren Grün, beim Nick-Trimm Blau; keine Wellenfarben
     c.gyro_calibrating = false;
     check(renderLeds(c, 0, user, out) && out == user, "Modus 1 im Stand: Nutzerfarben");
     c.forward_request = 50;

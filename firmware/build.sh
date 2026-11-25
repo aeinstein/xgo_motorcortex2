@@ -10,42 +10,15 @@
 # Läuft unter Linux/macOS und unter Windows in Git-Bash (Python 3.8+ als python3 oder python).
 #
 # Referenz: github.com/LuwuDynamics/xgorider2_rl (R-1.1.6-Reimplementierung, PlatformIO).
-# Patches (firmware/patches/, in Reihenfolge):
-#   0001 Register 0x0c (Rad-Encoder) und 0x0d (Lage + Räder + Zeit in einem Snapshot)
-#   0002 Aktion 0x3e = 254: binäres Disarm/Not-Stopp wie !stop
-#   0003 LED-Helligkeit halbiert (129 -> 64 von 256)
-#   0004 Aktion 0x3e = 253 / !standup: Aufstehen aus der Liegelage auf Befehl
-#   0005 Kippraten ohne Gier-Anteil (Gierrate x tan(Roll/Nick)): sonst rollt der Rider beim Drehen weg
-#   0006 Beschleunigungswinkel bei > 25 °/s Gierrate einfrieren (Fliehkraft verfälscht die Lage)
-#   0007 Diagnose-Register 0x0e (32 Byte Reglergrößen, am Pi über raw_reg lesbar)
-#   0008 Positionshalten auch beim Drehen auf der Stelle (Radmitte), Aktion 241 an / 240 aus
-#   0009 Gyro-z-Nullpunkt laufend nachführen (Räder/Stillstand), Gier-Totband 2 -> 0,3 °/s, Register 0x0f
-#   0010 Positionshalten beim Drehen per Default an
-#   0011 Gier-Totband entfernt (Integration erst nach Startkalibrierung)
-#   0012 Roll-Trimm aus dem Nivellieren behalten (über Höhenänderungen)
-#   0013 Diagnose-Register 0x10 (Lagefusion Nick/Roll: Beschleunigungswinkel, Abzug 0005, Einfrieren 0006)
-#   0014 IMU-/Rad-Datenstrom an den Pi (Register 0x11 = Rate in Hz, Pakete Typ 0x14)
-#   0015 Integral beim Fahren als Untergrenze (30 % des Befehls; Aktion 239 an / 238 aus), sonst bleibt er an Steigungen stehen
-#   0016 LED-Helligkeit als globaler Multiplikator zur Laufzeit (Register 0x12 = n/256, !led <n>), Default 32 = Hälfte von 0003
-#   0017 Nick-Fusion mit ungefiltertem Beschleunigungs-Nick (Vorfilter hinkte nach: Nickbewegungen ~6 % zu klein)
-#   0018 Aktion 0x3e = 237 / !restart: ESP32 neu starten (nur wenn er nicht balanciert)
-#   0019 Startkalibrierung des Gier-Nullpunkts nur im Stillstand (sonst wiederholen, höchstens 20 Fenster)
-#   0020 Diagnose-Register 0x15 (laufende Summen der IMU-Rohwerte + Radticks, Leser tools/rawdiag.py)
-#   0021 Lagefusion neu: Lage als Richtungsvektor, alle Kreisel-Nullpunkte, kein Einfrieren (ersetzt die Rechnung von 0005/0006/0017)
-#   0022 LEDs: heller Punkt läuft im Kreis (Nutzerfarbe, 0,4 s je Umlauf), solange der Kreisel beim Start kalibriert
-#   0023 LEDs: keine Farbverläufe der Roll-/Höhenwelle mehr (Sache des Clients), Pink beim Armen, Nutzerfarben auch im Liegen
-#   0024 Gespeicherte Aktionen als Tabelle (nur motorische Abläufe, 1..6 unverändert, neue = ein Eintrag)
-#   0025 Bluetooth neu: eigener BLE-Dienst "RiderKerk" (Binärrahmen, Konsole, Tunnel zum Pi, IP des Pi), Hersteller-BLE entfernt (docs/ble.md)
-#   0026 Akku-Warnung hebt sich nach 5 s über 15 % wieder auf (dann 250 -> 253), Neustart 237 auch bei Akku-Warnung
-#   0027 Protokoll des Hebeschutzes übersteht Stopps (Register 0x19), kein Selbststart aus Zustand 0 (rot) nach Sturz
-#   0028 Roll laufend auf 0 halten, auch beim Drehen (Aktion 236 an / 235 aus); LEDs blau beim Herunterfahren (234 an / 233 aus)
-#   0029 Fahrrahmen in mm/s und °/s (Register 0x1a, Grenzen + Wächter 0x1b, Beschleunigungsbetrieb), 0xa0/0xa1 entfernt
-#   0030 Sollwertgenerator für den Fahrrahmen: Rampe mit Ruckbegrenzung (S-Kurve) statt Tiefpass
-#   0031 Geschwindigkeitsregler für den Fahrrahmen: Integral mit Anti-Windup + Vorsteuerung atan(a/g), ersetzt dort 0015
-#   0032 Drehratenregler für den Fahrrahmen: Kursziel genau w·dt (statt 1,25 × w), langsames Drehen, !turnctl
-#   0033 automatische Schräglage des Originals (automatic_lean, nie gesetzt) entfernt
-#   0034 In schnellen Kurven einlegen: Roll halten regelt auf -atan(v·Gierrate/g) (Aktion 232 an / 231 aus, Default aus)
-#   0035 Abstimmung des Rahmenwegs: 0x1b 14 Byte (Einheit, ki, i_max, kv), Soll-Nick -kv·v_ist, Integral erst nach der Rampe
+# Patches (firmware/patches/, in Reihenfolge; Inhalt: firmware/README.md):
+#   01-ble           eigener BLE-Dienst RiderKerk, Tunnel zum Pi, Konsole an den Kanal der Zeile
+#   02-pi-interface  Register 0x0d, IMU-/Radstrom 0x11
+#   03-diagnostics   Diagnose-Register 0x0e, 0x15, Hebeschutz-Protokoll 0x19
+#   04-attitude      Lagefusion als Richtungsvektor, Kreisel-Nullpunkte, Startkalibrierung im Stillstand
+#   05-actions       Not-Aus 254, Aufstehen 253, Neustart 237, Aktionstabelle, Akku-Warnung, kein Selbststart
+#   06-leds          LED-Helligkeit 0x12, Lauflicht beim Kalibrieren, LEDs Sache des Clients, Blau 234/233
+#   07-balance       Positionshalten beim Drehen, Roll-Trimm, Roll halten, Fahr-Integral, Einlegen 232/231
+#   08-velocity      Fahrrahmen 0x1a/0x1b in mm/s und °/s, Sollwertgenerator, Geschwindigkeits-/Drehratenregler
 # Braucht: git, python3 (venv), Internet beim ersten Lauf (PlatformIO lädt Toolchain ~1 GB).
 set -euo pipefail
 
@@ -131,7 +104,7 @@ echo
 echo "Fertig: $OUT/app0.bin ($(stat -c %s "$OUT/app0.bin") Byte)"
 cat "$OUT/app0.bin.sha256"
 echo
-echo "Flashen (nur app0, vorher Voll-Backup; Port prüfen, z. B. COM3/COM4 bzw. /dev/ttyUSB0):"
+echo "Flashen (nur app0; Port prüfen, z. B. COM3/COM4 bzw. /dev/ttyUSB0):"
 echo "  python -m esptool --port <PORT> --baud 115200 write-flash 0x10000 app0.bin"
 echo "Nie 0x310000-0x32ffff (Beinnullpunkte, BLE-Name, Trimm) oder spiffs überschreiben."
 echo "Nach dem Flashen ist der Rider disarmed: Aktion 255 (Aufstehen) zum Balancieren."

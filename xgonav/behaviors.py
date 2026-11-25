@@ -101,7 +101,7 @@ def dreh_w(err: float, kp: float, w_max: float, rcfg: RobotCfg, deadband_deg: fl
            w_min: float | None = None) -> float:
     """Gemeinsamer Drehregler für alle Drehungen (PathFollower, Servo, pet, Dunkelangst; seit 2026-11-23):
     Soll-Drehrate kp * err (rad/s) als normierter Drehwert, Betrag höchstens w_max (Faktor: Anteil von robot.max_w),
-    mindestens w_min (absolut, Standard 0: die Firmware regelt auch kleine Drehraten, Patch 0032), im Totband
+    mindestens w_min (absolut, Standard 0: die Firmware regelt auch kleine Drehraten, Firmware-Patch 08-velocity), im Totband
     (Grad) 0."""
     if err == 0.0 or abs(err) < math.radians(deadband_deg):
         return 0.0

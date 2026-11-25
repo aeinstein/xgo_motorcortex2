@@ -48,7 +48,7 @@
        "key": "vel_frame",
        "typ": "bool",
        "default": true,
-       "hilfe": "Fahrrahmen (Firmware 0029–0032, xgonav/fahrrahmen.py, ARBEITSPLAN.md Punkt 4): Kennt der Treiber /proc/XGORider/vel und antwortet die Firmware, schickt Robot statt speed_x/speed_z Sollwerte in echten Einheiten (normiert x vx_limit bzw. x vyaw_limit_dps) mit Beschleunigung und Ruck; die Firmware rampt (S-Kurve) und regelt Tempo und Drehrate selbst (Rampe am Pi, speed_ctrl und turn_min_w seit 2026-11-25 entfernt; auf dem Byteweg filtert die Firmware selbst). v_max = max_v x vx_limit, w_max = max_w x vyaw_limit_dps gehen beim Start nach vel_limits, mit dem Wächter der Firmware vel_timeout_ms (> keepalive_s). Beschleunigung beim Schnellerwerden vel_accel, beim Langsamerwerden vel_decel, drive(brake=True) vel_brake mit vel_brake_jerk. Höchstwerte sind vorsichtige Startwerte (Nutzer 2026-11-25: werden am Rider gemessen); 0,5 m/s² entspricht ~2,9° Vorlage. fw_speed_unit_mm: mm/s je Firmware-Einheit der Radgeschwindigkeit (Ist in 0x0e, Eingang des Reglers), gemessen 2026-11-25 mit tools/fw_einheit.py: 3,95 / 3,90 bei 152 / 246 mm/s (Encoder). Die frühere 8,4 kam vom Soll des Bytewegs, den der P-Regler um das 1,4–1,7-fache überfährt."
+       "hilfe": "Fahrrahmen (Firmware-Patch 08-velocity, xgonav/fahrrahmen.py, ARBEITSPLAN.md Punkt 4): Kennt der Treiber /proc/XGORider/vel und antwortet die Firmware, schickt Robot statt speed_x/speed_z Sollwerte in echten Einheiten (normiert x vx_limit bzw. x vyaw_limit_dps) mit Beschleunigung und Ruck; die Firmware rampt (S-Kurve) und regelt Tempo und Drehrate selbst (Rampe am Pi, speed_ctrl und turn_min_w seit 2026-11-25 entfernt; auf dem Byteweg filtert die Firmware selbst). v_max = max_v x vx_limit, w_max = max_w x vyaw_limit_dps gehen beim Start nach vel_limits, mit dem Wächter der Firmware vel_timeout_ms (> keepalive_s). Beschleunigung beim Schnellerwerden vel_accel, beim Langsamerwerden vel_decel, drive(brake=True) vel_brake mit vel_brake_jerk. Höchstwerte sind vorsichtige Startwerte (Nutzer 2026-11-25: werden am Rider gemessen); 0,5 m/s² entspricht ~2,9° Vorlage. fw_speed_unit_mm: mm/s je Firmware-Einheit der Radgeschwindigkeit (Ist in 0x0e, Eingang des Reglers), gemessen 2026-11-25 mit tools/fw_einheit.py: 3,95 / 3,90 bei 152 / 246 mm/s (Encoder). Die frühere 8,4 kam vom Soll des Bytewegs, den der P-Regler um das 1,4–1,7-fache überfährt."
       },
       {
        "key": "fw_speed_unit_mm",
@@ -114,7 +114,7 @@
        "key": "vel_ki",
        "typ": "float",
        "default": 0.03,
-       "hilfe": "Firmware 0035 (Messfahrten 2026-11-25, ARBEITSPLAN.md), gehen mit vel_limits an die Firmware: Der Original-P treibt den Rider auf ~1,8 × Soll, weil er beim Fahren eine Nick-Abweichung proportional zum Tempo braucht; vel_kv liefert sie (Soll-Nick −kv · gemessenes Tempo, ° je Firmware-Einheit). 0,05 gab 0,8 × Soll, 0,025 hält v 0,2 / 0,4 auf ±4 %, v 0,3 / 0,5 auf +11 %. Das Integral (vel_ki ° je Einheit Fehler · s, Grenze vel_i_max_deg) gleicht nur den Rest aus; ki 0,08–0,15 schwang."
+       "hilfe": "Firmware-Patch 08-velocity (Messfahrten 2026-11-25, ARBEITSPLAN.md), gehen mit vel_limits an die Firmware: Der Original-P treibt den Rider auf ~1,8 × Soll, weil er beim Fahren eine Nick-Abweichung proportional zum Tempo braucht; vel_kv liefert sie (Soll-Nick −kv · gemessenes Tempo, ° je Firmware-Einheit). 0,05 gab 0,8 × Soll, 0,025 hält v 0,2 / 0,4 auf ±4 %, v 0,3 / 0,5 auf +11 %. Das Integral (vel_ki ° je Einheit Fehler · s, Grenze vel_i_max_deg) gleicht nur den Rest aus; ki 0,08–0,15 schwang."
       },
       {
        "key": "vel_i_max_deg",
@@ -144,7 +144,7 @@
        "key": "level_while_driving",
        "typ": "bool",
        "default": true,
-       "hilfe": "Nivellieren beim Fahren (Nutzer 2026-11-24: nach dem Drehen auf der Stelle bleibt ein Roll stehen): Fährt er level_drive_delay_s lang geradeaus (|v| über dem Totband, |w| <= level_drive_w_max, Rollbefehl 0), bleibt die Nivellierung der Firmware an, bis er dreht, anhält oder ein Rollbefehl kommt; der gefundene Trimm bleibt danach stehen (Patch 0012). Im Drehen nie: Fliehkraft und Dreh-Effekt (+1,8° links) wären sonst der Sollwert, die Firmware schaltet sie selbst ab ab Drehbefehl 128±16. Kosten am Pi: ein Vergleich je 0,2 s, Schreiben nur beim Wechsel."
+       "hilfe": "Nivellieren beim Fahren (Nutzer 2026-11-24: nach dem Drehen auf der Stelle bleibt ein Roll stehen): Fährt er level_drive_delay_s lang geradeaus (|v| über dem Totband, |w| <= level_drive_w_max, Rollbefehl 0), bleibt die Nivellierung der Firmware an, bis er dreht, anhält oder ein Rollbefehl kommt; der gefundene Trimm bleibt danach stehen (Firmware-Patch 07-balance). Im Drehen nie: Fliehkraft und Dreh-Effekt (+1,8° links) wären sonst der Sollwert, die Firmware schaltet sie selbst ab ab Drehbefehl 128±16. Kosten am Pi: ein Vergleich je 0,2 s, Schreiben nur beim Wechsel."
       },
       {
        "key": "level_drive_w_max",
@@ -210,7 +210,7 @@
        "key": "led_file",
        "typ": "str",
        "default": "/var/lib/xgonav/led_brightness",
-       "hilfe": "LED-Helligkeit (Firmware-Patch 0016, n/256, settings/led_brightness). Das Web speichert sie in led_file, rc.local setzt sie beim Booten. Beim Start blitzt xgonav led_start_s lang mit 255 (Zeichen „läuft“), danach wieder der gespeicherte Wert; 0 = ohne Blitz, nur setzen."
+       "hilfe": "LED-Helligkeit (Firmware-Patch 06-leds, n/256, settings/led_brightness). Das Web speichert sie in led_file, rc.local setzt sie beim Booten. Beim Start blitzt xgonav led_start_s lang mit 255 (Zeichen „läuft“), danach wieder der gespeicherte Wert; 0 = ohne Blitz, nur setzen."
       },
       {
        "key": "led_default",
@@ -516,7 +516,7 @@
        "key": "stream_hz",
        "typ": "int",
        "default": 100,
-       "hilfe": "IMU/Rad-Strom der Firmware (Patch 0014) mit eigener Messzeit statt Abfrage; > 0 wird beim Start nach settings/imu_stream_hz geschrieben (Treiber mit Strom-Unterstützung). Ohne Strom fragt der Treiber wie bisher ab."
+       "hilfe": "IMU/Rad-Strom der Firmware (Patch 02-pi-interface) mit eigener Messzeit statt Abfrage; > 0 wird beim Start nach settings/imu_stream_hz geschrieben (Treiber mit Strom-Unterstützung). Ohne Strom fragt der Treiber wie bisher ab."
       },
       {
        "key": "idle_hz",
@@ -541,7 +541,7 @@
        "key": "pitch_ref_deg",
        "typ": "float",
        "default": -5.0,
-       "hilfe": "IMU-Rohpitch bei der Kamerakalibrierung (calibrate.py wall): -4.43; seit 2026-11-17 -4.23 (Nick +0,2°): Flur mit 2,04 m befahrbarer Breite (Nutzer) kam in drei Rundumblicken mit Roll-Korrektur auf 1,98 m, mit +0,25° auf 2,03-2,05 m. Seit 2026-11-18 -6.23: Firmware 0021 (Lage aus dem Schwerkraftvektor, Nick-Kreisel kalibriert) liefert den Nick ~2° tiefer (vorher stand er wegen des unkalibrierten Nick-Kreisels ~2,3° zu hoch); Nutzer am Bild im Browser geprüft. Seit 2026-11-19 -5.0: Flurfahrt 20261119-122328 (Flur 2,04 m) kam mit -6.23 auf 1,53 (hin) / 1,67 m (zurück), 2,04 m bei +1,4° / +1,0°. Wirksam ist nur tilt_deg + pitch_ref_deg (geometry: Blickwinkel = tilt_deg + pitch_ref_deg - IMU-Nick)."
+       "hilfe": "IMU-Rohpitch bei der Kamerakalibrierung (calibrate.py wall): -4.43; seit 2026-11-17 -4.23 (Nick +0,2°): Flur mit 2,04 m befahrbarer Breite (Nutzer) kam in drei Rundumblicken mit Roll-Korrektur auf 1,98 m, mit +0,25° auf 2,03-2,05 m. Seit 2026-11-18 -6.23: Lagefusion 04-attitude (Lage aus dem Schwerkraftvektor, Nick-Kreisel kalibriert) liefert den Nick ~2° tiefer (vorher stand er wegen des unkalibrierten Nick-Kreisels ~2,3° zu hoch); Nutzer am Bild im Browser geprüft. Seit 2026-11-19 -5.0: Flurfahrt 20261119-122328 (Flur 2,04 m) kam mit -6.23 auf 1,53 (hin) / 1,67 m (zurück), 2,04 m bei +1,4° / +1,0°. Wirksam ist nur tilt_deg + pitch_ref_deg (geometry: Blickwinkel = tilt_deg + pitch_ref_deg - IMU-Nick)."
       },
       {
        "key": "yaw_scale_left",
@@ -613,7 +613,7 @@
        "key": "enabled",
        "typ": "bool",
        "default": true,
-       "hilfe": "Rad-Odometrie aus /proc/XGORider/wheels_log: die Radhälfte des IMU-Stroms (Firmware 0014), ohne Strom aus 0x0d. source: \"auto\" = Räder, wenn vorhanden und frisch, sonst Fahrbefehl x vx_limit; \"command\" = immer Fahrbefehl (wie früher)."
+       "hilfe": "Rad-Odometrie aus /proc/XGORider/wheels_log: die Radhälfte des IMU-Stroms (Firmware-Patch 02-pi-interface), ohne Strom aus 0x0d. source: \"auto\" = Räder, wenn vorhanden und frisch, sonst Fahrbefehl x vx_limit; \"command\" = immer Fahrbefehl (wie früher)."
       },
       {
        "key": "source",

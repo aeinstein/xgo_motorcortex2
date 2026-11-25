@@ -1,17 +1,11 @@
-// Host-Test für Patch 0017: Nick-Fusion ohne Nachhinken. updateImu mit synthetischen Rohdaten, Rider
-// liegend von Hand genickt (reine Drehung um die Nickachse, keine Linearbeschleunigung), Abtastung 3 ms
-// wie am RiderPi. 5 s Stillstand (Startkalibrierung), dann Sinus -37..+28° mit Periode 2, 5 und 12 s.
-// Ausgewertet wie am Rider gemessen (2026-11-17): Winkeländerung je 0,1 s, wahr gegen Fusion, nur
-// Paare mit 10..50 °/s.
-//   vor 0017: 1,059 / 1,053 / 1,027 (Beschleunigungs-Nick mit ~0,1 s vorgefiltert, hinkt nach)
-//   0017:     1,00 ± 0,01
-// Dazu: gehaltene Stellungen stimmen auf 0,05°. Seit Patch 0021 (neue Lagefusion, Nullpunkte aller Achsen
-// aus der Startkalibrierung) verschiebt ein Nick-Kreisel-Nullpunkt von -1,2 °/s den Winkel nicht mehr
-// (bis 0020: ~1,8°). Drehungen um die Senkrechte prüft test_imu_yaw_coupling, echte Fahrdaten
-// test_lagefusion_replay.
-// Nach firmware/build.sh (Quellen mit Patches in firmware/build/), im Repo-Root:
-//   S=firmware/build/xgorider2_rl/firmware/src
-//   g++ -std=c++17 -ffp-contract=off -I $S firmware/tests/test_pitch_fusion.cpp $S/control/rider_leg_imu.cpp -o t && ./t
+// Host-Test 04-attitude: Nick-Fusion ohne Nachhinken. updateImu mit synthetischen Rohdaten, Rider liegend von
+// Hand genickt (reine Drehung um die Nickachse, keine Linearbeschleunigung), Abtastung 3 ms wie am RiderPi.
+// 5 s Stillstand (Startkalibrierung), dann Sinus -37..+28° mit Periode 2, 5 und 12 s. Ausgewertet wie am Rider:
+// Winkeländerung je 0,1 s, wahr gegen Fusion, nur Paare mit 10..50 °/s; Soll 1,00 ± 0,01 (das Original mit
+// vorgefiltertem Beschleunigungs-Nick: 1,03-1,06). Dazu: gehaltene Stellungen stimmen auf 0,05°, ein Nick-Kreisel-
+// Nullpunkt von -1,2 °/s verschiebt den Winkel nicht (Original: ~1,8°). Drehungen um die Senkrechte prüft
+// test_imu_yaw_coupling, echte Fahrdaten test_lagefusion_replay.
+// Aufruf: firmware/tests/run.sh test_pitch_fusion
 #include "control/rider_leg_imu.h"
 #include <cmath>
 #include <cstdint>
@@ -118,7 +112,7 @@ int main() {
         std::snprintf(text, sizeof text, "30° in 0,3 s: größte Abweichung danach %.3f° (Grenze 0,1°)", e);
         check(e < 0.1, text);
     }
-    {   // Nick-Kreisel-Nullpunkt -1,2 °/s wie am RiderPi: seit 0021 kalibriert, kein Versatz mehr (vorher ~1,8°)
+    {   // Nick-Kreisel-Nullpunkt -1,2 °/s wie am RiderPi: kalibriert, kein Versatz (Original ~1,8°)
         const auto o = lauf([](double) { return 0.0; }, 30.0, -1.2);
         char text[96];
         std::snprintf(text, sizeof text, "Nullpunkt -1,2 °/s: Versatz %.3f° (Grenze 0,05°)", o.back().imu);

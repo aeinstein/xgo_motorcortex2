@@ -43,7 +43,7 @@ static unsigned int XGO_MOTION_TIMEOUT_MS = 0;
 static void motion_watchdog_fn(struct work_struct *work);
 static DECLARE_DELAYED_WORK(motion_wd, motion_watchdog_fn);
 
-// IPv4 des Pi an den ESP32 melden (Firmware-Patch 0025, Register 0x18): Adresse dieser Schnittstelle, alle
+// IPv4 des Pi an den ESP32 melden (Firmware-Patch 01-ble, Register 0x18): Adresse dieser Schnittstelle, alle
 // XGO_PI_IP_MS neu (der ESP32 vergisst sie nach 10 s ohne Meldung) und sofort bei Änderung.
 #define XGO_PI_IP_MS 3000
 static char XGO_IP_DEV[IFNAMSIZ] = "wlan0";

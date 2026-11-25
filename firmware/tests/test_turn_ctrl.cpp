@@ -1,11 +1,9 @@
-// Host-Test für Patch 0032: Drehratenregler des Fahrrahmens (control/rider_motion.h TurnControl).
+// Host-Test 08-velocity: Drehratenregler des Fahrrahmens (control/rider_motion.h TurnControl).
 // Prüft: aus = Original bitgleich, Kursziel läuft genau mit w·dt (Original 0,005 je Takt = 1,25 × w bei 4 ms),
 // kp/kd/ff wirken. Dazu ein Modell (NICHT der Rider): Gierrate folgt −c·Raddifferenz mit 0,1 s Verzögerung, optional
 // Haftreibung (unter 10 Radeinheiten keine Drehung). Damit: mittlere Drehrate = w_soll (Original 1,25 ×), nach w = 0
 // steht der Kurs, langsames Drehen (0,5 °/s) kommt trotz Haftreibung voran.
-// Nach firmware/build.sh (Quellen mit Patches in firmware/build/), im Repo-Root:
-//   S=firmware/build/xgorider2_rl/firmware/src
-//   g++ -std=c++17 -ffp-contract=off -I $S firmware/tests/test_turn_ctrl.cpp $S/control/rider_motion.cpp $S/control/pid.cpp -o t && ./t
+// Aufruf: firmware/tests/run.sh test_turn_ctrl
 #include "control/rider_motion.h"
 #include <cmath>
 #include <cstdio>

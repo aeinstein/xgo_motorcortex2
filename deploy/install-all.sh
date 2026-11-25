@@ -82,7 +82,7 @@ systemctl daemon-reload
 # Kein "systemctl start": rc.local lädt den Treiber und startet den Daemon beim Booten.
 
 # ---------------------------------------------------------------- BLE-Tunnel
-# Gegenstelle des BLE-Dienstes der Firmware (Patch 0025, docs/ble.md): WLAN einrichten und Befehle an xgonav
+# Gegenstelle des BLE-Dienstes der Firmware (Patch 01-ble, docs/ble.md): WLAN einrichten und Befehle an xgonav
 # über /proc/XGORider/ble. Schläft, solange niemand über BLE spricht; ohne passenden Treiber versucht er es
 # alle 2 s neu.
 schritt "xgo-ble (BLE-Tunnel: WLAN, Befehle an xgonav)"
@@ -106,7 +106,7 @@ systemctl enable xgo-wlan-auto >/dev/null 2>&1
 systemctl restart xgo-wlan-auto
 
 # ---------------------------------------------------------------- LEDs beim Herunterfahren
-# Firmware 0028: beim Herunterfahren des Pi werden die LEDs blau (Aktion 234), xgonav setzt sie beim Start zurück.
+# Firmware-Patch 06-leds: beim Herunterfahren des Pi werden die LEDs blau (Aktion 234), xgonav setzt sie beim Start zurück.
 # Nur starten, nicht neu starten: ein Neustart des Dienstes liefe durch ExecStop und machte sie jetzt schon blau.
 schritt "xgo-shutdown-led (LEDs blau beim Herunterfahren)"
 installiere deploy/xgo-shutdown-led.service /etc/systemd/system/xgo-shutdown-led.service

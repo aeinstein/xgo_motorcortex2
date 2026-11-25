@@ -33,7 +33,7 @@ def main() -> int:
     ap.add_argument("--url", default="http://127.0.0.1:8088")
     ap.add_argument("--proc", default="/proc/XGORider")
     ap.add_argument("--neben", default="", help="Befehl, der zeitgleich läuft und mit der Aufnahme endet (SIGINT), "
-                                                "z. B. \"python3 /root/imudiag.py 600 /tmp/diag.csv\"")
+                                                "z. B. \"python3 /opt/xgonav/tools/rawdiag.py 600 /tmp/roh.csv\"")
     a = ap.parse_args()
     B = a.url
     os.makedirs(a.ziel, exist_ok=True)

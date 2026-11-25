@@ -1,4 +1,4 @@
-"""Fahrrahmen (Firmware 0029–0032, xgonav/fahrrahmen.py, Robot): Text für /proc, Generator wie die Firmware,
+"""Fahrrahmen (Firmware-Patch 08-velocity, xgonav/fahrrahmen.py, Robot): Text für /proc, Generator wie die Firmware,
 Robot schreibt Rahmen statt Bytes, Grenzen beim Start und periodisch, Einschalten nur mit Treiber und Firmware."""
 import os
 import sys
@@ -55,7 +55,7 @@ def test_generator_wie_firmware():
 
 def _cfg(**kw):
     c = Config.neutral().robot
-    assert c.vel_frame                                                     # Default: wie am Rider mit 0029
+    assert c.vel_frame                                                     # Default: wie am Rider mit 08-velocity
     for k, v in kw.items():
         setattr(c, k, v)
     return c
@@ -149,7 +149,7 @@ def test_fahrrahmen_einschalten_nur_mit_treiber_und_firmware(tmp_path):
     assert not r.vel                                                       # Treiber ohne vel
     (tmp_path / "vel").write_text("Fehler -110\n")
     r._vel_setup()
-    assert not r.vel                                                       # Firmware vor 0029
+    assert not r.vel                                                       # Firmware ohne 08-velocity
     (tmp_path / "vel").write_text("0 0 0 0 0 0.0 0 0.0 0\n")
     (tmp_path / "vel_limits").write_text("")
     r._vel_setup()

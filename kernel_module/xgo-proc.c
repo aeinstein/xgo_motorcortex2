@@ -3,7 +3,7 @@
 //
 
 #include "xgo-proc.h"
-#include "xgo-vel.h"   // Fahrrahmen 0x1a/0x1b (Firmware 0029)
+#include "xgo-vel.h"   // Fahrrahmen 0x1a/0x1b (Firmware-Patch 08-velocity)
 
 static const struct proc_ops yaw_ops = {
 	.proc_read = yaw_read,
@@ -67,7 +67,7 @@ static int imu_log_show(struct seq_file *m, void *v) {
 	return 0;
 }
 
-// /proc/XGORider/wheels: "seq t_ns ticks11 ticks21 fw_ms" (neueste Probe, leer ohne 0x0c).
+// /proc/XGORider/wheels: "seq t_ns ticks11 ticks21 fw_ms" (neueste Probe aus dem Strom oder aus 0x0d, sonst leer).
 // fw_ms = Firmware-millis() des Snapshots (nur mit 0x0d, sonst 0).
 static int wheels_show(struct seq_file *m, void *v) {
 	struct wheel_sample w;
@@ -112,13 +112,13 @@ static int serial_stats_show(struct seq_file *m, void *v) {
 		atomic_read(&stat_frames), atomic_read(&stat_bad), atomic_read(&stat_timeouts),
 		atomic_read(&stat_unsolicited), READ_ONCE(imu_seq), XGO_IMU_HZ, combo_supported ? 3 : 0,
 		combo_supported || last, READ_ONCE(wheel_seq));
-	// IMU/Rad-Strom (Firmware 0014): Pakete, seq-Lücken, Sollrate, läuft (stream_active),
+	// IMU/Rad-Strom (Firmware-Patch 02-pi-interface): Pakete, seq-Lücken, Sollrate, läuft (stream_active),
 	// Versatz CLOCK_MONOTONIC - ESP-Zeit in µs
 	seq_printf(m, "stream %d\nstream_gaps %d\nstream_hz %u\nstream_active %d\nstream_offset_us %lld\n",
 		atomic_read(&stat_stream), atomic_read(&stat_stream_gaps), XGO_IMU_STREAM_HZ,
 		stream_active(ktime_get_ns()),
 		stream_off_ok ? (long long)div_s64(stream_off_ns, 1000) : 0LL);
-	// BLE-Tunnel (Firmware 0025): Datensätze vom ESP32, verworfene (Ring voll), gesendete Rahmen; gemeldete IP
+	// BLE-Tunnel (Firmware-Patch 01-ble): Datensätze vom ESP32, verworfene (Ring voll), gesendete Rahmen; gemeldete IP
 	seq_printf(m, "tunnel_rx %d\ntunnel_drop %d\ntunnel_tx %d\npi_ip %pI4\n",
 		atomic_read(&stat_tunnel_rx), atomic_read(&stat_tunnel_drop), atomic_read(&stat_tunnel_tx),
 		&XGO_PI_IP_SENT);
@@ -172,7 +172,7 @@ static ssize_t raw_reg_write(struct file *file, const char __user *user_buf, siz
 }
 
 /*
- * lift (Firmware-Patch 0027): Protokoll des Hebeschutzes, Register 0x19 (32 Byte, Aufbau in der Firmware
+ * lift (Firmware-Patch 03-diagnostics): Protokoll des Hebeschutzes, Register 0x19 (32 Byte, Aufbau in der Firmware
  * main.cpp fillLiftDiag), bei jedem Lesen frisch vom ESP32. Format wie raw_reg: "0x19 32: 00 11 ...".
  * Lesbar für alle (xgonav liest es nach einem Sturz); alte Firmware antwortet nicht -> "Fehler <n>".
  */
@@ -191,12 +191,12 @@ static int lift_show(struct seq_file *m, void *v) {
 static int lift_open(struct inode *inode, struct file *file) { return single_open(file, lift_show, NULL); }
 
 /*
- * vel, vel_limits (Firmware-Patches 0029–0032): Fahrrahmen in mm/s und °/s, Text-Format in xgo-vel.h.
+ * vel, vel_limits (Firmware-Patch 08-velocity): Fahrrahmen in mm/s und °/s, Text-Format in xgo-vel.h.
  * vel schreiben = ein Rahmen auf 0x1a und Neustart des Kernel-Wächters (wie speed_x/speed_z); läuft er ab, schreibt
  * er 128 auf 0x30/0x32, das beendet in der Firmware auch den Rahmenweg. vel lesen = Zustand 0x1a frisch vom ESP32
  * (alte Firmware antwortet nicht -> "Fehler <n>"). vel_limits schreiben = 0x1b, lesen = zuletzt geschriebener Text.
  */
-static char vel_limits_text[48];   /* 7 Felder (Firmware 0035) */
+static char vel_limits_text[48];   /* 7 Felder */
 static DEFINE_MUTEX(vel_limits_lock);
 
 static int vel_show(struct seq_file *m, void *v) {
@@ -240,7 +240,7 @@ static ssize_t vel_limits_write(struct file *file, const char __user *user_buf, 
 	if (count == 0 || count >= sizeof(buffer) - 1) return -EINVAL;
 	if (copy_from_user(buffer, user_buf, count)) return -EFAULT;
 	buffer[count] = '\0';
-	len = vel_limits_encode(buffer, lim);   /* 6 oder 10 Byte (Firmware 0035) */
+	len = vel_limits_encode(buffer, lim);   /* 14 Byte */
 	if (len < 0) return -EINVAL;
 	write_serial_data(XGO_VEL_LIMITS, (char *)lim, len);
 	mutex_lock(&vel_limits_lock);
@@ -280,7 +280,7 @@ static const struct proc_ops raw_reg_ops = {
 };
 
 /*
- * ble (nur root, Firmware-Patch 0025): Tunnel zum BLE-Client, den die Firmware über die Characteristic "PI"
+ * ble (nur root, Firmware-Patch 01-ble): Tunnel zum BLE-Client, den die Firmware über die Characteristic "PI"
  * durchreicht. Hier läuft das WLAN-Passwort durch, deshalb 0600.
  *   read:  blockiert, bis etwas da ist (poll geht auch), und liefert genau einen Datensatz:
  *          Byte 0 = Kennung (0 Daten, 1 BLE verbunden, 2 BLE getrennt), danach bis zu 23 Byte Daten.
@@ -543,7 +543,7 @@ static ssize_t settings_write(struct file *file, const char __user *user_buf, si
     	pr_info("XGORider: IMU-Strom %u Hz\n", v);
 
     } else if (strcmp(setting_name, "led_brightness") == 0) {
-    	// Firmware-Patch 0016: Multiplikator n/256 für alle LEDs; die Firmware merkt ihn sich nicht über einen Neustart
+    	// Firmware-Patch 06-leds: Multiplikator n/256 für alle LEDs; die Firmware merkt ihn sich nicht über einen Neustart
     	unsigned int v;
     	unsigned char b;
     	if (kstrtouint(strim(buffer), 10, &v) || v > 255) return -EINVAL;
@@ -553,7 +553,7 @@ static ssize_t settings_write(struct file *file, const char __user *user_buf, si
     	pr_info("XGORider: LED-Helligkeit %u/256\n", v);
 
     } else if (strcmp(setting_name, "ip_dev") == 0) {
-    	// Schnittstelle, deren IPv4 der ESP32 über BLE zeigt (Firmware-Patch 0025); Name höchstens 8 Zeichen
+    	// Schnittstelle, deren IPv4 der ESP32 über BLE zeigt (Firmware-Patch 01-ble); Name höchstens 8 Zeichen
     	char *name = strim(buffer);
     	if (!*name) return -EINVAL;
     	strscpy(XGO_IP_DEV, name, sizeof(XGO_IP_DEV));

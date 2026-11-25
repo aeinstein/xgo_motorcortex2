@@ -1,11 +1,9 @@
-// Host-Test für Patch 0028: Roll laufend auf 0 halten (MotionRequest::roll_hold) und blaue LEDs beim Herunterfahren.
+// Host-Test 07-balance / 06-leds: Roll laufend auf 0 halten (MotionRequest::roll_hold) und blaue LEDs beim Herunterfahren.
 // Roll halten: dieselbe Beinrechnung wie die Nivellierung 0x61 (bitgleich), aber die Räder wie ohne Nivellierung
 // (kein rollabhängiger Anteil der Kurskorrektur), und das auch bei vollem Drehbefehl. Dazu ein kleiner Regelkreis:
 // Körper-Roll = Störung + Roll-Sollwert der Beine (Vorzeichen aus der Nivellierung selbst bestimmt) -> geht auf 0.
-// Shutdown-LEDs: blau vor allem anderen (Fehlerfarbe, Akku, Fahren), aus = wie vorher.
-// Nach firmware/build.sh (Quellen mit Patches in firmware/build/), im Repo-Root:
-//   S=firmware/build/xgorider2_rl/firmware/src
-//   g++ -std=c++17 -ffp-contract=off -I $S firmware/tests/test_roll_hold.cpp $S/motion_controller.cpp $S/control/rider_motion.cpp $S/control/pid.cpp $S/control/rider_leg_imu.cpp $S/board_support.cpp -o t && ./t
+// Shutdown-LEDs: blau vor allem anderen (Fehlerfarbe, Akku, Fahren), aus = wie ohne.
+// Aufruf: firmware/tests/run.sh test_roll_hold
 #include "motion_controller.h"
 #include "board_support.h"
 #include <cmath>
@@ -89,7 +87,7 @@ static void testRollHold() {
     for (std::uint32_t k = 0; k < 2000; ++k) step(c, k, false, true, 2.0f, sign, 128);
     const float trim = c.r.legs.roll_trim_deg;
     for (std::uint32_t k = 2000; k < 2300; ++k) step(c, k, false, false, 2.0f, sign, 128);
-    check(std::fabs(c.r.legs.roll_target_deg - trim - c.r.command.roll) < 0.05f, "aus: Sollwert bleibt bei Rollbefehl + eingelerntem Trimm (0012)");
+    check(std::fabs(c.r.legs.roll_target_deg - trim - c.r.command.roll) < 0.05f, "aus: Sollwert bleibt bei Rollbefehl + eingelerntem Roll-Trimm");
 }
 
 static void testShutdownLeds() {

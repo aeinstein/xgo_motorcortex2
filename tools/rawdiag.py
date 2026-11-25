@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Rohwerte der IMU aus Register 0x15 mitschreiben (Firmware-Patch 0020), auf dem Rider als root.
+"""Rohwerte der IMU aus Register 0x15 mitschreiben (Firmware-Patch 03-diagnostics), auf dem Rider als root.
 
     python3 rawdiag.py 60 /root/roh.csv        # 60 s lang, so schnell wie raw_reg antwortet (~50 Hz)
 
@@ -12,7 +12,7 @@ Spalten: t_ns (CLOCK_MONOTONIC nach der Lesung), t_us (Messzeit der letzten Prob
 proben (Proben seit der vorigen Zeile), ax, ay, az, g_roll, g_nick, g_gier, w11, w21, imu
 
 Kostet am Pi nur während des Mitschnitts Rechenzeit (ein Python-Prozess, zwei /proc-Zugriffe je Zeile).
-raw_reg hat nur eine Adresse: nicht gleichzeitig mit imudiag.py oder anderen raw_reg-Lesern laufen lassen.
+raw_reg hat nur eine Adresse: nicht gleichzeitig mit anderen raw_reg-Lesern (z. B. fw_einheit.py) laufen lassen.
 """
 import struct
 import sys

@@ -1580,7 +1580,7 @@ While driving <code>pitch_dev</code> is typically −2 to −4°, so the horizon
 </tr>
 <tr>
 <td><code>tools/floornet/nick_bezug.py</code></td>
-<td><code>pitch_dev</code> of firmware-0021 runs re-referenced to <code>pitch_ref_deg</code> −5.0; used by <code>comfy_npz.py</code>, <code>geo_label.py</code>, <code>abstimmen.py</code>, <code>fahrt_js.py</code>, <code>tools/map_replay.py</code>. Affects metres only (evaluation, near-frame selection), not the learned rows</td>
+<td><code>pitch_dev</code> of runs with the attitude fusion (firmware patch 04-attitude, from 2026-11-18) re-referenced to <code>pitch_ref_deg</code> −5.0; used by <code>comfy_npz.py</code>, <code>geo_label.py</code>, <code>abstimmen.py</code>, <code>fahrt_js.py</code>, <code>tools/map_replay.py</code>. Affects metres only (evaluation, near-frame selection), not the learned rows</td>
 </tr>
 <tr>
 <td><code>tools/floornet/schnitt.py</code></td>

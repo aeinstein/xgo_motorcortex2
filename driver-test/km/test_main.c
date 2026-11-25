@@ -3,7 +3,7 @@
 const char *g_serial_path;
 #include "xgo-serial.c"
 #include "imu_extract.c"
-#include "xgo-vel.h"   /* Fahrrahmen 0x1a/0x1b (Firmware 0029), dieselben Funktionen wie /proc/XGORider/vel */
+#include "xgo-vel.h"   /* Fahrrahmen 0x1a/0x1b (Firmware-Patch 08-velocity), dieselben Funktionen wie /proc/XGORider/vel */
 #include <math.h>
 
 /* Text -> Bytes der Fahrrahmen prüfen, ohne Emulator */
@@ -31,7 +31,7 @@ static int test_vel(void) {
 	bad += vel_case("40000 0 0 0 0 0", 0, NULL, 0);
 	bad += vel_case("acc 1 2 x 4 5", 0, NULL, 0);
 	bad += vel_case("1 2 3 4 -5 6", 0, NULL, 0);
-	{   /* Grenzen 0x1b, 14 Byte (Firmware 0035) */
+	{   /* Grenzen 0x1b, 14 Byte */
 		const uint8_t l1[] = {0xf4, 0x01, 0x89, 0x03, 0x2c, 0x01, 0x3c, 0x0f, 0x2c, 0x01, 0x58, 0x02, 0xfa, 0x00};   /* 500 90.5 300 3900 300 600 250 */
 		bad += vel_case("500 90.5 300 3900 300 600 250", 1, l1, 14);
 		bad += vel_case("500 90.5 300 3900 300 600 250\n", 1, l1, 14);
@@ -58,7 +58,7 @@ static int test_vel(void) {
 
 /* mit --vel im Emulator: Grenzen + Rahmen wie /proc schicken, Zustand zurücklesen */
 static void vel_roundtrip(void) {
-	static const char *lim = "450 72.5 300 3900 300 600 250";   /* 14 Byte (Firmware 0035) */
+	static const char *lim = "450 72.5 300 3900 300 600 250";   /* 14 Byte */
 	static const char *frames[] = {"250 500 2500 12.3 120 600", "acc -300 2000 -5 0 0", "-120 800 4000 -30.0 90 400"};
 	uint8_t b[16];   /* Rahmen 13, Grenzen bis 14 Byte */
 	char hex[64], t[80];
@@ -114,7 +114,7 @@ static void *writer(void *a) {      /* xgonav schreibt speed_x/speed_z mit 20 Hz
 	return NULL;
 }
 
-/* BLE-Tunnel (Firmware 0025): wie xgo-ble jeden Datensatz holen und die Daten zurückschicken */
+/* BLE-Tunnel (Firmware-Patch 01-ble): wie xgo-ble jeden Datensatz holen und die Daten zurückschicken */
 static int n_tun_data, n_tun_conn, n_tun_bytes;
 static void *tunnel_echo(void *a) {
 	(void)a;
@@ -147,7 +147,7 @@ int main(int argc, char **argv) {
 	g_serial_path = argv[1];
 	double secs = atof(argv[2]);
 	XGO_IMU_HZ = atoi(argv[3]);
-	if (argc > 4) XGO_IMU_STREAM_HZ = atoi(argv[4]);   /* Strom (Firmware 0014) einschalten */
+	if (argc > 4) XGO_IMU_STREAM_HZ = atoi(argv[4]);   /* Strom (Firmware-Patch 02-pi-interface) einschalten */
 	if (test_f32()) return 2;
 	if (test_vel()) return 2;
 

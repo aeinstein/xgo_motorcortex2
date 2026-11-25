@@ -1,8 +1,6 @@
-// Host-Test für Patch 0014: IMU-/Rad-Datenstrom (imu_stream.h). Zeitsteuerung mit seq, Ring
+// Host-Test 02-pi-interface: IMU-/Rad-Datenstrom (imu_stream.h). Zeitsteuerung mit seq, Ring
 // (voll -> verwerfen, Reihenfolge), Paketaufbau mit Rahmen/Prüfsumme und Rückparsen, Register 0x11.
-// Nach firmware/build.sh, im Repo-Root:
-//   S=firmware/build/xgorider2_rl/firmware/src
-//   g++ -std=c++17 -ffp-contract=off -I $S firmware/tests/test_imu_stream.cpp $S/command_protocol.cpp -o t && ./t
+// Aufruf: firmware/tests/run.sh test_imu_stream
 #include "imu_stream.h"
 #include "command_protocol.h"
 #include <cstdint>

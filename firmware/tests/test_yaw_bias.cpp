@@ -1,10 +1,8 @@
-// Host-Test für Patch 0009: Gyro-z-Nullpunkt laufend nachführen (trackYawBias); mit Patch 0011 ohne Gier-Totband.
+// Host-Test 04-attitude: Gyro-z-Nullpunkt laufend nachführen (trackYawBias), ohne Gier-Totband.
 // updateImu mit synthetischen Rohdaten (500 Hz, Rauschen ±0,15 °/s, Rohwert-Quantisierung), Encoder
-// mit 100 Hz passend zur wahren Drehung. Fall wie am RiderPi 2026-11-05: Startkalibrierung bei
-// 0,2 °/s Sensor-Nullpunkt, danach durch Erwärmung 0,68 °/s (Fehler 0,48 °/s).
-// Nach firmware/build.sh (Quellen mit Patches in firmware/build/), im Repo-Root:
-//   S=firmware/build/xgorider2_rl/firmware/src
-//   g++ -std=c++17 -ffp-contract=off -I $S firmware/tests/test_yaw_bias.cpp $S/control/rider_leg_imu.cpp -o t && ./t
+// mit 100 Hz passend zur wahren Drehung. Fall: Startkalibrierung bei 0,2 °/s Sensor-Nullpunkt, danach durch
+// Erwärmung 0,68 °/s (Fehler 0,48 °/s).
+// Aufruf: firmware/tests/run.sh test_yaw_bias
 #include "control/rider_leg_imu.h"
 #include <cmath>
 #include <cstdint>
@@ -114,7 +112,7 @@ int main() {
         // Ohne Nachführung (None) bleibt der Restfehler der Startkalibrierung stehen und läuft mit auf
         const double d = s.imu.yaw_deg - y0, rest = s.biasErr() * 60;
         std::printf("       0,1 °/s für 60 s (wahr 6°): Kurs %+.2f°, davon Nullpunkt-Restfehler %+.2f°\n", d, rest);
-        check(std::fabs(d - (s.true_yaw - t0) - rest) < 0.1, "ohne Totband: sehr langsames Drehen (0,1 °/s) wird mitgezählt (0009: 0°)");
+        check(std::fabs(d - (s.true_yaw - t0) - rest) < 0.1, "ohne Totband: sehr langsames Drehen (0,1 °/s) wird mitgezählt (mit Totband: 0°)");
     }
     std::printf(fail ? "FEHLER\n" : "ok\n");
     return fail;

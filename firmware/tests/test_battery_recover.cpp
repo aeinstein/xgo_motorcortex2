@@ -1,10 +1,8 @@
-// Host-Test für Patch 0026 (Akku-Warnung hebt sich wieder auf):
+// Host-Test 05-actions: Akku-Warnung hebt sich wieder auf.
 // Ab <= 7 % zählt BatteryMonitor die Warnstufe hoch (ab 10 Zustand 250, keine Befehle mehr). Im Original
-// blieb sie bis zum Stromlos-Machen stehen; jetzt ist sie weg, wenn der Akku 5 s lang ununterbrochen
+// blieb sie bis zum Stromlos-Machen stehen; hier ist sie weg, wenn der Akku 5 s lang ununterbrochen
 // >= 15 % liegt. Kürzer oder darunter bleibt sie.
-// Nach firmware/build.sh (Quellen mit Patches in firmware/build/), im Repo-Root:
-//   S=firmware/build/xgorider2_rl/firmware/src
-//   g++ -std=c++17 -ffp-contract=off -I $S firmware/tests/test_battery_recover.cpp $S/board_support.cpp -o t && ./t
+// Aufruf: firmware/tests/run.sh test_battery_recover
 #include "board_support.h"
 #include <cstdint>
 #include <cstdio>

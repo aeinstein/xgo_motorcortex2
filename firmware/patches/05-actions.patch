@@ -1,0 +1,564 @@
+actions: Not-Aus, Aufstehen, Neustart, Aktionstabelle, Akku-Warnung, kein Selbststart, automatic_lean raus
+
+diff --git a/firmware/src/action_engine.cpp b/firmware/src/action_engine.cpp
+index aec9450..1c80285 100644
+--- a/firmware/src/action_engine.cpp
++++ b/firmware/src/action_engine.cpp
+@@ -1,8 +1,53 @@
+ #include "action_engine.h"
+ #include <cmath>
++#include <cstddef>
+ 
+ namespace rider2 {
+-namespace { constexpr uint8_t sequence[6]={1,2,3,4,5,6}; }
++namespace {
++constexpr uint8_t sequence[6]={1,2,3,4,5,6};
++
++// The stored actions as a table instead of two switch blocks; actions 1..6 behave exactly as the original.
++// An action is a purely MOTOR sequence: drive, turn, height, roll and the two waves. No LEDs, no sound: those
++// belong to the client. A new action = its steps plus one line in kActions; free numbers are 7..230
++// (231 and up are commands of register 0x3e or reserved; the commands are handled before the engine sees them).
++// Clients must know new numbers too: web/api.php (allows 1..6), xgonav/robot.py FW_ACTIONS (mirrors 3..5).
++// One step = one tick() = every 21st sensor loop (~63..81 ms on the RiderPi).
++constexpr ActionStep s1[]={{0,kKeep,kKeep,112,kKeep,10,kKeep}};              // roll wave at height 112
++constexpr ActionStep s2[]={{0,kKeep,kKeep,kKeep,kKeep,kKeep,10}};            // height wave
++constexpr ActionStep s3[]={{0,192,kKeep,kKeep,kKeep,kKeep,kKeep},            // forward ...
++                           {8,64,kKeep,kKeep,kKeep,kKeep,kKeep}};            // ... and back
++constexpr ActionStep s4[]={{0,176,208,kKeep,kKeep,kKeep,kKeep},              // zigzag forward ...
++                           {14,176,48,kKeep,kKeep,kKeep,kKeep},
++                           {28,96,208,kKeep,kKeep,kKeep,kKeep},              // ... and backward
++                           {44,96,48,kKeep,kKeep,kKeep,kKeep}};
++constexpr ActionStep s5[]={{0,kKeep,32,kKeep,kKeep,kKeep,10},                // turn one way with a height wave ...
++                           {46,kKeep,208,kKeep,kKeep,kKeep,kKeep}};          // ... and back
++constexpr ActionStep s6[]={{0,kKeep,kKeep,kKeep,kKeep,10,750}};              // roll and height wave
++template<std::size_t N> constexpr ActionDef def(uint8_t id,uint16_t end,uint8_t flags,const ActionStep (&steps)[N]) {
++    return ActionDef{id,end,flags,steps,uint8_t(N)};
++}
++constexpr ActionDef kActions[]={
++    def(1,50,0,s1), def(2,40,0,s2), def(3,20,0,s3), def(4,60,0,s4),
++    def(5,100,kActionFreeHeading,s5), def(6,80,kActionDefaultPeriods,s6),
++};
++}
++
++const ActionDef *findAction(uint8_t id) {
++    for(const auto &a:kActions) if(a.id==id) return &a;
++    return nullptr;
++}
++void ActionEngine::applySteps(const ActionDef &def, uint16_t step) {
++    for(uint8_t i=0;i<def.count;++i) {
++        const ActionStep &s=def.steps[i];
++        if(s.at!=step) continue;
++        if(s.forward!=kKeep) state_.command.forward=uint8_t(s.forward);
++        if(s.turn!=kKeep) state_.command.turn=uint8_t(s.turn);
++        if(s.height!=kKeep) state_.command.height=uint8_t(s.height);
++        if(s.roll!=kKeep) state_.command.roll=uint8_t(s.roll);
++        if(s.roll_phase>=0) state_.roll_phase=s.roll_phase;
++        if(s.height_phase>=0) state_.height_phase=s.height_phase;
++    }
++}
+ 
+ ActionEngine::ActionEngine() = default;
+ 
+@@ -17,7 +62,7 @@ void ActionEngine::clearCounters() {
+     for(auto &value:counters_) value=0;
+ }
+ void ActionEngine::resetCommands(uint32_t now_ms) {
+-    // 0x400d4740. Limits, periods, heading hold and automatic lean are retained.
++    // 0x400d4740. Limits, periods and heading hold are retained.
+     state_.last_reset_ms=now_ms;
+     state_.leveling=false; state_.hold_protection=true;
+     state_.roll_phase=0; state_.height_phase=0;
+@@ -92,47 +137,23 @@ void ActionEngine::tick(uint32_t now_ms) {
+     const uint8_t id=state_.action_id;
+     if(id==0) {clearCounters(); return;}
+     if(id==255) {enable(now_ms); return;}
+-    if(id>6) {state_.action_id=0; event(ActionUnknown,id); return;}
++    const ActionDef *def=findAction(id);
++    if(!def) {state_.action_id=0; event(ActionUnknown,id); return;}
+     const uint16_t step=counters_[id];
+-    if(id==5) state_.heading_hold=false; // BEFORE saving, as in 0x400d49b0.
++    const bool free_heading=(def->flags&kActionFreeHeading)!=0;
++    if(free_heading) state_.heading_hold=false; // BEFORE saving, as in 0x400d49b0.
+     if(step==0) {
+         finish(0,now_ms); event(ActionStarted,id);
+-        switch(id) {
+-        case 1: state_.command.height=112; state_.roll_phase=10; break;
+-        case 2: state_.height_phase=10; break;
+-        case 3: state_.command.forward=192; break;
+-        case 4: state_.command.forward=176; state_.command.turn=208; break;
+-        case 5:
+-            state_.height_phase=10; state_.command.turn=32;
+-            saved_heading_hold_=state_.heading_hold; break;
+-        case 6:
+-            state_.command.roll_period=128; state_.command.height_period=128;
+-            state_.roll_phase=10; state_.height_phase=750; break;
++        applySteps(*def,0);
++        if(def->flags&kActionDefaultPeriods) {state_.command.roll_period=128; state_.command.height_period=128;}
++        if(free_heading) saved_heading_hold_=state_.heading_hold;
++    } else if(step==def->end) {
++        finish(1,now_ms);
++        if(free_heading) {
++            restore_pending_=true; restore_started_ms_=now_ms;
++            return; // Original increment occurs after delay(50), not before.
+         }
+-    } else {
+-        switch(id) {
+-        case 1: if(step==50) finish(1,now_ms); break;
+-        case 2: if(step==40) finish(1,now_ms); break;
+-        case 3:
+-            if(step==8) state_.command.forward=64;
+-            else if(step==20) finish(1,now_ms);
+-            break;
+-        case 4:
+-            if(step==14) {state_.command.forward=176; state_.command.turn=48;}
+-            else if(step==28) {state_.command.forward=96; state_.command.turn=208;}
+-            else if(step==44) {state_.command.forward=96; state_.command.turn=48;}
+-            else if(step==60) finish(1,now_ms);
+-            break;
+-        case 5:
+-            if(step==46) state_.command.turn=208;
+-            else if(step==100) {
+-                finish(1,now_ms); restore_pending_=true; restore_started_ms_=now_ms;
+-                return; // Original increment occurs after delay(50), not before.
+-            }
+-            break;
+-        case 6: if(step==80) finish(1,now_ms); break;
+-        }
+-    }
++    } else applySteps(*def,step);
+     // Read-modify-write AFTER finish(), whose clearCounters() may have run.
+     ++counters_[id];
+ }
+diff --git a/firmware/src/action_engine.h b/firmware/src/action_engine.h
+index 917cc40..0e78736 100644
+--- a/firmware/src/action_engine.h
++++ b/firmware/src/action_engine.h
+@@ -16,6 +16,26 @@ struct ActionEvents {
+     bool has(ActionEvent flag) const { return (flags & uint32_t(flag))!=0; }
+ };
+ 
++// one stored action = a short list of motor set-points at given ticks (action_engine.cpp, kActions).
++constexpr int16_t kKeep=-1;                       // field of a step: leave this value as it is
++struct ActionStep {
++    uint16_t at;                                  // tick at which the step applies (0 = start of the action)
++    int16_t forward, turn, height, roll;          // command bytes 0..255 (128 = neutral) or kKeep
++    float roll_phase, height_phase;               // > 0 starts the wave, 0 stops it, kKeep leaves it
++};
++enum ActionFlag : uint8_t {
++    kActionFreeHeading=1,     // heading hold off during the action, restored 50 ms after its end (action 5)
++    kActionDefaultPeriods=2   // wave periods back to 128 at the start (action 6)
++};
++struct ActionDef {
++    uint8_t id;               // 1..230
++    uint16_t end;             // tick at which the action finishes and the commands return to neutral
++    uint8_t flags;
++    const ActionStep *steps;
++    uint8_t count;
++};
++const ActionDef *findAction(uint8_t id);          // nullptr = no such stored action
++
+ // This state corresponds to the original command globals. The protocol and
+ // controller may update it on the SAME owner task; ActionEngine is not threaded.
+ struct ActionState {
+@@ -59,10 +79,11 @@ public:
+     ActionEvents takeEvents();
+     uint16_t counter(uint8_t id) const { return id<255 ? counters_[id] : 0; }
+     bool deferred() const { return restore_pending_; }
+-    static bool supported(uint8_t id) { return id<=6 || id==255; }
++    static bool supported(uint8_t id) { return id==0 || id==255 || findAction(id)!=nullptr; }
+ private:
+     void resetCommands(uint32_t now_ms);
+     void clearCounters();
++    void applySteps(const ActionDef &def, uint16_t step);
+     void finish(uint8_t kind, uint32_t now_ms);
+     void event(ActionEvent flag, uint8_t id=0);
+     ActionState state_{};
+diff --git a/firmware/src/board_support.cpp b/firmware/src/board_support.cpp
+index b2a9d38..73d65a1 100644
+--- a/firmware/src/board_support.cpp
++++ b/firmware/src/board_support.cpp
+@@ -23,6 +23,12 @@ void BatteryMonitor::update(std::uint16_t adc,std::uint32_t uptime_ms) {
+         if(previous>=200){state_.low_stage=1;low_count_=0;}
+     }
+     if(state_.percent>7 && low_count_)low_count_=0;
++    if(state_.low_stage && state_.percent>=kBatteryRecoverPercent) {
++        if(!recover_since_ms_)recover_since_ms_=uptime_ms?uptime_ms:1;
++        else if(std::uint32_t(uptime_ms-recover_since_ms_)>=kBatteryRecoverMs) {
++            state_.low_stage=0;state_.low_blink=false;blink_count_=0;low_count_=0;recover_since_ms_=0;
++        }
++    } else recover_since_ms_=0;
+     if(state_.low_stage) {
+         if(state_.low_stage>30)state_.low_stage=30;
+         const auto previous=blink_count_++;
+diff --git a/firmware/src/board_support.h b/firmware/src/board_support.h
+index ce7debe..fbc631b 100644
+--- a/firmware/src/board_support.h
++++ b/firmware/src/board_support.h
+@@ -15,6 +15,12 @@ struct BoardState {
+     bool calibration_pressed=false;
+ };
+ float batteryVoltage(std::uint16_t adc);
++// Die Akku-Warnung (low_stage) hob sich im Original nie wieder auf, auch nicht am Ladegerät mit
++// vollem Akku; im Zustand 250 nahm die Firmware keine Befehle mehr an (auch keinen Neustart 237), half nur
++// Stromlos-Machen. Jetzt: liegt der Akku kBatteryRecoverMs lang ununterbrochen bei >= kBatteryRecoverPercent,
++// ist die Warnung weg (Hysterese gegen die Schwelle 7 %, an der sie beginnt).
++constexpr float kBatteryRecoverPercent=15.0f;
++constexpr std::uint32_t kBatteryRecoverMs=5000;
+ float batteryPercent(float voltage);
+ // Original block-average/outlier rejection and count-based low-battery state.
+ class BatteryMonitor {
+@@ -26,6 +32,7 @@ private:
+     float readings_[15]={};
+     std::uint8_t index_=0;
+     std::uint16_t low_count_=0,blink_count_=0;
++    std::uint32_t recover_since_ms_=0;   // seit wann der Akku nach der Warnung wieder >= kBatteryRecoverPercent liegt (0 = nicht)
+ };
+ class CalibrationSwitch {
+ public:
+diff --git a/firmware/src/control/rider_motion.cpp b/firmware/src/control/rider_motion.cpp
+index d134060..38ec416 100644
+--- a/firmware/src/control/rider_motion.cpp
++++ b/firmware/src/control/rider_motion.cpp
+@@ -30,13 +30,8 @@ void updateCommandTargets(CommandState &s,const MotionCommand &c) {
+     // 0x400d4248: each wave period is 2000..4000 phase units.
+     const float roll_period=std::fma(static_cast<float>(c.roll_period)/255.0f,2000.0f,2000.0f);
+     const float height_period=std::fma(static_cast<float>(c.height_period)/255.0f,2000.0f,2000.0f);
+-    if(c.automatic_lean) {
+-        if(static_cast<double>(std::fabs(s.filtered_forward))>static_cast<double>(c.max_forward)*.1) {
+-            const float ratio=static_cast<float>(static_cast<double>(std::fabs(s.filtered_forward))*.6/c.max_forward+.4);
+-            const float turn_ratio=-s.filtered_turn/c.max_turn;
+-            s.roll=static_cast<float>(static_cast<double>(ratio)*20.0*turn_ratio);
+-        }
+-    } else if(s.roll_phase!=0) {
++    // automatische Schräglage des Originals (Roll aus Fahr- und Drehbefehl) entfernt, nie gesetzt.
++    if(s.roll_phase!=0) {
+         const float phase=s.roll_phase/roll_period;
+         s.roll=static_cast<float>(std::sin(static_cast<double>(phase+phase)*pi)*15.0);
+         s.roll_phase+=10;
+diff --git a/firmware/src/control/rider_motion.h b/firmware/src/control/rider_motion.h
+index 208c368..ac41710 100644
+--- a/firmware/src/control/rider_motion.h
++++ b/firmware/src/control/rider_motion.h
+@@ -10,7 +10,6 @@ struct MotionCommand {
+     std::uint8_t forward=128, turn=128, height=128, roll=128;
+     std::uint8_t roll_period=128, height_period=128;
+     float max_forward=210, max_turn=300;
+-    bool automatic_lean=false;
+ };
+ struct CommandState {
+     float forward=0, turn=0, height=0, roll=0; // mapped requests, 3ffc30d8
+diff --git a/firmware/src/leg_position_controller.cpp b/firmware/src/leg_position_controller.cpp
+index 62e21b8..e6276d0 100644
+--- a/firmware/src/leg_position_controller.cpp
++++ b/firmware/src/leg_position_controller.cpp
+@@ -20,7 +20,6 @@ MotionResult LegPositionController::step(const MotionInput& i,MotionRequest& req
+     auto command=request.command;
+     command.max_forward=std::min(command.max_forward,policy::kMaxForwardMmS);
+     command.max_turn=std::min(command.max_turn,policy::kMaxTurnDegS);
+-    if(command.max_forward==0||command.max_turn==0)command.automatic_lean=false;
+     command_.roll_phase=request.roll_phase;command_.height_phase=request.height_phase;
+     // Clamp the mapped targets BEFORE filtering, so a phone action cannot wind
+     // the filters outside the actor's qualified reference profile.
+diff --git a/firmware/src/main.cpp b/firmware/src/main.cpp
+index 61fd8dd..c1efc52 100644
+--- a/firmware/src/main.cpp
++++ b/firmware/src/main.cpp
+@@ -50,6 +50,18 @@ constexpr uint32_t kImuPeriodUs=2000,kControlPeriodUs=4000;
+ // Consecutive 4 ms control ticks the robot must remain plausibly upright and
+ // still before a protective stop may re-select the learned controller.
+ constexpr uint16_t kAutoRearmTicks=250;
++// Host-triggered stand-up (Action 0x3e = 253, console !standup). Stock R-1.1.3
++// switched the wheel PID on right after boot regardless of tilt, and the PID
++// swung the body up from its resting angle. Here the host decides when: the
++// request arms like 255, but for kStandupWindowMs the start also accepts a
++// tilted (lying) robot. Until it is upright the classic wheel PID drives the
++// wheels directly (no RL, no lift guard, no runaway count); if it is not
++// upright within kStandupTimeoutMs the stand-up ends in a latched tilt stop.
++constexpr uint32_t kStandupWindowMs=3000;
++constexpr uint32_t kStandupTimeoutMs=2000;
++constexpr float kStandupMaxPitch=40.0f;      // tilt guard stops at 45 deg anyway
++constexpr float kStandupMaxRoll=10.0f;
++constexpr uint16_t kStandupUprightTicks=40;  // ~160 ms with |pitch|<8, |roll|<5 = done
+ constexpr uint8_t kIds[]={11,21,12,22};
+ // Diagnostic trace: 28-byte samples, about 55 Hz for 20 seconds. The control
+ // task fills the ring (sample + USB-only companion record); the application
+@@ -86,6 +98,7 @@ volatile uint32_t dz_reset_request=0;
+ constexpr const char* kBuildId="rider2-rl-only | rider_balance_v6 | lift guard v4 | dead-zone preload v3 | free-fall guard 60 ms + low-g = fall (v3) + LED fault codes | servo-dropout auto re-arm | 2026-10-24";
+ volatile uint32_t wheel_smooth_ms=0;
+ volatile float yaw_slew_per_second=20000.0f;
++bool battery_low_seen=false;   // Akku-Warnung war aktiv (nur Robot-Task)
+ // Ausgleich des Gleichgewichtspunkts: Die Lagefusion liefert den wahren Nick, der gespeicherte Nick-Trimm ist
+ // aber mit dem ~2° zu hohen Nick des Originals eingelernt (Nullpunkt des Nick-Kreisels nie abgezogen). Regler,
+ // Aufstehen und Wächter bekommen Nick + kBalanceOffsetDeg; nach außen (Register, Datenstrom, Status) geht der wahre.
+@@ -127,6 +140,7 @@ struct Snapshot {
+     bool fall_low=false,fall_falling=false;
+     uint32_t fall_trips=0,fall_deep_trips=0;
+     float fall_min_g=0,fall_longest_low_ms=0;
++    uint8_t standup=0;   // 0 idle, 1 requested (waiting for start), 2 standing up
+     char last_result[64]="booting";
+ };
+ Snapshot shared;
+@@ -171,6 +185,9 @@ public:
+     bool save_legs_pending=false,stop_sent=false,tilt_fault_stop=false;
+     uint16_t save_a=0,save_b=0,trim_stable=0,runaway_count=0;
+     uint16_t auto_rearm_ticks=0;
++    bool standup_requested=false,standup_phase=false;
++    uint32_t standup_request_ms=0,standup_started_ms=0;
++    uint16_t standup_upright_ticks=0;
+     uint32_t dz_reset_seen=0;
+     uint32_t save_started=0,last_imu_us=0,last_control_us=0,last_publish_ms=0;
+     uint8_t sensor_loops=0,trim_stage=0;
+@@ -205,8 +222,11 @@ public:
+         loadExtendedTrim();
+         board.begin();imu_board.begin();bus.pauseFeedback(false);
+         s.imu.last_us=micros();last_imu_us=last_control_us=micros();
+-#if RIDER2_RL_ONLY
++        // Nach einem Sturz (Zustand 0) nicht von selbst wieder balancieren. Im Original stand er nach ~500
++        // aufrechten Regeltakten wieder auf, während die LEDs noch rot waren; scharf ist er nur nach einem
++        // Befehl (255, 253), und das zeigen die LEDs pink.
+         actions.state().auto_recover=false;
++#if RIDER2_RL_ONLY
+         {
+             auto& st=actions.state();
+             st.command.forward=st.command.turn=st.command.roll=128;
+@@ -224,6 +244,8 @@ public:
+     }
+     void stop(StopReason reason,bool latch) {
+         if(!manual_stop||latch)s.last_stop_reason=reason;
++        if(driving)standup_phase=false;
++        if(latch)standup_requested=false;
+         if(driving){policy.resetHistory();if(policy.status().mode==rl::Mode::Active)policy.setMode(rl::Mode::Off);}
+         rider2::lift::logStop(lift_log,driving,uint8_t(reason),millis());   // vor dem Rücksetzen festhalten
+         tilt_fault_stop=false;lift_state=rider2::lift::State();lift_acting=false;
+@@ -256,6 +278,7 @@ public:
+     void enterCalibration() {
+         policy.setMode(rl::Mode::Off);
+         cancelTrim();
++        standup_requested=false;
+         actions.cancel(millis());actions.requestMode(255,true);leg_calibrating=true;
+         save_legs_pending=false;
+         stop(StopReason::Calibration,false);result("leg calibration entered; torque released");
+@@ -280,11 +303,43 @@ public:
+         auto_rearm_ticks=0;
+         result("arm requested; waiting for valid upright sensor state");
+     }
++    void standup() {
++        if(driving){result("stand-up ignored: already balancing");return;}
++        if(leg_calibrating||save_legs_pending||save_trim_pending){result("stand-up refused during calibration");++s.rejected_commands;return;}
++        arm();
++        if(manual_stop)return;   // arm refused (RL model unavailable)
++        standup_requested=true;standup_phase=false;standup_upright_ticks=0;standup_request_ms=millis();
++        result("stand-up requested; starts within 3 s if |pitch|<40");
++    }
++    // Neustart des ESP32 auf Befehl (Aktion 0x3e = 237, Konsole !restart), etwa wenn nach einem Aktorfehler
++    // ein Bein festhält. Nur wenn er nicht balanciert (sonst fiele er um): Stopp, "Drehmoment aus" noch einmal
++    // an beide Beine, Bus leerlaufen lassen, dann ESP.restart(). Die Servos selbst setzt das nicht zurück
++    // (kein Stromlos); danach wie nach dem Einschalten: disarmed, Kurs und Gyro-Nullpunkt neu.
++    void restart() {
++        if(driving){result("restart refused while balancing; stop first (254)");++s.rejected_commands;return;}
++        policy.setMode(rl::Mode::Off);
++        stop(StopReason::Manual,true);
++        bus.pauseFeedback(true);bus.setLegTorque(false);
++        const uint32_t began=millis();
++        do {
++            bus.poll(millis());
++            if(bus.transportIdle())break;
++            delay(1);
++        }while(uint32_t(millis()-began)<100);
++        Serial.println("restarting on command");Serial.flush();
++        delay(20);
++        ESP.restart();
++    }
++    bool standupStartOk(const GuardInput& g) const {
++        return outputGuard(g)==StopReason::None&&std::fabs(g.pitch)<kStandupMaxPitch&&std::fabs(g.roll)<kStandupMaxRoll;
++    }
+     void dispatch(const CommandEvent& e) {
+         auto& a=actions.state();const uint8_t value=e.data[0];const uint32_t now=millis();
+         const auto kind=commandKind(e);
++        // Neustart (237) auch bei Akku-Warnung, er balanciert dann ohnehin nicht (restart() prüft es)
+         if(board.state().low_stage && kind!=CommandKind::TelemetryStream
+            && kind!=CommandKind::ImuStream
++           && !(kind==CommandKind::Action&&value==237)
+            ){++s.rejected_commands;return;}
+         switch(kind) {
+         case CommandKind::ActionLoop:actions.setLoop(value,now);break;
+@@ -322,7 +377,12 @@ public:
+         case CommandKind::Roll:a.command.roll=value;break;
+         case CommandKind::RollWave:a.command.roll_period=value;a.roll_phase=value?10:0;break;
+         case CommandKind::HeightWave:a.command.height_period=value;a.height_phase=value?10:0;break;
+-        case CommandKind::Action:if(value==255)arm();else if(!leg_calibrating)actions.request(value,now);break;
++        case CommandKind::Action:
++            if(value==255)arm();else if(value==254)emergencyStop();
++            else if(value==253)standup();
++            else if(value==237)restart();
++            else if(!leg_calibrating)actions.request(value,now);
++            break;
+         case CommandKind::PositionHoldProtection:a.hold_protection=value!=0;break;
+         case CommandKind::Leveling:a.leveling=value!=0;break;
+         case CommandKind::MaxForward:a.command.max_forward=float(double(value)/255.0*210.0);break;
+@@ -341,7 +401,7 @@ public:
+         portENTER_CRITICAL(&stateLock);emergency=emergencyRequested;emergencyRequested=false;portEXIT_CRITICAL(&stateLock);
+         if(emergency) {
+             policy.setMode(rl::Mode::Off);
+-            xQueueReset(commands);manual_stop=true;leg_calibrating=false;
++            xQueueReset(commands);manual_stop=true;leg_calibrating=false;standup_requested=false;standup_phase=false;
+             save_legs_pending=false;cancelTrim();
+             actions.cancel(millis());actions.requestMode(254,true);stop(StopReason::Manual,true);result("manual stop latched");
+         }
+@@ -413,7 +473,7 @@ public:
+                 using rider::control::YawReference;
+                 const auto& w11=bus.sample(11);const auto& w21=bus.sample(21);
+                 YawReference ref=YawReference::None;
+-                if(driving&&actions.state().mode==1&&!lift_acting&&w11.fresh(now,40)&&w21.fresh(now,40))ref=YawReference::Wheels;
++                if(driving&&actions.state().mode==1&&!standup_phase&&!lift_acting&&w11.fresh(now,40)&&w21.fresh(now,40))ref=YawReference::Wheels;
+                 else if(!driving&&!leg_calibrating)ref=YawReference::Still;
+                 rider::control::trackYawBias(s.imu,yaw_bias_tracker,ref,w11.encoder_ticks,w21.encoder_ticks,sample_us);
+             }
+@@ -436,9 +496,14 @@ public:
+         const auto power=board.state();
+         if(power.neutralize){auto& a=actions.state();a.command.forward=a.command.turn=a.command.roll=128;a.command.height=0;a.height_phase=a.roll_phase=0;actions.cancel(millis());a.command.height=0;}
+         if(power.stop_required)actions.requestMode(250,true);
++        // Akku-Warnung aufgehoben -> aus 250 nach 253 (disarmed, bereit; Aufstehen mit 253/255)
++        if(battery_low_seen&&!power.low_stage){
++            battery_low_seen=false;
++            if(actions.state().mode==250){actions.requestMode(253,true);result("battery recovered; disarmed (253)");}
++        } else if(power.low_stage)battery_low_seen=true;
+         if(imu_valid)odometry.update(millis(),bus.sample(21).encoder_ticks,bus.sample(11).filtered_speed_mm_s,s.imu.yaw_deg);
+         // Original runaway criterion is count based and uses wheel11.
+-        if(actions.state().mode==1&&std::fabs(bus.sample(11).filtered_speed_mm_s)>300&&
++        if(actions.state().mode==1&&!standup_phase&&std::fabs(bus.sample(11).filtered_speed_mm_s)>300&&
+            std::abs(int(s.motion.wheels.id11))>=701&&std::fabs(s.motion.command.forward)<20)++runaway_count;
+         else runaway_count=0;
+         if(runaway_count>350)actions.requestMode(0);
+@@ -563,14 +628,18 @@ public:
+         if(driving&&tilt_fault_stop&&reason==StopReason::None)reason=StopReason::Tilt;
+ #endif
+         if(reason!=StopReason::None)a.upright_control_ticks=0;
+-        if(a.mode==253&&!manual_stop&&!leg_calibrating&&board.state().battery_valid&&uprightForStart(g)){
++        const bool standup_window=standup_requested&&uint32_t(now-standup_request_ms)<kStandupWindowMs;
++        if(standup_requested&&!standup_window){standup_requested=false;result("stand-up window expired; waiting for upright start");}
++        if(a.mode==253&&!manual_stop&&!leg_calibrating&&board.state().battery_valid&&
++           (uprightForStart(g)||(standup_window&&standupStartOk(g)))){
++            if(standup_window){standup_requested=false;standup_phase=true;standup_started_ms=now;standup_upright_ticks=0;}
+             actions.cancel(now);actions.requestMode(1,true);
+ #if RIDER2_RL_ONLY
+             // ActionEngine::controlTick neutralises height while the robot is
+             // waiting to start; restore the trained leg-height centre here.
+             if(a.command.height==0)a.command.height=128;
+ #endif
+-            controller.reset(now,s.imu.yaw_deg);result("balance enabled");
++            controller.reset(now,s.imu.yaw_deg);result(standup_phase?"stand-up started":"balance enabled");
+         }
+ #if RIDER2_RL_ONLY
+         // A protective stop clears the actor and latches manual_stop. For stops
+@@ -661,6 +730,20 @@ public:
+                 lift_in.pitch_rate_deg_s=s.imu.pitch_rate_rad_s*57.2957795f;lift_in.roll_rate_deg_s=s.imu.gyro_roll_filtered;
+                 lift_state=rider2::lift::update(lift_state,lift_config,lift_in);
+             }
++            bool standup_now=false;
++            if(standup_phase) {
++                if(std::fabs(ctrlPitch())<8&&std::fabs(s.imu.roll_deg)<5) {
++                    if(++standup_upright_ticks>=kStandupUprightTicks){standup_phase=false;policy.resetHistory();result("stand-up complete; balancing");}
++                } else standup_upright_ticks=0;
++                if(standup_phase&&uint32_t(now-standup_started_ms)>kStandupTimeoutMs) {
++                    standup_phase=false;actions.requestMode(0,true);stop(StopReason::Tilt,true);
++                    result("stand-up failed: not upright in time; stop latched");
++                    s.control_timing.end(micros());return;
++                }
++                standup_now=standup_phase;
++                // The swing-up is fast wheel motion by design; the lift guard must not hold it at zero.
++                if(standup_now)lift_state=rider2::lift::State();
++            }
+             float wheel11=float(decision.wheel11),wheel21=float(decision.wheel21);
+             wheel11*=wheel_gain;wheel21*=wheel_gain;
+             const uint32_t filter_dt=uint32_t(us-last_filter_us);last_filter_us=us;
+@@ -681,6 +764,16 @@ public:
+             wheel11=forward_command+yaw_command_filtered;wheel21=forward_command-yaw_command_filtered;
+             wheel11=std::max(-1023.0f,std::min(1023.0f,wheel11));
+             wheel21=std::max(-1023.0f,std::min(1023.0f,wheel21));
++#if !RIDER2_RL_ONLY
++            if(standup_now) {
++                // Swing-up: raw classic wheel PID as in stock R-1.1.3 (no RL, gain, smoothing or yaw slew).
++                // The filters are seeded with it so the hand-over after the stand-up is continuous.
++                wheel11=float(s.motion.wheels.id11);wheel21=float(s.motion.wheels.id21);
++                wheel_filtered[0]=wheel11;wheel_filtered[1]=wheel21;wheel_filter_init=true;
++                yaw_command_filtered=(wheel11-wheel21)*.5f;yaw_filter_init=true;
++                policy.resetHistory();
++            }
++#endif
+             s.motion.wheels.id11=int16_t(std::lround(wheel11));s.motion.wheels.id21=int16_t(std::lround(wheel21));
+             // Wheels free in the air: the speed feedback has no ground to push against and runs away (see lift_guard.h).
+             // Hold the wheel command at zero and keep the policy's history clean so nothing winds up meanwhile.
+@@ -768,6 +861,7 @@ public:
+         put16(30,l.stops?uint16_t(std::min<uint32_t>((now-l.stop_ms)/10,65535)):uint16_t(65535));
+     }
+     void publish() {
++        s.standup=standup_phase?2:(standup_requested?1:0);
+         s.ms=millis();s.driving=driving;s.manual_stop=manual_stop;s.leg_calibrating=leg_calibrating;s.imu_valid=imu_valid;
+         s.pitch_calibrating=trim_stage;s.mode=actions.state().mode;s.action=actions.state().action_id;
+         s.battery=board.state();s.bus=bus.stats();for(size_t n=0;n<4;++n)s.actuators[n]=bus.sample(kIds[n]);
+@@ -893,6 +987,7 @@ void printStatus(Print& out) {
+     out.printf(",\"dzcomp\":{\"max\":%.1f,\"hysteresis\":%.1f,\"ramp\":%.2f,\"initial\":%.1f,\"grow_mean\":%.1f,\"preload\":%.2f,\"sign\":%d,\"flip_rate\":%.2f,\"trips\":%u,\"locked\":%s}",
+         printable(dz_max_units),printable(dz_hysteresis),printable(dz_ramp),printable(dz_initial),printable(dz_grow_mean),printable(s.policy.dz_preload),int(s.policy.dz_sign),
+         printable(s.policy.dz_flip_rate),s.policy.dz_trips,s.policy.dz_locked?"true":"false");
++    {static const char* const kStandupNames[]={"idle","requested","active"};out.printf(",\"standup\":\"%s\"",kStandupNames[s.standup<3?s.standup:0]);}
+     out.printf(",\"policy\":{\"mode\":\"%s\",\"error\":\"%s\",\"model\":\"%s\",\"model_id\":%u,\"trained\":%s,\"model_valid\":%s,\"action_space\":\"%s\",\"action_scale\":%.3f,\"calls\":%u,\"failures\":%u,\"last_us\":%u,\"max_us\":%u,\"last_interval_us\":%u,\"action\":[%.6f,%.6f],\"command\":[%.3f,%.3f],\"yaw_integral\":%.6f,\"yaw_integral_gain\":%.6f,\"observation\":[",
+         rl::modeName(p.mode),rl::errorName(p.error),p.model_valid?model.name:"invalid",model.id,
+         p.trained?"true":"false",p.model_valid?"true":"false",rl::actionSpaceName(model.action_space),printable(model.action_scale),
+@@ -919,6 +1014,8 @@ void console(const char* line,Print& out) {
+     if(!strcmp(line,"!stop")){emergencyStop();out.println("stop requested");return;}
+     Event e;
+     if(!strcmp(line,"!arm")){e.kind=EventKind::Arm;enqueue(e);return;}
++    if(!strcmp(line,"!standup")){valueCommand(CommandKind::Action,253,out);return;}
++    if(!strcmp(line,"!restart")){valueCommand(CommandKind::Action,237,out);return;}   // nur wenn er nicht balanciert
+     if(!strcmp(line,"!neutral")){e.kind=EventKind::Neutral;enqueue(e);return;}
+     if(!strcmp(line,"!odom reset")){e.kind=EventKind::ResetOdometry;enqueue(e);return;}
+     if(!strcmp(line,"!cal begin")){valueCommand(CommandKind::LegCalibration,1,out);return;}
+@@ -989,6 +1086,7 @@ void console(const char* line,Print& out) {
+         for(const auto& m:maps)if(!strcmp(cmd,m.text)){valueCommand(m.kind,a,out);return;}
+     }
+     out.print("!status | !policy off/shadow/active/status | !stop | !arm | !neutral | !move FORWARD TURN (bytes,128 neutral) | !height BYTE | !roll BYTE | !action 0..6/255 | !loop 0/1 | !level 0/1 | !heading 0/1 | !heightwave BYTE | !rollwave BYTE | !maxforward BYTE | !maxturn BYTE | !rgb INDEX R G B | !cal begin | !cal save | !trim | !odom reset | !trace dump | !trace usb on/off | !liftguard on/off/status | !fallguard on/off/status/clear/ms N | !dzcomp [off|on|reset|MAX [HYST [RAMP [START [GROW]]]]]");
++    out.print(" | !standup | !restart");
+     out.println();
+ }
+ }
+diff --git a/firmware/src/motion_controller.cpp b/firmware/src/motion_controller.cpp
+index 37da298..7021d0b 100644
+--- a/firmware/src/motion_controller.cpp
++++ b/firmware/src/motion_controller.cpp
+@@ -27,9 +27,6 @@ MotionResult MotionController::step(const MotionInput& i,MotionRequest& request)
+         reset(i.now_ms,std::isfinite(i.yaw_deg)?i.yaw_deg:0);return o;
+     }
+     auto command=request.command;
+-    // A zero speed-limit byte is legal. Avoid dividing by zero in the dormant
+-    // automatic lean branch while retaining the zero movement limit.
+-    if(command.max_forward==0||command.max_turn==0)command.automatic_lean=false;
+     command_.roll_phase=request.roll_phase;command_.height_phase=request.height_phase;
+     o.physical_position=control::wheelDistance(i.encoder11,i.encoder21);
+     o.position=control::wheelDistance(i.encoder11,request.original_position_feedback?int32_t(i.leg12_position):i.encoder21);
+diff --git a/firmware/tests/test_leg_position_controller.cpp b/firmware/tests/test_leg_position_controller.cpp
+index 47b6842..e8fef76 100644
+--- a/firmware/tests/test_leg_position_controller.cpp
++++ b/firmware/tests/test_leg_position_controller.cpp
+@@ -45,7 +45,7 @@ int main() {
+     // Wheel feedback and pitch cannot create a wheel command in this module.
+     i.pitch_deg=30;i.pitch_rate_rad_s=20;i.speed11=10000;i.speed21=-10000;
+     out=legs.step(i,a);assert(out.valid&&out.wheels.id11==0&&out.wheels.id21==0);
+-    a.command.max_forward=a.command.max_turn=0;a.command.automatic_lean=true;assert(legs.step(i,a).valid);
++    a.command.max_forward=a.command.max_turn=0;assert(legs.step(i,a).valid);
+     i.roll_deg=std::numeric_limits<float>::quiet_NaN();assert(!legs.step(i,a).valid);i.roll_deg=0;
+     a.roll_phase=std::numeric_limits<float>::infinity();assert(!legs.step(i,a).valid);a.roll_phase=0;
+     i.zero_a=1024;assert(!legs.step(i,a).valid);i.zero_a=601;
+diff --git a/firmware/tests/test_motion_controller.cpp b/firmware/tests/test_motion_controller.cpp
+index 082d04c..2b2421d 100644
+--- a/firmware/tests/test_motion_controller.cpp
++++ b/firmware/tests/test_motion_controller.cpp
+@@ -13,7 +13,7 @@ int main() {
+     i.mode=0;CHECK(!c.step(i,r).valid);
+     i.mode=1;auto fresh=c.step(i,r);CHECK(fresh.valid&&fresh.balance==first.balance);
+     i.speed11=std::numeric_limits<float>::quiet_NaN();CHECK(!c.step(i,r).valid);i.speed11=0;
+-    r.command.max_forward=0;r.command.max_turn=0;r.command.automatic_lean=true;CHECK(c.step(i,r).valid);
++    r.command.max_forward=0;r.command.max_turn=0;CHECK(c.step(i,r).valid);
+     r={};r.roll_phase=std::numeric_limits<float>::quiet_NaN();CHECK(!c.step(i,r).valid);
+     r={};r.height_phase=std::numeric_limits<float>::infinity();CHECK(!c.step(i,r).valid);
+     r={};c.reset();i.encoder11=100;i.encoder21=200;i.leg12_position=400;

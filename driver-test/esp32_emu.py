@@ -2,20 +2,20 @@
 
 python3 esp32_emu.py <harness> <sekunden> <imu_hz> [--faults] [--wheels --combo] [--stream[=HZ]|--stream-off]
 
---imu65: Register 0x65 (R-1.1.6: accel + roll/pitch/yaw, 24 Byte); --wheels: 0x0c (Rad-Encoder);
---combo: 0x0d (roll/pitch/yaw + Rad-Ticks + t_ms, 24 Byte; nur zusammen mit --wheels sinnvoll).
---stream[=HZ]: Firmware 0014. Der Emulator versteht das Schreiben auf 0x11 (Rate) und sendet dann selbst Pakete
+--imu65: Register 0x65 (R-1.1.6: accel + roll/pitch/yaw, 24 Byte); --wheels: wird angenommen, wirkt aber nicht mehr
+(0x0c beantwortet der Emulator wie die Firmware nicht); --combo: 0x0d (roll/pitch/yaw + Rad-Ticks + t_ms, 24 Byte).
+--stream[=HZ]: Firmware-Patch 02-pi-interface. Der Emulator versteht das Schreiben auf 0x11 (Rate) und sendet dann selbst Pakete
 Typ 0x14 (seq, t_us der Messung nach eigener, driftender ESP-Uhr, Winkel, Ticks) mit zufälligem Sendeverzug
 (Firmware-loop); aus nach 5 s ohne Byte vom Host. Das Testprogramm bekommt HZ (Standard 100) als Strom-Rate.
 --stream-off: wie --stream, aber die Firmware kennt 0x11 nicht (Rückfall auf Abfrage prüfen).
---vel: Firmware 0029. Der Emulator nimmt Fahrrahmen (0x1a, 13 Byte) und Grenzen (0x1b, 14 Byte, Firmware 0035) an, prüft Länge und
+--vel: Firmware-Patch 08-velocity. Der Emulator nimmt Fahrrahmen (0x1a, 13 Byte) und Grenzen (0x1b, 14 Byte) an, prüft Länge und
 Prüfsumme und beantwortet 0x1a lesen mit dem Zustand des letzten Rahmens; am Ende vergleicht er die empfangenen Bytes
 mit denen, die das Testprogramm laut VELSENT/VELLIM geschickt hat, und dessen VELDIAG mit dem erwarteten Text.
---tunnel: Firmware 0025. Der Emulator schickt wie ein BLE-Client Daten durch den Tunnel (Rahmen Typ 0x15, Register
+--tunnel: Firmware-Patch 01-ble. Der Emulator schickt wie ein BLE-Client Daten durch den Tunnel (Rahmen Typ 0x15, Register
 0x17, Kennung + höchstens 23 Byte, davor die Meldung "verbunden"); das Testprogramm schickt sie zurück (Schreiben auf
 0x17). Geprüft wird, dass alles vollständig und in der Reihenfolge zurückkommt, neben Abfragen und Strom. Dazu wird
 die auf 0x18 geschriebene IP des Pi ausgegeben.
-Ohne diese Schalter antwortet der Emulator auf 0x65/0x0c/0x0d gar nicht (wie R-1.1.3); der Treiber nutzt seit
+Ohne diese Schalter antwortet der Emulator auf 0x65/0x0d gar nicht (wie R-1.1.3), auf 0x0c nie; der Treiber nutzt seit
 2026-11-17 nur noch 0x0d und den Strom, --block und --imu65 prüfen nur noch, dass er sie nicht fälschlich annimmt.
 """
 import math
@@ -34,10 +34,9 @@ harness, secs, hz = args[0], args[1], args[2]
 BLOCK = "--block" in args
 FAULTS = "--faults" in args
 IMU65 = "--imu65" in args
-WHEELS = "--wheels" in args
 COMBO = "--combo" in args
 TUNNEL = "--tunnel" in args
-VEL = "--vel" in args   # Firmware 0029: Fahrrahmen 0x1a (13 Byte) / Grenzen 0x1b (14 Byte), 0x1a lesen = Zustand
+VEL = "--vel" in args   # Firmware-Patch 08-velocity: Fahrrahmen 0x1a (13 Byte) / Grenzen 0x1b (14 Byte), 0x1a lesen = Zustand
 _st = [a for a in args if a.startswith("--stream")]
 STREAM = bool(_st) and "--stream-off" not in args
 STREAM_HZ = int(_st[0].split("=")[1]) if _st and "=" in _st[0] else 100
@@ -75,11 +74,6 @@ def payload(addr, n, t):
             return None
         a, b = wheels_truth(t)
         return (f(r) + f(p) + f(y) + struct.pack("<III", a, b, int((t - T0) * 1000) & 0xFFFFFFFF))[:n]
-    if addr == 0x0c:
-        if not WHEELS:
-            return None
-        a, b = wheels_truth(t)
-        return struct.pack("<IIii", a, b, a % 1024, (b & 0xFFFFFFFF) % 1024)[:n]
     if addr == 0x1a and VEL:                # Zustand wie die Firmware (velocity_cmd.h fillDiag), ohne Rampe
         if not vel_frames:
             return bytes([8 if vel_limits else 0]) + bytes(11)
@@ -204,7 +198,7 @@ def serve():
                 if VEL and addr in (0x1a, 0x1b):
                     data = fr[5:ln - 3]
                     ok = fr[ln - 3] == 255 - ((ln + mode + addr + sum(data)) % 256)
-                    want = (13,) if addr == 0x1a else (14,)   # 0x1b: 14 Byte (Firmware 0035)
+                    want = (13,) if addr == 0x1a else (14,)   # 0x1b: 14 Byte
                     if not ok or len(data) not in want:
                         stats["vel_bad"] = stats.get("vel_bad", 0) + 1
                     else:

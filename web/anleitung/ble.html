@@ -1398,7 +1398,7 @@
 
 
 <h1 id="bluetooth-ble">Bluetooth (BLE)<a class="headerlink" href="#bluetooth-ble" title="Permanent link">&para;</a></h1>
-<p>Own GATT service of the ESP32 firmware (patch 0025). Replaces the vendor service <code>fff0</code>/<code>fff1</code>/<code>fff2</code>; the vendor app no longer finds the Rider.</p>
+<p>Own GATT service of the ESP32 firmware (patch 01-ble). Replaces the vendor service <code>fff0</code>/<code>fff1</code>/<code>fff2</code>; the vendor app no longer finds the Rider.</p>
 <table>
 <thead>
 <tr>
@@ -1539,10 +1539,10 @@
 </tr>
 </tbody>
 </table>
-<p>Not over BLE: register <code>0x11</code> (IMU stream, Pi only), telemetry stream <code>0x08</code>, registers <code>0x17</code>/<code>0x18</code> writes (Pi only). Removed with 0025: <code>0x13</code> (name suffix), <code>0xb3</code> (trace stream).</p>
+<p>Not over BLE: register <code>0x11</code> (IMU stream, Pi only), telemetry stream <code>0x08</code>, registers <code>0x17</code>/<code>0x18</code> writes (Pi only). Removed with 01-ble: <code>0x13</code> (name suffix), <code>0xb3</code> (trace stream).</p>
 <p>Action 254 written directly does not stop xgonav: send <code>nav POST /stop</code> first, otherwise mode <code>pet</code> makes it jump up again after a faint.</p>
 <h2 id="con-console"><code>CON</code>: console<a class="headerlink" href="#con-console" title="Permanent link">&para;</a></h2>
-<p>One command per line, terminated by <code>\n</code>, at most 95 characters. Same commands as on USB (<code>!status</code>, <code>!stop</code>, <code>!arm</code>, <code>!standup</code>, <code>!restart</code>, <code>!move F T</code>, <code>!height N</code>, <code>!led N</code>, <code>!balance N</code>, <code>!rgb I R G B</code>, <code>!fallguard …</code>, <code>!liftguard …</code>, <code>!gain X</code>, …; unknown line → command list). Output of <code>!trace dump</code> / <code>!trace usb on</code> still goes to USB.</p>
+<p>One command per line, terminated by <code>\n</code>, at most 95 characters. Same commands as on USB (<code>!status</code>, <code>!stop</code>, <code>!arm</code>, <code>!standup</code>, <code>!restart</code>, <code>!move F T</code>, <code>!height N</code>, <code>!led N</code>, <code>!rgb I R G B</code>, <code>!fallguard …</code>, <code>!liftguard …</code>, <code>!gain X</code>, …; unknown line → command list). Output of <code>!trace dump</code> / <code>!trace usb on</code> still goes to USB.</p>
 <table>
 <thead>
 <tr>
@@ -1661,7 +1661,7 @@
 <tbody>
 <tr>
 <td>Firmware</td>
-<td><code>firmware/patches/0025-ble-neu.patch</code> (<code>ble_transport.cpp</code>, <code>pi_tunnel.h</code>, <code>main.cpp</code>)</td>
+<td><code>firmware/patches/01-ble.patch</code> (<code>ble_transport.cpp</code>, <code>pi_tunnel.h</code>, <code>main.cpp</code>)</td>
 <td>GATT service; tunnel frames type <code>0x15</code> register <code>0x17</code> (payload = kind + ≤ 23 bytes; kind 0 data, 1 connected, 2 disconnected); register <code>0x18</code></td>
 </tr>
 <tr>

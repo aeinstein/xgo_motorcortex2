@@ -2,16 +2,16 @@
 darfst du die Werte anpassen“).
 
 pitch_dev in meta.jsonl ist pitch_ref_deg − IMU-Nick mit dem pitch_ref_deg, der beim Fahren am Rider eingestellt war.
-Mit Firmware 0021 (ab Fahrt 20261118-172730) passt nur −5,0 (Flurfahrten 2026-11-19, Flur 2,04 m); gefahren wurde
+Mit der Lagefusion (Firmware-Patch 04-attitude, ab Fahrt 20261118-172730) passt nur −5,0 (Flurfahrten 2026-11-19, Flur 2,04 m); gefahren wurde
 aber auch mit −4,23 und −6,23. Bezug je Fahrt aus den Daten selbst (pitch_dev + IMU-Nick der Bildzeit, Median,
-Streuung ±0,1°). Fahrten vor 0021 bleiben, für die alte Firmware galt −4,23.
+Streuung ±0,1°). Fahrten davor bleiben, für die alte Firmware galt −4,23.
 """
 from __future__ import annotations
 
 import math
 
 ZIEL_0021 = -5.0
-GEFAHREN = {                      # Fahrt -> pitch_ref_deg beim Fahren (Firmware 0021)
+GEFAHREN = {                      # Fahrt -> pitch_ref_deg beim Fahren (Lagefusion 04-attitude)
     "20261118-172730": -4.23,
     "20261118-175735": -6.23,
     "20261119-114557": -6.23,

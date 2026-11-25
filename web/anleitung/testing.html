@@ -1413,34 +1413,9 @@
 <td></td>
 </tr>
 <tr>
-<td><code>g++ -std=c++17 -ffp-contract=off -I $S firmware/tests/test_imu_yaw_coupling.cpp $S/control/rider_leg_imu.cpp</code></td>
-<td>firmware host test, patches 0005/0006 (attitude while turning); <code>S=firmware/build/xgorider2_rl/firmware/src</code> after <code>firmware/build.sh</code></td>
-<td>&lt;1 s</td>
-</tr>
-<tr>
-<td><code>g++ -std=c++17 -ffp-contract=off -I $S firmware/tests/test_turn_hold.cpp $S/control/rider_motion.cpp $S/control/pid.cpp</code></td>
-<td>firmware host test, patch 0008 (position hold while turning)</td>
-<td>&lt;1 s</td>
-</tr>
-<tr>
-<td><code>g++ -std=c++17 -ffp-contract=off -I $S firmware/tests/test_yaw_bias.cpp $S/control/rider_leg_imu.cpp</code></td>
-<td>firmware host test, patches 0009/0011 (gyro-z bias tracking, no yaw dead band)</td>
-<td>&lt;1 s</td>
-</tr>
-<tr>
-<td><code>g++ -std=c++17 -ffp-contract=off -I $S firmware/tests/test_roll_trim.cpp $S/control/rider_leg_imu.cpp</code></td>
-<td>firmware host test, patch 0012 (roll trim kept after leveling)</td>
-<td>&lt;1 s</td>
-</tr>
-<tr>
-<td><code>g++ -std=c++17 -ffp-contract=off -I $S firmware/tests/test_imu_diag.cpp $S/control/rider_leg_imu.cpp $S/command_protocol.cpp</code></td>
-<td>firmware host test, patch 0013 (diagnostic register 0x10)</td>
-<td>&lt;1 s</td>
-</tr>
-<tr>
-<td><code>g++ -std=c++17 -ffp-contract=off -I $S firmware/tests/test_imu_stream.cpp $S/command_protocol.cpp</code></td>
-<td>firmware host test, patch 0014 (IMU/wheel data stream)</td>
-<td>&lt;1 s</td>
+<td><code>firmware/tests/run.sh [name]</code></td>
+<td>firmware host tests (g++, no ESP32), one or more per patch 01-ble … 08-velocity; <code>name</code> filters by test or patch name; after <code>firmware/build.sh</code></td>
+<td>&lt;1 s each</td>
 </tr>
 <tr>
 <td><code>python -m xgonav --source video.mp4 --robot sim --mode follow [--fast]</code></td>
@@ -1489,7 +1464,7 @@
 </tr>
 <tr>
 <td><code>driver-test/run.sh kernel_module 6 50 --wheels --combo --vel</code></td>
-<td>drive frame (firmware 0029): <code>VELPARSE</code> = text ↔ bytes of <code>xgo-vel.h</code> (valid/invalid inputs, state text), <code>VELTEST</code> = limits + 3 frames reach the emulator byte for byte with checksum, state read back; needs Linux (kimmy)</td>
+<td>drive frame (firmware patch 08-velocity): <code>VELPARSE</code> = text ↔ bytes of <code>xgo-vel.h</code> (valid/invalid inputs, state text), <code>VELTEST</code> = limits + 3 frames reach the emulator byte for byte with checksum, state read back; needs Linux (kimmy)</td>
 <td>~6 s</td>
 </tr>
 </tbody>

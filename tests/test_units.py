@@ -4428,7 +4428,7 @@ def test_frontier_kein_ziel_an_loch_in_merkkarte_wand():
 
 
 def test_lift_text_firmware_0027():
-    """Register 0x19 (Hebeschutz-Protokoll, Firmware 0027) aus /proc/XGORider/lift -> Logtext."""
+    """Register 0x19 (Hebeschutz-Protokoll, Firmware-Patch 03-diagnostics) aus /proc/XGORider/lift -> Logtext."""
     from xgonav.robot import lift_text
 
     def zeile(d: bytes) -> str:

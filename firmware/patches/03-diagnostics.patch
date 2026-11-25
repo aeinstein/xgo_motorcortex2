@@ -1,0 +1,342 @@
+diagnostics: Diagnose-Register 0x0e, 0x15 und Hebeschutz-Protokoll 0x19
+
+diff --git a/firmware/src/command_protocol.cpp b/firmware/src/command_protocol.cpp
+index d374451..8915b58 100644
+--- a/firmware/src/command_protocol.cpp
++++ b/firmware/src/command_protocol.cpp
+@@ -16,7 +16,10 @@ uint8_t readLength(uint8_t reg) {
+     case 0x07:return 10;
+     case 0x0b:return 16;
+     case 0x0d:return 24;
++    case 0x0e:return 32;
++    case 0x15:return 32;
+     case 0x18:return 4;
++    case 0x19:return 32;
+     case 0x62: case 0x63: case 0x64:return 4;
+     case 0x65:return 24;
+     case 0x66: case 0x67: case 0x68:return 2;
+@@ -141,7 +144,7 @@ size_t buildFrame(uint8_t type,uint8_t reg,const uint8_t *payload,size_t length,
+ }
+ size_t buildReadResponse(const CommandEvent &r,const Telemetry &t,uint8_t *out,size_t cap) {
+     if(!r.isRead() || !validCommand(r))return 0;
+-    uint8_t data[24]={};const uint8_t n=readLength(r.reg);
++    uint8_t data[32]={};const uint8_t n=readLength(r.reg);
+     switch(r.reg) {
+     case 0x01:data[0]=std::isfinite(t.battery_percent)?uint8_t(t.battery_percent<0?0:t.battery_percent>255?255:t.battery_percent):0;break;
+     case 0x02:data[0]=t.mode;break;
+@@ -170,6 +173,9 @@ size_t buildReadResponse(const CommandEvent &r,const Telemetry &t,uint8_t *out,s
+         putFloat(data,t.roll_deg);putFloat(data+4,t.pitch_deg);putFloat(data+8,t.yaw_deg);
+         putI32(data+12,t.wheel11_ticks);putI32(data+16,t.wheel21_ticks);
+         putI32(data+20,int32_t(t.t_ms));break;
++    case 0x0e:std::memcpy(data,t.diag,32);break;       // custom: controller diagnostics, main.cpp fillDiag()
++    case 0x15:std::memcpy(data,t.rawdiag,32);break;    // custom: raw IMU sums, main.cpp fillRawDiag()
++    case 0x19:std::memcpy(data,t.liftdiag,32);break;   // custom: lift-guard log, main.cpp fillLiftDiag()
+     case 0x18:std::memcpy(data,t.pi_ip,4);break;       // custom: IPv4 of the Pi
+     default:return 0;
+     }
+diff --git a/firmware/src/command_protocol.h b/firmware/src/command_protocol.h
+index 663e6e4..22bcb78 100644
+--- a/firmware/src/command_protocol.h
++++ b/firmware/src/command_protocol.h
+@@ -58,6 +58,10 @@ struct Telemetry {
+     // Custom reg 0x0d: wheel encoder ticks (continuous) and firmware millis of the combined IMU+wheel sample.
+     int32_t wheel11_ticks = 0, wheel21_ticks = 0;
+     uint32_t t_ms = 0;
++    // Custom reg 0x0e / 0x15 / 0x19: controller diagnostics, raw IMU sums, lift-guard log (layouts in main.cpp fill*Diag).
++    uint8_t diag[32] = {};
++    uint8_t rawdiag[32] = {};
++    uint8_t liftdiag[32] = {};
+     // Custom reg 0x18 read: IPv4 of the Pi; main.cpp receive() fills it in before answering.
+     uint8_t pi_ip[4] = {};
+     uint8_t policy_mode=0,policy_action_space=0;
+diff --git a/firmware/src/control/rider_leg_imu.cpp b/firmware/src/control/rider_leg_imu.cpp
+index 694584c..6b434d4 100644
+--- a/firmware/src/control/rider_leg_imu.cpp
++++ b/firmware/src/control/rider_leg_imu.cpp
+@@ -96,6 +96,17 @@ bool updateImu(ImuState &s, const std::uint8_t *raw, std::size_t size,
+     s.gyro_deg_s[0] = -float(bigSigned(raw + 8)) * scale * 2000.0f;
+     s.gyro_deg_s[1] = float(bigSigned(raw + 6)) * scale * 2000.0f;
+     s.gyro_deg_s[2] = float(bigSigned(raw + 10)) * scale * 2000.0f;
++    // Rohwerte aufsummieren (Register 0x15), Vorzeichen und Reihenfolge wie oben.
++    const std::int32_t raw_accel[3] = {-std::int32_t(bigSigned(raw)), -std::int32_t(bigSigned(raw + 2)),
++                                       std::int32_t(bigSigned(raw + 4))};
++    const std::int32_t raw_gyro[3] = {-std::int32_t(bigSigned(raw + 8)), std::int32_t(bigSigned(raw + 6)),
++                                      std::int32_t(bigSigned(raw + 10))};
++    for (int n = 0; n < 3; ++n) {
++        s.raw_accel_sum[n] += std::uint32_t(raw_accel[n]);
++        s.raw_gyro_sum[n] += std::uint32_t(raw_gyro[n]);
++    }
++    ++s.raw_samples;
++    s.raw_us = now_us;
+     if (s.acceleration[0] == s.last_accel_x && s.acceleration[1] == s.last_accel_y)
+         s.identical_samples = s.identical_samples < 500 ? s.identical_samples + 1 : 500;
+     else s.identical_samples = 0;
+diff --git a/firmware/src/control/rider_leg_imu.h b/firmware/src/control/rider_leg_imu.h
+index 3f671f5..9d17310 100644
+--- a/firmware/src/control/rider_leg_imu.h
++++ b/firmware/src/control/rider_leg_imu.h
+@@ -48,6 +48,14 @@ struct ImuState {
+     std::uint16_t identical_samples = 0, calibration_count = 0, tilt_count = 0;
+     std::uint32_t last_us = 0;
+     bool calibrated = false, just_calibrated = false, tilt_fault = false;
++    // Diagnose-Register 0x15: laufende Summen der Rohwerte jeder Probe, in Körperachsen wie
++    // acceleration/gyro_deg_s, aber als Sensor-Zählwerte vor jeder Rechnung (Beschleunigung 19,6/32768
++    // m/s^2 je Zählwert, Kreisel 2000/32768 °/s). Laufen über (mod 2^32); wer zweimal liest, bekommt aus
++    // Differenz der Summen / Differenz von raw_samples das exakte Mittel dazwischen, ohne Abtastfehler.
++    // raw_us = Messzeit der letzten Probe. Nur gespeichert, von der Lagerechnung nicht genutzt.
++    std::uint32_t raw_accel_sum[3]{}, raw_gyro_sum[3]{};
++    std::uint16_t raw_samples = 0;
++    std::uint32_t raw_us = 0;
+ };
+ // raw: 12-byte big-endian sensor register window 0x0b..0x16.
+ // Returns false only for an invalid caller buffer; performs no I2C or motor I/O.
+diff --git a/firmware/src/lift_log.h b/firmware/src/lift_log.h
+new file mode 100644
+index 0000000..f01b48a
+--- /dev/null
++++ b/firmware/src/lift_log.h
+@@ -0,0 +1,81 @@
++#pragma once
++// Protokoll des Hebeschutzes (lift_guard.h), das einen Stopp überlebt.
++//
++// Anlass: Sturz am RiderPi 2026-11-24 19:50 bei 0,6 m/s Geradeausfahrt. Die Räder standen binnen ~60 ms, der
++// Zustand blieb 1 bis zum Kippstopp. Der einzige Weg in der Firmware, der so etwas tut, ist der Hebeschutz
++// (Radbefehl 0, Beine an, kein Zustandswechsel). Nachweisen ließ es sich nicht, denn stop() setzt lift::State
++// samt trips zurück, und der Kippstopp kam ~0,1 s später.
++//
++// Hier steht dauerhaft (bis zum Neustart des ESP32), wann der Detektor zuletzt ausgelöst hat, mit welchen
++// Messwerten, wie lange er griff und wie es endete. Dazu der letzte Stopp aus dem Balancieren heraus.
++// Ausgabe: Register 0x19 (main.cpp fillLiftDiag), Konsole !liftguard status.
++//
++// Header-only und ohne Hardware, damit tests/test_lift_log.cpp es am Host prüfen kann.
++#include <cstdint>
++#include <cstdlib>
++
++namespace rider2 { namespace lift {
++
++enum class LogEnd : std::uint8_t { Active = 0, Released = 1, Stopped = 2 };
++
++struct LogSample {
++    std::uint32_t ms = 0;
++    float speed11 = 0, speed21 = 0;     // gefilterte Radgeschwindigkeit wie lift::Input (Registereinheiten)
++    std::int16_t raw11 = 0, raw21 = 0;  // Geschwindigkeitsfeld des Servos, unverändert (21 nicht umgedreht)
++    float forward = 0;                  // gefilterter Fahrbefehl (CommandState::filtered_forward)
++    float pitch = 0;                    // Nick wie für den Regler (ctrlPitch)
++    bool guard_enabled = true;          // !liftguard on/off: griff er, oder hat nur der Detektor angeschlagen
++};
++
++struct Log {
++    std::uint32_t trips = 0;            // Auslösungen seit dem Start des ESP32 (stop() löscht nichts)
++    LogSample trip;                     // Werte im Takt der letzten Auslösung
++    std::uint16_t ticks = 0;            // Dauer der letzten Auslösung in Regeltakten (sättigt)
++    std::int16_t raw_peak = 0;          // betragsgrößtes Geschwindigkeitsfeld eines Servos währenddessen
++    LogEnd end = LogEnd::Active;
++    std::uint8_t end_reason = 0;        // StopReason, wenn end == Stopped
++    bool active = false;
++    // letzter Stopp aus dem Balancieren heraus (anders als last_stop_reason nie von Startup überschrieben)
++    std::uint8_t stop_reason = 0;
++    std::uint32_t stop_ms = 0;
++    std::uint32_t stops = 0;
++};
++
++inline std::int16_t largerMagnitude(std::int16_t a, std::int16_t b) {
++    return std::abs(int(b)) > std::abs(int(a)) ? b : a;
++}
++
++// Einmal je Regeltakt nach dem Detektor, mit dessen Zustand (lift::State::active).
++inline void logTick(Log& l, bool active, const LogSample& s) {
++    if (active && !l.active) {
++        ++l.trips;
++        l.trip = s;
++        l.ticks = 0;
++        l.raw_peak = largerMagnitude(s.raw11, s.raw21);
++        l.end = LogEnd::Active;
++        l.end_reason = 0;
++    }
++    if (active) {
++        if (l.ticks < 65535) ++l.ticks;
++        l.raw_peak = largerMagnitude(l.raw_peak, largerMagnitude(s.raw11, s.raw21));
++    } else if (l.active) {
++        l.end = LogEnd::Released;
++    }
++    l.active = active;
++}
++
++// Aus stop(), bevor lift::State zurückgesetzt wird. driving: der Stopp beendet das Balancieren.
++inline void logStop(Log& l, bool driving, std::uint8_t reason, std::uint32_t ms) {
++    if (l.active) {
++        l.active = false;
++        l.end = LogEnd::Stopped;
++        l.end_reason = reason;
++    }
++    if (driving) {
++        l.stop_reason = reason;
++        l.stop_ms = ms;
++        ++l.stops;
++    }
++}
++
++}}  // namespace rider2::lift
+diff --git a/firmware/src/main.cpp b/firmware/src/main.cpp
+index bb66740..f7057a7 100644
+--- a/firmware/src/main.cpp
++++ b/firmware/src/main.cpp
+@@ -27,6 +27,7 @@ extern "C" {extern const volatile uint32_t rider_rl_only_build=0x524c4f31;}
+ #include "pi_tunnel.h"
+ #include "trace.h"
+ #include "lift_guard.h"
++#include "lift_log.h"
+ #include "fall_guard.h"
+ #include "led_status.h"
+ #include "policy/policy.h"
+@@ -170,6 +171,8 @@ public:
+     uint32_t save_started=0,last_imu_us=0,last_control_us=0,last_publish_ms=0;
+     uint8_t sensor_loops=0,trim_stage=0;
+     rider2::lift::State lift_state;rider2::lift::Config lift_config;bool lift_acting=false;uint32_t control_dt_us=0;
++    rider2::lift::Log lift_log;   // überlebt stop(), Register 0x19
++    int16_t diag_ctrl11=0,diag_ctrl21=0;   // classic controller output before gain/smoothing/slew (0x0e)
+     rider2::imustream::Producer imu_stream_prod;
+     rider2::fall::State fall_state,fall_deep_state;rider2::fall::Config fall_config,fall_deep_config=rider2::fall::deepConfig();uint32_t fall_last_us=0;
+     double trim_to_save=0;
+@@ -216,6 +219,7 @@ public:
+     void stop(StopReason reason,bool latch) {
+         if(!manual_stop||latch)s.last_stop_reason=reason;
+         if(driving){policy.resetHistory();if(policy.status().mode==rl::Mode::Active)policy.setMode(rl::Mode::Off);}
++        rider2::lift::logStop(lift_log,driving,uint8_t(reason),millis());   // vor dem Rücksetzen festhalten
+         tilt_fault_stop=false;lift_state=rider2::lift::State();lift_acting=false;
+         if(driving||!stop_sent){bus.stop(true);stop_sent=true;}
+         driving=false;s.driving=false;s.reason=reason;
+@@ -612,6 +616,7 @@ public:
+         request.roll_phase=a.roll_phase;request.height_phase=a.height_phase;
+         request.leveling=a.leveling;request.heading_hold=a.heading_hold;request.hold_protection=a.hold_protection;request.heading_term_limit=heading_limit;
+         s.motion=controller.step(in,request);a.roll_phase=request.roll_phase;a.height_phase=request.height_phase;
++        diag_ctrl11=s.motion.wheels.id11;diag_ctrl21=s.motion.wheels.id21;
+         if(!s.motion.valid){actions.requestMode(252,true);stop(StopReason::InvalidControl,true);result("invalid control output; stop latched");}
+         else {
+             const auto decision=runPolicy(us,true);
+@@ -660,6 +665,13 @@ public:
+             // Wheels free in the air: the speed feedback has no ground to push against and runs away (see lift_guard.h).
+             // Hold the wheel command at zero and keep the policy's history clean so nothing winds up meanwhile.
+             lift_acting=lift_guard_enabled&&lift_state.active;
++            {   // Auslösungen des Hebeschutzes festhalten (Register 0x19), auch wenn ein Stopp folgt
++                rider2::lift::LogSample ls;ls.ms=now;
++                ls.speed11=bus.sample(11).filtered_speed_mm_s;ls.speed21=bus.sample(21).filtered_speed_mm_s;
++                ls.raw11=bus.sample(11).raw_speed;ls.raw21=bus.sample(21).raw_speed;
++                ls.forward=s.motion.command.filtered_forward;ls.pitch=s.imu.pitch_deg;ls.guard_enabled=lift_guard_enabled;
++                rider2::lift::logTick(lift_log,lift_state.active,ls);
++            }
+             if(lift_acting){s.motion.wheels.id11=0;s.motion.wheels.id21=0;policy.resetHistory();}
+ #if RIDER2_RL_ONLY
+             // Apply the actor's two leg-extension offsets to the position
+@@ -674,6 +686,67 @@ public:
+         }
+         s.control_timing.end(micros());
+     }
++    // Register 0x0e, 32 Byte little endian, für die Analyse der Fahrt am Pi (raw_reg). Inhalt:
++    // 0 u16 ms | 2/4 i16 Raddrehzahl 11/21 (mm/s, gefiltert, Reglereingang) |
++    // 6/8 i16 Reglerausgang 11/21 | 10/12 i16 an den Bus 11/21 | 14 i16 Balance-Ausgang |
++    // 16 i16 Soll-Nick x100 (°) | 18 i16 gemessener Nick + Bias x100 (°) |
++    // 20 i16 Positionshalten-Korrektur x10 | 22 u8 Haltemodus | 23 u8 Flags (bit0 fährt,
++    // bit1 Hebeschutz greift) | 24 i16 Position Radmitte (mm, läuft über) |
++    // 26 i16 Halteposition (mm, läuft über) | 28 i16 gefiltert vorwärts x10 | 30 i16 gefiltert Drehung x10
++    void fillDiag(uint8_t* d) {
++        auto i16=[](float v){return int16_t(std::max(-32768.0f,std::min(32767.0f,std::isfinite(v)?std::round(v):0.0f)));};
++        auto put=[&](int at,int16_t v){d[at]=uint8_t(uint16_t(v));d[at+1]=uint8_t(uint16_t(v)>>8);};
++        auto wrap_mm=[](float m){return int16_t(int32_t(std::lround(double(m)*1000.0)));};
++        const uint16_t ms=uint16_t(millis());d[0]=uint8_t(ms);d[1]=uint8_t(ms>>8);
++        put(2,i16(bus.sample(11).filtered_speed_mm_s));put(4,i16(bus.sample(21).filtered_speed_mm_s));
++        put(6,diag_ctrl11);put(8,diag_ctrl21);
++        put(10,s.motion.wheels.id11);put(12,s.motion.wheels.id21);
++        put(14,i16(s.motion.balance));
++        put(16,i16(controller.pitchTarget()*100.0f));put(18,i16(controller.pitchMeasured()*100.0f));
++        put(20,i16(s.motion.hold.correction*10.0f));
++        d[22]=s.motion.hold.mode;
++        d[23]=uint8_t((driving?1:0)|(lift_acting?2:0)
++            );
++        put(24,wrap_mm(s.motion.physical_position));put(26,wrap_mm(controller.holdPosition()));
++        put(28,i16(s.motion.command.filtered_forward*10.0f));put(30,i16(s.motion.command.filtered_turn*10.0f));
++    }
++    // Register 0x15, 32 Byte little endian, Rohwerte der IMU zum Bestimmen des Sensormodells
++    // (Nullpunkte, Übersprechen, Bewegungsanteile im Beschleunigungssensor). Laufende Summen über alle Proben
++    // der Regelschleife (~300 Hz), sie laufen über: aus zwei Lesungen ergibt (Differenz der Summe) /
++    // (Differenz des Zählers) das Mittel dazwischen, unabhängig davon, wie oft gelesen wird.
++    // 0 u16 Probenzähler | 2 u16 Messzeit der letzten Probe (micros() >> 6, 64 µs je Schritt) |
++    // 4 3 x u32 Summe Beschleunigung x, y, z (Zählwerte, 19,6/32768 m/s^2; Achsen wie ImuState::acceleration) |
++    // 16 3 x u32 Summe Kreisel Roll, Nick, Gier (Zählwerte, 2000/32768 °/s; Achsen wie ImuState::gyro_deg_s,
++    // ohne Nullpunktabzug) | 28 i16 Ticks Rad 11 (untere 16 Bit) | 30 i16 Ticks Rad 21
++    void fillRawDiag(uint8_t* d) {
++        auto put16=[&](int at,uint16_t v){d[at]=uint8_t(v);d[at+1]=uint8_t(v>>8);};
++        auto put32=[&](int at,uint32_t v){for(int i=0;i<4;++i)d[at+i]=uint8_t(v>>(8*i));};
++        const auto& m=s.imu;
++        put16(0,m.raw_samples);put16(2,uint16_t(m.raw_us>>6));
++        for(int n=0;n<3;++n){put32(4+4*n,m.raw_accel_sum[n]);put32(16+4*n,m.raw_gyro_sum[n]);}
++        put16(28,uint16_t(bus.sample(11).encoder_ticks));put16(30,uint16_t(bus.sample(21).encoder_ticks));
++    }
++    // Register 0x19, 32 Byte little endian, Protokoll des Hebeschutzes (lift_log.h), übersteht Stopps:
++    // 0 u32 millis jetzt | 4 u16 Auslösungen seit Start (sättigt) | 6 u8 Ende der letzten (0 greift noch,
++    // 1 frei gegeben, 2 durch Stopp) | 7 u8 Flags (bit0 Hebeschutz an, bit1 war an bei der Auslösung, bit2 Detektor
++    // jetzt aktiv, bit3 Selbststart aus Zustand 0 an) | 8 u32 millis der Auslösung | 12/14 i16 gefilterte
++    // Radgeschwindigkeit 11/21 (Registereinheiten wie 0x0e) | 16/18 i16 Geschwindigkeitsfeld der Servos 11/21 roh |
++    // 20 i16 gefilterter Fahrbefehl x10 | 22 i16 Nick x100 (°) | 24 u16 Dauer in Regeltakten | 26 i16 betragsgrößtes
++    // Rohfeld währenddessen | 28 u8 StopReason des Endes (bei 2) | 29 u8 StopReason des letzten Stopps aus dem
++    // Balancieren | 30 u16 Alter dieses Stopps in 10 ms (65535 = keiner oder älter)
++    void fillLiftDiag(uint8_t* d) {
++        auto i16=[](float v){return int16_t(std::max(-32768.0f,std::min(32767.0f,std::isfinite(v)?std::round(v):0.0f)));};
++        auto put16=[&](int at,uint16_t v){d[at]=uint8_t(v);d[at+1]=uint8_t(v>>8);};
++        auto put32=[&](int at,uint32_t v){for(int i=0;i<4;++i)d[at+i]=uint8_t(v>>(8*i));};
++        const auto& l=lift_log;const uint32_t now=millis();
++        put32(0,now);put16(4,uint16_t(std::min<uint32_t>(l.trips,65535)));d[6]=uint8_t(l.end);
++        d[7]=uint8_t((lift_guard_enabled?1:0)|(l.trip.guard_enabled?2:0)|(lift_state.active?4:0)|(actions.state().auto_recover?8:0));
++        put32(8,l.trip.ms);put16(12,uint16_t(i16(l.trip.speed11)));put16(14,uint16_t(i16(l.trip.speed21)));
++        put16(16,uint16_t(l.trip.raw11));put16(18,uint16_t(l.trip.raw21));
++        put16(20,uint16_t(i16(l.trip.forward*10.0f)));put16(22,uint16_t(i16(l.trip.pitch*100.0f)));
++        put16(24,l.ticks);put16(26,uint16_t(l.raw_peak));d[28]=l.end_reason;d[29]=l.stop_reason;
++        put16(30,l.stops?uint16_t(std::min<uint32_t>((now-l.stop_ms)/10,65535)):uint16_t(65535));
++    }
+     void publish() {
+         s.ms=millis();s.driving=driving;s.manual_stop=manual_stop;s.leg_calibrating=leg_calibrating;s.imu_valid=imu_valid;
+         s.pitch_calibrating=trim_stage;s.mode=actions.state().mode;s.action=actions.state().action_id;
+@@ -686,6 +759,9 @@ public:
+         t.leg12_position=bus.sample(12).position_ticks;t.leg22_position=bus.sample(22).position_ticks;
+         t.wheel11_ticks=bus.sample(11).encoder_ticks;t.wheel21_ticks=bus.sample(21).encoder_ticks;
+         t.t_ms=s.ms;
++        fillDiag(t.diag);
++        fillRawDiag(t.rawdiag);
++        fillLiftDiag(t.liftdiag);
+         t.leg12_zero=s.calibration.zero_a;t.leg22_zero=s.calibration.zero_b;
+         t.policy_mode=uint8_t(s.policy.mode);t.policy_model_id=policy.model().id;
+         t.policy_trained=s.policy.trained;t.policy_valid=s.policy.model_valid;
+@@ -844,7 +920,16 @@ void console(const char* line,Print& out) {
+     }
+     if(!strcmp(line,"!liftguard on")){lift_guard_enabled=true;out.println("lift guard on: the wheel command is held at zero while the wheels have run away in the air");return;}
+     if(!strcmp(line,"!liftguard off")){lift_guard_enabled=false;out.println("lift guard off (the detector keeps recording)");return;}
+-    if(!strcmp(line,"!liftguard status")){const auto snap=snapshot();out.printf("lift guard %s, detector %s, acting %s, trips %u\n",lift_guard_enabled?"on":"off",snap.lift_active?"active":"idle",snap.lift_acting?"yes":"no",snap.lift_trips);return;}
++    if(!strcmp(line,"!liftguard status")){const auto snap=snapshot();out.printf("lift guard %s, detector %s, acting %s, trips %u\n",lift_guard_enabled?"on":"off",snap.lift_active?"active":"idle",snap.lift_acting?"yes":"no",snap.lift_trips);
++        // Protokoll, übersteht Stopps (Register 0x19, Aufbau in fillLiftDiag)
++        const uint8_t* d=snap.telemetry.liftdiag;
++        auto u16=[&](int at){return unsigned(d[at]|(d[at+1]<<8));};
++        auto s16=[&](int at){return int(int16_t(uint16_t(d[at]|(d[at+1]<<8))));};
++        auto u32=[&](int at){return unsigned(d[at]|(d[at+1]<<8)|(d[at+2]<<16)|(uint32_t(d[at+3])<<24));};
++        static const char* const ends[]={"active","released","stopped"};
++        out.printf("lift log: trips %u since boot, last at %u ms (now %u): speed %d/%d raw %d/%d forward %.1f pitch %.2f, %u ticks, raw peak %d, end %s (%s); last stop while driving: %s, %u x 10 ms ago\n",
++            u16(4),u32(8),u32(0),s16(12),s16(14),s16(16),s16(18),s16(20)/10.0,s16(22)/100.0,u16(24),s16(26),ends[d[6]<3?d[6]:0],
++            stopReasonName(StopReason(d[28])),u16(30)==65535?"none":stopReasonName(StopReason(d[29])),u16(30));return;}
+     // Dead-zone preload (src/policy/dead_zone_comp.h).  Settings are applied by the control task; what was learned survives !dzcomp off.
+     if(!strcmp(line,"!dzcomp")||!strcmp(line,"!dzcomp status")){
+         const auto snap=snapshot();const auto& p=snap.policy;
+diff --git a/firmware/src/motion_controller.h b/firmware/src/motion_controller.h
+index a3643fb..ffdeb97 100644
+--- a/firmware/src/motion_controller.h
++++ b/firmware/src/motion_controller.h
+@@ -43,6 +43,11 @@ public:
+     void resetStoppedPid();
+     float holdCorrection() const {return hold_.correction;}
+     uint8_t holdMode() const {return hold_.mode;}
++    // Diagnose-Register 0x0e: Soll-Nick = Ausgang des Geschwindigkeitsreglers samt Integralen (°)
++    // und gemessener Nick + Bias, den der Nickregler sieht.
++    float pitchTarget() const {return balance_.pitch.target;}
++    float pitchMeasured() const {return balance_.pitch.measurement;}
++    float holdPosition() const {return hold_.position;}
+ private:
+     control::BalanceState balance_{};
+     control::CommandState command_{};

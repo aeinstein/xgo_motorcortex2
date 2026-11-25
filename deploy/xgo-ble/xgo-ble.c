@@ -1,5 +1,5 @@
 /*
- * xgo-ble: Gegenstelle des BLE-Tunnels am Pi (Firmware-Patch 0025, docs/ble.md).
+ * xgo-ble: Gegenstelle des BLE-Tunnels am Pi (Firmware-Patch 01-ble, docs/ble.md).
  *
  * Die Firmware reicht die BLE-Characteristic "PI" über die UART durch, der Treiber legt sie als Datensätze in
  * /proc/XGORider/ble (Byte 0 = Kennung: 0 Daten, 1 BLE verbunden, 2 getrennt). Dieser Dienst liest dort

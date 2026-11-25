@@ -2010,7 +2010,7 @@
 <td><code>vel_frame</code></td>
 <td>true</td>
 <td></td>
-<td>drive frame of firmware 0029–0032 (<code>xgonav/fahrrahmen.py</code>): used when the driver has <code>/proc/XGORider/vel</code> and the firmware answers reg 0x1a, else bytes. Sends target m/s (normalised × <code>vx_limit</code>) and °/s (× <code>vyaw_limit_dps</code>) with acceleration and jerk; the firmware ramps (S-curve) and controls speed and turn rate. (Pi ramp, <code>speed_ctrl</code> and <code>turn_min_w</code> removed 2026-11-25; the byte fallback sends targets unramped); <code>robot.command</code> is the firmware's setpoint, recomputed on the Pi. Simulator follows it with 0.15 s / 0.1 s lag (assumption until measured)</td>
+<td>drive frame of firmware patch 08-velocity (<code>xgonav/fahrrahmen.py</code>): used when the driver has <code>/proc/XGORider/vel</code> and the firmware answers reg 0x1a, else bytes. Sends target m/s (normalised × <code>vx_limit</code>) and °/s (× <code>vyaw_limit_dps</code>) with acceleration and jerk; the firmware ramps (S-curve) and controls speed and turn rate. (Pi ramp, <code>speed_ctrl</code> and <code>turn_min_w</code> removed 2026-11-25; the byte fallback sends targets unramped); <code>robot.command</code> is the firmware's setpoint, recomputed on the Pi. Simulator follows it with 0.15 s / 0.1 s lag (assumption until measured)</td>
 </tr>
 <tr>
 <td><code>fw_speed_unit_mm</code></td>
@@ -2046,13 +2046,13 @@
 <td><code>vel_ki</code> / <code>vel_i_max_deg</code></td>
 <td>0.03 / 6.0</td>
 <td></td>
-<td>firmware 0035: integral of the frame speed controller in ° pitch per (firmware unit error · s) and its limit, runs only 0.6 s after the ramp; covers what <code>vel_kv</code> leaves (0.08–0.15 oscillated). Sent in <code>vel_limits</code></td>
+<td>firmware patch 08-velocity: integral of the frame speed controller in ° pitch per (firmware unit error · s) and its limit, runs only 0.6 s after the ramp; covers what <code>vel_kv</code> leaves (0.08–0.15 oscillated). Sent in <code>vel_limits</code></td>
 </tr>
 <tr>
 <td><code>vel_kv</code></td>
 <td>0.025</td>
 <td></td>
-<td>firmware 0035: pitch-target feed-forward −kv·v_measured (° per firmware speed unit): the pitch loop needs a speed-proportional deviation, without it the stock P drives ~1.8 × target. Holds v 0.2 / 0.4 within ±4 %, v 0.3 / 0.5 at +11 % (2026-11-25). Sent in <code>vel_limits</code></td>
+<td>firmware patch 08-velocity: pitch-target feed-forward −kv·v_measured (° per firmware speed unit): the pitch loop needs a speed-proportional deviation, without it the stock P drives ~1.8 × target. Holds v 0.2 / 0.4 within ±4 %, v 0.3 / 0.5 at +11 % (2026-11-25). Sent in <code>vel_limits</code></td>
 </tr>
 <tr>
 <td><code>keepalive_s</code></td>
@@ -2264,7 +2264,7 @@
 <td><code>stream_hz</code></td>
 <td>100 (sim: 0)</td>
 <td></td>
-<td>&gt; 0: written to <code>settings/imu_stream_hz</code> → firmware stream (patch 0014) with the firmware's sample time; driver without it: warning, polling</td>
+<td>&gt; 0: written to <code>settings/imu_stream_hz</code> → firmware stream (patch 02-pi-interface) with the firmware's sample time; driver without it: warning, polling</td>
 </tr>
 <tr>
 <td><code>idle_hz</code></td>
@@ -2300,7 +2300,7 @@
 <td><code>pitch_ref_deg</code></td>
 <td>-5.0 (sim: 0.0)</td>
 <td></td>
-<td>raw IMU pitch at camera calibration (-4.43; R-1.1.3: -2.7) plus 0.2° from a corridor of 2.04 m drivable width (three start scans 2026-11-17 gave 1.98 m); -2° for firmware 0021 (2026-11-18: pitch from gravity, pitch gyro bias calibrated); -5.0 since 2026-11-19 (corridor run 20261119-122328 gave 1.53 / 1.67 m with -6.23, 2.04 m at +1.4° / +1.0°). Only <code>tilt_deg + pitch_ref_deg</code> matters</td>
+<td>raw IMU pitch at camera calibration (-4.43; R-1.1.3: -2.7) plus 0.2° from a corridor of 2.04 m drivable width (three start scans 2026-11-17 gave 1.98 m); -2° for the attitude fusion of firmware patch 04-attitude (2026-11-18: pitch from gravity, pitch gyro bias calibrated); -5.0 since 2026-11-19 (corridor run 20261119-122328 gave 1.53 / 1.67 m with -6.23, 2.04 m at +1.4° / +1.0°). Only <code>tilt_deg + pitch_ref_deg</code> matters</td>
 </tr>
 <tr>
 <td><code>use_roll</code></td>

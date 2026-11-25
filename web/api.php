@@ -71,7 +71,7 @@ const EMOTION = '/opt/xgonav/tools/emotion.sh';         // Player (RGB565-Rohbil
 const EMOTION_RAW = '/opt/xgonav/emotions';             // tools/eyes.py, von deploy/install.sh erzeugt
 const STIMMEN = '/opt/xgonav/stimmen';                 // [stimme] dir: bestaetigt/NN(_roh).wav, kandidaten/<Zeit>.wav
 const HEIGHT_MIN = 61;                                   // u8; ~10 mm über dem Minimum, dazu ~4 mm fürs Ausrichten (ein Bein tiefer)
-const LED_FILE = '/var/lib/xgonav/led_brightness';      // n/256 (Firmware-Patch 0016), deploy/install.sh legt den Ordner an
+const LED_FILE = '/var/lib/xgonav/led_brightness';      // n/256 (Firmware-Patch 06-leds), deploy/install.sh legt den Ordner an
 const HEIGHT_MAX = 205;                                 // u8; Firmware nähme 255, bei 235 Stopp 252 (2026-11-06, Ursache offen)
 const CONFIG = '/opt/xgonav/config.toml';               // Gruppe video, 0664 (deploy/install.sh)
 const CONFIG_SCHEMA = __DIR__ . '/config-schema.json';  // tools/config_schema.py
@@ -543,7 +543,7 @@ switch ($a) {
         if ($n > 6 && $n !== 237 && $n !== 253 && $n !== 254 && $n !== 255) {
             antwort(400, json_encode(['error' => 'Aktion ungültig']));
         }
-        // 237 = ESP32 neu starten (Firmware-Patch 0018, die Firmware lehnt ab, solange er balanciert):
+        // 237 = ESP32 neu starten (Firmware-Patch 05-actions, die Firmware lehnt ab, solange er balanciert):
         // danach liegt er disarmed, pet darf ihn also ebenso wenig von selbst aufstellen wie nach 254.
         if ($n === 254 || $n === 237) {
             // Die Aktion geht direkt nach /proc, xgonav erfährt davon nichts. Der Modus pet stünde

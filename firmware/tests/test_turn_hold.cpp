@@ -1,7 +1,5 @@
-// Host-Test für Patch 0008: Positionshalten beim Drehen auf der Stelle.
-// Nach firmware/build.sh (Quellen mit Patches in firmware/build/), im Repo-Root:
-//   S=firmware/build/xgorider2_rl/firmware/src
-//   g++ -std=c++17 -ffp-contract=off -I $S firmware/tests/test_turn_hold.cpp $S/control/rider_motion.cpp $S/control/pid.cpp -o t && ./t
+// Host-Test 07-balance: Positionshalten beim Drehen auf der Stelle.
+// Aufruf: firmware/tests/run.sh test_turn_hold
 #include "control/rider_motion.h"
 #include <cmath>
 #include <cstdio>
@@ -22,7 +20,7 @@ int main() {
         for (std::uint32_t t = 3000; t < 4000; t += 4) updatePositionHold(h, t, 1, 0.0f, kTurn, 0.0f, 0.0f);
         check(h.mode == 0 && h.correction == 0, "ohne Schalter: Drehen hält nicht (wie R-1.1.6)");
     }
-    // Patch 0008: beim Drehen halten, Abweichung zurückregeln
+    // beim Drehen halten, Abweichung zurückregeln
     {
         HoldState h;
         for (std::uint32_t t = 3000; t < 3600; t += 4) updatePositionHold(h, t, 1, 0.0f, kTurn, 0.0f, 0.0f, true, true, 675.0f);

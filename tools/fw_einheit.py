@@ -6,7 +6,7 @@
 
 Fährt selbst NICHT. Gefahren wird währenddessen über xgonav (MCP rider: fahren), geradeaus, je Abschnitt einige
 Sekunden mit gleichem Tempo. Mitgeschrieben werden ~20-mal je Sekunde:
-  * Register 0x0e (Firmware-Patch 0007, über /proc/XGORider/raw_reg): gefilterte Radgeschwindigkeit 11/21 in
+  * Register 0x0e (Firmware-Patch 03-diagnostics, über /proc/XGORider/raw_reg): gefilterte Radgeschwindigkeit 11/21 in
     Firmware-Einheiten (Eingang des Geschwindigkeitsreglers), gefilterter Fahrbefehl (x10), Flags (bit0 fährt)
   * /proc/XGORider/wheels: Radticks (1024 je Umdrehung) -> echte Geschwindigkeit aus dem Raddurchmesser
   * aus 0x0e auch Soll-Nick und gemessener Nick + Bias (°, Eingang des Nick-Reglers), Balance-Ausgang,

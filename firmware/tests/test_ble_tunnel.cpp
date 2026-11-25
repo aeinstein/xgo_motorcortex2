@@ -1,9 +1,7 @@
-// Host-Test für Patch 0025: Bausteine des neuen BLE-Dienstes (pi_tunnel.h) und die Register 0x17/0x18.
+// Host-Test 01-ble: Bausteine des BLE-Dienstes (pi_tunnel.h) und die Register 0x17/0x18.
 // Tunnelrahmen (Aufbau, Stückeln und Zusammensetzen), Parser (0x17 mit 1..24 Byte, 0x18 mit 4 Byte, 0x13 und
-// 0xb3 gibt es nicht mehr), Leseantworten 0x17/0x18, Ausgabepuffer, IP mit Zeitablauf, Zeilenpuffer der Konsole.
-// Nach firmware/build.sh, im Repo-Root:
-//   S=firmware/build/xgorider2_rl/firmware/src
-//   g++ -std=c++17 -ffp-contract=off -I $S firmware/tests/test_ble_tunnel.cpp $S/command_protocol.cpp -o t && ./t
+// 0xb3 gibt es nicht), Leseantwort 0x18, Ausgabepuffer, IP mit Zeitablauf, Zeilenpuffer der Konsole.
+// Aufruf: firmware/tests/run.sh test_ble_tunnel
 #include "pi_tunnel.h"
 #include "command_protocol.h"
 #include <cstdint>
@@ -98,12 +96,11 @@ int main() {
         const bool nob3 = !feedFrame(p, Source::Ble, f, n, e);
         check(no13 && nob3, "0x13 (BLE-Name) und 0xb3 (Trace über BLE) gibt es nicht mehr");
     }
-    // --- Leseantworten 0x17 (BLE verbunden) und 0x18 (IP)
+    // --- Leseantwort 0x18 (IP); 0x17 ist nur zum Schreiben (Tunnel)
     {
         StreamParser p;
         CommandEvent e;
         Telemetry t;
-        t.ble_connected = 1;
         const std::uint8_t ip[4] = {10, 10, 0, 110};
         std::memcpy(t.pi_ip, ip, 4);
         std::uint8_t f[16], out[64];
@@ -113,10 +110,8 @@ int main() {
         std::size_t m = buildReadResponse(e, t, out, sizeof out);
         ok = ok && m == 12 && out[3] == 0x12 && out[4] == 0x18 && !std::memcmp(out + 5, ip, 4);
         n = buildFrame(2, 0x17, len1, 1, f, sizeof f);
-        ok = ok && feedFrame(p, Source::Usb, f, n, e);
-        m = buildReadResponse(e, t, out, sizeof out);
-        ok = ok && m == 9 && out[4] == 0x17 && out[5] == 1;
-        check(ok, "Lesen: 0x18 = 4 Byte IP, 0x17 = 1 Byte BLE verbunden");
+        ok = ok && (!feedFrame(p, Source::Usb, f, n, e) || buildReadResponse(e, t, out, sizeof out) == 0);
+        check(ok, "Lesen: 0x18 = 4 Byte IP, 0x17 nicht lesbar");
     }
     // --- Ausgabepuffer
     {

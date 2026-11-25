@@ -1,15 +1,14 @@
-// Host-Test für Patch 0021 (neue Lagefusion): echte Rohwerte vom RiderPi laufen durch updateImu.
-// Prüfdaten firmware/tests/data/lagefusion_163849.txt (erzeugt von firmware/tests/lagefusion_ref.py aus den
-// Mitschnitten von Register 0x15, 2026-11-18): 60 s liegend (Startkalibrierung), 1 s künstliches Aufrichten,
-// dann die Messfahrt 163849 (60 s balancierend still, Drehen im Stand, geradeaus, Bremsdrehungen aus
-// 0,5 m/s mit 90 °/s). Je Zeile die 12 Rohbytes, Radticks und die Lage aus der Python-Referenz.
+// Host-Test 04-attitude: echte Rohwerte vom RiderPi laufen durch updateImu.
+// Prüfdaten firmware/tests/data/lagefusion_163849.txt (erzeugt von firmware/tests/lagefusion_ref.py aus
+// Mitschnitten von Register 0x15): 60 s liegend (Startkalibrierung), 1 s künstliches Aufrichten, dann eine
+// Messfahrt (60 s balancierend still, Drehen im Stand, geradeaus, Bremsdrehungen aus 0,5 m/s mit 90 °/s).
+// Je Zeile die 12 Rohbytes, Radticks und die Lage aus der Python-Referenz.
 //   1. updateImu liefert dieselbe Lage wie die Referenz (Nick/Roll auf 0,05°, Kurs auf 0,3°).
 //   2. Startkalibrierung im Liegen setzt alle drei Nullpunkte (Nick-Kreisel RiderPi ~-1,15 °/s).
-//   3. Bremsdrehungen: Roll bleibt innerhalb 1,5° um den Stand davor (bis 0020: bis 4,9° daneben).
+//   3. Bremsdrehungen: Roll bleibt innerhalb 1,5° um den Stand davor (Original: bis 4,9° daneben).
 //   4. Nach jeder Bewegung liegt die Lage wieder beim Beschleunigungssensor (3 s danach, auf 1°).
-// Nach firmware/build.sh, im Repo-Root:
-//   S=firmware/build/xgorider2_rl/firmware/src
-//   g++ -std=c++17 -ffp-contract=off -I $S firmware/tests/test_lagefusion_replay.cpp $S/control/rider_leg_imu.cpp -o t && ./t [Datei]
+// Optional: Pfad der Prüfdaten als Argument.
+// Aufruf: firmware/tests/run.sh test_lagefusion_replay
 #include "control/rider_leg_imu.h"
 #include <cmath>
 #include <cstdint>
@@ -60,7 +59,9 @@ int main(int argc, char** argv) {
         dy = std::fmax(dy, std::fabs(s.yaw_deg - ry));
         if (fresh) {
             if (first_fresh < 0) { first_fresh = n; t_fresh0 = now_us * 1e-6; }
-            rows.push_back({now_us * 1e-6 - t_fresh0, s.pitch_deg, s.roll_deg, s.diag_accel_pitch, s.diag_accel_roll,
+            const float acc_pitch = float(std::atan(s.acceleration[1] / s.acceleration[2]) * 57.2958);
+            const float acc_roll = float(std::atan(s.acceleration[0] / s.acceleration[2]) * 57.2958);
+            rows.push_back({now_us * 1e-6 - t_fresh0, s.pitch_deg, s.roll_deg, acc_pitch, acc_roll,
                             s.gyro_deg_s[2] - s.gyro_bias[2]});
         }
         ++n;

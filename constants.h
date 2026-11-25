@@ -14,16 +14,16 @@
 #define XGO_FIRMWARE_VERSION 0x07
 #define XGO_PITCH_CALIBRATION 0x09 // Nick-Trimm: Byte 1 = im Stand ausbalancieren und speichern
 #define XGO_RING_SWITCH 0x0a
-// 0x13 (BLE-Namenssuffix) gibt es seit Firmware-Patch 0025 nicht mehr: fester Name "RiderKerk"
-#define XGO_TUNNEL 0x17         // Firmware-Patch 0025: BLE-Tunnel. Vom ESP32 Rahmen Typ 0x15, zum ESP32 Schreibbefehl;
+// 0x13 (BLE-Namenssuffix) gibt es seit Firmware-Patch 01-ble nicht mehr: fester Name "RiderKerk"
+#define XGO_TUNNEL 0x17         // Firmware-Patch 01-ble: BLE-Tunnel. Vom ESP32 Rahmen Typ 0x15, zum ESP32 Schreibbefehl;
                                 // Nutzlast = Kennung (0 Daten, 1 BLE verbunden, 2 getrennt) + höchstens 23 Byte
 #define XGO_TUNNEL_TYPE 0x15
 #define XGO_TUNNEL_MAX 24
-#define XGO_PI_IP 0x18          // Firmware-Patch 0025: schreiben = IPv4 des Pi (4 Byte), der ESP32 zeigt sie über BLE;
+#define XGO_PI_IP 0x18          // Firmware-Patch 01-ble: schreiben = IPv4 des Pi (4 Byte), der ESP32 zeigt sie über BLE;
                                 // ohne neue Meldung gilt sie dort nach 10 s als 0.0.0.0
-#define XGO_VEL 0x1a            // Firmware-Patch 0029: Fahrrahmen schreiben (13 Byte: v mm/s, a, Ruck, w 0,1 °/s, alpha,
+#define XGO_VEL 0x1a            // Firmware-Patch 08-velocity: Fahrrahmen schreiben (13 Byte: v mm/s, a, Ruck, w 0,1 °/s, alpha,
                                 //   Drehruck), lesen = Zustand (12 Byte); Text-Format kernel_module/xgo-vel.h
-#define XGO_VEL_LIMITS 0x1b     // Firmware-Patch 0029: v_max mm/s, w_max 0,1 °/s, Wächter ms (6 Byte); schreibt xgonav beim Start
+#define XGO_VEL_LIMITS 0x1b     // Firmware-Patch 08-velocity: Grenzen, Wächter, Einheit, ki, i_max, kv (14 Byte); schreibt xgonav
 #define XGO_VX 0x30
 #define XGO_VYAW 0x32
 #define XGO_BODYHEIGHT 0x35
@@ -33,11 +33,10 @@
 #define XGO_ROLL_MAX_DEG 20
 #define XGO_IMU 0x61
 #define XGO_IMU_ALL 0x65        // R-1.1.6: accel[3] + roll/pitch/yaw, 6 Floats (24 Byte) in einer Antwort
-#define XGO_WHEELS 0x0c         // R-1.1.6+Patch: w11_ticks, w21_ticks, w11_pos, w21_pos (int32 LE)
-#define XGO_COMBO 0x0d          // R-1.1.6+Patch: roll, pitch, yaw (float) + w11/w21_ticks (int32) + t_ms (uint32), 24 Byte
-#define XGO_STREAM 0x11         // Firmware-Patch 0014: schreiben = Strom-Rate in Hz (0 aus, <= 250); Pakete Typ 0x14, 26 Byte:
+#define XGO_COMBO 0x0d          // Firmware-Patch 02-pi-interface: roll, pitch, yaw (float) + w11/w21_ticks (int32) + t_ms (uint32), 24 Byte
+#define XGO_STREAM 0x11         // Firmware-Patch 02-pi-interface: Strom-Rate in Hz (0 aus, <= 250); Pakete Typ 0x14, 26 Byte:
                                 // seq u16, t_us u32 (micros() der IMU-Lesung), roll/pitch/yaw float, Ticks Rad 11/21 s32
-#define XGO_LED_BRIGHTNESS 0x12 // Firmware-Patch 0016: schreiben = Helligkeit aller LEDs, n/256 (0 dunkel, 32 Default, 255 voll)
+#define XGO_LED_BRIGHTNESS 0x12 // Firmware-Patch 06-leds: Helligkeit aller LEDs, n/256 (0 dunkel, 32 Default, 255 voll)
 #define XGO_STREAM_TYPE 0x14
 #define XGO_STREAM_LEN 26
 #define XGO_ROLL 0x62

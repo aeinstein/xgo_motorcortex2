@@ -1,10 +1,8 @@
-// Host-Test für Patch 0020: Register 0x15 (laufende Summen der IMU-Rohwerte). Prüft, dass updateImu
+// Host-Test 03-diagnostics: Register 0x15 (laufende Summen der IMU-Rohwerte). Prüft, dass updateImu
 // jede Probe mit Vorzeichen und Achsen wie acceleration/gyro_deg_s aufsummiert, dass die Summen beim
 // Überlauf richtige Differenzen geben, dass die Lagerechnung davon unberührt bleibt und dass 0x15 als
 // 32-Byte-Antwort kommt.
-// Nach firmware/build.sh, im Repo-Root:
-//   S=firmware/build/xgorider2_rl/firmware/src
-//   g++ -std=c++17 -ffp-contract=off -I $S firmware/tests/test_raw_diag.cpp $S/control/rider_leg_imu.cpp $S/command_protocol.cpp -o t && ./t
+// Aufruf: firmware/tests/run.sh test_raw_diag
 #include "control/rider_leg_imu.h"
 #include "command_protocol.h"
 #include <cmath>

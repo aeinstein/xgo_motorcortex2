@@ -1,11 +1,8 @@
-// Host-Test für Patch 0024: gespeicherte Aktionen als Tabelle (action_engine.cpp, kActions).
-// Prüft die Aktionen 1..6 an ihren Schaltpunkten (Werte wie vor dem Umbau; xgonav/robot.py FW_ACTIONS
+// Host-Test 05-actions: gespeicherte Aktionen als Tabelle (action_engine.cpp, kActions).
+// Prüft die Aktionen 1..6 an ihren Schaltpunkten (Werte wie im Original; xgonav/robot.py FW_ACTIONS
 // spiegelt 3..5), die Schleife (Register 0x03), unbekannte Nummern und den Abbruch.
-// Mit -DTRACE gibt das Programm stattdessen den Zustand je Tick aus: so wurde die Tabelle am 2026-11-19
-// gegen die alte switch-Fassung verglichen (gleiche Ausgabe; die TRACE-Fassung nutzt nur die alte API).
-// Nach firmware/build.sh (Quellen mit Patches in firmware/build/), im Repo-Root:
-//   S=firmware/build/xgorider2_rl/firmware/src
-//   g++ -std=c++17 -ffp-contract=off -I $S firmware/tests/test_action_table.cpp $S/action_engine.cpp -o t && ./t
+// Mit -DTRACE gibt das Programm stattdessen den Zustand je Tick aus (Vergleich mit der switch-Fassung des Originals).
+// Aufruf: firmware/tests/run.sh test_action_table
 #include "action_engine.h"
 #include <cstdint>
 #include <cstdio>

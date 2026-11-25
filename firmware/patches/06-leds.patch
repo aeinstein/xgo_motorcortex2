@@ -1,0 +1,292 @@
+leds: LED-Helligkeit 0x12, Lauflicht beim Kalibrieren, LEDs Sache des Clients, Blau beim Herunterfahren
+
+diff --git a/firmware/src/board_support.cpp b/firmware/src/board_support.cpp
+index 73d65a1..41d6fe1 100644
+--- a/firmware/src/board_support.cpp
++++ b/firmware/src/board_support.cpp
+@@ -63,23 +63,36 @@ Rgb paletteColor(std::uint8_t index) {
+     if(p<170){p-=85;return Rgb{0,std::uint8_t(p*3),std::uint8_t(255-p*3)};}
+     p-=170;return Rgb{std::uint8_t(p*3),std::uint8_t(255-p*3),0};
+ }
+-std::uint8_t brightnessScale(std::uint8_t channel) { return std::uint8_t((unsigned(channel)*129)>>8); }
++// Global multiplier for every LED output (user LEDs, status and fault patterns), settable at runtime
++// (register 0x12, !led <n>); n/256, default 32 (the original scaled fixed with 129/256).
++// Not stored: back to the default after every restart of the ESP32.
++namespace { volatile std::uint8_t led_brightness256 = kLedBrightnessDefault; }
++void setLedBrightness(std::uint8_t per256) { led_brightness256 = per256; }
++std::uint8_t ledBrightness() { return led_brightness256; }
++std::uint8_t brightnessScale(std::uint8_t channel) { return std::uint8_t((unsigned(channel)*unsigned(led_brightness256))>>8); }
++std::uint8_t calibrationSpin(std::uint32_t now,unsigned led) {
++    // Angle between the spot and this LED in turns, -0.5 .. 0.5; the LEDs sit a quarter turn apart.
++    float d=float(now%kCalibrationSpinPeriodMs)/float(kCalibrationSpinPeriodMs)-0.25f*float(led&3u);
++    d-=std::floor(d+0.5f);
++    const float c=std::fabs(d)<0.25f?std::cos(d*6.2831853f):0.0f;
++    return std::uint8_t(float(kCalibrationSpinMin)+c*c*float(255-kCalibrationSpinMin)+0.5f);
++}
+ bool renderLeds(const LedControl &c,std::uint32_t now,const LedPixels &user,LedPixels &out) {
+     Rgb uniform{};
+     bool fill=true;
+     if(c.robot_mode==250)uniform.r=c.low_blink?200:0;
+     else if(c.robot_mode==0)uniform.r=200;
+-    else if(c.pitch_trim_stage==2)uniform.b=now%1000<500?128:0;
+-    else if(c.roll_period!=0) {
+-        const int value=std::isfinite(c.roll_request)?int(double(c.roll_request)*0.0625*127.0+128.0):128;
+-        const auto shade=std::uint8_t(value);
+-        for(unsigned i=0;i<4;++i)out[i]=i<2?Rgb{0,std::uint8_t(shade^255),shade}:Rgb{0,shade,std::uint8_t(shade^255)};
++    else if(c.gyro_calibrating) {
++        // a spot circles in the user colours until the gyro is calibrated.
++        for(unsigned i=0;i<4;++i) {
++            const unsigned f=calibrationSpin(now,i);
++            out[i]=Rgb{std::uint8_t((user[i].r*f+128)>>8),std::uint8_t((user[i].g*f+128)>>8),std::uint8_t((user[i].b*f+128)>>8)};
++        }
+         fill=false;
+-    } else if(c.height_period!=0) {
+-        const float scaled=(c.height_request/36.0f)*255.0f;
+-        const auto shade=std::uint8_t(std::isfinite(scaled)?unsigned(scaled<0?0:scaled):0);
+-        uniform=Rgb{0,shade,std::uint8_t(shade^255)};
+-    } else if(c.robot_mode==1) {
++    } else if(c.pitch_trim_stage==2)uniform.b=now%1000<500?128:0;
++    // the roll/height wave colour gradients (actions 1, 2, 5, 6, registers 0x39/0x82) are gone:
++    // LED effects are the client's business, the firmware only shows states.
++    else if(c.robot_mode==1) {
+         if(std::fabs(c.forward_request)>5 || std::fabs(c.turn_request)>5) {
+             out={};
+             if(c.forward_request>5){out[0].g=240;out[3].g=240;}
+@@ -93,6 +106,12 @@ bool renderLeds(const LedControl &c,std::uint32_t now,const LedPixels &user,LedP
+     return true;
+ }
+ 
++bool renderShutdownLeds(const LedControl &c,LedPixels &out) {
++    if(!c.shutdown)return false;
++    out.fill(kShutdownColor);
++    return true;
++}
++
+ bool renderFaultLeds(const LedControl &c,std::uint32_t now,LedPixels &out) {
+     if(c.fault==LedFault::None||c.robot_mode==1||c.robot_mode==250)return false;
+     Rgb color{};
+@@ -120,7 +139,7 @@ bool BoardSupport::begin() {
+     config.tx_config.idle_output_en=true;config.tx_config.idle_level=RMT_IDLE_LEVEL_LOW;
+     leds_ready_=rmt_config(&config)==ESP_OK && rmt_driver_install(RMT_CHANNEL_0,0,0)==ESP_OK;
+     last_poll_ms_=millis();last_led_ms_=last_poll_ms_;started_=true;
+-    fillPalette(0,4,234);show(user_);
++    resetUserLeds();show(user_);
+     return leds_ready_;
+ }
+ void BoardSupport::poll(std::uint32_t now) {
+@@ -147,11 +166,16 @@ void BoardSupport::fillPalette(std::uint8_t first,std::uint8_t count,std::uint8_
+ void BoardSupport::updateLeds(const LedControl &control,std::uint32_t now) {
+     if(std::uint32_t(now-last_led_ms_)<20)return;
+     last_led_ms_=now;LedPixels pixels;
+-    if(renderFaultLeds(control,now,pixels)||renderLeds(control,now,user_,pixels))show(pixels);
++    if(renderShutdownLeds(control,pixels)||renderFaultLeds(control,now,pixels)||renderLeds(control,now,user_,pixels))show(pixels);
++    // no state picture due (disarmed without a fault): the user colours, drawn only when they or the
++    // brightness differ from what is on the LEDs. So the LEDs turn steady after the gyro calibration, pink after
++    // arming, and colours written by the client show at once, also while the robot lies.
++    else if(shown_!=user_||shown_brightness_!=ledBrightness())show(user_);
+ }
+ void BoardSupport::show(const LedPixels &pixels) {
+     if(!leds_ready_)return;
+     rmt_item32_t items[97]{};unsigned bit=0;
++    const std::uint8_t brightness=ledBrightness();   // remembered with the frame
+     for(const auto &pixel:pixels) {
+         const std::uint8_t channels[]={brightnessScale(pixel.g),brightnessScale(pixel.r),brightnessScale(pixel.b)};
+         for(auto channel:channels)for(int shift=7;shift>=0;--shift) {
+@@ -161,7 +185,7 @@ void BoardSupport::show(const LedPixels &pixels) {
+         }
+     }
+     items[96].level0=0;items[96].duration0=3000;items[96].level1=0;items[96].duration1=3000;
+-    if(rmt_write_items(RMT_CHANNEL_0,items,97,true)==ESP_OK)shown_=pixels;
++    if(rmt_write_items(RMT_CHANNEL_0,items,97,true)==ESP_OK){shown_=pixels;shown_brightness_=brightness;}
+ }
+ #endif
+ }} // namespace rider::board
+diff --git a/firmware/src/board_support.h b/firmware/src/board_support.h
+index fbc631b..7d62214 100644
+--- a/firmware/src/board_support.h
++++ b/firmware/src/board_support.h
+@@ -45,6 +45,8 @@ private:
+     std::uint8_t mismatches_=0;
+ };
+ struct Rgb { std::uint8_t r=0,g=0,b=0; };
++inline bool operator==(const Rgb &a,const Rgb &b) { return a.r==b.r&&a.g==b.g&&a.b==b.b; }
++inline bool operator!=(const Rgb &a,const Rgb &b) { return !(a==b); }
+ using LedPixels=std::array<Rgb,4>;
+ // RL-only addition (the original firmware has no such thing): why the servos are released.  The original leaves the LEDs
+ // untouched in most stopped modes, so a protective stop could pass unnoticed, or an old colour stayed on.
+@@ -52,18 +54,36 @@ enum class LedFault : std::uint8_t { None, Tilt, Fall, Other, Manual };
+ struct LedControl {
+     std::uint8_t robot_mode=0,pitch_trim_stage=0;
+     bool low_blink=false;
+-    float height_period=0,roll_period=0,height_request=0,roll_request=0;
++    // No roll/height wave colours (LED effects belong to the client), their inputs are gone.
+     float forward_request=0,turn_request=0;
+     LedFault fault=LedFault::None;
++    bool gyro_calibrating=false;   // boot calibration of the gyro still running
++    bool shutdown=false;           // Pi fährt herunter (Aktion 234 an / 233 aus): alle LEDs blau
+ };
++// Anzeige „Pi heruntergefahren“: alle vier LEDs gleichmäßig blau, solange control.shutdown gesetzt ist.
++// Geht allem vor (Fehlerfarben, Akku, Fahren, Nutzerfarben); sonst ändert sich nichts. false = nichts zu zeichnen.
++constexpr Rgb kShutdownColor{0,0,200};
++bool renderShutdownLeds(const LedControl&,LedPixels &out);
++// While the gyro boot calibration runs, a bright spot circles over the four LEDs (0 -> 1 -> 2 -> 3,
++// front left, rear left, rear right, front right) in the user colours, like a spinning top.
++// Factor n/256 for one LED: 255 where the spot is, fading softly to kCalibrationSpinMin a quarter turn away.
++constexpr std::uint32_t kCalibrationSpinPeriodMs = 400;   // one revolution
++constexpr std::uint8_t kCalibrationSpinMin = 30;
++std::uint8_t calibrationSpin(std::uint32_t now_ms,unsigned led);
+ Rgb paletteColor(std::uint8_t index);
+-// Returns false where the original leaves the previous LED frame untouched.
++constexpr std::uint8_t kUserLedPalette = 234;   // pink: user LEDs after power-on and after arming
++// Returns false where the firmware has no picture of its own; BoardSupport::updateLeds() then shows the user
++// colours (the original left the previous LED frame untouched).
+ bool renderLeds(const LedControl&,std::uint32_t now_ms,const LedPixels &user,LedPixels &out);
+ // The servos-released indication, drawn instead of renderLeds() while `fault` is set and the robot is not balancing:
+ // solid red = fallen over (tilt stop), fast red flicker (5 Hz) = free fall, slow red blink (1 Hz) = another protective stop (servo or IMU
+ // lost, policy fault, ...), solid amber = stopped by a command.  Returns false when nothing is due (no fault, balancing, low battery).
+ bool renderFaultLeds(const LedControl&,std::uint32_t now_ms,LedPixels &out);
+ std::uint8_t brightnessScale(std::uint8_t channel); // original brightness128
++// Global LED multiplier n/256 (0 = dark, 255 = full); 32 = 12.5 %, a quarter of the original fixed 129.
++constexpr std::uint8_t kLedBrightnessDefault = 32;
++void setLedBrightness(std::uint8_t per256);
++std::uint8_t ledBrightness();
+ 
+ #ifdef ARDUINO
+ class BoardSupport {
+@@ -77,6 +97,8 @@ public:
+         return setUserLed(index,Rgb{r,g,b});
+     }
+     void fillPalette(std::uint8_t first,std::uint8_t count,std::uint8_t color);
++    // User LEDs back to the power-on colour (pink, palette 234); called when the robot is armed.
++    void resetUserLeds() { fillPalette(0,4,kUserLedPalette); }
+     void updateLeds(const LedControl&,std::uint32_t now_ms);
+     bool ledsReady() const { return leds_ready_; }
+ private:
+@@ -87,6 +109,7 @@ private:
+     LedPixels user_{},shown_{};
+     std::uint32_t last_poll_ms_=0,last_led_ms_=0;
+     bool started_=false,leds_ready_=false;
++    std::uint8_t shown_brightness_=0;   // brightness the shown frame was drawn with
+ };
+ #endif
+ }} // namespace rider::board
+diff --git a/firmware/src/command_protocol.cpp b/firmware/src/command_protocol.cpp
+index 8915b58..b828775 100644
+--- a/firmware/src/command_protocol.cpp
++++ b/firmware/src/command_protocol.cpp
+@@ -47,6 +47,7 @@ CommandKind commandKind(const CommandEvent &e) {
+     switch(e.reg) {
+     case 0x03:case 0x04:case 0x05:case 0x06:case 0x08:case 0x09:case 0x0a:
+     case 0x11:
++    case 0x12:
+     case 0x17:case 0x18:
+     case 0x30:case 0x32:case 0x35:case 0x36:case 0x39:case 0x3e:case 0x60:case 0x61:
+     case 0x69:case 0x6a:case 0x6b:case 0x6c:case 0x82:case 0xa0:case 0xa1:case 0xb0:
+@@ -63,6 +64,7 @@ const char *commandName(CommandKind kind) {
+     case CommandKind::UnknownSetting06:return "setting_06_no_known_consumer";
+     case CommandKind::TelemetryStream:return "telemetry_stream";
+     case CommandKind::ImuStream:return "imu_stream";
++    case CommandKind::LedBrightness:return "led_brightness";
+     case CommandKind::PitchCalibration:return "pitch_calibration";
+     case CommandKind::HeadingHold:return "heading_hold";
+     case CommandKind::PiTunnel:return "pi_tunnel";
+diff --git a/firmware/src/command_protocol.h b/firmware/src/command_protocol.h
+index 22bcb78..a69366e 100644
+--- a/firmware/src/command_protocol.h
++++ b/firmware/src/command_protocol.h
+@@ -9,6 +9,7 @@ enum class CommandKind : uint8_t {
+     UnknownSetting06 = 0x06, TelemetryStream = 0x08, PitchCalibration = 0x09,
+     HeadingHold = 0x0a,
+     ImuStream = 0x11,
++    LedBrightness = 0x12,
+     PiTunnel = 0x17, PiIp = 0x18,
+     Forward = 0x30,
+     Turn = 0x32, Height = 0x35, Roll = 0x36, RollWave = 0x39,
+diff --git a/firmware/src/main.cpp b/firmware/src/main.cpp
+index c1efc52..7be19d8 100644
+--- a/firmware/src/main.cpp
++++ b/firmware/src/main.cpp
+@@ -99,6 +99,8 @@ constexpr const char* kBuildId="rider2-rl-only | rider_balance_v6 | lift guard v
+ volatile uint32_t wheel_smooth_ms=0;
+ volatile float yaw_slew_per_second=20000.0f;
+ bool battery_low_seen=false;   // Akku-Warnung war aktiv (nur Robot-Task)
++// Pi fährt herunter (Aktion 234 an / 233 aus, !shutdown on|off): LEDs blau, sonst nichts. Nicht gespeichert.
++volatile bool shutdown_leds=false;
+ // Ausgleich des Gleichgewichtspunkts: Die Lagefusion liefert den wahren Nick, der gespeicherte Nick-Trimm ist
+ // aber mit dem ~2° zu hohen Nick des Originals eingelernt (Nullpunkt des Nick-Kreisels nie abgezogen). Regler,
+ // Aufstehen und Wächter bekommen Nick + kBalanceOffsetDeg; nach außen (Register, Datenstrom, Status) geht der wahre.
+@@ -301,6 +303,7 @@ public:
+         manual_stop=false;actions.cancel(millis());actions.requestMode(253,true);
+         controller.reset(millis(),s.imu.yaw_deg);policy.resetHistory();stop_sent=false;
+         auto_rearm_ticks=0;
++        board.resetUserLeds();   // armed = pink again (fault colours and low battery still go first)
+         result("arm requested; waiting for valid upright sensor state");
+     }
+     void standup() {
+@@ -371,6 +374,7 @@ public:
+         case CommandKind::WheelSlew:policy.setSlewRate(1000.0f+float(value)*18000.0f/255.0f);result("wheel slew updated");break;
+         case CommandKind::YawSlew:yaw_slew_per_second=1000.0f+float(value)*18000.0f/255.0f;result("yaw slew updated");break;
+         case CommandKind::HeadingHold:a.heading_hold=value!=0;break;
++        case CommandKind::LedBrightness:rider::board::setLedBrightness(value);result("led brightness updated");break;   // n/256
+         case CommandKind::Forward:a.command.forward=value;break;
+         case CommandKind::Turn:a.command.turn=value;if(std::abs(int(value)-128)>16)a.leveling=false;break;
+         case CommandKind::Height:a.command.height=value;break;
+@@ -381,6 +385,7 @@ public:
+             if(value==255)arm();else if(value==254)emergencyStop();
+             else if(value==253)standup();
+             else if(value==237)restart();
++            else if(value==234||value==233){shutdown_leds=value==234;result(value==234?"shutdown leds on":"shutdown leds off");}
+             else if(!leg_calibrating)actions.request(value,now);
+             break;
+         case CommandKind::PositionHoldProtection:a.hold_protection=value!=0;break;
+@@ -499,7 +504,7 @@ public:
+         // Akku-Warnung aufgehoben -> aus 250 nach 253 (disarmed, bereit; Aufstehen mit 253/255)
+         if(battery_low_seen&&!power.low_stage){
+             battery_low_seen=false;
+-            if(actions.state().mode==250){actions.requestMode(253,true);result("battery recovered; disarmed (253)");}
++            if(actions.state().mode==250){actions.requestMode(253,true);board.resetUserLeds();result("battery recovered; disarmed (253)");}
+         } else if(power.low_stage)battery_low_seen=true;
+         if(imu_valid)odometry.update(millis(),bus.sample(21).encoder_ticks,bus.sample(11).filtered_speed_mm_s,s.imu.yaw_deg);
+         // Original runaway criterion is count based and uses wheel11.
+@@ -660,7 +665,7 @@ public:
+                 if(policy.arm()) {
+                     manual_stop=false;actions.cancel(now);actions.requestMode(253,true);
+                     if(a.command.height==0)a.command.height=128;
+-                    controller.reset(now,s.imu.yaw_deg);
++                    controller.reset(now,s.imu.yaw_deg);board.resetUserLeds();
+                     result("RL auto re-armed after protective stop; waiting for upright start");
+                 }
+             }
+@@ -898,10 +903,11 @@ public:
+             persistence();bus.poll(millis());
+             const uint32_t now=millis();
+             rider::board::LedControl led;led.robot_mode=actions.state().mode;led.pitch_trim_stage=trim_stage;
+-            led.low_blink=board.state().low_blink;led.height_period=actions.state().height_phase;led.roll_period=actions.state().roll_phase;
+-            led.height_request=s.motion.command.height;led.roll_request=s.motion.command.roll;
++            led.low_blink=board.state().low_blink;   // no wave colours: roll/height phases no longer go to the LEDs
+             led.forward_request=s.motion.command.forward;led.turn_request=s.motion.command.turn;
++            led.shutdown=shutdown_leds;
+             led.fault=ledFaultFor(driving,s.last_stop_reason);   // the servos-released indication (red/amber) while stopped after a fault
++            led.gyro_calibrating=!s.imu.calibrated;   // a spot circles over the LEDs until the gyro boot calibration is done
+             board.updateLeds(led,now);
+             if(uint32_t(now-last_publish_ms)>=10){last_publish_ms=now;publish();}
+             vTaskDelay(1);
+@@ -1015,7 +1021,10 @@ void console(const char* line,Print& out) {
+     Event e;
+     if(!strcmp(line,"!arm")){e.kind=EventKind::Arm;enqueue(e);return;}
+     if(!strcmp(line,"!standup")){valueCommand(CommandKind::Action,253,out);return;}
++    if(!strcmp(line,"!shutdown on")){valueCommand(CommandKind::Action,234,out);return;}
++    if(!strcmp(line,"!shutdown off")){valueCommand(CommandKind::Action,233,out);return;}
+     if(!strcmp(line,"!restart")){valueCommand(CommandKind::Action,237,out);return;}   // nur wenn er nicht balanciert
++    if(!strncmp(line,"!led ",5)){valueCommand(CommandKind::LedBrightness,int(strtol(line+5,nullptr,10)),out);return;}   // global LED multiplier n/256
+     if(!strcmp(line,"!neutral")){e.kind=EventKind::Neutral;enqueue(e);return;}
+     if(!strcmp(line,"!odom reset")){e.kind=EventKind::ResetOdometry;enqueue(e);return;}
+     if(!strcmp(line,"!cal begin")){valueCommand(CommandKind::LegCalibration,1,out);return;}
+@@ -1087,6 +1096,7 @@ void console(const char* line,Print& out) {
+     }
+     out.print("!status | !policy off/shadow/active/status | !stop | !arm | !neutral | !move FORWARD TURN (bytes,128 neutral) | !height BYTE | !roll BYTE | !action 0..6/255 | !loop 0/1 | !level 0/1 | !heading 0/1 | !heightwave BYTE | !rollwave BYTE | !maxforward BYTE | !maxturn BYTE | !rgb INDEX R G B | !cal begin | !cal save | !trim | !odom reset | !trace dump | !trace usb on/off | !liftguard on/off/status | !fallguard on/off/status/clear/ms N | !dzcomp [off|on|reset|MAX [HYST [RAMP [START [GROW]]]]]");
+     out.print(" | !standup | !restart");
++    out.print(" | !led BYTE | !shutdown on/off");
+     out.println();
+ }
+ }

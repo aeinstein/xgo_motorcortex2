@@ -1,5 +1,5 @@
 //
-// Fahrrahmen in mm/s und °/s (Firmware-Patches 0029–0032, ARBEITSPLAN.md Punkt 4, Stufe 7).
+// Fahrrahmen in mm/s und °/s (Firmware-Patch 08-velocity, ARBEITSPLAN.md Punkt 4, Stufe 7).
 //
 // Nur Text <-> Bytes, ohne Kernel-Aufrufe außer sscanf/strcmp: der Treiber (xgo-proc.c) und das Test-Harness
 // (driver-test/km/test_main.c) nutzen dieselben Funktionen.
@@ -10,7 +10,7 @@
 //   "acc A J W ALPHA JW"    Beschleunigungsbetrieb: A mm/s² mit Vorzeichen, ohne Tempo-Sollwert (bis ±v_max)
 // /proc/XGORider/vel lesen (Register 0x1a, 12 Byte):
 //   "aktiv beschl waechter grenzen v w v_max w_max timeout_ms", z. B. "1 0 0 1 250 -12.3 500 90.0 300"
-// /proc/XGORider/vel_limits schreiben (Register 0x1b, 14 Byte, Firmware ab 0035):
+// /proc/XGORider/vel_limits schreiben (Register 0x1b, 14 Byte):
 //   "V_MAX W_MAX TIMEOUT_MS EINHEIT_UM KI_E4 IMAX_CENTI KV_E4": V_MAX in Firmware-Einheiten, W_MAX in °/s (eine
 //   Nachkommastelle), Wächter ms (0 = aus), µm/s je Firmware-Einheit (0 = 1 mm/s), ki × 10000 (° je Einheit·s),
 //   i_max in 0,01° (je 0 = Konsolenwert `!velctl`), kv × 10000 (Soll-Nick je Einheit gemessenes Tempo, 0 = aus).

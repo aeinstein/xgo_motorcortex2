@@ -1,4 +1,4 @@
-"""Fahrrahmen der Firmware (Patches 0029–0032, ARBEITSPLAN.md Punkt 4, Stufe 8): Sollwerte in echten Einheiten.
+"""Fahrrahmen der Firmware (Firmware-Patch 08-velocity, ARBEITSPLAN.md Punkt 4, Stufe 8): Sollwerte in echten Einheiten.
 
 Statt der Bytes speed_x/speed_z (wirken wie eine Kraft) schreibt Robot je Änderung einen Rahmen nach
 /proc/XGORider/vel: Tempo-Soll, Beschleunigung und Ruck, Drehrate, Drehbeschleunigung und Drehruck. Die Firmware
@@ -7,7 +7,7 @@ beim Start (und alle paar Sekunden neu) nach /proc/XGORider/vel_limits; ohne sie
 
 Einheiten: Die Radgeschwindigkeit der Firmware ist nicht echte mm/s, sondern ~3,9 mm/s je Einheit
 (robot.fw_speed_unit_mm, gemessen 2026-11-25 mit tools/fw_einheit.py). Alles Fahren (v, a, Ruck,
-v_max) wird damit umgerechnet. Drehen ist seit 0032 in echten °/s (Kursziel läuft mit w·dt gegen den IMU-Kurs).
+v_max) wird damit umgerechnet. Drehen ist in echten °/s (Kursziel läuft mit w·dt gegen den IMU-Kurs).
 
 Achse.schritt ist der Sollwertgenerator der Firmware (velocity_cmd.h approach) in Python: Robot rechnet so am Pi
 denselben Sollwert, den die Firmware gerade anfährt (robot.command, Simulator, Bahnprüfung). Kosten am Pi: zwei
@@ -79,7 +79,7 @@ def rahmen_text(v_mps: float, a_mps2: float, j_mps3: float, w_dps: float, alpha_
 
 def grenzen_text(v_max_mps: float, w_max_dps: float, timeout_ms: int, unit_mm: float,
                  ki: float, i_max_deg: float, kv: float) -> str:
-    """Text für /proc/XGORider/vel_limits (Firmware 0035, 14 Byte):
+    """Text für /proc/XGORider/vel_limits (Firmware-Patch 08-velocity, 14 Byte):
     "V_MAX W_MAX TIMEOUT_MS EINHEIT_UM KI_E4 IMAX_CENTI KV_E4". V_MAX in Firmware-Einheiten, W_MAX in °/s, Einheit
     in µm/s je Firmware-Einheit (für die Vorsteuerung atan(a/g)), ki in ° Soll-Nick je (Einheit Fehler · s), i_max
     in °, kv in ° Soll-Nick je Einheit gemessenes Tempo.

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Referenz der Lagefusion von Patch 0021 und Erzeuger der Prüfdaten für test_lagefusion_replay.cpp.
+"""Referenz der Lagefusion (Patch 04-attitude) und Erzeuger der Prüfdaten für test_lagefusion_replay.cpp.
 
     python firmware/tests/lagefusion_ref.py roh_liegend_60.csv roh_fahrt_163849.csv firmware/tests/data/lagefusion_163849.txt
 

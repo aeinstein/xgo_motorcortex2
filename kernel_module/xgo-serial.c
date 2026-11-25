@@ -211,7 +211,7 @@ static void stream_frame(const uint8_t *b, u64 t_rx) {
     spin_unlock_irqrestore(&imu_lock, flags);
 }
 
-// ---- BLE-Tunnel (Firmware-Patch 0025) ----------------------------------------
+// ---- BLE-Tunnel (Firmware-Patch 01-ble) ----------------------------------------
 // Reader-Thread: eine Nutzlast (Kennung + Daten) als Datensatz ablegen. Ist der Ring voll (niemand liest
 // /proc/XGORider/ble), wird sie verworfen und gezählt.
 static void tunnel_frame(const uint8_t *b, uint8_t n) {
