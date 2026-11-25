@@ -614,9 +614,11 @@ class Robot:
         sq = None
         if strecke is not None and kurs is None:
             # Strecke mit Halt: Nachbau wie die Firmware, gemessenes Tempo = Sollwert (der Pi kennt das Radtempo hier
-            # nicht), also ohne Nachlauf; jeder neue Rahmen setzt den Rest
+            # nicht) und ohne Nachlauf (der Nachbau rollt nicht nach; mit lag hielte er 0,25 s × v zu früh); jeder neue
+            # Rahmen setzt den Rest
             sq = round(strecke / self.STRECKE_STUFE_M) * self.STRECKE_STUFE_M
-            strecke_messen(st, g.x, g.x, 1.0 if tv >= 0 else -1.0, 1000.0, dt)
+            strecke_messen(st, g.x, 1.0 if tv >= 0 else -1.0, 1000.0, dt)
+            st.lag = 0.0
             if not st.an or sq != self._strecke_q:
                 strecke_empfang(st, sq * 1000.0)
                 self._strecke_q = sq

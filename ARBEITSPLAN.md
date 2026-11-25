@@ -15,7 +15,7 @@ Planer, der Planer fährt den Rider, nach der Sicherheitsprüfung.
 | 2 | **Test: Anfahren an eine Wand** | geradeaus geprüft gefahren 2026-11-25 (unten) |
 | 3 | **Test: Fahren einer Bahn entlang.** Kurven glätten, Drehungen auf der Stelle vermeiden (Hauptgrund der Drift) | offen |
 | 4 | **Fahrregler in die Firmware.** Pi sendet Sollgeschwindigkeit und Drehrate in echten Einheiten, die Firmware regelt | erledigt, gefahren (unten) |
-| 5 | **Bahnbefehle für die Navigation.** Krümmung statt Drehrate, Drehen auf Kurs, Strecke mit Halt, Rückmeldung im Strom (Plan unten) | Stufe 0 fertig. Stufe 1: gefahren 2026-11-25 (κ 2, Firmware hält κ_soll exakt; Anfang enger, Halt jetzt auf dem Bogen), `vel_kappa` aus. Stufe 2: gefahren 2026-11-25 mit 81cb3335 (±90°/±180°, Sollwinkel auf 0,4°, IMU-Kurs 2 s nach Ende auf ≤ 1,4°). `vel_kappa`/`vel_kurs` seit 2026-11-25 Standard an. Stufe 3: gefahren 2026-11-25 von Hand (vorwärts 5–6 cm zu früh, rückwärts 9 cm zu weit: Nachlauf-Integral der Firmware, gemeldet), `vel_strecke` aus. home mit Krümmung + Kursziel gefahren: am Start 1 cm / 0,9° |
+| 5 | **Bahnbefehle für die Navigation.** Krümmung statt Drehrate, Drehen auf Kurs, Strecke mit Halt, Rückmeldung im Strom (Plan unten) | Stufe 0 fertig. Stufe 1: gefahren 2026-11-25 (κ 2, Firmware hält κ_soll exakt; Anfang enger, Halt jetzt auf dem Bogen), `vel_kappa` aus. Stufe 2: gefahren 2026-11-25 mit 81cb3335 (±90°/±180°, Sollwinkel auf 0,4°, IMU-Kurs 2 s nach Ende auf ≤ 1,4°). `vel_kappa`/`vel_kurs` seit 2026-11-25 Standard an. Stufe 3: gefahren 2026-11-25 von Hand (vorwärts 5–6 cm zu früh, rückwärts 9 cm zu weit: Nachlauf-Integral der Firmware; Fix 73f08ad/33c685ea gebaut, nicht geflasht, Pi-Nachbau nachgezogen), `vel_strecke` aus. home mit Krümmung + Kursziel gefahren: am Start 1 cm / 0,9° |
 
 ## Bahnbefehle (Punkt 5, Plan 2026-11-25)
 
@@ -126,8 +126,11 @@ Byte-Vertrag: Kopfkommentar in `firmware/src/velocity_cmd.h` und dieser Abschnit
   Verworfen: bit3 mit 13 Byte, 15 Byte ohne bit3, bit3 + bit0, bit3 + bit2; bit3 + bit1 erlaubt (Bogen bis zum
   Haltepunkt, Strecke = Bogenlänge der Encoder).
 - Firmware je Takt: Rest −= v_meas · unit_mm · dt · dir (dir = Vorzeichen des Rahmen-v, v_meas = Mittel der gefilterten
-  Radtempi). Nachlauf lag += (v_soll_vorher − v_meas) · unit_mm · dt · dir, klingt bei v_soll = 0 und |v_meas| < 1 mit
-  exp(−dt/0,5 s) ab, beginnt bei 0 und läuft über neue Rahmen weiter; wirksamer Rest = Rest − lag. Fahrachse: go =
+  Radtempi). Nachlauf (Änderung 73f08ad / SHA 33c685ea): vf += (v_meas·dir − vf)·(1 − exp(−dt/0,1 s)), lag = 0,25 s ·
+  vf · unit_mm (was er nach dem Soll noch fährt; gefahren vorwärts 0,23 s, rückwärts 0,31 s); vf und lag 0 beim
+  Einschalten der Strecke, bei Rahmen ohne bit3 und bei cancel; kein Integral, kein Abklingen im Stand mehr (das
+  Integral ∫(v_soll − v_meas) machte den Rest zu S − ∫v_soll: vorwärts 5–6 cm zu früh, rückwärts 9 cm zu weit).
+  Wirksamer Rest = Rest − lag. Pi-Nachbau in `Robot` ohne lag (der Nachbau rollt nicht nach). Fahrachse: go =
   approach(v_ziel, a, Ruck) (mit κ-Grenzen im Krümmungsbetrieb); fwd = go, solange wirksamer Rest − |go|·dt·unit −
   |stopDistance(go)|·unit ≥ 0, sonst approach auf 0. Erreicht bei wirksamem Rest ≤ 5 mm (auch bei einem Rahmen mit
   s − lag ≤ 5), dann v → 0, Flag bleibt bis zu einem Rahmen mit größerem s. Wächter bremst, Strecke bleibt offen.

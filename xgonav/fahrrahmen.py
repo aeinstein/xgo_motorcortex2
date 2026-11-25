@@ -30,7 +30,8 @@ CAP_KAPPA = 1                              # Fähigkeitsbyte (0x1a lesen, Byte 1
 CAP_KURS = 2                               # bit1 Kursziel
 CAP_STRECKE = 4                            # bit2 Strecke mit Halt
 STRECKE_ANKUNFT_MM = 5.0                   # wirksamer Rest für „erreicht“ (kDistArrive)
-STRECKE_LAG_TAU_S = 0.5                    # Abklingen des Nachlaufs im Stand (kDistLagTau)
+STRECKE_COAST_S = 0.25                     # Nachlauf je Radtempo: so lange fährt er nach dem Soll noch (kDistCoastS)
+STRECKE_MESS_TAU_S = 0.1                   # Tiefpass des Radtempos für den Nachlauf (kDistMeasTau)
 KURS_ANKUNFT_DEG = 0.5                     # Restwinkel für „angekommen“ (kCourseArrive)
 STOP_SIM_MAX = 1000                        # Takte der Bremswinkel-Vorausschau (kStopSimMax)
 WATCHDOG_ALPHA = 180.0                     # °/s², Wächter ohne alpha im Rahmen (kWatchdogAlpha)
@@ -172,34 +173,36 @@ def stop_winkel(ax: Achse, alpha: float, jw: float, dt: float) -> float:
 @dataclass
 class Strecke:
     """Strecke mit Halt (ARBEITSPLAN.md Punkt 5 Stufe 3, velocity_cmd.h dist_*): an = läuft, done = erreicht, rest =
-    Reststrecke (mm), lag = Nachlauf (mm, was der Rider dem Soll hinterherfährt und noch kommt)."""
+    Reststrecke (mm), lag = Nachlauf (mm, was der Rider nach dem Soll noch fährt), vf = gefiltertes Radtempo in
+    Fahrtrichtung (Einheiten)."""
     an: bool = False
     done: bool = False
     rest: float = 0.0
     lag: float = 0.0
+    vf: float = 0.0
 
 
 def strecke_empfang(st: Strecke, s_mm: float | None) -> None:
     """Rahmen angenommen (receive): jeder Strecken-Rahmen setzt den Rest neu (kein Wechselbit), der Nachlauf läuft
     weiter und beginnt beim Einschalten bei 0; ein Rahmen ohne Strecke (s_mm None) beendet sie."""
     if s_mm is None:
-        st.an, st.done, st.rest, st.lag = False, False, 0.0, 0.0
+        st.an, st.done, st.rest, st.lag, st.vf = False, False, 0.0, 0.0, 0.0
         return
     if not st.an:
-        st.lag = 0.0
+        st.lag = st.vf = 0.0
     st.an, st.rest = True, s_mm
     st.done = s_mm - st.lag <= STRECKE_ANKUNFT_MM
 
 
-def strecke_messen(st: Strecke, v_soll_vorher: float, v_meas: float, richtung: float, unit_mm: float, dt: float) -> None:
-    """Je Takt vor dem Generator (tick): gemessene Radstrecke vom Rest ab, Nachlauf = ∫(v_soll − v_meas) in
-    Fahrtrichtung; im Stand (Soll 0, Ist < 1 Einheit) klingt er ab. v in Radeinheiten, richtung ±1 (Rahmen-v)."""
+def strecke_messen(st: Strecke, v_meas: float, richtung: float, unit_mm: float, dt: float) -> None:
+    """Je Takt vor dem Generator (tick): gemessene Radstrecke vom Rest ab; Nachlauf = STRECKE_COAST_S × gefiltertes
+    Radtempo in Fahrtrichtung (Firmware 73f08ad; vorher Integral ∫(v_soll − v_meas), das eine dauerhafte Abweichung
+    aufsummierte: vorwärts 5–6 cm zu früh, rückwärts 9 cm zu weit). v in Radeinheiten, richtung ±1 (Rahmen-v)."""
     if not st.an or dt <= 0:
         return
     st.rest -= v_meas * unit_mm * dt * richtung
-    st.lag += (v_soll_vorher - v_meas) * unit_mm * dt * richtung
-    if v_soll_vorher == 0 and abs(v_meas) < 1.0:
-        st.lag *= math.exp(-dt / STRECKE_LAG_TAU_S)
+    st.vf += (v_meas * richtung - st.vf) * (1.0 - math.exp(-dt / STRECKE_MESS_TAU_S))
+    st.lag = STRECKE_COAST_S * st.vf * unit_mm
 
 
 def strecke_schritt(fwd: Achse, st: Strecke, v_ziel: float, amax: float, jmax: float, dt: float, unit_mm: float) -> None:

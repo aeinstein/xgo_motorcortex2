@@ -92,8 +92,7 @@ def _firmware_nachbau(rows):
             dt = min(0.05, (t - last_tick) * 1e-6)
         last_tick, ticked = t, True
         if st.an and dt > 0:
-            strecke_messen(st, fwd.x, float(r.get("v_meas") or 0.0), 1.0 if f["v"] >= 0 else -1.0,
-                           float(r["unit_mm"]), dt)
+            strecke_messen(st, float(r.get("v_meas") or 0.0), 1.0 if f["v"] >= 0 else -1.0, float(r["unit_mm"]), dt)
         wd = timeout and t - last_rx > timeout * 1000
         if wd and not timed_out:
             timed_out, beschl = True, False
