@@ -165,6 +165,11 @@ Kosten am ESP32: zwei PI-Regler + Rampe je Takt, vernachlässigbar gegen die Lag
 - **Firmware 0037 (Nutzer: Weg 2):** ki und i_max gehen mit 0x1b (14 Byte) von xgonav an die Firmware
   (`robot.vel_ki` 0,15, `vel_i_max_deg` 4). Treiber `vel_limits` mit 7 Feldern, Textpuffer 48 Byte. Host-Tests und
   Treibertest grün, Build SHA aa2260dd… (`out/app0_0037.bin`).
+- **Geflasht 0001–0037 (2026-11-25), Messfahrt c 0,55, ki 0,15:** Strecke 0,61 / 0,89 m (≈ Soll-Strecke). Verlauf
+  v 0,2 (Soll 46): nach der Rampe 1 s Plateau bei 26–28 (≈ Soll × c, Integral wartet 0,6 s), dann zieht das Integral
+  hoch auf 63 (1,37 ×) bei 2,5 s und wieder herunter auf 46–40: langsame Schwingung, Periode ~3 s. v 0,3 (Soll 69):
+  Plateau 48, Spitze 86 (1,25 ×), Ende 66–70. Mittel der letzten Sekunde 1,14–1,16 ×. Deutung: ki 0,15 zu groß für
+  den Nachlauf von ~1 s; das Plateau zeigt, dass der Bestandsweg hier etwa Soll × c fährt (c 0,55 zu klein).
 
 ### Zu klären
 
