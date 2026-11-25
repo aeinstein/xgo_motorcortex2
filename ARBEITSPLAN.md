@@ -99,9 +99,14 @@ Kosten am ESP32: zwei PI-Regler + Rampe je Takt, vernachlässigbar gegen die Lag
 - **Stufe 2 (2026-11-25):** Patch `0030-velocity-generator.patch`: S-Kurve je Achse (a, Ruck; alpha, Drehruck),
   ersetzt für den Rahmenweg Tiefpass und 5er-Schritt; Wächter bremst mit den Rahmengrenzen; Übernahme aus der
   Fahrt. Gebaut (SHA d5f01194…, 1 263 776 Byte), alle Host-Tests grün. Nicht geflasht.
-  Für Stufe 4 gesehen: `addHeadingCorrection` erhöht das Kursziel je Takt um filtered_turn × 0,005, bei ~333 Hz
-  also um ~1,67 × w je Sekunde (nicht 1 × w); dazu die Vorsteuerung −turn × 0,5. Welche Drehrate wirklich
-  herauskommt, ist ungemessen.
+  Für Stufe 4 gesehen: `addHeadingCorrection` erhöht das Kursziel je Regeltakt um filtered_turn × 0,005; der
+  Regeltakt ist 4 ms (`kControlPeriodUs`, 250 Hz; gemessen balancierend ~260 Hz), also ~1,25–1,3 × w je Sekunde
+  (nicht 1 × w); dazu die Vorsteuerung −turn × 0,5. Welche Drehrate wirklich herauskommt, ist ungemessen.
+- **Stufe 3 (2026-11-25):** Patch `0031-velocity-control.patch`: Soll-Nick = Original-P + Integral (ki 0,05 °/(mm/s·s),
+  ±4°, Anti-Windup, steht beim Hebeschutz, klingt beim Halten ab) + Vorsteuerung atan(a_soll/g); 0015 dort aus.
+  Zur Laufzeit `!velctl KI FF IMAX`. Gebaut (SHA 49578aae…, 1 265 568 Byte), alle Host-Tests grün. Im einfachen Modell
+  (nicht der Rider): Last 2° → Original 17,5 mm/s Restfehler, mit Integral 0,3 mm/s; Vorsteuerung halbiert den
+  Schleppfehler. ki und Vorsteuerung am Rider einstellen (Stufe 9). Nicht geflasht.
 
 ### Zu klären
 
