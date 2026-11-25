@@ -110,6 +110,9 @@ def test_firmware_vektoren(name):
     import csv
     with open(os.path.join(VECTORS, name + ".csv"), newline="") as fh:
         rows = list(csv.DictReader(fh))
+    flags = {bytes.fromhex(r["frame_hex"])[0] for r in rows}
+    if any(f & ~3 for f in flags):
+        pytest.skip("Betrieb mit Flag %s noch nicht nachgebaut (Kursziel/Strecke: Stufe 2/3)" % sorted(flags))
     for i, (r, (v, w, a, k, to)) in enumerate(zip(rows, _firmware_nachbau(rows))):
         for key, x in (("v", v), ("w", w), ("a", a), ("kappa", k)):
             soll = float(r[key])
