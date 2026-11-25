@@ -37,6 +37,9 @@
 #   0024 Gespeicherte Aktionen als Tabelle (nur motorische Abläufe, 1..6 unverändert, neue = ein Eintrag)
 #   0025 Bluetooth neu: eigener BLE-Dienst "RiderKerk" (Binärrahmen, Konsole, Tunnel zum Pi, IP des Pi), Hersteller-BLE entfernt (docs/ble.md)
 #   0026 Akku-Warnung hebt sich nach 5 s über 15 % wieder auf (dann 250 -> 253), Neustart 237 auch bei Akku-Warnung
+#   0027 Protokoll des Hebeschutzes übersteht Stopps (Register 0x19), kein Selbststart aus Zustand 0 (rot) nach Sturz
+#   0028 Roll laufend auf 0 halten, auch beim Drehen (Aktion 236 an / 235 aus); LEDs blau beim Herunterfahren (234 an / 233 aus)
+#   0029 Fahrrahmen in mm/s und °/s (Register 0x1a, Grenzen + Wächter 0x1b, Beschleunigungsbetrieb), 0xa0/0xa1 entfernt
 # Braucht: git, python3 (venv), Internet beim ersten Lauf (PlatformIO lädt Toolchain ~1 GB).
 set -euo pipefail
 
