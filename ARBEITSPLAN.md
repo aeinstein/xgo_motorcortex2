@@ -150,6 +150,12 @@ Kosten am ESP32: zwei PI-Regler + Rampe je Takt, vernachlässigbar gegen die Lag
   ~40, Spitze 60 (1,30 × statt 1,80 ×) nach ~2,5 s, am Ende 52; v 0,3: Soll 69, Spitze 90 (1,30 × statt 1,91 ×)
   nach ~2 s, am Ende ~80. Strecke 0,70 / 1,09 m (vorher 0,85 / 1,28). Schneller am Soll, Überschwingen auf ein
   Drittel; der Rest steigt langsam an (Bestandsweg) und das Integral holt ihn zu langsam zurück.
+- **Messfahrt c 0,42 (2026-11-25, Flur zurück):** schlechter. v 0,2: 90 % erst nach 2,1 s (c 0,55: 0,9 s), dann
+  stetiger Anstieg bis 64 (1,40 ×) bei 3,7 s, kein Rückgang; v 0,3: 90 % nach 1,8 s, Spitze 93 (1,35 ×) bei 3,3 s,
+  Ende 1,23 ×. Strecke 0,57 / 0,96 m. Deutung: kein Fehler des Bestandswegs allein, sondern Windup des Integrals
+  (0031): solange das Ist beim Anfahren hinterherläuft (Gegenschwung des Balancierens), läuft vel_i bis i_max 4° voll
+  und treibt danach über das Soll; je kleiner c, desto länger der Nachlauf, desto mehr Windup. Vorschlag: Integral
+  nur bei ruhendem Generator (a = 0) bzw. kleinerem Fehler, c zurück auf 0,55.
 
 ### Zu klären
 
