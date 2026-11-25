@@ -6,7 +6,8 @@
 // Sollwertgenerator (S-Kurve): Beschleunigung ≤ a, Ruck ≤ Ruckgrenze, kein Überschwingen, Dauer wie gerechnet,
 // Umkehr, Beschleunigungsbetrieb mit Ruck, Wächter mit den Rahmengrenzen, Übernahme aus der Fahrt, Drehachse.
 // Krümmungsbetrieb (bit1): Format, Fähigkeitsbyte, w = κ·v_soll, Bahn auf dem Kreis (Anfahren/Bremsen/rückwärts/
-// Wächter), v/a durch w_max/alpha begrenzt, κ-Nachführung, Übernahme aus dem Drehratenweg; Prüfvektoren (XGO_VECTORS=1).
+// Wächter), v/a durch w_max/alpha begrenzt, κ-Nachführung, Übernahme aus dem Drehratenweg. Kursziel (bit2): Ziel ±0,5°
+// ohne Überschwingen, Wechselbit, Wächter, im Fahren, aus der Kurve; Prüfvektoren (XGO_VECTORS=1).
 // Aufruf: firmware/tests/run.sh test_velocity_cmd
 #include "velocity_cmd.h"
 #include "command_protocol.h"
@@ -142,9 +143,10 @@ static void generatorTests() {
 // --- Krümmungsbetrieb (bit1): Szenarien als Folge von Rahmen, je Takt ausgewertet. Mit XGO_VECTORS=1 schreibt jedes
 // Szenario firmware/tests/vectors/<name>.csv (Lauf aus dem Repo-Root, run.sh), für den Nachbau am Pi
 // (tests/test_fahrrahmen.py): je Takt t_us, rx (1 = in diesem Takt neuer Rahmen, vor dem Takt angenommen), die 13
-// Rahmenbytes als Hex, Grenzen (v_max, w_max, Wächter, unit_mm) und danach v, w, a (Fahrachse), κ und timed_out.
+// Rahmenbytes als Hex, Grenzen (v_max, w_max, Wächter, unit_mm) und danach v, w, a (Fahrachse), κ, timed_out,
+// Restwinkel des Kursziels (°) und angekommen.
 struct KEv { std::uint32_t t_us; std::uint8_t d[V::kFrameLen]; };
-struct KStep { std::uint32_t t_us; float v, w, a, kappa; bool timed_out, kappa_on; };
+struct KStep { std::uint32_t t_us; float v, w, a, kappa; bool timed_out, kappa_on; float rest; bool done, course_on; };
 static void kappaBytes(std::uint8_t* d, bool speed, int v, int a, int j, float kappa, int alpha, int jw) {
     frameBytes(d, speed, v, a, j, 0, alpha, jw);
     d[0] |= V::kFlagKappa; V::put16(d + 7, std::uint16_t(std::int16_t(std::lround(kappa * 1000.0f))));
@@ -158,7 +160,7 @@ static std::vector<KStep> runScenario(const char* name, const V::Limits& l, cons
         char path[256]; std::snprintf(path, sizeof path, "firmware/tests/vectors/%s.csv", name);
         csv = std::fopen(path, "w");
         if (!csv) std::printf("FEHLER Vektor %s nicht schreibbar\n", path);
-        else std::fprintf(csv, "t_us,rx,frame_hex,v_max,w_max,timeout_ms,unit_mm,v,w,a,kappa,timed_out\n");
+        else std::fprintf(csv, "t_us,rx,frame_hex,v_max,w_max,timeout_ms,unit_mm,v,w,a,kappa,timed_out,rest,done\n");
     }
     const std::uint8_t* last = nullptr;
     for (std::uint32_t t = 0; t <= std::uint32_t(seconds * 1e6f); t += kTickUs) {
@@ -168,13 +170,14 @@ static std::vector<KStep> runScenario(const char* name, const V::Limits& l, cons
             last = evs[next].d; rx = true; ++next;
         }
         V::tick(s, l, t);
-        out.push_back({t, s.v, s.w, s.fwd.a, s.kappa, s.timed_out, s.kappa_on});
+        out.push_back({t, s.v, s.w, s.fwd.a, s.kappa, s.timed_out, s.kappa_on, s.course_rest, s.course_done, s.course_on});
         if (csv) {
             char hex[2 * V::kFrameLen + 1] = {};
             if (last) for (int i = 0; i < V::kFrameLen; ++i) std::snprintf(hex + 2 * i, 3, "%02x", last[i]);
-            std::fprintf(csv, "%u,%d,%s,%.9g,%.9g,%u,%.9g,%.9g,%.9g,%.9g,%.9g,%d\n", unsigned(t), rx ? 1 : 0, hex,
+            std::fprintf(csv, "%u,%d,%s,%.9g,%.9g,%u,%.9g,%.9g,%.9g,%.9g,%.9g,%d,%.9g,%d\n", unsigned(t), rx ? 1 : 0, hex,
                          double(l.v_max), double(l.w_max), unsigned(l.timeout_ms), double(l.unit_mm),
-                         double(s.v), double(s.w), double(s.fwd.a), double(s.kappa), s.timed_out ? 1 : 0);
+                         double(s.v), double(s.w), double(s.fwd.a), double(s.kappa), s.timed_out ? 1 : 0,
+                         double(s.course_rest), s.course_done ? 1 : 0);
         }
     }
     if (csv) std::fclose(csv);
@@ -204,7 +207,7 @@ static void kappaTests() {
         kappaBytes(d, true, 46, 128, 641, -32.767f, 360, 1800); V::parseFrame(d, sizeof d, f);
         check(near(f.kappa, -32.767f, 1e-5f), "κ-Bereich ±32,767 1/m");
         std::uint8_t u[V::kFrameLen]; frameBytes(u, true, 46, 0, 0, 100, 0, 0);
-        u[0] = 4; check(!V::parseFrame(u, sizeof u, f), "unbekanntes Bit (bit2) -> verworfen");
+        u[0] = 8; check(!V::parseFrame(u, sizeof u, f), "unbekanntes Bit (bit3) -> verworfen");
         u[0] = 0x80; check(!V::parseFrame(u, sizeof u, f), "unbekanntes Bit (bit7) -> verworfen");
         u[0] = 0; check(V::parseFrame(u, sizeof u, f) && !f.kappa_mode && near(f.w, 10.0f, 1e-5f), "ohne bit1: w wie bisher");
         V::State s; V::Limits l = kLimits(); V::Frame k; k.kappa_mode = true; k.kappa = 1; k.v = 20;
@@ -311,9 +314,98 @@ static void kappaTests() {
     }
 }
 
+// --- Kursziel (bit2, Wechselbit bit4)
+static void courseBytes(std::uint8_t* d, bool seq, int v, float dpsi_deg, int alpha, int jw) {
+    frameBytes(d, true, v, 128, 641, 0, alpha, jw);
+    d[0] |= V::kFlagCourse | (seq ? V::kFlagCourseSeq : 0);
+    V::put16(d + 7, std::uint16_t(std::int16_t(std::lround(dpsi_deg * 10.0f))));
+}
+struct Turn { float angle = 0, over = 0, wpk = 0, dw = 0; };
+// gedrehter Winkel (∫w dt), Überschwingen über das Ziel, größte Drehrate und Änderung je Takt
+static Turn turned(const std::vector<KStep>& tr, float goal, std::size_t from = 0) {
+    Turn r; const float sg = goal >= 0 ? 1.0f : -1.0f;
+    for (std::size_t i = from + 1; i < tr.size(); ++i) {
+        r.angle += tr[i].w * kTickUs * 1e-6f;
+        r.over = std::max(r.over, (r.angle - goal) * sg);
+        r.wpk = std::max(r.wpk, std::fabs(tr[i].w)); r.dw = std::max(r.dw, std::fabs(tr[i].w - tr[i - 1].w));
+    }
+    return r;
+}
+static std::vector<KEv> repeat(const std::uint8_t* d, std::uint32_t from, std::uint32_t to) {
+    std::vector<KEv> ev; for (std::uint32_t t = from; t < to; t += 100000) ev.push_back(kev(t, d)); return ev;
+}
+
+static void courseTests() {
+    const V::Limits l = []{ V::Limits x = limits(600, 1000, 300); x.unit_mm = 3.9f; return x; }();   // w_max 100 °/s
+    const float dw_max = 360.0f * kTickUs * 1e-6f * 1.01f + 1e-4f;
+    // Format
+    {
+        std::uint8_t d[V::kFrameLen]; courseBytes(d, true, 0, 90.0f, 360, 1800);
+        V::Frame f; check(V::parseFrame(d, sizeof d, f) && f.course_mode && f.course_seq && near(f.dpsi, 90.0f, 1e-4f) && f.w == 0 && !f.kappa_mode,
+                          "Kursziel: bit2, Feld w = Δψ 0,1°, Wechselbit bit4");
+        d[0] = V::kFlagCourse | V::kFlagKappa; check(!V::parseFrame(d, sizeof d, f), "Krümmung + Kursziel -> verworfen");
+        d[0] = V::kFlagCourseSeq; check(!V::parseFrame(d, sizeof d, f), "Wechselbit ohne Kursziel -> verworfen");
+        d[0] = 8; check(!V::parseFrame(d, sizeof d, f), "bit3 (Strecke, noch nicht) -> verworfen");
+        check((V::kCaps & 2) != 0, "Fähigkeitsbyte bit1 Kursziel");
+    }
+    struct Case { const char* name; float goal; int alpha, jw; };
+    for (const Case& c : {Case{"kurs_90", 90, 360, 1800}, Case{"kurs_m180", -180, 360, 1800}, Case{"kurs_klein", 2, 360, 1800},
+                          Case{"kurs_steil", 45, 1000, 5000}, Case{"kurs_ohne_ruck", 90, 360, 0}}) {
+        std::uint8_t d[V::kFrameLen]; courseBytes(d, false, 0, c.goal, c.alpha, c.jw);
+        const auto tr = runScenario(c.name, l, repeat(d, 0, 5000000), 5.0f);
+        const Turn r = turned(tr, c.goal);
+        std::printf("       %s: gedreht %.3f°, Überschwingen %.3f°, w bis %.1f °/s, Ende Rest %.3f°\n",
+                    c.name, double(r.angle), double(r.over), double(r.wpk), double(tr.back().rest));
+        char what[160];
+        std::snprintf(what, sizeof what, "%s: Ziel auf ±0,5°, Überschwingen < 1°, angekommen, w ≤ w_max, Drehbeschleunigung ≤ alpha", c.name);
+        check(std::fabs(r.angle - c.goal) < 0.5f && r.over < 1.0f && tr.back().done && r.wpk <= 100.0f + 1e-3f
+              && r.dw <= std::max(dw_max, float(c.alpha) * kTickUs * 1e-6f * 1.01f + 1e-4f) && tr.back().w == 0, what);
+    }
+    {   // gleiche Rahmen (gleiches Wechselbit) drehen nicht nochmal, neues Wechselbit setzt ein neues Ziel ab dem Generatorwinkel
+        std::uint8_t a[V::kFrameLen], b[V::kFrameLen]; courseBytes(a, false, 0, 90, 360, 1800); courseBytes(b, true, 0, 45, 360, 1800);
+        auto ev = repeat(a, 0, 600000); auto e2 = repeat(b, 600000, 5000000); ev.insert(ev.end(), e2.begin(), e2.end());
+        const auto tr = runScenario("kurs_neu", l, ev, 5.0f);
+        const std::size_t k = 600000 / kTickUs;
+        const Turn first = turned(std::vector<KStep>(tr.begin(), tr.begin() + k), 90);
+        const Turn r = turned(tr, 0);
+        check(std::fabs(r.angle - (first.angle + 45)) < 0.5f && tr.back().done, "neues Wechselbit mitten im Drehen: Ziel = Winkel bei Empfang + 45°");
+        const auto tk = runScenario("kurs_halten", l, repeat(a, 0, 6000000), 6.0f);
+        check(std::fabs(turned(tk, 90).angle - 90) < 0.5f, "Wiederholung mit gleichem Wechselbit: nur einmal 90°");
+    }
+    {   // Wächter: bremst die Drehung, Ziel bleibt offen
+        std::uint8_t a[V::kFrameLen]; courseBytes(a, false, 0, 180, 360, 1800);
+        const auto tr = runScenario("kurs_waechter", l, repeat(a, 0, 500000), 3.0f);
+        check(tr.back().timed_out && tr.back().w == 0 && !tr.back().done && tr.back().rest > 10, "Wächter: Drehung gebremst, nicht angekommen");
+    }
+    {   // im Fahren: v bleibt, Drehung auf 90° (Bogen)
+        std::uint8_t a[V::kFrameLen]; courseBytes(a, false, 46, 90, 360, 1800);
+        const auto tr = runScenario("kurs_fahrt", l, repeat(a, 0, 4000000), 4.0f);
+        check(tr.back().v == 46 && tr.back().done && std::fabs(turned(tr, 90).angle - 90) < 0.5f, "im Fahren: v 46 bleibt, 90° gedreht");
+    }
+    {   // aus dem Krümmungsbetrieb (w ≠ 0) ins Kursziel, dann zurück auf den Drehratenweg
+        std::uint8_t k[V::kFrameLen], c[V::kFrameLen], r[V::kFrameLen];
+        kappaBytes(k, true, 46, 128, 641, 2.0f, 360, 1800); courseBytes(c, false, 0, -30, 360, 1800);
+        frameBytes(r, true, 0, 128, 641, 0, 360, 1800);
+        auto ev = repeat(k, 0, 2000000); auto e2 = repeat(c, 2000000, 5000000); auto e3 = repeat(r, 5000000, 6000000);
+        ev.insert(ev.end(), e2.begin(), e2.end()); ev.insert(ev.end(), e3.begin(), e3.end());
+        const auto tr = runScenario("kurs_aus_kappa", l, ev, 6.0f);
+        const std::size_t a = 2000000 / kTickUs, b = 5000000 / kTickUs;
+        float dwk = 0; for (std::size_t i = a; i < b; ++i) dwk = std::max(dwk, std::fabs(tr[i].w - tr[i - 1].w));
+        const Turn rr = turned(std::vector<KStep>(tr.begin() + a - 1, tr.begin() + b), -30);
+        check(dwk <= dw_max && std::fabs(rr.angle + 30) < 0.5f && tr[b - 1].done, "aus der Kurve ins Kursziel: ohne Sprung, −30° ab Empfang");
+        check(!tr.back().course_on && tr.back().w == 0, "Drehratenweg beendet das Kursziel");
+    }
+    {   // Diagnose
+        V::State s; V::Frame f; f.course_mode = true; f.dpsi = 0.2f; V::receive(s, l, f, 0); V::tick(s, l, 0); V::tick(s, l, 4000);
+        std::uint8_t g[V::kDiagLen]; V::fillDiag(g, s, l);
+        check((g[0] & 32) && (g[0] & 64) && g[1] == V::kCaps, "0x1a lesen: bit5 Kursziel, bit6 erreicht (Rest 0,2° < 0,5°)");
+    }
+}
+
 int main() {
     generatorTests();
     kappaTests();
+    courseTests();
     // --- Format
     {
         std::uint8_t d[V::kFrameLen]; frameBytes(d, true, -350, 800, 4000, -455, 120, 900);
