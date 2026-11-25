@@ -1687,6 +1687,10 @@
 </thead>
 <tbody>
 <tr>
+<td><code>App._liegt_idle()</code></td>
+<td>not balancing (set down, fallen): every mode except <code>idle</code>, <code>manual</code>, <code>pet</code> ends at once → <code>idle</code>, before the behaviour runs; those modes cannot be selected while lying (since 2026-11-24; explore had blocked gaps and written the local map into the room map while lying)</td>
+</tr>
+<tr>
 <td><code>behaviors.safety()</code></td>
 <td>not balancing → stop; blind (no FloorNet) → stop; centre free space &lt; <code>blocked_free</code>·0.6 → no forward; &lt; <code>slow_free</code> → scale v (≥ 0.25); TTC &lt; <code>ttc_stop_s</code> (0.8 s) → no forward; free space and TTC skipped for a push of the path follower (length limited, see <code>push_*</code>)</td>
 </tr>

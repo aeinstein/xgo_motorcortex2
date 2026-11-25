@@ -1654,7 +1654,11 @@ Status JSON: <code>odom.src</code> = <code>räder</code> | <code>befehl</code>, 
 </tr>
 <tr>
 <td>Braking</td>
-<td>points the path check brakes for count as confirmed and occupied at once (<code>grid.mark_blocking</code>). RiderPi 2026-11-11: the Rider braked for obstacles the map never showed (1382 unconfirmed cells, 1192 occupied)</td>
+<td>points the path check brakes for count as confirmed and occupied at once (<code>grid.mark_blocking</code>). RiderPi 2026-11-11: the Rider braked for obstacles the map never showed (1382 unconfirmed cells, 1192 occupied). FloorNet's free rays erase them again (chair legs, cabinet edges: floor visible behind)</td>
+</tr>
+<tr>
+<td>Brake spots</td>
+<td>full brake already in tight mode: hit points + <code>grid.brake_block_r_m</code> 0.18 m blocked for planner and goal search for <code>grid.brake_block_s</code> 300 s, not erased by free rays; replan at once. Not on every full brake: in front of the 25 cm door (sim <code>spalt</code>) it brakes with the normal radius first and then passes in tight mode; storing those cells closed the door (known floor 43 instead of 82 %). Red circles in <code>/map.png</code>, count <code>grid.bremsstellen</code> in <code>/status</code></td>
 </tr>
 <tr>
 <td>Pitch, pose</td>
@@ -1813,7 +1817,7 @@ Status JSON <code>grid</code>: <code>pose [x m, y m, yaw °]</code>, <code>start
 </tr>
 <tr>
 <td>Blocked</td>
-<td>occupied cells (<code>&gt; l_show</code>) inflated by <code>home.squeeze_m</code> 0.09 m (direct neighbours); cells within <code>home.inflate_m</code> 0.23 m cost <code>squeeze_cost</code> 20 more (not on the driven path), so the path squeezes through only if there is no other way. Cleared within <code>inflate_m</code> around pose and goal (drift)</td>
+<td>occupied cells (<code>&gt; l_show</code>) inflated by <code>home.squeeze_m</code> 0.09 m (direct neighbours); cells within <code>home.inflate_m</code> 0.23 m cost <code>squeeze_cost</code> 20 more (not on the driven path), so the path squeezes through only if there is no other way. Cleared within <code>inflate_m</code> around pose and goal (drift), except the confirmed local-map points themselves (since 2026-11-24: he had planned through a table leg 10 cm ahead). Local-map points block every cell whose centre is closer than <code>home.merk_r_m</code> 0.08 m, from their true coordinates (<code>planner.merk_maske</code>, like the arc check in tight spots), not their cell plus <code>squeeze_m</code>: on the 5 cm grid a 15 cm gap between chair and table legs looked like 20 cm. Now 15 cm is closed, 25 cm open, wherever the gap lies on the grid</td>
 </tr>
 <tr>
 <td>Narrowest gap</td>
@@ -1833,7 +1837,7 @@ Status JSON <code>grid</code>: <code>pose [x m, y m, yaw °]</code>, <code>start
 </tr>
 <tr>
 <td>Local obstacles</td>
-<td>confirmed <code>LocalMap</code> points within 1.5 m (what <code>_arc_check</code> brakes for) are blocked for planning (<code>use_localmap</code>). Explore (since 2026-11-23): the best of the top 4 frontier groups that is reachable with them wins; a group reachable only without them (room map alone, e.g. through chair legs only the local map knows) is taken last and counts as tight (<code>tight_max</code>)</td>
+<td>confirmed <code>LocalMap</code> points within <code>localmap_reach_m</code> 2.0 m (1.0 until 2026-11-24: he planned from 2 m towards a passage camera and local map already saw closed) (what <code>_arc_check</code> brakes for) are blocked for planning (<code>use_localmap</code>). Explore (since 2026-11-23): the best of the top 4 frontier groups that is reachable with them wins; a group reachable only without them (room map alone, e.g. through chair legs only the local map knows) is taken last and counts as tight (<code>tight_max</code>), but only if that path does not cross a local-map point (<code>explore.ziel_sicht</code>, since 2026-11-24)</td>
 </tr>
 <tr>
 <td>Following</td>
@@ -1841,7 +1845,7 @@ Status JSON <code>grid</code>: <code>pose [x m, y m, yaw °]</code>, <code>start
 </tr>
 <tr>
 <td>Tight spot</td>
-<td>occupied map cell within <code>tight_m</code> 0.21 m of the pose or of the path up to 0.45 m ahead (normal paths keep 0.23 m): lookahead 0.2 m, speed × 0.6, turn in place above 30° until below 10°, path check with <code>map.radius_tight_m</code> 0.08 m instead of 0.18 m, and aim at the middle between the nearest confirmed <code>LocalMap</code> points left and right ahead (the room map places a narrow gap centimetres off). Cost on the Pi: four 11 × 11 cell windows per control step while following a path</td>
+<td>occupied map cell within <code>tight_m</code> 0.21 m of the pose or of the path up to 0.45 m ahead (normal paths keep 0.23 m): lookahead 0.2 m, speed × 0.6, turn in place above 30° until below 10°, path check with <code>map.radius_tight_m</code> 0.08 m instead of 0.18 m, and aim at the middle between the nearest confirmed <code>LocalMap</code> points left and right ahead (the room map places a narrow gap centimetres off), unless the path turns a corner within <code>tight_center_knick_m</code> 0.5 m (since 2026-11-24: he aimed straight at the gap middle into a cabinet while the path went left round its corner). Cost on the Pi: four 11 × 11 cell windows per control step while following a path</td>
 </tr>
 <tr>
 <td>Goal</td>
@@ -1994,7 +1998,7 @@ Status JSON <code>grid</code>: <code>pose [x m, y m, yaw °]</code>, <code>start
 </tr>
 <tr>
 <td>Frontier</td>
-<td>reachable free cell next to unknown; groups ≥ <code>min_cluster_m</code> 0.4 m. Only when none of those is left: groups close to obstacles (within <code>home.inflate_m</code>, e.g. the mouth of a 25 cm gap, 3–5 cells) ≥ <code>squeeze_cluster_m</code> 0.15 m with ≥ <code>min_unknown_m2</code> 0.05 m² of connected unknown behind. Reachability from the room map only, the local map only shapes the path</td>
+<td>reachable free cell next to unknown; groups ≥ <code>min_cluster_m</code> 0.4 m. Only when none of those is left: groups close to obstacles (within <code>home.inflate_m</code>, e.g. the mouth of a 25 cm gap, 3–5 cells) ≥ <code>squeeze_cluster_m</code> 0.15 m with ≥ <code>min_unknown_m2</code> 0.05 m² of connected unknown behind. Reachability from the room map only, the local map only shapes the path. Since 2026-11-24 (RiderPi: goal behind a bin only the local map knew): the goal must be visible from its stop point (straight line free in room map and local map, <code>ziel_sicht</code>), and the path to it uses known floor only (<code>weg_bekannt</code>; otherwise it led through another opening into the unknown and to the spot from behind). The fallback path without the local map must pass every confirmed local-map point by <code>merk_abstand_m</code> 0.08 m (= <code>map.radius_tight_m</code>; it had planned into a 10 cm slot between a box and a door, where the arc check braked). Cells within that distance of confirmed local-map points do not count as unknown, so a hole in a drawn wall that the local map sees as wall is no frontier (since 2026-11-24, RiderPi: corner of a niche). Cost on the Pi: ≤ 8 lines per goal search in the planner thread, nothing per frame</td>
 </tr>
 <tr>
 <td>Choice</td>
@@ -2007,6 +2011,10 @@ Status JSON <code>grid</code>: <code>pose [x m, y m, yaw °]</code>, <code>start
 <tr>
 <td>Tight-only goals</td>
 <td>compete with the others at <code>tight_penalty_s</code> 3 s extra (since 2026-11-15; before and in the simulator, -1: only when no goal with clearance is left, which made him turn around for a goal behind him while a tight spot lay straight ahead); at most <code>tight_max</code> 10 per run (3 until 2026-11-15 and in the simulator: holes in drawn walls look like gaps; RiderPi 2026-11-15 left 10 spots behind tight places with 3)</td>
+</tr>
+<tr>
+<td>Speed</td>
+<td>path follower brakes by the <code>home.end_*</code> profile before the first local-map obstacle along the path or on the command arc (up to 2.5 m) and before sharp corners (<code>home.free_slow</code>), not only by the arc check</td>
 </tr>
 <tr>
 <td>Arrival</td>

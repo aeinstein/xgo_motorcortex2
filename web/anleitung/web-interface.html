@@ -1602,11 +1602,11 @@
 <tbody>
 <tr>
 <td>Header (fixed, page padded by its measured height)</td>
-<td>host, connection, mode, state (firmware <code>state</code>: balancing / lying = set down (254) / fallen (0) / ready (253) / battery low / actuator fault / fault; mapped in the browser), battery (green ≥ 40 %, yellow ≥ 20 %, red &lt; 20 %), recording (only while switched on), WLAN (signal dBm: green ≥ −60, yellow ≥ −70, red below; ↓/↑ kB/s of <code>wlan0</code>), language DE/EN, <strong>⤓</strong> Absetzen (254, shown only while balancing), <strong>⤒</strong> Aufspringen (253, confirm) and <strong>↑</strong> Aufstehen (arm, 255) (both shown only while lying; all three without connection; header buttons are icon only), pipeline start/stop (icon ▶/■), <strong>Aufzeichnen</strong> (icon ●, red; white on red while recording; raw recording, only shown with <code>rawrec</code>), <strong>⚙</strong> Einstellungen (always icon only; modal, see below), <strong>☾</strong> Ruhe (icon only), <strong>STOPP</strong>; second header row: mode selector, target class and <em>Bodenmodell</em> (described under Left)</td>
+<td>host, connection, mode, state (firmware <code>state</code>: balancing / lying = set down (254) / fallen (0) / ready (253) / battery low / actuator fault / fault; mapped in the browser), battery (green ≥ 40 %, yellow ≥ 20 %, red &lt; 20 %), recording (only while switched on), WLAN (signal dBm: green ≥ −60, yellow ≥ −70, red below; ↓/↑ kB/s of <code>wlan0</code>), language DE/EN, <strong>⤓</strong> Absetzen (254, shown while balancing, fallen (0) or armed and ready (253)), <strong>⤒</strong> Aufspringen (253, confirm) and <strong>↑</strong> Aufstehen (arm, 255) (both shown only while lying; all three without connection; header buttons are icon only), pipeline start/stop (icon ▶/■), <strong>Aufzeichnen</strong> (icon ●, red; white on red while recording; raw recording, only shown with <code>rawrec</code>), <strong>⚙</strong> Einstellungen (always icon only; modal, see below), <strong>☾</strong> Ruhe (icon only), <strong>STOPP</strong>; second header row: mode selector, target class and <em>Bodenmodell</em> (described under Left)</td>
 </tr>
 <tr>
 <td>Left</td>
-<td>camera image (WebSocket) with camera bar below it: exposure (ms, auto), gain (1–63.9×, auto), icon toggles at the top right of the image (overlay, blue = on): <strong>⇕</strong> <em>Bild am IMU-Nick festhalten</em> (browser shifts the <code>&lt;img&gt;</code> by <code>row_stand − row_imu</code> via CSS, no pipeline cost; stored in <code>localStorage</code>; normal pose against the pure IMU pitch without image share); <strong>⟲</strong> <em>Roll ausgleichen</em> (browser rotates the <code>&lt;img&gt;</code> by the IMU roll about the horizon point at <code>cx</code>; vertical edges stand vertical if the roll is right; <code>localStorage</code> <code>xgonav.roll</code>), <strong>↝</strong> <em>Planerbahn</em> (browser projects the planner path <code>/status</code> → <code>plan</code> (map coordinates) onto the image: pinhole over the floor plane with <code>kamera</code> (f, <code>cam_h_m</code>, <code>cam_fwd_m</code>) from <code>/status</code>, pose and horizon row from the <code>nick=3</code> header, roll about (<code>cx</code>, horizon row) like <code>freespace.roll_columns</code>; segments behind the camera are clipped, end point as dot; orange; default on, <code>localStorage</code> <code>xgonav.plan</code>; no pipeline cost, <code>/status</code> +plan points at 1 Hz (plus <code>erwartet</code> [x, y]: expected position of a lost target, or null), <code>/ws</code> +16 bytes and one lock per frame), <strong>⌖</strong> <em>Bildmitte</em> (browser draws the configured image centre over the <code>&lt;img&gt;</code> as SVG: dashed column <code>cx</code> = W/2 (driving direction, mounting yaw is in the lens table) from the frame header, circle at row H/2; follows both CSS transforms; default on, <code>localStorage</code> <code>xgonav.mitte</code>; no pipeline cost), actual values (help in the ⓘ tooltip); mode selector (Idle · Hand · Follow · Explore · Approach · Zum Start) + target class dropdown (classes from <code>?a=detector</code>, reloaded after an xgonav restart, last choice in <code>localStorage</code>; disabled when YOLO is off), pipeline card with recording status, free space and status tiles, <em>Bodenmodell</em> dropdown + <em>Aktivieren</em> (nets from <code>?a=floornet</code>, loaded once per page and after a restart or switch; disabled while <code>net</code> is not a symlink)</td>
+<td>camera image (WebSocket) with camera bar below it: exposure (ms, auto), gain (1–63.9×, auto), icon toggles at the top right of the image (overlay, blue = on): <strong>⇕</strong> <em>Bild am IMU-Nick festhalten</em> (browser shifts the <code>&lt;img&gt;</code> by <code>row_stand − row_imu</code> minus its running mean (~3 s) via CSS, so only the pitch oscillation is removed and the image fills the frame on average, no pipeline cost; stored in <code>localStorage</code>; normal pose against the pure IMU pitch without image share); <strong>⟲</strong> <em>Roll ausgleichen</em> (browser rotates the <code>&lt;img&gt;</code> by the IMU roll about the horizon point at <code>cx</code>; vertical edges stand vertical if the roll is right; <code>localStorage</code> <code>xgonav.roll</code>), <strong>↝</strong> <em>Planerbahn</em> (browser projects the planner path <code>/status</code> → <code>plan</code> (map coordinates) onto the image: pinhole over the floor plane with <code>kamera</code> (f, <code>cam_h_m</code>, <code>cam_fwd_m</code>) from <code>/status</code>, pose and horizon row from the <code>nick=3</code> header, roll about (<code>cx</code>, horizon row) like <code>freespace.roll_columns</code>; segments behind the camera are clipped, end point as dot; orange; default on, <code>localStorage</code> <code>xgonav.plan</code>; no pipeline cost, <code>/status</code> +plan points at 1 Hz (plus <code>erwartet</code> [x, y]: expected position of a lost target, or null), <code>/ws</code> +16 bytes and one lock per frame), <strong>⌖</strong> <em>Bildmitte</em> (browser draws the configured image centre over the <code>&lt;img&gt;</code> as SVG: dashed column <code>cx</code> = W/2 (driving direction, mounting yaw is in the lens table) from the frame header, circle at row H/2; follows both CSS transforms; default on, <code>localStorage</code> <code>xgonav.mitte</code>; no pipeline cost), actual values (help in the ⓘ tooltip); mode selector (Idle · Hand · Follow · Explore · Approach · Zum Start) + target class dropdown (classes from <code>?a=detector</code>, reloaded after an xgonav restart, last choice in <code>localStorage</code>; disabled when YOLO is off), pipeline card with recording status, free space and status tiles, <em>Bodenmodell</em> dropdown + <em>Aktivieren</em> (nets from <code>?a=floornet</code>, loaded once per page and after a restart or switch; disabled while <code>net</code> is not a symlink)</td>
 </tr>
 <tr>
 <td>Lage (open by default, right column top)</td>
@@ -2181,11 +2181,11 @@ WebSocket helpers shared with <code>live.php</code> in <code>tools/ws.inc.php</c
 </tr>
 <tr>
 <td>Rider → browser</td>
-<td><code>arecord -D plughw:0,0 -f S16_LE -r 8000 -c 1</code>, binary frames of 640 B (40 ms); dropped while &gt; 0.5 s unsent</td>
+<td><code>arecord -D plughw:CARD=wm8960soundcard,DEV=0 -f S16_LE -r 8000 -c 1</code>, binary frames of 640 B (40 ms); dropped while &gt; 0.5 s unsent</td>
 </tr>
 <tr>
 <td>Browser → Rider</td>
-<td>binary frames S16_LE 8 kHz mono → <code>aplay -D plughw:0,0</code>; backlog &gt; 0.5 s cut to the newest 0.2 s</td>
+<td>binary frames S16_LE 8 kHz mono → <code>aplay -D plughw:CARD=wm8960soundcard,DEV=0</code>; backlog &gt; 0.5 s cut to the newest 0.2 s</td>
 </tr>
 <tr>
 <td>Server → client (text)</td>
@@ -2201,7 +2201,7 @@ WebSocket helpers shared with <code>live.php</code> in <code>tools/ws.inc.php</c
 </tr>
 <tr>
 <td>End</td>
-<td>browser closes, mode leaves manual or xgonav unreachable (checked every 1 s), <code>arecord</code>/<code>aplay</code> ends; then both processes are killed, <code>hw:0,0</code> free for sound direction (retry ≤ <code>[ortung] retry_s</code> 10 s)</td>
+<td>browser closes, mode leaves manual or xgonav unreachable (checked every 1 s), <code>arecord</code>/<code>aplay</code> ends; then both processes are killed, <code>hw:CARD=wm8960soundcard,DEV=0</code> free for sound direction (retry ≤ <code>[ortung] retry_s</code> 10 s)</td>
 </tr>
 <tr>
 <td>Idle</td>
@@ -2338,6 +2338,10 @@ With full processing, the charging dock current is insufficient to charge.</p>
 <td>hardware encoder q95 (<code>output.record_jpeg_q_hw</code>), fallback libjpeg q92; <code>meta.jsonl</code> <code>"jpeg"</code> per image (since 2026-11-19)</td>
 </tr>
 <tr>
+<td>Map images</td>
+<td>every <code>output.record_map_s</code> 2 s (0 = off): room map with local-map points as <code>karte/&lt;idx&gt;.png</code> (<code>record_map_px</code> 480, <code>record_map_view_m</code> 6 m around the pose; same picture as <code>/map.png</code>), <code>idx</code> = JPEG taken at that moment. ~10 ms per image in the recording thread (since 2026-11-24)</td>
+</tr>
+<tr>
 <td>Condition</td>
 <td>switch on, state = balancing, pipeline running; only frames newer than the start</td>
 </tr>
@@ -2351,7 +2355,7 @@ With full processing, the charging dock current is insufficient to charge.</p>
 </tr>
 <tr>
 <td>Cost on the Pi</td>
-<td>off: no thread. On, lying: 5 attribute reads/s. Recording: one JPEG per frame in its own thread on <code>render_cpus</code>, never in the main loop; frames are skipped if it falls behind (gaps in <code>idx</code>)</td>
+<td>off: no thread. On, lying: 5 attribute reads/s. Recording: one JPEG per frame in its own thread on <code>render_cpus</code>, never in the main loop; frames are skipped if it falls behind (gaps in <code>idx</code>); plus one map PNG every 2 s</td>
 </tr>
 </tbody>
 </table>

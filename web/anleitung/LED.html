@@ -1173,6 +1173,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#pi-shutdown-patch-0028" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pi shutdown (patch 0028)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#low-battery" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1370,6 +1381,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#pi-shutdown-patch-0028" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pi shutdown (patch 0028)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#low-battery" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1495,7 +1517,7 @@ Stock firmware R-1.1.3 may differ (not analysed).</p>
 <tr>
 <td><strong>Red, steady</strong></td>
 <td>constant</td>
-<td><strong>Tipped over / tilt fault</strong>. Also <code>mode 0</code>.</td>
+<td><strong>Tipped over / tilt fault</strong>. Also <code>mode 0</code>, upright too. Patch 0027: no self-start from mode 0 (stock: balanced again after ~500 upright control ticks while still red); only a command arms it (255, stand-up 253), then pink.</td>
 </tr>
 <tr>
 <td><strong>Red, fast blink</strong> (~5 Hz)</td>
@@ -1511,6 +1533,23 @@ Stock firmware R-1.1.3 may differ (not analysed).</p>
 <td><strong>Amber</strong> (R200 G70 B0), steady</td>
 <td>constant</td>
 <td><strong>Manually stopped</strong> — <code>!stop</code>, action 0x3e=254, switch or app.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="pi-shutdown-patch-0028">Pi shutdown (patch 0028)<a class="headerlink" href="#pi-shutdown-patch-0028" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Colour</th>
+<th>Pattern</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Blue</strong> (R0 G0 B200), steady, all 4</td>
+<td>constant</td>
+<td><strong>Pi shut down</strong> (action 234, set by <code>xgo-shutdown-led.service</code> on Pi shutdown/reboot). Before every other display, nothing else changes; cleared by action 233 (xgonav on start) or ESP restart.</td>
 </tr>
 </tbody>
 </table>
@@ -1587,7 +1626,7 @@ Stock firmware R-1.1.3 may differ (not analysed).</p>
 </tr>
 <tr>
 <td style="text-align: right;">0</td>
-<td>tilt/fall fault, "stranded", runaway protection</td>
+<td>tilt/fall fault, "stranded", runaway protection; stays until a command (patch 0027)</td>
 <td>red (tilt = steady, fall = fast blink)</td>
 </tr>
 <tr>
@@ -1624,12 +1663,12 @@ Stock firmware R-1.1.3 may differ (not analysed).</p>
 </table>
 <h2 id="cheat-sheet">Cheat sheet<a class="headerlink" href="#cheat-sheet" title="Permanent link">&para;</a></h2>
 <ul>
-<li><strong>Red</strong> = problem/stopped (pattern gives cause: steady = tip, fast = fall, slow = fault, battery timing = battery).</li>
+<li><strong>Red</strong> = problem/stopped (pattern gives cause: steady = tip, fast = fall, slow = fault, battery timing = battery). Does not balance by itself (patch 0027).</li>
 <li><strong>Amber</strong> = deliberately stopped.</li>
 <li><strong>Green</strong> = driving (direction).</li>
-<li><strong>Blue</strong> = pitch trim.</li>
+<li><strong>Blue</strong> = pitch trim (blinking); steady blue = Pi shut down (patch 0028).</li>
 <li><strong>Pink circling</strong> = gyro calibrating, keep still.</li>
-<li><strong>Pink</strong> = powered on / armed, or idle with default user LEDs.</li>
+<li><strong>Pink</strong> = powered on / armed (mode 253 balances by itself once upright), or idle with default user LEDs.</li>
 <li><strong>Other steady colour</strong> = idle (user LEDs set via <code>!rgb</code> / <code>leds/0..3</code>).</li>
 </ul>
 <p>Read state live: <code>!status</code> → <code>mode</code>, <code>driving</code>, <code>reason</code>, <code>last_stop_reason</code>. Set LEDs (visible whenever no state display is due, also while lying; reset to pink by arming):

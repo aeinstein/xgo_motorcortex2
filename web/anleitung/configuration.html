@@ -1974,7 +1974,7 @@
 <td><code>turn_min_w</code></td>
 <td>0.06</td>
 <td></td>
-<td>lower bound of the shared turn controller <code>behaviors.dreh_w</code> (firmware ignores smaller turn values): path follower turning in place and final alignment, <code>pet</code> turns, fear of the dark. Since 2026-11-23; replaces <code>pet.turn_min_w</code>, <code>dunkel.turn_min_w</code> and <code>behavior.search_w</code> as the path follower's minimum</td>
+<td>lower bound of the shared turn controller <code>behaviors.dreh_w</code> (firmware ignores smaller turn values): path follower turning in place and final alignment, <code>pet</code> turns, fear of the dark. Since 2026-11-23; replaces <code>pet.turn_min_w</code>, <code>dunkel.turn_min_w</code> and <code>behavior.search_w</code> as the path follower's minimum. Since 2026-11-24 also a floor after <code>tempo</code> in <code>Robot.drive</code> for turns on the spot (v = 0, requested ≥ <code>turn_min_w</code>): with tempo 0.75 a sent 0.045 left the Rider standing in the firmware dead band</td>
 </tr>
 <tr>
 <td><code>tempo</code></td>
@@ -2047,6 +2047,42 @@
 <td>0.8 / 2.0</td>
 <td></td>
 <td>per second</td>
+</tr>
+<tr>
+<td><code>vel_frame</code></td>
+<td>true</td>
+<td></td>
+<td>drive frame of firmware 0029–0032 (<code>xgonav/fahrrahmen.py</code>): used when the driver has <code>/proc/XGORider/vel</code> and the firmware answers reg 0x1a, else bytes. Sends target m/s (normalised × <code>vx_limit</code>) and °/s (× <code>vyaw_limit_dps</code>) with acceleration and jerk; the firmware ramps (S-curve) and controls speed and turn rate. Then the Pi ramp (<code>accel_v</code>/<code>accel_w</code>), <code>speed_ctrl</code> and the <code>turn_min_w</code> floor in <code>Robot.drive</code> are off; <code>robot.command</code> is the firmware's setpoint, recomputed on the Pi. Simulator follows it with 0.15 s / 0.1 s lag (assumption until measured)</td>
+</tr>
+<tr>
+<td><code>fw_speed_unit_mm</code></td>
+<td>8.4</td>
+<td></td>
+<td>mm/s per firmware speed unit (2026-11-05: command 0.15 → 27 cm/s at 32.1 units); all drive values to the firmware (v, a, jerk, v_max) are divided by it. Measure: <code>tools/fw_einheit.py</code> (<a href="calibration.html">calibration.md</a>)</td>
+</tr>
+<tr>
+<td><code>vel_accel_mps2</code> / <code>vel_decel_mps2</code> / <code>vel_jerk_mps3</code></td>
+<td>0.5 / 1.0 / 2.5</td>
+<td></td>
+<td>faster in the same direction / slower or reversing; cautious start values, to be measured (0.5 m/s² ≈ 2.9° lean)</td>
+</tr>
+<tr>
+<td><code>vel_brake_mps2</code> / <code>vel_brake_jerk_mps3</code></td>
+<td>1.5 / 10</td>
+<td></td>
+<td><code>drive(brake=True)</code></td>
+</tr>
+<tr>
+<td><code>vel_alpha_dps2</code> / <code>vel_jerk_w_dps3</code></td>
+<td>360 / 1800</td>
+<td></td>
+<td>turning</td>
+</tr>
+<tr>
+<td><code>vel_timeout_ms</code> / <code>vel_limits_s</code></td>
+<td>500 / 2.0</td>
+<td></td>
+<td>firmware watchdog (no frame → ramp to 0; above <code>keepalive_s</code>); <code>vel_limits</code> (v_max = <code>max_v</code> × <code>vx_limit</code>, w_max = <code>max_w</code> × <code>vyaw_limit_dps</code>) rewritten this often (an ESP restart loses it)</td>
 </tr>
 <tr>
 <td><code>keepalive_s</code></td>
@@ -2635,7 +2671,7 @@
 </tbody>
 </table>
 <h3 id="output"><code>[output]</code><a class="headerlink" href="#output" title="Permanent link">&para;</a></h3>
-<p><code>web_host</code> 127.0.0.1, <code>web_port</code> 8088 (0 = off), <code>web_fps</code> 10, <code>jpeg_native</code> true (browser JPEG in the hardware encoder <code>jpeg_dev</code> = <code>/dev/video31</code>, fallback <code>cv2.imencode</code>), <code>lcd_fifo</code> <code>""</code> = off (sim: <code>/tmp/lcd0</code>), <code>lcd_fps</code> 15, <code>record_dir</code> <code>~/fahrt</code> (raw recording), <code>record_min_free_mb</code> 500 (below: recording switches itself off), <code>record_jpeg_q_hw</code> 95 (raw-recording JPEG in the hardware encoder; RiderPi: 4.6 instead of 8.6 ms CPU per image, mean deviation 0.70 vs 0.63, 51 vs 41 KB; above 95 only larger), <code>record_jpeg_q_cv</code> 92 (libjpeg fallback). <code>meta.jsonl</code> names the encoder per image (<code>"jpeg": "hw95"</code>/<code>"cv92"</code>; missing before 2026-11-19 = libjpeg q92).</p>
+<p><code>web_host</code> 127.0.0.1, <code>web_port</code> 8088 (0 = off), <code>web_fps</code> 10, <code>jpeg_native</code> true (browser JPEG in the hardware encoder <code>jpeg_dev</code> = <code>/dev/video31</code>, fallback <code>cv2.imencode</code>), <code>lcd_fifo</code> <code>""</code> = off (sim: <code>/tmp/lcd0</code>), <code>lcd_fps</code> 15, <code>record_dir</code> <code>~/fahrt</code> (raw recording), <code>record_min_free_mb</code> 500 (below: recording switches itself off), <code>record_jpeg_q_hw</code> 95 (raw-recording JPEG in the hardware encoder; RiderPi: 4.6 instead of 8.6 ms CPU per image, mean deviation 0.70 vs 0.63, 51 vs 41 KB; above 95 only larger), <code>record_jpeg_q_cv</code> 92 (libjpeg fallback), <code>record_map_s</code> 2.0 (room map PNG every n s into <code>karte/</code>, 0 = off), <code>record_map_px</code> 480, <code>record_map_view_m</code> 6.0. <code>meta.jsonl</code> names the encoder per image (<code>"jpeg": "hw95"</code>/<code>"cv92"</code>; missing before 2026-11-19 = libjpeg q92).</p>
 <h3 id="emotion"><code>[emotion]</code><a class="headerlink" href="#emotion" title="Permanent link">&para;</a></h3>
 <p><code>enabled</code> true, <code>dir</code> <code>/opt/xgonav/emotions</code>, <code>fifo</code> <code>/tmp/lcd0</code>, <code>gap_s</code> 5, <code>lost_s</code> 2, <code>battery_low</code> 20 %, <code>battery_repeat_s</code> 300.
 Sounds: <code>sound</code> true, <code>sound_dir</code> <code>/opt/xgonav/sounds</code>, <code>sound_found</code> <code>freude.wav</code>, <code>sound_lost</code> <code>trauer.wav</code>, <code>sound_device</code> <code>""</code> (ALSA default).</p>
@@ -2861,7 +2897,7 @@ Sounds: <code>sound</code> true, <code>sound_dir</code> <code>/opt/xgonav/sounds
 </tr>
 <tr>
 <td><code>device</code>, <code>rate</code>, <code>block</code></td>
-<td><code>hw:0,0</code>, 48000, 1024</td>
+<td><code>hw:CARD=wm8960soundcard,DEV=0</code>, 48000, 1024</td>
 <td><code>arecord</code> capture; block = power of two</td>
 </tr>
 <tr>
@@ -3047,6 +3083,18 @@ Sounds: <code>sound</code> true, <code>sound_dir</code> <code>/opt/xgonav/sounds
 <tr>
 <td><code>mark_blocking</code></td>
 <td>true</td>
+</tr>
+<tr>
+<td><code>brake_block_s</code></td>
+<td>300</td>
+</tr>
+<tr>
+<td><code>brake_block_r_m</code></td>
+<td>0.18</td>
+</tr>
+<tr>
+<td><code>brake_block_max_mps</code></td>
+<td>0.25</td>
 </tr>
 <tr>
 <td><code>free_range_m</code></td>
@@ -3287,6 +3335,11 @@ Sounds: <code>sound</code> true, <code>sound_dir</code> <code>/opt/xgonav/sounds
 <td><code>end_decel_mps2</code> / <code>end_lag_s</code> / <code>end_min_v</code></td>
 <td>0.25 / 1.0 / 0.15</td>
 <td>braking before the path end (every drive that stops there, also <code>home</code>/<code>patrol</code>; <code>explore</code> only without a planned next goal): speed ≤ √(2·a·s), s = remaining path length minus wheel speed × <code>end_lag_s</code> (the Rider applies a set-point only after ~0.7–1 s), at least <code>end_min_v</code> × <code>max_v</code>. Full <code>explore</code> speed starts braking ~1.8 m before the end (before 2026-11-23: 0.45 × straight-line distance, from ~0.9 m; <code>home</code> did not brake)</td>
+</tr>
+<tr>
+<td><code>free_slow</code> / <code>free_rest_m</code></td>
+<td>true / 0.10</td>
+<td>same braking profile before the first local-map obstacle along the path and on the arc of the drive command (same arc and radius as the arc check, up to 2.5 m; s minus <code>free_rest_m</code>) and before the first sharp corner (&gt; <code>turn_enter_deg</code>; with pass-through also into the next path). Status <code>frei …m</code> when it limits. Before: only the arc check (look-ahead = braking distance + 0.15 m, ~0.85 m at 0.65 m/s) reacted, with a full brake (RiderPi 2026-11-24). The arc check now derives its allowed speed from the faster of command and wheels, so an early lowered command no longer forces a full brake (sim <code>spalt</code>: that closed the door via brake spots)</td>
 </tr>
 <tr>
 <td><code>replan_s</code></td>
