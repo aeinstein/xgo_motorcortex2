@@ -15,7 +15,7 @@ Planer, der Planer fährt den Rider, nach der Sicherheitsprüfung.
 | 2 | **Test: Anfahren an eine Wand** | geradeaus geprüft gefahren 2026-11-25 (unten) |
 | 3 | **Test: Fahren einer Bahn entlang.** Kurven glätten, Drehungen auf der Stelle vermeiden (Hauptgrund der Drift) | offen |
 | 4 | **Fahrregler in die Firmware.** Pi sendet Sollgeschwindigkeit und Drehrate in echten Einheiten, die Firmware regelt | erledigt, gefahren (unten) |
-| 5 | **Bahnbefehle für die Navigation.** Krümmung statt Drehrate, Drehen auf Kurs, Strecke mit Halt, Rückmeldung im Strom (Plan unten) | Stufe 1: Firmware geflasht (2a7f213d), Treiber geladen, xgonav eingespielt, `vel_kappa` aus, nicht gefahren. Stufe 2: Firmware geflasht (4aabe9f6), Pi-Seite fertig, `vel_kurs` aus, nicht gefahren |
+| 5 | **Bahnbefehle für die Navigation.** Krümmung statt Drehrate, Drehen auf Kurs, Strecke mit Halt, Rückmeldung im Strom (Plan unten) | Stufe 0 fertig. Stufe 1: fertig, `vel_kappa` aus, nicht gefahren (MCP `fahren`/`folge` mit `bogen` dafür). Stufe 2: gefahren 2026-11-25 (±90°/±180°, Sollwinkel auf 0,5°, IMU-Kurs 2–4 % kürzer; Firmware-Fix 33a7c5a/3c9f6fc0 Kurs halten im Stand, geflasht, Pi-Seite und Nachfahrt offen), `vel_kurs` aus |
 
 ## Bahnbefehle (Punkt 5, Plan 2026-11-25)
 
@@ -39,7 +39,7 @@ beschreiben, und hält sie mit 260 Hz. Keine Wegpunktlisten in der Firmware.
 
 | Stufe | Inhalt | Firmware (Patch 08-velocity) | Treiber (`xgo-vel.h`) | xgonav | Kosten am Pi | Prüfung |
 |---|---|---|---|---|---|---|
-| 0 | Rückwärts symmetrisch, Höchstwerte | geflasht 2026-11-25: Tempo-Regler über vier Fassungen (unten „Messfahrt Stufe 0“), jetzt ec493c66: Original-P 0,11 + Vorsteuerung −0,05·v_soll + atan(a/g), ki 0,1 auf ±40 ab Ende der Rampe; ki/i_max/kv aus 0x1b ignoriert | – | `vel_kv`/`vel_ki`/`vel_i_max_deg` als wirkungslos gekennzeichnet (`config.py`, `docs/configuration.md`); a_max ohne Kippen, w/alpha-Grenzen messen → `config.py` | 0 | gefahren 2026-11-25; mit kp 0,15 / ki 0,06 (im RAM gesetzt) v ±0,2 im Ziel (Spitze 1,13 / 1,15 ×), v ±0,3 nach dem Laden nachmessen, dann 5abeb9a6 flashen (unten) |
+| 0 | Rückwärts symmetrisch, Höchstwerte | geflasht 2026-11-25: Tempo-Regler über vier Fassungen (unten „Messfahrt Stufe 0“), jetzt ec493c66: Original-P 0,11 + Vorsteuerung −0,05·v_soll + atan(a/g), ki 0,1 auf ±40 ab Ende der Rampe; ki/i_max/kv aus 0x1b ignoriert | – | `vel_kv`/`vel_ki`/`vel_i_max_deg` als wirkungslos gekennzeichnet (`config.py`, `docs/configuration.md`); a_max ohne Kippen, w/alpha-Grenzen messen → `config.py` | 0 | fertig 2026-11-25: Firmware 5abeb9a6 (kp 0,15 / ki 0,06 fest) geflasht, v ±0,2 und ±0,3 gefahren, Spitze 1,13–1,17 ×, rückwärts 1,00 × (unten) |
 | 1 | **Krümmungsbetrieb** | Flag bit1 in 0x1a: Feld w = κ in 0,001 1/m (i16, ±32 1/m); im Takt w_soll = κ · v_soll · 180/π (aus dem **Sollwert**, nicht v_ist: Kurs = ∫κ·v_soll dt, rauschfrei, am Pi nachrechenbar; keine v_min-Schwelle, w → 0 von selbst). Bahntreue unter Grenzen: nicht w kappen, sondern v begrenzen: \|v\| ≤ w_max/\|κ\|, a ≤ alpha/\|κ\|, Ruck ≤ Drehruck/\|κ\|. Neues κ während der Fahrt mit \|dκ/dt\| ≤ alpha/\|v\| nachführen (Klothoide), sonst springt w um Δκ·v. Rückwärts gleiches κ (derselbe Kreis rückwärts). Positionshalten beim Drehen (07-balance) greift nur bei v = 0, verträglich. Ohne bit1 wie heute | Text um κ erweitern, `zustand` liest Flag und Fähigkeitsbyte | `Robot.drive(v, w)` bleibt; neu `drive_bogen(v, kappa)`. `PathFollower` lenkt mit κ (Pure Pursuit κ = 2·sin α / L statt `kp_turn·err`); `_arc_check` prüft und bremst bei festem κ (nur v sinkt, Bahn bleibt). `Achse.schritt` + Kopplung, v/a/Ruck-Begrenzung durch κ und κ-Nachführung in Python nachgebaut, gegen Prüfvektoren | sinkt leicht (kein Lenkregler je Schritt, eine Multiplikation im 50-Hz-Durchlauf) | Host-Test: Bahn aus Generator-Simulation liegt bei Anfahren/Bremsen auf dem Kreis (Abweichung < 1 cm auf 1 m); Simulator `--dyn` explore/home; am Rider Kreisbogen v 0,2, κ 2 1/m, Endpunkt gegen Karte |
 | 2 | **Kursziel** | Flag bit2: Feld w = Δψ in 0,1°, relativ zum Generatorwinkel bei Empfang. Der Generator integriert seinen Winkel ∫w_soll dt selbst (= Änderung des Kursziels): Rest → w_ziel = sign · min(w_max, √(2·alpha·\|Rest\|)) → vorhandenes `approach` der Drehachse; angekommen bei \|Rest\| < 0,5° und w = 0 (Flag), danach hält der Kurs-PID | wie 1 | `dreh_auf_kurs`/`align`/`POST /turn` schreiben einmal Δψ statt 24 Hz `dreh_w`; Ankunft aus dem Flag statt aus dem Kursfehler | sinkt (keine Kursregelung je Schritt) | Host-Test Überschwingen < 1°; am Rider 90°/180° links/rechts, Endkurs gegen IMU-Kurs ±2° |
 | 3 | **Strecke mit Halt** | Flag bit3, Rahmen 15 Byte mit Reststrecke s (mm, u16): Rest = s − Radstrecke (Encoder) seit Empfang, v_ziel = sign · min(v, √(2·a·Rest)), danach v = 0 und Positionshalten. Neue Rahmen setzen s neu (Pi schickt die Reststrecke nach) | wie 1 | Wegfolger am Wegende (`end_v`) und Bahnprüfung schicken s = min(Weg bis Ziel, `clear − Rest`) statt das Tempo zu senken; Kriechen mit `slow_free` entfällt | sinkt | Wand wie Punkt 2: Halt 20 cm ±1 cm aus v 0,2/0,3; Host-Test Halt auf ±5 mm |
@@ -190,8 +190,34 @@ der Soll-Nick ab 1,4 s negativ, der Ist-Nick bis 2,1 s über 1,5°) – also meh
 - Runde 2 vorwärts: 90 % nach 1,6 s ab Rampenbeginn (Firmware-Sitzung zählt ab Soll erreicht: Spitze 1,09 ×), ab 2 s
   45…51 Einheiten, kein Unterschwingen, kein Pendeln; Soll-Nick gleichmäßig auf −1,6 … −2,2°. Rückwärts Streuung 2,0.
 - ±69 mit kp 0,15 nicht gefahren: Akku nach −46 bei 18 %, abgebrochen.
-- Firmware 023a6ff (SHA 5abeb9a6, kp 0,15 / ki 0,06 als Standard) gebaut, nicht geflasht. Weiter (Nutzer): laden,
-  Firmware-Sitzung prüft per USB, ob die RAM-Werte noch gelten (sonst neu setzen), dann ±69 nachmessen, dann flashen.
+- Runde 3 (Werte neu gesetzt, nur +69 bei 22 % Akku): ab 2,2 s 69…72 Einheiten, kein Überschießen; −69 wegen Akku nicht.
+- Firmware 023a6ff (SHA 5abeb9a6, kp 0,15 / ki 0,06 fest) geflasht. Danach (`runde4.csv`): Aufschwung Soll-Nick 14,2°;
+  +69 (4,5 s) Mittel 0,92 × (90 % nach 2,1 s), Spitze 1,15 ×; −69 1,00 ×, Spitze 1,17 ×, Streuung 2,8. Stufe 0 fertig.
+
+## Kursziel gefahren (Punkt 5 Stufe 2, 2026-11-25)
+
+`vel_kurs` nur für den Test in `/opt/xgonav/config.toml`, danach wieder heraus. MCP `drehen` (`POST /turn`, w 0,25 →
+90 °/s), Mitschnitt `runde5.csv` (`fw_turn` = Sollwert des Generators, `imu_yaw` roh).
+
+| Soll | Dauer | ∫ w_soll (Generator) | IMU-Kurs am Ende | 2 s danach |
+|---|---|---|---|---|
+| +90° | 1,41 s | 89,5° | 87,3° | 87,4° |
+| −90° | 1,41 s | −89,8° | −86,3° | −86,7° |
+| +180° | 2,36 s | 180,1° | 177,3° | 175,8° |
+| −180° | 2,41 s | −180,0° | −177,1° | −176,6° |
+
+- Glatt: Rampe auf 90 °/s, rechtzeitig gebremst, kein Überschwingen der Rate, Generator trifft Δψ.
+- Erste Drehung davor 98° statt 90°: xgonav schob das Ziel nach, weil der Restfehler vom IMU-Kurs kommt, der dem
+  Generator nachläuft (Schwelle 2°). Behoben 13399a0 (Schwelle 20°, Nachkorrektur erst 0,5 s nach Ankunft), Test
+  `test_kurs_nachlaufender_imu_kurs_schiebt_ziel_nicht`.
+- IMU-Kurs 2–4 % kürzer: kein Maßstabsfehler (Kurs-PID und Strom nutzen beide `imu.yaw_deg`). Original-Logik
+  `addHeadingCorrection`: im Stand korrigiert der Kurs-PID nicht und setzt das Kursziel nach 200 ms auf den Ist-Kurs; der
+  Nachlauf am Ende bleibt stehen. Firmware-Fix 33a7c5a (SHA 3c9f6fc0, `TurnControl::hold` solange Kursziel-Rahmen
+  kommen), geflasht 2026-11-25. Pi-Seite dazu offen: nach der Ankunft ~1 s weiter Kursziel-Rahmen schicken (Handdrehung
+  schaltet heute sofort auf Drehratenweg v 0), Nachkorrektur `KURS_NACH_*` dann entfernen (korrigierte doppelt).
+
+Stufe 1 (Bogen) von Hand: `/drive?bogen=1` bzw. MCP `fahren`/`folge` mit `bogen` setzt `Command.kappa` = w/v
+(seit 2026-11-25); mit `vel_kappa` fährt die Firmware diesen Kreis. Noch nicht gefahren.
 
 ## Anfahren an eine Wand (Punkt 2, gefahren 2026-11-25)
 

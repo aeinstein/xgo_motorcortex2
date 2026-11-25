@@ -151,13 +151,17 @@ class Manual(Behavior):
         self._v = self._w = 0.0
         self._t = -1e9
         self.checked = False      # letzter Sollwert verlangt Bodengrenze + Bahnprüfung (/drive?sicher=1, MCP)
+        self.bogen = False        # letzter Sollwert als Bogen (/drive?bogen=1): Krümmung κ = w/v statt Drehrate
         self._turn: dict | None = None
         self.turn_info: dict | None = None   # /status turn: soll_deg, gedreht_deg, fertig, grund
 
-    def set(self, v: float, w: float, now: float, checked: bool = False) -> None:
-        """v, w: Faktoren -1..1 (Anteil von robot.max_v/max_w), seit 2026-11-23. Bricht ein /turn ab."""
+    def set(self, v: float, w: float, now: float, checked: bool = False, bogen: bool = False) -> None:
+        """v, w: Faktoren -1..1 (Anteil von robot.max_v/max_w), seit 2026-11-23. Bricht ein /turn ab. bogen: Befehl
+        trägt die Krümmung κ = Drehrate/Tempo (Command.kappa); mit robot.vel_kappa fährt die Firmware dann diesen Kreis,
+        auch beim Anfahren und Bremsen (ARBEITSPLAN.md Punkt 5 Stufe 1), sonst wie ohne."""
         self._v, self._w, self._t = clamp(v, -1.0, 1.0), clamp(w, -1.0, 1.0), now
         self.checked = checked
+        self.bogen = bogen
         if self._turn is not None:
             self.turn_ende("abgebrochen")
 
@@ -203,8 +207,11 @@ class Manual(Behavior):
             return self._turn_step(yaw, now)
         if now - self._t > self.HOLD_S:
             return Command(0.0, 0.0, None, "Handsteuerung – steht")
-        return Command(self.rcfg.v_of(self._v), self.rcfg.w_of(self._w), None,
-                       "Handsteuerung v=%+.2f w=%+.2f" % (self._v, self._w))
+        v, w = self.rcfg.v_of(self._v), self.rcfg.w_of(self._w)
+        vm = v * self.rcfg.vx_limit
+        kappa = w_to_yaw_rate(w, self.rcfg) / vm if self.bogen and abs(vm) > 1e-3 else None
+        return Command(v, w, None, "Handsteuerung v=%+.2f w=%+.2f%s" % (self._v, self._w, " Bogen" if kappa is not None
+                                                                         else ""), kappa=kappa)
 
 
 class Servo:

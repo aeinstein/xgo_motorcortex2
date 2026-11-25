@@ -436,6 +436,7 @@ function werkzeuge(): array
                     'w' => $zahl('Drehrate, Anteil von max_w, + = links (Standard 0)', -HAND_MAX, HAND_MAX),
                     'sekunden' => $zahl('Dauer', 0.2, FAHR_S_MAX),
                     'geprueft' => $ja('Mit Bodengrenze und Bahnprüfung (Standard true); false = Handsteuerung ohne Prüfung'),
+                    'bogen' => $ja('Als Kreisbogen mit Krümmung w/v fahren (Standard false); mit robot.vel_kappa hält die Firmware den Kreis auch beim Anfahren und Bremsen'),
                     'bild' => $ja('Danach das Kamerabild mitliefern (Standard true)')], ['v', 'sekunden']), false],
         'folge' => ['fahren', 'Mehrere Fahrabschnitte [v, w, sekunden] nacheinander OHNE Halt dazwischen, z. B. fahren und direkt aus der '
             . 'Fahrt drehen: [[0.26, 0, 3], [0, 0.5, 1]]. Grenzen je Abschnitt wie „fahren“ (auch geprueft), Abschnitte 0..5 s, '
@@ -443,6 +444,7 @@ function werkzeuge(): array
             schema(['abschnitte' => ['type' => 'array', 'description' => 'Liste [v, w, sekunden]', 'minItems' => 1, 'maxItems' => FOLGE_N_MAX,
                                      'items' => ['type' => 'array', 'items' => ['type' => 'number'], 'minItems' => 3, 'maxItems' => 3]],
                     'geprueft' => $ja('Mit Bodengrenze und Bahnprüfung (Standard true); false = Handsteuerung ohne Prüfung'),
+                    'bogen' => $ja('Abschnitte mit v ≠ 0 als Kreisbogen mit Krümmung w/v fahren (Standard false)'),
                     'bild' => $ja('Danach das Kamerabild mitliefern (Standard true)')], ['abschnitte']), false],
         'modus' => ['fahren', 'Verhalten von xgonav wählen: idle (steht), follow (einem Ziel folgen), approach (Ziel suchen und anfahren), '
             . 'explore (Raum selbstständig erkunden und kartieren), home (zurück zum Start), patrol (Route abfahren, braucht bestaetigt), '
@@ -790,9 +792,14 @@ function fahrt(array $abschnitte, array $a): array
             throw new Fehler(sprintf('Grenzen%s: |v| ≤ %.2f, |w| ≤ %.2f.', $geprueft ? ' (geprüft)' : ' (ungeprüft)', $vmax, $wmax));
         }
     }
-    // Ein xgonav vor 2026-11-20 kennt sicher=1 nicht und führe ungeprüft
-    if ($geprueft && strpos(http('GET', '/')[1], 'sicher=') === false) {
+    $bogen = (bool)($a['bogen'] ?? false);
+    // Ein xgonav vor 2026-11-20 kennt sicher=1 nicht und führe ungeprüft; eines vor 2026-11-25 kennt bogen=1 nicht
+    $hilfe = ($geprueft || $bogen) ? http('GET', '/')[1] : '';
+    if ($geprueft && strpos($hilfe, 'sicher=') === false) {
         throw new Fehler('Das laufende xgonav kennt das geprüfte Fahren noch nicht (Neustart des Dienstes nötig). Dem Besitzer sagen.');
+    }
+    if ($bogen && strpos($hilfe, 'bogen=') === false) {
+        throw new Fehler('Das laufende xgonav kennt das Fahren im Bogen noch nicht (Neustart des Dienstes nötig). Dem Besitzer sagen.');
     }
     $fp = sperre();
     $s0 = fahrbereit($geprueft);
@@ -808,7 +815,7 @@ function fahrt(array $abschnitte, array $a): array
                 if (!balanciert()) {
                     throw new Fehler('Abbruch: Der Rider liegt.');
                 }
-                post(sprintf('/drive?v=%.3f&w=%.3f', $v, $w) . ($geprueft ? '&sicher=1' : ''));   // 409, sobald jemand „stopp“ ruft
+                post(sprintf('/drive?v=%.3f&w=%.3f', $v, $w) . ($geprueft ? '&sicher=1' : '') . ($bogen ? '&bogen=1' : ''));   // 409, sobald jemand „stopp“ ruft
                 $m = (string)(status()['status'] ?? '');
                 foreach (['Freiraum!', 'Bahn', 'TTC', 'Sperrzone', 'BLIND', 'GEFALLEN', 'LIEGT'] as $wort) {
                     if (strpos($m, $wort) !== false) {

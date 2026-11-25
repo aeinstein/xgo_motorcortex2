@@ -50,8 +50,8 @@ Lets a multimodal LLM look at the world through the Rider: camera image, room ma
 | `hoehe` | drehen | `u8` 61..200 | body height → `/proc/XGORider/height`, waits 4 s |
 | `neigen` | drehen | `grad` −20..20 | roll → `/proc/XGORider/roll` |
 | `ausrichten` | drehen | | xgonav `/level` |
-| `fahren` | fahren | `v`, `w`, `sekunden` 0.2..5, `geprueft` (default true), `bild` | `v`, `w` are factors of `robot.max_v`/`max_w` (since 2026-11-23). Checked: `/drive?sicher=1`, `v` ±0.30, `w` ±0.60; `geprueft: false`: `/drive` like the web D-pad / `rider_nav.py fahr`, `v`, `w` ±1; 10 Hz, then standstill + idle; returns distance, pose before/after, braking messages, image |
-| `folge` | fahren | `abschnitte` [[v, w, s], …] (1..10, each 0..5 s, ≤ 30 s total), `geprueft`, `bild` | sections back to back without a stop in between (like `rider_nav.py folge`), limits as `fahren`; then standstill + idle |
+| `fahren` | fahren | `v`, `w`, `sekunden` 0.2..5, `geprueft` (default true), `bogen` (default false), `bild` | `v`, `w` are factors of `robot.max_v`/`max_w` (since 2026-11-23). Checked: `/drive?sicher=1`, `v` ±0.30, `w` ±0.60; `geprueft: false`: `/drive` like the web D-pad / `rider_nav.py fahr`, `v`, `w` ±1; 10 Hz, then standstill + idle; returns distance, pose before/after, braking messages, image. `bogen`: `/drive?bogen=1`, the setpoint carries curvature κ = w/v (`Command.kappa`); with `robot.vel_kappa` the firmware holds that circle while accelerating and braking |
+| `folge` | fahren | `abschnitte` [[v, w, s], …] (1..10, each 0..5 s, ≤ 30 s total), `geprueft`, `bogen`, `bild` | sections back to back without a stop in between (like `rider_nav.py folge`), limits as `fahren`; then standstill + idle |
 | `modus` | fahren | `name`, `ziel`, `bestaetigt` | xgonav `/mode` (all modes; rules as in the web UI) |
 | `tempo` | fahren | `anteil` 0.05..1 | xgonav `/tempo` |
 | `karte_aendern` | fahren | `aktion` | `leeren`, `start_hier`, `speichern`, `sperren`, `entsperren`, `pose_start`, `pose_hier`, `pose_verwerfen` |

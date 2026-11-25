@@ -426,3 +426,20 @@ def test_kurs_nachlaufender_imu_kurs_schiebt_ziel_nicht():
         assert abs(r._gen_winkel - 90.0) < 0.6
     finally:
         r.close()
+
+
+def test_handsteuerung_im_bogen_setzt_kruemmung():
+    """/drive?bogen=1: Manual trägt κ = Drehrate/Tempo; ohne bogen und im Stand keins."""
+    from xgonav.behaviors import Manual
+    from xgonav.mathe import w_to_yaw_rate
+    cfg = Config.neutral()
+    m = Manual(cfg.behavior, cfg.robot)
+    t = time.monotonic()
+    m.set(0.2, 0.3, t, bogen=True)
+    c = m.step(None, now=t)
+    v_mps = cfg.robot.v_of(0.2) * cfg.robot.vx_limit
+    assert c.kappa == pytest.approx(w_to_yaw_rate(cfg.robot.w_of(0.3), cfg.robot) / v_mps) and "Bogen" in c.status
+    m.set(0.2, 0.3, t)
+    assert m.step(None, now=t).kappa is None
+    m.set(0.0, 0.3, t, bogen=True)
+    assert m.step(None, now=t).kappa is None                              # auf der Stelle: kein Bogen

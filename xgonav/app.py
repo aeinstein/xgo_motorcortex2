@@ -626,15 +626,16 @@ class App:
         self._free = None
         self.fs_worker.reset()
 
-    def set_manual(self, v: float, w: float, checked: bool = False) -> None:
+    def set_manual(self, v: float, w: float, checked: bool = False, bogen: bool = False) -> None:
         """Sollwert der Handsteuerung (normiert, v > 0 vor, w > 0 links). Nur im Modus manual;
         geht auch bei gestoppter Bildverarbeitung (braucht keine Kamera).
         checked: dieser Sollwert läuft wie in den anderen Modi durch safety() und die Bahnprüfung
-        (/drive?sicher=1, vom MCP-Server genutzt); ohne Bildverarbeitung dreht er dann nur."""
+        (/drive?sicher=1, vom MCP-Server genutzt); ohne Bildverarbeitung dreht er dann nur.
+        bogen: als Kreisbogen mit κ = w/v (/drive?bogen=1), siehe Manual.set."""
         b = self.behavior
         if b.name != "manual":
             raise ModeNotAllowed("Handsteuerung nur im Modus manual")
-        b.set(v, w, time.monotonic(), checked)
+        b.set(v, w, time.monotonic(), checked, bogen)
 
     TURN_MAX_DEG = 1080.0
 
