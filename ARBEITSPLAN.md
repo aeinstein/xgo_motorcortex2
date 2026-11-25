@@ -196,6 +196,11 @@ Kosten am ESP32: zwei PI-Regler + Rampe je Takt, vernachlässigbar gegen die Lag
   Gleichgewicht 0,11·(s − v) = −0,05·v ergibt v = 1,83 · s (gemessen 1,8–1,9 ×).
 - **Firmware 0039 (Nutzer: so vorgehen):** kv auf das gemessene Tempo (−kv·v_ist): gleicht genau den Bedarf aus,
   ohne Integral rechnerisch v = s, keine Delle; ki 0,02 nur für den Rest.
+- **Geflasht 0001–0039 (2026-11-25, SHA cdb6fdb3…), Messfahrt kv 0,05 auf Ist, ki 0,02:** erstmals kein
+  Überschwingen, ruhig, Soll-Nick ±0,5° statt Schwingen. Aber zu langsam: v 0,2 hält 30–34 statt 46 (letzte Sekunde
+  0,79 ×), v 0,3 hält 48–56 statt 69 (0,81 ×), das Integral holt mit 0,02 kaum auf. Strecke 0,47 / 0,76 m.
+  Gleichgewicht nachgerechnet (Soll-Nick ≈ 0 bei v_ist): kv ist zu groß, der Bedarf liegt eher bei 0,02–0,025° je
+  Einheit (die −0,05 aus der Nick-Messfahrt enthielten das Integral). Nächster Schritt: kv 0,025, ki 0,03.
 
 ### Zu klären
 
