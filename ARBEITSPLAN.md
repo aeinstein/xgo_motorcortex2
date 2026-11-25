@@ -201,6 +201,11 @@ Kosten am ESP32: zwei PI-Regler + Rampe je Takt, vernachlässigbar gegen die Lag
   0,79 ×), v 0,3 hält 48–56 statt 69 (0,81 ×), das Integral holt mit 0,02 kaum auf. Strecke 0,47 / 0,76 m.
   Gleichgewicht nachgerechnet (Soll-Nick ≈ 0 bei v_ist): kv ist zu groß, der Bedarf liegt eher bei 0,02–0,025° je
   Einheit (die −0,05 aus der Nick-Messfahrt enthielten das Integral). Nächster Schritt: kv 0,025, ki 0,03.
+- **Messfahrt kv 0,025, ki 0,03 (2026-11-25, gegenläufig):** erstmals brauchbar. v 0,2 (Soll 46): 90 % nach 1,6 s,
+  Spitze 48 (1,03 ×), letzte Sekunde 0,97 ×, Strecke 0,58 m. v 0,3 (Soll 69): 90 % nach 0,65 s, hält 72–74
+  (1,05 ×), kriecht zum Ende auf 80 (letzte Sekunde 1,12 ×), Strecke 1,0 m. Soll-Nick beim Halten −0,5° bei 46,
+  −2,5…−3,5° bei 73–80: der Bedarf wächst stärker als linear (bei 46 ~0,01, bei 75 ~0,035° je Einheit). Offen:
+  höhere Tempi messen, kv ggf. tempoabhängig; Drehen auf dem Rahmenweg noch nicht gemessen.
 
 ### Zu klären
 
