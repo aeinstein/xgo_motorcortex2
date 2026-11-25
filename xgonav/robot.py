@@ -567,7 +567,15 @@ class Robot:
             a, j = c.vel_accel_mps2, c.vel_jerk_mps3          # schneller in derselben Richtung (oder aus dem Stand)
         else:
             a, j = c.vel_decel_mps2, c.vel_jerk_mps3          # langsamer oder Richtungswechsel
-        w_lim = kurs[1] if kurs is not None else None
+        # w_max über vel_limits: vor dem Kursziel-Rahmen schreiben (hier, _send folgt) und während eines Kursziels nie
+        # senken: die Firmware klemmt w sofort auf w_max, ein Sprung ohne alpha (Firmware-Sitzung 2026-11-25). Also beim
+        # Start nicht unter die laufende Drehrate, danach nur anheben; zurück auf das volle w_max erst nach dem Kursziel.
+        w_lim = None
+        if kurs is not None:
+            w_lim = max(kurs[1], abs(self._gen_w.x))
+            if self._kurs.an and self._w_lim is not None:
+                w_lim = max(w_lim, self._w_lim)
+            w_lim = min(w_lim, self.w_max_dps)
         if w_lim != self._w_lim:
             self._w_lim = w_lim
             self._write_limits(time.monotonic())

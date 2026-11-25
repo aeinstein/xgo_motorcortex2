@@ -377,3 +377,28 @@ def test_kurs_robot_dreht_auf_ziel_ein_rahmen_je_ziel():
         assert not _writes(r, "vel")[-1].startswith("kurs ")
     finally:
         r.close()
+
+
+def test_kurs_senkt_w_max_nicht_waehrend_des_kursziels():
+    """w_max über vel_limits: beim Start des Kursziels nicht unter die laufende Drehrate, währenddessen nie kleiner
+    (die Firmware klemmt w sofort, ein Sprung ohne alpha); auch nicht, wenn der Temporegler mitten drin sinkt."""
+    cfg = _cfg(vel_kurs=True)
+    r = SimRobot(cfg)
+    r.start()
+    try:
+        for _ in range(40):                                                # 0,8 s mit 0,5 x 360 = 180 °/s drehen
+            r.drive(0.0, 0.5)
+            time.sleep(0.02)
+        w0 = abs(r._gen_w.x)
+        assert w0 > 100
+        t0 = time.monotonic()
+        for i in range(60):
+            if i == 20:
+                r.tempo = 0.5
+            r.drive(0.0, 0.5, kurs=(math.radians(720.0), cfg.w_of(0.25)))
+            time.sleep(0.02)
+        grenzen = [float(t.split()[1]) for t in _writes(r, "vel_limits", t0)]
+        assert grenzen and grenzen[0] >= w0 - 1e-6
+        assert all(b >= a for a, b in zip(grenzen, grenzen[1:]))          # nur anheben
+    finally:
+        r.close()
