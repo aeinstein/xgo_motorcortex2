@@ -71,11 +71,11 @@ class RobotCfg:
     # Firmware 0035: auf dem Rahmenweg sehen Speed-P und Radkorrektur des Originals das Soll × vel_stock_scale, das
     # Integral das volle Soll. Messfahrt 2026-11-25 ohne Vorfaktor: Ist-Spitze 1,8 / 1,9 × Soll nach ~2 s, dann langsam
     # zurück; 0,55 ergab 1,30 × (Messfahrt 2026-11-25), 0,42 war schlechter (längerer Nachlauf, mehr Windup), daher 0,55; Integral seit Firmware 0036 erst bei ruhendem Generator. Geht mit Einheit an vel_limits (10 Byte, braucht Firmware 0035).
-    vel_stock_scale: float = 0.55
+    vel_stock_scale: float = 0.8
     # Firmware 0037: Integral des Tempo-Reglers (0031) in ° Soll-Nick je (Firmware-Einheit Fehler · s) und seine Grenze.
     # Messfahrt mit 0036 und ki 0,05: der Bestandsweg kroch weiter auf 1,13–1,26 × Soll (Fehler −8 → nur −0,4°/s);
-    # 0,15 ist der nächste Versuch. Geht mit vel_limits an die Firmware (14 Byte).
-    vel_ki: float = 0.15
+    # ki 0,15 schwang (1,37 ×, ~3 s), daher 0,08 mit c 0,8 (Plateau lag bei Soll × c). Geht mit vel_limits (14 Byte).
+    vel_ki: float = 0.08
     vel_i_max_deg: float = 4.0
     # Die Beine haben eine Totzone: bei gleichem Befehl steht der Rider je nach Vorgeschichte bei
     # +0,7..+3,4° Roll (2026-11-05). Ein kurzer Impuls der Nivellierung in der Firmware richtet ihn

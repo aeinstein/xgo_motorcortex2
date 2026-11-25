@@ -170,6 +170,12 @@ Kosten am ESP32: zwei PI-Regler + Rampe je Takt, vernachlässigbar gegen die Lag
   hoch auf 63 (1,37 ×) bei 2,5 s und wieder herunter auf 46–40: langsame Schwingung, Periode ~3 s. v 0,3 (Soll 69):
   Plateau 48, Spitze 86 (1,25 ×), Ende 66–70. Mittel der letzten Sekunde 1,14–1,16 ×. Deutung: ki 0,15 zu groß für
   den Nachlauf von ~1 s; das Plateau zeigt, dass der Bestandsweg hier etwa Soll × c fährt (c 0,55 zu klein).
+- **Messfahrt c 0,8, ki 0,08 (2026-11-25, Flur zurück):** Strecke 0,61 / 0,92 m. v 0,2: wieder 1 s Plateau bei
+  25–26 (nicht 46 × 0,8 = 37!), dann Anstieg bis 66 (1,42 ×) bei 3,1 s, letzte Sekunde 1,33 ×; v 0,3: 90 % nach
+  1,45 s, Spitze 83 (1,20 ×), Ende 1,15 ×. Damit widerlegt: das Plateau hängt nicht an c, und der Anstieg ist mit
+  halbem ki fast gleich steil und läuft über das Soll hinaus weiter, ist also nicht (nur) das Integral. Neue
+  Vermutung: beim Fahren ein Nick-Versatz von ~2° nach vorn (P 0,11 °/Einheit hält 15–20 Einheiten Überschuss),
+  der den Rider stetig schneller macht. Prüfen: Nick (IMU) und Soll-Nick beim Fahren mitschreiben.
 
 ### Zu klären
 
