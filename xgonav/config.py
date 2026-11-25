@@ -47,11 +47,9 @@ class RobotCfg:
     vel_jerk_w_dps3: float = 1800.0
     vel_timeout_ms: int = 500
     vel_limits_s: float = 2.0      # vel_limits so oft neu schreiben (ESP-Neustart verliert sie)
-    # Firmware-Patch 08-velocity (Messfahrten 2026-11-25, ARBEITSPLAN.md), gehen mit vel_limits an die Firmware: Der Original-P
-    # treibt den Rider auf ~1,8 × Soll, weil er beim Fahren eine Nick-Abweichung proportional zum Tempo braucht;
-    # vel_kv liefert sie (Soll-Nick −kv · gemessenes Tempo, ° je Firmware-Einheit). 0,05 gab 0,8 × Soll, 0,025 hält
-    # v 0,2 / 0,4 auf ±4 %, v 0,3 / 0,5 auf +11 %. Das Integral (vel_ki ° je Einheit Fehler · s, Grenze
-    # vel_i_max_deg) gleicht nur den Rest aus; ki 0,08–0,15 schwang.
+    # WIRKUNGSLOS seit 2026-11-25 (Firmware 08-velocity, e93e525): Die Firmware regelt das Tempo nur über Soll − Ist
+    # mit festen Werten (kp 0,3, ki 0,15, i_max 8°) und ignoriert ki/i_max/kv aus vel_limits. Die drei Felder gehen
+    # weiter mit vel_limits an die Firmware, weil das 0x1b-Format sie enthält; Ändern bewirkt nichts.
     vel_ki: float = 0.03
     vel_i_max_deg: float = 6.0
     vel_kv: float = 0.025

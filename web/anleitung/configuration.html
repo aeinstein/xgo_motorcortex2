@@ -2043,16 +2043,10 @@
 <td>firmware watchdog (no frame → ramp to 0; above <code>keepalive_s</code>); <code>vel_limits</code> (v_max = <code>max_v</code> × <code>vx_limit</code>, w_max = <code>max_w</code> × <code>vyaw_limit_dps</code>) rewritten this often (an ESP restart loses it)</td>
 </tr>
 <tr>
-<td><code>vel_ki</code> / <code>vel_i_max_deg</code></td>
-<td>0.03 / 6.0</td>
+<td><code>vel_ki</code> / <code>vel_i_max_deg</code> / <code>vel_kv</code></td>
+<td>0.03 / 6.0 / 0.025</td>
 <td></td>
-<td>firmware patch 08-velocity: integral of the frame speed controller in ° pitch per (firmware unit error · s) and its limit, runs only 0.6 s after the ramp; covers what <code>vel_kv</code> leaves (0.08–0.15 oscillated). Sent in <code>vel_limits</code></td>
-</tr>
-<tr>
-<td><code>vel_kv</code></td>
-<td>0.025</td>
-<td></td>
-<td>firmware patch 08-velocity: pitch-target feed-forward −kv·v_measured (° per firmware speed unit): the pitch loop needs a speed-proportional deviation, without it the stock P drives ~1.8 × target. Holds v 0.2 / 0.4 within ±4 %, v 0.3 / 0.5 at +11 % (2026-11-25). Sent in <code>vel_limits</code></td>
+<td><strong>no effect</strong> since 2026-11-25 (firmware 08-velocity, e93e525): the firmware controls speed on target − measured only, with fixed kp 0.3, ki 0.15, i_max 8°, and ignores these fields. Still sent in <code>vel_limits</code> (part of the 0x1b format)</td>
 </tr>
 <tr>
 <td><code>keepalive_s</code></td>
@@ -3295,6 +3289,16 @@ Sounds: <code>sound</code> true, <code>sound_dir</code> <code>/opt/xgonav/sounds
 <td><code>lookahead_m</code></td>
 <td>0.5</td>
 <td>pure pursuit</td>
+</tr>
+<tr>
+<td><code>glatt_r_m</code> / <code>glatt_step_m</code></td>
+<td>0.3 / 0.05</td>
+<td>corners of a newly planned path become circular arcs (<code>planner.glaetten</code>; home, patrol, the chosen explore path): radius halved up to 3× where the planner's blocked cells require it, else the corner stays. 0 = corners as before 2026-11-25 (work plan point 3: drive curves instead of turning in place)</td>
+</tr>
+<tr>
+<td><code>kurve_a_mps2</code> / <code>kurve_vorschau_m</code></td>
+<td>0.3 / 1.5</td>
+<td>curve speed (<code>PathFollower.kurve_v</code>): in every corner of the path up to <code>kurve_vorschau_m</code> ahead at most √(a / curvature), braking before it with <code>end_decel_mps2</code> (≈ 0.3 m/s on a 0.3 m arc). Status <code>Kurve in …m</code>. 0 = off</td>
 </tr>
 <tr>
 <td><code>arrive_m</code></td>

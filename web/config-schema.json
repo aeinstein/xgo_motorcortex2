@@ -114,7 +114,7 @@
        "key": "vel_ki",
        "typ": "float",
        "default": 0.03,
-       "hilfe": "Firmware-Patch 08-velocity (Messfahrten 2026-11-25, ARBEITSPLAN.md), gehen mit vel_limits an die Firmware: Der Original-P treibt den Rider auf ~1,8 × Soll, weil er beim Fahren eine Nick-Abweichung proportional zum Tempo braucht; vel_kv liefert sie (Soll-Nick −kv · gemessenes Tempo, ° je Firmware-Einheit). 0,05 gab 0,8 × Soll, 0,025 hält v 0,2 / 0,4 auf ±4 %, v 0,3 / 0,5 auf +11 %. Das Integral (vel_ki ° je Einheit Fehler · s, Grenze vel_i_max_deg) gleicht nur den Rest aus; ki 0,08–0,15 schwang."
+       "hilfe": "WIRKUNGSLOS seit 2026-11-25 (Firmware 08-velocity, e93e525): Die Firmware regelt das Tempo nur über Soll − Ist mit festen Werten (kp 0,3, ki 0,15, i_max 8°) und ignoriert ki/i_max/kv aus vel_limits. Die drei Felder gehen weiter mit vel_limits an die Firmware, weil das 0x1b-Format sie enthält; Ändern bewirkt nichts."
       },
       {
        "key": "vel_i_max_deg",

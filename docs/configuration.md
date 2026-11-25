@@ -57,8 +57,7 @@ RiderPi = `deploy/config.example.toml` where it still differs (blank = default).
 | `vel_brake_mps2` / `vel_brake_jerk_mps3` | 1.5 / 10 | | `drive(brake=True)` |
 | `vel_alpha_dps2` / `vel_jerk_w_dps3` | 360 / 1800 | | turning |
 | `vel_timeout_ms` / `vel_limits_s` | 500 / 2.0 | | firmware watchdog (no frame → ramp to 0; above `keepalive_s`); `vel_limits` (v_max = `max_v` × `vx_limit`, w_max = `max_w` × `vyaw_limit_dps`) rewritten this often (an ESP restart loses it) |
-| `vel_ki` / `vel_i_max_deg` | 0.03 / 6.0 | | firmware patch 08-velocity: integral of the frame speed controller in ° pitch per (firmware unit error · s) and its limit, runs only 0.6 s after the ramp; covers what `vel_kv` leaves (0.08–0.15 oscillated). Sent in `vel_limits` |
-| `vel_kv` | 0.025 | | firmware patch 08-velocity: pitch-target feed-forward −kv·v_measured (° per firmware speed unit): the pitch loop needs a speed-proportional deviation, without it the stock P drives ~1.8 × target. Holds v 0.2 / 0.4 within ±4 %, v 0.3 / 0.5 at +11 % (2026-11-25). Sent in `vel_limits` |
+| `vel_ki` / `vel_i_max_deg` / `vel_kv` | 0.03 / 6.0 / 0.025 | | **no effect** since 2026-11-25 (firmware 08-velocity, e93e525): the firmware controls speed on target − measured only, with fixed kp 0.3, ki 0.15, i_max 8°, and ignores these fields. Still sent in `vel_limits` (part of the 0x1b format) |
 | `keepalive_s` | 0.3 | | s |
 | `stall_timeout_s` | 0.5 | | s, userspace watchdog |
 | `kernel_watchdog_ms` | 1000 | 1000 | `settings/motion_timeout_ms` |
