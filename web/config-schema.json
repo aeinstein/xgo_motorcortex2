@@ -149,7 +149,7 @@
       {
        "key": "vel_stock_scale",
        "typ": "float",
-       "default": 0.8,
+       "default": 1.0,
        "hilfe": "Firmware 0035: auf dem Rahmenweg sehen Speed-P und Radkorrektur des Originals das Soll × vel_stock_scale, das Integral das volle Soll. Messfahrt 2026-11-25 ohne Vorfaktor: Ist-Spitze 1,8 / 1,9 × Soll nach ~2 s, dann langsam zurück; 0,55 ergab 1,30 × (Messfahrt 2026-11-25), 0,42 war schlechter (längerer Nachlauf, mehr Windup), daher 0,55; Integral seit Firmware 0036 erst bei ruhendem Generator. Geht mit Einheit an vel_limits (10 Byte, braucht Firmware 0035)."
       },
       {
@@ -161,8 +161,14 @@
       {
        "key": "vel_i_max_deg",
        "typ": "float",
-       "default": 4.0,
+       "default": 6.0,
        "hilfe": ""
+      },
+      {
+       "key": "vel_kv",
+       "typ": "float",
+       "default": 0.05,
+       "hilfe": "Firmware 0038: Tempo-Vorsteuerung des Soll-Nicks −vel_kv · v_soll (° je Firmware-Einheit). Messfahrt mit Nick 2026-11-25: beim Fahren hält der Nick-Regler das Tempo nur mit ~−0,05° je Einheit Abweichung (−2,2° bei 46, −3,3° bei 73), die sonst das Integral lernen musste (Nachlauf, Schwingen; i_max 4° reichte nur bis ~80). Damit c (vel_stock_scale) wieder 1 und i_max 6°."
       },
       {
        "key": "level_pulse_s",

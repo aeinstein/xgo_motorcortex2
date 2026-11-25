@@ -78,13 +78,15 @@ def rahmen_text(v_mps: float, a_mps2: float, j_mps3: float, w_dps: float, alpha_
 
 
 def grenzen_text(v_max_mps: float, w_max_dps: float, timeout_ms: int, unit_mm: float,
-                 stock_scale: float | None = None, ki: float | None = None, i_max_deg: float | None = None) -> str:
+                 stock_scale: float | None = None, ki: float | None = None, i_max_deg: float | None = None,
+                 kv: float | None = None) -> str:
     """Text für /proc/XGORider/vel_limits: "V_MAX W_MAX TIMEOUT_MS" (V_MAX in Firmware-Einheiten, W_MAX in °/s).
 
     Mit stock_scale (Firmware 0035, 10 Byte) dazu "EINHEIT_UM VORFAKTOR_PROMILLE": die Einheit braucht die
     Vorsteuerung der Firmware, der Vorfaktor verkleinert das Soll für den Bestandsregler (robot.vel_stock_scale).
     Mit ki und i_max_deg (Firmware 0037, 14 Byte) dazu "KI_E4 IMAX_CENTI": Integral des Tempo-Reglers in ° Soll-Nick
-    je (Firmware-Einheit Fehler · s) und seine Grenze in °.
+    je (Firmware-Einheit Fehler · s) und seine Grenze in °. Mit kv (Firmware 0038, 16 Byte) dazu "KV_E4":
+    Tempo-Vorsteuerung des Soll-Nicks in ° je Firmware-Einheit Soll-Tempo.
     """
     v = max(0, min(65535, _fw(v_max_mps, unit_mm)))
     w10 = max(0, min(65535, _rund(w_max_dps * 10.0)))
@@ -97,7 +99,9 @@ def grenzen_text(v_max_mps: float, w_max_dps: float, timeout_ms: int, unit_mm: f
         return f"{t} {um} {c}"
     k = max(1, min(10000, _rund(ki * 10000.0)))
     im = max(1, min(1000, _rund(i_max_deg * 100.0)))
-    return f"{t} {um} {c} {k} {im}"
+    if kv is None:
+        return f"{t} {um} {c} {k} {im}"
+    return f"{t} {um} {c} {k} {im} {max(0, min(2000, _rund(kv * 10000.0)))}"
 
 
 def zustand(text: str) -> dict | None:

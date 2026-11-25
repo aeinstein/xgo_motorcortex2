@@ -47,7 +47,12 @@ static int test_vel(void) {
 			bad += vel_case("231 180.0 500 3900 550 1500 400", 1, l3, 14);
 			bad += vel_case("231 180.0 500 3900 550 10001 400", 0, NULL, 14);
 			bad += vel_case("231 180.0 500 3900 550 1500 1001", 0, NULL, 14);
-			bad += vel_case("231 180.0 500 3900 550 1500 400 9", 0, NULL, 14);
+			bad += vel_case("231 180.0 500 3900 550 1500 400 2001", 0, NULL, 16);
+			bad += vel_case("231 180.0 500 3900 550 1500 400 9 1", 0, NULL, 16);
+		}
+		{   /* Firmware 0038: kv × 10000 */
+			const uint8_t l4[] = {0xe7, 0x00, 0x08, 0x07, 0xf4, 0x01, 0x3c, 0x0f, 0xe8, 0x03, 0x20, 0x03, 0x58, 0x02, 0xf4, 0x01};
+			bad += vel_case("231 180.0 500 3900 1000 800 600 500", 1, l4, 16);
 		}
 	}
 	{
@@ -65,7 +70,7 @@ static int test_vel(void) {
 
 /* mit --vel im Emulator: Grenzen + Rahmen wie /proc schicken, Zustand zurücklesen */
 static void vel_roundtrip(void) {
-	static const char *lim = "450 72.5 300 3900 550 1500 400";   /* 14 Byte (Firmware 0037) */
+	static const char *lim = "450 72.5 300 3900 1000 800 600 500";   /* 16 Byte (Firmware 0038) */
 	static const char *frames[] = {"250 500 2500 12.3 120 600", "acc -300 2000 -5 0 0", "-120 800 4000 -30.0 90 400"};
 	uint8_t b[16];   /* Rahmen 13, Grenzen bis 14 Byte */
 	char hex[64], t[80];

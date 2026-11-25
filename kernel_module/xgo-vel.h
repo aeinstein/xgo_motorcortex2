@@ -15,12 +15,14 @@
 //   Firmware 0035, 10 Byte: "V_MAX W_MAX TIMEOUT_MS EINHEIT_UM VORFAKTOR_PROMILLE" (µm/s je Firmware-Einheit,
 //   z. B. 3900; Vorfaktor des Bestandswegs, z. B. 550; je 0 = Standard der Firmware). Ältere Firmware verwirft 10 Byte.
 //   Firmware 0037, 14 Byte: dazu "KI_E4 IMAX_CENTI" (ki × 10000 in ° je Einheit·s, i_max in 0,01°; 0 = Konsolenwert).
+//   Firmware 0038, 16 Byte: dazu "KV_E4" (Tempo-Vorsteuerung des Soll-Nicks × 10000 in ° je Einheit; 0 = aus).
 //
 #ifndef XGO_VEL_H
 #define XGO_VEL_H
 
 #define XGO_VEL_FRAME_LEN 13
-#define XGO_VEL_LIMITS_LEN 14      /* Puffergröße; gesendet werden 6, 10 oder 14 Byte (vel_limits_encode) */
+#define XGO_VEL_LIMITS_LEN 16      /* Puffergröße; gesendet werden 6, 10, 14 oder 16 Byte (vel_limits_encode) */
+#define XGO_VEL_LIMITS_LEN_CTL 14
 #define XGO_VEL_LIMITS_LEN_EXT 10
 #define XGO_VEL_LIMITS_LEN_OLD 6
 #define XGO_VEL_DIAG_LEN 12
@@ -72,11 +74,12 @@ static int vel_encode(const char *text, uint8_t out[XGO_VEL_FRAME_LEN]) {
 	return 0;
 }
 
-// Text -> Grenzen 0x1b. Länge (6, 10 oder 14 Byte) = ok, -1 = ungültig.
+// Text -> Grenzen 0x1b. Länge (6, 10, 14 oder 16 Byte) = ok, -1 = ungültig.
 static int vel_limits_encode(const char *text, uint8_t out[XGO_VEL_LIMITS_LEN]) {
 	char wtok[16];
-	int vmax, wmax10, ms, n, unit = 0, scale = 0, ki = 0, imax = 0, len = XGO_VEL_LIMITS_LEN_OLD;
-	if (sscanf(text, "%d %15s %d %d %d %d %d%n", &vmax, wtok, &ms, &unit, &scale, &ki, &imax, &n) == 7) len = XGO_VEL_LIMITS_LEN;
+	int vmax, wmax10, ms, n, unit = 0, scale = 0, ki = 0, imax = 0, kv = 0, len = XGO_VEL_LIMITS_LEN_OLD;
+	if (sscanf(text, "%d %15s %d %d %d %d %d %d%n", &vmax, wtok, &ms, &unit, &scale, &ki, &imax, &kv, &n) == 8) len = XGO_VEL_LIMITS_LEN;
+	else if (sscanf(text, "%d %15s %d %d %d %d %d%n", &vmax, wtok, &ms, &unit, &scale, &ki, &imax, &n) == 7) len = XGO_VEL_LIMITS_LEN_CTL;
 	else if (sscanf(text, "%d %15s %d %d %d%n", &vmax, wtok, &ms, &unit, &scale, &n) == 5) len = XGO_VEL_LIMITS_LEN_EXT;
 	else if (sscanf(text, "%d %15s %d%n", &vmax, wtok, &ms, &n) != 3) return -1;
 	while (text[n] == ' ' || text[n] == '\n' || text[n] == '\t') n++;
@@ -84,9 +87,10 @@ static int vel_limits_encode(const char *text, uint8_t out[XGO_VEL_LIMITS_LEN]) 
 	if (vel_parse_tenths(wtok, &wmax10)) return -1;
 	if (!vel_in(vmax, 0, 65535) || !vel_in(wmax10, 0, 65535) || !vel_in(ms, 0, 65535)) return -1;
 	if (!vel_in(unit, 0, 65535) || !vel_in(scale, 0, 2000)) return -1;
-	if (!vel_in(ki, 0, 10000) || !vel_in(imax, 0, 1000)) return -1;
+	if (!vel_in(ki, 0, 10000) || !vel_in(imax, 0, 1000) || !vel_in(kv, 0, 2000)) return -1;
 	vel_put16(out, vmax); vel_put16(out + 2, wmax10); vel_put16(out + 4, ms);
 	vel_put16(out + 6, unit); vel_put16(out + 8, scale); vel_put16(out + 10, ki); vel_put16(out + 12, imax);
+	vel_put16(out + 14, kv);
 	return len;
 }
 

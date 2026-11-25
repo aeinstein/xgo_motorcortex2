@@ -185,6 +185,8 @@ Kosten am ESP32: zwei PI-Regler + Rampe je Takt, vernachlässigbar gegen die Lag
   Soll-Nick / Ist-Tempo = −2,2° / 46 und −3,3° / 73, also ~−0,05° je Firmware-Einheit. Diesen Anteil muss bisher
   das Integral lernen (dauert, schwingt) und i_max 4° begrenzt ihn auf ~80 Einheiten ≈ 0,31 m/s. Vorschlag:
   Tempo-Vorsteuerung des Soll-Nicks −kv · v_soll (kv ≈ 0,05 °/Einheit), Integral nur für den Rest.
+- **Firmware 0038 (Nutzer: so vorgehen):** −kv·v_soll im Soll-Nick, kv über 0x1b (16 Byte); xgonav `vel_kv` 0,05,
+  c wieder 1,0, i_max 6°, ki 0,08. Treiber `vel_limits` mit 8 Feldern.
 
 ### Zu klären
 

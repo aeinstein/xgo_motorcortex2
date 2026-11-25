@@ -7,7 +7,7 @@
 // 0035: Vorsteuerung mit unit_mm (a in Firmware-Einheiten/s²), stock_scale: Original-P sieht Soll × c, Integral
 // das volle Soll, aus/1 = bitgleich.
 // 0036: Integral erst, wenn der Generator kVelSettleS (0,6 s) lang a = 0 hat (kein Windup beim Anfahren); die
-// Integral-Tests setzen dafür vel_settled vorab (settle()).
+// Integral-Tests setzen dafür vel_settled vorab (settle()). 0038: Tempo-Vorsteuerung −kv·v_soll.
 // Nach firmware/build.sh (Quellen mit Patches in firmware/build/), im Repo-Root:
 //   S=firmware/build/xgorider2_rl/firmware/src
 //   g++ -std=c++17 -ffp-contract=off -I $S firmware/tests/test_velocity_ctrl.cpp $S/control/rider_motion.cpp $S/control/pid.cpp -o t && ./t
@@ -124,6 +124,18 @@ int main() {
         VelocityControl off = vc; off.on = false; settle(b);
         step(b, 40, 0, 0, false, true, &off);
         check(b.vel_settled == 0, "0036: Rahmenweg aus setzt die Wartezeit zurück");
+    }
+    // --- Patch 0038: Tempo-Vorsteuerung des Soll-Nicks
+    {
+        BalanceState a, b; VelocityControl v0; v0.on = true; v0.dt = kDt; v0.ki = 0;
+        VelocityControl v1 = v0; v1.kv = 0.05f;
+        const float t0 = step(a, 60, 60, 0, false, true, &v0), t1 = step(b, 60, 60, 0, false, true, &v1);
+        check(near(t1 - t0, -3.0f, 1e-4f), "0038: kv 0,05 bei 60 Einheiten -> Soll-Nick −3°");
+        BalanceState c, d2; VelocityControl rev = v1;
+        const float r0 = step(c, -40, -40, 0, false, true, &v0), r1 = step(d2, -40, -40, 0, false, true, &rev);
+        check(near(r1 - r0, 2.0f, 1e-4f), "0038: rückwärts mit umgekehrtem Vorzeichen");
+        BalanceState e0, e1; VelocityControl off = v1; off.on = false;
+        check(step(e0, 60, 60, 0, false, true, &off) == step(e1, 60, 60, 0, false, true, nullptr), "0038: ohne Rahmenweg keine Wirkung");
     }
     // --- Integral: wächst mit ki·Fehler·dt, Grenze, Vorzeichen
     {

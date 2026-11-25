@@ -5,7 +5,7 @@
 // 0030: Sollwertgenerator (S-Kurve): Beschleunigung ≤ a, Ruck ≤ Ruckgrenze, kein Überschwingen, Dauer wie gerechnet,
 // Umkehr, Beschleunigungsbetrieb mit Ruck, Wächter mit den Rahmengrenzen, Übernahme aus der Fahrt, Drehachse.
 // 0035: 0x1b mit 10 Byte (Einheit, Vorfaktor), 6 Byte wie vorher, Vorfaktor begrenzt.
-// 0037: 0x1b mit 14 Byte (ki, i_max), 0 = nicht gesendet, Grenzen.
+// 0037: 0x1b mit 14 Byte (ki, i_max), 0 = nicht gesendet, Grenzen. 0038: 16 Byte mit kv.
 // Nach firmware/build.sh (Quellen mit Patches in firmware/build/), im Repo-Root:
 //   S=firmware/build/xgorider2_rl/firmware/src
 //   g++ -std=c++17 -ffp-contract=off -I $S firmware/tests/test_velocity_cmd.cpp $S/control/rider_motion.cpp $S/control/pid.cpp $S/command_protocol.cpp -o t && ./t
@@ -231,6 +231,7 @@ int main() {
         e.length = 10; check(validCommand(e), "0x1b mit 10 Byte gültig (0035)");
         e.length = 8; check(!validCommand(e), "0x1b mit 8 Byte ungültig");
         e.length = 14; check(validCommand(e), "0x1b mit 14 Byte gültig (0037)");
+        e.length = 16; check(validCommand(e), "0x1b mit 16 Byte gültig (0038)");
         e.length = 6;
         e.reg = 0xa0; e.length = 1; check(!validCommand(e), "0xa0 (max_forward) entfernt");
         e.reg = 0xa1; check(!validCommand(e), "0xa1 (max_turn) entfernt");
@@ -285,6 +286,17 @@ int main() {
         check(l.ki < 0 && l.i_max < 0, "0x1b 14 Byte mit 0: Konsolenwerte gelten");
         V::put16(d + 10, 60000); V::put16(d + 12, 60000); V::parseLimits(d, sizeof d, l);
         check(l.ki == 1.0f && l.i_max == 10.0f, "ki ≤ 1, i_max ≤ 10°");
+        check(l.kv == 0, "0x1b 14 Byte: kv aus");
+    }
+    {   // Patch 0038: kv
+        std::uint8_t d[V::kLimitsLenKv];
+        V::put16(d, 231); V::put16(d + 2, 1800); V::put16(d + 4, 500); V::put16(d + 6, 3900); V::put16(d + 8, 1000);
+        V::put16(d + 10, 800); V::put16(d + 12, 600); V::put16(d + 14, 500);
+        V::Limits l; check(V::parseLimits(d, sizeof d, l), "0x1b 16 Byte angenommen");
+        check(near(l.ki, 0.08f, 1e-6f) && near(l.i_max, 6.0f, 1e-5f) && near(l.kv, 0.05f, 1e-6f),
+              "0x1b 16 Byte: ki 0,08, i_max 6°, kv 0,05");
+        V::put16(d + 14, 9000); V::parseLimits(d, sizeof d, l);
+        check(near(l.kv, 0.2f, 1e-6f), "kv ≤ 0,2");
     }
     std::printf(fail ? "\nFEHLER\n" : "\nalle ok\n");
     return fail;
