@@ -407,7 +407,8 @@ static void courseTests() {
 }
 
 // --- Strecke mit Halt (bit3, 15 Byte). Nachgebildet: der Pi schickt alle 100 ms s = S − gefahrene Strecke (Odometrie
-// = ∫ v_meas), v_meas folgt v_soll mit der Zeitkonstante tau (0: v_meas = v_soll des vorigen Takts).
+// = ∫ v_meas), v_meas folgt gain·v_soll mit der Zeitkonstante tau (0: v_meas = gain·v_soll des vorigen Takts); gain ≠ 1
+// bildet die dauerhafte Tempoabweichung am Rider nach (vorwärts ~0,9 ×, rückwärts ~1,09 ×, runde9).
 static void distBytes(std::uint8_t* d, int v, float rest_mm, bool kappa = false, float k = 0) {
     std::memset(d, 0, V::kFrameLenDist);
     d[0] = V::kFlagDist | (kappa ? V::kFlagKappa : 0);
@@ -418,7 +419,7 @@ static void distBytes(std::uint8_t* d, int v, float rest_mm, bool kappa = false,
 }
 struct DistRun { double traveled = 0, heading = 0; float v_end = 0, v_peak = 0; bool done = false, timed_out = false; int frames = 0; };
 static DistRun runDist(const char* name, const V::Limits& l, int v, float S, float tau, std::uint32_t until_us, float seconds,
-                       bool kappa = false, float k = 0) {
+                       bool kappa = false, float k = 0, float gain = 1) {
     V::State s; DistRun r; float meas = 0;
     FILE* csv = nullptr;
     if (const char* env = std::getenv("XGO_VECTORS"); env && *env == '1') {
@@ -430,7 +431,7 @@ static DistRun runDist(const char* name, const V::Limits& l, int v, float S, flo
     std::uint8_t d[V::kFrameLenDist] = {};
     for (std::uint32_t t = 0; t <= std::uint32_t(seconds * 1e6f); t += kTickUs) {
         const float dt = t ? kTickUs * 1e-6f : 0.0f;
-        meas = tau > 0 ? meas + (s.v - meas) * dt / tau : s.v;   // Radtempo aus dem vorigen Sollwert
+        meas = tau > 0 ? meas + (gain * s.v - meas) * dt / tau : gain * s.v;   // Radtempo aus dem vorigen Sollwert
         const bool rx = t < until_us && t % 100000 == 0;
         if (rx) {
             distBytes(d, v, S - float(std::fabs(r.traveled)), kappa, k);
@@ -475,16 +476,19 @@ static void distTests() {
         std::uint8_t g[V::kDiagLen]; V::fillDiag(g, s, l);
         check((g[0] & 128) != 0, "0x1a lesen: bit7 Strecke erreicht");
     }
-    struct Case { const char* name; int v; float S; float tau; };
-    for (const Case& c : {Case{"strecke_1m", 46, 1000, 0}, Case{"strecke_1m_traege", 46, 1000, 0.3f},
-                          Case{"strecke_kurz", 46, 50, 0.3f}, Case{"strecke_rueck", -46, 500, 0.3f}, Case{"strecke_69", 69, 800, 0.3f}}) {
-        const DistRun r = runDist(c.name, l, c.v, c.S, c.tau, 8000000, 8.0f);
+    // Nachlauf = kDistCoastS × v_ist: passt die Trägheit genau (tau = kDistCoastS), hält er auf ±6 mm, sonst auf ±15 mm.
+    struct Case { const char* name; int v; float S; float tau; float gain; };
+    for (const Case& c : {Case{"strecke_1m", 46, 1000, V::kDistCoastS, 1}, Case{"strecke_1m_traege", 46, 1000, 0.3f, 1},
+                          Case{"strecke_kurz", 46, 50, 0.3f, 1}, Case{"strecke_rueck", -46, 500, 0.3f, 1}, Case{"strecke_69", 69, 800, 0.3f, 1},
+                          Case{"strecke_69_langsam", 69, 1000, 0.23f, 0.9f}, Case{"strecke_rueck_schnell", -46, 500, 0.3f, 1.09f}}) {
+        const DistRun r = runDist(c.name, l, c.v, c.S, c.tau, 8000000, 8.0f, false, 0, c.gain);
         const float err = float(std::fabs(r.traveled) - c.S);
         std::printf("       %s: gefahren %.1f mm (Soll %.0f, Fehler %+.1f mm), Spitze v %.1f, Ende v %.1f, erreicht %d\n",
                     c.name, std::fabs(r.traveled), double(c.S), double(err), double(r.v_peak), double(r.v_end), r.done ? 1 : 0);
         char what[160];
-        std::snprintf(what, sizeof what, "%s: Halt auf ±%s mm, erreicht, v = 0, Richtung stimmt", c.name, c.tau > 0 ? "15" : "6");
-        check(std::fabs(err) < (c.tau > 0 ? 15.0f : 6.0f) && r.done && r.v_end == 0 && (r.traveled > 0) == (c.v > 0), what);
+        const bool exact = c.tau == V::kDistCoastS && c.gain == 1;
+        std::snprintf(what, sizeof what, "%s: Halt auf ±%s mm, erreicht, v = 0, Richtung stimmt", c.name, exact ? "6" : "15");
+        check(std::fabs(err) < (exact ? 6.0f : 15.0f) && r.done && r.v_end == 0 && (r.traveled > 0) == (c.v > 0), what);
     }
     {
         const DistRun r = runDist("strecke_bogen", l, 46, 785.4f, 0.3f, 8000000, 8.0f, true, 2.0f);

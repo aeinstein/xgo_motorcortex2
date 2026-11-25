@@ -580,10 +580,10 @@ index 8cf9b55..a85dbbb 100644
      uint32_t now_ms=0;
 diff --git a/firmware/src/velocity_cmd.h b/firmware/src/velocity_cmd.h
 new file mode 100644
-index 0000000..e479f09
+index 0000000..5b144b4
 --- /dev/null
 +++ b/firmware/src/velocity_cmd.h
-@@ -0,0 +1,340 @@
+@@ -0,0 +1,342 @@
 +#pragma once
 +// Fahrbefehl in echten Einheiten (Rahmenweg) mit Sollwertgenerator: Rampe mit Ruckbegrenzung (S-Kurve) statt Tiefpass.
 +//
@@ -623,8 +623,9 @@ index 0000000..e479f09
 +//   neu auf s (kein Wechselbit: der Pi schickt die Reststrecke aus seiner Odometrie laufend nach). Je Takt sinkt der Rest
 +//   um die gemessene Radstrecke (Radtempo × unit_mm × dt, in Fahrtrichtung des Rahmens). Die Fahrachse nimmt den Schritt
 +//   Richtung v nur, wenn der Bremsweg danach (mit demselben approach auf 0 vorausgerechnet) noch in den wirksamen Rest
-+//   passt, sonst bremst sie. Wirksamer Rest = Rest − Nachlauf; Nachlauf = ∫(v_soll − v_ist) in mm (was der Rider dem
-+//   Sollwert hinterherfährt und noch kommt; im Stand klingt er mit kDistLagTau ab). Bei wirksamem Rest ≤ kDistArrive ist
++//   passt, sonst bremst sie. Wirksamer Rest = Rest − Nachlauf; Nachlauf = kDistCoastS × v_ist in mm (was der Rider
++//   nach dem Soll noch fährt; v_ist = Radtempo in Fahrtrichtung, Tiefpass kDistMeasTau, beim Einschalten 0). Kein
++//   Integral seit Beginn: den Rückstand beim Anlauf holt der Rider nie auf. Bei wirksamem Rest ≤ kDistArrive ist
 +//   die Strecke erreicht (0x1a lesen Flag bit7), v = 0, Positionshalten wie im Stand. Mit bit1 (Krümmung) zählt die Bogenlänge. Wächter: bremst, Strecke bleibt offen.
 +// bit1 und bit2 schließen sich aus, bit4 nur mit bit2, bit3 nur mit 15 Byte und nicht mit bit0 oder bit2; unbekannte
 +//   Bits -> Rahmen verworfen (Zähler rejected_commands).
@@ -659,7 +660,8 @@ index 0000000..e479f09
 +constexpr std::uint8_t kFlagsKnown = kFlagNoSpeed | kFlagKappa | kFlagCourse | kFlagDist | kFlagCourseSeq;
 +constexpr std::uint8_t kCaps = 1 | 2 | 4;    // Fähigkeitsbyte 0x1a lesen: bit0 Krümmung, bit1 Kursziel, bit2 Strecke
 +constexpr float kDistArrive = 5.0f;          // mm Reststrecke für „erreicht“
-+constexpr float kDistLagTau = 0.5f;          // s, Abklingen des Nachlaufs im Stand (Soll 0, Ist < 1 Einheit)
++constexpr float kDistCoastS = 0.25f;         // s, Nachlauf je Radtempo (gefahren: vorwärts 0,23, rückwärts 0,31)
++constexpr float kDistMeasTau = 0.1f;         // s, Tiefpass des Radtempos für den Nachlauf
 +constexpr float kCourseArrive = 0.5f;        // ° Restwinkel für „angekommen“
 +constexpr int kStopSimMax = 1000;            // Takte der Bremsweg-Vorausschau (bei 4 ms und 360 °/s² höchstens ~240)
 +constexpr float kDeg = 57.29578f;            // ° je rad
@@ -691,7 +693,7 @@ index 0000000..e479f09
 +    float v = 0, w = 0;                  // ausgegebene Sollwerte mm/s, °/s (= fwd.x, turn.x)
 +    bool kappa_on = false; float kappa = 0;   // Krümmungsbetrieb läuft, nachgeführtes κ in 1/m
 +    bool course_on = false, course_seq = false, course_done = false; float course_rest = 0;   // Kursziel, Rest in °
-+    bool dist_on = false, dist_done = false; float dist_rest = 0, dist_lag = 0;   // Strecke, Rest und Nachlauf in mm
++    bool dist_on = false, dist_done = false; float dist_rest = 0, dist_lag = 0, dist_vf = 0;   // Strecke, Rest und Nachlauf in mm, Radtempo gefiltert
 +};
 +
 +inline std::int16_t i16(const std::uint8_t* d) { return std::int16_t(std::uint16_t(d[0] | (d[1] << 8))); }
@@ -741,9 +743,9 @@ index 0000000..e479f09
 +        s.course_on = true; s.course_seq = f.course_seq; s.course_rest = f.dpsi; s.course_done = false;
 +    }
 +    if (f.dist_mode) {   // jeder Rahmen setzt den Rest neu; der Nachlauf läuft weiter (beginnt beim Einschalten bei 0)
-+        if (!s.dist_on) s.dist_lag = 0;
++        if (!s.dist_on) { s.dist_lag = 0; s.dist_vf = 0; }
 +        s.dist_on = true; s.dist_rest = f.dist; s.dist_done = f.dist - s.dist_lag <= kDistArrive;
-+    } else { s.dist_on = false; s.dist_done = false; s.dist_rest = 0; s.dist_lag = 0; }
++    } else { s.dist_on = false; s.dist_done = false; s.dist_rest = 0; s.dist_lag = 0; s.dist_vf = 0; }
 +    return true;
 +}
 +// Rahmenweg beenden (Byte-Befehl, Neutral, Stopp, Aktion, Armen).
@@ -751,7 +753,7 @@ index 0000000..e479f09
 +    s.active = false; s.accel_mode = false; s.timed_out = false; s.v = 0; s.w = 0; s.ticked = false;
 +    s.fwd = Axis{}; s.turn = Axis{}; s.kappa_on = false; s.kappa = 0;
 +    s.course_on = false; s.course_done = false; s.course_rest = 0;
-+    s.dist_on = false; s.dist_done = false; s.dist_rest = 0; s.dist_lag = 0;
++    s.dist_on = false; s.dist_done = false; s.dist_rest = 0; s.dist_lag = 0; s.dist_vf = 0;
 +}
 +
 +inline float clampAbs(float x, float m) { return std::max(-m, std::min(m, x)); }
@@ -796,7 +798,7 @@ index 0000000..e479f09
 +}
 +// Fahrachse auf Strecke (Kopfkommentar): Schritt Richtung v_target nur, wenn der Bremsweg danach in den Rest (mm) passt.
 +inline void approachDist(State& s, const Limits& l, float v_target, float amax, float jmax, float dt) {
-+    const float rest = s.dist_rest - s.dist_lag;   // wirksamer Rest: was der Rider dem Soll hinterherfährt, kommt noch
++    const float rest = s.dist_rest - s.dist_lag;   // wirksamer Rest: was der Rider nach dem Soll noch fährt, kommt dazu
 +    if (rest <= kDistArrive) s.dist_done = true;
 +    if (s.dist_done) { approach(s.fwd, 0, amax, jmax, dt); return; }
 +    if (dt <= 0) return;
@@ -884,8 +886,8 @@ index 0000000..e479f09
 +    if (s.dist_on && dt > 0 && std::isfinite(v_meas)) {   // gemessene Radstrecke und Nachlauf in Fahrtrichtung des Rahmens
 +        const float dir = f.v >= 0 ? 1.0f : -1.0f;
 +        s.dist_rest -= v_meas * l.unit_mm * dt * dir;
-+        s.dist_lag += (s.v - v_meas) * l.unit_mm * dt * dir;   // s.v = Sollwert des vorigen Takts
-+        if (s.v == 0 && std::fabs(v_meas) < 1.0f) s.dist_lag *= std::exp(-dt / kDistLagTau);
++        s.dist_vf += (v_meas * dir - s.dist_vf) * (1.0f - std::exp(-dt / kDistMeasTau));
++        s.dist_lag = kDistCoastS * s.dist_vf * l.unit_mm;
 +    }
 +    if (f.kappa_mode) { tickKappa(s, l, now_us, dt); return; }
 +    s.kappa_on = false;

@@ -95,6 +95,7 @@ Dead ends of the old series 0001–0039 (2026-11-04 … 11-25), one line each. T
 | Velocity frame: kp 0.3 within ±20 units | limit cycle 2.5 Hz while driving (target −35: measured −84…+2, pitch target ±10°; kv build: ±3, ±1°) (2026-11-25) |
 | Velocity frame: kp 0.3 on the full speed error | standing-up swing (wheels ±190 units) gave 57° pitch target, fell over (2026-11-25); now extra gain only within ±20 units |
 | Velocity frame: −kv·v_measured (fixed pitch need per speed) | a model: offset/slope not in it, reverse 1.3–1.4 × target, forward 1.03–1.07 × (2026-11-25); now only target − measured |
+| Distance stop: lag as ∫(v_target − v_measured) since start | summed the start-up shortfall and the steady speed offset, which the rider never makes up: stopped 5–6 cm short forward, 9 cm long reverse (runde9, ede94cd8); now lag = 0.25 s × filtered v_measured |
 | Velocity frame: integral during the ramp | wound up during acceleration; now only 0.6 s after the ramp |
 | Stock `automatic_lean` | never set by any register or console |
 | Vendor BLE (fff0/fff1/fff2, name sector, trace stream `0xb3`, `!name`) | own service `RiderKerk` |
