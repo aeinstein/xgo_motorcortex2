@@ -182,6 +182,7 @@ class Robot:
         self.caps = 0
         self.bogen = False
         self._target_k: float | None = None
+        self._kappa_ziel: float | None = None      # κ des letzten Bogenrahmens: ein Halt bremst auf diesem Bogen
         self._bogen = Bogen()
         # Kursziel (Fähigkeitsbit und robot.vel_kurs): drive(kurs=(Restfehler rad, w_max Anteil)) schickt ein Ziel Δψ,
         # die Firmware dreht mit Bremsvorausschau darauf. Neues Ziel (Wechselbit) nur, wenn sich das verlangte Ziel
@@ -585,6 +586,12 @@ class Robot:
             self._write_limits(time.monotonic())
         if kurs is None and self._kurs.an:
             kurs_empfang(self._kurs, None)            # anderer Rahmen beendet das Kursziel
+        if (kappa is None and kurs is None and target == (0.0, 0.0) and self._bogen.an and abs(g.x) > 1e-6
+                and self._kappa_ziel is not None):
+            # Halt nach einer Bogenfahrt: auf demselben Bogen bremsen (w = κ · v_soll) statt w sofort auf 0 und geradeaus
+            # (Rider 2026-11-25); steht er, gilt wieder der Drehratenweg (w ist dann schon 0, kein Sprung)
+            kappa = self._kappa_ziel
+        self._kappa_ziel = kappa if kurs is None else None
         if kurs is not None:
             err = math.degrees(kurs[0])
             k = self._kurs
@@ -621,6 +628,7 @@ class Robot:
         nächster Durchlauf schreibt den Rahmen sofort (nicht im Liegen, sonst schriebe er in jedem Durchlauf)."""
         self._gen_v, self._gen_w = Achse(), Achse()
         self._bogen = Bogen()
+        self._kappa_ziel = None
         self._kurs = Kurs()
         if resend:
             self._frame_sent = None

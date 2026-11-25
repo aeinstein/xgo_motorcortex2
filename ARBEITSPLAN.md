@@ -15,7 +15,7 @@ Planer, der Planer fährt den Rider, nach der Sicherheitsprüfung.
 | 2 | **Test: Anfahren an eine Wand** | geradeaus geprüft gefahren 2026-11-25 (unten) |
 | 3 | **Test: Fahren einer Bahn entlang.** Kurven glätten, Drehungen auf der Stelle vermeiden (Hauptgrund der Drift) | offen |
 | 4 | **Fahrregler in die Firmware.** Pi sendet Sollgeschwindigkeit und Drehrate in echten Einheiten, die Firmware regelt | erledigt, gefahren (unten) |
-| 5 | **Bahnbefehle für die Navigation.** Krümmung statt Drehrate, Drehen auf Kurs, Strecke mit Halt, Rückmeldung im Strom (Plan unten) | Stufe 0 fertig. Stufe 1: fertig, `vel_kappa` aus, nicht gefahren (MCP `fahren`/`folge` mit `bogen` dafür). Stufe 2: gefahren 2026-11-25 (±90°/±180°, Sollwinkel auf 0,5°, IMU-Kurs 2–4 % kürzer; Firmware-Fix 33a7c5a/3c9f6fc0 Kurs halten im Stand, geflasht, Pi-Seite fertig, Nachfahrt offen), `vel_kurs` aus |
+| 5 | **Bahnbefehle für die Navigation.** Krümmung statt Drehrate, Drehen auf Kurs, Strecke mit Halt, Rückmeldung im Strom (Plan unten) | Stufe 0 fertig. Stufe 1: gefahren 2026-11-25 (κ 2, Firmware hält κ_soll exakt; Anfang enger, Halt jetzt auf dem Bogen), `vel_kappa` aus. Stufe 2: gefahren 2026-11-25 mit 3c9f6fc0 (±90°/±180°, Sollwinkel auf 0,4°, IMU-Kurs 1,4–2,2° kürzer), `vel_kurs` aus |
 
 ## Bahnbefehle (Punkt 5, Plan 2026-11-25)
 
@@ -216,8 +216,36 @@ der Soll-Nick ab 1,4 s negativ, der Ist-Nick bis 2,1 s über 1,5°) – also meh
   kommen), geflasht 2026-11-25. Pi-Seite dazu: Handdrehung schickt im Nachlauf (`turn_settle_s` 1 s) weiter das
   Kursziel, Nachkorrektur `KURS_NACH_*` entfernt (korrigierte doppelt).
 
-Stufe 1 (Bogen) von Hand: `/drive?bogen=1` bzw. MCP `fahren`/`folge` mit `bogen` setzt `Command.kappa` = w/v
-(seit 2026-11-25); mit `vel_kappa` fährt die Firmware diesen Kreis. Noch nicht gefahren.
+Nachfahrt mit 3c9f6fc0 (`runde7.csv`; Handdrehung hält 1 s im Nachlauf):
+
+| Soll | ∫ w_soll | IMU-Kurs am Ende | vorher ohne Halten |
+|---|---|---|---|
+| +90° | 90,2° | 88,6° | 87,3° |
+| −90° | −90,1° | −87,8° | −86,3° |
+| +180° | 179,9° | 178,5° | 177,3° |
+| −180° | −180,4° | −178,6° | −177,1° |
+
+- Rest 1,4–2,2° statt 2,7–3,5°: Das Halten holt nur teilweise auf (Haftreibung wie im Modell der Firmware-Sitzung).
+- Davor noch einmal 105° statt 90°: Der Kurs in xgonav läuft dem Generator bei 90 °/s über 20° nach, auch 20° Schwelle
+  schob das Ziel nach. Jetzt nie ein neues Ziel, solange die Firmware dreht; erst nach Ankunft bei > 15° Rest (69f33db).
+
+## Bogen gefahren (Punkt 5 Stufe 1, 2026-11-25)
+
+`/drive?bogen=1` bzw. MCP `fahren`/`folge` mit `bogen` setzt `Command.kappa` = w/v (Handsteuerung); `vel_kappa` nur für
+den Test. Gefahren über `bogenfahrt.py` am Rider (gleicher Ablauf wie MCP `fahren`, geprüft; das MCP-Werkzeug in Claude
+Code kannte `bogen` noch nicht, die Werkzeugliste lädt nur beim Verbinden). v 0,2 (46 Einh.), w 0,115 → κ 2 1/m, 4,5 s.
+
+| Größe | Ergebnis |
+|---|---|
+| κ_soll = w_soll / v_soll | 2,00 über Rampe und Fahrt |
+| κ mit v_ist | 2,7–2,9 in der ersten Sekunde (v_ist 33 statt 46, langsamer Anlauf vorwärts), danach 2,0–2,2 |
+| gedreht / Strecke | 91,5° / 0,75 m (Kreis R 0,5: 90° auf 0,79 m) |
+| Endpunkt | 0,42 m vor, 0,51 m links (Kreis: 0,50 / 0,50) |
+| Halt | `/stop` (v 0, w 0 ohne κ) schaltete auf den Drehratenweg: w sofort 0, geradeaus gebremst |
+
+- Halt behoben: Nach einem Bogenrahmen bremst `Robot` bei v 0, w 0 weiter auf demselben Bogen (Krümmungsrahmen mit
+  v 0) bis zum Stand; Drehen auf der Stelle schaltet sofort um (`test_halt_nach_bogen_bremst_auf_dem_bogen`).
+- Offen: Der engere Anfang folgt aus der Kopplung an v_soll (Entscheidung Firmware) und dem langsamen Anlauf vorwärts.
 
 ## Anfahren an eine Wand (Punkt 2, gefahren 2026-11-25)
 

@@ -460,3 +460,37 @@ def test_handdrehung_schickt_kursziel_im_nachlauf():
     assert c.kurs is not None
     c = m.step(None, yaw=math.radians(90.0), now=t + 1.0 + cfg.behavior.turn_settle_s + 0.01)
     assert c.kurs is None and m.turn_info["fertig"]
+
+
+def test_halt_nach_bogen_bremst_auf_dem_bogen():
+    """Halt (drive(0, 0)) nach einer Bogenfahrt: weiter Krümmungsrahmen mit v 0, w = κ · v_soll bis zum Stand (Rider
+    2026-11-25: w fiel sofort auf 0, er bremste geradeaus); danach Drehratenweg. Drehen auf der Stelle schaltet sofort."""
+    cfg = _cfg(vel_kappa=True)
+    r = SimRobot(cfg)
+    r.start()
+    try:
+        k = 2.0
+        for _ in range(40):
+            r.drive(0.2, 0.0, kappa=k)
+            time.sleep(0.02)
+        t0 = time.monotonic()
+        vk, v_alt = [], r.command[0]
+        for _ in range(60):
+            r.drive(0.0, 0.0)
+            time.sleep(0.02)
+            v, w = r.command
+            if v > 1e-3:
+                vk.append(math.radians(w * cfg.vyaw_limit_dps) / (v * cfg.vx_limit))
+        assert v_alt > 0.1 and vk and all(abs(x - k) < 1e-6 for x in vk)
+        vel = _writes(r, "vel", t0)
+        assert any(t.startswith("kap 0 ") for t in vel)                    # Bogenrahmen mit Ziel v 0
+        assert r.command == (0.0, 0.0) and not vel[-1].startswith("kap ")  # steht: wieder Drehratenweg
+        for _ in range(20):
+            r.drive(0.2, 0.0, kappa=k)
+            time.sleep(0.02)
+        t1 = time.monotonic()
+        r.drive(0.0, 0.3)                                                  # Drehen auf der Stelle: sofort Drehrate
+        time.sleep(0.1)
+        assert not any(t.startswith("kap ") for t in _writes(r, "vel", t1))
+    finally:
+        r.close()
