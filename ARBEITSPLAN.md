@@ -15,7 +15,7 @@ Planer, der Planer fährt den Rider, nach der Sicherheitsprüfung.
 | 2 | **Test: Anfahren an eine Wand** | geradeaus geprüft gefahren 2026-11-25 (unten) |
 | 3 | **Test: Fahren einer Bahn entlang.** Kurven glätten, Drehungen auf der Stelle vermeiden (Hauptgrund der Drift) | offen |
 | 4 | **Fahrregler in die Firmware.** Pi sendet Sollgeschwindigkeit und Drehrate in echten Einheiten, die Firmware regelt | erledigt, gefahren (unten) |
-| 5 | **Bahnbefehle für die Navigation.** Krümmung statt Drehrate, Drehen auf Kurs, Strecke mit Halt, Rückmeldung im Strom (Plan unten) | Stufe 0 fertig. Stufe 1: gefahren 2026-11-25 (κ 2, Firmware hält κ_soll exakt; Anfang enger, Halt jetzt auf dem Bogen), `vel_kappa` aus. Stufe 2: gefahren 2026-11-25 mit 3c9f6fc0 (±90°/±180°, Sollwinkel auf 0,4°, IMU-Kurs 1,4–2,2° kürzer), `vel_kurs` aus |
+| 5 | **Bahnbefehle für die Navigation.** Krümmung statt Drehrate, Drehen auf Kurs, Strecke mit Halt, Rückmeldung im Strom (Plan unten) | Stufe 0 fertig. Stufe 1: gefahren 2026-11-25 (κ 2, Firmware hält κ_soll exakt; Anfang enger, Halt jetzt auf dem Bogen), `vel_kappa` aus. Stufe 2: gefahren 2026-11-25 mit 81cb3335 (±90°/±180°, Sollwinkel auf 0,4°, IMU-Kurs 2 s nach Ende auf ≤ 1,4°), `vel_kurs` aus |
 
 ## Bahnbefehle (Punkt 5, Plan 2026-11-25)
 
@@ -228,6 +228,19 @@ Nachfahrt mit 3c9f6fc0 (`runde7.csv`; Handdrehung hält 1 s im Nachlauf):
 - Rest 1,4–2,2° statt 2,7–3,5°: Das Halten holt nur teilweise auf (Haftreibung wie im Modell der Firmware-Sitzung).
 - Davor noch einmal 105° statt 90°: Der Kurs in xgonav läuft dem Generator bei 90 °/s über 20° nach, auch 20° Schwelle
   schob das Ziel nach. Jetzt nie ein neues Ziel, solange die Firmware dreht; erst nach Ankunft bei > 15° Rest (69f33db).
+
+Nachfahrt mit 81cb3335 (Kurs-Regler bekommt beim Halten im Stand ein Integral, ki 0,04 je Takt, Totband 0,3°; Ursache
+des Rests: Kurs-PID ohne Integral, P 3 Einheiten je Grad bleibt unter ~3° unter der Haftreibung) und 2 s Nachlauf
+(`behavior.turn_settle_s` 2,0, 9c72292), `runde8.csv`:
+
+| Soll | ∫ w_soll | IMU-Kurs am Ende | IMU-Kurs 2 s danach | Kurs xgonav (MCP) |
+|---|---|---|---|---|
+| +90° | 89,7° | 85,8° | 88,6° | 88,8° |
+| −90° | −89,6° | −85,4° | −88,9° | −90,2° |
+| +180° | 179,6° | 176,3° | 179,9° | 180,4° |
+| −180° | −179,9° | −176,2° | −179,0° | −180,5° |
+
+- Ziel ±2° erreicht: Im Nachlauf holt das Integral den Rest auf (IMU 2 s danach ≤ 1,4° daneben, Kurs xgonav ≤ 1,2°).
 
 ## Bogen gefahren (Punkt 5 Stufe 1, 2026-11-25)
 
