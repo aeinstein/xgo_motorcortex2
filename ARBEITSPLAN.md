@@ -221,6 +221,10 @@ Kosten am ESP32: zwei PI-Regler + Rampe je Takt, vernachlässigbar gegen die Lag
   `0035-velocity-tuning`: 0x1b fest 14 Byte (Einheit, ki, i_max, kv), Vorsteuerung in mm/s², −kv·v_ist, Integral
   erst nach der Rampe. Entfernt: Vorfaktor des Bestandswegs (`vel_stock_scale`), kv auf das Soll, die 6/10/16-Byte-
   Varianten. Treiber `vel_limits` nur noch 7 Felder. Verhalten gleich dem gefahrenen Stand (c 1, kv 0,025, ki 0,03).
+  Geflasht 2026-11-25 ~14:05 (SHA ef2a2894…), Treiber und xgonav eingespielt. **Prüffahrt:** v 0,2 (Soll 46): 90 %
+  nach 0,5 s, Spitze 1,10 ×, letzte Sekunde 1,07 ×, 0,64 m; v 0,3 (Soll 69): 90 % nach 0,95 s, Spitze 1,08 ×, letzte
+  Sekunde 1,03 ×, 0,82 m in 3 s; Drehen w 0,4 (72 °/s): 1,00 ×, Winkel 219 / 215°. Firmware ab hier Sache einer
+  anderen Sitzung (Nutzer 2026-11-25).
 
 ### Zu klären
 
