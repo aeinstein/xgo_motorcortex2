@@ -101,6 +101,9 @@ class Command:
     # Drehen auf einen Kurs: (Restfehler rad, + = links; höchster normierter Drehwert wie w). Mit robot.vel_kurs dreht
     # die Firmware selbst mit Bremsvorausschau darauf (ARBEITSPLAN.md Punkt 5 Stufe 2), sonst zählt w.
     kurs: tuple[float, float] | None = None
+    # Reststrecke (m) bis zum Halt, vom Aufrufer laufend aus der Odometrie nachgerechnet; mit robot.vel_strecke bremst
+    # die Firmware so, dass er dort steht (ARBEITSPLAN.md Punkt 5 Stufe 3).
+    strecke: float | None = None
 
 
 def dreh_w(err: float, kp: float, w_max: float, rcfg: RobotCfg, deadband_deg: float = 0.0,
@@ -149,19 +152,26 @@ class Manual(Behavior):
     def __init__(self, cfg, rcfg):
         super().__init__(cfg, rcfg)
         self._v = self._w = 0.0
-        self._t = -1e9
+        self._t = self._t_alt = -1e9
         self.checked = False      # letzter Sollwert verlangt Bodengrenze + Bahnprüfung (/drive?sicher=1, MCP)
         self.bogen = False        # letzter Sollwert als Bogen (/drive?bogen=1): Krümmung κ = w/v statt Drehrate
+        self.strecke_soll: float | None = None   # /drive?strecke=S: nach S Metern halten (Stufe 3)
+        self.strecke_odo0: float | None = None   # Odometrie beim ersten Sollwert mit dieser Strecke (setzt die App)
         self._turn: dict | None = None
         self.turn_info: dict | None = None   # /status turn: soll_deg, gedreht_deg, fertig, grund
 
-    def set(self, v: float, w: float, now: float, checked: bool = False, bogen: bool = False) -> None:
+    def set(self, v: float, w: float, now: float, checked: bool = False, bogen: bool = False,
+            strecke: float | None = None) -> None:
         """v, w: Faktoren -1..1 (Anteil von robot.max_v/max_w), seit 2026-11-23. Bricht ein /turn ab. bogen: Befehl
         trägt die Krümmung κ = Drehrate/Tempo (Command.kappa); mit robot.vel_kappa fährt die Firmware dann diesen Kreis,
         auch beim Anfahren und Bremsen (ARBEITSPLAN.md Punkt 5 Stufe 1), sonst wie ohne."""
         self._v, self._w, self._t = clamp(v, -1.0, 1.0), clamp(w, -1.0, 1.0), now
         self.checked = checked
         self.bogen = bogen
+        if strecke != self.strecke_soll or now - self._t_alt > self.HOLD_S:
+            self.strecke_odo0 = None          # neue Strecke (oder neu angefangen): Bezug beim nächsten Regelschritt
+        self.strecke_soll = strecke if strecke is not None and strecke > 0 else None
+        self._t_alt = now
         if self._turn is not None:
             self.turn_ende("abgebrochen")
 

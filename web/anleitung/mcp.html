@@ -1543,8 +1543,8 @@
 <tr>
 <td><code>fahren</code></td>
 <td>fahren</td>
-<td><code>v</code>, <code>w</code>, <code>sekunden</code> 0.2..5, <code>geprueft</code> (default true), <code>bogen</code> (default false), <code>bild</code></td>
-<td><code>v</code>, <code>w</code> are factors of <code>robot.max_v</code>/<code>max_w</code> (since 2026-11-23). Checked: <code>/drive?sicher=1</code>, <code>v</code> ±0.30, <code>w</code> ±0.60; <code>geprueft: false</code>: <code>/drive</code> like the web D-pad / <code>rider_nav.py fahr</code>, <code>v</code>, <code>w</code> ±1; 10 Hz, then standstill + idle; returns distance, pose before/after, braking messages, image. <code>bogen</code>: <code>/drive?bogen=1</code>, the setpoint carries curvature κ = w/v (<code>Command.kappa</code>); with <code>robot.vel_kappa</code> the firmware holds that circle while accelerating and braking</td>
+<td><code>v</code>, <code>w</code>, <code>sekunden</code> 0.2..5, <code>geprueft</code> (default true), <code>bogen</code> (default false), <code>strecke</code> (m, optional), <code>bild</code></td>
+<td><code>v</code>, <code>w</code> are factors of <code>robot.max_v</code>/<code>max_w</code> (since 2026-11-23). Checked: <code>/drive?sicher=1</code>, <code>v</code> ±0.30, <code>w</code> ±0.60; <code>geprueft: false</code>: <code>/drive</code> like the web D-pad / <code>rider_nav.py fahr</code>, <code>v</code>, <code>w</code> ±1; 10 Hz, then standstill + idle; returns distance, pose before/after, braking messages, image. <code>bogen</code>: <code>/drive?bogen=1</code>, the setpoint carries curvature κ = w/v (<code>Command.kappa</code>); with <code>robot.vel_kappa</code> the firmware holds that circle while accelerating and braking. <code>strecke</code>: <code>/drive?strecke=M</code>, stop after M metres (odometry from the first setpoint); with <code>robot.vel_strecke</code> the firmware brakes to that point</td>
 </tr>
 <tr>
 <td><code>folge</code></td>

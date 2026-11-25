@@ -2010,19 +2010,25 @@
 <td><code>vel_frame</code></td>
 <td>true</td>
 <td></td>
-<td>drive frame of firmware patch 08-velocity (<code>xgonav/fahrrahmen.py</code>): used when the driver has <code>/proc/XGORider/vel</code> and the firmware answers reg 0x1a, else bytes. Sends target m/s (normalised × <code>vx_limit</code>) and °/s (× <code>vyaw_limit_dps</code>) with acceleration and jerk; the firmware ramps (S-curve) and controls speed and turn rate. (Pi ramp, <code>speed_ctrl</code> and <code>turn_min_w</code> removed 2026-11-25; the byte fallback sends targets unramped); <code>robot.command</code> is the firmware's setpoint, recomputed on the Pi. Simulator follows it with 0.15 s / 0.1 s lag (assumption until measured)</td>
+<td>drive frame of firmware patch 08-velocity (<code>xgonav/fahrrahmen.py</code>): used when the driver has <code>/proc/XGORider/vel</code> and the firmware answers reg 0x1a, else bytes; if the firmware did not answer at start (flashing, ESP restart), xgonav asks again every 5 s and switches over. Sends target m/s (normalised × <code>vx_limit</code>) and °/s (× <code>vyaw_limit_dps</code>) with acceleration and jerk; the firmware ramps (S-curve) and controls speed and turn rate. (Pi ramp, <code>speed_ctrl</code> and <code>turn_min_w</code> removed 2026-11-25; the byte fallback sends targets unramped); <code>robot.command</code> is the firmware's setpoint, recomputed on the Pi. Simulator follows it with 0.15 s / 0.1 s lag (assumption until measured)</td>
 </tr>
 <tr>
 <td><code>vel_kappa</code></td>
-<td>false</td>
+<td>true</td>
 <td></td>
-<td>curvature mode (ARBEITSPLAN.md item 5, stage 1): path-follower commands carry <code>Command.kappa</code> and go out as <code>kap</code> frames (κ in 0.001 1/m); the firmware sets w = κ · v_target and limits v/a/jerk instead of w, so the arc holds while accelerating and braking. Only if the firmware reports capability bit0 (reg 0x1a byte 1); otherwise turn-rate frames and a log warning. Off until driven</td>
+<td>curvature mode (ARBEITSPLAN.md item 5, stage 1): path-follower commands carry <code>Command.kappa</code> and go out as <code>kap</code> frames (κ in 0.001 1/m); the firmware sets w = κ · v_target and limits v/a/jerk instead of w, so the arc holds while accelerating and braking. Only if the firmware reports capability bit0 (reg 0x1a byte 1); otherwise turn-rate frames and a log warning. A stop after an arc brakes on the same arc. Driven 2026-11-25 (κ 2 by hand), on since</td>
 </tr>
 <tr>
 <td><code>vel_kurs</code></td>
+<td>true</td>
+<td></td>
+<td>course target (ARBEITSPLAN.md item 5, stage 2): turning on the spot to a heading (path follower turn/align, <code>POST /turn</code>) goes out as <code>kurs</code> frames (Δψ in 0.1°, toggle bit = new target); the firmware turns with braking look-ahead and holds the heading. While a target runs, the mode's turn limit is sent as w_max in <code>vel_limits</code>. A new target only when none runs or the running one has arrived and &gt; 15° remain (never while the firmware turns: the heading lags &gt; 20° at 90 °/s); <code>POST /turn</code> keeps sending the target for <code>behavior.turn_settle_s</code> (2 s) after arrival so the firmware holds it (81cb3335). Only if the firmware reports capability bit1 and the driver has 13-field <code>vel</code>; otherwise turn-rate frames. Driven 2026-11-25 (±90°/±180° within ±1.4°), on since</td>
+</tr>
+<tr>
+<td><code>vel_strecke</code></td>
 <td>false</td>
 <td></td>
-<td>course target (ARBEITSPLAN.md item 5, stage 2): turning on the spot to a heading (path follower turn/align, <code>POST /turn</code>) goes out as <code>kurs</code> frames (Δψ in 0.1°, toggle bit = new target); the firmware turns with braking look-ahead and holds the heading. While a target runs, the mode's turn limit is sent as w_max in <code>vel_limits</code>. A new target only when the requested one moves &gt; 2° (or &gt; 1° left after arrival). Only if the firmware reports capability bit1 and the driver has 13-field <code>vel</code>; otherwise turn-rate frames. Off until driven</td>
+<td>distance with stop (ARBEITSPLAN.md item 5, stage 3): commands with <code>Command.strecke</code> (remaining metres, recomputed by the caller from odometry each step, e.g. <code>/drive?strecke=M</code>) go out as 15-byte <code>dist</code>/<code>kapdist</code> frames (rest in mm, rounded to 5 mm); the firmware brakes so it stops there (look-ahead plus wheel lag). Only if the firmware reports capability bit2 and the driver has 14-field <code>vel</code>. Off until driven</td>
 </tr>
 <tr>
 <td><code>fw_speed_unit_mm</code></td>

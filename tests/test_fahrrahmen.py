@@ -9,8 +9,9 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from xgonav.config import Config  # noqa: E402
-from xgonav.fahrrahmen import (CAP_KAPPA, CAP_KURS, Achse, Bogen, Kurs, bogen_schritt, bogen_text, grenzen_text,  # noqa: E402
-                                kurs_empfang, kurs_schritt, kurs_text, rahmen_text, zustand)
+from xgonav.fahrrahmen import (CAP_KAPPA, CAP_KURS, Achse, Bogen, Kurs, Strecke, bogen_schritt, bogen_text,  # noqa: E402
+                                grenzen_text, kurs_empfang, kurs_schritt, kurs_text, rahmen_text, strecke_empfang,
+                                strecke_messen, strecke_schritt, strecke_text, zustand)
 from xgonav.robot import ProcRobot, SimRobot  # noqa: E402
 
 
@@ -28,7 +29,7 @@ def test_zustand_lesen():
     z = zustand("1 0 0 1 250 -12.3 500 90.0 300")
     assert z == {"aktiv": True, "beschl": False, "waechter": False, "grenzen": True, "v": 250, "w": -12.3,
                  "v_max": 500, "w_max": 90.0, "timeout_ms": 300, "kappa": False, "caps": 0,
-                 "kurs": False, "erreicht": False}                                    # alter Treiber
+                 "kurs": False, "erreicht": False, "strecke": False}                  # alter Treiber
     z = zustand("1 0 0 1 46 4.6 600 300.0 300 1 1")
     assert z["kappa"] and z["caps"] == CAP_KAPPA and z["w"] == 4.6
     z = zustand("1 0 0 1 46 4.6 600 300.0 300 1 3")
@@ -65,7 +66,7 @@ def _u16(b, i):
 def _firmware_nachbau(rows):
     """velocity_cmd.h receive + tick (Drehraten- und Krümmungsweg) mit Achse und bogen_schritt nachgerechnet; je Takt
     (v, w, a, kappa, timed_out)."""
-    fwd, turn, bog, kz = Achse(), Achse(), Bogen(), Kurs()
+    fwd, turn, bog, kz, st = Achse(), Achse(), Bogen(), Kurs(), Strecke()
     aktiv = ticked = timed_out = beschl = False
     last_rx = last_tick = 0
     f = None
@@ -83,12 +84,16 @@ def _firmware_nachbau(rows):
                 ticked = False
             aktiv, timed_out, last_rx, beschl = True, False, t, f["beschl"]
             kurs_empfang(kz, _i16(d, 7) * 0.1 if kur else None, bool(d[0] & 16))
+            strecke_empfang(st, float(_u16(d, 13)) if d[0] & 8 else None)
         dt = 0.0
         if not ticked:
             fwd, turn = Achse(), Achse()
         else:
             dt = min(0.05, (t - last_tick) * 1e-6)
         last_tick, ticked = t, True
+        if st.an and dt > 0:
+            strecke_messen(st, fwd.x, float(r.get("v_meas") or 0.0), 1.0 if f["v"] >= 0 else -1.0,
+                           float(r["unit_mm"]), dt)
         wd = timeout and t - last_rx > timeout * 1000
         if wd and not timed_out:
             timed_out, beschl = True, False
@@ -98,7 +103,7 @@ def _firmware_nachbau(rows):
                 turn.x = bogen_schritt(fwd, bog, turn.x, 0.0, f["k"], a, f["j"], f["al"], f["jw"], v_max, w_max, dt, m)
             else:
                 turn.x = bogen_schritt(fwd, bog, turn.x, f["v"], f["k"], f["a"], f["j"], f["al"], f["jw"], v_max,
-                                       w_max, dt, m, beschl=beschl)
+                                       w_max, dt, m, beschl=beschl, st=st)
         elif f["kurs"]:
             bog.an = False
             if wd:
@@ -117,11 +122,14 @@ def _firmware_nachbau(rows):
             else:
                 if beschl:
                     fwd.beschleunigen(f["a"], f["j"], v_max, dt)
+                elif st.an:
+                    strecke_schritt(fwd, st, max(-v_max, min(v_max, f["v"])), abs(f["a"]), f["j"], dt,
+                                    float(r["unit_mm"]))
                 else:
                     fwd.schritt(max(-v_max, min(v_max, f["v"])), abs(f["a"]), f["j"], dt)
                 turn.schritt(max(-w_max, min(w_max, f["w"])), f["al"], f["jw"], dt)
             fwd.x, turn.x = max(-v_max, min(v_max, fwd.x)), max(-w_max, min(w_max, turn.x))
-        out.append((fwd.x, turn.x, fwd.a, bog.kappa, timed_out, kz.rest, kz.done))
+        out.append((fwd.x, turn.x, fwd.a, bog.kappa, timed_out, kz.rest, kz.done, st.rest, st.done, st.lag))
     return out
 
 
@@ -133,17 +141,21 @@ def test_firmware_vektoren(name):
     with open(os.path.join(VECTORS, name + ".csv"), newline="") as fh:
         rows = list(csv.DictReader(fh))
     flags = {bytes.fromhex(r["frame_hex"])[0] for r in rows}
-    if any(f & ~(1 | 2 | 4 | 16) for f in flags):
-        pytest.skip("Betrieb mit Flag %s noch nicht nachgebaut (Strecke: Stufe 3)" % sorted(flags))
+    if any(f & ~(1 | 2 | 4 | 8 | 16) for f in flags):
+        pytest.skip("Betrieb mit Flag %s noch nicht nachgebaut" % sorted(flags))
     # Kursziel: Die Vorausschau entscheidet je Takt „weiter oder bremsen“ über ein Vorzeichen; float (ESP32) und double
     # kippen an der Grenze einen Takt verschieden. Gemessen 2026-11-25: höchstens 0,61 °/s, Rest 0,05°, „angekommen“
     # ±2 Takte, Endrest gleich auf 0,001°. Deshalb dort diese Grenzen statt 1e-4.
     kurs = any(f & 4 for f in flags)
     tol = {"w": 1.0, "rest": 0.1} if kurs else {}
+    tol.update({"dist_rest": 0.01, "dist_lag": 0.01})   # mm: Summen über bis 1600 Takte in float (ESP32) gegen double
     falsch_done = 0
     out = _firmware_nachbau(rows)
-    for i, (r, (v, w, a, k, to, rest, done)) in enumerate(zip(rows, out)):
+    for i, (r, (v, w, a, k, to, rest, done, d_rest, d_done, d_lag)) in enumerate(zip(rows, out)):
         werte = [("v", v), ("w", w), ("a", a), ("kappa", k)] + ([("rest", rest)] if "rest" in r else [])
+        if "dist_rest" in r:
+            werte += [("dist_rest", d_rest), ("dist_lag", d_lag)]
+            assert d_done == (r["dist_done"] == "1"), "%s Zeile %d t %s: dist_done" % (name, i + 2, r["t_us"])
         for key, x in werte:
             soll = float(r[key])
             grenze = tol.get(key, 1e-4 * max(1.0, abs(soll)))
@@ -331,8 +343,7 @@ def test_bogen_robot_schreibt_kruemmung_und_haelt_den_bogen():
 
 
 def test_bogen_ohne_vel_kappa_wie_bisher():
-    cfg = _cfg()
-    assert not cfg.vel_kappa
+    cfg = _cfg(vel_kappa=False)
     r = SimRobot(cfg)
     r.start()
     try:
@@ -348,7 +359,7 @@ def test_bogen_ohne_vel_kappa_wie_bisher():
 def test_kurs_robot_dreht_auf_ziel_ein_rahmen_je_ziel():
     """Kursziel: ein Ziel Δψ mit Wechselbit, gleiche Rahmen danach, w_max des Modus über vel_limits, angekommen ohne
     Überschwingen; ein verschobenes Ziel schaltet das Wechselbit um, danach w_max wieder voll."""
-    cfg = _cfg(vel_kurs=True)
+    cfg = _cfg(vel_kurs=True, vel_kappa=False)
     r = SimRobot(cfg)
     r.start()
     try:
@@ -494,3 +505,54 @@ def test_halt_nach_bogen_bremst_auf_dem_bogen():
         assert not any(t.startswith("kap ") for t in _writes(r, "vel", t1))
     finally:
         r.close()
+
+
+def test_fahrrahmen_wird_nachtraeglich_erkannt(tmp_path):
+    """Antwortet die Firmware beim Start nicht (Flashen), schaltet ProcRobot später selbst auf den Fahrrahmen um."""
+    cfg = _cfg(proc_dir=str(tmp_path))
+    r = ProcRobot(cfg)
+    (tmp_path / "vel").write_text("Fehler -110\n")
+    (tmp_path / "vel_limits").write_text("")
+    r._vel_setup()
+    assert not r.vel
+    r._vel_nachpruefen(r._vel_neu_t + 1.0)
+    assert not r.vel                                                       # zu früh: keine Abfrage
+    r._vel_nachpruefen(r._vel_neu_t + r.VEL_NEU_S)
+    assert not r.vel                                                       # Firmware antwortet noch nicht
+    (tmp_path / "vel").write_text("0 0 0 0 0 0.0 0 0.0 0 0 3 0 0\n")
+    r._vel_nachpruefen(r._vel_neu_t + r.VEL_NEU_S)
+    assert r.vel and r.bogen and r.kurs_an
+    assert (tmp_path / "vel_limits").read_text().startswith("231 180.0")
+
+
+def test_strecke_text_und_robot_haelt_am_ende():
+    """Stufe 3: Rahmen "dist …"/"kapdist …" mit Reststrecke in mm; Robot (Nachbau) steht nach der verlangten Strecke."""
+    assert strecke_text(0.18, 0.5, 2.5, 0.0, None, 360, 1800, 3.9, 1.0) == "dist 46 128 641 0.0 360 1800 1000"
+    assert strecke_text(0.18, 0.5, 2.5, None, 2.0, 360, 1800, 3.9, 0.785) == "kapdist 46 128 641 2000 360 1800 785"
+    cfg = _cfg(vel_strecke=True)
+    r = SimRobot(cfg)
+    r._setup()                                                             # ohne Thread: fester Takt 20 ms
+    assert r.strecke_an
+    ziel, weg, dt = 0.5, 0.0, 0.02
+    for _ in range(250):                                                   # bis 5 s
+        r._ramp_vel((r.cfg.v_of(0.2), 0.0), dt, strecke=max(0.0, ziel - weg))
+        weg += r.command[0] * cfg.vx_limit * dt                            # Odometrie = Sollwert
+        if weg > 0.1 and r.command[0] == 0.0:
+            break
+    assert r.command[0] == 0.0 and abs(weg - ziel) < 0.01, weg          # steht auf 1 cm genau
+    assert r._frame.startswith("dist ")
+
+
+def test_handsteuerung_mit_strecke():
+    from xgonav.behaviors import Manual
+    cfg = Config.neutral()
+    m = Manual(cfg.behavior, cfg.robot)
+    m.set(0.2, 0.0, 10.0, strecke=1.0)
+    assert m.strecke_soll == 1.0 and m.strecke_odo0 is None
+    m.strecke_odo0 = 3.0
+    m.set(0.2, 0.0, 10.1, strecke=1.0)                                     # Wiederholung mit 10 Hz: Bezug bleibt
+    assert m.strecke_odo0 == 3.0
+    m.set(0.2, 0.0, 10.2, strecke=0.5)                                     # neue Strecke: neuer Bezug
+    assert m.strecke_odo0 is None
+    m.set(0.2, 0.0, 10.3)
+    assert m.strecke_soll is None

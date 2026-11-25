@@ -15,7 +15,7 @@ Planer, der Planer fährt den Rider, nach der Sicherheitsprüfung.
 | 2 | **Test: Anfahren an eine Wand** | geradeaus geprüft gefahren 2026-11-25 (unten) |
 | 3 | **Test: Fahren einer Bahn entlang.** Kurven glätten, Drehungen auf der Stelle vermeiden (Hauptgrund der Drift) | offen |
 | 4 | **Fahrregler in die Firmware.** Pi sendet Sollgeschwindigkeit und Drehrate in echten Einheiten, die Firmware regelt | erledigt, gefahren (unten) |
-| 5 | **Bahnbefehle für die Navigation.** Krümmung statt Drehrate, Drehen auf Kurs, Strecke mit Halt, Rückmeldung im Strom (Plan unten) | Stufe 0 fertig. Stufe 1: gefahren 2026-11-25 (κ 2, Firmware hält κ_soll exakt; Anfang enger, Halt jetzt auf dem Bogen), `vel_kappa` aus. Stufe 2: gefahren 2026-11-25 mit 81cb3335 (±90°/±180°, Sollwinkel auf 0,4°, IMU-Kurs 2 s nach Ende auf ≤ 1,4°), `vel_kurs` aus |
+| 5 | **Bahnbefehle für die Navigation.** Krümmung statt Drehrate, Drehen auf Kurs, Strecke mit Halt, Rückmeldung im Strom (Plan unten) | Stufe 0 fertig. Stufe 1: gefahren 2026-11-25 (κ 2, Firmware hält κ_soll exakt; Anfang enger, Halt jetzt auf dem Bogen), `vel_kappa` aus. Stufe 2: gefahren 2026-11-25 mit 81cb3335 (±90°/±180°, Sollwinkel auf 0,4°, IMU-Kurs 2 s nach Ende auf ≤ 1,4°). `vel_kappa`/`vel_kurs` seit 2026-11-25 Standard an. Stufe 3: Firmware ede94cd8 geflasht, Pi-Seite fertig (`vel_strecke` aus), nicht gefahren |
 
 ## Bahnbefehle (Punkt 5, Plan 2026-11-25)
 
@@ -60,6 +60,14 @@ Wechselbit nur bei > 2° Verschiebung (oder > 1° Rest nach Ankunft), w-Obergren
 Befehle mit `Command.kurs`: Wegfolger (Drehen, Ausrichten) und `POST /turn`; Dunkelangst und pet noch über `dreh_w`.
 Simulator (je ein Lauf, `--dyn`): home 60 s mit Kursziel und mit Kursziel + Krümmung am Start (4–5 cm), explore 200 s
 `--rider` beide an: Karte fertig in 110 s, keine Kollision, 1 Stelle nicht erreicht.
+
+Stand Stufe 3 (2026-11-25): Firmware 335401c (ede94cd8) geflasht. Treiber `dist V A J W ALPHA JW S` und
+`kapdist V A J K ALPHA JW S` (15 Byte, `vel_encode` liefert die Länge), Zustand 14 Felder mit `strecke` (driver-test
+`--vel` grün auf kimmy). xgonav: `fahrrahmen.Strecke`/`strecke_empfang`/`strecke_messen`/`strecke_schritt` gegen alle 26
+Vektoren (Rest und Nachlauf auf 0,01 mm); `Robot.drive(strecke=Rest m)` schickt den Rest auf 5 mm gerundet, Nachbau mit
+v_meas = Sollwert (ohne Nachlauf); Handsteuerung `/drive?strecke=M` bzw. MCP `fahren` mit `strecke`, Reststrecke aus
+`odom_m` ab dem ersten Regelschritt. Wegfolger und Bahnprüfung schicken noch keine Strecke. Außerdem: xgonav fragt alle
+5 s nach, wenn der Fahrrahmen beim Start fehlte (Flashen), und schaltet dann um.
 
 Reihenfolge: 0 → 1 → 2 → 3 → 4. Stufe 1 ist der Kern für Punkt 3 (Bahn entlang), 2 und 3 ersetzen Pi-Regelschleifen,
 4 räumt den doppelten Generator weg.

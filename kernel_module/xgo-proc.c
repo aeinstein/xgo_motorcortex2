@@ -215,12 +215,14 @@ static int vel_open(struct inode *inode, struct file *file) { return single_open
 
 static ssize_t vel_write(struct file *file, const char __user *user_buf, size_t count, loff_t *ppos) {
 	char buffer[64];
-	u8 frame[XGO_VEL_FRAME_LEN];
+	u8 frame[XGO_VEL_FRAME_MAX];
+	int len;
 	if (count == 0 || count >= sizeof(buffer)) return -EINVAL;
 	if (copy_from_user(buffer, user_buf, count)) return -EFAULT;
 	buffer[count] = '\0';
-	if (vel_encode(buffer, frame)) return -EINVAL;
-	write_serial_data(XGO_VEL, (char *)frame, sizeof(frame));
+	len = vel_encode(buffer, frame);   /* 13, mit Reststrecke 15 Byte */
+	if (len < 0) return -EINVAL;
+	write_serial_data(XGO_VEL, (char *)frame, len);
 	arm_motion_watchdog();
 	return count;
 }

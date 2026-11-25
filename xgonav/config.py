@@ -39,11 +39,15 @@ class RobotCfg:
     vel_frame: bool = True
     # Krümmungsbetrieb (ARBEITSPLAN.md Punkt 5 Stufe 1): Wegfolger-Befehle mit Command.kappa gehen als Bahnkrümmung an
     # die Firmware (w = κ · v_soll dort), der Bogen bleibt beim Anfahren und Bremsen. Nur wenn die Firmware das
-    # Fähigkeitsbit meldet; aus, bis am Rider gefahren.
-    vel_kappa: bool = False
+    # Fähigkeitsbit meldet. Gefahren 2026-11-25 (κ 2 von Hand), seitdem an (Nutzer).
+    vel_kappa: bool = True
     # Kursziel (Punkt 5 Stufe 2): Drehen auf einen Kurs (Wegfolger, POST /turn) als Ziel Δψ an die Firmware, die mit
-    # Bremsvorausschau dreht; w_max des Modus geht solange über vel_limits. Nur mit Fähigkeitsbit; aus bis gefahren.
-    vel_kurs: bool = False
+    # Bremsvorausschau dreht; w_max des Modus geht solange über vel_limits. Nur mit Fähigkeitsbit. Gefahren 2026-11-25
+    # (±90°/±180° auf ±1,4° mit Firmware 81cb3335), seitdem an (Nutzer).
+    vel_kurs: bool = True
+    # Strecke mit Halt (Punkt 5 Stufe 3): Befehle mit Command.strecke (Reststrecke, vom Aufrufer laufend nachgerechnet)
+    # gehen als 15-Byte-Rahmen; die Firmware bremst so, dass er dort steht. Nur mit Fähigkeitsbit; aus bis gefahren.
+    vel_strecke: bool = False
     fw_speed_unit_mm: float = 3.9
     vel_accel_mps2: float = 0.5
     vel_decel_mps2: float = 1.0

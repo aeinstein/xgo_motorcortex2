@@ -626,7 +626,8 @@ class App:
         self._free = None
         self.fs_worker.reset()
 
-    def set_manual(self, v: float, w: float, checked: bool = False, bogen: bool = False) -> None:
+    def set_manual(self, v: float, w: float, checked: bool = False, bogen: bool = False,
+                   strecke: float | None = None) -> None:
         """Sollwert der Handsteuerung (normiert, v > 0 vor, w > 0 links). Nur im Modus manual;
         geht auch bei gestoppter Bildverarbeitung (braucht keine Kamera).
         checked: dieser Sollwert läuft wie in den anderen Modi durch safety() und die Bahnprüfung
@@ -635,7 +636,7 @@ class App:
         b = self.behavior
         if b.name != "manual":
             raise ModeNotAllowed("Handsteuerung nur im Modus manual")
-        b.set(v, w, time.monotonic(), checked, bogen)
+        b.set(v, w, time.monotonic(), checked, bogen, strecke)
 
     TURN_MAX_DEG = 1080.0
 
@@ -952,7 +953,7 @@ class App:
         """Fahrbefehl an den Roboter (alle Modi gleich, auch die Handsteuerung: Faktor x tempo x max_v)."""
         bogen_w(cmd, self.robot, self.cfg.robot)
         self.robot.drive(cmd.v, cmd.w, brake=bool(cmd.extra.get("bremsen")), kappa=cmd.kappa,
-                         kurs=cmd.kurs if abs(cmd.v) < 1e-6 else None)
+                         kurs=cmd.kurs if abs(cmd.v) < 1e-6 else None, strecke=cmd.strecke)
 
     def _manual_cmd(self, w: World | None = None) -> Command:
         """Handsteuerung: nur Sturz-Erkennung, kein Bodenmodell/keine Bahnprüfung. Geprüfter Sollwert
@@ -963,6 +964,13 @@ class App:
             if getattr(self.behavior, "_turn", None) is not None:
                 self.behavior.turn_ende("liegt")
             return Command(0.0, 0.0, None, stopp_text(self.robot.state.mode))
+        soll = getattr(self.behavior, "strecke_soll", None)
+        if soll is not None and cmd.v:
+            # Strecke mit Halt (/drive?strecke=S): Reststrecke aus der Odometrie, ab dem ersten Regelschritt gezählt
+            if self.behavior.strecke_odo0 is None:
+                self.behavior.strecke_odo0 = self.odom_m
+            cmd.strecke = max(0.0, soll - (self.odom_m - self.behavior.strecke_odo0))
+            cmd.status += " Strecke %.2fm" % cmd.strecke
         if getattr(self.behavior, "checked", False) and (cmd.v or cmd.w):
             if w is None:
                 if cmd.v:

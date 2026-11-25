@@ -437,6 +437,7 @@ function werkzeuge(): array
                     'sekunden' => $zahl('Dauer', 0.2, FAHR_S_MAX),
                     'geprueft' => $ja('Mit Bodengrenze und Bahnprüfung (Standard true); false = Handsteuerung ohne Prüfung'),
                     'bogen' => $ja('Als Kreisbogen mit Krümmung w/v fahren (Standard false); mit robot.vel_kappa hält die Firmware den Kreis auch beim Anfahren und Bremsen'),
+                    'strecke' => $zahl('Nach so vielen Metern halten (optional); mit robot.vel_strecke bremst die Firmware genau dorthin', 0.05, 5),
                     'bild' => $ja('Danach das Kamerabild mitliefern (Standard true)')], ['v', 'sekunden']), false],
         'folge' => ['fahren', 'Mehrere Fahrabschnitte [v, w, sekunden] nacheinander OHNE Halt dazwischen, z. B. fahren und direkt aus der '
             . 'Fahrt drehen: [[0.26, 0, 3], [0, 0.5, 1]]. Grenzen je Abschnitt wie „fahren“ (auch geprueft), Abschnitte 0..5 s, '
@@ -793,10 +794,14 @@ function fahrt(array $abschnitte, array $a): array
         }
     }
     $bogen = (bool)($a['bogen'] ?? false);
+    $strecke = isset($a['strecke']) ? (float)$a['strecke'] : null;
     // Ein xgonav vor 2026-11-20 kennt sicher=1 nicht und führe ungeprüft; eines vor 2026-11-25 kennt bogen=1 nicht
-    $hilfe = ($geprueft || $bogen) ? http('GET', '/')[1] : '';
+    $hilfe = ($geprueft || $bogen || isset($a['strecke'])) ? http('GET', '/')[1] : '';
     if ($geprueft && strpos($hilfe, 'sicher=') === false) {
         throw new Fehler('Das laufende xgonav kennt das geprüfte Fahren noch nicht (Neustart des Dienstes nötig). Dem Besitzer sagen.');
+    }
+    if ($strecke !== null && strpos($hilfe, 'strecke=') === false) {
+        throw new Fehler('Das laufende xgonav kennt das Fahren mit Strecke noch nicht (Neustart des Dienstes nötig). Dem Besitzer sagen.');
     }
     if ($bogen && strpos($hilfe, 'bogen=') === false) {
         throw new Fehler('Das laufende xgonav kennt das Fahren im Bogen noch nicht (Neustart des Dienstes nötig). Dem Besitzer sagen.');
@@ -815,7 +820,8 @@ function fahrt(array $abschnitte, array $a): array
                 if (!balanciert()) {
                     throw new Fehler('Abbruch: Der Rider liegt.');
                 }
-                post(sprintf('/drive?v=%.3f&w=%.3f', $v, $w) . ($geprueft ? '&sicher=1' : '') . ($bogen ? '&bogen=1' : ''));   // 409, sobald jemand „stopp“ ruft
+                post(sprintf('/drive?v=%.3f&w=%.3f', $v, $w) . ($geprueft ? '&sicher=1' : '') . ($bogen ? '&bogen=1' : '')
+                     . ($strecke !== null ? sprintf('&strecke=%.3f', $strecke) : ''));   // 409, sobald jemand „stopp“ ruft
                 $m = (string)(status()['status'] ?? '');
                 foreach (['Freiraum!', 'Bahn', 'TTC', 'Sperrzone', 'BLIND', 'GEFALLEN', 'LIEGT'] as $wort) {
                     if (strpos($m, $wort) !== false) {
