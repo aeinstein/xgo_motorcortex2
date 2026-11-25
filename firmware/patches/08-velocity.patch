@@ -1,7 +1,7 @@
 velocity: Fahrrahmen in mm/s und °/s mit Sollwertgenerator, Geschwindigkeits- und Drehratenregler
 
 diff --git a/firmware/src/command_protocol.cpp b/firmware/src/command_protocol.cpp
-index b828775..d4a6c25 100644
+index b828775..affd25d 100644
 --- a/firmware/src/command_protocol.cpp
 +++ b/firmware/src/command_protocol.cpp
 @@ -20,6 +20,7 @@ uint8_t readLength(uint8_t reg) {
@@ -45,7 +45,7 @@ index b828775..d4a6c25 100644
      if(e.type>1 || commandKind(e)==CommandKind::Unknown)return false;
      if(e.reg==0x17)return e.length>=1 && e.length<=24;   // Pi tunnel: kind + data
      if(e.reg==0x18)return e.length==4;
-+    if(e.reg==0x1a)return e.length==13;   // velocity_cmd.h
++    if(e.reg==0x1a)return e.length==13||e.length==15;   // velocity_cmd.h (15 = mit Reststrecke)
 +    if(e.reg==0x1b)return e.length==14;
      if(e.reg>=0x69 && e.reg<=0x6c)return e.length==3 || e.length==12;
      if(e.reg==0x05)return e.length<=1;
@@ -307,7 +307,7 @@ index 776c330..03fc0d4 100644
  void addWheelFriction(Wheels &);
  
 diff --git a/firmware/src/main.cpp b/firmware/src/main.cpp
-index 75d1306..e535114 100644
+index 75d1306..ffd2ffa 100644
 --- a/firmware/src/main.cpp
 +++ b/firmware/src/main.cpp
 @@ -28,6 +28,7 @@ extern "C" {extern const volatile uint32_t rider_rl_only_build=0x524c4f31;}
@@ -428,7 +428,7 @@ index 75d1306..e535114 100644
          auto& a=actions.state();a.command.forward=a.command.turn=a.command.roll=128;a.command.height=144;
          a.action_id=0;a.roll_phase=a.height_phase=0;
          if(!driving||a.mode!=1||outputGuard(guard(millis()))!=StopReason::None){trim_stable=0;return;}
-@@ -707,13 +725,31 @@ public:
+@@ -707,13 +725,32 @@ public:
          in.encoder11=bus.sample(11).encoder_ticks;in.encoder21=bus.sample(21).encoder_ticks;in.leg12_position=bus.sample(12).position_ticks;
          in.zero_a=s.calibration.zero_a;in.zero_b=s.calibration.zero_b;in.pitch_trim=s.calibration.pitch_trim;
          request.command=a.command;
@@ -436,7 +436,8 @@ index 75d1306..e535114 100644
 +            // Generator startet beim aktuellen gefilterten Sollwert (Übernahme aus der Fahrt); nur wenn er
 +            // schon balanciert fährt, sonst stünde in s.motion noch der Stand vor dem letzten Stopp (z. B. Sturz)
 +            const bool take=driving&&s.motion.valid;
-+            rider2::velocity::tick(vel,vel_limits,us,take?s.motion.command.filtered_forward:0.0f,take?s.motion.command.filtered_turn:0.0f);
++            rider2::velocity::tick(vel,vel_limits,us,take?s.motion.command.filtered_forward:0.0f,take?s.motion.command.filtered_turn:0.0f,
++                                   (bus.sample(11).filtered_speed_mm_s+bus.sample(21).filtered_speed_mm_s)*.5f);
 +            request.command.velocity=true;request.command.velocity_forward=vel.v;request.command.velocity_turn=vel.w;
 +            // Bytes auf den Gegenwert: Positionshalten (Drehen 113..143) rechnet weiter damit
 +            request.command.forward=rider2::velocity::toByte(vel.v,rider2::velocity::kByteForward);
@@ -461,7 +462,7 @@ index 75d1306..e535114 100644
          // Positionshalten auch beim Drehen auf der Stelle, Integral beim Fahren (Byteweg)
          request.turn_hold=true;request.drive_integral=true;
          // Roll laufend auf 0 halten, nur balancierend und ohne eigenen Rollbefehl (Gesten, Rollwelle)
-@@ -897,6 +933,7 @@ public:
+@@ -897,6 +934,7 @@ public:
          fillDiag(t.diag);
          fillRawDiag(t.rawdiag);
          fillLiftDiag(t.liftdiag);
@@ -469,7 +470,7 @@ index 75d1306..e535114 100644
          t.leg12_zero=s.calibration.zero_a;t.leg22_zero=s.calibration.zero_b;
          t.policy_mode=uint8_t(s.policy.mode);t.policy_model_id=policy.model().id;
          t.policy_trained=s.policy.trained;t.policy_valid=s.policy.model_valid;
-@@ -1100,6 +1137,39 @@ void console(const char* line,Print& out) {
+@@ -1100,6 +1138,43 @@ void console(const char* line,Print& out) {
      {float g=0;if(sscanf(line,"!gain %f",&g)==1){wheel_gain=g;out.printf("wheel gain %.3f\n",g);return;}}
      {float g=0;if(sscanf(line,"!speedcal %f",&g)==1){if(g>=.2f&&g<=4.f&&!shared.driving){speed_cal=g;out.printf("policy speed scale %.3f\n",g);}else out.println("ERR speedcal 0.2..4.0 and standstill");return;}}
      {int ms=0;if(sscanf(line,"!smooth %d",&ms)==1&&ms>=0){wheel_smooth_ms=unsigned(ms);out.printf("wheel smoothing %d ms\n",ms);return;}}
@@ -490,7 +491,7 @@ index 75d1306..e535114 100644
 +            turn_kp=x;turn_kd=y;turn_ff=vk;turn_ki=tki;out.printf("turn control kp %.2f kd %.2f ff %.2f ki_hold %.3f\n",double(x),double(y),double(vk),double(tki));return;}
 +        if(!strcmp(line,"!vel status")){const auto snap=snapshot();const uint8_t* d=snap.telemetry.veldiag;
 +            out.printf("velocity %s%s%s%s, limits %s: v %d mm/s, w %.1f deg/s, v_max %u mm/s, w_max %.1f deg/s, timeout %u ms, caps 0x%02x\n",
-+                d[0]&1?"active":"off",d[0]&2?" (accel)":"",d[0]&4?" (timed out)":"",d[0]&16?" (kappa)":d[0]&64?" (course reached)":d[0]&32?" (course)":"",d[0]&8?"set":"missing",
++                d[0]&1?"active":"off",d[0]&2?" (accel)":"",d[0]&4?" (timed out)":"",d[0]&16?" (kappa)":d[0]&64?" (course reached)":d[0]&32?" (course)":d[0]&128?" (distance reached)":"",d[0]&8?"set":"missing",
 +                int(V::i16(d+2)),double(V::i16(d+4))*.1,unsigned(V::u16(d+6)),double(V::u16(d+8))*.1,unsigned(V::u16(d+10)),unsigned(d[1]));return;}
 +        auto frame=[&](bool speed,float v,float acc,float w){uint8_t d[V::kFrameLen]={};d[0]=speed?0:V::kFlagNoSpeed;
 +            V::put16(d+1,uint16_t(V::sat16(v)));V::put16(d+3,uint16_t(V::sat16(acc)));V::put16(d+7,uint16_t(V::sat16(w*10)));
@@ -499,6 +500,10 @@ index 75d1306..e535114 100644
 +            static bool seq=false;seq=!seq;
 +            uint8_t d[V::kFrameLen]={};d[0]=uint8_t(V::kFlagCourse|(seq?V::kFlagCourseSeq:0));V::put16(d+7,uint16_t(V::sat16(x*10)));
 +            V::put16(d+9,360);V::put16(d+11,1800);   // alpha 360 °/s², Drehruck 1800 °/s³
++            protocolCommand(CommandKind::Velocity,d,sizeof d,out);return;}
++        if(sscanf(line,"!vel dist %f %f",&x,&y)==2){   // V mm/s, Strecke mm (bit3, a 500 mm/s², Ruck 2500)
++            uint8_t d[V::kFrameLenDist]={};d[0]=V::kFlagDist;V::put16(d+1,uint16_t(V::sat16(x)));V::put16(d+3,500);V::put16(d+5,2500);
++            V::put16(d+13,uint16_t(std::max(0.0f,std::min(65535.0f,y))));
 +            protocolCommand(CommandKind::Velocity,d,sizeof d,out);return;}
 +        if(sscanf(line,"!vel kappa %f %f",&x,&y)==2){   // V mm/s, κ 1/m (Krümmungsbetrieb, ohne Grenzen = Sprung)
 +            uint8_t d[V::kFrameLen]={};d[0]=V::kFlagKappa;V::put16(d+1,uint16_t(V::sat16(x)));V::put16(d+7,uint16_t(V::sat16(y*1000)));
@@ -509,7 +514,7 @@ index 75d1306..e535114 100644
      char cmd[20]={};int a=0,b=0,c=0,d=0;
      const int count=sscanf(line,"%19s %d %d %d %d",cmd,&a,&b,&c,&d);
      if(count==3&&!strcmp(cmd,"!move")){if(a<0||a>255||b<0||b>255){out.println("ERR expected bytes 0..255");return;}valueCommand(CommandKind::Forward,a,out);valueCommand(CommandKind::Turn,b,out);return;}
-@@ -1108,14 +1178,14 @@ void console(const char* line,Print& out) {
+@@ -1108,14 +1183,14 @@ void console(const char* line,Print& out) {
          const struct{const char* text;CommandKind kind;} maps[]={
              {"!action",CommandKind::Action},{"!loop",CommandKind::ActionLoop},{"!height",CommandKind::Height},
              {"!roll",CommandKind::Roll},{"!level",CommandKind::Leveling},{"!heading",CommandKind::HeadingHold},
@@ -523,7 +528,7 @@ index 75d1306..e535114 100644
      out.print(" | !standup | !restart");
      out.print(" | !led BYTE | !shutdown on/off");
      out.print(" | !lean on/off");
-+    out.print(" | !vel limits VMAX_mm_s WMAX_deg_s TIMEOUT_ms | !vel V_mm_s W_deg_s | !vel accel A_mm_s2 W_deg_s | !vel kappa V_mm_s K_1_per_m | !vel turn DEG | !vel status | !velctl KI FF IMAX [KP [KF]] | !turnctl KP KD FF [KI_HOLD]");
++    out.print(" | !vel limits VMAX_mm_s WMAX_deg_s TIMEOUT_ms | !vel V_mm_s W_deg_s | !vel accel A_mm_s2 W_deg_s | !vel kappa V_mm_s K_1_per_m | !vel turn DEG | !vel dist V_mm_s S_mm | !vel status | !velctl KI FF IMAX [KP [KF]] | !turnctl KP KD FF [KI_HOLD]");
      out.println();
  }
  }
@@ -575,10 +580,10 @@ index 8cf9b55..a85dbbb 100644
      uint32_t now_ms=0;
 diff --git a/firmware/src/velocity_cmd.h b/firmware/src/velocity_cmd.h
 new file mode 100644
-index 0000000..eb304a1
+index 0000000..e479f09
 --- /dev/null
 +++ b/firmware/src/velocity_cmd.h
-@@ -0,0 +1,299 @@
+@@ -0,0 +1,340 @@
 +#pragma once
 +// Fahrbefehl in echten Einheiten (Rahmenweg) mit Sollwertgenerator: Rampe mit Ruckbegrenzung (S-Kurve) statt Tiefpass.
 +//
@@ -614,8 +619,15 @@ index 0000000..eb304a1
 +//   vorher kein Kursziel lief oder bit4 anders ist als im letzten Kursziel-Rahmen; gleiche Rahmen halten nur den Wächter
 +//   wach (der Pi schickt sie laufend nach). Das Feld v gilt wie im Geschwindigkeitsbetrieb (Drehen im Fahren = Bogen).
 +//   Wächter: v und w mit den Rahmengrenzen auf 0, das Ziel bleibt offen.
-+// bit1 und bit2 schließen sich aus, bit4 nur mit bit2; unbekannte Bits und bit3 (Strecke, kommt noch) -> Rahmen
-+//   verworfen (Zähler rejected_commands).
++// Strecke mit Halt (Flag bit3, Rahmen 15 Byte): Byte 13 u16 Reststrecke s in echten mm. Jeder Rahmen setzt den Rest
++//   neu auf s (kein Wechselbit: der Pi schickt die Reststrecke aus seiner Odometrie laufend nach). Je Takt sinkt der Rest
++//   um die gemessene Radstrecke (Radtempo × unit_mm × dt, in Fahrtrichtung des Rahmens). Die Fahrachse nimmt den Schritt
++//   Richtung v nur, wenn der Bremsweg danach (mit demselben approach auf 0 vorausgerechnet) noch in den wirksamen Rest
++//   passt, sonst bremst sie. Wirksamer Rest = Rest − Nachlauf; Nachlauf = ∫(v_soll − v_ist) in mm (was der Rider dem
++//   Sollwert hinterherfährt und noch kommt; im Stand klingt er mit kDistLagTau ab). Bei wirksamem Rest ≤ kDistArrive ist
++//   die Strecke erreicht (0x1a lesen Flag bit7), v = 0, Positionshalten wie im Stand. Mit bit1 (Krümmung) zählt die Bogenlänge. Wächter: bremst, Strecke bleibt offen.
++// bit1 und bit2 schließen sich aus, bit4 nur mit bit2, bit3 nur mit 15 Byte und nicht mit bit0 oder bit2; unbekannte
++//   Bits -> Rahmen verworfen (Zähler rejected_commands).
 +// Der zuletzt beschriebene Weg gilt: ein Byte 0x30/0x32, Neutral, Stopp, Aktion oder Armen beenden den Rahmenweg.
 +// Wächter: kommt timeout_ms lang kein Rahmen, rampt er v und w mit den Grenzen des letzten Rahmens auf 0
 +// (ohne Grenze mit kWatchdogAccel/kWatchdogAlpha), Beschleunigungsbetrieb aus.
@@ -624,14 +636,15 @@ index 0000000..eb304a1
 +//   0x1a schreiben, 13 Byte: 0 u8 Flags (bit0 = ohne Geschwindigkeit, bit1 = Krümmung, bit2 = Kursziel, bit4 =
 +//        Wechselbit des Kursziels) | 1 i16 v mm/s | 3 i16 a mm/s² (Vorzeichen nur im Beschleunigungsbetrieb)
 +//        | 5 u16 Ruck mm/s³ | 7 i16 w 0,1 °/s, mit bit1 κ 0,001 1/m, mit bit2 Δψ 0,1°
++//        (bit3 = Strecke: 15 Byte, zusätzlich | 13 u16 Reststrecke mm)
 +//        | 9 u16 alpha °/s² | 11 u16 Drehruck °/s³
 +//   0x1b schreiben, 14 Byte: 0 u16 v_max | 2 u16 w_max 0,1 °/s | 4 u16 Wächter ms (0 = aus)
 +//        | 6 u16 Einheit µm/s je Firmware-Einheit der Radgeschwindigkeit (0 = 1 mm/s; am Rider 3900)
 +//        | 8..13 ohne Bedeutung (xgonav schreibt dort ki, i_max, kv; der Regler nimmt eigene Werte, `!velctl`)
 +//   0x1a lesen, 12 Byte: 0 u8 Flags (bit0 Rahmenweg aktiv, bit1 Beschleunigungsbetrieb, bit2 Wächter hat gegriffen,
-+//        bit3 Grenzen gesetzt, bit4 Krümmungsbetrieb, bit5 Kursziel läuft, bit6 Kursziel erreicht) | 1 u8 Fähigkeiten
-+//        (bit0 Krümmung, bit1 Kursziel; bit2 Strecke, bit3 Strom 0x16 kommen noch; die Pi-Seite schaltet einen Betrieb
-+//        nur bei gesetztem Bit ein) | 2 i16 v-Soll mm/s | 4 i16 w-Soll 0,1 °/s | 6 u16 v_max | 8 u16 w_max 0,1 °/s
++//        bit3 Grenzen gesetzt, bit4 Krümmungsbetrieb, bit5 Kursziel läuft, bit6 Kursziel erreicht, bit7 Strecke
++//        erreicht) | 1 u8 Fähigkeiten (bit0 Krümmung, bit1 Kursziel, bit2 Strecke; bit3 Strom 0x16 kommt noch; die
++//        Pi-Seite schaltet einen Betrieb nur bei gesetztem Bit ein) | 2 i16 v-Soll mm/s | 4 i16 w-Soll 0,1 °/s | 6 u16 v_max | 8 u16 w_max 0,1 °/s
 +//        | 10 u16 Wächter ms
 +//
 +// Header-only und ohne Hardware, damit tests/test_velocity_cmd.cpp es am Host prüfen kann.
@@ -641,10 +654,12 @@ index 0000000..eb304a1
 +
 +namespace rider2 { namespace velocity {
 +
-+constexpr std::uint8_t kFrameLen = 13, kLimitsLen = 14, kDiagLen = 12;
-+constexpr std::uint8_t kFlagNoSpeed = 1, kFlagKappa = 2, kFlagCourse = 4, kFlagCourseSeq = 16;
-+constexpr std::uint8_t kFlagsKnown = kFlagNoSpeed | kFlagKappa | kFlagCourse | kFlagCourseSeq;
-+constexpr std::uint8_t kCaps = 1 | 2;        // Fähigkeitsbyte 0x1a lesen: bit0 Krümmung, bit1 Kursziel
++constexpr std::uint8_t kFrameLen = 13, kFrameLenDist = 15, kLimitsLen = 14, kDiagLen = 12;
++constexpr std::uint8_t kFlagNoSpeed = 1, kFlagKappa = 2, kFlagCourse = 4, kFlagDist = 8, kFlagCourseSeq = 16;
++constexpr std::uint8_t kFlagsKnown = kFlagNoSpeed | kFlagKappa | kFlagCourse | kFlagDist | kFlagCourseSeq;
++constexpr std::uint8_t kCaps = 1 | 2 | 4;    // Fähigkeitsbyte 0x1a lesen: bit0 Krümmung, bit1 Kursziel, bit2 Strecke
++constexpr float kDistArrive = 5.0f;          // mm Reststrecke für „erreicht“
++constexpr float kDistLagTau = 0.5f;          // s, Abklingen des Nachlaufs im Stand (Soll 0, Ist < 1 Einheit)
 +constexpr float kCourseArrive = 0.5f;        // ° Restwinkel für „angekommen“
 +constexpr int kStopSimMax = 1000;            // Takte der Bremsweg-Vorausschau (bei 4 ms und 360 °/s² höchstens ~240)
 +constexpr float kDeg = 57.29578f;            // ° je rad
@@ -664,6 +679,7 @@ index 0000000..eb304a1
 +    float w = 0, alpha = 0, jerk_w = 0;  // °/s, °/s², °/s³
 +    bool kappa_mode = false; float kappa = 0;   // Krümmungsbetrieb (bit1): κ in 1/m, w dann 0
 +    bool course_mode = false, course_seq = false; float dpsi = 0;   // Kursziel (bit2, Wechselbit bit4): Δψ in °, w dann 0
++    bool dist_mode = false; float dist = 0;   // Strecke (bit3, 15 Byte): Reststrecke in mm
 +};
 +struct Axis { float x = 0, a = 0; };     // Sollwert und Soll-Beschleunigung einer Achse
 +struct State {
@@ -675,6 +691,7 @@ index 0000000..eb304a1
 +    float v = 0, w = 0;                  // ausgegebene Sollwerte mm/s, °/s (= fwd.x, turn.x)
 +    bool kappa_on = false; float kappa = 0;   // Krümmungsbetrieb läuft, nachgeführtes κ in 1/m
 +    bool course_on = false, course_seq = false, course_done = false; float course_rest = 0;   // Kursziel, Rest in °
++    bool dist_on = false, dist_done = false; float dist_rest = 0, dist_lag = 0;   // Strecke, Rest und Nachlauf in mm
 +};
 +
 +inline std::int16_t i16(const std::uint8_t* d) { return std::int16_t(std::uint16_t(d[0] | (d[1] << 8))); }
@@ -686,8 +703,11 @@ index 0000000..eb304a1
 +}
 +
 +inline bool parseFrame(const std::uint8_t* d, std::uint8_t len, Frame& f) {
-+    if (len != kFrameLen) return false;
++    if (len != kFrameLen && len != kFrameLenDist) return false;
 +    if (d[0] & ~kFlagsKnown) return false;   // unbekannte Betriebsart: nicht raten
++    const bool dist = (d[0] & kFlagDist) != 0;
++    if (dist != (len == kFrameLenDist)) return false;                         // Strecke genau mit 15 Byte
++    if (dist && (d[0] & (kFlagNoSpeed | kFlagCourse))) return false;          // Strecke braucht ein Tempo, kein Kursziel
 +    if ((d[0] & kFlagKappa) && (d[0] & kFlagCourse)) return false;           // Krümmung und Kursziel schließen sich aus
 +    if ((d[0] & kFlagCourseSeq) && !(d[0] & kFlagCourse)) return false;      // Wechselbit nur mit Kursziel
 +    f.has_speed = (d[0] & kFlagNoSpeed) == 0;
@@ -699,6 +719,7 @@ index 0000000..eb304a1
 +    else if (f.course_mode) f.dpsi = i16(d + 7) * 0.1f;
 +    else f.w = i16(d + 7) * 0.1f;
 +    f.alpha = u16(d + 9); f.jerk_w = u16(d + 11);
++    f.dist_mode = dist; f.dist = dist ? float(u16(d + 13)) : 0.0f;
 +    return true;
 +}
 +inline bool parseLimits(const std::uint8_t* d, std::uint8_t len, Limits& l) {
@@ -719,6 +740,10 @@ index 0000000..eb304a1
 +    else if (!s.course_on || f.course_seq != s.course_seq) {   // neues Ziel; gleiche Rahmen halten nur den Wächter wach
 +        s.course_on = true; s.course_seq = f.course_seq; s.course_rest = f.dpsi; s.course_done = false;
 +    }
++    if (f.dist_mode) {   // jeder Rahmen setzt den Rest neu; der Nachlauf läuft weiter (beginnt beim Einschalten bei 0)
++        if (!s.dist_on) s.dist_lag = 0;
++        s.dist_on = true; s.dist_rest = f.dist; s.dist_done = f.dist - s.dist_lag <= kDistArrive;
++    } else { s.dist_on = false; s.dist_done = false; s.dist_rest = 0; s.dist_lag = 0; }
 +    return true;
 +}
 +// Rahmenweg beenden (Byte-Befehl, Neutral, Stopp, Aktion, Armen).
@@ -726,6 +751,7 @@ index 0000000..eb304a1
 +    s.active = false; s.accel_mode = false; s.timed_out = false; s.v = 0; s.w = 0; s.ticked = false;
 +    s.fwd = Axis{}; s.turn = Axis{}; s.kappa_on = false; s.kappa = 0;
 +    s.course_on = false; s.course_done = false; s.course_rest = 0;
++    s.dist_on = false; s.dist_done = false; s.dist_rest = 0; s.dist_lag = 0;
 +}
 +
 +inline float clampAbs(float x, float m) { return std::max(-m, std::min(m, x)); }
@@ -762,6 +788,23 @@ index 0000000..eb304a1
 +    s.x = clampAbs(s.x + s.a * dt, vmax);
 +}
 +
++// Bremsweg einer Achse aus (x, a), mit demselben approach auf 0 vorausgerechnet (Einheit von x mal s).
++inline float stopDistance(Axis ax, float amax, float jmax, float dt) {
++    float d = 0;
++    for (int i = 0; i < kStopSimMax && (ax.x != 0 || ax.a != 0); ++i) { approach(ax, 0, amax, jmax, dt); d += ax.x * dt; }
++    return d;
++}
++// Fahrachse auf Strecke (Kopfkommentar): Schritt Richtung v_target nur, wenn der Bremsweg danach in den Rest (mm) passt.
++inline void approachDist(State& s, const Limits& l, float v_target, float amax, float jmax, float dt) {
++    const float rest = s.dist_rest - s.dist_lag;   // wirksamer Rest: was der Rider dem Soll hinterherfährt, kommt noch
++    if (rest <= kDistArrive) s.dist_done = true;
++    if (s.dist_done) { approach(s.fwd, 0, amax, jmax, dt); return; }
++    if (dt <= 0) return;
++    Axis go = s.fwd; approach(go, v_target, amax, jmax, dt);
++    const float after = rest - std::fabs(go.x) * dt * l.unit_mm - std::fabs(stopDistance(go, amax, jmax, dt)) * l.unit_mm;
++    if (after >= 0) s.fwd = go;
++    else approach(s.fwd, 0, amax, jmax, dt);
++}
 +// Krümmungsbetrieb (Kopfkommentar): Generator nur auf der Fahrachse, w = κ·v_soll. m = m/s je Einheit von v.
 +inline void tickKappa(State& s, const Limits& l, std::uint32_t now_us, float dt) {
 +    const Frame& f = s.frame;
@@ -789,7 +832,8 @@ index 0000000..eb304a1
 +        const float a = minLimit(std::fabs(f.a), a_lim);
 +        accelerate(s.fwd, f.a == 0 ? 0.0f : std::copysign(a, f.a), minLimit(f.jerk, j_lim), v_lim, dt);
 +    } else {
-+        approach(s.fwd, clampAbs(f.v, v_lim), minLimit(std::fabs(f.a), a_lim), minLimit(f.jerk, j_lim), dt);
++        if (s.dist_on) approachDist(s, l, clampAbs(f.v, v_lim), minLimit(std::fabs(f.a), a_lim), minLimit(f.jerk, j_lim), dt);
++        else approach(s.fwd, clampAbs(f.v, v_lim), minLimit(std::fabs(f.a), a_lim), minLimit(f.jerk, j_lim), dt);
 +    }
 +    // |v| ≤ w_max/|κ| auch, wenn κ gerade gewachsen ist (Bahn bleibt, w wird nie gekappt)
 +    s.fwd.x = clampAbs(s.fwd.x, std::min(l.v_max, std::fabs(s.kappa) * m > 0 ? l.w_max / kDeg / (std::fabs(s.kappa) * m) : l.v_max));
@@ -798,12 +842,6 @@ index 0000000..eb304a1
 +    s.v = s.fwd.x; s.w = s.turn.x;
 +}
 +
-+// Bremsweg (°) der Drehachse aus (w, a), mit demselben approach auf 0 vorausgerechnet.
-+inline float stopAngle(Axis ax, float alpha, float jerk_w, float dt) {
-+    float d = 0;
-+    for (int i = 0; i < kStopSimMax && (ax.x != 0 || ax.a != 0); ++i) { approach(ax, 0, alpha, jerk_w, dt); d += ax.x * dt; }
-+    return d;
-+}
 +// Kursziel (Kopfkommentar): Fahrachse wie im Geschwindigkeitsbetrieb, Drehachse auf den Restwinkel.
 +inline void tickCourse(State& s, const Limits& l, std::uint32_t now_us, float dt) {
 +    const Frame& f = s.frame;
@@ -820,7 +858,7 @@ index 0000000..eb304a1
 +            else {
 +                const float sg = s.course_rest >= 0 ? 1.0f : -1.0f;
 +                Axis go = s.turn; approach(go, sg * l.w_max, f.alpha, f.jerk_w, dt);
-+                if ((s.course_rest - go.x * dt - stopAngle(go, f.alpha, f.jerk_w, dt)) * sg >= 0) s.turn = go;
++                if ((s.course_rest - go.x * dt - stopDistance(go, f.alpha, f.jerk_w, dt)) * sg >= 0) s.turn = go;
 +                else approach(s.turn, 0, f.alpha, f.jerk_w, dt);
 +            }
 +        }
@@ -833,7 +871,8 @@ index 0000000..eb304a1
 +
 +// Je Regeltakt, solange der Rahmenweg aktiv ist: Wächter, Generator, Grenzen. Ergebnis in s.v/s.w und s.fwd/s.turn.
 +// v_now/w_now: aktuelle gefilterte Sollwerte der Kaskade, Startwert beim ersten Takt (Übernahme aus der Fahrt).
-+inline void tick(State& s, const Limits& l, std::uint32_t now_us, float v_now = 0, float w_now = 0) {
++// v_meas: gemessenes Radtempo (Firmware-Einheiten) für die Strecke (bit3).
++inline void tick(State& s, const Limits& l, std::uint32_t now_us, float v_now = 0, float w_now = 0, float v_meas = 0) {
 +    if (!s.active) return;
 +    float dt = 0;
 +    if (!s.ticked) {
@@ -842,6 +881,12 @@ index 0000000..eb304a1
 +    } else dt = std::min(0.05f, float(std::uint32_t(now_us - s.last_tick_us)) * 1e-6f);
 +    s.last_tick_us = now_us; s.ticked = true;
 +    const Frame& f = s.frame;
++    if (s.dist_on && dt > 0 && std::isfinite(v_meas)) {   // gemessene Radstrecke und Nachlauf in Fahrtrichtung des Rahmens
++        const float dir = f.v >= 0 ? 1.0f : -1.0f;
++        s.dist_rest -= v_meas * l.unit_mm * dt * dir;
++        s.dist_lag += (s.v - v_meas) * l.unit_mm * dt * dir;   // s.v = Sollwert des vorigen Takts
++        if (s.v == 0 && std::fabs(v_meas) < 1.0f) s.dist_lag *= std::exp(-dt / kDistLagTau);
++    }
 +    if (f.kappa_mode) { tickKappa(s, l, now_us, dt); return; }
 +    s.kappa_on = false;
 +    if (f.course_mode) { tickCourse(s, l, now_us, dt); return; }
@@ -853,6 +898,7 @@ index 0000000..eb304a1
 +        approach(s.turn, 0, al, f.jerk_w, dt);
 +    } else {
 +        if (s.accel_mode) accelerate(s.fwd, f.a, f.jerk, l.v_max, dt);
++        else if (s.dist_on) approachDist(s, l, clampAbs(f.v, l.v_max), std::fabs(f.a), f.jerk, dt);
 +        else approach(s.fwd, clampAbs(f.v, l.v_max), std::fabs(f.a), f.jerk, dt);
 +        approach(s.turn, clampAbs(f.w, l.w_max), f.alpha, f.jerk_w, dt);
 +    }
@@ -870,7 +916,7 @@ index 0000000..eb304a1
 +inline void fillDiag(std::uint8_t* d, const State& s, const Limits& l) {
 +    d[0] = std::uint8_t((s.active ? 1 : 0) | (s.accel_mode ? 2 : 0) | (s.timed_out ? 4 : 0) | (l.set ? 8 : 0)
 +                        | (s.active && s.kappa_on ? 16 : 0) | (s.active && s.course_on ? 32 : 0)
-+                        | (s.active && s.course_on && s.course_done ? 64 : 0));
++                        | (s.active && s.course_on && s.course_done ? 64 : 0) | (s.active && s.dist_on && s.dist_done ? 128 : 0));
 +    d[1] = kCaps;
 +    put16(d + 2, std::uint16_t(sat16(s.v))); put16(d + 4, std::uint16_t(sat16(s.w * 10.0f)));
 +    put16(d + 6, std::uint16_t(std::min(65535.0f, l.v_max))); put16(d + 8, std::uint16_t(std::min(65535.0f, l.w_max * 10.0f)));

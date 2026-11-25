@@ -7,7 +7,9 @@
 // Umkehr, Beschleunigungsbetrieb mit Ruck, Wächter mit den Rahmengrenzen, Übernahme aus der Fahrt, Drehachse.
 // Krümmungsbetrieb (bit1): Format, Fähigkeitsbyte, w = κ·v_soll, Bahn auf dem Kreis (Anfahren/Bremsen/rückwärts/
 // Wächter), v/a durch w_max/alpha begrenzt, κ-Nachführung, Übernahme aus dem Drehratenweg. Kursziel (bit2): Ziel ±0,5°
-// ohne Überschwingen, Wechselbit, Wächter, im Fahren, aus der Kurve; Prüfvektoren (XGO_VECTORS=1).
+// ohne Überschwingen, Wechselbit, Wächter, im Fahren, aus der Kurve. Strecke (bit3, 15 Byte): Format, Halt auf der
+// Strecke mit nachgebildetem Pi (Reststrecke alle 100 ms aus der Odometrie, Radtempo mit Verzögerung), kurz, rückwärts,
+// Bogen, 0, Wächter; Prüfvektoren (XGO_VECTORS=1).
 // Aufruf: firmware/tests/run.sh test_velocity_cmd
 #include "velocity_cmd.h"
 #include "command_protocol.h"
@@ -17,6 +19,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <functional>
 #include <vector>
 
 namespace V = rider2::velocity;
@@ -143,8 +146,9 @@ static void generatorTests() {
 // --- Krümmungsbetrieb (bit1): Szenarien als Folge von Rahmen, je Takt ausgewertet. Mit XGO_VECTORS=1 schreibt jedes
 // Szenario firmware/tests/vectors/<name>.csv (Lauf aus dem Repo-Root, run.sh), für den Nachbau am Pi
 // (tests/test_fahrrahmen.py): je Takt t_us, rx (1 = in diesem Takt neuer Rahmen, vor dem Takt angenommen), die 13
-// Rahmenbytes als Hex, Grenzen (v_max, w_max, Wächter, unit_mm) und danach v, w, a (Fahrachse), κ, timed_out,
-// Restwinkel des Kursziels (°) und angekommen.
+// Rahmenbytes als Hex (13 oder 15), Grenzen (v_max, w_max, Wächter, unit_mm) und danach v, w, a (Fahrachse), κ, timed_out,
+// Restwinkel des Kursziels (°), angekommen, v_meas (an tick übergebenes Radtempo, Einheiten; außer strecke_* 0),
+// Reststrecke (mm), Strecke erreicht und Nachlauf (mm).
 struct KEv { std::uint32_t t_us; std::uint8_t d[V::kFrameLen]; };
 struct KStep { std::uint32_t t_us; float v, w, a, kappa; bool timed_out, kappa_on; float rest; bool done, course_on; };
 static void kappaBytes(std::uint8_t* d, bool speed, int v, int a, int j, float kappa, int alpha, int jw) {
@@ -160,7 +164,7 @@ static std::vector<KStep> runScenario(const char* name, const V::Limits& l, cons
         char path[256]; std::snprintf(path, sizeof path, "firmware/tests/vectors/%s.csv", name);
         csv = std::fopen(path, "w");
         if (!csv) std::printf("FEHLER Vektor %s nicht schreibbar\n", path);
-        else std::fprintf(csv, "t_us,rx,frame_hex,v_max,w_max,timeout_ms,unit_mm,v,w,a,kappa,timed_out,rest,done\n");
+        else std::fprintf(csv, "t_us,rx,frame_hex,v_max,w_max,timeout_ms,unit_mm,v,w,a,kappa,timed_out,rest,done,v_meas,dist_rest,dist_done,dist_lag\n");
     }
     const std::uint8_t* last = nullptr;
     for (std::uint32_t t = 0; t <= std::uint32_t(seconds * 1e6f); t += kTickUs) {
@@ -174,10 +178,10 @@ static std::vector<KStep> runScenario(const char* name, const V::Limits& l, cons
         if (csv) {
             char hex[2 * V::kFrameLen + 1] = {};
             if (last) for (int i = 0; i < V::kFrameLen; ++i) std::snprintf(hex + 2 * i, 3, "%02x", last[i]);
-            std::fprintf(csv, "%u,%d,%s,%.9g,%.9g,%u,%.9g,%.9g,%.9g,%.9g,%.9g,%d,%.9g,%d\n", unsigned(t), rx ? 1 : 0, hex,
+            std::fprintf(csv, "%u,%d,%s,%.9g,%.9g,%u,%.9g,%.9g,%.9g,%.9g,%.9g,%d,%.9g,%d,0,%.9g,%d,%.9g\n", unsigned(t), rx ? 1 : 0, hex,
                          double(l.v_max), double(l.w_max), unsigned(l.timeout_ms), double(l.unit_mm),
                          double(s.v), double(s.w), double(s.fwd.a), double(s.kappa), s.timed_out ? 1 : 0,
-                         double(s.course_rest), s.course_done ? 1 : 0);
+                         double(s.course_rest), s.course_done ? 1 : 0, double(s.dist_rest), s.dist_done ? 1 : 0, double(s.dist_lag));
         }
     }
     if (csv) std::fclose(csv);
@@ -345,7 +349,7 @@ static void courseTests() {
                           "Kursziel: bit2, Feld w = Δψ 0,1°, Wechselbit bit4");
         d[0] = V::kFlagCourse | V::kFlagKappa; check(!V::parseFrame(d, sizeof d, f), "Krümmung + Kursziel -> verworfen");
         d[0] = V::kFlagCourseSeq; check(!V::parseFrame(d, sizeof d, f), "Wechselbit ohne Kursziel -> verworfen");
-        d[0] = 8; check(!V::parseFrame(d, sizeof d, f), "bit3 (Strecke, noch nicht) -> verworfen");
+        d[0] = 8; check(!V::parseFrame(d, sizeof d, f), "bit3 mit 13 Byte -> verworfen");
         check((V::kCaps & 2) != 0, "Fähigkeitsbyte bit1 Kursziel");
     }
     struct Case { const char* name; float goal; int alpha, jw; };
@@ -402,10 +406,108 @@ static void courseTests() {
     }
 }
 
+// --- Strecke mit Halt (bit3, 15 Byte). Nachgebildet: der Pi schickt alle 100 ms s = S − gefahrene Strecke (Odometrie
+// = ∫ v_meas), v_meas folgt v_soll mit der Zeitkonstante tau (0: v_meas = v_soll des vorigen Takts).
+static void distBytes(std::uint8_t* d, int v, float rest_mm, bool kappa = false, float k = 0) {
+    std::memset(d, 0, V::kFrameLenDist);
+    d[0] = V::kFlagDist | (kappa ? V::kFlagKappa : 0);
+    V::put16(d + 1, std::uint16_t(std::int16_t(v))); V::put16(d + 3, 128); V::put16(d + 5, 641);
+    V::put16(d + 7, std::uint16_t(std::int16_t(kappa ? std::lround(k * 1000.0f) : 0)));
+    V::put16(d + 9, 360); V::put16(d + 11, 1800);
+    V::put16(d + 13, std::uint16_t(std::max(0.0f, std::min(65535.0f, std::round(rest_mm)))));
+}
+struct DistRun { double traveled = 0, heading = 0; float v_end = 0, v_peak = 0; bool done = false, timed_out = false; int frames = 0; };
+static DistRun runDist(const char* name, const V::Limits& l, int v, float S, float tau, std::uint32_t until_us, float seconds,
+                       bool kappa = false, float k = 0) {
+    V::State s; DistRun r; float meas = 0;
+    FILE* csv = nullptr;
+    if (const char* env = std::getenv("XGO_VECTORS"); env && *env == '1') {
+        char path[256]; std::snprintf(path, sizeof path, "firmware/tests/vectors/%s.csv", name);
+        csv = std::fopen(path, "w");
+        if (!csv) std::printf("FEHLER Vektor %s nicht schreibbar\n", path);
+        else std::fprintf(csv, "t_us,rx,frame_hex,v_max,w_max,timeout_ms,unit_mm,v,w,a,kappa,timed_out,rest,done,v_meas,dist_rest,dist_done,dist_lag\n");
+    }
+    std::uint8_t d[V::kFrameLenDist] = {};
+    for (std::uint32_t t = 0; t <= std::uint32_t(seconds * 1e6f); t += kTickUs) {
+        const float dt = t ? kTickUs * 1e-6f : 0.0f;
+        meas = tau > 0 ? meas + (s.v - meas) * dt / tau : s.v;   // Radtempo aus dem vorigen Sollwert
+        const bool rx = t < until_us && t % 100000 == 0;
+        if (rx) {
+            distBytes(d, v, S - float(std::fabs(r.traveled)), kappa, k);
+            V::Frame f; if (V::parseFrame(d, sizeof d, f)) { V::receive(s, l, f, t); ++r.frames; }
+        }
+        V::tick(s, l, t, 0, 0, meas);
+        r.traveled += double(meas) * l.unit_mm * dt;
+        r.heading += double(s.w) * dt;
+        r.v_peak = std::max(r.v_peak, std::fabs(s.v));
+        if (csv) {
+            char hex[2 * V::kFrameLenDist + 1] = {};
+            for (int i = 0; i < V::kFrameLenDist; ++i) std::snprintf(hex + 2 * i, 3, "%02x", d[i]);
+            std::fprintf(csv, "%u,%d,%s,%.9g,%.9g,%u,%.9g,%.9g,%.9g,%.9g,%.9g,%d,%.9g,%d,%.9g,%.9g,%d,%.9g\n", unsigned(t), rx ? 1 : 0, hex,
+                         double(l.v_max), double(l.w_max), unsigned(l.timeout_ms), double(l.unit_mm),
+                         double(s.v), double(s.w), double(s.fwd.a), double(s.kappa), s.timed_out ? 1 : 0,
+                         double(s.course_rest), s.course_done ? 1 : 0, double(meas), double(s.dist_rest), s.dist_done ? 1 : 0, double(s.dist_lag));
+        }
+    }
+    if (csv) std::fclose(csv);
+    r.v_end = s.v; r.done = s.dist_done; r.timed_out = s.timed_out;
+    return r;
+}
+
+static void distTests() {
+    const V::Limits l = kLimits();   // v_max 600, w_max 300 °/s, Wächter 300 ms, Einheit 3,9 mm/s
+    // Format
+    {
+        std::uint8_t d[V::kFrameLenDist]; distBytes(d, 46, 1000);
+        V::Frame f; check(V::parseFrame(d, sizeof d, f) && f.dist_mode && f.dist == 1000 && f.v == 46 && !f.kappa_mode,
+                          "Strecke: bit3 mit 15 Byte, Byte 13 u16 Reststrecke mm");
+        check(!V::parseFrame(d, V::kFrameLen, f), "bit3 mit 13 Byte -> verworfen");
+        std::uint8_t e[V::kFrameLenDist]; std::memcpy(e, d, sizeof e); e[0] = 0;
+        check(!V::parseFrame(e, sizeof e, f), "15 Byte ohne bit3 -> verworfen");
+        e[0] = V::kFlagDist | V::kFlagNoSpeed; check(!V::parseFrame(e, sizeof e, f), "Strecke + Beschleunigungsbetrieb -> verworfen");
+        e[0] = V::kFlagDist | V::kFlagCourse; check(!V::parseFrame(e, sizeof e, f), "Strecke + Kursziel -> verworfen");
+        distBytes(e, 46, 785, true, 2.0f);
+        check(V::parseFrame(e, sizeof e, f) && f.dist_mode && f.kappa_mode && near(f.kappa, 2.0f, 1e-6f), "Strecke + Krümmung: Bogen bis zum Haltepunkt");
+        check((V::kCaps & 4) != 0, "Fähigkeitsbyte bit2 Strecke");
+        CommandEvent ev; ev.type = 0; ev.reg = 0x1a; ev.length = 15;
+        check(validCommand(ev), "0x1a mit 15 Byte gültig");
+        V::State s; V::receive(s, l, f, 0); s.dist_done = true;
+        std::uint8_t g[V::kDiagLen]; V::fillDiag(g, s, l);
+        check((g[0] & 128) != 0, "0x1a lesen: bit7 Strecke erreicht");
+    }
+    struct Case { const char* name; int v; float S; float tau; };
+    for (const Case& c : {Case{"strecke_1m", 46, 1000, 0}, Case{"strecke_1m_traege", 46, 1000, 0.3f},
+                          Case{"strecke_kurz", 46, 50, 0.3f}, Case{"strecke_rueck", -46, 500, 0.3f}, Case{"strecke_69", 69, 800, 0.3f}}) {
+        const DistRun r = runDist(c.name, l, c.v, c.S, c.tau, 8000000, 8.0f);
+        const float err = float(std::fabs(r.traveled) - c.S);
+        std::printf("       %s: gefahren %.1f mm (Soll %.0f, Fehler %+.1f mm), Spitze v %.1f, Ende v %.1f, erreicht %d\n",
+                    c.name, std::fabs(r.traveled), double(c.S), double(err), double(r.v_peak), double(r.v_end), r.done ? 1 : 0);
+        char what[160];
+        std::snprintf(what, sizeof what, "%s: Halt auf ±%s mm, erreicht, v = 0, Richtung stimmt", c.name, c.tau > 0 ? "15" : "6");
+        check(std::fabs(err) < (c.tau > 0 ? 15.0f : 6.0f) && r.done && r.v_end == 0 && (r.traveled > 0) == (c.v > 0), what);
+    }
+    {
+        const DistRun r = runDist("strecke_bogen", l, 46, 785.4f, 0.3f, 8000000, 8.0f, true, 2.0f);
+        std::printf("       strecke_bogen: gefahren %.1f mm, gedreht %.2f°, erreicht %d\n", std::fabs(r.traveled), r.heading, r.done ? 1 : 0);
+        check(r.done && r.v_end == 0 && std::fabs(std::fabs(r.traveled) - 785.4) < 15 && r.v_peak <= 46.0f + 1e-3f,
+              "Bogen κ 2 bis zum Haltepunkt (Viertelkreis 785 mm): Halt auf ±15 mm");
+        check(std::fabs(r.heading - 90.0) < 3.0, "Bogen: gedreht ~90° (∫w_soll, w = κ·v_soll)");
+    }
+    {
+        const DistRun r = runDist("strecke_null", l, 46, 0, 0.3f, 2000000, 2.0f);
+        check(r.done && r.v_peak == 0 && std::fabs(r.traveled) < 1e-6, "Reststrecke 0: fährt nicht an, erreicht");
+    }
+    {
+        const DistRun r = runDist("strecke_waechter", l, 46, 1000, 0.3f, 1000000, 3.0f);
+        check(r.timed_out && r.v_end == 0 && !r.done, "Wächter: bremst, Strecke bleibt offen");
+    }
+}
+
 int main() {
     generatorTests();
     kappaTests();
     courseTests();
+    distTests();
     // --- Format
     {
         std::uint8_t d[V::kFrameLen]; frameBytes(d, true, -350, 800, 4000, -455, 120, 900);
