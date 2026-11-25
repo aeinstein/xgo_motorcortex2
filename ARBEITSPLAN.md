@@ -212,6 +212,11 @@ Kosten am ESP32: zwei PI-Regler + Rampe je Takt, vernachlässigbar gegen die Lag
   1,11 ×, Soll-Nick −4,7°, Strecke 0,86 m. Beim Bremsen aus v 0,5 Soll-Nick bis −15°, ohne Sturz. Die
   Halteabschnitte sind kurz (1–1,7 s), also nicht eingeschwungen. Bedarf je Einheit uneinheitlich (0,017 bei 88,
   0,037 bei 128); v 0,3 und 0,5 kriechen etwas über, v 0,2 und 0,4 nicht.
+- **Messfahrt Drehen auf dem Rahmenweg (2026-11-25, 0032; `tools/fw_einheit.py` schreibt jetzt Drehsollwert aus
+  0x0e und IMU-Kurs mit; je 3 s über MCP fahren):** auf der Stelle w 0,2 / −0,4 / 0,6 = +36 / −72 / +108 °/s:
+  Ist-Rate im Halten 0,96 / 1,01 / 1,01 ×, 90 % nach 0,25–0,4 s, Winkel Soll +108 / −218 / +330°, IMU +102 / −217 /
+  +332°. Kurve v 0,2 + w 0,3 (+54 °/s): 1,01 ×, Winkel 163 / 163°. Kurzes Überschwingen der Rate nach dem
+  Rampenende (Spitzen über 0,25 s: 1,22–1,36 ×). Das Drehen stimmt; im Original drehte er 1,25 × zu schnell.
 
 ### Zu klären
 

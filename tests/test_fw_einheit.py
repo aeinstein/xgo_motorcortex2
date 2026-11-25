@@ -23,6 +23,8 @@ def test_diag_0e_felder():
     assert {"nick_soll", "nick_ist", "balance", "halt_korr", "halt_modus"} <= d.keys()
     assert fe.imu_nick("56144 579050273938 51 -2244 174491") == -2.244
     assert fe.imu_nick("") is None
+    assert fe.imu_yaw("56144 579050273938 51 -2244 174491") == 174.491
+    assert "fw_turn" in d
     assert fe.diag_0e("0x0e 32: Fehler -110") is None
     assert fe.diag_0e("0x15 32: " + " ".join(["00"] * 32)) is None
 

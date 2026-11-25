@@ -18,7 +18,8 @@ beide gleich; fährt sie viel schneller als verlangt, wirkt der Befehl wie eine 
 
 Spalten: t (s, CLOCK_MONOTONIC), fw_ms, fw_v11, fw_v21 (Einheiten), fw_cmd (Einheiten), faehrt (0/1), ticks11, ticks21,
 odo_mms (mm/s, über --fenster gemittelt; leer bis genug Proben), nick_soll, nick_ist (°, 0x0e), balance,
-halt_korr, halt_modus (0x0e), imu_nick (°)
+halt_korr, halt_modus (0x0e), imu_nick (°), fw_turn (°/s, gefilterter Drehsollwert aus 0x0e; auf dem Rahmenweg der
+Sollwert des Generators), imu_yaw (°, Kurs aus /proc/XGORider/imu) — für die Drehrate auf dem Rahmenweg
 
 Kosten am Pi: nur während des Mitschnitts, ein Python-Prozess, je Zeile zwei /proc-Zugriffe (0x0e = eine Anfrage
 an den ESP32, ~4 ms auf der Leitung). raw_reg hat nur eine Adresse: nicht gleichzeitig mit rawdiag.py laufen lassen.
@@ -51,15 +52,22 @@ def diag_0e(text: str) -> dict | None:
     ms, v11, v21 = struct.unpack_from("<Hhh", b, 0)
     fwd10, = struct.unpack_from("<h", b, 28)
     bal, soll100, ist100, korr10 = struct.unpack_from("<hhhh", b, 14)
+    turn10, = struct.unpack_from("<h", b, 30)
     return {"fw_ms": ms, "fw_v11": v11, "fw_v21": v21, "fw_cmd": fwd10 / 10.0, "faehrt": b[23] & 1,
             "nick_soll": soll100 / 100.0, "nick_ist": ist100 / 100.0, "balance": bal,
-            "halt_korr": korr10 / 10.0, "halt_modus": b[22]}
+            "halt_korr": korr10 / 10.0, "halt_modus": b[22], "fw_turn": turn10 / 10.0}
 
 
 def imu_nick(text: str) -> float | None:
     """/proc/XGORider/imu (\"seq t_ns roll pitch yaw\", Milligrad) -> Nick in °."""
     f = text.split()
     return int(f[3]) / 1000.0 if len(f) >= 5 else None
+
+
+def imu_yaw(text: str) -> float | None:
+    """/proc/XGORider/imu -> Kurs in ° (Milligrad, + = links)."""
+    f = text.split()
+    return int(f[4]) / 1000.0 if len(f) >= 5 else None
 
 
 def wheels(text: str) -> tuple[int, int, int] | None:
@@ -156,7 +164,7 @@ def mitschreiben(sek: float, pfad: str, durchmesser_m: float, fenster_s: float, 
     with open(pfad, "w", newline="") as out:
         w = csv.writer(out)
         w.writerow(["t", "fw_ms", "fw_v11", "fw_v21", "fw_cmd", "faehrt", "ticks11", "ticks21", "odo_mms",
-                    "nick_soll", "nick_ist", "balance", "halt_korr", "halt_modus", "imu_nick"])
+                    "nick_soll", "nick_ist", "balance", "halt_korr", "halt_modus", "imu_nick", "fw_turn", "imu_yaw"])
         try:
             while time.monotonic() < ende:
                 t0 = time.monotonic()
@@ -166,9 +174,10 @@ def mitschreiben(sek: float, pfad: str, durchmesser_m: float, fenster_s: float, 
                     wl = wheels(f.read())
                 try:
                     with open(IMU) as f:
-                        nk = imu_nick(f.read())
+                        txt = f.read()
+                    nk, yw = imu_nick(txt), imu_yaw(txt)
                 except (OSError, ValueError):
-                    nk = None
+                    nk = yw = None
                 if d is None or wl is None:
                     fehler += 1
                 else:
@@ -178,7 +187,8 @@ def mitschreiben(sek: float, pfad: str, durchmesser_m: float, fenster_s: float, 
                     w.writerow([f"{t0:.4f}", d["fw_ms"], d["fw_v11"], d["fw_v21"], f"{d['fw_cmd']:.1f}", d["faehrt"],
                                 wl[1], wl[2], "" if o is None else f"{o:.1f}",
                                 f"{d['nick_soll']:.2f}", f"{d['nick_ist']:.2f}", d["balance"], f"{d['halt_korr']:.1f}",
-                                d["halt_modus"], "" if nk is None else f"{nk:.3f}"])
+                                d["halt_modus"], "" if nk is None else f"{nk:.3f}", f"{d['fw_turn']:.1f}",
+                                "" if yw is None else f"{yw:.3f}"])
                     if len(rows) % int(hz) == 0:
                         print("fw %5.0f/%5.0f Soll %6.1f  Räder %s mm/s" % (d["fw_v11"], d["fw_v21"], d["fw_cmd"],
                               "-" if o is None else f"{o:6.0f}"), flush=True)
