@@ -12,7 +12,7 @@ Planer, der Planer fährt den Rider, nach der Sicherheitsprüfung.
 | # | Punkt | Stand |
 |---|---|---|
 | 1 | **Nur ein Gehirn mit Modus, jeder Weg läuft über den Planer.** Bei Dunkelangst wird der schnellste Weg zurück gefahren | offen (Befund unten) |
-| 2 | **Test: Anfahren an eine Wand** | offen |
+| 2 | **Test: Anfahren an eine Wand** | geradeaus geprüft gefahren 2026-11-25 (unten) |
 | 3 | **Test: Fahren einer Bahn entlang.** Kurven glätten, Drehungen auf der Stelle vermeiden (Hauptgrund der Drift) | offen |
 | 4 | **Fahrregler in die Firmware.** Pi sendet Sollgeschwindigkeit und Drehrate in echten Einheiten, die Firmware regelt | erledigt, gefahren (unten) |
 
@@ -38,6 +38,23 @@ Gefahren 2026-11-25 (geprüft geradeaus und auf der Stelle):
 
 Offen: Bedarf an Soll-Nick wächst stärker als linear mit dem Tempo (kv ggf. tempoabhängig); höhere Tempi
 eingeschwungen messen; Höchstwerte (a_max ohne Kippen, größte Drehrate/-beschleunigung) messen und in `config.py`.
+
+## Anfahren an eine Wand (Punkt 2, gefahren 2026-11-25)
+
+MCP `fahren` geprüft geradeaus auf einen glatten Pfeiler, Abstand Vorderkante Rad bis Wand nachgemessen:
+
+| Fahrt | Halt | gemessen |
+|---|---|---|
+| v 0,2 (0,18 m/s) aus ~2 m | Bahnprüfung „Bahn 0.09m“ | 20,5 cm |
+| v 0,3, zweiter Abschnitt aus dem Stand ~55 cm vor der Wand | „Bahn 0.09m“ | 21 cm |
+| v 0,3 (0,27 m/s) aus ~1,2 m, durchgehend | „Bahn 0.10m“ | 22,5 cm |
+
+- Haltepunkt unabhängig vom Anfahrtempo (laut Karte dreimal x 2,58–2,59 m): Die Bahnprüfung bremst voll, danach
+  kriecht er mit kleinem Soll (7–30 Einheiten, `slow_free` bzw. Bahn) bis an die Grenze; kein Kontakt.
+- Bremsen aus voller Fahrt: Das Ist steigt erst (Gegenschwung: 74 → 102 Einheiten bei v 0,3), Soll-Nick bis −18°,
+  dann Halt ohne Sturz.
+- Nebenbefund: rückwärts v −0,2 fährt er 1,29–1,37 × Soll (Ist −59…−63 statt −46, Soll-Nick +4°); vorwärts
+  1,03–1,07 ×. Sache der Firmware (Nutzer 2026-11-25), an die Firmware-Sitzung gemeldet; xgonav ändert nichts.
 
 ## Dunkelangst (Befund 2026-11-24, zu Punkt 1)
 
