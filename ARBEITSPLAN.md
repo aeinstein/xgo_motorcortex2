@@ -39,7 +39,7 @@ beschreiben, und hält sie mit 260 Hz. Keine Wegpunktlisten in der Firmware.
 
 | Stufe | Inhalt | Firmware (Patch 08-velocity) | Treiber (`xgo-vel.h`) | xgonav | Kosten am Pi | Prüfung |
 |---|---|---|---|---|---|---|
-| 0 | Rückwärts symmetrisch, Höchstwerte | geflasht 2026-11-25 (e93e525): Tempo nur über Soll − Ist (kp 0,3, ki 0,15, i_max 8° fest); ki/i_max/kv aus 0x1b ignoriert | – | `vel_kv`/`vel_ki`/`vel_i_max_deg` als wirkungslos gekennzeichnet (`config.py`, `docs/configuration.md`); a_max ohne Kippen, w/alpha-Grenzen messen → `config.py` | 0 | Messfahrten v ±0,2/0,3, eingeschwungen ≥ 3 s (noch nicht gefahren) |
+| 0 | Rückwärts symmetrisch, Höchstwerte | geflasht 2026-11-25: Tempo-Regler über drei Fassungen (unten „Messfahrt Stufe 0“), jetzt 2a3c9422: Original-P 0,11 + Vorsteuerung −0,05·v_soll + ki 0,05; ki/i_max/kv aus 0x1b ignoriert | – | `vel_kv`/`vel_ki`/`vel_i_max_deg` als wirkungslos gekennzeichnet (`config.py`, `docs/configuration.md`); a_max ohne Kippen, w/alpha-Grenzen messen → `config.py` | 0 | gefahren 2026-11-25 mit 2a3c9422: rückwärts 0,91–1,00 ×, vorwärts nur 0,62–0,78 × (unten); offen |
 | 1 | **Krümmungsbetrieb** | Flag bit1 in 0x1a: Feld w = κ in 0,001 1/m (i16, ±32 1/m); im Takt w_soll = κ · v_soll · 180/π (aus dem **Sollwert**, nicht v_ist: Kurs = ∫κ·v_soll dt, rauschfrei, am Pi nachrechenbar; keine v_min-Schwelle, w → 0 von selbst). Bahntreue unter Grenzen: nicht w kappen, sondern v begrenzen: \|v\| ≤ w_max/\|κ\|, a ≤ alpha/\|κ\|, Ruck ≤ Drehruck/\|κ\|. Neues κ während der Fahrt mit \|dκ/dt\| ≤ alpha/\|v\| nachführen (Klothoide), sonst springt w um Δκ·v. Rückwärts gleiches κ (derselbe Kreis rückwärts). Positionshalten beim Drehen (07-balance) greift nur bei v = 0, verträglich. Ohne bit1 wie heute | Text um κ erweitern, `zustand` liest Flag und Fähigkeitsbyte | `Robot.drive(v, w)` bleibt; neu `drive_bogen(v, kappa)`. `PathFollower` lenkt mit κ (Pure Pursuit κ = 2·sin α / L statt `kp_turn·err`); `_arc_check` prüft und bremst bei festem κ (nur v sinkt, Bahn bleibt). `Achse.schritt` + Kopplung, v/a/Ruck-Begrenzung durch κ und κ-Nachführung in Python nachgebaut, gegen Prüfvektoren | sinkt leicht (kein Lenkregler je Schritt, eine Multiplikation im 50-Hz-Durchlauf) | Host-Test: Bahn aus Generator-Simulation liegt bei Anfahren/Bremsen auf dem Kreis (Abweichung < 1 cm auf 1 m); Simulator `--dyn` explore/home; am Rider Kreisbogen v 0,2, κ 2 1/m, Endpunkt gegen Karte |
 | 2 | **Kursziel** | Flag bit2: Feld w = Δψ in 0,1°, relativ zum Generatorwinkel bei Empfang. Der Generator integriert seinen Winkel ∫w_soll dt selbst (= Änderung des Kursziels): Rest → w_ziel = sign · min(w_max, √(2·alpha·\|Rest\|)) → vorhandenes `approach` der Drehachse; angekommen bei \|Rest\| < 0,5° und w = 0 (Flag), danach hält der Kurs-PID | wie 1 | `dreh_auf_kurs`/`align`/`POST /turn` schreiben einmal Δψ statt 24 Hz `dreh_w`; Ankunft aus dem Flag statt aus dem Kursfehler | sinkt (keine Kursregelung je Schritt) | Host-Test Überschwingen < 1°; am Rider 90°/180° links/rechts, Endkurs gegen IMU-Kurs ±2° |
 | 3 | **Strecke mit Halt** | Flag bit3, Rahmen 15 Byte mit Reststrecke s (mm, u16): Rest = s − Radstrecke (Encoder) seit Empfang, v_ziel = sign · min(v, √(2·a·Rest)), danach v = 0 und Positionshalten. Neue Rahmen setzen s neu (Pi schickt die Reststrecke nach) | wie 1 | Wegfolger am Wegende (`end_v`) und Bahnprüfung schicken s = min(Weg bis Ziel, `clear − Rest`) statt das Tempo zu senken; Kriechen mit `slow_free` entfällt | sinkt | Wand wie Punkt 2: Halt 20 cm ±1 cm aus v 0,2/0,3; Host-Test Halt auf ±5 mm |
@@ -127,6 +127,33 @@ Gefahren 2026-11-25 (geprüft geradeaus und auf der Stelle):
 
 Offen: Bedarf an Soll-Nick wächst stärker als linear mit dem Tempo (kv ggf. tempoabhängig); höhere Tempi
 eingeschwungen messen; Höchstwerte (a_max ohne Kippen, größte Drehrate/-beschleunigung) messen und in `config.py`.
+
+## Messfahrt Stufe 0 (Punkt 5, 2026-11-25)
+
+Mitschnitt `tools/fw_einheit.py` (0x0e + Encoder, 20 Hz), MCP `fahren` geprüft geradeaus, je 4,5 s, vorwärts und auf
+derselben Spur zurück.
+
+| Firmware | Ergebnis |
+|---|---|
+| e93e525/4aabe9f6 (Tempo nur kp 0,3 · (Soll − Ist), Klemme nur ±100°) | Sturz ~1 s nach dem Aufstehen: Räder im Aufschwung ±190 Einheiten → Soll-Nick 0,3 · 191 = 57°, vornüber. xgonav schickt sofort einen Rahmen v 0, damit war der Regler aktiv |
+| f287c1a9 (kp 0,11 voll + Zuschlag bis 0,3 im ±20-Band) | Aufstehen ok (Nutzer über das Web). Fahren: Grenzzyklus ~2,5 Hz, Ist −10 … −87 bei Soll −35, Soll-Nick ±10°, rückwärts 1,2 × Soll; die Bahnprüfung bremste vorwärts an den Ist-Spitzen (230 mm/s). Wirksame Verstärkung ~0,22, stabil nur ≤ 0,135. Abgebrochen nach v ±0,2 (Tempo 75 %) |
+| 2a3c9422 (Original-P 0,11, Vorsteuerung −0,05 · v_soll, ki 0,05 auf ±20) | ruhig, Soll-Nick ±2–4°, keine Bremsung; Tabelle unten |
+
+2a3c9422, Tempo 100 % (`messfahrt0d.csv`):
+
+| Soll | Ist ab 1 s (Firmware / Encoder) | 90 % nach | Spitze | Soll-Nick Mittel |
+|---|---|---|---|---|
+| v 0,2 vorwärts (46 Einh., 179 mm/s) | 0,78 × / 0,75 × | 3,1 s | 1,52 × | 0,0° |
+| v 0,2 rückwärts | 1,00 × / 1,00 × | 0,5 s | 1,25 × | +2,1° |
+| v 0,3 vorwärts (69 Einh., 269 mm/s) | 0,62 × / 0,60 × | 3,6 s | 1,43 × | +0,7° |
+| v 0,3 rückwärts (3,5 s) | 0,91 × / 0,90 × | 2,3 s | 1,20 × | +2,3° |
+
+- Rückwärts stimmt jetzt (vorher 1,29–1,37 ×). Schwingen behoben.
+- Vorwärts zu langsam: Soll-Nick in der ersten Sekunde **positiv** (+1,3 … +1,9°, wie rückwärts) statt −0,05 · 69 ≈ −3,5°;
+  erst das Integral zieht ihn nach ~3 s auf −2°, dann Überschwingen auf 1,4–1,5 ×. Verdacht Vorzeichen der
+  Vorsteuerung oder ein Versatz nur vorwärts; an die Firmware-Sitzung gemeldet, offen.
+- Aufstehen mit 2a3c9422 nicht mitgeschrieben (Nutzer stand ihn über das Web auf, bevor der Mitschnitt lief), kein Sturz.
+- Stufe 1/2 erst fahren, wenn vorwärts stimmt.
 
 ## Anfahren an eine Wand (Punkt 2, gefahren 2026-11-25)
 
