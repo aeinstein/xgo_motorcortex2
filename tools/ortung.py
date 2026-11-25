@@ -4,7 +4,7 @@
   python tools/ortung.py live [--config /etc/xgonav.toml]   am Rider: eigenes arecord, je Geräusch eine Zeile
   python tools/ortung.py wav aufnahme.wav                   Stereo-Aufnahme (arecord ... -c 2) auswerten
 
-hw:0,0 lässt sich nur einmal öffnen: läuft die Ortung in xgonav (Modus idle/pet), vorher den Modus wechseln
+hw:CARD=wm8960soundcard,DEV=0 lässt sich nur einmal öffnen: läuft die Ortung in xgonav (Modus idle/pet), vorher den Modus wechseln
 oder dort GET /status lesen ("ortung"). Mikrofonabstand: Geräusch genau von der Seite (90°) machen, die größte
 Laufzeit |tau| ablesen -> mic_dist_m = |tau| x 343 m/s; hat links das falsche Vorzeichen: sign = -1.
 """

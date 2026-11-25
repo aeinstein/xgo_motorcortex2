@@ -3,10 +3,10 @@
  * xgonav-sprech – Gegensprechen Browser ↔ Rider per WebSocket, nur im Modus manual (Hand).
  *
  * nginx reicht /sprech hierher durch (127.0.0.1:8090, systemd deploy/xgonav-sprech.service).
- * Rider-Mikrofon:  arecord (plughw:0,0, 8 kHz, mono, S16_LE) → Binärrahmen je 40 ms (640 B) → Browser
+ * Rider-Mikrofon:  arecord (plughw:CARD=wm8960soundcard,DEV=0, 8 kHz, mono, S16_LE) → Binärrahmen je 40 ms (640 B) → Browser
  * Browser-Mikrofon: Binärrahmen (S16_LE, 8 kHz, mono)                        → aplay → Lautsprecher
  * Ohne Gespräch laufen weder arecord noch aplay; der Dienst schläft in stream_select (0 % CPU).
- * Die Ortung hält hw:0,0 nur in [ortung] modes (idle, pet); in manual ist das Gerät frei. Wechselt der Modus
+ * Die Ortung hält hw:CARD=wm8960soundcard,DEV=0 nur in [ortung] modes (idle, pet); in manual ist das Gerät frei. Wechselt der Modus
  * weg von manual, endet das Gespräch binnen STATUS_S und gibt das Gerät frei.
  * Nur ein Gespräch zugleich; ein zweiter Browser bekommt "besetzt".
  * Rechenarbeit (Abtastrate wandeln, Echo dämpfen, Pegel) macht der Browser.
@@ -49,9 +49,9 @@ function befehl(string $env, array $std): array
     return $v !== '' ? preg_split('/\s+/', $v) : $std;
 }
 
-define('ARECORD', befehl('XGO_ARECORD', ['arecord', '-q', '-D', 'plughw:0,0', '-f', 'S16_LE', '-r', (string)RATE,
+define('ARECORD', befehl('XGO_ARECORD', ['arecord', '-q', '-D', 'plughw:CARD=wm8960soundcard,DEV=0', '-f', 'S16_LE', '-r', (string)RATE,
                                          '-c', '1', '-t', 'raw', '--buffer-time=100000']));
-define('APLAY', befehl('XGO_APLAY', ['aplay', '-q', '-D', 'plughw:0,0', '-f', 'S16_LE', '-r', (string)RATE,
+define('APLAY', befehl('XGO_APLAY', ['aplay', '-q', '-D', 'plughw:CARD=wm8960soundcard,DEV=0', '-f', 'S16_LE', '-r', (string)RATE,
                                      '-c', '1', '-t', 'raw', '--buffer-time=200000']));
 define('LCD_FIFO', getenv('XGO_LCD_FIFO') ?: '/tmp/lcd0');
 define('LCD_OWNER', LCD_FIFO . '.owner');

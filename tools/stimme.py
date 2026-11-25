@@ -6,8 +6,8 @@
   python tools/stimme.py lernen ordner/*.wav                                       Ablauf wie am Rider, in einem tmp-Verzeichnis
   python tools/stimme.py strom aufnahme.wav [--aus ordner] [--set vad_hang_s=0.6]  lange Stereo-Aufnahme (48 kHz) wie am
                                                                                    Rider in Äußerungen schneiden, vergleichen
-Aufnahme am Rider (Modus manual, sonst hält die Ortung hw:0,0):
-  arecord -D hw:0,0 -f S16_LE -r 48000 -c 2 -d 120 /root/stimmen.wav
+Aufnahme am Rider (Modus manual, sonst hält die Ortung hw:CARD=wm8960soundcard,DEV=0):
+  arecord -D hw:CARD=wm8960soundcard,DEV=0 -f S16_LE -r 48000 -c 2 -d 120 /root/stimmen.wav
 
 Eingaben: mono oder stereo, 16 oder 48 kHz (z. B. scp root@<rider>:/opt/xgonav/stimmen/kandidaten/*.wav .).
 Treffer gelten bis [stimme] match_dist; die Tabelle zeigt, wo die Grenze für echte Stimmen liegen sollte.

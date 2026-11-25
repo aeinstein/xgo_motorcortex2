@@ -1366,8 +1366,8 @@
 
 
 <h1 id="audio-speaker-and-microphones">Audio (speaker and microphones)<a class="headerlink" href="#audio-speaker-and-microphones" title="Permanent link">&para;</a></h1>
-<p>Sound card <code>wm8960soundcard</code> (WM8960 codec, I²S), ALSA card 0, device <code>hw:0,0</code>, playback and capture. Sounds played by xgonav: <a href="display-emotions.html#sounds">display-emotions.md</a>.
-Intercom with the browser (mode manual, 8 kHz mono both ways, <code>plughw:0,0</code>): <a href="web-interface.html#intercom-websocket">web-interface.md</a>.</p>
+<p>Sound card <code>wm8960soundcard</code> (WM8960 codec, I²S), ALSA device <code>hw:CARD=wm8960soundcard,DEV=0</code> (by name, not number; HDMI is off, see <a href="installation.html#boot-config-bootfirmwareconfigtxt">installation.md</a>), playback and capture. Sounds played by xgonav: <a href="display-emotions.html#sounds">display-emotions.md</a>.
+Intercom with the browser (mode manual, 8 kHz mono both ways, <code>plughw:CARD=wm8960soundcard,DEV=0</code>): <a href="web-interface.html#intercom-websocket">web-interface.md</a>.</p>
 <h2 id="microphones">Microphones<a class="headerlink" href="#microphones" title="Permanent link">&para;</a></h2>
 <p>Measured 2026-11-13 on the RiderPi, quiet room.</p>
 <table>
@@ -1384,7 +1384,7 @@ Intercom with the browser (mode manual, 8 kHz mono both ways, <code>plughw:0,0</
 </tr>
 <tr>
 <td>Record</td>
-<td><code>arecord -D hw:0,0 -f S16_LE -r 48000 -c 2 out.wav</code> (works while pipewire/wireplumber run as <code>aeinstein</code>)</td>
+<td><code>arecord -D hw:CARD=wm8960soundcard,DEV=0 -f S16_LE -r 48000 -c 2 out.wav</code> (works while pipewire/wireplumber run as <code>aeinstein</code>)</td>
 </tr>
 <tr>
 <td>Silence</td>
@@ -1424,7 +1424,7 @@ Intercom with the browser (mode manual, 8 kHz mono both ways, <code>plughw:0,0</
 </tr>
 <tr>
 <td>Active</td>
-<td><code>[ortung] modes</code> (<code>idle</code>, <code>pet</code>), never in sleep mode or during Wi-Fi setup; <code>arecord</code> on <code>hw:0,0</code> runs only then (device opens once: <code>arecord</code> by hand fails meanwhile; mode <code>manual</code> frees it)</td>
+<td><code>[ortung] modes</code> (<code>idle</code>, <code>pet</code>), never in sleep mode or during Wi-Fi setup; <code>arecord</code> on <code>hw:CARD=wm8960soundcard,DEV=0</code> runs only then (device opens once: <code>arecord</code> by hand fails meanwhile; mode <code>manual</code> frees it)</td>
 </tr>
 <tr>
 <td>Gate</td>
@@ -1551,7 +1551,7 @@ Intercom with the browser (mode manual, 8 kHz mono both ways, <code>plughw:0,0</
 </tr>
 <tr>
 <td>Tools</td>
-<td><code>python tools/stimme.py sittich in.wav out.wav [--set speed=1.8]</code>, <code>vergleich a.wav b.wav …</code> (distance table), <code>lernen *.wav</code> (whole flow in a temp dir), <code>strom long.wav [--aus dir]</code> (cut a long 48 kHz stereo recording like on the Rider, distance table; record in mode <code>manual</code>: <code>arecord -D hw:0,0 -f S16_LE -r 48000 -c 2 -d 120 x.wav</code>)</td>
+<td><code>python tools/stimme.py sittich in.wav out.wav [--set speed=1.8]</code>, <code>vergleich a.wav b.wav …</code> (distance table), <code>lernen *.wav</code> (whole flow in a temp dir), <code>strom long.wav [--aus dir]</code> (cut a long 48 kHz stereo recording like on the Rider, distance table; record in mode <code>manual</code>: <code>arecord -D hw:CARD=wm8960soundcard,DEV=0 -f S16_LE -r 48000 -c 2 -d 120 x.wav</code>)</td>
 </tr>
 </tbody>
 </table>

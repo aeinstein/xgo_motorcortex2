@@ -10,7 +10,7 @@ Die Mikrofone liegen akustisch nur ~4 mm auseinander (Laufzeit höchstens +-11 u
 brauchbar wird die Richtung erst über ~1 s gemittelt, also für Sprache und Dauergeräusche, nicht für ein Klatschen.
 Gleichbleibender Lärm hebt den Ruhepegel (noise_up) und schließt das Tor nach einigen Sekunden wieder.
 Eigene Töne (aplay) werden über `stumm` ausgeblendet, dazu nachhall_s danach.
-Stimmproben (stimme.Stimmen, Modus pet) hängen als `horcher` am selben Strom: arecord hält hw:0,0 allein.
+Stimmproben (stimme.Stimmen, Modus pet) hängen als `horcher` am selben Strom: arecord hält hw:CARD=wm8960soundcard,DEV=0 allein.
 
 Zwei Mikrofone trennen nur links/rechts: vorn und hinten sind nicht zu unterscheiden, der Winkel gilt gegen
 die Querachse (0 = Mitte, > 0 links wie w > 0). mic_dist_m und tau_offset_us stammen aus einer Messreihe im

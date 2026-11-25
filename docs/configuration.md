@@ -249,7 +249,7 @@ All keys with comments: `PetCfg` in `xgonav/config.py`.
 | Key | Default | Meaning |
 |---|---|---|
 | `enabled`, `modes` | true, `idle` `pet` | only with `--robot proc`; never in sleep mode |
-| `device`, `rate`, `block` | `hw:0,0`, 48000, 1024 | `arecord` capture; block = power of two |
+| `device`, `rate`, `block` | `hw:CARD=wm8960soundcard,DEV=0`, 48000, 1024 | `arecord` capture; block = power of two |
 | `mic_dist_m`, `tau_offset_us`, `sign` | 0.0038, −2.2, 1 | effective microphone spacing and fixed channel offset (calibration 2026-11-13, balancing); −1 swaps left/right |
 | `f_lo`, `f_hi` | 300, 2000 | band in Hz; above 2 kHz the channels are not phase-true |
 | `tau_margin`, `steer_steps`, `phat_beta` | 1.5, 20, 0.8 | search range × spacing, delays per side, 1 = phase only |

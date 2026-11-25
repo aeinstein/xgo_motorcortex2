@@ -815,6 +815,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#boot-config-bootfirmwareconfigtxt" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Boot config (/boot/firmware/config.txt)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#manual-steps" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1348,6 +1359,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#boot-config-bootfirmwareconfigtxt" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Boot config (/boot/firmware/config.txt)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#manual-steps" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1504,6 +1526,34 @@
 <tr>
 <td>After <code>apt upgrade</code></td>
 <td>check imports as the service user: <code>sudo -u aeinstein /opt/xgonav/venv/bin/python -c "import picamera2"</code> (the service also uses <code>~/.local</code>, root does not)</td>
+</tr>
+</tbody>
+</table>
+<h2 id="boot-config-bootfirmwareconfigtxt">Boot config (<code>/boot/firmware/config.txt</code>)<a class="headerlink" href="#boot-config-bootfirmwareconfigtxt" title="Permanent link">&para;</a></h2>
+<p>HDMI is off (2026-11-25): headless, display on SPI. With HDMI audio the ALSA card order changed between boots (<code>hw:0,0</code> became HDMI, sound direction failed).</p>
+<table>
+<thead>
+<tr>
+<th>Line</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>dtoverlay=vc4-kms-v3d</code>, <code>max_framebuffers=2</code></td>
+<td>commented out (no DRM, no <code>vc4-hdmi</code> cards; camera, ISP and HW-JPEG do not need it)</td>
+</tr>
+<tr>
+<td><code>display_auto_detect</code></td>
+<td><code>0</code></td>
+</tr>
+<tr>
+<td><code>dtparam=audio</code></td>
+<td><code>off</code> (<code>snd_bcm2835</code>)</td>
+</tr>
+<tr>
+<td>Check after reboot</td>
+<td><code>cat /proc/asound/cards</code> → only <code>wm8960soundcard</code></td>
 </tr>
 </tbody>
 </table>

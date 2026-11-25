@@ -1038,7 +1038,7 @@ class OrtungCfg:
     # nur bei Geräuschen über dem Ruhepegel. Vorn/hinten ist mit zwei Mikrofonen nicht zu trennen.
     enabled: bool = True
     modes: list = field(default_factory=lambda: ["idle", "pet"])
-    device: str = "hw:0,0"             # WM8960 (docs/audio.md)
+    device: str = "hw:CARD=wm8960soundcard,DEV=0"  # WM8960 per Name, nicht Nummer (docs/audio.md)
     rate: int = 48000
     block: int = 1024                  # Abtastwerte je Block (Zweierpotenz), 21 ms
     # Wirksamer Abstand der Mikrofone quer zur Fahrtrichtung und fester Versatz zwischen den Kanälen. Gemessen

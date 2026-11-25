@@ -30,6 +30,17 @@ Behaviour:
 | Why | on 6.12.115 `wm8960-soundcard` (DKMS) does not build, which aborts the kernel setup; `xgo-drv` is neither built nor tested there |
 | After `apt upgrade` | check imports as the service user: `sudo -u aeinstein /opt/xgonav/venv/bin/python -c "import picamera2"` (the service also uses `~/.local`, root does not) |
 
+## Boot config (`/boot/firmware/config.txt`)
+
+HDMI is off (2026-11-25): headless, display on SPI. With HDMI audio the ALSA card order changed between boots (`hw:0,0` became HDMI, sound direction failed).
+
+| Line | Value |
+|---|---|
+| `dtoverlay=vc4-kms-v3d`, `max_framebuffers=2` | commented out (no DRM, no `vc4-hdmi` cards; camera, ISP and HW-JPEG do not need it) |
+| `display_auto_detect` | `0` |
+| `dtparam=audio` | `off` (`snd_bcm2835`) |
+| Check after reboot | `cat /proc/asound/cards` → only `wm8960soundcard` |
+
 ## Manual steps
 
 ```

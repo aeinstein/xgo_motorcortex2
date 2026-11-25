@@ -6,7 +6,7 @@ After=rc-local.service network.target
 Type=simple
 User=www-data
 Group=www-data
-# arecord/aplay auf plughw:0,0 (WM8960)
+# arecord/aplay auf plughw:CARD=wm8960soundcard,DEV=0 (WM8960)
 SupplementaryGroups=audio
 ExecStart=/usr/bin/php /opt/xgonav/tools/sprech.php
 Restart=always

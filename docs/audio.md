@@ -1,7 +1,7 @@
 # Audio (speaker and microphones)
 
-Sound card `wm8960soundcard` (WM8960 codec, I²S), ALSA card 0, device `hw:0,0`, playback and capture. Sounds played by xgonav: [display-emotions.md](display-emotions.md#sounds).
-Intercom with the browser (mode manual, 8 kHz mono both ways, `plughw:0,0`): [web-interface.md](web-interface.md#intercom-websocket).
+Sound card `wm8960soundcard` (WM8960 codec, I²S), ALSA device `hw:CARD=wm8960soundcard,DEV=0` (by name, not number; HDMI is off, see [installation.md](installation.md#boot-config-bootfirmwareconfigtxt)), playback and capture. Sounds played by xgonav: [display-emotions.md](display-emotions.md#sounds).
+Intercom with the browser (mode manual, 8 kHz mono both ways, `plughw:CARD=wm8960soundcard,DEV=0`): [web-interface.md](web-interface.md#intercom-websocket).
 
 ## Microphones
 
@@ -10,7 +10,7 @@ Measured 2026-11-13 on the RiderPi, quiet room.
 | Item | Value |
 |---|---|
 | Count | 2 microphones, stereo (left = `LINPUT1`, right = `RINPUT1`) |
-| Record | `arecord -D hw:0,0 -f S16_LE -r 48000 -c 2 out.wav` (works while pipewire/wireplumber run as `aeinstein`) |
+| Record | `arecord -D hw:CARD=wm8960soundcard,DEV=0 -f S16_LE -r 48000 -c 2 out.wav` (works while pipewire/wireplumber run as `aeinstein`) |
 | Silence | both channels ≈ −27 dBFS noise at full gain, no zero samples; channels uncorrelated (0.09) |
 | Noise spectrum | 50–66 % below 200 Hz (hum / structure-borne), ~28 % above 12 kHz, whine at 15.9 kHz in both channels |
 | Own speaker (`freude.wav`, 1.0–1.8 kHz) | +43 dB (×145) over silence on both channels, L/R correlation 0.99, same level |
@@ -24,7 +24,7 @@ Time difference left/right from the phase of the cross spectrum (GCC-PHAT, 300�
 |---|---|
 | Output | `GET /status` → `ortung.letzter`: `winkel_deg` (0 = centre, > 0 left), `tau_us`, `guete` 0..1, `pegel_db`, `alter_s`; `ortung.verlauf` (last sounds, for the radar card in the web page, [web-interface.md](web-interface.md)); in code `app.ortung.last` (`Schall`) |
 | Limits | two microphones: left/right only, front and back are the same (a source at 150° reads as 30°) |
-| Active | `[ortung] modes` (`idle`, `pet`), never in sleep mode or during Wi-Fi setup; `arecord` on `hw:0,0` runs only then (device opens once: `arecord` by hand fails meanwhile; mode `manual` frees it) |
+| Active | `[ortung] modes` (`idle`, `pet`), never in sleep mode or during Wi-Fi setup; `arecord` on `hw:CARD=wm8960soundcard,DEV=0` runs only then (device opens once: `arecord` by hand fails meanwhile; mode `manual` frees it) |
 | Gate | per 1024-sample block (21 ms) one level value (band ≈ 0.7–3.5 kHz) against a tracked noise floor: opens at `on_db = 9`, stays open down to `off_db = 3`, pauses ≤ `hang_blocks` (0.25 s) do not end a sound. A steady sound is followed for ≈ 15 s, then counts as silence (`noise_up`) |
 | Estimate | open gate: one FFT per block (both channels as one complex signal), cross spectrum summed over ≤ 47 blocks (1 s), weighted `|S|^-0.8`, tested against 41 delays within ±17 µs, parabola at the peak; sounds < 0.5 s dropped |
 | Own sounds | ignored while `aplay` from xgonav runs and `nachhall_s = 0.3` after; sounds started elsewhere (web, `rc.local`) are not |
@@ -62,7 +62,7 @@ The pet learns phrases it hears repeatedly and parrots them back, filtered to so
 | Web | card **Samples**: `api.php?a=stimmen` lists the files (disk only, works without xgonav), `a=stimme_wav&name=NN\|<time>&roh=0\|1` serves one WAV for the browser; `POST a=stimme_spielen&name=NN` → xgonav `POST /stimme/spielen` (sound `stimme:NN`, sound location ignores it), `POST a=stimme_loeschen&name=…` → xgonav `POST /stimme/loeschen` (`Stimmen.loeschen`: files + memory + counts; 400 bad name, 404 missing), `POST a=stimme_hochladen&fertig=0|1` (body WAV, ≤ 1000 KB) → xgonav `POST /stimme/hochladen`; list field `fest`. Cost on the Pi only on request (upload: gate + filter + features of ≤ 3 s once, C++ core, web thread) |
 | Status | `GET /status` → `ortung.stimme` (`aufnahme`, `bestaetigt`, `kandidaten`, `voll`, `fest`, `segmente`, `verworfen`, `wieder`); pet info `nachgeplappert`, `proben` |
 | Cost | per 21 ms block only while capturing: a few comparisons and keeping the block; per utterance C++ core `native/stimmfast.cpp` in thread `stimme` (CM4: 3 s features ≈ 21 ms before the pitch check, DTW ≈ 2 ms per sample); filter once per confirmation (≈ 6 ms per s). numpy fallback equal to rounding (1e-13). Nothing in the frame loop |
-| Tools | `python tools/stimme.py sittich in.wav out.wav [--set speed=1.8]`, `vergleich a.wav b.wav …` (distance table), `lernen *.wav` (whole flow in a temp dir), `strom long.wav [--aus dir]` (cut a long 48 kHz stereo recording like on the Rider, distance table; record in mode `manual`: `arecord -D hw:0,0 -f S16_LE -r 48000 -c 2 -d 120 x.wav`) |
+| Tools | `python tools/stimme.py sittich in.wav out.wav [--set speed=1.8]`, `vergleich a.wav b.wav …` (distance table), `lernen *.wav` (whole flow in a temp dir), `strom long.wav [--aus dir]` (cut a long 48 kHz stereo recording like on the Rider, distance table; record in mode `manual`: `arecord -D hw:CARD=wm8960soundcard,DEV=0 -f S16_LE -r 48000 -c 2 -d 120 x.wav`) |
 
 ## Mixer state (as found, not changed)
 

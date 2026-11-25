@@ -3466,8 +3466,8 @@
       {
        "key": "device",
        "typ": "str",
-       "default": "hw:0,0",
-       "hilfe": "WM8960 (docs/audio.md)"
+       "default": "hw:CARD=wm8960soundcard,DEV=0",
+       "hilfe": "WM8960 per Name, nicht Nummer (docs/audio.md)"
       },
       {
        "key": "rate",
