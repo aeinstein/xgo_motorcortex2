@@ -36,6 +36,7 @@ FAULTS = "--faults" in args
 IMU65 = "--imu65" in args
 COMBO = "--combo" in args
 TUNNEL = "--tunnel" in args
+VEL_CAPS = 1                # Fähigkeitsbyte (0x1a lesen, Byte 1): bit0 Krümmungsbetrieb
 VEL = "--vel" in args   # Firmware-Patch 08-velocity: Fahrrahmen 0x1a (13 Byte) / Grenzen 0x1b (14 Byte), 0x1a lesen = Zustand
 _st = [a for a in args if a.startswith("--stream")]
 STREAM = bool(_st) and "--stream-off" not in args
@@ -76,11 +77,11 @@ def payload(addr, n, t):
         return (f(r) + f(p) + f(y) + struct.pack("<III", a, b, int((t - T0) * 1000) & 0xFFFFFFFF))[:n]
     if addr == 0x1a and VEL:                # Zustand wie die Firmware (velocity_cmd.h fillDiag), ohne Rampe
         if not vel_frames:
-            return bytes([8 if vel_limits else 0]) + bytes(11)
+            return bytes([8 if vel_limits else 0, VEL_CAPS]) + bytes(10)
         fl = vel_frames[-1]
         lim = vel_limits[-1] if vel_limits else bytes(6)
-        flags = 1 | (2 if fl[0] & 1 else 0) | (8 if vel_limits else 0)
-        return bytes([flags, 0]) + fl[1:3] + fl[7:9] + lim[0:6]
+        flags = 1 | (2 if fl[0] & 1 else 0) | (8 if vel_limits else 0) | (16 if fl[0] & 2 else 0)
+        return bytes([flags, VEL_CAPS]) + fl[1:3] + fl[7:9] + lim[0:6]
     if addr == 0x62 and n == 12:
         return (f(r) + f(p) + f(y)) if BLOCK else f(r)   # ohne Block-Support: nur 4 Byte
     table = {0x62: f(r), 0x63: f(p), 0x64: f(y), 0x01: bytes([87]), 0x02: bytes([1]),

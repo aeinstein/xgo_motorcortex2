@@ -18,7 +18,7 @@ from . import navfast
 from .config import BehaviorCfg, ExploreCfg, HomeCfg, PatrolCfg, RobotCfg
 from .egomotion import EgoResult
 from .freespace import FreeSpace
-from .mathe import clamp, polar, wrap as _wrap, yaw_rate_to_w
+from .mathe import clamp, polar, w_to_yaw_rate, wrap as _wrap, yaw_rate_to_w
 from .geometry import CamGeometry
 from .robot import stopp_text
 from .tracker import Track
@@ -95,6 +95,9 @@ class Command:
     status: str = ""
     target_id: int | None = None
     extra: dict = field(default_factory=dict)
+    # Bahnkrümmung (1/m, + = links) zum Befehl, gesetzt vom Wegfolger beim Fahren im Bogen (w = κ · v). Wer danach v
+    # ändert, behält den Bogen (App._arc_check rechnet w nach); mit robot.vel_kappa geht κ statt w an die Firmware.
+    kappa: float | None = None
 
 
 def dreh_w(err: float, kp: float, w_max: float, rcfg: RobotCfg, deadband_deg: float = 0.0,
@@ -1041,8 +1044,12 @@ class PathFollower:
                 vf = self.brems_v(w, frei)
                 if vf < v:
                     v, frei_txt = vf, ", frei %.2fm" % max(0.0, frei)
+        # Bogen des Befehls als Krümmung (gleiche Lenkung wie bisher: κ = Drehrate/Tempo im eingeschwungenen Zustand);
+        # mit robot.vel_kappa hält die Firmware ihn auch beim Anfahren und Bremsen (ARBEITSPLAN.md Punkt 5 Stufe 1)
+        vm = v * self.rcfg.vx_limit
+        kappa = w_to_yaw_rate(wc, self.rcfg) / vm if vm > 1e-3 else None
         return Command(v, wc, hmm, "%s (%+.0f°%s%s)" % (label, math.degrees(err), ", Lücke" if mitte else ", eng" if tight else "",
-                                                       frei_txt), extra={"tight": tight, "frei": info})
+                                                       frei_txt), extra={"tight": tight, "frei": info}, kappa=kappa)
 
     def ausrichten(self, err: float, label: str = "am Start – richte aus") -> Command | None:
         """Am Ziel auf den Endkurs drehen (home.align_heading, align_tol_deg); None = steht schon richtig."""

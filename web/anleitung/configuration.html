@@ -2013,6 +2013,12 @@
 <td>drive frame of firmware patch 08-velocity (<code>xgonav/fahrrahmen.py</code>): used when the driver has <code>/proc/XGORider/vel</code> and the firmware answers reg 0x1a, else bytes. Sends target m/s (normalised × <code>vx_limit</code>) and °/s (× <code>vyaw_limit_dps</code>) with acceleration and jerk; the firmware ramps (S-curve) and controls speed and turn rate. (Pi ramp, <code>speed_ctrl</code> and <code>turn_min_w</code> removed 2026-11-25; the byte fallback sends targets unramped); <code>robot.command</code> is the firmware's setpoint, recomputed on the Pi. Simulator follows it with 0.15 s / 0.1 s lag (assumption until measured)</td>
 </tr>
 <tr>
+<td><code>vel_kappa</code></td>
+<td>false</td>
+<td></td>
+<td>curvature mode (ARBEITSPLAN.md item 5, stage 1): path-follower commands carry <code>Command.kappa</code> and go out as <code>kap</code> frames (κ in 0.001 1/m); the firmware sets w = κ · v_target and limits v/a/jerk instead of w, so the arc holds while accelerating and braking. Only if the firmware reports capability bit0 (reg 0x1a byte 1); otherwise turn-rate frames and a log warning. Off until driven</td>
+</tr>
+<tr>
 <td><code>fw_speed_unit_mm</code></td>
 <td>3.9</td>
 <td></td>

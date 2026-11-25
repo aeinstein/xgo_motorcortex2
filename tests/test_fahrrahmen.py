@@ -1,5 +1,6 @@
 """Fahrrahmen (Firmware-Patch 08-velocity, xgonav/fahrrahmen.py, Robot): Text für /proc, Generator wie die Firmware,
 Robot schreibt Rahmen statt Bytes, Grenzen beim Start und periodisch, Einschalten nur mit Treiber und Firmware."""
+import math
 import os
 import sys
 import time
@@ -8,7 +9,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from xgonav.config import Config  # noqa: E402
-from xgonav.fahrrahmen import Achse, grenzen_text, rahmen_text, zustand  # noqa: E402
+from xgonav.fahrrahmen import CAP_KAPPA, Achse, Bogen, bogen_schritt, bogen_text, grenzen_text, rahmen_text, zustand  # noqa: E402
 from xgonav.robot import ProcRobot, SimRobot  # noqa: E402
 
 
@@ -25,8 +26,96 @@ def test_rahmen_text_einheiten():
 def test_zustand_lesen():
     z = zustand("1 0 0 1 250 -12.3 500 90.0 300")
     assert z == {"aktiv": True, "beschl": False, "waechter": False, "grenzen": True, "v": 250, "w": -12.3,
-                 "v_max": 500, "w_max": 90.0, "timeout_ms": 300}
+                 "v_max": 500, "w_max": 90.0, "timeout_ms": 300, "kappa": False, "caps": 0}   # alter Treiber
+    z = zustand("1 0 0 1 46 4.6 600 300.0 300 1 1")
+    assert z["kappa"] and z["caps"] == CAP_KAPPA and z["w"] == 4.6
     assert zustand("Fehler -110") is None and zustand("") is None and zustand("1 2 3") is None
+    assert zustand("1 0 0 1 250 -12.3 500 90.0 300 1") is None
+
+
+def test_bogen_text():
+    # κ in 0,001 1/m, Tempo wie rahmen_text (0,18 m/s / 3,9 = 46)
+    assert bogen_text(0.18, 0.5, 2.5, 2.0, 360, 1800, 3.9) == "kap 46 128 641 2000 360 1800"
+    assert bogen_text(-0.18, 0.0, 0.0, -0.5004, 0, 0, 3.9) == "kap -46 0 0 -500 0 0"
+    assert bogen_text(0.1, 0, 0, 99.0, 0, 0, 3.9).split()[4] == "32767"
+
+
+VECTORS = os.path.join(os.path.dirname(__file__), "..", "firmware", "tests", "vectors")
+
+
+def _i16(b, i):
+    return int.from_bytes(b[i:i + 2], "little", signed=True)
+
+
+def _u16(b, i):
+    return int.from_bytes(b[i:i + 2], "little")
+
+
+def _firmware_nachbau(rows):
+    """velocity_cmd.h receive + tick (Drehraten- und Krümmungsweg) mit Achse und bogen_schritt nachgerechnet; je Takt
+    (v, w, a, kappa, timed_out)."""
+    fwd, turn, bog = Achse(), Achse(), Bogen()
+    aktiv = ticked = timed_out = beschl = False
+    last_rx = last_tick = 0
+    f = None
+    out = []
+    for r in rows:
+        t = int(r["t_us"])
+        v_max, w_max, timeout, m = float(r["v_max"]), float(r["w_max"]), int(r["timeout_ms"]), float(r["unit_mm"]) * 1e-3
+        if r["rx"] == "1":
+            d = bytes.fromhex(r["frame_hex"])
+            kap = bool(d[0] & 2)
+            f = {"beschl": bool(d[0] & 1), "kap": kap, "v": _i16(d, 1), "a": _i16(d, 3), "j": _u16(d, 5),
+                 "w": 0.0 if kap else _i16(d, 7) * 0.1, "k": _i16(d, 7) * 0.001 if kap else 0.0,
+                 "al": _u16(d, 9), "jw": _u16(d, 11)}
+            if not aktiv:
+                ticked = False
+            aktiv, timed_out, last_rx, beschl = True, False, t, f["beschl"]
+        dt = 0.0
+        if not ticked:
+            fwd, turn = Achse(), Achse()
+        else:
+            dt = min(0.05, (t - last_tick) * 1e-6)
+        last_tick, ticked = t, True
+        wd = timeout and t - last_rx > timeout * 1000
+        if wd and not timed_out:
+            timed_out, beschl = True, False
+        if f["kap"]:
+            if wd:
+                a = abs(f["a"]) if f["a"] else 500.0
+                turn.x = bogen_schritt(fwd, bog, turn.x, 0.0, f["k"], a, f["j"], f["al"], f["jw"], v_max, w_max, dt, m)
+            else:
+                turn.x = bogen_schritt(fwd, bog, turn.x, f["v"], f["k"], f["a"], f["j"], f["al"], f["jw"], v_max,
+                                       w_max, dt, m, beschl=beschl)
+        else:
+            bog.an = False
+            if wd:
+                fwd.schritt(0.0, abs(f["a"]) if f["a"] else 500.0, f["j"], dt)
+                turn.schritt(0.0, f["al"] if f["al"] else 180.0, f["jw"], dt)
+            else:
+                if beschl:
+                    fwd.beschleunigen(f["a"], f["j"], v_max, dt)
+                else:
+                    fwd.schritt(max(-v_max, min(v_max, f["v"])), abs(f["a"]), f["j"], dt)
+                turn.schritt(max(-w_max, min(w_max, f["w"])), f["al"], f["jw"], dt)
+            fwd.x, turn.x = max(-v_max, min(v_max, fwd.x)), max(-w_max, min(w_max, turn.x))
+        out.append((fwd.x, turn.x, fwd.a, bog.kappa, timed_out))
+    return out
+
+
+@pytest.mark.parametrize("name", sorted(n[:-4] for n in os.listdir(VECTORS) if n.endswith(".csv"))
+                         if os.path.isdir(VECTORS) else [])
+def test_firmware_vektoren(name):
+    """Prüfvektoren der Firmware-Host-Tests (XGO_VECTORS=1, ESP32 float): Nachbau am Pi gleich bis 1e-4 (relativ ab 1)."""
+    import csv
+    with open(os.path.join(VECTORS, name + ".csv"), newline="") as fh:
+        rows = list(csv.DictReader(fh))
+    for i, (r, (v, w, a, k, to)) in enumerate(zip(rows, _firmware_nachbau(rows))):
+        for key, x in (("v", v), ("w", w), ("a", a), ("kappa", k)):
+            soll = float(r[key])
+            assert abs(x - soll) <= 1e-4 * max(1.0, abs(soll)), "%s Zeile %d t %s: %s %.7g statt %.7g" % (
+                name, i + 2, r["t_us"], key, x, soll)
+        assert to == (r["timed_out"] == "1"), "%s Zeile %d: timed_out" % (name, i + 2)
 
 
 def _lauf(ax, ziel, a, j, s, dt=0.004):
@@ -164,3 +253,54 @@ def test_fahrrahmen_einschalten_nur_mit_treiber_und_firmware(tmp_path):
     cfg.vel_frame = False
     r._vel_setup()
     assert not r.vel
+    cfg.vel_frame = True
+    r._vel_setup()
+    assert r.vel and r.caps == 0 and not r.bogen                           # alter Treiber: kein Fähigkeitsbyte
+    cfg.vel_kappa = True
+    r._vel_setup()
+    assert not r.bogen                                                     # Firmware ohne Krümmungsbetrieb
+    (tmp_path / "vel").write_text("0 0 0 1 0 0.0 0 0.0 0 0 1\n")
+    r._vel_setup()
+    assert r.bogen and r.caps == CAP_KAPPA
+    cfg.vel_kappa = False
+    r._vel_setup()
+    assert not r.bogen                                                     # vel_kappa aus: Drehratenweg
+
+
+def test_bogen_robot_schreibt_kruemmung_und_haelt_den_bogen():
+    """Krümmungsbetrieb: Rahmen "kap …", w = κ · v_soll schon beim Anfahren (Drehratenweg: w früher am Ziel)."""
+    cfg = _cfg(vel_kappa=True)
+    r = SimRobot(cfg)
+    r.start()
+    try:
+        assert r.bogen
+        k = 2.0                                                            # 1/m, 0,5 m Radius links
+        vk = []
+        for _ in range(40):
+            r.drive(0.2, 0.0, kappa=k)                                     # w egal, κ zählt
+            time.sleep(0.02)
+            v, w = r.command
+            if v > 1e-3:
+                vk.append(math.radians(w * cfg.vyaw_limit_dps) / (v * cfg.vx_limit))
+        assert "kap 92 128 641 2000 360 1800" in _writes(r, "vel")
+        assert vk and all(abs(x - k) < 1e-6 for x in vk)                   # Krümmung in jedem Takt
+        r.drive(0.2, 0.3)                                                  # ohne κ: wieder Drehratenweg
+        time.sleep(0.1)
+        assert not _writes(r, "vel")[-1].startswith("kap ")
+    finally:
+        r.close()
+
+
+def test_bogen_ohne_vel_kappa_wie_bisher():
+    cfg = _cfg()
+    assert not cfg.vel_kappa
+    r = SimRobot(cfg)
+    r.start()
+    try:
+        assert not r.bogen
+        for _ in range(10):
+            r.drive(0.2, 0.1, kappa=2.0)
+            time.sleep(0.02)
+        assert not any(t.startswith("kap ") for t in _writes(r, "vel"))
+    finally:
+        r.close()

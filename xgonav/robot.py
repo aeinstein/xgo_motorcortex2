@@ -21,7 +21,7 @@ import time
 from dataclasses import dataclass
 
 from .config import RobotCfg
-from .fahrrahmen import W_LEVEL_OFF_DPS, Achse, grenzen_text, rahmen_text, zustand
+from .fahrrahmen import CAP_KAPPA, W_LEVEL_OFF_DPS, Achse, Bogen, bogen_schritt, bogen_text, grenzen_text, rahmen_text, zustand
 
 log = logging.getLogger(__name__)
 
@@ -177,6 +177,11 @@ class Robot:
         # rechnen den Sollwert der Firmware nach (m/s bzw. °/s); _cur ist dann deren Sollwert, normiert.
         self.vel = False
         self._gen_v, self._gen_w = Achse(), Achse()
+        # Krümmungsbetrieb (Fähigkeitsbit der Firmware und robot.vel_kappa): drive(kappa=…) schickt κ statt w
+        self.caps = 0
+        self.bogen = False
+        self._target_k: float | None = None
+        self._bogen = Bogen()
         self._frame = ""                        # Text des aktuellen Rahmens
         self._frame_sent: str | None = None
         self._limits_t = -1e9
@@ -198,6 +203,17 @@ class Robot:
         except OSError as e:
             log.error("vel_limits nicht geschrieben: %s", e)
         self._limits_t = now
+
+    def _caps_setup(self, caps: int) -> None:
+        """Fähigkeitsbyte der Firmware (0x1a lesen, Byte 1): Krümmungsbetrieb nur mit Bit und robot.vel_kappa. Ältere
+        Firmware (0) führte einen Krümmungsrahmen als Drehrate aus."""
+        self.caps = caps
+        self.bogen = bool(self.cfg.vel_kappa and caps & CAP_KAPPA)
+        if self.cfg.vel_kappa and not self.bogen:
+            log.warning("robot.vel_kappa an, aber die Firmware meldet keinen Krümmungsbetrieb (Fähigkeiten %d) – "
+                        "Drehratenweg", caps)
+        elif self.bogen:
+            log.info("Krümmungsbetrieb aktiv (Fähigkeiten %d)", caps)
 
     # ---- öffentliche API -------------------------------------------------
     def start(self) -> None:
@@ -226,15 +242,18 @@ class Robot:
             raise ValueError(f"Tempo {f} außerhalb {self.TEMPO_MIN}..1")
         self._tempo = f
 
-    def drive(self, v: float, w: float, brake: bool = False) -> None:
+    def drive(self, v: float, w: float, brake: bool = False, kappa: float | None = None) -> None:
         """brake: Vollbremsung, beim Langsamerwerden mit robot.vel_brake statt vel_decel (Fahrrahmen; auch auf ein
-        kleineres Tempo als 0, so rollt er weich bis an die Grenze der Bahnprüfung). Auf dem Byteweg ohne Wirkung."""
+        kleineres Tempo als 0, so rollt er weich bis an die Grenze der Bahnprüfung). Auf dem Byteweg ohne Wirkung.
+        kappa: Bahnkrümmung (1/m, + = links) zum Befehl; mit self.bogen geht sie statt w an die Firmware (w = κ · v_soll
+        dort, Grenzen begrenzen v statt w), sonst zählt w."""
         # Erst begrenzen, dann Tempo: v/w der Modi sind Faktor x max_v (RobotCfg.v_of), gesendet wird
         # Faktor x tempo x max_v; Verhältnis v/w und damit die geprüfte Bahn bleiben gleich.
         v = max(-self.cfg.max_v, min(self.cfg.max_v, v)) * self._tempo
         w = max(-self.cfg.max_w, min(self.cfg.max_w, w)) * self._tempo
         with self._lock:
             self._target = (v, w)
+            self._target_k = kappa if self.bogen else None
             self._brake = brake
             self._last_cmd_t = time.monotonic()
 
@@ -390,6 +409,7 @@ class Robot:
             now = time.monotonic()
             with self._lock:
                 target = self._target
+                kappa = self._target_k
                 stale = now - self._last_cmd_t > self.cfg.stall_timeout_s
             if stale:
                 target = (0.0, 0.0)
@@ -409,7 +429,9 @@ class Robot:
                 self._cur = (0.0, 0.0)
                 if self.vel:
                     self._gen_reset()
-            self._ramp(target, now)
+            if stale or not self.state.balancing or (self._act is not None and self._act_abort):
+                kappa = None                        # Stopp von hier: Drehratenweg wie bisher
+            self._ramp(target, now, kappa)
             with self._act_lock:
                 if not self._action_tick(now):
                     self._send(now)
@@ -487,17 +509,18 @@ class Robot:
             self._drive_level_on = on
             log.debug("Nivellieren beim Fahren %s", "an" if on else "aus")
 
-    def _ramp(self, target: tuple[float, float], now: float) -> None:
+    def _ramp(self, target: tuple[float, float], now: float, kappa: float | None = None) -> None:
         dt = max(1e-3, now - self._last_ramp_t)
         self._last_ramp_t = now
         if self.vel:
-            self._ramp_vel(target, dt)
+            self._ramp_vel(target, dt, kappa if self.bogen else None)
             return
         self._cur = target                   # Byteweg: die Firmware filtert selbst (Tiefpass, 5er-Schritt)
 
-    def _ramp_vel(self, target: tuple[float, float], dt: float) -> None:
+    def _ramp_vel(self, target: tuple[float, float], dt: float, kappa: float | None = None) -> None:
         """Fahrrahmen: Ziel in m/s und °/s, Beschleunigung je nach Richtung; der Generator rechnet nach, was die
-        Firmware daraus macht (_cur), der Rahmen selbst trägt nur Ziel und Grenzen."""
+        Firmware daraus macht (_cur), der Rahmen selbst trägt nur Ziel und Grenzen. kappa: Krümmungsrahmen
+        (bogen_schritt wie velocity_cmd.h tickKappa, w = κ · v_soll)."""
         c = self.cfg
         tv, tw = target[0] * c.vx_limit, target[1] * c.vyaw_limit_dps
         g = self._gen_v
@@ -508,16 +531,27 @@ class Robot:
             a, j = c.vel_accel_mps2, c.vel_jerk_mps3          # schneller in derselben Richtung (oder aus dem Stand)
         else:
             a, j = c.vel_decel_mps2, c.vel_jerk_mps3          # langsamer oder Richtungswechsel
-        g.schritt(tv, a, j, dt)
-        self._gen_w.schritt(tw, c.vel_alpha_dps2, c.vel_jerk_w_dps3, dt)
+        if kappa is not None:
+            kq = round(kappa * 1000.0) / 1000.0       # wie im Rahmen (0,001 1/m)
+            gw = self._gen_w
+            gw.x = bogen_schritt(g, self._bogen, gw.x, tv, kq, a, j, c.vel_alpha_dps2, c.vel_jerk_w_dps3,
+                                 self.v_max_mps, self.w_max_dps, dt)
+            gw.a = 0.0
+            self._frame = bogen_text(tv, a, j, kq, c.vel_alpha_dps2, c.vel_jerk_w_dps3, c.fw_speed_unit_mm)
+            self._frame_w = gw.x
+        else:
+            self._bogen.an = False
+            g.schritt(tv, a, j, dt)
+            self._gen_w.schritt(tw, c.vel_alpha_dps2, c.vel_jerk_w_dps3, dt)
+            self._frame = rahmen_text(tv, a, j, tw, c.vel_alpha_dps2, c.vel_jerk_w_dps3, c.fw_speed_unit_mm)
+            self._frame_w = tw
         self._cur = (g.x / c.vx_limit, self._gen_w.x / c.vyaw_limit_dps)
-        self._frame = rahmen_text(tv, a, j, tw, c.vel_alpha_dps2, c.vel_jerk_w_dps3, c.fw_speed_unit_mm)
-        self._frame_w = tw
 
     def _gen_reset(self, resend: bool = True) -> None:
         """Firmware hat den Rahmenweg beendet (Stopp, Aktion, nicht balancierend): Generator neu ab 0. resend:
         nächster Durchlauf schreibt den Rahmen sofort (nicht im Liegen, sonst schriebe er in jedem Durchlauf)."""
         self._gen_v, self._gen_w = Achse(), Achse()
+        self._bogen = Bogen()
         if resend:
             self._frame_sent = None
 
@@ -624,6 +658,7 @@ class ProcRobot(Robot):
             return
         self._write_limits(time.monotonic())
         self.vel = True
+        self._caps_setup(st["caps"])
         c = self.cfg
         log.info("Fahrrahmen aktiv: v_max %.2f m/s, w_max %.0f °/s, a %.2f/%.2f m/s², Wächter %d ms, %.2f mm/s je Einheit",
                  self.v_max_mps, self.w_max_dps, c.vel_accel_mps2, c.vel_decel_mps2, c.vel_timeout_ms, c.fw_speed_unit_mm)
@@ -762,6 +797,7 @@ class SimRobot(Robot):
     def _setup(self) -> None:
         if self.vel:
             self._write_limits(time.monotonic())
+            self._caps_setup(CAP_KAPPA)             # wie die Firmware mit Stufe 1 der Bahnbefehle
 
     def _read_text(self, name: str) -> str | None:
         if name.startswith("settings/"):

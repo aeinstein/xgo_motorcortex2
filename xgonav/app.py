@@ -949,7 +949,8 @@ class App:
 
     def _drive(self, cmd: Command) -> None:
         """Fahrbefehl an den Roboter (alle Modi gleich, auch die Handsteuerung: Faktor x tempo x max_v)."""
-        self.robot.drive(cmd.v, cmd.w, brake=bool(cmd.extra.get("bremsen")))
+        bogen_w(cmd, self.robot, self.cfg.robot)
+        self.robot.drive(cmd.v, cmd.w, brake=bool(cmd.extra.get("bremsen")), kappa=cmd.kappa)
 
     def _manual_cmd(self, w: World | None = None) -> Command:
         """Handsteuerung: nur Sturz-Erkennung, kein Bodenmodell/keine Bahnprüfung. Geprüfter Sollwert
@@ -1646,6 +1647,7 @@ class App:
 
     def _arc_check(self, cmd: Command) -> Command:
         """Geplanten Bogen gegen die Hinderniskarte prüfen (auch außerhalb des Sichtfelds)."""
+        bogen_w(cmd, self.robot, self.cfg.robot)
         if self.lmap is None or abs(cmd.v) < 1e-3:
             return cmd
         v = cmd.v * self.cfg.robot.vx_limit
@@ -1716,6 +1718,13 @@ class App:
                             neu_planen()
         return cmd
 
+
+
+def bogen_w(cmd: Command, robot, rcfg) -> None:
+    """Krümmungsbetrieb (robot.bogen): w aus κ und dem jetzigen v, damit jede Schicht, die v senkt (safety(),
+    Bahnprüfung), den Bogen behält statt ihn enger zu machen. Ohne Krümmungsbetrieb bleibt alles wie bisher."""
+    if cmd.kappa is not None and getattr(robot, "bogen", False):
+        cmd.w = cmd.kappa * cmd.v * rcfg.vx_limit / math.radians(rcfg.vyaw_limit_dps)
 
 # ---------------------------------------------------------------------------
 _ASCII = str.maketrans({"–": "-", "—": "-", "°": "deg", "µ": "u", "ä": "ae", "ö": "oe", "ü": "ue",

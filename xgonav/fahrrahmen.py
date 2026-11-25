@@ -12,6 +12,11 @@ v_max) wird damit umgerechnet. Drehen ist in echten °/s (Kursziel läuft mit w�
 Achse.schritt ist der Sollwertgenerator der Firmware (velocity_cmd.h approach) in Python: Robot rechnet so am Pi
 denselben Sollwert, den die Firmware gerade anfährt (robot.command, Simulator, Bahnprüfung). Kosten am Pi: zwei
 Wurzeln je Durchlauf der 50-Hz-Schleife, ein /proc-Schreiben nur bei Änderung oder Keepalive.
+
+Krümmungsbetrieb (ARBEITSPLAN.md Punkt 5 Stufe 1, Flag bit1): Der Rahmen trägt statt der Drehrate die Bahnkrümmung κ,
+die Firmware rechnet w = κ · v_soll und begrenzt die Fahrachse statt w (bogen_schritt = velocity_cmd.h tickKappa).
+So bleibt der Bogen beim Anfahren und Bremsen derselbe. Geprüft gegen die Vektoren der Firmware-Host-Tests
+(firmware/tests/vectors/, tests/test_fahrrahmen.py).
 """
 from __future__ import annotations
 
@@ -19,6 +24,18 @@ import math
 from dataclasses import dataclass
 
 W_LEVEL_OFF_DPS = 16.0 / 127.5 * 300.0     # wie das Drehbyte (|Byte-128| > 16): Firmware schaltet 0x61 ab
+KDEG = 57.29578                            # ° je rad wie in velocity_cmd.h (kDeg)
+KAPPA_MAX = 32.767                         # 1/m, Bereich des i16-Felds (0,001 1/m)
+CAP_KAPPA = 1                              # Fähigkeitsbyte (0x1a lesen, Byte 1): bit0 Krümmungsbetrieb
+
+
+def _clamp_abs(x: float, m: float) -> float:
+    return max(-m, min(m, x))
+
+
+def _min_grenze(a: float, b: float) -> float:
+    """Kleinere von zwei Grenzen, 0 = ohne Grenze (velocity_cmd.h minLimit)."""
+    return b if a <= 0 else (a if b <= 0 else min(a, b))
 
 
 @dataclass
@@ -52,6 +69,63 @@ class Achse:
         else:
             self.x = nx
 
+    def beschleunigen(self, a_cmd: float, jmax: float, vmax: float, dt: float) -> None:
+        """Beschleunigungsbetrieb wie velocity_cmd.h accelerate: a mit Ruck auf a_cmd, Tempo bis ±vmax; a_cmd = 0 hält
+        das Tempo (Beschleunigung baut sich mit dem Ruck ab)."""
+        if dt <= 0:
+            return
+        if a_cmd != 0:
+            self.schritt(math.copysign(vmax, a_cmd), abs(a_cmd), jmax, dt)
+            return
+        if jmax <= 0:
+            self.a = 0.0
+        else:
+            js = jmax * dt
+            self.a -= max(-js, min(js, self.a))
+        self.x = _clamp_abs(self.x + self.a * dt, vmax)
+
+
+@dataclass
+class Bogen:
+    """Zustand des Krümmungsbetriebs: an = läuft (sonst Übernahme beim nächsten Schritt), kappa = nachgeführtes κ (1/m)."""
+    an: bool = False
+    kappa: float = 0.0
+
+
+def bogen_schritt(fwd: Achse, b: Bogen, w_jetzt: float, v_ziel: float, k_ziel: float, a: float, j: float,
+                  alpha: float, jw: float, v_max: float, w_max: float, dt: float, m: float = 1.0,
+                  beschl: bool = False) -> float:
+    """Ein Takt Krümmungsbetrieb wie velocity_cmd.h tickKappa; gibt w (°/s) zurück.
+
+    fwd: Fahrachse in Einheiten u (Pi: m/s, also m = 1; Firmware: Radeinheit, m = unit_mm/1000 m/s je Einheit).
+    w_jetzt: laufende Drehrate (°/s) für die Übernahme aus dem Drehratenweg. a, j: Grenzen der Fahrachse (u/s², u/s³;
+    beim Wächter a schon ersetzt und v_ziel = 0), alpha, jw: °/s², °/s³ (0 = ohne Grenze). beschl: Beschleunigungsbetrieb
+    (a mit Vorzeichen). Die Fahrachse wird so begrenzt, dass w = κ·v nie gekappt werden muss: |v| ≤ w_max/|κ|,
+    a ≤ alpha/|κ|, Ruck ≤ jw/|κ|; ein neues κ läuft mit |dκ/dt| ≤ alpha/|v| nach.
+    """
+    k_ziel = _clamp_abs(k_ziel, KAPPA_MAX)
+    if not b.an:                              # Übernahme: κ aus dem laufenden w/v, sonst spränge w
+        vm = fwd.x * m
+        b.kappa = _clamp_abs(w_jetzt / KDEG / vm, KAPPA_MAX) if abs(vm) > 1e-3 else k_ziel
+        b.an = True
+    vm, al = abs(fwd.x * m), alpha / KDEG
+    if al <= 0 or vm < 1e-6:
+        b.kappa = k_ziel
+    else:
+        b.kappa += _clamp_abs(k_ziel - b.kappa, al / vm * dt)
+    kk = max(abs(b.kappa), abs(k_ziel)) * m
+    v_lim = min(v_max, w_max / KDEG / kk) if kk > 0 else v_max
+    a_lim = alpha / KDEG / kk if kk > 0 and alpha > 0 else 0.0
+    j_lim = jw / KDEG / kk if kk > 0 and jw > 0 else 0.0
+    if beschl:
+        aa = _min_grenze(abs(a), a_lim)
+        fwd.beschleunigen(0.0 if a == 0 else math.copysign(aa, a), _min_grenze(j, j_lim), v_lim, dt)
+    else:
+        fwd.schritt(_clamp_abs(v_ziel, v_lim), _min_grenze(abs(a), a_lim), _min_grenze(j, j_lim), dt)
+    km = abs(b.kappa) * m
+    fwd.x = _clamp_abs(fwd.x, min(v_max, w_max / KDEG / km) if km > 0 else v_max)
+    return b.kappa * m * fwd.x * KDEG
+
 
 def _rund(x: float) -> int:
     """Kaufmännisch runden (vom Nullpunkt weg; Pythons round rundet 0,5 auf gerade, -0,05 °/s würde 0)."""
@@ -77,6 +151,15 @@ def rahmen_text(v_mps: float, a_mps2: float, j_mps3: float, w_dps: float, alpha_
     return f"{v} {a} {j} {w} {al} {jw}"
 
 
+def bogen_text(v_mps: float, a_mps2: float, j_mps3: float, kappa: float, alpha_dps2: float, jw_dps3: float,
+               unit_mm: float) -> str:
+    """Krümmungsrahmen für /proc/XGORider/vel: "kap V A J K ALPHA JW", K = κ in 0,001 1/m (+ = links). Nur senden, wenn
+    die Firmware CAP_KAPPA meldet (ältere führte K als Drehrate in 0,1 °/s aus)."""
+    t = rahmen_text(v_mps, a_mps2, j_mps3, 0.0, alpha_dps2, jw_dps3, unit_mm).split()
+    t[3] = str(max(-32767, min(32767, _rund(kappa * 1000.0))))
+    return "kap " + " ".join(t)
+
+
 def grenzen_text(v_max_mps: float, w_max_dps: float, timeout_ms: int, unit_mm: float,
                  ki: float, i_max_deg: float, kv: float) -> str:
     """Text für /proc/XGORider/vel_limits (Firmware-Patch 08-velocity, 14 Byte):
@@ -94,12 +177,14 @@ def grenzen_text(v_max_mps: float, w_max_dps: float, timeout_ms: int, unit_mm: f
 
 
 def zustand(text: str) -> dict | None:
-    """Gelesenes /proc/XGORider/vel ("aktiv beschl waechter grenzen v w v_max w_max timeout") -> dict; None bei Fehler."""
+    """Gelesenes /proc/XGORider/vel ("aktiv beschl waechter grenzen v w v_max w_max timeout [kappa caps]") -> dict;
+    None bei Fehler. Alter Treiber (9 Felder): kappa False, caps 0."""
     f = text.split()
-    if len(f) != 9 or f[0] == "Fehler":
+    if len(f) not in (9, 11) or f[0] == "Fehler":
         return None
     try:
         return {"aktiv": f[0] == "1", "beschl": f[1] == "1", "waechter": f[2] == "1", "grenzen": f[3] == "1",
-                "v": int(f[4]), "w": float(f[5]), "v_max": int(f[6]), "w_max": float(f[7]), "timeout_ms": int(f[8])}
+                "v": int(f[4]), "w": float(f[5]), "v_max": int(f[6]), "w_max": float(f[7]), "timeout_ms": int(f[8]),
+                "kappa": len(f) == 11 and f[9] == "1", "caps": int(f[10]) if len(f) == 11 else 0}
     except ValueError:
         return None

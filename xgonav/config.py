@@ -37,6 +37,10 @@ class RobotCfg:
     # des Reglers), gemessen 2026-11-25 mit tools/fw_einheit.py: 3,95 / 3,90 bei 152 / 246 mm/s (Encoder). Die frühere
     # 8,4 kam vom Soll des Bytewegs, den der P-Regler um das 1,4–1,7-fache überfährt.
     vel_frame: bool = True
+    # Krümmungsbetrieb (ARBEITSPLAN.md Punkt 5 Stufe 1): Wegfolger-Befehle mit Command.kappa gehen als Bahnkrümmung an
+    # die Firmware (w = κ · v_soll dort), der Bogen bleibt beim Anfahren und Bremsen. Nur wenn die Firmware das
+    # Fähigkeitsbit meldet; aus, bis am Rider gefahren.
+    vel_kappa: bool = False
     fw_speed_unit_mm: float = 3.9
     vel_accel_mps2: float = 0.5
     vel_decel_mps2: float = 1.0

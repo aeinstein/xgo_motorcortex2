@@ -31,6 +31,15 @@ static int test_vel(void) {
 	bad += vel_case("40000 0 0 0 0 0", 0, NULL, 0);
 	bad += vel_case("acc 1 2 x 4 5", 0, NULL, 0);
 	bad += vel_case("1 2 3 4 -5 6", 0, NULL, 0);
+	{
+		const uint8_t k1[] = {2, 0x2e, 0x00, 0x80, 0x00, 0x81, 0x02, 0xd0, 0x07, 0x68, 0x01, 0x08, 0x07};   /* kap 46 128 641 2000 360 1800 */
+		const uint8_t k2[] = {2, 0xd2, 0xff, 0, 0, 0, 0, 0x30, 0xf8, 0, 0, 0, 0};                         /* kap -46 0 0 -2000 0 0 */
+		bad += vel_case("kap 46 128 641 2000 360 1800", 1, k1, 0);
+		bad += vel_case("kap -46 0 0 -2000 0 0\n", 1, k2, 0);
+		bad += vel_case("kap 46 128 641 2.5 360 1800", 0, NULL, 0);   /* κ ganzzahlig in 0,001 1/m */
+		bad += vel_case("kap 46 128 641 40000 360 1800", 0, NULL, 0);
+		bad += vel_case("kap 46 -1 641 2000 360 1800", 0, NULL, 0);
+	}
 	{   /* Grenzen 0x1b, 14 Byte */
 		const uint8_t l1[] = {0xf4, 0x01, 0x89, 0x03, 0x2c, 0x01, 0x3c, 0x0f, 0x2c, 0x01, 0x58, 0x02, 0xfa, 0x00};   /* 500 90.5 300 3900 300 600 250 */
 		bad += vel_case("500 90.5 300 3900 300 600 250", 1, l1, 14);
@@ -48,9 +57,12 @@ static int test_vel(void) {
 		const uint8_t e[] = {1, 0, 0, 0, 0xfb, 0xff, 0, 0, 0, 0, 0, 0};
 		char t[80];
 		vel_format_diag(d, t, sizeof(t));
-		if (strcmp(t, "1 0 0 1 250 -12.3 500 90.0 300\n")) { printf("VEL FEHLER Zustand '%s'\n", t); bad++; }
+		if (strcmp(t, "1 0 0 1 250 -12.3 500 90.0 300 0 0\n")) { printf("VEL FEHLER Zustand '%s'\n", t); bad++; }
 		vel_format_diag(e, t, sizeof(t));
-		if (strcmp(t, "1 0 0 0 0 -0.5 0 0.0 0\n")) { printf("VEL FEHLER Zustand '%s'\n", t); bad++; }
+		if (strcmp(t, "1 0 0 0 0 -0.5 0 0.0 0 0 0\n")) { printf("VEL FEHLER Zustand '%s'\n", t); bad++; }
+		const uint8_t k[] = {0x19, 1, 0x2e, 0x00, 0x2e, 0x00, 0x58, 0x02, 0xb8, 0x0b, 0x2c, 0x01};
+		vel_format_diag(k, t, sizeof(t));
+		if (strcmp(t, "1 0 0 1 46 4.6 600 300.0 300 1 1\n")) { printf("VEL FEHLER Zustand '%s'\n", t); bad++; }
 	}
 	printf("VELPARSE %s\n", bad ? "FEHLER" : "ok");
 	return bad;
@@ -59,7 +71,8 @@ static int test_vel(void) {
 /* mit --vel im Emulator: Grenzen + Rahmen wie /proc schicken, Zustand zurücklesen */
 static void vel_roundtrip(void) {
 	static const char *lim = "450 72.5 300 3900 300 600 250";   /* 14 Byte */
-	static const char *frames[] = {"250 500 2500 12.3 120 600", "acc -300 2000 -5 0 0", "-120 800 4000 -30.0 90 400"};
+	static const char *frames[] = {"250 500 2500 12.3 120 600", "acc -300 2000 -5 0 0", "kap 46 128 641 2000 360 1800",
+	                               "-120 800 4000 -30.0 90 400"};
 	uint8_t b[16];   /* Rahmen 13, Grenzen bis 14 Byte */
 	char hex[64], t[80];
 	int ln = vel_limits_encode(lim, b);
@@ -73,7 +86,7 @@ static void vel_roundtrip(void) {
 		printf("VELSENT %s\n", hex);
 		msleep(20);
 	}
-	printf("VELWANT 1 0 0 1 -120 -30.0 450 72.5 300\n");
+	printf("VELWANT 1 0 0 1 -120 -30.0 450 72.5 300 0 1\n");
 	for (int tries = 0; tries < 5; tries++) {
 		uint8_t d[XGO_VEL_DIAG_LEN];
 		if (read_addr_sync(XGO_VEL, sizeof(d), d, 100) >= (int)sizeof(d)) {
