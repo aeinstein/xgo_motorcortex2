@@ -70,6 +70,14 @@ works without xgonav.
 
 GET only for `status`, `route`, `detector`; all commands POST. Parameters are validated; invalid → HTTP 400.
 
+Environment (unset on the Rider; set by the php-fpm pool of the virtual Rider, `tools/sim_rider.fpm.conf`):
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `XGO_NAV` | `http://127.0.0.1:8088` | xgonav base URL |
+| `XGO_PROC` | `/proc/XGORider` | driver directory (`height`, `roll`, `action`, `leds/*`, `settings/*`) |
+| `XGO_SIM` | – | `1`: `shutdown`, `restart`, `wlan_*`, `emotion`, `config_save`, `config_restore` → 409; sleep mode skips `xgo-ruhe` |
+
 | Request | Target | Range |
 |---|---|---|
 | `GET ?a=status` | xgonav `/status` (once; live via `/live`) | |
@@ -158,20 +166,12 @@ Mode rules: `explore`/`approach`/`home` need `freespace.enabled` (else 409); `fo
 | Reconnect | client after 1 s |
 | Pipeline state | client connects only while `pipeline` = `läuft` (and not sleep mode), closes otherwise; last image stays dimmed. xgonav sends an unchanged image once, no re-encode |
 | Rate | ≤ `output.web_fps` (10) |
+| Raw | `?roh=1`: camera image without overlay, JPEG quality 80 (overlay 70); combinable with `nick` |
 | Overlay | no status text lines in web frames (~10 ms saved per image); drawing ~1 ms per sent image (RiderPi) |
 | JPEG | hardware encoder `/dev/video31` (`jpeg.py`, `native/jpegfast.cpp`, `output.jpeg_native`), self-check at first image; fallback `cv2.imencode` (4.5 ms CPU per 640×480 image on the RiderPi); raw recording see below |
 
 Replaced MJPEG (`/stream`, removed 2026-11-17): on weak Wi-Fi, TCP buffers queued up to 20 s of delay.
 
-## Live data (WebSocket)
-
-Daemon `tools/live.php` (PHP CLI, unit `xgonav-live.service`, user `www-data`, `Nice=10`), not under `web/`
-| Raw | `?roh=1`: camera image without overlay, JPEG quality 80 (overlay 70); combinable with `nick` |
-(would be callable via php-fpm). Reads `/proc` directly, works without xgonav. One shared read per tick for all tabs.
-
-| Item | Value |
-|---|---|
-| Path | `/live` (nginx → `127.0.0.1:8089`) |
 ### OBS (`web/obs.php`)
 
 | Item | Value |
@@ -181,6 +181,14 @@ Daemon `tools/live.php` (PHP CLI, unit `xgonav-live.service`, user `www-data`, `
 | Page | image only on black (`object-fit: contain`), `/ws` with ack per image, reconnect after 1 s, last image stays when the pipeline is off |
 | Cost on the Pi | like another open web tab: ≤ 10 JPEG/s in the hardware encoder; `roh=1` skips drawing the overlay |
 
+## Live data (WebSocket)
+
+Daemon `tools/live.php` (PHP CLI, unit `xgonav-live.service`, user `www-data`, `Nice=10`), not under `web/`
+(would be callable via php-fpm). Reads `/proc` directly, works without xgonav. One shared read per tick for all tabs.
+
+| Item | Value |
+|---|---|
+| Path | `/live` (nginx → `127.0.0.1:8089`) |
 | Idle | no client: blocks in `stream_select`, no `/proc` reads, 0 % CPU |
 | `sys` + `status`, 1 s (sleep mode 5 s) | `sys`: `t`, `cpu` `[[total, idle+iowait], …]` per core (jiffies), `temp_c`, `load`, `mhz` `[cur, max]` (cpu0 cpufreq) or `null`, `battery`, `height`, `roll`, `state`, `wlan` `"rx_bytes tx_bytes dBm quality"` (`-` = unknown); `status`: xgonav `/status` verbatim (timeout 0.5 s) or `null` + `status_fehler` |
 | `imu`, 0.3 s if `state` = 1 (balancing), else 1 s; none in sleep mode | `seq`, `imu` `[[seq, t_ms, roll, pitch, yaw], …]` (°), `wseq`, `wheels` `[[seq, t_ms, ticks_left, ticks_right], …]`, `state`; only samples newer than the last sent per connection |

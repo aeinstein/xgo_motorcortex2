@@ -1165,6 +1165,34 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Simulator (xgonav/sim.py)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#scene-from-recorded-runs-toolssimwelt-gpu-machine-only" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scene from recorded runs (tools/simwelt/, GPU machine only)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3d-view-toolssim3dpy-toolssim3dhtml-pc-only" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3D view (tools/sim3d.py, tools/sim3d.html, PC only)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1267,6 +1295,34 @@
       
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="Simulator (xgonav/sim.py)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#scene-from-recorded-runs-toolssimwelt-gpu-machine-only" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scene from recorded runs (tools/simwelt/, GPU machine only)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3d-view-toolssim3dpy-toolssim3dhtml-pc-only" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3D view (tools/sim3d.py, tools/sim3d.html, PC only)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -1485,6 +1541,18 @@
 <td>raycasting, room with boxes, walking person</td>
 </tr>
 <tr>
+<td>Scenes (<code>--scene</code>)</td>
+<td><code>raum</code> 6 × 6 m, two boxes; <code>zwei</code> two rooms, door 0.8 m; <code>spalt</code> door 0.25 m; <code>fuge</code> invisible floor joints; <code>unten</code> ground floor reconstructed from the runs since 2026-11-23 (lamp light), <code>unten_tag</code> the same in daylight</td>
+</tr>
+<tr>
+<td>Extended scenes (<code>SimScene.teile</code>, <code>flaechen</code>, <code>boden</code>)</td>
+<td>own path in <code>SimWorld._ext_bild</code>: per column the 10 nearest faces drawn back to front, parts with their own height z0..z1, one texture per side, floating parts (table top, seats) leave the floor visible, only <code>fest</code> parts collide, slanted faces via <code>flaechen</code>; old scenes render bit-identically</td>
+</tr>
+<tr>
+<td>Scene <code>unten</code> (<code>xgonav/welten/unten.npz</code>, 2 MB)</td>
+<td>10 × 9 m bounding box: galley kitchen, dining nook (table, four chairs, drivable underneath), main room with wardrobe wall, slanted wall, TV lowboard, rug, sofas, stairs, window platform; 42 parts read off the fused map (±10 cm, not measured), photo textures per face (2 cm per texel) and floor image from the camera frames, tile joints assumed 120 × 60 cm; start pose = charging spot. ~21 ms per frame on the PC</td>
+</tr>
+<tr>
 <td>Camera motion</td>
 <td>pitch oscillation from IMU samples of seven RiderPi drives (2026-11-10/11, ~1060 s at 92 Hz): driving 1.0° at 0.8 Hz, 0.6° at 2.5 Hz, 0.2° at 6.1 Hz, 0.1° at 9.3 Hz, 0.05° at 13.1 Hz, standing a quarter of that (<code>sim.NICK</code>, <code>STAND_FACTOR</code>); acceleration tilt 9°/(m/s²), clipped at 0.5 m/s²; heading jitter 0.8° at 1.7 Hz (standing a quarter); motion blur. Until 2026-11-11: 3° at 2.5 Hz, 1.5° at 6.1 Hz, also standing</td>
 </tr>
@@ -1506,6 +1574,112 @@
 </tr>
 </tbody>
 </table>
+<h3 id="scene-from-recorded-runs-toolssimwelt-gpu-machine-only">Scene from recorded runs (<code>tools/simwelt/</code>, GPU machine only)<a class="headerlink" href="#scene-from-recorded-runs-toolssimwelt-gpu-machine-only" title="Permanent link">&para;</a></h3>
+<p>Builds <code>xgonav/welten/&lt;name&gt;.npz</code> from raw recordings (<code>--record-raw</code>). Nothing of it runs on the Rider.</p>
+<table>
+<thead>
+<tr>
+<th>Step</th>
+<th>Script</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td><code>punkte.py CODE DATA OUT run… --jedes 3</code></td>
+<td>MoGe-2 point cloud per frame in the Rider frame; scale and attitude from the fitted floor plane (<code>tools/floornet/geo_label.py</code>), ~22 frames/s</td>
+</tr>
+<tr>
+<td>2</td>
+<td><code>kompass.py DATA PKT OUT run</code></td>
+<td>heading per frame from wall directions (modulo 90°, tracked with gain 0.08); removes the yaw drift of the run (4–15° per run seen), path re-integrated</td>
+</tr>
+<tr>
+<td>3</td>
+<td><code>karte.py DATA PKT OUT run --rmax 1.5 --posendir KOMP</code></td>
+<td>top-down maps per run, 2 cm cells: floor colour, obstacle colour, height histogram (10 cm bins)</td>
+</tr>
+<tr>
+<td>4</td>
+<td><code>reg.py KARTEN OUT REF run… --recht</code></td>
+<td>lays the runs onto a reference run (multiples of 90° ± 3°, shift by FFT correlation); <code>summe.py</code> adds the registered maps</td>
+</tr>
+<tr>
+<td>5</td>
+<td><code>plan.py KARTE.npz OUT --ursprung=-1,-5 [--modell welt.json]</code></td>
+<td>large plots (colour, walls, heights) in world coordinates, model overlaid; <code>sicht.py X,Y</code> shows the frames taken at a place</td>
+</tr>
+<tr>
+<td>6</td>
+<td><code>modell.py &gt; welt.json</code></td>
+<td>the model: boxes with height, slanted faces, chairs, rug (edited by hand from the plots)</td>
+</tr>
+<tr>
+<td>7</td>
+<td><code>textur.py sammeln …</code>, <code>textur.py bauen …</code></td>
+<td>texture per face: per texel the colour from the single best frame (wide, frontal, near), separately for day and evening; floor image from the maps; writes the world file</td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th>Finding (2026-11-26)</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Runs used</td>
+<td>20 of 2026-11-23/24 (7 daylight, 13 evening), 17 600 frames</td>
+</tr>
+<tr>
+<td>Fusing with recorded poses only</td>
+<td>walls 20–30 cm wide, kitchen doubled: yaw drift per run</td>
+</tr>
+<tr>
+<td>Range used for the maps</td>
+<td>1.5 m; beyond that the depth of a single frame smears</td>
+</tr>
+<tr>
+<td>Not reconstructed</td>
+<td>undersides, things above ~1.3 m at close range, tile grid, sofa interior (camera is below the seat)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="3d-view-toolssim3dpy-toolssim3dhtml-pc-only">3D view (<code>tools/sim3d.py</code>, <code>tools/sim3d.html</code>, PC only)<a class="headerlink" href="#3d-view-toolssim3dpy-toolssim3dhtml-pc-only" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>python tests/sim_run.py explore 120 --wheels --dyn --rider --live [--live-port 8765]</code></td>
+<td>live in the browser at <code>http://localhost:8765/</code>, stays open after the run (Ctrl+C)</td>
+</tr>
+<tr>
+<td><code>… --view run.jsonl</code></td>
+<td>write the run to a file (~0.5 MB per 20 s)</td>
+</tr>
+<tr>
+<td><code>python tools/sim3d.py run.jsonl [--port 8765]</code></td>
+<td>replay; <code>?t=12</code> jumps to 12 s, <code>?ansicht=2</code> top view</td>
+</tr>
+<tr>
+<td><code>python tools/sim_rider.py --proc DIR [--port 8793] [--view-port 8792] [--scene unten]</code></td>
+<td>virtual Rider (default scene <code>unten</code>): endless simulator (idle, Rider values, person) with the real xgonav API on 127.0.0.1:8793; <code>DIR</code> plays <code>/proc/XGORider</code> (<code>SimRobot(proc_dir=…)</code>: <code>height</code>, <code>roll</code>, <code>action</code> 253/254, <code>state</code>, <code>battery</code>; <code>imu_log</code>, <code>wheels_log</code> at 50 Hz for <code>tools/live.php</code>); 3D view of the last 5 min</td>
+</tr>
+<tr>
+<td><code>./tools/sim_kimmy.sh</code></td>
+<td>deploy the simulator to kimmy: <code>http://192.168.53.236:8790/</code> starts runs (mode, seconds, scene, body heights cruise/search/fast = <code>behavior.height_*_mm</code> 60–108, flags, <code>--set</code>), lists results, shows each run live and as replay (<code>tools/simserver.py</code>, user unit <code>xgo-sim</code>, runs in <code>~/xgo_sim/laeufe</code>, at most 4 at once, nice 10). Virtual Rider: the real web UI (<code>web/</code> copied to <code>/srv/xgo_sim/web</code>) at <code>http://192.168.53.236:8791/</code> (nginx site <code>tools/sim_rider.nginx.conf</code>, HTTP only; php-fpm pool <code>tools/sim_rider.fpm.conf</code> as <code>www-data</code> with <code>XGO_NAV</code>/<code>XGO_PROC</code>/<code>XGO_SIM</code>; user units <code>xgo-rider</code>, <code>xgo-rider-live</code> = <code>live.php</code> on 8794; <code>/srv/xgo_sim/proc</code> group <code>www-data</code>), 3D at <code>:8792</code>, “Neu starten” in the Zentrale. Not in the simulator: intercom, emotions/display, LEDs (file only), Wi-Fi, shutdown/restart, settings editor, voice samples, FloorNet choice; roll is written but the body does not tilt; CPU/WLAN tiles show kimmy</td>
+</tr>
+</tbody>
+</table>
+<p>Shows room, boxes, joints, dark zones, rider (CAD model <code>web/rider-model.bin</code> as in the web UI: legs from the height setpoint with the firmware's u8 55–200 clamp and ~0.33 s lag, wheels turn with the true path; boxes if the file is missing; pitch, FOV cone, collision radius), person, true path (green), map pose path (orange), plan (blue), patrol route (pink), occupancy map (1 Hz) and camera frame (4 Hz). Read-only feed thread at 10 Hz (truth from <code>SimWorld</code>, estimate from <code>GridMap</code>); <code>loop_ms</code> unchanged within run-to-run spread. Keys 1–4: follow, top, free, close-up of the rider; space: play/pause. three.js 0.160.0 from jsDelivr (internet needed).</p>
 <h2 id="results-40-s-runs">Results (40 s runs)<a class="headerlink" href="#results-40-s-runs" title="Permanent link">&para;</a></h2>
 <table>
 <thead>

@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Simulator-Zentrale</title>
+<style>
+  :root { --bg: #f6f7f9; --card: #fff; --fg: #1c2128; --muted: #5f6b7a; --line: #e1e5ea; --acc: #2f6fdb;
+          --ok: #1f9d55; --warn: #d98e04; --err: #c8372d; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #14171c; --card: #1d2128; --fg: #e6e9ee; --muted: #9aa5b4; --line: #2c323b; --acc: #6aa0ff;
+            --ok: #3ccf7c; --warn: #f0b43c; --err: #ff6b5e; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 1150px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { margin: 0; font-size: 1.6rem; }
+  .sub { color: var(--muted); margin: 4px 0 20px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+  form { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px 14px; align-items: end; }
+  label { display: flex; flex-direction: column; gap: 3px; font-size: .85rem; color: var(--muted); }
+  .chk { flex-direction: row; align-items: center; gap: 6px; color: var(--fg); }
+  .flags { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px 18px; }
+  .wide { grid-column: 1 / -1; }
+  input, select, textarea, button { font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line);
+                                     border-radius: 6px; padding: 5px 8px; }
+  textarea { min-height: 2.2em; resize: vertical; font: 13px ui-monospace, monospace; }
+  button { cursor: pointer; }
+  button.primary { background: var(--acc); border-color: var(--acc); color: #fff; font-weight: 600; }
+  #meldung { color: var(--err); min-height: 1.3em; margin-top: 8px; font-size: .9rem; }
+  h2 { font-size: .85rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 28px 0 10px; }
+  .tabelle { overflow-x: auto; padding: 0; }
+  table { border-collapse: collapse; width: 100%; font-size: .9rem; }
+  th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { color: var(--muted); font-weight: 500; font-size: .8rem; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  td.klein { white-space: normal; min-width: 180px; }
+  tr:last-child td { border-bottom: none; }
+  .st { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; background: var(--muted); }
+  .st.lauf { background: var(--ok); animation: puls 1.2s infinite; } .st.err { background: var(--err); }
+  @keyframes puls { 50% { opacity: .3; } }
+  a { color: var(--acc); text-decoration: none; } a:hover { text-decoration: underline; }
+  .klein { color: var(--muted); font-size: .8rem; }
+  .knopf { padding: 2px 8px; font-size: .82rem; }
+  pre { margin: 6px 0 0; white-space: pre-wrap; font-size: 11px; color: var(--err); max-width: 600px; }
+  .koll { color: var(--err); font-weight: 600; }
+  .rider { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
+  .knoepfe { display: flex; gap: 8px; flex-wrap: wrap; }
+  a.knopf { border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; }
+  a.primary-link { background: var(--acc); border-color: var(--acc); color: #fff; font-weight: 600; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Simulator-Zentrale</h1>
+  <p class="sub">xgonav-Simulator auf kimmy · Läufe starten, live in 3D ansehen, später abspielen</p>
+
+  <div class="card rider">
+    <div><b>Virtueller Rider</b> <span class="klein">läuft dauerhaft, gesteuert über die echte Rider-Weboberfläche
+      (Steuerkreuz, Modi, Höhe, Aufstehen/Absetzen, Karte)</span></div>
+    <div class="knoepfe">
+      <a class="knopf primary-link" id="rider-web" target="_blank">Weboberfläche öffnen</a>
+      <a class="knopf" id="rider-3d" target="_blank">3D-Ansicht</a>
+      <button class="knopf" onclick="riderNeu()" title="Szene, Karte und Pose zurück auf Anfang">Neu starten</button>
+    </div>
+  </div>
+  <h2>Lauf starten</h2>
+  <div class="card">
+    <form id="f">
+      <label>Modus
+        <select name="mode">
+          <option>explore</option><option>home</option><option>patrol</option>
+          <option>follow</option><option>approach</option><option>pet</option>
+        </select>
+      </label>
+      <label>Sekunden <input name="secs" type="number" min="5" max="1800" value="120"></label>
+      <label>Szene
+        <select name="scene">
+          <option value="raum">raum – ein Zimmer, zwei Kisten</option>
+          <option value="zwei">zwei – zwei Zimmer, Tür 80 cm</option>
+          <option value="spalt">spalt – Tür nur 25 cm</option>
+          <option value="fuge">fuge – Fugen im Boden</option>
+          <option value="unten">unten – Erdgeschoss aus den Fahrten ab 23.11., Lampenlicht</option>
+          <option value="unten_tag">unten_tag – dasselbe bei Tageslicht</option>
+        </select>
+      </label>
+      <label>Phantome <input name="phantoms" type="number" min="0" max="50" value="0" title="Fehlalarme des Bodenmodells"></label>
+      <label>Höhe Fahrt (mm) <input name="h_cruise" type="number" min="60" max="108" step="1" placeholder="85"
+             title="behavior.height_cruise_mm; leer = Rider-Wert. Sollwert 60..108 mm (u8 bis height_limit_u8 205)"></label>
+      <label>Höhe Suche (mm) <input name="h_search" type="number" min="60" max="108" step="1" placeholder="100"
+             title="behavior.height_search_mm; leer = Rider-Wert"></label>
+      <label>Höhe schnell (mm) <input name="h_fast" type="number" min="60" max="108" step="1" placeholder="80"
+             title="behavior.height_fast_mm (follow bei schnellem Ziel); leer = Rider-Wert"></label>
+      <div class="flags">
+        <label class="chk"><input type="checkbox" name="flag" value="--wheels" checked> Räder</label>
+        <label class="chk"><input type="checkbox" name="flag" value="--dyn" checked> Trägheit (--dyn)</label>
+        <label class="chk"><input type="checkbox" name="flag" value="--rider" checked> IMU wie am Rider</label>
+        <label class="chk"><input type="checkbox" name="flag" value="--fs-thread" checked> Freiraum im Thread</label>
+        <label class="chk"><input type="checkbox" name="flag" value="--imu"> IMU-Automatik</label>
+      </div>
+      <label class="wide">--set (je Zeile abschnitt.name=wert, z. B. explore.v=0.3)
+        <textarea name="set" rows="1" placeholder="grid.max_range_m=1.5"></textarea>
+      </label>
+      <div><button class="primary" type="submit">Lauf starten</button></div>
+    </form>
+    <div id="meldung"></div>
+  </div>
+
+  <h2>Läufe</h2>
+  <div class="card tabelle">
+    <table>
+      <thead><tr><th>Lauf</th><th>Einstellungen</th><th>Kollisionen</th><th class="num">Strecke</th>
+        <th class="num">Posefehler</th><th class="num">Karte bekannt</th><th>Ende</th><th class="num">MB</th><th></th></tr></thead>
+      <tbody id="liste"><tr><td colspan="9" class="klein">lade …</td></tr></tbody>
+    </table>
+  </div>
+  <p class="klein">Ansicht: Tasten 1–4 Folgen/Oben/Frei/Rider (nah, CAD-Modell mit Beinen nach Höhe), Leertaste Pause · Link mit <code>?t=30&amp;ansicht=2</code> springt an eine Stelle</p>
+</main>
+<script>
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const zahl = (v, n = 2) => v == null || Number.isNaN(v) ? "–" : Number(v).toFixed(n).replace(".", ",");
+
+document.getElementById("f").onsubmit = async e => {
+  e.preventDefault();
+  const f = e.target;
+  const body = {
+    mode: f.mode.value, secs: +f.secs.value, scene: f.scene.value, phantoms: +f.phantoms.value,
+    flags: [...f.querySelectorAll("[name=flag]:checked")].map(x => x.value),
+    set: f.set.value.split("\n").map(s => s.trim()).filter(Boolean),
+  };
+  for (const [feld, name] of [["h_cruise", "cruise"], ["h_search", "search"], ["h_fast", "fast"]])
+    if (f[feld].value !== "") body.set.push(`behavior.height_${name}_mm=${+f[feld].value}`);
+  const m = document.getElementById("meldung");
+  m.textContent = "";
+  const r = await fetch("api/start", { method: "POST", body: JSON.stringify(body) });
+  const j = await r.json();
+  if (!r.ok) { m.textContent = j.fehler; return; }
+  window.open("lauf/" + j.id + "/", "_blank");
+  laden();
+};
+
+async function aktion(was, id) {
+  if (was === "loeschen" && !confirm("Lauf " + id + " löschen?")) return;
+  const r = await fetch(`api/${was}/${id}`, { method: "POST", body: "{}" });
+  if (!r.ok) document.getElementById("meldung").textContent = (await r.json()).fehler;
+  laden();
+}
+
+function einstellungen(m) {
+  const p = m.param || {};
+  return [p.mode, (p.secs ?? "") + " s", p.scene, ...(p.flags || []).map(x => x.replace(/^--/, "")),
+          p.phantoms ? p.phantoms + " Phantome" : "", ...(p.set || [])].filter(Boolean).join(" · ");
+}
+
+async function laden() {
+  let l;
+  try { l = await (await fetch("api/laeufe")).json(); } catch { return; }
+  const tb = document.getElementById("liste");
+  if (!l.length) { tb.innerHTML = '<tr><td colspan="9" class="klein">noch keine Läufe</td></tr>'; return; }
+  tb.innerHTML = l.map(m => {
+    const e = m.ergebnis || {}, g = e.grid || {};
+    const st = m.laeuft ? "lauf" : (m.fehler ? "err" : "");
+    const ende = m.laeuft ? "läuft …" : m.fehler ? "abgebrochen" :
+      esc((e.status || "").slice(0, 48)) + (e.fertig_s ? ` <span class="klein">(fertig ${zahl(e.fertig_s, 0)} s)</span>` : "");
+    return `<tr>
+      <td><span class="st ${st}"></span><a href="lauf/${m.id}/" target="_blank">${esc(m.id)}</a></td>
+      <td class="klein">${esc(einstellungen(m))}</td>
+      <td class="${e.collisions ? "koll" : ""}">${m.ergebnis ? e.collisions : "–"}</td>
+      <td class="num">${m.ergebnis ? zahl(e.dist_m) + " m" : "–"}</td>
+      <td class="num">${g.pose_fehler_m != null ? zahl(g.pose_fehler_m * 100, 0) + " cm" : "–"}</td>
+      <td class="num">${g.boden_bekannt != null ? zahl(g.boden_bekannt * 100, 0) + " %" : "–"}</td>
+      <td>${ende}${m.fehler ? `<details><summary class="klein">Ausgabe</summary><pre>${esc(m.fehler)}</pre></details>` : ""}</td>
+      <td class="num">${zahl(m.mb, 1)}</td>
+      <td>${m.laeuft ? `<button class="knopf" onclick="aktion('stop','${m.id}')">Stopp</button>`
+                     : `<a class="knopf" href="lauf/${m.id}/lauf.jsonl" download>⤓</a>
+                        <button class="knopf" onclick="aktion('loeschen','${m.id}')">Löschen</button>`}</td>
+    </tr>`;
+  }).join("");
+}
+document.getElementById("rider-web").href = `http://${location.hostname}:8791/`;
+document.getElementById("rider-3d").href = `http://${location.hostname}:8792/`;
+async function riderNeu() {
+  if (!confirm("Virtuellen Rider neu starten? Karte und Pose beginnen von vorn.")) return;
+  const r = await fetch("api/rider/neu", { method: "POST", body: "{}" });
+  if (!r.ok) document.getElementById("meldung").textContent = (await r.json()).fehler;
+}
+laden();
+setInterval(laden, 3000);
+</script>
+</body>
+</html>

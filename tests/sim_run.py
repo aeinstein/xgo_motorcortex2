@@ -1,4 +1,4 @@
-"""Closed-Loop-Szenarien im Simulator. python3 tests/sim_run.py follow|approach|explore|home [sekunden] [video.mp4] [--dunkel x0,y0,x1,y1[,rest]] [--yaw-scale 1.01] [--imu] [--fs-thread] [--wheels] [--dyn] [--rider] [--scene raum|zwei|spalt|fuge] [--video-step n] [--set a.b=wert] [--vx-true m/s]
+"""Closed-Loop-Szenarien im Simulator. python3 tests/sim_run.py follow|approach|explore|home [sekunden] [video.mp4] [--dunkel x0,y0,x1,y1[,rest]] [--yaw-scale 1.01] [--imu] [--fs-thread] [--wheels] [--dyn] [--rider] [--scene raum|zwei|spalt|fuge] [--video-step n] [--set a.b=wert] [--vx-true m/s] [--view lauf.jsonl] [--live] [--live-port 8765]
 
 home: erste Hälfte explore, dann Modus home (zurück zum Startpunkt der Raumkarte).
 --dyn: Trägheit wie am RiderPi (Totzone, Nachlaufen der Drehung, Rückrollen beim Anfahren).
@@ -6,7 +6,9 @@ home: erste Hälfte explore, dann Modus home (zurück zum Startpunkt der Raumkar
 Riders (Config.neutral()). Ohne IMU bleibt die langsame Neigung beim Beschleunigen (sim.ACC_DEG) unbemerkt und die
 Raumkarte zeichnet Wände dicker: eine 25-cm-Lücke blieb so in 4 von 5 Läufen zu (2026-11-11).
 --vx-true: echte m/s je Firmware-Einheit, abweichend von robot.vx_limit (z. B. 1.3 = rollt schwerer, wie auf Teppich).
-Die Bodengrenze kommt aus der Ground Truth (sim.SimFloorNet statt FloorNet); --phantoms n täuscht Fehlalarme vor."""
+Die Bodengrenze kommt aus der Ground Truth (sim.SimFloorNet statt FloorNet); --phantoms n täuscht Fehlalarme vor.
+--view: 3D-Ansicht in eine Datei (Replay: python tools/sim3d.py lauf.jsonl); --live: 3D-Ansicht im Browser während
+des Laufs (http://localhost:8765/, tools/sim3d.py), bleibt danach offen bis Strg+C."""
 import logging, math, sys, threading, time
 sys.path.insert(0, ".")
 import numpy as np
@@ -79,7 +81,7 @@ def fahrweise(L) -> dict | None:
 
 def run(mode="follow", secs=25.0, video=None, shake=1.0, quiet=True, imu=False, fs_thread=False, wheels=False, vx_true=None, dyn=False,
         overrides=None, scene="raum", record=None, phantoms=0, animal="person", speed=None, video_step=1, dunkel=None,
-        yaw_scale=1.0):
+        yaw_scale=1.0, view=None, live_port=None):
     """overrides: siehe apply_overrides. record: Liste, bekommt je Eintrag in die Raumkarte die Beobachtung
     (tools/map_eval.py spielt sie offline ab); dafür trägt die Karte im Regelschritt ein.
     animal, speed (m/s): nur Modus pet, wer auf den Rider zukommt (person, cat, dog)."""
@@ -94,7 +96,8 @@ def run(mode="follow", secs=25.0, video=None, shake=1.0, quiet=True, imu=False, 
     if record is not None:
         cfg.grid.threaded = False
     robot = SimRobot(cfg.robot)
-    person = Person([(3.2, 1.3), (4.8, 4.6), (1.4, 5.0), (1.2, 3.0)], speed=0.3) if mode not in ("explore", "home", "patrol") else None
+    sc = SCENES[scene]()
+    person = Person(sc.person_weg or [(3.2, 1.3), (4.8, 4.6), (1.4, 5.0), (1.2, 3.0)], speed=0.3) if mode not in ("explore", "home", "patrol") else None
     if mode in ("follow", "pet") and scene in ("zwei", "spalt"):
         # geht durch die Tür ins andere Zimmer und bleibt dort hinter der Wand stehen: Der Rider verliert sie und
         # muss zur letzten Stelle fahren und sich umschauen ([behavior] lost_seek)
@@ -110,10 +113,10 @@ def run(mode="follow", secs=25.0, video=None, shake=1.0, quiet=True, imu=False, 
         # stehender Stuhl schräg voraus (FakeDetector meldet "chair"); anfahren und ~approach_dist_m davor halten
         person = Person([(3.2, 2.2)], speed=0.0, cls="chair", height_m=0.9, width_m=0.45, loop=False)
         cfg.behavior.target_class = "chair"
-    world = SimWorld(cfg.camera, robot, person, start=(1.0, 1.2, 0.2), shake=shake,
+    world = SimWorld(cfg.camera, robot, person, start=sc.start or (1.0, 1.2, 0.2), shake=shake,
                      mount_offset_mm=cfg.camera.mount_offset_mm,
                      vx_mps=vx_true if vx_true is not None else cfg.robot.vx_limit,  # vx_true: echte m/s je Einheit
-                     dynamics=dyn, scene=SCENES[scene]())
+                     dynamics=dyn, scene=sc)
     if dunkel:                               # dunkle Zone (x0, y0, x1, y1[, Restlicht]): Dunkelangst
         z = tuple(dunkel) + ((0.04,) if len(dunkel) == 4 else ())
         world.dark_zones.append(z)
@@ -200,7 +203,17 @@ def run(mode="follow", secs=25.0, video=None, shake=1.0, quiet=True, imu=False, 
                     app.stop()
                 time.sleep(0.2)
         threading.Thread(target=watch, daemon=True).start()
+    feed = None
+    if view or live_port:
+        from tools.sim3d import Feed, Hub, serve
+        hub = Hub() if live_port else None
+        if hub:
+            serve(hub, live_port)
+            print(f"3D-Ansicht: http://localhost:{live_port}/", flush=True)
+        feed = Feed(world, app, mode, view, hub).start()
     app.run(duration=secs)
+    if feed:
+        feed.close()
     if video:
         with app.snap_cond: app.snap_cond.notify_all()
         th.join(timeout=3)
@@ -268,7 +281,7 @@ def run(mode="follow", secs=25.0, video=None, shake=1.0, quiet=True, imu=False, 
 if __name__ == "__main__":
     mode = sys.argv[1] if len(sys.argv) > 1 else "follow"
     secs = float(sys.argv[2]) if len(sys.argv) > 2 and not sys.argv[2].startswith("--") else 25
-    args = [a for i, a in enumerate(sys.argv) if i >= 3 and not a.startswith("--") and sys.argv[i - 1] not in ("--set", "--scene", "--phantoms", "--animal", "--speed", "--video-step", "--vx-true", "--dunkel", "--yaw-scale")]
+    args = [a for i, a in enumerate(sys.argv) if i >= 3 and not a.startswith("--") and sys.argv[i - 1] not in ("--set", "--scene", "--phantoms", "--animal", "--speed", "--video-step", "--vx-true", "--dunkel", "--yaw-scale", "--view", "--live-port")]
     rider = "--rider" in sys.argv
     ov = dict(RIDER) if rider else {}
     for i, a in enumerate(sys.argv):
@@ -285,4 +298,10 @@ if __name__ == "__main__":
               animal=sys.argv[sys.argv.index("--animal") + 1] if "--animal" in sys.argv else "person",
               speed=float(sys.argv[sys.argv.index("--speed") + 1]) if "--speed" in sys.argv else None,
               dunkel=[float(v) for v in sys.argv[sys.argv.index("--dunkel") + 1].split(",")] if "--dunkel" in sys.argv else None,
-              yaw_scale=float(sys.argv[sys.argv.index("--yaw-scale") + 1]) if "--yaw-scale" in sys.argv else 1.0))
+              yaw_scale=float(sys.argv[sys.argv.index("--yaw-scale") + 1]) if "--yaw-scale" in sys.argv else 1.0,
+              view=sys.argv[sys.argv.index("--view") + 1] if "--view" in sys.argv else None,
+              live_port=(int(sys.argv[sys.argv.index("--live-port") + 1]) if "--live-port" in sys.argv else 8765)
+              if "--live" in sys.argv else None))
+    if "--live" in sys.argv:
+        from tools.sim3d import wait_forever
+        wait_forever(int(sys.argv[sys.argv.index("--live-port") + 1]) if "--live-port" in sys.argv else 8765)

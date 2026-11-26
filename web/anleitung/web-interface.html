@@ -979,6 +979,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Image transport (WebSocket)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#obs-webobsphp" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        OBS (web/obs.php)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1455,6 +1472,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Image transport (WebSocket)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#obs-webobsphp" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        OBS (web/obs.php)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -1725,6 +1759,33 @@ works without xgonav.</p>
 </ul>
 <h2 id="apiphp"><code>api.php</code><a class="headerlink" href="#apiphp" title="Permanent link">&para;</a></h2>
 <p>GET only for <code>status</code>, <code>route</code>, <code>detector</code>; all commands POST. Parameters are validated; invalid → HTTP 400.</p>
+<p>Environment (unset on the Rider; set by the php-fpm pool of the virtual Rider, <code>tools/sim_rider.fpm.conf</code>):</p>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Default</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>XGO_NAV</code></td>
+<td><code>http://127.0.0.1:8088</code></td>
+<td>xgonav base URL</td>
+</tr>
+<tr>
+<td><code>XGO_PROC</code></td>
+<td><code>/proc/XGORider</code></td>
+<td>driver directory (<code>height</code>, <code>roll</code>, <code>action</code>, <code>leds/*</code>, <code>settings/*</code>)</td>
+</tr>
+<tr>
+<td><code>XGO_SIM</code></td>
+<td>–</td>
+<td><code>1</code>: <code>shutdown</code>, <code>restart</code>, <code>wlan_*</code>, <code>emotion</code>, <code>config_save</code>, <code>config_restore</code> → 409; sleep mode skips <code>xgo-ruhe</code></td>
+</tr>
+</tbody>
+</table>
 <table>
 <thead>
 <tr>
@@ -2104,6 +2165,10 @@ works without xgonav.</p>
 <td>≤ <code>output.web_fps</code> (10)</td>
 </tr>
 <tr>
+<td>Raw</td>
+<td><code>?roh=1</code>: camera image without overlay, JPEG quality 80 (overlay 70); combinable with <code>nick</code></td>
+</tr>
+<tr>
 <td>Overlay</td>
 <td>no status text lines in web frames (~10 ms saved per image); drawing ~1 ms per sent image (RiderPi)</td>
 </tr>
@@ -2114,6 +2179,33 @@ works without xgonav.</p>
 </tbody>
 </table>
 <p>Replaced MJPEG (<code>/stream</code>, removed 2026-11-17): on weak Wi-Fi, TCP buffers queued up to 20 s of delay.</p>
+<h3 id="obs-webobsphp">OBS (<code>web/obs.php</code>)<a class="headerlink" href="#obs-webobsphp" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>URL</td>
+<td><code>https://&lt;rider&gt;/obs.php?roh=1</code> (raw image), without <code>roh</code> with overlay as in the web view</td>
+</tr>
+<tr>
+<td>OBS</td>
+<td>source „Browser“, 640 × 480; self-signed certificate: start OBS with <code>--ignore-certificate-errors</code></td>
+</tr>
+<tr>
+<td>Page</td>
+<td>image only on black (<code>object-fit: contain</code>), <code>/ws</code> with ack per image, reconnect after 1 s, last image stays when the pipeline is off</td>
+</tr>
+<tr>
+<td>Cost on the Pi</td>
+<td>like another open web tab: ≤ 10 JPEG/s in the hardware encoder; <code>roh=1</code> skips drawing the overlay</td>
+</tr>
+</tbody>
+</table>
 <h2 id="live-data-websocket">Live data (WebSocket)<a class="headerlink" href="#live-data-websocket" title="Permanent link">&para;</a></h2>
 <p>Daemon <code>tools/live.php</code> (PHP CLI, unit <code>xgonav-live.service</code>, user <code>www-data</code>, <code>Nice=10</code>), not under <code>web/</code>
 (would be callable via php-fpm). Reads <code>/proc</code> directly, works without xgonav. One shared read per tick for all tabs.</p>

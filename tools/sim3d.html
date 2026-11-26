@@ -1,0 +1,490 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Simulator 3D</title>
+<style>
+  :root { --bg: #15181c; --fg: #e6e8ea; --dim: #8a929a; --panel: rgba(20, 23, 27, .82); --acc: #4fc3f7; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg);
+               font: 13px/1.4 system-ui, sans-serif; overflow: hidden; }
+  #c { position: fixed; inset: 0; }
+  .panel { position: fixed; background: var(--panel); border-radius: 8px; padding: 8px 10px; }
+  #kopf { top: 10px; left: 10px; right: 360px; display: flex; flex-wrap: wrap; gap: 4px 16px; }
+  #kopf b { color: var(--dim); font-weight: 500; margin-right: 4px; }
+  #cam { top: 10px; right: 10px; padding: 4px; }
+  #cam img { display: block; width: 320px; border-radius: 4px; }
+  #leiste { left: 10px; right: 10px; bottom: 10px; display: flex; align-items: center; gap: 10px; }
+  #zeit { flex: 1; }
+  button, select { background: #262b31; color: var(--fg); border: 1px solid #3a4148; border-radius: 5px;
+                   padding: 4px 9px; font: inherit; cursor: pointer; }
+  button.an { border-color: var(--acc); color: var(--acc); }
+  #legende { left: 10px; bottom: 58px; color: var(--dim); }
+  #legende span { display: inline-block; width: 18px; height: 3px; vertical-align: middle; margin: 0 4px 0 10px; }
+  #legende span:first-child { margin-left: 0; }
+  #warte { position: fixed; inset: 0; display: grid; place-items: center; color: var(--dim); }
+  [hidden] { display: none !important; }
+  @media (max-width: 700px) { #cam img { width: 160px; } #kopf { right: 190px; } }
+</style>
+<script type="importmap">
+{"imports": {"three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+             "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}
+</script>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="warte">Warte auf Daten …</div>
+<div id="kopf" class="panel"></div>
+<div id="cam" class="panel" hidden><img id="bild" alt="Kamerabild"></div>
+<div id="legende" class="panel">
+  <span style="background:#66bb6a"></span>Weg (Wahrheit)
+  <span style="background:#ffa726"></span>Weg (Karte)
+  <span style="background:#4fc3f7"></span>Plan
+  <span style="background:#ec407a"></span>Route
+</div>
+<div id="leiste" class="panel">
+  <button id="play" title="Leertaste">⏸</button>
+  <select id="tempo"><option>0.5</option><option selected>1</option><option>2</option><option>4</option></select>
+  <input id="zeit" type="range" min="0" max="0" value="0">
+  <span id="tlabel">0,0 s</span>
+  <button id="live" class="an" title="ans Ende springen und mitlaufen">live</button>
+  <button id="koll" title="nächste Kollision">Kollision ▶</button>
+  <button data-k="1" class="ansicht an" title="Taste 1">Folgen</button>
+  <button data-k="2" class="ansicht" title="Taste 2">Oben</button>
+  <button data-k="3" class="ansicht" title="Taste 3">Frei</button>
+  <button data-k="4" class="ansicht" title="Taste 4: nah am Rider, schräg von vorn">Rider</button>
+</div>
+<script type="module">
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+
+// Welt (x vorwärts, y links, m) -> three (X = x, Y hoch, Z = -y); Kurs th = rotation.y
+const W = (x, y, h = 0) => new THREE.Vector3(x, h, -y);
+
+const canvas = document.getElementById("c");
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(devicePixelRatio);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x15181c);
+const cam = new THREE.PerspectiveCamera(55, 1, 0.05, 100);
+const orbit = new OrbitControls(cam, canvas);
+orbit.enableDamping = true;
+scene.add(new THREE.HemisphereLight(0xffffff, 0x404850, 1.6));
+const sonne = new THREE.DirectionalLight(0xffffff, 1.4);
+sonne.position.set(3, 8, 2);
+scene.add(sonne);
+
+let kopf = null, ticks = [], cur = 0, playing = true, live = true, ende = false;
+let ansicht = 1, tSim = 0, lastWall = performance.now(), ersterT = 0;
+const kartenIdx = [], bildIdx = [], kollIdx = [];
+let rider, nase, person, kartenGruppe, kartenPlane, gezeigteKarte = -1, gezeigtesBild = -1;
+
+function linie(farbe, max = 20000, h = 0.01) {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.BufferAttribute(new Float32Array(max * 3), 3));
+  g.setDrawRange(0, 0);
+  const l = new THREE.Line(g, new THREE.LineBasicMaterial({ color: farbe }));
+  l.userData = { max, h };
+  l.frustumCulled = false;
+  scene.add(l);
+  return l;
+}
+function setzeLinie(l, pts) {
+  const a = l.geometry.attributes.position.array, n = Math.min(pts.length, l.userData.max);
+  for (let i = 0; i < n; i++) { a[3 * i] = pts[i][0]; a[3 * i + 1] = l.userData.h; a[3 * i + 2] = -pts[i][1]; }
+  l.geometry.attributes.position.needsUpdate = true;
+  l.geometry.setDrawRange(0, n);
+}
+const spurWahr = linie(0x66bb6a, 20000, 0.024), spurKarte = linie(0xffa726, 20000, 0.02);
+const planL = linie(0x4fc3f7, 4000, 0.028), routeL = linie(0xec407a, 4000, 0.032);
+
+// Quader x1..x2, y1..y2 (Welt), z0..z1 hoch
+function quader(x1, y1, x2, y2, z0, z1, mat) {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(Math.max(0.005, x2 - x1), Math.max(0.005, z1 - z0),
+    Math.max(0.005, y2 - y1)), mat);
+  m.position.copy(W((x1 + x2) / 2, (y1 + y2) / 2, (z0 + z1) / 2));
+  scene.add(m);
+  return m;
+}
+function baueSzene(k) {
+  const s = k.size, sy = k.size_y ?? k.size;
+  const fliesen = k.boden === "fliesen";
+  const boden = new THREE.Mesh(new THREE.PlaneGeometry(s, sy),
+    new THREE.MeshStandardMaterial({ color: fliesen ? 0x8f9191 : 0x6d6257 }));
+  boden.rotation.x = -Math.PI / 2;
+  boden.position.copy(W(s / 2, sy / 2));
+  scene.add(boden);
+  if (fliesen) {
+    // Fliesen 120 x 60 cm im Halbverband wie im Simulator (xgonav/sim.py _ext_boden)
+    const p = [];
+    for (let y = 0; y <= sy + 1e-6; y += 0.6) p.push(W(0, y, 0.002), W(s, y, 0.002));
+    for (let j = 0; j * 0.6 < sy; j++)
+      for (let x = -(j % 2) * 0.6; x <= s; x += 1.2)
+        if (x > 0) p.push(W(x, j * 0.6, 0.002), W(x, Math.min(sy, (j + 1) * 0.6), 0.002));
+    scene.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(p),
+      new THREE.LineBasicMaterial({ color: 0x5e6062 })));
+  } else {
+    const gitter = new THREE.GridHelper(s, s * 2, 0x80776c, 0x7a7065);
+    gitter.position.copy(W(s / 2, s / 2, 0.001));
+    scene.add(gitter);
+  }
+  for (const [x1, y1, x2, y2, farbe] of k.teppiche || []) {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(x2 - x1, y2 - y1), new THREE.MeshStandardMaterial({ color: farbe }));
+    m.rotation.x = -Math.PI / 2;
+    m.position.copy(W((x1 + x2) / 2, (y1 + y2) / 2, 0.004));
+    scene.add(m);
+  }
+  const d = 0.04;
+  if (k.waende) {
+    // Außenwände in Stücken (Tür, Fenster, Vorhang), halb durchsichtig, damit man von außen hineinsieht
+    for (const [x1, y1, x2, y2, farbe] of k.waende) {
+      const mat = new THREE.MeshStandardMaterial({ color: farbe, transparent: true, opacity: 0.4 });
+      const nx = y1 === y2 ? 0 : (x1 === 0 ? -d : d), ny = x1 === x2 ? 0 : (y1 === 0 ? -d : d);
+      quader(Math.min(x1, x2, x1 + nx), Math.min(y1, y2, y1 + ny), Math.max(x1, x2, x1 + nx), Math.max(y1, y2, y1 + ny),
+        0, k.wall_h, mat);
+    }
+  } else {
+    const wandM = new THREE.MeshStandardMaterial({ color: 0x9aa3ad, transparent: true, opacity: 0.55 });
+    for (const [x1, y1, x2, y2] of [[0, -d, s, 0], [s, 0, s + d, s], [0, s, s, s + d], [-d, 0, 0, s]])
+      quader(x1, y1, x2, y2, 0, k.wall_h, wandM);
+  }
+  const mats = {};
+  for (const [x1, y1, x2, y2, z0, z1, farbe, tex] of k.teile || []) {
+    const durch = tex === "pflanze" || tex === "wand";
+    mats[farbe + durch] ??= new THREE.MeshStandardMaterial({ color: farbe, transparent: durch, opacity: durch ? 0.6 : 1 });
+    quader(x1, y1, x2, y2, z0, z1, mats[farbe + durch]);
+  }
+  const kisteM = new THREE.MeshStandardMaterial({ color: 0x5c7fb8 });
+  for (const [x1, y1, x2, y2] of k.boxes) {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(x2 - x1, k.box_h, y2 - y1), kisteM);
+    m.position.copy(W((x1 + x2) / 2, (y1 + y2) / 2, k.box_h / 2));
+    scene.add(m);
+  }
+  const fugeM = new THREE.LineBasicMaterial({ color: 0x222222 });
+  for (const [x1, y1, x2, y2] of k.rillen || [])
+    scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([W(x1, y1, 0.004), W(x2, y2, 0.004)]), fugeM));
+  for (const [x0, y0, x1, y1, rest] of k.dunkel || []) {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(x1 - x0, y1 - y0),
+      new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.6 * (1 - (rest ?? 0)) }));
+    m.rotation.x = -Math.PI / 2;
+    m.position.copy(W((x0 + x1) / 2, (y0 + y1) / 2, 0.003));
+    scene.add(m);
+  }
+  // Rider: Quader als Ersatz, bis das CAD-Modell (rider-model.bin wie im Web) geladen ist; Nick um die Radachse
+  rider = new THREE.Group();
+  nase = new THREE.Group();
+  const koerper = new THREE.Mesh(new THREE.BoxGeometry(0.133, 0.1, 0.09), new THREE.MeshStandardMaterial({ color: 0xe0e0e0 }));
+  koerper.position.y = 0.09;
+  nase.add(koerper);
+  const auge = new THREE.Mesh(new THREE.BoxGeometry(0.01, 0.04, 0.05), new THREE.MeshStandardMaterial({ color: 0x222831 }));
+  auge.position.set(0.07, 0.1, 0);
+  nase.add(auge);
+  rider.add(nase);
+  ersatz.push(koerper, auge);
+  const radM = new THREE.MeshStandardMaterial({ color: 0x333333 });
+  for (const z of [-0.0575, 0.0575]) {
+    const r = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.02, 20), radM);
+    r.rotation.x = Math.PI / 2;
+    r.position.set(0, 0.04, z);
+    rider.add(r);
+    ersatz.push(r);
+  }
+  modellLaden();
+  // Sichtkegel (Öffnungswinkel hfov, 1,2 m)
+  const a = THREE.MathUtils.degToRad(k.hfov / 2), L = 1.2;
+  const kegel = new THREE.Line(new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(L, 0, -L * Math.tan(a)), new THREE.Vector3(0, 0, 0), new THREE.Vector3(L, 0, L * Math.tan(a))]),
+    new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.45 }));
+  kegel.name = "kegel";
+  nase.add(kegel);
+  scene.add(rider);
+  // Rundung des Kollisionsradius
+  const ring = new THREE.Mesh(new THREE.RingGeometry(k.robot_r - 0.004, k.robot_r, 40),
+    new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.35, side: THREE.DoubleSide }));
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.y = 0.005;
+  rider.add(ring);
+  if (k.person) {
+    const r = k.person.b / 2, h = k.person.h;
+    person = new THREE.Mesh(new THREE.CapsuleGeometry(r, Math.max(0.01, h - 2 * r), 6, 16),
+      new THREE.MeshStandardMaterial({ color: 0xd4a373 }));
+    person.userData.h = h;
+    scene.add(person);
+  }
+  kartenGruppe = new THREE.Group();
+  const [startX, startY, startTh] = k.start;
+  kartenGruppe.position.copy(W(startX, startY, 0.012));
+  kartenGruppe.rotation.y = startTh;
+  scene.add(kartenGruppe);
+  cam.position.copy(W(s / 2, -sy * 0.4, Math.max(s, sy) * 0.9));
+  orbit.target.copy(W(s / 2, sy / 2));
+  document.getElementById("warte").hidden = true;
+  if (ansicht === 2) setAnsicht(2);
+}
+
+// --- CAD-Modell: Format und Beingeometrie wie in web/index.php (modellDekodieren, beinStreckung, beinTeile),
+// tools/step_to_model.py. CAD: cm, x vorn, y links, z hoch -> three (x, z, -y), eine echte Drehung.
+// Teile: 0 Körper, 1..4 Bein rechts, 5..8 Bein links (Servo-Glied, oberes Glied, Koppel, Rad).
+const ersatz = [];
+let cad = null, beinIst = null, beinZeit = 0;
+const RAD_TICKS = 1024, RAD_D = 0.06, SPUR = 0.124;      // Raddurchmesser, Spurweite (m)
+function modellDekodieren(buf) {
+  const k = new DataView(buf);
+  if (k.getUint32(0, true) !== 0x32524758) throw new Error("kein Rider-Modell");
+  const nP = k.getUint32(4, true), nD = k.getUint32(8, true), nG = k.getUint32(12, true), s = k.getFloat32(16, true);
+  const o = 20 + 8 * nG + 80, pos = new Int16Array(buf, o, nP * 3), idx = new Uint16Array(buf, o + ((nP * 6 + 3) & ~3), nD * 3);
+  const dreh = Array.from({ length: 2 }, (_, j) => Object.fromEntries(["S", "P", "A", "B", "W"].map((n, m) =>
+    [n, [k.getFloat32(20 + 8 * nG + 40 * j + 8 * m, true), k.getFloat32(20 + 8 * nG + 40 * j + 8 * m + 4, true)]])));
+  const teile = Array.from({ length: 9 }, () => ({ p: [], n: [], c: [] }));
+  const col = new THREE.Color();
+  let g = 0, rest = 0, c = null, teil = 0;
+  for (let i = 0; i < nD; i++) {
+    while (!rest) {
+      const b = 20 + 8 * g++;
+      col.setRGB(k.getUint8(b) / 255, k.getUint8(b + 1) / 255, k.getUint8(b + 2) / 255, THREE.SRGBColorSpace);
+      c = [col.r, col.g, col.b]; teil = k.getUint8(b + 3); rest = k.getUint32(b + 4, true);
+    }
+    rest--;
+    const P = [0, 1, 2].map(j => { const v = idx[3 * i + j] * 3; return [pos[v] * s, pos[v + 1] * s, pos[v + 2] * s]; });
+    const u = P[1].map((v, m) => v - P[0][m]), w = P[2].map((v, m) => v - P[0][m]);
+    const n = [u[1] * w[2] - u[2] * w[1], u[2] * w[0] - u[0] * w[2], u[0] * w[1] - u[1] * w[0]];
+    const t = teile[teil];
+    for (const p of P) { t.p.push(p[0], p[2], -p[1]); t.n.push(n[0], n[2], -n[1]); t.c.push(...c); }
+  }
+  return { teile, dreh };
+}
+const grenze = (v, a, b) => Math.max(a, Math.min(b, v));
+function beinStreckung(h, r) {    // mm links, rechts wie Firmware (main.cpp, updateLegTargets)
+  const m = grenze(h, 55, 200) * 36 / 255, d = Math.sin(r / 57.3) * 43;
+  return [grenze(m + d, 0, 36) + 45, grenze(m - d, 0, 36) + 45];
+}
+// Viergelenk S-A-B-P (cm, CAD x/z): je Glied [cos, sin, tx, tz]; achse = Radmitte
+function beinTeile({ S, P, A, B, W }, e, ticks = 0) {
+  const abst = (p, q) => Math.hypot(p[0] - q[0], p[1] - q[1]);
+  const um = (q, w) => { const c = Math.cos(w), s = Math.sin(w); return [c, s, q[0] - c * q[0] + s * q[1], q[1] - s * q[0] - c * q[1]]; };
+  const w = Math.acos(abst(S, W) * 10 / 96) - Math.acos(e / 96), bS = um(S, w);
+  const A2 = [bS[0] * A[0] - bS[1] * A[1] + bS[2], bS[1] * A[0] + bS[0] * A[1] + bS[3]];
+  const ab = abst(A, B), pb = abst(P, B), dd = abst(P, A2), a = (pb * pb - ab * ab + dd * dd) / (2 * dd), h = Math.sqrt(Math.max(0, pb * pb - a * a));
+  const mx = P[0] + a * (A2[0] - P[0]) / dd, mz = P[1] + a * (A2[1] - P[1]) / dd, ex = (A2[1] - P[1]) / dd, ez = -(A2[0] - P[0]) / dd;
+  const B1 = [mx + h * ex, mz + h * ez], B3 = [mx - h * ex, mz - h * ez], B2 = abst(B1, B) <= abst(B3, B) ? B1 : B3;
+  const oben = Math.atan2(B2[1] - P[1], B2[0] - P[0]) - Math.atan2(B[1] - P[1], B[0] - P[0]);
+  const r = Math.atan2(B2[1] - A2[1], B2[0] - A2[0]) - Math.atan2(B[1] - A[1], B[0] - A[0]), c = Math.cos(r), s = Math.sin(r);
+  const K = [c, s, A2[0] - c * A[0] + s * A[1], A2[1] - s * A[0] - c * A[1]];
+  const W2 = [c * W[0] - s * W[1] + K[2], s * W[0] + c * W[1] + K[3]];
+  const phi = -2 * Math.PI * (((ticks % RAD_TICKS) + RAD_TICKS) % RAD_TICKS) / RAD_TICKS, rc = Math.cos(phi), rs = Math.sin(phi);
+  const Rad = [rc, rs, W2[0] - (rc * W[0] - rs * W[1]), W2[1] - (rs * W[0] + rc * W[1])];
+  return { teile: [bS, um(P, oben), K, Rad], achse: W2 };
+}
+async function modellLaden() {
+  try {
+    const r = await fetch("rider-model.bin");
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const { teile, dreh } = modellDekodieren(await r.arrayBuffer());
+    const mat = new THREE.MeshStandardMaterial({ vertexColors: true, side: THREE.DoubleSide, roughness: 0.65, metalness: 0.1 });
+    const achse = new THREE.Group(), gr = new THREE.Group();
+    achse.position.y = 0.03;                     // Radachse 3 cm über dem Boden (Rad 60 mm)
+    gr.scale.setScalar(0.01);
+    achse.add(gr);
+    const meshes = teile.map(t => {
+      if (!t.p.length) return null;
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute("position", new THREE.Float32BufferAttribute(t.p, 3));
+      geo.setAttribute("normal", new THREE.Float32BufferAttribute(t.n, 3));
+      geo.setAttribute("color", new THREE.Float32BufferAttribute(t.c, 3));
+      geo.normalizeNormals();
+      const m = new THREE.Mesh(geo, mat);
+      m.matrixAutoUpdate = false;
+      gr.add(m);
+      return m;
+    });
+    rider.add(achse);
+    for (const e of ersatz) e.visible = false;
+    cad = { achse, gr, meshes, dreh };
+    if (ticks.length) { zeige(cur); renderer.render(scene, cam); }   // sofort zeigen, auch angehalten
+  } catch (e) { console.warn("Rider-Modell nicht geladen, zeichne Quader:", e); }
+}
+// Beine nach dem Höhen-Sollwert (u8) mit Tiefpass wie die Firmware (~0,33 s), Räder nach der gefahrenen Strecke
+function posiere(d, now) {
+  if (!cad) return;
+  const ziel = beinStreckung(d.h_u8 ?? 128, 0);
+  const f = beinIst ? 1 - Math.exp(-(now - beinZeit) / 330) : 1;
+  beinIst = beinIst ? beinIst.map((v, i) => v + (ziel[i] - v) * f) : ziel;
+  beinZeit = now;
+  const tpm = RAD_TICKS / (Math.PI * RAD_D);
+  const L = beinTeile(cad.dreh[0], beinIst[0], (d.sl || 0) * tpm), R = beinTeile(cad.dreh[1], beinIst[1], (d.sr || 0) * tpm);
+  [[1, 0, 0, 0], ...R.teile, ...L.teile].forEach(([c, s, tx, tz], i) => {
+    const m = cad.meshes[i];
+    if (m) { m.matrix.set(c, -s, 0, tx, s, c, 0, tz, 0, 0, 1, 0, 0, 0, 0, 1); m.matrixWorldNeedsUpdate = true; }
+  });
+  // Mitte der Radachsen fest auf der Achse: der Körper hebt und senkt sich, die Räder bleiben am Boden
+  cad.gr.position.set(-(L.achse[0] + R.achse[0]) / 200, -(L.achse[1] + R.achse[1]) / 200, 0);
+  cad.achse.rotation.z = d.nick;
+}
+
+const KFARBE = [[0, 0, 0, 0], [225, 245, 235, 110], [200, 40, 40, 235]];     // unbekannt, frei, belegt
+function zeigeKarte(m) {
+  const z = Uint8Array.from(atob(m.zellen), c => c.charCodeAt(0));
+  const rgba = new Uint8Array(z.length * 4);
+  for (let i = 0; i < z.length; i++) rgba.set(KFARBE[z[i]], 4 * i);
+  const tex = new THREE.DataTexture(rgba, m.cols, m.rows);   // Zeile 0 = kleinstes y der Karte (unten)
+  tex.magFilter = THREE.NearestFilter;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.needsUpdate = true;
+  if (kartenPlane) { kartenGruppe.remove(kartenPlane); kartenPlane.material.map.dispose(); kartenPlane.geometry.dispose(); }
+  kartenPlane = new THREE.Mesh(new THREE.PlaneGeometry(m.cols * m.res, m.rows * m.res),
+    new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false }));
+  kartenPlane.rotation.x = -Math.PI / 2;
+  const mx = (m.c0 + m.cols / 2 - m.n / 2) * m.res, my = (m.r0 + m.rows / 2 - m.n / 2) * m.res;
+  kartenPlane.position.set(mx, 0, -my);
+  kartenGruppe.add(kartenPlane);
+}
+
+function letzte(idx, bis) {                 // größter Eintrag <= bis
+  let lo = 0, hi = idx.length - 1, r = -1;
+  while (lo <= hi) { const m = (lo + hi) >> 1; if (idx[m] <= bis) { r = idx[m]; lo = m + 1; } else hi = m - 1; }
+  return r;
+}
+
+const fmt = (v, n = 2) => v.toFixed(n).replace(".", ",");
+function zeige(i) {
+  if (!ticks.length) return;
+  const d = ticks[i];
+  rider.position.copy(W(d.x, d.y));
+  rider.rotation.y = d.th;
+  nase.rotation.z = d.nick;
+  nase.getObjectByName("kegel").position.y = d.cam_h;
+  posiere(d, performance.now());
+  if (person) {
+    person.visible = !!d.p && d.p[0] > -10;
+    if (person.visible) person.position.copy(W(d.p[0], d.p[1], person.userData.h / 2));
+  }
+  setzeLinie(spurWahr, ticks.slice(0, i + 1).map(t => [t.x, t.y]));
+  setzeLinie(spurKarte, ticks.slice(0, i + 1).filter(t => t.schaetz).map(t => t.schaetz));
+  setzeLinie(planL, d.plan && d.plan.length ? [[d.x, d.y], ...d.plan] : []);
+  setzeLinie(routeL, d.route || []);
+  const ki = letzte(kartenIdx, i);
+  if (ki !== gezeigteKarte) { gezeigteKarte = ki; if (ki >= 0) zeigeKarte(ticks[ki].karte); }
+  const bi = letzte(bildIdx, i);
+  if (bi !== gezeigtesBild) {
+    gezeigtesBild = bi;
+    document.getElementById("cam").hidden = bi < 0;
+    if (bi >= 0) document.getElementById("bild").src = "data:image/jpeg;base64," + ticks[bi].bild;
+  }
+  const drift = d.schaetz ? Math.hypot(d.schaetz[0] - d.x, d.schaetz[1] - d.y) : null;
+  document.getElementById("kopf").innerHTML = [
+    ["Modus", kopf.modus + (d.verhalten && d.verhalten !== kopf.modus ? " / " + d.verhalten : "")],
+    ["Status", d.status || "–"], ["v", fmt(d.v) + " m/s"], ["w", fmt(d.w) + " rad/s"],
+    ["Nick", fmt(d.nick * 57.2958, 1) + "°"], ["Höhe", d.h_mm == null ? "–" : fmt(d.h_mm, 0) + " mm"],
+    ["Kollisionen", d.koll],
+    ["Kartenfehler", drift === null ? "–" : fmt(drift * 100, 0) + " cm"],
+  ].map(([a, b]) => `<span><b>${a}</b>${String(b).replace(/</g, "&lt;")}</span>`).join("")
+    + (location.pathname.startsWith("/lauf/") ? '<a href="../../" style="color:var(--acc);margin-left:auto">← Übersicht</a>' : "");
+  const z = document.getElementById("zeit");
+  z.max = ticks.length - 1; z.value = i;
+  document.getElementById("tlabel").textContent = fmt(d.t, 1) + " s" + (ende ? "" : " ●");
+}
+
+function neu(d) {
+  if (d.typ === "kopf") {
+    if (kopf) { location.reload(); return; }     // neu verbunden (neuer Lauf): alles neu aufbauen
+    kopf = d; ersterT = performance.now(); baueSzene(d); return;
+  }
+  if (!kopf) return;
+  const i = ticks.length;
+  // Radwege aus der wahren Bahn (nur Anzeige): Strecke längs des Kurses ± Drehung × halbe Spur
+  const a = ticks[i - 1];
+  if (a) {
+    const ds = (d.x - a.x) * Math.cos(a.th) + (d.y - a.y) * Math.sin(a.th);
+    const dth = Math.atan2(Math.sin(d.th - a.th), Math.cos(d.th - a.th));
+    d.sl = a.sl + ds - dth * SPUR / 2; d.sr = a.sr + ds + dth * SPUR / 2;
+  } else d.sl = d.sr = 0;
+  ticks.push(d);
+  if (d.karte) kartenIdx.push(i);
+  if (d.bild) bildIdx.push(i);
+  if (i > 0 && d.koll > ticks[i - 1].koll) kollIdx.push(i);
+}
+
+const url = new URLSearchParams(location.search);
+const es = new EventSource("events");
+es.onmessage = e => {
+  neu(JSON.parse(e.data));
+  if (live && ticks.length) { cur = ticks.length - 1; tSim = ticks[cur].t; }
+};
+es.addEventListener("ende", () => {
+  ende = true;
+  // gleich nach dem Verbinden fertig = Datei (Replay): von vorn abspielen; nach einem Live-Lauf am Ende bleiben
+  if (ticks.length && performance.now() - ersterT < 3000) { setLive(false); cur = 0; tSim = ticks[0].t; playing = true; }
+  if (url.has("t") && ticks.length) {            // ?t=15: an diese Stelle springen und anhalten
+    setLive(false); playing = false; playB.textContent = "▶";
+    cur = Math.max(0, ticks.findIndex(d => d.t >= +url.get("t")));
+    if (ticks[cur].t < +url.get("t")) cur = ticks.length - 1;
+    tSim = ticks[cur].t;
+  }
+});
+
+// Bedienung
+const playB = document.getElementById("play"), liveB = document.getElementById("live");
+function setLive(an) { live = an; liveB.classList.toggle("an", an); }
+playB.onclick = () => { playing = !playing; playB.textContent = playing ? "⏸" : "▶"; if (!playing) setLive(false); };
+liveB.onclick = () => { setLive(true); playing = true; playB.textContent = "⏸"; };
+document.getElementById("zeit").oninput = e => { setLive(false); cur = +e.target.value; tSim = ticks[cur].t; };
+document.getElementById("koll").onclick = () => {
+  const n = kollIdx.find(k => k > cur) ?? kollIdx[0];
+  if (n === undefined) return;
+  setLive(false); playing = false; playB.textContent = "▶"; cur = Math.max(0, n - 10); tSim = ticks[cur].t;
+};
+let springen = false;
+function setAnsicht(k) {
+  springen = k !== ansicht || k === 4;
+  ansicht = k;
+  document.querySelectorAll(".ansicht").forEach(b => b.classList.toggle("an", +b.dataset.k === k));
+  if (k === 2 && kopf) {
+    const s = kopf.size, sy = kopf.size_y ?? s;
+    cam.position.copy(W(s / 2, sy / 2 - 0.01, Math.max(s, sy) * 1.25)); orbit.target.copy(W(s / 2, sy / 2));
+  }
+}
+document.querySelectorAll(".ansicht").forEach(b => b.onclick = () => setAnsicht(+b.dataset.k));
+addEventListener("keydown", e => {
+  if (e.key === " ") { playB.click(); e.preventDefault(); }
+  if ("1234".includes(e.key)) setAnsicht(+e.key);
+});
+
+function groesse() {
+  const w = innerWidth, h = innerHeight;
+  renderer.setSize(w, h, false);
+  cam.aspect = w / h;
+  cam.updateProjectionMatrix();
+}
+addEventListener("resize", groesse);
+groesse();
+if (url.has("ansicht")) setTimeout(() => setAnsicht(+url.get("ansicht")), 0);
+
+const folgeVersatz = new THREE.Vector3();
+function frame(now) {
+  requestAnimationFrame(frame);
+  const dt = (now - lastWall) / 1000;
+  lastWall = now;
+  if (ticks.length && playing && !live) {
+    tSim += dt * +document.getElementById("tempo").value;
+    while (cur < ticks.length - 1 && ticks[cur + 1].t <= tSim) cur++;
+    if (cur === ticks.length - 1) { if (!ende) setLive(true); else { playing = false; playB.textContent = "▶"; } }
+  }
+  if (ticks.length) {
+    zeige(cur);
+    if (ansicht === 1 || ansicht === 4) {
+      // 1: hinter dem Rider; 4: nah, schräg von vorn links (Beine, Räder); folgt Position und Kurs
+      const d = ticks[cur], nah = ansicht === 4, r = W(d.x, d.y, nah ? 0.08 : 0.1);
+      const [ab, wi, hoch] = nah ? [0.45, 0.7, 0.16] : [1.1, Math.PI, 0.7];
+      folgeVersatz.set(ab * Math.cos(d.th + wi), hoch, -ab * Math.sin(d.th + wi));
+      cam.position.lerp(r.clone().add(folgeVersatz), springen ? 1 : nah ? 0.2 : 0.08);
+      orbit.target.lerp(r, springen ? 1 : 0.2);
+      springen = false;
+    }
+  }
+  orbit.update();
+  renderer.render(scene, cam);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

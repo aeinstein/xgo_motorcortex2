@@ -18,6 +18,10 @@ Weboberfläche des RiderPi in PHP (`web/index.php`, `web/api.php`) hinter nginx 
 - Kachel „Samples“: gelernte Stimmen des Modus pet (`api.php?a=stimmen|stimme_wav` direkt von `/opt/xgonav/stimmen`, `stimme_spielen`/`stimme_loeschen` über xgonav `POST /stimme/…`), nur beim Aufklappen geladen, Wiedergabe im Browser. Hochladen (`api.php?a=stimme_hochladen` → xgonav `POST /stimme/hochladen`): der Browser wandelt in WAV 16 kHz mono ≤ 3 s, `Stimmen.hochladen` reiht ohne Prüfung als bestätigt ein (`fertig=1`: 48 kHz ≤ 8 s, unverändert ohne Sittich-Filter); hochgeladene sind fest (`bestaetigt/fest.json`), fallen nie raus; jede bestätigte lässt sich per 📌 schützen/lösen (`stimme_fest` → `POST /stimme/fest`).
 - Einstellungen (Modal im Kasten „System“): `api.php?a=config|config_save|config_restore|restart`, Zeilen-Editor `konfig.inc.php`, Schema `config-schema.json` (nach Änderungen an `xgonav/config.py`: `python tools/config_schema.py`, sonst schlägt `test_config_schema_aktuell` fehl). Sicherungen in `/var/lib/xgonav/config-backup`, `config.toml` Gruppe video 0664, sudoers `deploy/sudoers-xgonav-restart`.
 
+## Virtueller Rider (kimmy)
+
+Dieselbe Oberfläche läuft auf kimmy gegen den Simulator (`tools/sim_rider.py`, `http://192.168.53.236:8791/`). `api.php` liest dafür `XGO_NAV`, `XGO_PROC`, `XGO_SIM` aus der Umgebung (am Rider nicht gesetzt, Standard wie bisher); `XGO_SIM=1` sperrt alles, was den Rechner selbst träfe. Neue Aktionen, die Programme starten oder das System ändern, dort in die Sperrliste aufnehmen. Einspielen: `tools/sim_kimmy.sh`.
+
 ## Schnittstelle zu xgonav
 
 - `xgonav/web.py` ist nur noch die lokale Schnittstelle (`web_host = 127.0.0.1`), ohne Authentifizierung.

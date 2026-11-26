@@ -24,11 +24,12 @@ python -m pytest -q -m slow tests/               # Closed-Loop im Simulator (6 T
 python -m pytest -q tests/test_units.py -k imu_sync   # einzelner Test
 
 python tests/sim_run.py follow 40 out.mp4        # Szenario im Simulator, optional mit Overlay-Video
-python tests/sim_run.py explore 300 --wheels --fs-thread --dyn --rider [--scene zwei|spalt] [--phantoms 8]   # Raum kartieren wie am Rider (spalt: Tür nur 25 cm; Bodengrenze aus Ground Truth)
+python tests/sim_run.py explore 300 --wheels --fs-thread --dyn --rider [--scene zwei|spalt|unten|unten_tag] [--phantoms 8]   # Raum kartieren wie am Rider (spalt: Tür nur 25 cm; unten: Erdgeschoss aus den Fahrten ab 2026-11-23, Weltdatei xgonav/welten/unten.npz, gebaut mit tools/simwelt/; Bodengrenze aus Ground Truth)
 python tools/map_eval.py record a.pkl; python tools/map_eval.py eval a.pkl --set grid.max_range_m=1.0,1.5 --rays   # Karte offline messen
 python tests/sim_run.py home 60 --wheels         # 30 s erkunden, dann zurück zum Start (--dyn: Trägheit wie am Rider)
 python tests/sim_run.py explore 120 --wheels --dyn --rider --live [--view lauf.jsonl]   # 3D-Ansicht im Browser (three.js, http://localhost:8765/), --view schreibt Replay
 python tools/sim3d.py lauf.jsonl                 # Replay der 3D-Ansicht (?t=12&ansicht=2: Sprung, Draufsicht)
+./tools/sim_kimmy.sh                             # Simulator auf kimmy einspielen: http://192.168.53.236:8790/ (Läufe starten, live/Replay in 3D); virtueller Rider mit echter Weboberfläche :8791 (tools/sim_rider.py)
 python tests/sim_run.py follow 40 --imu          # mit simulierter IMU (Vorzeichen -1, Versatz -8 ms absichtlich falsch)
 
 python -m xgonav --source video.mp4 --robot sim --mode follow --fast   # Replay eines eigenen Videos

@@ -47,11 +47,47 @@ FloorNet tests (`tests/test_floornet_*.py`): those that need torch are skipped o
 | Feature | Value |
 |---|---|
 | Rendering | raycasting, room with boxes, walking person |
+| Scenes (`--scene`) | `raum` 6 × 6 m, two boxes; `zwei` two rooms, door 0.8 m; `spalt` door 0.25 m; `fuge` invisible floor joints; `unten` ground floor reconstructed from the runs since 2026-11-23 (lamp light), `unten_tag` the same in daylight |
+| Extended scenes (`SimScene.teile`, `flaechen`, `boden`) | own path in `SimWorld._ext_bild`: per column the 10 nearest faces drawn back to front, parts with their own height z0..z1, one texture per side, floating parts (table top, seats) leave the floor visible, only `fest` parts collide, slanted faces via `flaechen`; old scenes render bit-identically |
+| Scene `unten` (`xgonav/welten/unten.npz`, 2 MB) | 10 × 9 m bounding box: galley kitchen, dining nook (table, four chairs, drivable underneath), main room with wardrobe wall, slanted wall, TV lowboard, rug, sofas, stairs, window platform; 42 parts read off the fused map (±10 cm, not measured), photo textures per face (2 cm per texel) and floor image from the camera frames, tile joints assumed 120 × 60 cm; start pose = charging spot. ~21 ms per frame on the PC |
 | Camera motion | pitch oscillation from IMU samples of seven RiderPi drives (2026-11-10/11, ~1060 s at 92 Hz): driving 1.0° at 0.8 Hz, 0.6° at 2.5 Hz, 0.2° at 6.1 Hz, 0.1° at 9.3 Hz, 0.05° at 13.1 Hz, standing a quarter of that (`sim.NICK`, `STAND_FACTOR`); acceleration tilt 9°/(m/s²), clipped at 0.5 m/s²; heading jitter 0.8° at 1.7 Hz (standing a quarter); motion blur. Until 2026-11-11: 3° at 2.5 Hz, 1.5° at 6.1 Hz, also standing |
 | FOV | 91.8° (default, = real RiderPi camera) |
 | Detector | `FakeDetector`: ground-truth boxes, 180 ms latency, 5 Hz |
 | Robot | `SimRobot`: integrates heading, logs writes; drive commands move the camera |
 | Ground truth | `SimWorld.log`, `collisions` |
+
+### Scene from recorded runs (`tools/simwelt/`, GPU machine only)
+
+Builds `xgonav/welten/<name>.npz` from raw recordings (`--record-raw`). Nothing of it runs on the Rider.
+
+| Step | Script | What it does |
+|---|---|---|
+| 1 | `punkte.py CODE DATA OUT run… --jedes 3` | MoGe-2 point cloud per frame in the Rider frame; scale and attitude from the fitted floor plane (`tools/floornet/geo_label.py`), ~22 frames/s |
+| 2 | `kompass.py DATA PKT OUT run` | heading per frame from wall directions (modulo 90°, tracked with gain 0.08); removes the yaw drift of the run (4–15° per run seen), path re-integrated |
+| 3 | `karte.py DATA PKT OUT run --rmax 1.5 --posendir KOMP` | top-down maps per run, 2 cm cells: floor colour, obstacle colour, height histogram (10 cm bins) |
+| 4 | `reg.py KARTEN OUT REF run… --recht` | lays the runs onto a reference run (multiples of 90° ± 3°, shift by FFT correlation); `summe.py` adds the registered maps |
+| 5 | `plan.py KARTE.npz OUT --ursprung=-1,-5 [--modell welt.json]` | large plots (colour, walls, heights) in world coordinates, model overlaid; `sicht.py X,Y` shows the frames taken at a place |
+| 6 | `modell.py > welt.json` | the model: boxes with height, slanted faces, chairs, rug (edited by hand from the plots) |
+| 7 | `textur.py sammeln …`, `textur.py bauen …` | texture per face: per texel the colour from the single best frame (wide, frontal, near), separately for day and evening; floor image from the maps; writes the world file |
+
+| Finding (2026-11-26) | Value |
+|---|---|
+| Runs used | 20 of 2026-11-23/24 (7 daylight, 13 evening), 17 600 frames |
+| Fusing with recorded poses only | walls 20–30 cm wide, kitchen doubled: yaw drift per run |
+| Range used for the maps | 1.5 m; beyond that the depth of a single frame smears |
+| Not reconstructed | undersides, things above ~1.3 m at close range, tile grid, sofa interior (camera is below the seat) |
+
+### 3D view (`tools/sim3d.py`, `tools/sim3d.html`, PC only)
+
+| Command | Effect |
+|---|---|
+| `python tests/sim_run.py explore 120 --wheels --dyn --rider --live [--live-port 8765]` | live in the browser at `http://localhost:8765/`, stays open after the run (Ctrl+C) |
+| `… --view run.jsonl` | write the run to a file (~0.5 MB per 20 s) |
+| `python tools/sim3d.py run.jsonl [--port 8765]` | replay; `?t=12` jumps to 12 s, `?ansicht=2` top view |
+| `python tools/sim_rider.py --proc DIR [--port 8793] [--view-port 8792] [--scene unten]` | virtual Rider (default scene `unten`): endless simulator (idle, Rider values, person) with the real xgonav API on 127.0.0.1:8793; `DIR` plays `/proc/XGORider` (`SimRobot(proc_dir=…)`: `height`, `roll`, `action` 253/254, `state`, `battery`; `imu_log`, `wheels_log` at 50 Hz for `tools/live.php`); 3D view of the last 5 min |
+| `./tools/sim_kimmy.sh` | deploy the simulator to kimmy: `http://192.168.53.236:8790/` starts runs (mode, seconds, scene, body heights cruise/search/fast = `behavior.height_*_mm` 60–108, flags, `--set`), lists results, shows each run live and as replay (`tools/simserver.py`, user unit `xgo-sim`, runs in `~/xgo_sim/laeufe`, at most 4 at once, nice 10). Virtual Rider: the real web UI (`web/` copied to `/srv/xgo_sim/web`) at `http://192.168.53.236:8791/` (nginx site `tools/sim_rider.nginx.conf`, HTTP only; php-fpm pool `tools/sim_rider.fpm.conf` as `www-data` with `XGO_NAV`/`XGO_PROC`/`XGO_SIM`; user units `xgo-rider`, `xgo-rider-live` = `live.php` on 8794; `/srv/xgo_sim/proc` group `www-data`), 3D at `:8792`, “Neu starten” in the Zentrale. Not in the simulator: intercom, emotions/display, LEDs (file only), Wi-Fi, shutdown/restart, settings editor, voice samples, FloorNet choice; roll is written but the body does not tilt; CPU/WLAN tiles show kimmy |
+
+Shows room, boxes, joints, dark zones, rider (CAD model `web/rider-model.bin` as in the web UI: legs from the height setpoint with the firmware's u8 55–200 clamp and ~0.33 s lag, wheels turn with the true path; boxes if the file is missing; pitch, FOV cone, collision radius), person, true path (green), map pose path (orange), plan (blue), patrol route (pink), occupancy map (1 Hz) and camera frame (4 Hz). Read-only feed thread at 10 Hz (truth from `SimWorld`, estimate from `GridMap`); `loop_ms` unchanged within run-to-run spread. Keys 1–4: follow, top, free, close-up of the rider; space: play/pause. three.js 0.160.0 from jsDelivr (internet needed).
 
 ## Results (40 s runs)
 

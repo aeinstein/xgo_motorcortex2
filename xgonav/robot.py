@@ -970,9 +970,17 @@ class ProcRobot(Robot):
 
 
 class SimRobot(Robot):
-    """Für Replay/Tests: integriert Kurs aus w und protokolliert Kommandos."""
+    """Für Replay/Tests: integriert Kurs aus w und protokolliert Kommandos.
 
-    def __init__(self, cfg: RobotCfg, log_cmds: bool = False):
+    proc_dir (nur virtueller Rider, tools/sim_rider.py): ein gewöhnliches Verzeichnis spielt /proc/XGORider für
+    die Weboberfläche. Jedes Schreiben landet auch in der Datei (wie /proc den letzten Wert zeigt); Höhe und
+    Aktion, die von außen (api.php) geschrieben werden, übernimmt _poll_state wie Treiber und Firmware; state und
+    battery stehen dort für live.php. Ersetzt wird immer per tmp + rename (Web und Simulator laufen als
+    verschiedene Nutzer, das Verzeichnis gehört beiden)."""
+
+    PROC_DATEIEN = {"height": "", "roll": "0", "action": "", "state": "1", "battery": "100"}
+
+    def __init__(self, cfg: RobotCfg, log_cmds: bool = False, proc_dir: str | None = None):
         super().__init__(cfg)
         self.log_cmds = log_cmds
         self.writes: list[tuple[float, str, int | str]] = []
@@ -981,6 +989,44 @@ class SimRobot(Robot):
         self.settings: dict[str, str] = {}   # Treiber-Einstellungen (settings/<name>), für Tests vorbelegbar
         self.vel = cfg.vel_frame             # wie eine Firmware mit 08-velocity und passendem Treiber
         self.KURSABS_OHNE_IMU = True         # absolutes Kursziel: Winkel des Generators ist der Kurs der Firmware
+        self.proc_dir = proc_dir
+        self._proc_seen: dict[str, tuple[str, int]] = {}   # zuletzt gesehener Inhalt + mtime je Datei
+        self._state_text: str | None = None
+        if proc_dir:
+            for sub in ("leds", "settings"):
+                os.makedirs(os.path.join(proc_dir, sub), exist_ok=True)
+            for name, text in self.PROC_DATEIEN.items():
+                self._proc_schreiben(name, text)
+            # steht schon (state 1): Mittelstellung der Firmware nach dem Aufstehen, wie am Rider
+            self._proc_schreiben("height", str(FW_HEIGHT_STANDUP_U8))
+            self._height_text = str(FW_HEIGHT_STANDUP_U8)
+            self._height_mm = self.height_u8_to_mm(FW_HEIGHT_STANDUP_U8)
+
+    def _proc_schreiben(self, name: str, text: str) -> None:
+        p = os.path.join(self.proc_dir, name)
+        tmp = "%s.%d.tmp" % (p, os.getpid())
+        try:
+            with open(tmp, "w") as f:
+                f.write(text + "\n" if text else "")
+            os.replace(tmp, p)
+            self._proc_seen[name] = (text, os.stat(p).st_mtime_ns)
+        except OSError as e:
+            log.warning("Sim-/proc %s: %s", name, e)
+
+    def _proc_neu(self, name: str) -> str | None:
+        """Inhalt, falls jemand anderes die Datei seit dem letzten Blick geschrieben hat, sonst None."""
+        p = os.path.join(self.proc_dir, name)
+        try:
+            mt = os.stat(p).st_mtime_ns
+            with open(p) as f:
+                text = f.read().strip()
+        except OSError:
+            return None
+        alt = self._proc_seen.get(name)
+        self._proc_seen[name] = (text, mt)
+        if alt is not None and alt == (text, mt):
+            return None
+        return text
 
     def _setup(self) -> None:
         if self.vel:
@@ -1001,19 +1047,48 @@ class SimRobot(Robot):
             del self.writes[:5000]
         if self.log_cmds:
             log.info("SIM %s <- %s", name, value)
+        if self.proc_dir and (name in self.PROC_DATEIEN or name.startswith("leds/")):
+            self._proc_schreiben(name, str(value))
+            if name == "height":
+                self._height_text = str(value)      # eigener Wert, nicht als „von außen“ übernehmen
+        self._aktion(name, value)
+
+    def _aktion(self, name: str, value: int | str) -> None:
         if name == "action" and value == 254:
             self.state.balancing, self.state.mode = False, 254
             self._up_at = None
         elif name == "action" and value == 253 and not self.state.balancing:
             self._up_at = time.monotonic() + 1.0
 
+    def _proc_von_aussen(self) -> None:
+        """Was die Weboberfläche direkt nach /proc schreibt: Höhe (wie ProcRobot._poll_height, Geometrie folgt) und
+        Aktionen (253 aufstehen, 254 absetzen; die anderen kennt der Simulator nicht)."""
+        text = self._proc_neu("height")
+        if text is not None and text.isdigit():
+            with self._height_lock:
+                if text != self._height_text:
+                    self._height_text = text
+                    self._height_mm = self.height_u8_to_mm(int(text))
+                    log.info("Körperhöhe von außen: %.1f mm (u8 %s)", self._height_mm, text)
+        text = self._proc_neu("action")
+        if text is not None and text.lstrip("-").isdigit():
+            self.writes.append((time.monotonic(), "action", int(text)))
+            self._aktion("action", int(text))
+
     def _poll_state(self) -> None:
         now = time.monotonic()
+        if self.proc_dir:
+            self._proc_von_aussen()
         if self._up_at is not None and now >= self._up_at:
             self.state.balancing, self.state.mode = True, 1
             self._up_at = None
         self.state.battery = 100
         self.state.t = now
+        if self.proc_dir:
+            st = "1" if self.state.balancing else str(self.state.mode)
+            if st != self._state_text:
+                self._state_text = st
+                self._proc_schreiben("state", st)
 
 
 def make_robot(kind: str, cfg: RobotCfg) -> Robot:

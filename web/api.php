@@ -64,9 +64,12 @@
  */
 declare(strict_types=1);
 
-const XGONAV = 'http://127.0.0.1:8088';
+// Am Rider ohne Umgebungsvariablen. Virtueller Rider (tools/sim_rider.py, php-fpm-Pool auf kimmy): XGO_NAV =
+// xgonav des Simulators, XGO_PROC = Verzeichnis statt /proc, XGO_SIM=1 sperrt alles, was den Rechner selbst träfe.
+define('XGONAV', getenv('XGO_NAV') ?: 'http://127.0.0.1:8088');
 const MODES = ['idle', 'manual', 'follow', 'explore', 'approach', 'home', 'patrol', 'pet'];
-const PROC = '/proc/XGORider';
+define('PROC', getenv('XGO_PROC') ?: '/proc/XGORider');
+define('SIM', getenv('XGO_SIM') === '1');
 const EMOTION = '/opt/xgonav/tools/emotion.sh';         // Player (RGB565-Rohbilder statt ffmpeg)
 const EMOTION_RAW = '/opt/xgonav/emotions';             // tools/eyes.py, von deploy/install.sh erzeugt
 const STIMMEN = '/opt/xgonav/stimmen';                 // [stimme] dir: bestaetigt/NN(_roh).wav, kandidaten/<Zeit>.wav
@@ -164,6 +167,9 @@ function schlafaugen(): void
 // Ruhemodus, root-Teil (CPU-Takt, WLAN-Stromsparen); true bei Erfolg.
 function ruhe_system(bool $an, array &$fehler): bool
 {
+    if (SIM) {
+        return true;                         // virtueller Rider: kein Takt/WLAN des Rechners anfassen
+    }
     exec('sudo -n /usr/local/sbin/xgo-ruhe ' . ($an ? 'on' : 'off') . ' 2>&1', $out, $rc);
     if ($rc !== 0) {
         $fehler[] = 'xgo-ruhe: ' . implode(' ', $out);
@@ -309,6 +315,11 @@ function wav_dauer(string $f): ?float
 
 $a = $_GET['a'] ?? '';
 $post = ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST';
+
+// Virtueller Rider: nichts, was den Rechner selbst herunterfährt, neu startet, sein WLAN ändert oder Programme startet
+if (SIM && in_array($a, ['shutdown', 'restart', 'wlan_status', 'wlan_scan', 'wlan_connect', 'emotion', 'config_save', 'config_restore'], true)) {
+    antwort(409, json_encode(['error' => 'im Simulator nicht verfügbar']));
+}
 
 if ($a === 'config' && !$post) {
     $text = konfig_text();
