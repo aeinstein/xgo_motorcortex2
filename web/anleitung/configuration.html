@@ -2025,6 +2025,12 @@
 <td>course target (ARBEITSPLAN.md item 5, stage 2): turning on the spot to a heading (path follower turn/align, <code>POST /turn</code>) goes out as <code>kurs</code> frames (Δψ in 0.1°, toggle bit = new target); the firmware turns with braking look-ahead and holds the heading. While a target runs, the mode's turn limit is sent as w_max in <code>vel_limits</code>. A new target only when none runs or the running one has arrived and &gt; 15° remain (never while the firmware turns: the heading lags &gt; 20° at 90 °/s); <code>POST /turn</code> keeps sending the target for <code>behavior.turn_settle_s</code> (2 s) after arrival so the firmware holds it (81cb3335). Only if the firmware reports capability bit1 and the driver has 13-field <code>vel</code>; otherwise turn-rate frames. Driven 2026-11-25 (±90°/±180° within ±1.4°), on since</td>
 </tr>
 <tr>
+<td><code>vel_kursabs</code></td>
+<td>false</td>
+<td></td>
+<td>absolute heading target (ARBEITSPLAN.md item 5, stage 2b, 2026-11-26), alternative to <code>vel_kurs</code>: turning to a heading sends only the wanted heading in the firmware's own yaw (0.01°, wrapped to ±180°, at most 170° ahead) plus w_max as a 5-byte <code>kursabs</code> frame every loop; no toggle bit, no w_max via <code>vel_limits</code>. Angular acceleration/jerk (<code>vel_alpha_dps2</code>, <code>vel_jerk_w_dps3</code>) go into 18-byte <code>vel_limits</code>. The target comes from the IMU yaw at the frame time of the control step plus the remaining error, converted back through the yaw scale factors. Needs capability bit4 (firmware c7a97230), the 15-field driver and the IMU stream; otherwise <code>vel_kurs</code> applies. Not flashed, never driven</td>
+</tr>
+<tr>
 <td><code>vel_strecke</code></td>
 <td>true</td>
 <td></td>

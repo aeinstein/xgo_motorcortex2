@@ -17,6 +17,10 @@ Krümmungsbetrieb (ARBEITSPLAN.md Punkt 5 Stufe 1, Flag bit1): Der Rahmen trägt
 die Firmware rechnet w = κ · v_soll und begrenzt die Fahrachse statt w (bogen_schritt = velocity_cmd.h tickKappa).
 So bleibt der Bogen beim Anfahren und Bremsen derselbe. Geprüft gegen die Vektoren der Firmware-Host-Tests
 (firmware/tests/vectors/, tests/test_fahrrahmen.py).
+
+Absolutes Kursziel (Flag bit5, Fähigkeit bit4, 2026-11-26, neben dem Kursziel bit2): Der Rahmen trägt nur den Wunschkurs
+im Kurs der Firmware (0,01°, ±180) und w_max, jeder Rahmen setzt nur das Ziel (kein Wechselbit, kein Neustart);
+alpha und Drehruck stehen in vel_limits (18 Byte). kursabs_schritt = velocity_cmd.h tickCourseAbs.
 """
 from __future__ import annotations
 
@@ -29,6 +33,9 @@ KAPPA_MAX = 32.767                         # 1/m, Bereich des i16-Felds (0,001 1
 CAP_KAPPA = 1                              # Fähigkeitsbyte (0x1a lesen, Byte 1): bit0 Krümmungsbetrieb
 CAP_KURS = 2                               # bit1 Kursziel
 CAP_STRECKE = 4                            # bit2 Strecke mit Halt
+CAP_KURSABS = 16                           # bit4 absolutes Kursziel (samt 0x1b mit 18 Byte)
+KURS_WIEDER_DEG = 1.0                      # absolutes Kursziel: ab diesem Rest dreht er nach der Ankunft wieder (kCourseReopen)
+KURSABS_VORAUS_DEG = 170.0                 # höchstens so weit liegt das absolute Ziel voraus (Firmware nimmt den kürzeren Weg)
 STRECKE_ANKUNFT_MM = 5.0                   # wirksamer Rest für „erreicht“ (kDistArrive)
 STRECKE_COAST_S = 0.25                     # Nachlauf je Radtempo: so lange fährt er nach dem Soll noch (kDistCoastS)
 STRECKE_MESS_TAU_S = 0.1                   # Tiefpass des Radtempos für den Nachlauf (kDistMeasTau)
@@ -39,6 +46,11 @@ WATCHDOG_ALPHA = 180.0                     # °/s², Wächter ohne alpha im Rahm
 
 def _clamp_abs(x: float, m: float) -> float:
     return max(-m, min(m, x))
+
+
+def wrap180(x: float) -> float:
+    """Winkel (°) auf [−180, 180) wie velocity_cmd.h wrap180."""
+    return x - 360.0 * math.floor((x + 180.0) / 360.0)
 
 
 def _min_grenze(a: float, b: float) -> float:
@@ -233,22 +245,53 @@ def kurs_schritt(turn: Achse, k: Kurs, alpha: float, jw: float, w_max: float, dt
     Kosten am Pi: bis ~20 approach-Schritte je Durchlauf bei dt 0,02 s (nur während eines Kursziels)."""
     if waechter:
         turn.schritt(0.0, alpha if alpha > 0 else WATCHDOG_ALPHA, jw, dt)
-    elif dt > 0:
-        if k.done:
-            turn.schritt(0.0, alpha, jw, dt)
-        elif alpha <= 0:
-            turn.x, turn.a = math.copysign(min(w_max, abs(k.rest) / dt), k.rest), 0.0
-        else:
-            sg = 1.0 if k.rest >= 0 else -1.0
-            go = Achse(turn.x, turn.a)
-            go.schritt(sg * w_max, alpha, jw, dt)
-            if (k.rest - go.x * dt - stop_winkel(go, alpha, jw, dt)) * sg >= 0:
-                turn.x, turn.a = go.x, go.a
-            else:
-                turn.schritt(0.0, alpha, jw, dt)
+    else:
+        _dreh_auf_rest(turn, k, w_max, alpha, jw, dt)
     turn.x = _clamp_abs(turn.x, w_max)
     k.rest -= turn.x * dt
     if not k.done and not waechter and turn.x == 0 and turn.a == 0 and abs(k.rest) < KURS_ANKUNFT_DEG:
+        k.done = True
+
+
+def _dreh_auf_rest(turn: Achse, k: Kurs, w_lim: float, alpha: float, jw: float, dt: float) -> None:
+    """velocity_cmd.h turnToRest: Schritt Richtung ±w_lim nur, wenn der Bremswinkel danach in den Rest passt; ohne
+    alpha w = sign·min(w_lim, |Rest|/dt); angekommen: auf 0."""
+    if dt <= 0:
+        return
+    if k.done:
+        turn.schritt(0.0, alpha, jw, dt)
+    elif alpha <= 0:
+        turn.x, turn.a = math.copysign(min(w_lim, abs(k.rest) / dt), k.rest), 0.0
+    else:
+        sg = 1.0 if k.rest >= 0 else -1.0
+        go = Achse(turn.x, turn.a)
+        go.schritt(sg * w_lim, alpha, jw, dt)
+        if (k.rest - go.x * dt - stop_winkel(go, alpha, jw, dt)) * sg >= 0:
+            turn.x, turn.a = go.x, go.a
+        else:
+            turn.schritt(0.0, alpha, jw, dt)
+
+
+def kursabs_schritt(turn: Achse, k: Kurs, ziel: float, ref: float | None, alpha: float, jw: float, w_rahmen: float,
+                    w_max: float, dt: float, waechter: bool = False, timed_out: bool = False) -> None:
+    """Drehachse eines Takts im absoluten Kursziel (velocity_cmd.h tickCourseAbs; die Fahrachse bremst beim Aufrufer auf
+    0). ziel, ref in ° (ref = Kursziel des Kurs-PID vor dem Takt, None = keins: bremsen); Rest = wrap180(ziel − ref)
+    je Takt. w_rahmen = w_max des Rahmens (0 = w_max aus vel_limits), alpha/jw aus vel_limits. Angekommen bei w = a = 0
+    und |Rest| < 0,5°, wieder offen erst bei |Rest| > KURS_WIEDER_DEG. timed_out: Wächter schon vor diesem Takt."""
+    if ref is not None:
+        k.rest = wrap180(ziel - ref)
+    if k.done and abs(k.rest) > KURS_WIEDER_DEG:
+        k.done = False
+    if ref is not None and not timed_out and turn.x == 0 and turn.a == 0 and abs(k.rest) < KURS_ANKUNFT_DEG:
+        k.done = True
+    timed_out = timed_out or waechter
+    if waechter or ref is None:
+        turn.schritt(0.0, alpha if alpha > 0 else WATCHDOG_ALPHA, jw, dt)
+    else:
+        _dreh_auf_rest(turn, k, _min_grenze(w_max, w_rahmen), alpha, jw, dt)
+    turn.x = _clamp_abs(turn.x, w_max)
+    k.rest -= turn.x * dt
+    if not k.done and not timed_out and ref is not None and turn.x == 0 and turn.a == 0 and abs(k.rest) < KURS_ANKUNFT_DEG:
         k.done = True
 
 
@@ -292,6 +335,16 @@ def kurs_text(seq: bool, v_mps: float, a_mps2: float, j_mps3: float, dpsi_deg: f
     return "kurs %d " % (1 if seq else 0) + rahmen_text(v_mps, a_mps2, j_mps3, dpsi_deg, alpha_dps2, jw_dps3, unit_mm)
 
 
+def kursabs_text(psi_deg: float, w_max_dps: float) -> str:
+    """Absolutes Kursziel (5 Byte) für /proc/XGORider/vel: "kursabs PSI W", PSI = Wunschkurs im Kurs der Firmware in
+    0,01° (ganzzahlig, auf ±180 gewickelt, + = links), W = w_max in °/s (eine Nachkommastelle, 0 = w_max aus vel_limits).
+    Nur senden, wenn die Firmware CAP_KURSABS meldet und vel_limits mit alpha/Drehruck (9 Felder) geschrieben ist."""
+    psi = _rund(wrap180(psi_deg) * 100.0)
+    psi = -18000 if psi >= 18000 else psi
+    w10 = max(0, min(65535, _rund(abs(w_max_dps) * 10.0)))
+    return "kursabs %d %d.%d" % (psi, w10 // 10, w10 % 10)
+
+
 def strecke_text(v_mps: float, a_mps2: float, j_mps3: float, w_dps: float | None, kappa: float | None,
                  alpha_dps2: float, jw_dps3: float, unit_mm: float, s_m: float) -> str:
     """Strecke mit Halt (15 Byte): "dist V A J W ALPHA JW S" bzw. mit Krümmung "kapdist V A J K ALPHA JW S", S =
@@ -303,11 +356,13 @@ def strecke_text(v_mps: float, a_mps2: float, j_mps3: float, w_dps: float | None
 
 
 def grenzen_text(v_max_mps: float, w_max_dps: float, timeout_ms: int, unit_mm: float,
-                 ki: float, i_max_deg: float, kv: float) -> str:
+                 ki: float, i_max_deg: float, kv: float, alpha_dps2: float | None = None,
+                 jw_dps3: float | None = None) -> str:
     """Text für /proc/XGORider/vel_limits (Firmware-Patch 08-velocity, 14 Byte):
     "V_MAX W_MAX TIMEOUT_MS EINHEIT_UM KI_E4 IMAX_CENTI KV_E4". V_MAX in Firmware-Einheiten, W_MAX in °/s, Einheit
     in µm/s je Firmware-Einheit (für die Vorsteuerung atan(a/g)), ki in ° Soll-Nick je (Einheit Fehler · s), i_max
-    in °, kv in ° Soll-Nick je Einheit gemessenes Tempo.
+    in °, kv in ° Soll-Nick je Einheit gemessenes Tempo. Mit alpha_dps2 (absolutes Kursziel, 18 Byte) zwei Felder mehr:
+    "… ALPHA JW" in °/s² und °/s³ (0 = ohne Grenze); nur an Firmware mit CAP_KURSABS, ältere verwirft 18 Byte ganz.
     """
     v = max(0, min(65535, _fw(v_max_mps, unit_mm)))
     w10 = max(0, min(65535, _rund(w_max_dps * 10.0)))
@@ -315,15 +370,19 @@ def grenzen_text(v_max_mps: float, w_max_dps: float, timeout_ms: int, unit_mm: f
     k = max(1, min(10000, _rund(ki * 10000.0)))
     im = max(1, min(1000, _rund(i_max_deg * 100.0)))
     kvx = max(0, min(2000, _rund(kv * 10000.0)))
-    return f"{v} {w10 // 10}.{w10 % 10} {max(0, min(65535, int(timeout_ms)))} {um} {k} {im} {kvx}"
+    t = f"{v} {w10 // 10}.{w10 % 10} {max(0, min(65535, int(timeout_ms)))} {um} {k} {im} {kvx}"
+    if alpha_dps2 is None:
+        return t
+    return t + " %d %d" % (max(0, min(65535, _rund(abs(alpha_dps2)))), max(0, min(65535, _rund(abs(jw_dps3 or 0.0)))))
 
 
 def zustand(text: str) -> dict | None:
     """Gelesenes /proc/XGORider/vel ("aktiv beschl waechter grenzen v w v_max w_max timeout [kappa caps [kurs
-    erreicht [strecke]]]") -> dict; None bei Fehler. Älterer Treiber (9, 11, 13 Felder): fehlende Felder False/0. caps
-    nimmt nur die Bits, die der Treiber auch schreiben kann (11 Felder: nur Krümmung, 13: ohne Strecke)."""
+    erreicht [strecke [abs_grenzen]]]]") -> dict; None bei Fehler. Älterer Treiber (9, 11, 13, 14 Felder): fehlende
+    Felder False/0. caps nimmt nur die Bits, die der Treiber auch schreiben kann (11 Felder: nur Krümmung, 13: ohne
+    Strecke, 14: ohne absolutes Kursziel). abs_grenzen: zuletzt vel_limits mit alpha/Drehruck (18 Byte) geschrieben."""
     f = text.split()
-    if len(f) not in (9, 11, 13, 14) or f[0] == "Fehler":
+    if len(f) not in (9, 11, 13, 14, 15) or f[0] == "Fehler":
         return None
     try:
         caps = int(f[10]) if len(f) >= 11 else 0
@@ -331,10 +390,12 @@ def zustand(text: str) -> dict | None:
             caps &= CAP_KAPPA                # Treiber ohne Kursrahmen
         elif len(f) == 13:
             caps &= CAP_KAPPA | CAP_KURS     # Treiber ohne Streckenrahmen
+        elif len(f) == 14:
+            caps &= CAP_KAPPA | CAP_KURS | CAP_STRECKE   # Treiber ohne absolutes Kursziel
         return {"aktiv": f[0] == "1", "beschl": f[1] == "1", "waechter": f[2] == "1", "grenzen": f[3] == "1",
                 "v": int(f[4]), "w": float(f[5]), "v_max": int(f[6]), "w_max": float(f[7]), "timeout_ms": int(f[8]),
                 "kappa": len(f) >= 11 and f[9] == "1", "caps": caps,
                 "kurs": len(f) >= 13 and f[11] == "1", "erreicht": len(f) >= 13 and f[12] == "1",
-                "strecke": len(f) == 14 and f[13] == "1"}
+                "strecke": len(f) >= 14 and f[13] == "1", "abs_grenzen": len(f) == 15 and f[14] == "1"}
     except ValueError:
         return None

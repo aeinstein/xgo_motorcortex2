@@ -165,6 +165,19 @@ class ImuSource:
         with self._lock:
             return float(self._buf[3, self._b - 1]) if self._b > self._a and self._y_last is not None else None
 
+    def fw_kurs_deg(self, ziel: float) -> float | None:
+        """Kurs ziel (rad, im Kurs dieser Historie wie latest_yaw, Kursfaktoren eingerechnet) als Kurs der Firmware (°,
+        auf ±180 gewickelt): für das absolute Kursziel (robot.vel_kursabs). Rohwert und Historie der neuesten Probe
+        gehören zusammen; der Abstand wird durch den Kursfaktor der Drehrichtung zurückgerechnet. None ohne Kurs."""
+        with self._lock:
+            if self._b <= self._a or self._y_last is None:
+                return None
+            y, roh = float(self._buf[3, self._b - 1]), self._y_last
+        d = ziel - y
+        d /= self.cfg.yaw_scale_left if d > 0 else self.cfg.yaw_scale_right
+        x = math.degrees(roh + d)
+        return x - 360.0 * math.floor((x + 180.0) / 360.0)
+
     def latest_t(self) -> float | None:
         with self._lock:
             return float(self._buf[0, self._b - 1]) if self._b > self._a else None

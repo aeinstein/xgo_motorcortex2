@@ -196,7 +196,8 @@ static int lift_open(struct inode *inode, struct file *file) { return single_ope
  * er 128 auf 0x30/0x32, das beendet in der Firmware auch den Rahmenweg. vel lesen = Zustand 0x1a frisch vom ESP32
  * (alte Firmware antwortet nicht -> "Fehler <n>"). vel_limits schreiben = 0x1b, lesen = zuletzt geschriebener Text.
  */
-static char vel_limits_text[48];   /* 7 Felder */
+static char vel_limits_text[64];   /* 7 oder 9 Felder */
+static int vel_abs_lim;            /* zuletzt 18-Byte-Grenzen (alpha/Drehruck des absoluten Kursziels) geschrieben */
 static DEFINE_MUTEX(vel_limits_lock);
 
 static int vel_show(struct seq_file *m, void *v) {
@@ -207,7 +208,7 @@ static int vel_show(struct seq_file *m, void *v) {
 		seq_printf(m, "Fehler %d\n", r < 0 ? r : -EIO);
 		return 0;
 	}
-	vel_format_diag(b, txt, sizeof(txt));
+	vel_format_diag(b, READ_ONCE(vel_abs_lim), txt, sizeof(txt));
 	seq_puts(m, txt);
 	return 0;
 }
@@ -220,7 +221,7 @@ static ssize_t vel_write(struct file *file, const char __user *user_buf, size_t 
 	if (count == 0 || count >= sizeof(buffer)) return -EINVAL;
 	if (copy_from_user(buffer, user_buf, count)) return -EFAULT;
 	buffer[count] = '\0';
-	len = vel_encode(buffer, frame);   /* 13, mit Reststrecke 15 Byte */
+	len = vel_encode(buffer, frame);   /* 13, mit Reststrecke 15, absolutes Kursziel 5 Byte */
 	if (len < 0) return -EINVAL;
 	write_serial_data(XGO_VEL, (char *)frame, len);
 	arm_motion_watchdog();
@@ -237,14 +238,15 @@ static ssize_t vel_limits_read(struct file *file, char __user *user_buf, size_t 
 
 static ssize_t vel_limits_write(struct file *file, const char __user *user_buf, size_t count, loff_t *ppos) {
 	char buffer[sizeof(vel_limits_text)];
-	u8 lim[XGO_VEL_LIMITS_LEN];
+	u8 lim[XGO_VEL_LIMITS_MAX];
 	int len;
 	if (count == 0 || count >= sizeof(buffer) - 1) return -EINVAL;
 	if (copy_from_user(buffer, user_buf, count)) return -EFAULT;
 	buffer[count] = '\0';
-	len = vel_limits_encode(buffer, lim);   /* 14 Byte */
+	len = vel_limits_encode(buffer, lim);   /* 14, mit alpha/Drehruck 18 Byte */
 	if (len < 0) return -EINVAL;
 	write_serial_data(XGO_VEL_LIMITS, (char *)lim, len);
+	WRITE_ONCE(vel_abs_lim, len == XGO_VEL_LIMITS_MAX);
 	mutex_lock(&vel_limits_lock);
 	scnprintf(vel_limits_text, sizeof(vel_limits_text), "%s%s", strim(buffer), "\n");
 	mutex_unlock(&vel_limits_lock);

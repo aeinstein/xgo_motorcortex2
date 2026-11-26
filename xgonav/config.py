@@ -45,6 +45,11 @@ class RobotCfg:
     # Bremsvorausschau dreht; w_max des Modus geht solange über vel_limits. Nur mit Fähigkeitsbit. Gefahren 2026-11-25
     # (±90°/±180° auf ±1,4° mit Firmware 81cb3335), seitdem an (Nutzer).
     vel_kurs: bool = True
+    # Absolutes Kursziel (2026-11-26, neben vel_kurs, das Vorrang bekommt, wenn dies aus ist): Drehen auf einen Kurs als
+    # absoluter Wunschkurs im Kurs der Firmware + w_max je Rahmen, ohne Wechselbit und ohne w_max in vel_limits (alpha
+    # und Drehruck gehen dafür mit 18 Byte in vel_limits). Braucht Fähigkeitsbit bit4 (Firmware c7a97230) und den IMU-
+    # Strom (Kurs der Firmware); sonst gilt vel_kurs. Nicht geflasht, nie gefahren.
+    vel_kursabs: bool = False
     # Strecke mit Halt (Punkt 5 Stufe 3): Befehle mit Command.strecke (Reststrecke, vom Aufrufer laufend nachgerechnet)
     # gehen als 15-Byte-Rahmen; die Firmware bremst so, dass er dort steht. Nur mit Fähigkeitsbit. Gefahren 2026-11-25
     # (±3 cm auf 0,5–1 m mit Firmware 33c685ea); nutzt die Handsteuerung (/drive?strecke=) und home am Schluss.

@@ -21,7 +21,8 @@ import time
 from dataclasses import dataclass
 
 from .config import RobotCfg
-from .fahrrahmen import (CAP_KAPPA, CAP_KURS, CAP_STRECKE, W_LEVEL_OFF_DPS, Achse, Bogen, Kurs, Strecke, bogen_schritt,
+from .fahrrahmen import (CAP_KAPPA, CAP_KURS, CAP_KURSABS, CAP_STRECKE, KURSABS_VORAUS_DEG, W_LEVEL_OFF_DPS, Achse,
+                         Bogen, Kurs, Strecke, bogen_schritt, kursabs_schritt, kursabs_text, wrap180,
                          bogen_text, grenzen_text, kurs_empfang, kurs_schritt, kurs_text, rahmen_text, strecke_empfang,
                          strecke_messen, strecke_schritt, strecke_text, zustand)
 
@@ -199,6 +200,12 @@ class Robot:
         self._kurs_ziel = self._kurs_dpsi = 0.0
         self._gen_winkel = 0.0
         self._w_lim: float | None = None        # °/s: w_max in vel_limits während eines Kursziels (Obergrenze des Modus)
+        # Absolutes Kursziel (Fähigkeitsbit bit4 und robot.vel_kursabs, 2026-11-26): drive(kurs=(Restfehler, w, Ziel im
+        # Kurs der Firmware °)) schickt jeden Durchlauf nur das Ziel; ohne Ziel (kein IMU-Strom) gilt das Kursziel Δψ.
+        # Der Nachbau dreht auf das Ziel im Winkel des Generators (_target_kurs[3], beim drive() aus dem Restfehler).
+        self.kursabs_an = False
+        self._kurs_abs = False
+        self._kursabs_off = 0.0
         self._frame = ""                        # Text des aktuellen Rahmens
         self._frame_sent: str | None = None
         self._limits_t = -1e9
@@ -221,8 +228,11 @@ class Robot:
         """v_max/w_max und Wächter an die Firmware (Fahrrahmen); periodisch, ein ESP-Neustart verliert sie."""
         c = self.cfg
         try:
+            # mit absolutem Kursziel 18 Byte (alpha/Drehruck dafür); jedes 0x1b gilt ganz, 14 Byte nähmen sie weg
+            abs_ = self.kursabs_an
             self._write("vel_limits", grenzen_text(self.v_max_mps, self._w_max_jetzt, c.vel_timeout_ms, c.fw_speed_unit_mm,
-                                                  c.vel_ki, c.vel_i_max_deg, c.vel_kv))
+                                                  c.vel_ki, c.vel_i_max_deg, c.vel_kv,
+                                                  c.vel_alpha_dps2 if abs_ else None, c.vel_jerk_w_dps3 if abs_ else None))
         except OSError as e:
             log.error("vel_limits nicht geschrieben: %s", e)
         self._limits_t = now
@@ -248,6 +258,15 @@ class Robot:
             log.warning("robot.vel_strecke an, aber Firmware oder Treiber melden keine Strecke (Fähigkeiten %d)", caps)
         elif self.strecke_an:
             log.info("Strecke mit Halt aktiv (Fähigkeiten %d)", caps)
+        abs_alt = self.kursabs_an
+        self.kursabs_an = bool(self.cfg.vel_kursabs and caps & CAP_KURSABS)
+        if self.cfg.vel_kursabs and not self.kursabs_an:
+            log.warning("robot.vel_kursabs an, aber Firmware oder Treiber melden kein absolutes Kursziel (Fähigkeiten %d)",
+                        caps)
+        elif self.kursabs_an:
+            log.info("Absolutes Kursziel aktiv (Fähigkeiten %d)", caps)
+        if self.kursabs_an != abs_alt and self.vel:
+            self._write_limits(time.monotonic())       # alpha/Drehruck dazu (18 Byte) bzw. wieder weg
 
     # ---- öffentliche API -------------------------------------------------
     def start(self) -> None:
@@ -282,8 +301,9 @@ class Robot:
         kleineres Tempo als 0, so rollt er weich bis an die Grenze der Bahnprüfung). Auf dem Byteweg ohne Wirkung.
         kappa: Bahnkrümmung (1/m, + = links) zum Befehl; mit self.bogen geht sie statt w an die Firmware (w = κ · v_soll
         dort, Grenzen begrenzen v statt w), sonst zählt w. kurs: (Restfehler zum Zielkurs in rad, + = links; höchster
-        normierter Drehwert wie w, z. B. RobotCfg.w_of(Anteil)) beim Drehen auf einen Kurs; mit self.kurs_an dreht die
-        Firmware selbst darauf. strecke: Reststrecke (m) bis zum Halt, vom Aufrufer laufend nachgerechnet; mit
+        normierter Drehwert wie w, z. B. RobotCfg.w_of(Anteil)[, Ziel im Kurs der Firmware in ° oder None]) beim Drehen
+        auf einen Kurs; mit self.kurs_an dreht die Firmware selbst darauf (Δψ), mit self.kursabs_an und Ziel auf den
+        absoluten Kurs. strecke: Reststrecke (m) bis zum Halt, vom Aufrufer laufend nachgerechnet; mit
         self.strecke_an bremst die Firmware so, dass er dort steht (Stufe 3)."""
         # Erst begrenzen, dann Tempo: v/w der Modi sind Faktor x max_v (RobotCfg.v_of), gesendet wird
         # Faktor x tempo x max_v; Verhältnis v/w und damit die geprüfte Bahn bleiben gleich.
@@ -294,9 +314,15 @@ class Robot:
             self._target_k = kappa if self.bogen else None
             self._target_kurs = None
             self._target_strecke = max(0.0, strecke) if strecke is not None and self.strecke_an else None
-            if kurs is not None and self.kurs_an:
+            if kurs is not None and (self.kurs_an or self.kursabs_an):
+                fw = kurs[2] if len(kurs) > 2 else None
+                if fw is None and self.KURSABS_OHNE_IMU and self.kursabs_an:
+                    fw = math.inf                         # Simulator: Ziel im Winkel des Generators
+                err = max(-KURSABS_VORAUS_DEG, min(KURSABS_VORAUS_DEG, math.degrees(kurs[0])))
                 self._target_kurs = (kurs[0], max(0.0, min(self.cfg.max_w, kurs[1])) * self._tempo
-                                     * self.cfg.vyaw_limit_dps)
+                                     * self.cfg.vyaw_limit_dps, fw, self._gen_winkel + err)
+                if fw is None and not self.kurs_an:
+                    self._target_kurs = None              # absolut ohne Kurs der Firmware: Drehratenweg
             self._brake = brake
             self._last_cmd_t = time.monotonic()
 
@@ -571,6 +597,7 @@ class Robot:
     # Ziel weiter (2°: 98° statt 90°, 20°: 105°). Den Rest nach der Ankunft holt der Kurs-Regler der Firmware auf,
     # solange Kursziel-Rahmen kommen (3c9f6fc0).
     KURS_NEU_DEG = 15.0
+    KURSABS_OHNE_IMU = False   # SimRobot: absolutes Kursziel ohne Kurs der Firmware (Winkel des Generators ist der Kurs)
 
     STRECKE_STUFE_M = 0.005   # Reststrecke im Rahmen auf 5 mm gerundet: sonst jeder Durchlauf ein neuer Rahmen
     STRECKE_NEU_M = 0.10      # Rest wächst um mehr: neues Ziel, sonst bleibt der kleinere
@@ -594,8 +621,9 @@ class Robot:
         # w_max über vel_limits: vor dem Kursziel-Rahmen schreiben (hier, _send folgt) und während eines Kursziels nie
         # senken: die Firmware klemmt w sofort auf w_max, ein Sprung ohne alpha (Firmware-Sitzung 2026-11-25). Also beim
         # Start nicht unter die laufende Drehrate, danach nur anheben; zurück auf das volle w_max erst nach dem Kursziel.
+        abs_ = kurs is not None and self.kursabs_an and kurs[2] is not None
         w_lim = None
-        if kurs is not None:
+        if kurs is not None and not abs_:
             w_lim = max(kurs[1], abs(self._gen_w.x))
             if self._kurs.an and self._w_lim is not None:
                 w_lim = max(w_lim, self._w_lim)
@@ -605,6 +633,7 @@ class Robot:
             self._write_limits(time.monotonic())
         if kurs is None and self._kurs.an:
             kurs_empfang(self._kurs, None)            # anderer Rahmen beendet das Kursziel
+            self._kurs_abs = False
         if (kappa is None and kurs is None and target == (0.0, 0.0) and self._bogen.an and abs(g.x) > 1e-6
                 and self._kappa_ziel is not None):
             # Halt nach einer Bogenfahrt: auf demselben Bogen bremsen (w = κ · v_soll) statt w sofort auf 0 und geradeaus
@@ -630,9 +659,26 @@ class Robot:
         elif st.an:
             strecke_empfang(st, None)
             self._strecke_q = None
-        if kurs is not None:
+        if abs_:
+            # absolutes Kursziel: nur das Ziel, jeden Durchlauf; Fahrachse bremst auf 0 (velocity_cmd.h tickCourseAbs)
+            fw = kurs[2] if math.isfinite(kurs[2]) else None
+            if not (self._kurs.an and self._kurs_abs):
+                self._kurs, self._kurs_abs = Kurs(an=True), True
+                # Versatz Kurs der Firmware -> Winkel des Generators einmal beim Start; danach folgt der Nachbau dem
+                # absoluten Ziel (sonst schöbe der nachlaufende Restfehler sein Ziel in jedem Durchlauf weiter)
+                self._kursabs_off = wrap180(fw - kurs[3]) if fw is not None else 0.0
+            ziel = kurs[3] if fw is None else kurs[3] + wrap180(fw - self._kursabs_off - kurs[3])
+            g.schritt(0.0, a, j, dt)
+            self._bogen.an = False
+            kursabs_schritt(self._gen_w, self._kurs, ziel, self._gen_winkel, c.vel_alpha_dps2, c.vel_jerk_w_dps3,
+                            min(kurs[1], self.w_max_dps), self.w_max_dps, dt)
+            self._frame = kursabs_text(kurs[3] if fw is None else fw, min(kurs[1], self.w_max_dps))
+            self._frame_w = self._gen_w.x
+        elif kurs is not None:
             err = math.degrees(kurs[0])
             k = self._kurs
+            if self._kurs_abs:
+                k.an, self._kurs_abs = False, False   # relativ nach absolut: immer neues Ziel (wie die Firmware)
             if not k.an or (k.done and abs(err) > self.KURS_NEU_DEG):
                 self._kurs_seq = not self._kurs_seq
                 self._kurs_dpsi = round(err * 10.0) / 10.0    # wie im Rahmen (0,1°)
@@ -675,6 +721,7 @@ class Robot:
         self._bogen = Bogen()
         self._kappa_ziel = None
         self._kurs = Kurs()
+        self._kurs_abs = False
         self._strecke, self._strecke_q = Strecke(), None
         if resend:
             self._frame_sent = None
@@ -933,11 +980,13 @@ class SimRobot(Robot):
         self.state.mode = 1
         self.settings: dict[str, str] = {}   # Treiber-Einstellungen (settings/<name>), für Tests vorbelegbar
         self.vel = cfg.vel_frame             # wie eine Firmware mit 08-velocity und passendem Treiber
+        self.KURSABS_OHNE_IMU = True         # absolutes Kursziel: Winkel des Generators ist der Kurs der Firmware
 
     def _setup(self) -> None:
         if self.vel:
             self._write_limits(time.monotonic())
-            self._caps_setup(CAP_KAPPA | CAP_KURS | CAP_STRECKE)   # wie die Firmware mit Stufe 3 der Bahnbefehle
+            self._caps_setup(CAP_KAPPA | CAP_KURS | CAP_STRECKE | CAP_KURSABS)   # Firmware mit Bahnbefehlen bis Stufe 3
+                                                                                # und absolutem Kursziel
 
     def _read_text(self, name: str) -> str | None:
         if name.startswith("settings/"):

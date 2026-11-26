@@ -18,29 +18,38 @@
 //   "dist V A J W ALPHA JW S"    Strecke mit Halt (Flag bit3, Stufe 3, 15 Byte): wie oben, dazu Reststrecke S in echten
 //   "kapdist V A J K ALPHA JW S" mm (0..65535); kapdist mit Krümmung (bit1+bit3, Bogen bis zum Haltepunkt). Jeder Rahmen
 //                           setzt den Rest neu: der Pi schickt die Reststrecke nach. Nur mit Fähigkeitsbit bit2
+//   "kursabs PSI W"         Absolutes Kursziel (Flag bit5 allein, 5 Byte, 2026-11-26): PSI = Wunschkurs im Kurs der
+//                           Firmware in 0,01° (ganzzahlig, ±18000, + = links; Firmware nimmt den kürzeren Weg), W = w_max
+//                           in °/s (eine Nachkommastelle, 0 = aus 0x1b). Jeder Rahmen setzt nur das Ziel. Nur mit
+//                           Fähigkeitsbit bit4 und nachdem vel_limits mit 9 Feldern (18 Byte) geschrieben ist
 // /proc/XGORider/vel lesen (Register 0x1a, 12 Byte):
-//   "aktiv beschl waechter grenzen v w v_max w_max timeout_ms kappa caps kurs erreicht strecke",
-//   z. B. "1 0 0 1 250 -12.3 500 90.0 300 1 1 0 0 0"; kappa = Krümmungsbetrieb läuft (bit4), caps = Fähigkeitsbyte
-//   (Byte 1: bit0 Krümmung, bit1 Kursziel, bit2 Strecke, bit3 Strom 0x16; ältere Firmware 0), kurs = Kursziel läuft
-//   (bit5), erreicht = Kursziel erreicht (bit6), strecke = Strecke erreicht (bit7)
-// /proc/XGORider/vel_limits schreiben (Register 0x1b, 14 Byte):
-//   "V_MAX W_MAX TIMEOUT_MS EINHEIT_UM KI_E4 IMAX_CENTI KV_E4": V_MAX in Firmware-Einheiten, W_MAX in °/s (eine
-//   Nachkommastelle), Wächter ms (0 = aus), µm/s je Firmware-Einheit (0 = 1 mm/s), ki × 10000 (° je Einheit·s),
-//   i_max in 0,01° (je 0 = Konsolenwert `!velctl`), kv × 10000 (Soll-Nick je Einheit gemessenes Tempo, 0 = aus).
-//   Ohne diese Grenzen verwirft die Firmware jeden Fahrrahmen; xgonav schreibt sie beim Start und alle 2 s.
+//   "aktiv beschl waechter grenzen v w v_max w_max timeout_ms kappa caps kurs erreicht strecke abs_grenzen",
+//   z. B. "1 0 0 1 250 -12.3 500 90.0 300 1 1 0 0 0 0"; kappa = Krümmungsbetrieb läuft (bit4), caps = Fähigkeitsbyte
+//   (Byte 1: bit0 Krümmung, bit1 Kursziel, bit2 Strecke, bit3 Strom 0x16, bit4 absolutes Kursziel; ältere Firmware 0),
+//   kurs = Kursziel läuft (bit5), erreicht = Kursziel erreicht (bit6), strecke = Strecke erreicht (bit7); abs_grenzen
+//   (nur Treiber, nicht Firmware): zuletzt geschriebene vel_limits hatten alpha/Drehruck (18 Byte)
+// /proc/XGORider/vel_limits schreiben (Register 0x1b, 14 oder 18 Byte):
+//   "V_MAX W_MAX TIMEOUT_MS EINHEIT_UM KI_E4 IMAX_CENTI KV_E4 [ALPHA JW]": V_MAX in Firmware-Einheiten, W_MAX in °/s
+//   (eine Nachkommastelle), Wächter ms (0 = aus), µm/s je Firmware-Einheit (0 = 1 mm/s), ki × 10000 (° je Einheit·s),
+//   i_max in 0,01° (je 0 = Konsolenwert `!velctl`), kv × 10000 (Soll-Nick je Einheit gemessenes Tempo, 0 = aus);
+//   ALPHA °/s², JW °/s³ (absolutes Kursziel, 0 = ohne Grenze; 18 Byte nur an Firmware mit Fähigkeitsbit bit4, ältere
+//   verwirft sie ganz). Ohne diese Grenzen verwirft die Firmware jeden Fahrrahmen; xgonav schreibt sie beim Start und alle 2 s.
 //
 #ifndef XGO_VEL_H
 #define XGO_VEL_H
 
 #define XGO_VEL_FRAME_LEN 13
 #define XGO_VEL_FRAME_MAX 15   /* mit Reststrecke (bit3) */
+#define XGO_VEL_FRAME_ABS_LEN 5   /* absolutes Kursziel (bit5) */
 #define XGO_VEL_LIMITS_LEN 14
+#define XGO_VEL_LIMITS_MAX 18   /* mit alpha/Drehruck des absoluten Kursziels */
 #define XGO_VEL_DIAG_LEN 12
 #define XGO_VEL_FLAG_NO_SPEED 1
 #define XGO_VEL_FLAG_KAPPA 2
 #define XGO_VEL_FLAG_COURSE 4
 #define XGO_VEL_FLAG_COURSE_SEQ 16
 #define XGO_VEL_FLAG_DIST 8
+#define XGO_VEL_FLAG_COURSE_ABS 32
 
 static void vel_put16(uint8_t *d, int v) { d[0] = (uint8_t)(v & 0xff); d[1] = (uint8_t)((v >> 8) & 0xff); }
 static int vel_s16(const uint8_t *d) { return (int16_t)(uint16_t)(d[0] | (d[1] << 8)); }
@@ -84,10 +93,18 @@ static int vel_parse_int(const char *s, int *out) {
 	return 0;
 }
 
-// Text -> Rahmen 0x1a. Länge (13, mit Reststrecke 15) = ok, -1 = ungültig.
+// Text -> Rahmen 0x1a. Länge (13, mit Reststrecke 15, absolutes Kursziel 5) = ok, -1 = ungültig.
 static int vel_encode(const char *text, uint8_t out[XGO_VEL_FRAME_MAX]) {
 	char wtok[16];
-	int v = 0, a, j, w10, alpha, jw, n, accel = 0, kappa = 0, course = 0, seq = 0, dist = 0, s = 0;
+	int v = 0, a, j, w10, alpha, jw, n, accel = 0, kappa = 0, course = 0, seq = 0, dist = 0, s = 0, psi;
+	if (sscanf(text, "kursabs %d %15s%n", &psi, wtok, &n) == 2) {
+		while (text[n] == ' ' || text[n] == '\n' || text[n] == '\t') n++;
+		if (text[n] != '\0' || vel_parse_tenths(wtok, &w10)) return -1;
+		if (!vel_in(psi, -18000, 18000) || !vel_in(w10, 0, 65535)) return -1;
+		out[0] = XGO_VEL_FLAG_COURSE_ABS;
+		vel_put16(out + 1, psi); vel_put16(out + 3, w10);
+		return XGO_VEL_FRAME_ABS_LEN;
+	}
 	if (sscanf(text, "acc %d %d %15s %d %d%n", &a, &j, wtok, &alpha, &jw, &n) == 5) accel = 1;
 	else if (sscanf(text, "kapdist %d %d %d %15s %d %d %d%n", &v, &a, &j, wtok, &alpha, &jw, &s, &n) == 7) kappa = dist = 1;
 	else if (sscanf(text, "dist %d %d %d %15s %d %d %d%n", &v, &a, &j, wtok, &alpha, &jw, &s, &n) == 7) dist = 1;
@@ -112,11 +129,14 @@ static int vel_encode(const char *text, uint8_t out[XGO_VEL_FRAME_MAX]) {
 	return XGO_VEL_FRAME_MAX;
 }
 
-// Text -> Grenzen 0x1b. XGO_VEL_LIMITS_LEN = ok, -1 = ungültig.
-static int vel_limits_encode(const char *text, uint8_t out[XGO_VEL_LIMITS_LEN]) {
+// Text -> Grenzen 0x1b. XGO_VEL_LIMITS_LEN (mit alpha/Drehruck XGO_VEL_LIMITS_MAX) = ok, -1 = ungültig.
+static int vel_limits_encode(const char *text, uint8_t out[XGO_VEL_LIMITS_MAX]) {
 	char wtok[16];
-	int vmax, wmax10, ms, unit, ki, imax, kv, n;
-	if (sscanf(text, "%d %15s %d %d %d %d %d%n", &vmax, wtok, &ms, &unit, &ki, &imax, &kv, &n) != 7) return -1;
+	int vmax, wmax10, ms, unit, ki, imax, kv, n, n7, alpha = 0, jw = 0, lang = 0;
+	if (sscanf(text, "%d %15s %d %d %d %d %d%n", &vmax, wtok, &ms, &unit, &ki, &imax, &kv, &n7) != 7) return -1;
+	n = n7;
+	if (sscanf(text + n7, " %d %d%n", &alpha, &jw, &n) == 2) { n += n7; lang = 1; }
+	else n = n7;
 	while (text[n] == ' ' || text[n] == '\n' || text[n] == '\t') n++;
 	if (text[n] != '\0') return -1;
 	if (vel_parse_tenths(wtok, &wmax10)) return -1;
@@ -124,17 +144,20 @@ static int vel_limits_encode(const char *text, uint8_t out[XGO_VEL_LIMITS_LEN]) 
 	if (!vel_in(unit, 0, 65535) || !vel_in(ki, 0, 10000) || !vel_in(imax, 0, 1000) || !vel_in(kv, 0, 2000)) return -1;
 	vel_put16(out, vmax); vel_put16(out + 2, wmax10); vel_put16(out + 4, ms); vel_put16(out + 6, unit);
 	vel_put16(out + 8, ki); vel_put16(out + 10, imax); vel_put16(out + 12, kv);
-	return XGO_VEL_LIMITS_LEN;
+	if (!lang) return XGO_VEL_LIMITS_LEN;
+	if (!vel_in(alpha, 0, 65535) || !vel_in(jw, 0, 65535)) return -1;
+	vel_put16(out + 14, alpha); vel_put16(out + 16, jw);
+	return XGO_VEL_LIMITS_MAX;
 }
 
-// Zustand 0x1a (12 Byte) -> Text. Zehntel ohne Fließkomma.
-static int vel_format_diag(const uint8_t d[XGO_VEL_DIAG_LEN], char *buf, size_t len) {
+// Zustand 0x1a (12 Byte) -> Text. Zehntel ohne Fließkomma. abs_lim: Treiber hat zuletzt 18-Byte-Grenzen geschrieben.
+static int vel_format_diag(const uint8_t d[XGO_VEL_DIAG_LEN], int abs_lim, char *buf, size_t len) {
 	int w10 = vel_s16(d + 4), wm10 = vel_u16(d + 8);
-	return snprintf(buf, len, "%d %d %d %d %d %s%d.%d %d %d.%d %d %d %d %d %d %d\n",
+	return snprintf(buf, len, "%d %d %d %d %d %s%d.%d %d %d.%d %d %d %d %d %d %d %d\n",
 	                d[0] & 1, (d[0] >> 1) & 1, (d[0] >> 2) & 1, (d[0] >> 3) & 1, vel_s16(d + 2),
 	                w10 < 0 ? "-" : "", (w10 < 0 ? -w10 : w10) / 10, (w10 < 0 ? -w10 : w10) % 10,
 	                vel_u16(d + 6), wm10 / 10, wm10 % 10, vel_u16(d + 10), (d[0] >> 4) & 1, d[1],
-	                (d[0] >> 5) & 1, (d[0] >> 6) & 1, (d[0] >> 7) & 1);
+	                (d[0] >> 5) & 1, (d[0] >> 6) & 1, (d[0] >> 7) & 1, abs_lim ? 1 : 0);
 }
 
 #endif // XGO_VEL_H

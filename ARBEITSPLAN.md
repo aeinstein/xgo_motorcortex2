@@ -43,6 +43,7 @@ beschreiben, und hält sie mit 260 Hz. Keine Wegpunktlisten in der Firmware.
 | 1 | **Krümmungsbetrieb** | Flag bit1 in 0x1a: Feld w = κ in 0,001 1/m (i16, ±32 1/m); im Takt w_soll = κ · v_soll · 180/π (aus dem **Sollwert**, nicht v_ist: Kurs = ∫κ·v_soll dt, rauschfrei, am Pi nachrechenbar; keine v_min-Schwelle, w → 0 von selbst). Bahntreue unter Grenzen: nicht w kappen, sondern v begrenzen: \|v\| ≤ w_max/\|κ\|, a ≤ alpha/\|κ\|, Ruck ≤ Drehruck/\|κ\|. Neues κ während der Fahrt mit \|dκ/dt\| ≤ alpha/\|v\| nachführen (Klothoide), sonst springt w um Δκ·v. Rückwärts gleiches κ (derselbe Kreis rückwärts). Positionshalten beim Drehen (07-balance) greift nur bei v = 0, verträglich. Ohne bit1 wie heute | Text um κ erweitern, `zustand` liest Flag und Fähigkeitsbyte | `Robot.drive(v, w)` bleibt; neu `drive_bogen(v, kappa)`. `PathFollower` lenkt mit κ (Pure Pursuit κ = 2·sin α / L statt `kp_turn·err`); `_arc_check` prüft und bremst bei festem κ (nur v sinkt, Bahn bleibt). `Achse.schritt` + Kopplung, v/a/Ruck-Begrenzung durch κ und κ-Nachführung in Python nachgebaut, gegen Prüfvektoren | sinkt leicht (kein Lenkregler je Schritt, eine Multiplikation im 50-Hz-Durchlauf) | Host-Test: Bahn aus Generator-Simulation liegt bei Anfahren/Bremsen auf dem Kreis (Abweichung < 1 cm auf 1 m); Simulator `--dyn` explore/home; am Rider Kreisbogen v 0,2, κ 2 1/m, Endpunkt gegen Karte |
 | 2 | **Kursziel** | Flag bit2: Feld w = Δψ in 0,1°, relativ zum Generatorwinkel bei Empfang. Der Generator integriert seinen Winkel ∫w_soll dt selbst (= Änderung des Kursziels): Rest → w_ziel = sign · min(w_max, √(2·alpha·\|Rest\|)) → vorhandenes `approach` der Drehachse; angekommen bei \|Rest\| < 0,5° und w = 0 (Flag), danach hält der Kurs-PID | wie 1 | `dreh_auf_kurs`/`align`/`POST /turn` schreiben einmal Δψ statt 24 Hz `dreh_w`; Ankunft aus dem Flag statt aus dem Kursfehler | sinkt (keine Kursregelung je Schritt) | Host-Test Überschwingen < 1°; am Rider 90°/180° links/rechts, Endkurs gegen IMU-Kurs ±2° |
 | 3 | **Strecke mit Halt** | Flag bit3, Rahmen 15 Byte mit Reststrecke s (mm, u16): Rest = s − Radstrecke (Encoder) seit Empfang, v_ziel = sign · min(v, √(2·a·Rest)), danach v = 0 und Positionshalten. Neue Rahmen setzen s neu (Pi schickt die Reststrecke nach) | wie 1 | Wegfolger am Wegende (`end_v`) und Bahnprüfung schicken s = min(Weg bis Ziel, `clear − Rest`) statt das Tempo zu senken; Kriechen mit `slow_free` entfällt | sinkt | Wand wie Punkt 2: Halt 20 cm ±1 cm aus v 0,2/0,3; Host-Test Halt auf ±5 mm |
+| 2b | **Absolutes Kursziel** (neben Stufe 2, Nutzer 2026-11-26: Rahmen „etwas overengineered“, Stufe 2 bleibt Standard) | Flag bit5 allein, 5 Byte: Wunschkurs ψ_ziel im Kurs der Firmware + w_max; Rest je Takt = wrap180(ψ_ziel − ψ_ref), ψ_ref = Kursziel des Kurs-PID; jeder Rahmen setzt nur das Ziel; alpha/Drehruck aus 0x1b (18 Byte) | `kursabs PSI W`, Grenzen mit 9 Feldern, Zustand 15 Felder | `robot.vel_kursabs` (aus): Ziel aus dem IMU-Kurs zur Bildzeit, höchstens 170° voraus; Wechselbit, Neuzielen und w_max über `vel_limits` entfallen | sinkt (Logik weg, ein Rahmen je Durchlauf) | Host-Tests + 16 `kursabs_*`-Vektoren; am Rider wie Stufe 2 (±90°/±180°), dazu explore gegen den Stand mit Stufe 2 |
 | 4 | **Rückmeldung** | Eigener Stromtyp **0x16** (0x14 bleibt unverändert), nur bei aktivem Rahmenweg, gleiche Rate und gleiches t_us wie die IMU-Probe, 12 Byte: u16 seq, u32 t_us, i16 v_soll, i16 w_soll (0,1 °/s), u8 Flags (Kurs erreicht, Strecke erreicht, Wächter, Sättigung = Soll-Nick an der Grenze), u8 reserviert; ~2 kB/s bei 100 Hz | Stromtyp 0x16 lesen, Felder in `/proc/XGORider/vel` | `Achse`-Nachbau nur noch für Simulator; Bahnprüfung und Anzeige nehmen den echten Sollwert; Sättigung senkt `kurve_a_mps2`/Tempo für den Rest der Fahrt | sinkt | Vergleich Nachbau ↔ Strom an einer Fahrt |
 
 Stand Stufe 1 (2026-11-25): Firmware 6194db7 geflasht. Treiber `kap V A J K ALPHA JW` und Zustand mit `kappa caps`
@@ -68,6 +69,16 @@ Vektoren (Rest und Nachlauf auf 0,01 mm); `Robot.drive(strecke=Rest m)` schickt 
 v_meas = Sollwert (ohne Nachlauf); Handsteuerung `/drive?strecke=M` bzw. MCP `fahren` mit `strecke`, Reststrecke aus
 `odom_m` ab dem ersten Regelschritt. Wegfolger und Bahnprüfung schicken noch keine Strecke. Außerdem: xgonav fragt alle
 5 s nach, wenn der Fahrrahmen beim Start fehlte (Flashen), und schaltet dann um.
+
+Stand Stufe 2b (2026-11-26): Firmware c7a97230 gebaut, alle Host-Tests grün, **nicht geflasht** (alte 28 Vektoren
+bytegleich). Treiber `kursabs PSI W` (5 Byte), `vel_limits` mit 9 Feldern (18 Byte), Zustand 15 Felder (`abs_grenzen`:
+Treiber hat zuletzt 18 Byte geschrieben); driver-test `--vel` und `--faults` grün auf kimmy; am Rider nicht gebaut.
+xgonav: `fahrrahmen.kursabs_schritt` gleich allen 16 `kursabs_*`-Vektoren (Ankunft am Ende in float bis 6 Takte
+später: Rest-w ~4e-5 °/s); `Robot` mit `vel_kursabs` und Fähigkeitsbit bit4: vel_limits mit alpha/Drehruck, je
+Durchlauf `kursabs`, Nachbau folgt dem festen Ziel (Versatz Firmware-Kurs → Generatorwinkel einmal beim Start); ohne
+IMU-Strom das Kursziel Δψ. `App._kurs_fw`: Ziel = IMU-Kurs zur Bildzeit des Regelschritts + Restfehler (±170°), über
+`ImuSource.fw_kurs_deg` (Kursfaktoren zurückgerechnet) in den Rohkurs. Simulator home 60 s `--wheels` mit/ohne:
+1–1,4 cm / ±1–1,4° gegen 1,8 cm / 0,1° (Hysterese 1° der Firmware). Nicht gefahren.
 
 ## Strecke mit Halt und home gefahren (2026-11-25)
 
@@ -154,6 +165,25 @@ Byte-Vertrag: Kopfkommentar in `firmware/src/velocity_cmd.h` und dieser Abschnit
 - Prüfvektoren: Die Firmware-Host-Tests schreiben bei `XGO_VECTORS=1` (Lauf auf kimmy) für `approach` + Kopplung
   Tabellen (Eingaben, Sollwerte je Takt) nach `firmware/tests/vectors/*.csv`, die CSV werden committet;
   `tests/test_fahrrahmen.py` rechnet sie mit `Achse` nach (ESP32 float, Toleranz 1e-4).
+
+- **Absolutes Kursziel (Ergänzung 2026-11-26, Stufe 2b, Firmware c7a97230, nicht geflasht):** 0x1a schreiben 5 Byte:
+  0 u8 Flags = 0x20 (genau so, jedes weitere Bit → verworfen) | 1 i16 ψ_ziel in 0,01° (mod 360 genommen, der Pi schickt
+  ±180) | 3 u16 w_max in 0,1 °/s (0 = aus 0x1b; wirksam min(Rahmen, 0x1b)). bit5 mit 13/15 Byte → verworfen.
+  0x1b schreiben 14 **oder** 18 Byte: 14 u16 alpha °/s², 16 u16 Drehruck °/s³ (nur fürs absolute Kursziel, 0 = ohne
+  Grenze). Jedes 0x1b gilt ganz: nach 14 Byte fehlen alpha/Drehruck, dann wird bit5 verworfen. Ältere Firmware verwirft
+  18 Byte ganz (dann gar keine Grenzen): erst Fähigkeit lesen. 0x1a lesen: Fähigkeiten bit4 (kCaps 0x17); Flags bit5
+  „Kurs läuft“, bit6 „erreicht“ wie beim Kursziel (nicht unterscheidbar).
+- Firmware je Takt (4 ms): ψ_ref = Kursziel des Kurs-PID vor dem Takt (läuft mit w_soll·dt; zu Beginn der Ist-Kurs, beide
+  abgewickelt, derselbe Float wie im Strom), Rest = wrap180(ψ_ziel − ψ_ref) ∈ [−180, 180) (kürzerer Weg, genau
+  gegenüber rechts herum). Drehachse = Generator des Kursziels (`turnToRest`); geändertes Ziel oder w_max fließend aus
+  dem Zustand (Umkehr mit alpha/Ruck, kleineres w_max mit alpha abgebaut; nur das w_max aus 0x1b kappt sofort).
+  Fahrachse bremst auf 0 mit a/Ruck des letzten Rahmens mit Fahrachse (sonst 500 mm/s² ohne Ruck). Erreicht bei w = 0,
+  a = 0 und |Rest| < 0,5° (auch vor dem Takt geprüft), danach Halte-Integral; wieder offen erst bei |Rest| > 1,0°
+  (kCourseReopen: Wackeln ±0,5° bewegt nichts, eine Korrektur muss > 1° sein). Wächter wie beim Kursziel. Relativer
+  Kursrahmen nach absolutem: immer neues Δψ; absoluter nach relativem: Neustart; jeder andere Rahmen, Byte, Stopp,
+  Aktion beendet ihn. Mehr als 180°: Pi führt das Ziel nach, höchstens 170° vor dem eigenen Kurs.
+- Prüfvektoren `kursabs_*.csv` (16): Spalten t_us, rx, frame_hex, v_max, w_max, timeout_ms, unit_mm, abs_alpha,
+  abs_jerk, psi_ref (an tick übergeben; nach jedem Takt ref += w·0,004), v, w, a, timed_out, rest, done, course_on.
 
 ### Zusammenarbeit
 

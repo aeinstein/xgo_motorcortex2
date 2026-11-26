@@ -20,6 +20,7 @@ from .camera import FrameSource, OpenCVSource, make_source
 from .config import Config
 from .detector import Detection, DetectorWorker
 from .egomotion import EgoMotion, EgoResult, warp_box
+from .fahrrahmen import KURSABS_VORAUS_DEG
 from .floornet import FloorNet
 from .freespace import FreeSpace, FreeSpaceEstimator, FreeSpaceWorker, column_runs
 from .gridmap import GridMap, GridWorker
@@ -201,6 +202,7 @@ class App:
             if self.gridmap is not None else None
         self._plan_seq = 0
         self._yaw_at_ctrl = 0.0
+        self._kurs_imu_ref: float | None = None    # IMU-Kurs (rad) zur Bildzeit des letzten Regelschritts: Bezug von self.yaw
         mode = cfg.behavior.mode
         try:
             self._check_mode(mode)
@@ -956,8 +958,21 @@ class App:
     def _drive(self, cmd: Command) -> None:
         """Fahrbefehl an den Roboter (alle Modi gleich, auch die Handsteuerung: Faktor x tempo x max_v)."""
         bogen_w(cmd, self.robot, self.cfg.robot)
-        self.robot.drive(cmd.v, cmd.w, brake=bool(cmd.extra.get("bremsen")), kappa=cmd.kappa,
-                         kurs=cmd.kurs if abs(cmd.v) < 1e-6 else None, strecke=cmd.strecke)
+        kurs = cmd.kurs if abs(cmd.v) < 1e-6 else None
+        if kurs is not None and self.robot.kursabs_an:
+            kurs = (kurs[0], kurs[1], self._kurs_fw(kurs[0]))
+        self.robot.drive(cmd.v, cmd.w, brake=bool(cmd.extra.get("bremsen")), kappa=cmd.kappa, kurs=kurs,
+                         strecke=cmd.strecke)
+
+    def _kurs_fw(self, err: float) -> float | None:
+        """Absolutes Kursziel (robot.vel_kursabs): Restfehler err (rad, gegen self.yaw) als Kurs der Firmware (°). self.yaw
+        gehört zum IMU-Kurs des letzten Regelschritts (_kurs_imu_ref); Korrekturen der Pose ändern nur den Namen des
+        Kurses, nicht die Drehung, die noch fehlt. Höchstens KURSABS_VORAUS_DEG voraus (größere Drehungen stückweise,
+        das Ziel wandert mit). None ohne IMU-Strom: Robot nimmt dann das Kursziel Δψ."""
+        if self.imu is None or self._kurs_imu_ref is None:
+            return None
+        g = math.radians(KURSABS_VORAUS_DEG)
+        return self.imu.fw_kurs_deg(self._kurs_imu_ref + max(-g, min(g, err)))
 
     def _manual_cmd(self, w: World | None = None) -> Command:
         """Handsteuerung: nur Sturz-Erkennung, kein Bodenmodell/keine Bahnprüfung. Geprüfter Sollwert
@@ -1349,6 +1364,7 @@ class App:
         jumps = self.imu.yaw_jumps if self.imu is not None else 0
         st = self.odomf.step(t, yaw_imu, jumps, ws, dyaw_vis, ds_cmd, self.robot.state.balancing)
         self.yaw += st.dyaw
+        self._kurs_imu_ref = yaw_imu
         self.yaw_src = st.kurs_src
         self.odom_src = "befehl" if st.ds_src == "befehl" else "räder"
         self.odom_m += abs(st.ds)

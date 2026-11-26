@@ -8,7 +8,7 @@ const char *g_serial_path;
 
 /* Text -> Bytes der Fahrrahmen prüfen, ohne Emulator */
 static int vel_case(const char *text, int want_ok, const uint8_t *want, int lim) {
-	uint8_t out[16] = {0};   /* Rahmen 13, Grenzen 14 Byte */
+	uint8_t out[20] = {0};   /* Rahmen 13, Grenzen 14/18 Byte */
 	int r = lim ? vel_limits_encode(text, out) : vel_encode(text, out);
 	int n = lim ? lim : XGO_VEL_FRAME_LEN;   /* lim = erwartete Länge der Grenzen */
 	int ok = want_ok ? (r == n && memcmp(out, want, n) == 0) : r < 0;
@@ -72,24 +72,48 @@ static int test_vel(void) {
 		bad += vel_case("500 90 300 3900 300 1001 250", 0, NULL, 14);
 		bad += vel_case("500 90 300 3900 300 600 2001", 0, NULL, 14);
 		bad += vel_case("500 90 300 3900 300 600 250 1", 0, NULL, 14);
+		/* 18 Byte mit alpha/Drehruck des absoluten Kursziels */
+		const uint8_t l2[] = {0xf4, 0x01, 0x89, 0x03, 0x2c, 0x01, 0x3c, 0x0f, 0x2c, 0x01, 0x58, 0x02, 0xfa, 0x00,
+		                      0x68, 0x01, 0x08, 0x07};   /* ... 360 1800 */
+		bad += vel_case("500 90.5 300 3900 300 600 250 360 1800", 1, l2, 18);
+		bad += vel_case("500 90.5 300 3900 300 600 250 360 1800\n", 1, l2, 18);
+		bad += vel_case("500 90.5 300 3900 300 600 250 360 70000", 0, NULL, 18);
+		bad += vel_case("500 90.5 300 3900 300 600 250 360 1800 5", 0, NULL, 18);
+	}
+	{   /* absolutes Kursziel, 5 Byte */
+		uint8_t out[20] = {0};
+		const uint8_t a1[] = {0x20, 0x28, 0x23, 0xc2, 0x01};   /* kursabs 9000 45.0 */
+		const uint8_t a2[] = {0x20, 0xb0, 0xb9, 0x00, 0x00};   /* kursabs -18000 0 */
+		int r = vel_encode("kursabs 9000 45.0", out);
+		if (r != 5 || memcmp(out, a1, 5)) { printf("VEL FEHLER kursabs 9000 (r %d)\n", r); bad++; }
+		r = vel_encode("kursabs -18000 0\n", out);
+		if (r != 5 || memcmp(out, a2, 5)) { printf("VEL FEHLER kursabs -18000 (r %d)\n", r); bad++; }
+		if (vel_encode("kursabs 18001 45.0", out) >= 0) { printf("VEL FEHLER kursabs 18001\n"); bad++; }
+		if (vel_encode("kursabs 9000 -5.0", out) >= 0) { printf("VEL FEHLER kursabs w<0\n"); bad++; }
+		if (vel_encode("kursabs 90.5 45.0", out) >= 0) { printf("VEL FEHLER kursabs Komma\n"); bad++; }
+		if (vel_encode("kursabs 9000 45.0 1", out) >= 0) { printf("VEL FEHLER kursabs 3 Felder\n"); bad++; }
+		const uint8_t z[] = {0x69, 0x17, 0, 0, 0, 0, 0x58, 0x02, 0xe8, 0x03, 0x2c, 0x01};
+		char t[80];
+		vel_format_diag(z, 1, t, sizeof(t));
+		if (strcmp(t, "1 0 0 1 0 0.0 600 100.0 300 0 23 1 1 0 1\n")) { printf("VEL FEHLER Zustand '%s'\n", t); bad++; }
 	}
 	{
 		const uint8_t d[] = {9, 0, 0xfa, 0x00, 0x85, 0xff, 0xf4, 0x01, 0x84, 0x03, 0x2c, 0x01};
 		const uint8_t e[] = {1, 0, 0, 0, 0xfb, 0xff, 0, 0, 0, 0, 0, 0};
 		char t[80];
-		vel_format_diag(d, t, sizeof(t));
-		if (strcmp(t, "1 0 0 1 250 -12.3 500 90.0 300 0 0 0 0 0\n")) { printf("VEL FEHLER Zustand '%s'\n", t); bad++; }
-		vel_format_diag(e, t, sizeof(t));
-		if (strcmp(t, "1 0 0 0 0 -0.5 0 0.0 0 0 0 0 0 0\n")) { printf("VEL FEHLER Zustand '%s'\n", t); bad++; }
+		vel_format_diag(d, 0, t, sizeof(t));
+		if (strcmp(t, "1 0 0 1 250 -12.3 500 90.0 300 0 0 0 0 0 0\n")) { printf("VEL FEHLER Zustand '%s'\n", t); bad++; }
+		vel_format_diag(e, 0, t, sizeof(t));
+		if (strcmp(t, "1 0 0 0 0 -0.5 0 0.0 0 0 0 0 0 0 0\n")) { printf("VEL FEHLER Zustand '%s'\n", t); bad++; }
 		const uint8_t st[] = {0x89, 7, 0, 0, 0, 0, 0x58, 0x02, 0xb8, 0x0b, 0x2c, 0x01};
-		vel_format_diag(st, t, sizeof(t));
-		if (strcmp(t, "1 0 0 1 0 0.0 600 300.0 300 0 7 0 0 1\n")) { printf("VEL FEHLER Zustand '%s'\n", t); bad++; }
+		vel_format_diag(st, 0, t, sizeof(t));
+		if (strcmp(t, "1 0 0 1 0 0.0 600 300.0 300 0 7 0 0 1 0\n")) { printf("VEL FEHLER Zustand '%s'\n", t); bad++; }
 		const uint8_t c[] = {0x69, 3, 0, 0, 0, 0, 0x58, 0x02, 0xe8, 0x03, 0x2c, 0x01};
-		vel_format_diag(c, t, sizeof(t));
-		if (strcmp(t, "1 0 0 1 0 0.0 600 100.0 300 0 3 1 1 0\n")) { printf("VEL FEHLER Zustand '%s'\n", t); bad++; }
+		vel_format_diag(c, 0, t, sizeof(t));
+		if (strcmp(t, "1 0 0 1 0 0.0 600 100.0 300 0 3 1 1 0 0\n")) { printf("VEL FEHLER Zustand '%s'\n", t); bad++; }
 		const uint8_t k[] = {0x19, 1, 0x2e, 0x00, 0x2e, 0x00, 0x58, 0x02, 0xb8, 0x0b, 0x2c, 0x01};
-		vel_format_diag(k, t, sizeof(t));
-		if (strcmp(t, "1 0 0 1 46 4.6 600 300.0 300 1 1 0 0 0\n")) { printf("VEL FEHLER Zustand '%s'\n", t); bad++; }
+		vel_format_diag(k, 0, t, sizeof(t));
+		if (strcmp(t, "1 0 0 1 46 4.6 600 300.0 300 1 1 0 0 0 0\n")) { printf("VEL FEHLER Zustand '%s'\n", t); bad++; }
 	}
 	printf("VELPARSE %s\n", bad ? "FEHLER" : "ok");
 	return bad;
@@ -97,11 +121,11 @@ static int test_vel(void) {
 
 /* mit --vel im Emulator: Grenzen + Rahmen wie /proc schicken, Zustand zurücklesen */
 static void vel_roundtrip(void) {
-	static const char *lim = "450 72.5 300 3900 300 600 250";   /* 14 Byte */
+	static const char *lim = "450 72.5 300 3900 300 600 250 360 1800";   /* 18 Byte (absolutes Kursziel) */
 	static const char *frames[] = {"250 500 2500 12.3 120 600", "acc -300 2000 -5 0 0", "kap 46 128 641 2000 360 1800",
 	                               "kurs 1 0 128 641 90.0 360 1800", "dist 46 128 641 0.0 360 1800 1000",
-	                               "-120 800 4000 -30.0 90 400"};
-	uint8_t b[16];   /* Rahmen 13, Grenzen bis 14 Byte */
+	                               "kursabs 9000 45.0", "-120 800 4000 -30.0 90 400"};
+	uint8_t b[20];   /* Rahmen bis 15, Grenzen bis 18 Byte */
 	char hex[64], t[80];
 	int ln = vel_limits_encode(lim, b);
 	write_serial_data(XGO_VEL_LIMITS, (char *)b, ln);
@@ -114,11 +138,11 @@ static void vel_roundtrip(void) {
 		printf("VELSENT %s\n", hex);
 		msleep(20);
 	}
-	printf("VELWANT 1 0 0 1 -120 -30.0 450 72.5 300 0 7 0 0 0\n");
+	printf("VELWANT 1 0 0 1 -120 -30.0 450 72.5 300 0 23 0 0 0 0\n");
 	for (int tries = 0; tries < 5; tries++) {
 		uint8_t d[XGO_VEL_DIAG_LEN];
 		if (read_addr_sync(XGO_VEL, sizeof(d), d, 100) >= (int)sizeof(d)) {
-			vel_format_diag(d, t, sizeof(t));
+			vel_format_diag(d, 0, t, sizeof(t));
 			t[strcspn(t, "\n")] = 0;
 			printf("VELDIAG %s\n", t);
 			return;

@@ -36,7 +36,7 @@ FAULTS = "--faults" in args
 IMU65 = "--imu65" in args
 COMBO = "--combo" in args
 TUNNEL = "--tunnel" in args
-VEL_CAPS = 7                # Fähigkeitsbyte (0x1a lesen, Byte 1): bit0 Krümmungsbetrieb, bit1 Kursziel, bit2 Strecke
+VEL_CAPS = 0x17             # Fähigkeitsbyte (0x1a lesen, Byte 1): bit0 Krümmung, bit1 Kursziel, bit2 Strecke, bit4 absolutes Kursziel
 VEL = "--vel" in args   # Firmware-Patch 08-velocity: Fahrrahmen 0x1a (13 Byte) / Grenzen 0x1b (14 Byte), 0x1a lesen = Zustand
 _st = [a for a in args if a.startswith("--stream")]
 STREAM = bool(_st) and "--stream-off" not in args
@@ -80,6 +80,8 @@ def payload(addr, n, t):
             return bytes([8 if vel_limits else 0, VEL_CAPS]) + bytes(10)
         fl = vel_frames[-1]
         lim = vel_limits[-1] if vel_limits else bytes(6)
+        if len(fl) == 5:                    # absolutes Kursziel: v = w = 0 (ohne Generator), Kurs läuft
+            return bytes([1 | (8 if vel_limits else 0) | 32, VEL_CAPS]) + bytes(4) + lim[0:6]
         flags = 1 | (2 if fl[0] & 1 else 0) | (8 if vel_limits else 0) | (16 if fl[0] & 2 else 0) | (32 if fl[0] & 4 else 0)
         return bytes([flags, VEL_CAPS]) + fl[1:3] + fl[7:9] + lim[0:6]
     if addr == 0x62 and n == 12:
@@ -199,7 +201,7 @@ def serve():
                 if VEL and addr in (0x1a, 0x1b):
                     data = fr[5:ln - 3]
                     ok = fr[ln - 3] == 255 - ((ln + mode + addr + sum(data)) % 256)
-                    want = (13, 15) if addr == 0x1a else (14,)   # 0x1a mit Reststrecke 15, 0x1b: 14 Byte
+                    want = (13, 15, 5) if addr == 0x1a else (14, 18)   # 0x1a: Reststrecke 15, absolut 5; 0x1b: 18 mit alpha
                     if not ok or len(data) not in want:
                         stats["vel_bad"] = stats.get("vel_bad", 0) + 1
                     else:
