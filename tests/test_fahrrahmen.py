@@ -239,6 +239,8 @@ def test_generator_wie_firmware():
 def _cfg(**kw):
     c = Config.neutral().robot
     assert c.vel_frame                                                     # Default: wie am Rider mit 08-velocity
+    # Die Rahmen-Tests rechnen mit der S-Kurve (Ruck 2,5 / 10 wie bis 2026-11-26); ohne Ruck: test_ohne_ruck_*
+    c.vel_jerk_mps3, c.vel_brake_jerk_mps3 = 2.5, 10.0
     for k, v in kw.items():
         setattr(c, k, v)
     return c
@@ -686,3 +688,17 @@ def test_handsteuerung_mit_strecke():
     assert m.strecke_odo0 is None
     m.set(0.2, 0.0, 10.3)
     assert m.strecke_soll is None
+
+
+def test_ohne_ruck_rampe_nur_mit_amax():
+    """Default seit 2026-11-26: Ruck 0 = ohne Ruckgrenze, der Rahmen trägt nur Soll-Tempo und a_max; der Nachbau
+    rampt linear mit a_max (wie velocity_cmd.h approach mit jmax 0)."""
+    from xgonav.fahrrahmen import Achse
+    c = Config.neutral().robot
+    assert c.vel_jerk_mps3 == 0.0 and c.vel_brake_jerk_mps3 == 0.0
+    ax = Achse()
+    ax.schritt(0.5, 2.0, 0.0, 0.01)
+    assert ax.a == pytest.approx(2.0) and ax.x == pytest.approx(0.02)      # sofort volle Beschleunigung
+    for _ in range(30):
+        ax.schritt(0.5, 2.0, 0.0, 0.01)
+    assert ax.x == pytest.approx(0.5) and ax.a == 0.0                     # rastet am Ziel ein
