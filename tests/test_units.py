@@ -2303,6 +2303,33 @@ def test_pathfollower_align_turn_limit():
     assert abs(f.align(math.radians(170), "x").w) > 0.25
 
 
+def test_pathfollower_tempo_ohne_winkelfehler():
+    """Tempo hängt nicht am Winkelfehler (seit 2026-11-26): 40° neben dem Weg so schnell wie geradeaus, nur der
+    Lenkbefehl ändert sich; die feste Bahn (Manual.bahn) fährt hin, wendet und kommt zurück."""
+    from xgonav.behaviors import Manual, PathFollower, World
+    cfg = Config.neutral()
+    cfg.home.kurve_a_mps2 = 0.0
+    cfg.home.free_slow = False
+    f = PathFollower(cfg.behavior, cfg.robot, cfg.home)
+    f.set_path([(0.0, 0.0), (3.0, 0.0)])
+    welt = lambda pose: World(t=0.0, dt=0.05, W=640, H=480, hfov=1.6, ego=None, tracks=[], free=None,
+                              balancing=True, yaw=0.0, cmd_v=0.0, pose=pose)
+    gerade = f.drive(welt((0.0, 0.0, 0.0)), "x", slow_end=False)
+    schraeg = f.drive(welt((0.0, 0.0, math.radians(40))), "x", slow_end=False)
+    assert gerade.v == pytest.approx(schraeg.v) == pytest.approx(cfg.robot.v_of(cfg.home.v))
+    assert schraeg.w < 0.0 == gerade.w
+    m = Manual(cfg.behavior, cfg.robot)
+    m.bahn([(0.0, 0.0), (1.0, 0.0)], True, cfg.home)
+    assert m.checked and m.step(welt((0.0, 0.0, 0.0)), now=0.0).v > 0
+    assert m.step(welt((0.95, 0.0, 0.0)), now=1.0).v == 0.0 and m.bahn_info["phase"] == "halt"
+    m.step(welt((0.95, 0.0, 0.0)), now=2.5)
+    assert m.step(welt((0.95, 0.0, 0.0)), now=2.6).kurs is not None    # wendet auf der Stelle
+    m.step(welt((0.95, 0.0, math.pi)), now=3.0)
+    assert m.bahn_info["phase"] == "zurueck" and m.step(welt((0.95, 0.0, math.pi)), now=3.1).v > 0
+    m.step(welt((0.02, 0.0, math.pi)), now=9.0)
+    assert m.bahn_info["fertig"] and m.bahn_info["grund"] == "angekommen" and not m.checked
+
+
 def test_frontier_keeps_goal_instead_of_switching():
     """Ein bestehendes Ziel bleibt, auch wenn ein anderes gerade besser ist (sonst pendelt er)."""
     from xgonav.frontier import next_goal

@@ -659,6 +659,34 @@ class App:
         timeout = (10.0 + abs(deg) / 20.0) / max(self.robot.tempo, 0.05)
         b.turn(deg, w, tol_deg, time.monotonic(), self.yaw, timeout)
 
+    def set_bahn(self, laenge_m: float = 3.0, winkel_deg: float = 20.0, welle_m: float = 1.5,
+                 zurueck: bool = True) -> list[tuple[float, float]]:
+        """Feste Testbahn (Modus manual, POST /bahn): Schlangenlinie laenge_m geradeaus ab der Pose,
+        y = A · sin(2π x / welle_m) mit höchstens winkel_deg gegen die Fahrtrichtung (0 = gerade), Punkte alle 5 cm;
+        mit zurueck am Ende 180° wenden und zurück. Fortschritt in /status bahn. Rückgabe: Punkte (Raumkarte)."""
+        b = self.behavior
+        if b.name != "manual":
+            raise ModeNotAllowed("Bahn nur im Modus manual")
+        if not (0.2 <= laenge_m <= 6.0 and 0.0 <= winkel_deg <= 45.0 and 0.3 <= welle_m <= 6.0):
+            raise ValueError("Grenzen: laenge 0.2..6, winkel 0..45, welle 0.3..6")
+        if not self.robot.state.balancing:
+            raise ModeNotAllowed("Bahn nur balancierend")
+        if not self.pipeline_on or self.gridmap is None or not self.gridmap.pose_ok:
+            raise ModeNotAllowed("Bahn braucht Bildverarbeitung und Raumkarte mit bekannter Pose")
+        x0, y0, th = self.gridmap.pose()
+        amp = math.tan(math.radians(winkel_deg)) * welle_m / (2.0 * math.pi)
+        n = max(2, int(round(laenge_m / 0.05)))
+        c, s = math.cos(th), math.sin(th)
+        pts = []
+        for i in range(n + 1):
+            u = laenge_m * i / n
+            q = amp * math.sin(2.0 * math.pi * u / welle_m)
+            pts.append((x0 + u * c - q * s, y0 + u * s + q * c))
+        b.bahn(pts, zurueck, self.cfg.home)
+        log.info("Bahn: %.1f m, %.0f°, Welle %.1f m (Ausschlag %.2f m)%s", laenge_m, winkel_deg, welle_m, amp,
+                 ", zurück" if zurueck else "")
+        return pts
+
     # Aktionen der Firmware, die vorwärts/rückwärts fahren (5 dreht nur auf der Stelle)
     FW_ACTION_DRIVES = {3, 4}
 
@@ -978,10 +1006,12 @@ class App:
         """Handsteuerung: nur Sturz-Erkennung, kein Bodenmodell/keine Bahnprüfung. Geprüfter Sollwert
         (Manual.checked): safety() und Bahnprüfung wie in den anderen Modi; ohne Weltdaten (Bildverarbeitung
         aus) fährt er dann nicht, Drehen bleibt."""
-        cmd = self.behavior.step(None, yaw=self.yaw)
+        cmd = self.behavior.step(w, yaw=self.yaw)
         if not self.robot.state.balancing:
             if getattr(self.behavior, "_turn", None) is not None:
                 self.behavior.turn_ende("liegt")
+            if getattr(self.behavior, "_bahn", None) is not None:
+                self.behavior.bahn_ende("liegt")
             return Command(0.0, 0.0, None, stopp_text(self.robot.state.mode))
         soll = getattr(self.behavior, "strecke_soll", None)
         if soll is not None and cmd.v:
@@ -1173,7 +1203,8 @@ class App:
                 w.pose_ok = self.gridmap.pose_ok
                 if self.startbild is not None:
                     w.pose = self._startbild_tick(f, w, pitch_dev, dyaw, dt)
-                if hasattr(self.behavior, "want_plan"):
+                # feste Bahn im Modus manual (POST /bahn): derselbe Wegfolger, dieselben Bremsgründe wie mit Planer
+                if hasattr(self.behavior, "want_plan") or getattr(self.behavior, "_bahn", None) is not None:
                     if self.lmap is not None and self.cfg.home.free_slow:
                         w.path_free_fn = self._path_free     # Tempo nach freier Strecke (nur beim Fahren gerufen)
                         w.arc_free_fn = self._arc_free
@@ -1181,7 +1212,8 @@ class App:
                         w.wall_fn = self.gridmap.wall_dist
                         if self.lmap is not None and self.cfg.home.tight_center:
                             w.gap_fn = self.lmap.gap_center
-                    self._plan_tick(w)
+                    if hasattr(self.behavior, "want_plan"):
+                        self._plan_tick(w)
             # approach erkundet mit derselben Logik, bis das Ziel in Sicht ist
             if self.lmap is not None and self.behavior.name in ("explore", "approach"):
                 vg = self.cfg.robot.v_of(self.cfg.behavior.cruise_v) * self.cfg.robot.vx_limit
@@ -1258,6 +1290,7 @@ class App:
                                         "imu_spruenge": self.imu.yaw_jumps if self.imu is not None else None},
                                "startbild": None if self.startbild is None else self.startbild.info(),
                                "turn": getattr(self.behavior, "turn_info", None) if self.behavior.name == "manual" else None,
+                               "bahn": getattr(self.behavior, "bahn_info", None) if self.behavior.name == "manual" else None,
                                "mode": self.behavior.name, "yaw_vis_deg": round(math.degrees(self.vis_yaw), 1),
                                "yaw_deg": round(math.degrees(self.yaw), 1), "yaw_src": self.yaw_src,
                                "yaw_imu": self.kurs_deg(), "battery": self.robot.state.battery,

@@ -64,7 +64,8 @@ Every mode ends in `Command(v, w)` → `safety()` → `_arc_check()` → `Robot.
 
 | Situation | Planner | v/w from |
 |---|---|---|
-| `home`, `explore`, `patrol`; `follow` search at the last position; every planned path in `pet` (come, roam, search, call search, home) | yes | `PathFollower.drive` (hysteresis, narrow passages, `slow_end`, stuck, push) |
+| `home`, `explore`, `patrol`; `follow` search at the last position; every planned path in `pet` (come, roam, search, call search, home) | yes | `PathFollower.drive` (hysteresis, narrow passages, `slow_end`, stuck, push); speed independent of the heading error since 2026-11-26 (before v · (1 − \|err\|/90°)), braking only for curves (`kurve_v`), path end, obstacles, narrow passages |
+| fixed test path `POST /bahn` (mode `manual`) | no | `PathFollower.drive` on a given snake, then 180° and back (`Manual.bahn`) |
 | `follow` with target in view (also `pet` following) | no | `Servo` (PD on bearing, distance Kalman filter) |
 | `pet` without room map / without path | no | `PetBrain._drive` (straight to the spot) |
 | turning on the spot (path follower, `pet`, fear of the dark, `/turn`) | – | `behaviors.dreh_w`: kp × error up to the mode's cap (factor of `max_w`), no lower bound since 2026-11-25; to a heading with tolerance and time limit `behaviors.dreh_auf_kurs` |

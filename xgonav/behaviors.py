@@ -159,6 +159,62 @@ class Manual(Behavior):
         self.strecke_odo0: float | None = None   # Odometrie beim ersten Sollwert mit dieser Strecke (setzt die App)
         self._turn: dict | None = None
         self.turn_info: dict | None = None   # /status turn: soll_deg, gedreht_deg, fertig, grund
+        self._bahn: dict | None = None
+        self.bahn_info: dict | None = None   # /status bahn: phase, fertig, grund
+
+    def bahn(self, hin: list, zurueck: bool, hcfg: HomeCfg) -> None:
+        """Feste Bahn (POST /bahn, Testfahrt): hin entlang der Punkte (Raumkarte), am Ende halten, mit zurueck auf
+        der Stelle um 180° wenden und dieselbe Bahn zurück. Fährt über den PathFollower wie explore/home, geprüft
+        (safety() + Bahnprüfung). Ein Sollwert oder /turn bricht ab."""
+        self._v = self._w = 0.0
+        self._turn = None
+        f = PathFollower(self.cfg, self.rcfg, hcfg)
+        f.set_path(hin)
+        self._bahn = {"f": f, "hin": list(hin), "zurueck": zurueck, "phase": "hin", "t": None, "ziel": None}
+        self.checked = True
+        self.bahn_info = {"phase": "hin", "fertig": False, "grund": None}
+
+    def bahn_ende(self, grund: str) -> None:
+        if self.bahn_info is not None and not self.bahn_info["fertig"]:
+            self.bahn_info.update(fertig=True, grund=grund, phase="fertig")
+        self._bahn = None
+        self.checked = False
+
+    BAHN_HALT_S = 1.0
+
+    def _bahn_step(self, wd: World | None, now: float) -> Command:
+        b = self._bahn
+        hmm = self.cfg.height_cruise_mm
+        if wd is None or wd.pose is None:
+            self.bahn_ende("keine Bildverarbeitung oder Raumkarte")
+            return Command(0.0, 0.0, None, "Bahn: abgebrochen")
+        f = b["f"]
+        x, y, th = wd.pose
+        ph = b["phase"]
+        if ph in ("hin", "zurueck"):
+            if f.stuck:
+                self.bahn_ende("festgefahren")
+                return Command(0.0, 0.0, hmm, "Bahn: festgefahren")
+            rest = f.rest_m(x, y)
+            if rest > f.h.arrive_m:
+                return f.drive(wd, "Bahn %s %.2f m" % (ph, rest), slow_end=True)
+            if ph == "zurueck" or not b["zurueck"]:
+                self.bahn_ende("angekommen")
+                return Command(0.0, 0.0, hmm, "Bahn: angekommen")
+            b["phase"], b["t"] = "halt", now
+            b["ziel"] = _wrap(th + math.pi)
+        elif ph == "halt" and now - b["t"] >= self.BAHN_HALT_S:
+            b["phase"] = "wenden"
+        elif ph == "wenden":
+            err = _wrap(b["ziel"] - th)
+            if abs(err) > math.radians(f.h.align_tol_deg):
+                return f.align(err, "Bahn: wende")
+            f.clear()
+            f.set_path(list(reversed(b["hin"])))
+            f._turning = False
+            b["phase"] = "zurueck"
+        self.bahn_info["phase"] = b["phase"]
+        return Command(0.0, 0.0, hmm, "Bahn: %s" % b["phase"])
 
     def set(self, v: float, w: float, now: float, checked: bool = False, bogen: bool = False,
             strecke: float | None = None) -> None:
@@ -174,11 +230,16 @@ class Manual(Behavior):
         self._t_alt = now
         if self._turn is not None:
             self.turn_ende("abgebrochen")
+        if self._bahn is not None:
+            self.bahn_ende("abgebrochen")
+            self.checked = checked
 
     def turn(self, deg: float, w: float, tol_deg: float, now: float, yaw: float, timeout_s: float) -> None:
         """Auf der Stelle um deg drehen (+ = links) mit höchstens w (Anteil von max_w), geregelt über den Kurs
         (App.yaw) mit dreh_auf_kurs; danach turn_settle_s Nachlauf mitzählen. Ein Sollwert (set) bricht ab."""
         self._v = self._w = 0.0
+        if self._bahn is not None:
+            self.bahn_ende("abgebrochen")
         self._turn = {"soll": math.radians(deg), "summe": 0.0, "y": yaw, "w": w, "tol": tol_deg, "t0": now,
                       "timeout": timeout_s, "ende": None}
         self.turn_info = {"soll_deg": round(deg, 1), "gedreht_deg": 0.0, "fertig": False, "grund": None}
@@ -217,6 +278,8 @@ class Manual(Behavior):
     def step(self, wd: World | None, yaw: float | None = None, now: float | None = None) -> Command:
         import time as _time                          # braucht keine Weltdaten (auch ohne Kamera)
         now = _time.monotonic() if now is None else now
+        if self._bahn is not None:
+            return self._bahn_step(wd, now)
         if self._turn is not None:
             return self._turn_step(yaw, now)
         if now - self._t > self.HOLD_S:
@@ -1040,7 +1103,10 @@ class PathFollower:
         wc = clamp(yaw_rate_to_w(self.h.kp_turn * err, self.rcfg), -1.0, 1.0)     # Kurve: Lenken beim Fahren
         if abs(wc) < self.rcfg.w_of(self.h.min_w) and abs(err) > math.radians(self.h.min_w_err_deg):
             wc = math.copysign(self.rcfg.w_of(self.h.min_w), err)
-        v = self.rcfg.v_of(self.v) * clamp(1.0 - abs(err) / math.radians(90), 0.3, 1.0)
+        # Tempo hängt nicht am Winkelfehler (bis 2026-11-26: v · (1 − |err|/90°), Nutzer: „er zuckt bei jeder
+        # Kursänderung, das Tempo soll bleiben und nur der Kurs geändert werden“); gebremst wird nur vor Kurven
+        # (kurve_v), am Wegende, vor Hindernissen und in Engstellen, sehr steil dreht er oben auf der Stelle
+        v = self.rcfg.v_of(self.v)
         if tight:
             v *= self.h.tight_v
         if slow_end:
