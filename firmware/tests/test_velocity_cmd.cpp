@@ -7,7 +7,8 @@
 // Umkehr, Beschleunigungsbetrieb mit Ruck, Wächter mit den Rahmengrenzen, Übernahme aus der Fahrt, Drehachse.
 // Krümmungsbetrieb (bit1): Format, Fähigkeitsbyte, w = κ·v_soll, Bahn auf dem Kreis (Anfahren/Bremsen/rückwärts/
 // Wächter), v/a durch w_max/alpha begrenzt, κ-Nachführung, Übernahme aus dem Drehratenweg. Kursziel (bit2): Ziel ±0,5°
-// ohne Überschwingen, Wechselbit, Wächter, im Fahren, aus der Kurve. Strecke (bit3, 15 Byte): Format, Halt auf der
+// ohne Überschwingen, Wechselbit, Wächter, im Fahren, aus der Kurve. Absolutes Kursziel (bit5, 5 Byte, 0x1b 18 Byte):
+// kürzerer Weg über ±180°, Ziel- und w_max-Sprünge fließend, Wackeln im Halten, stückweise > 180°, Wächter. Strecke (bit3, 15 Byte): Format, Halt auf der
 // Strecke mit nachgebildetem Pi (Reststrecke alle 100 ms aus der Odometrie, Radtempo mit Verzögerung), kurz, rückwärts,
 // Bogen, 0, Wächter; Prüfvektoren (XGO_VECTORS=1).
 // Aufruf: firmware/tests/run.sh test_velocity_cmd
@@ -406,6 +407,188 @@ static void courseTests() {
     }
 }
 
+// --- Absolutes Kursziel (bit5, 5 Byte). Nachgebildet: der Pi schickt mit 24 Hz ψ_ziel (auch unverändert); ψ_ref ist das
+// Kursziel des Kurs-PID, das am Rider genau mit w_soll·dt läuft (hier ebenso: ref += w·dt nach jedem Takt).
+// Mit XGO_VECTORS=1 je Szenario firmware/tests/vectors/<name>.csv: je Takt t_us, rx, Rahmenbytes (5 oder 13) als Hex,
+// Grenzen (v_max, w_max, Wächter, unit_mm, alpha und Drehruck aus 0x1b), psi_ref (an tick übergeben), danach v, w, a
+// (Fahrachse), timed_out, Rest (°, nach dem Takt), angekommen, Kursziel läuft.
+struct AEv { std::uint32_t t_us; std::uint8_t len; std::uint8_t d[V::kFrameLen]; };
+struct AStep { std::uint32_t t_us; float v, w, a, ref, rest; bool timed_out, done, course_on; };
+static constexpr std::uint32_t kPiUs = 41667;   // Regelschritt am Pi (24 Hz)
+static AEv absEv(std::uint32_t t, float psi_deg, float wmax_dps) {
+    AEv e{}; e.t_us = t; e.len = V::kFrameLenAbs; e.d[0] = V::kFlagCourseAbs;
+    V::put16(e.d + 1, std::uint16_t(std::int16_t(std::lround(psi_deg * 100.0f))));
+    V::put16(e.d + 3, std::uint16_t(std::lround(wmax_dps * 10.0f)));
+    return e;
+}
+static V::Limits absLimits(int alpha, int jw, int timeout = 300) {
+    std::uint8_t d[V::kLimitsLenAbs] = {};
+    V::put16(d, 600); V::put16(d + 2, 1000); V::put16(d + 4, std::uint16_t(timeout)); V::put16(d + 6, 3970);
+    V::put16(d + 14, std::uint16_t(alpha)); V::put16(d + 16, std::uint16_t(jw));
+    V::Limits l; V::parseLimits(d, sizeof d, l); return l;
+}
+// goal(t, ref): Ziel des Pi zum Zeitpunkt t (NAN = kein Rahmen); ref = sein Stand des Kurses (hier der Bezug).
+static std::vector<AStep> runAbs(const char* name, const V::Limits& l, float ref0, float seconds,
+                                 const std::function<bool(std::uint32_t, float, AEv&)>& pi) {
+    V::State s; std::vector<AStep> out; float ref = ref0;
+    FILE* csv = nullptr;
+    if (const char* env = std::getenv("XGO_VECTORS"); env && *env == '1') {
+        char path[256]; std::snprintf(path, sizeof path, "firmware/tests/vectors/%s.csv", name);
+        csv = std::fopen(path, "w");
+        if (!csv) std::printf("FEHLER Vektor %s nicht schreibbar\n", path);
+        else std::fprintf(csv, "t_us,rx,frame_hex,v_max,w_max,timeout_ms,unit_mm,abs_alpha,abs_jerk,psi_ref,v,w,a,timed_out,rest,done,course_on\n");
+    }
+    AEv last{}; bool have = false; std::uint32_t next_pi = 0;
+    for (std::uint32_t t = 0; t <= std::uint32_t(seconds * 1e6f); t += kTickUs) {
+        bool rx = false;
+        if (t >= next_pi) {
+            AEv e{}; e.t_us = t;
+            if (pi(t, ref, e)) {
+                V::Frame f; if (V::parseFrame(e.d, e.len, f)) V::receive(s, l, f, t);
+                last = e; have = true; rx = true;
+            }
+            next_pi += kPiUs;
+        }
+        const float used = ref;
+        V::tick(s, l, t, 0, 0, 0, used);
+        ref += s.w * (s.ticked && t > 0 ? kTickUs * 1e-6f : 0.0f);   // Kursziel des Kurs-PID: += w_soll·dt
+        out.push_back({t, s.v, s.w, s.fwd.a, used, s.course_rest, s.timed_out, s.course_done, s.course_on});
+        if (csv) {
+            char hex[2 * V::kFrameLen + 1] = {};
+            if (have) for (int i = 0; i < last.len; ++i) std::snprintf(hex + 2 * i, 3, "%02x", last.d[i]);
+            std::fprintf(csv, "%u,%d,%s,%.9g,%.9g,%u,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%d,%.9g,%d,%d\n", unsigned(t), rx ? 1 : 0, hex,
+                         double(l.v_max), double(l.w_max), unsigned(l.timeout_ms), double(l.unit_mm), double(l.abs_alpha),
+                         double(l.abs_jerk), double(used), double(s.v), double(s.w), double(s.fwd.a), s.timed_out ? 1 : 0,
+                         double(s.course_rest), s.course_done ? 1 : 0, s.course_on ? 1 : 0);
+        }
+    }
+    if (csv) std::fclose(csv);
+    return out;
+}
+struct AbsStat { float dw = 0, ddw = 0, wpk = 0, over = 0; bool reversed = false; };
+// größte Änderung je Takt von w (≙ alpha·dt) und von deren Änderung (≙ Ruck·dt²), größte Drehrate, Überschwingen über goal
+static AbsStat absStat(const std::vector<AStep>& tr, std::size_t from, std::size_t to, float goal, float sg) {
+    AbsStat r;
+    for (std::size_t i = std::max<std::size_t>(from, 2); i < to && i < tr.size(); ++i) {
+        r.dw = std::max(r.dw, std::fabs(tr[i].w - tr[i - 1].w));
+        r.ddw = std::max(r.ddw, std::fabs((tr[i].w - tr[i - 1].w) - (tr[i - 1].w - tr[i - 2].w)));
+        r.wpk = std::max(r.wpk, std::fabs(tr[i].w));
+        r.over = std::max(r.over, (tr[i].ref - goal) * sg);
+        if (tr[i].w * sg < -0.05f) r.reversed = true;   // Nulldurchgang im letzten Takt (Rundung, ≤ 0,004 °/s) zählt nicht
+    }
+    return r;
+}
+
+static void absTests() {
+    const float dt = kTickUs * 1e-6f;
+    const V::Limits l = absLimits(360, 1800);
+    const float dw_ok = 360.0f * dt * 1.01f + 1e-4f, ddw_ok = 1800.0f * dt * dt * 2.0f + 1e-4f;   // Einrasten: Stufe ≤ 2·j·dt²
+    // Format
+    {
+        const AEv e = absEv(0, -123.45f, 60.0f);
+        V::Frame f; check(V::parseFrame(e.d, e.len, f) && f.abs_mode && !f.course_mode && near(f.psi_goal, -123.45f, 1e-4f) && near(f.w_abs, 60.0f, 1e-4f),
+                          "absolutes Kursziel: 5 Byte, Flags 0x20, ψ_ziel 0,01°, w_max 0,1 °/s");
+        AEv b = e; b.d[0] = V::kFlagCourseAbs | V::kFlagCourse; check(!V::parseFrame(b.d, b.len, f), "5 Byte mit weiterem Bit -> verworfen");
+        b.d[0] = 0; check(!V::parseFrame(b.d, b.len, f), "5 Byte ohne bit5 -> verworfen");
+        std::uint8_t d[V::kFrameLen]; frameBytes(d, true, 0, 0, 0, 0, 0, 0); d[0] = V::kFlagCourseAbs;
+        check(!V::parseFrame(d, sizeof d, f), "bit5 mit 13 Byte -> verworfen");
+        check((V::kCaps & 16) && (V::kCaps & 8) == 0, "Fähigkeitsbyte bit4 absolutes Kursziel, bit3 bleibt frei");
+        check(l.abs_set && l.abs_alpha == 360 && l.abs_jerk == 1800 && near(l.unit_mm, 3.97f, 1e-5f), "0x1b 18 Byte: alpha, Drehruck");
+        const V::Limits old = limits(600, 1000, 300);
+        V::State s; V::parseFrame(e.d, e.len, f);
+        check(!old.abs_set && !V::receive(s, old, f, 0) && !s.active, "absolutes Kursziel ohne 0x1b 18 Byte -> verworfen");
+        check(near(V::wrap180(180.0f), -180.0f) && near(V::wrap180(-180.0f), -180.0f) && near(V::wrap180(190.0f), -170.0f)
+              && near(V::wrap180(-530.0f), -170.0f) && near(V::wrap180(719.5f), -0.5f), "wrap180 auf [−180, 180)");
+        CommandEvent c; c.type = 0; c.reg = 0x1a; c.length = 5; check(validCommand(c), "0x1a mit 5 Byte gültig");
+        c.reg = 0x1b; c.length = 18; check(validCommand(c), "0x1b mit 18 Byte gültig");
+    }
+    const auto steady = [](float goal, float w) {
+        return [goal, w](std::uint32_t t, float, AEv& e) { e = absEv(t, goal, w); return true; };
+    };
+    struct Case { const char* name; float ref0, goal, turn; };
+    for (const Case& c : {Case{"kursabs_90", 0, 90, 90}, Case{"kursabs_m45", 30, -15, -45}, Case{"kursabs_klein", 10, 11.5f, 1.5f},
+                          Case{"kursabs_ueber180", 170, -170, 20}, Case{"kursabs_ueber180_rueck", -175.5f, 172, -12.5f},
+                          Case{"kursabs_abgewickelt", 725, 0, -5}, Case{"kursabs_gegenueber", 0, 180, -180}}) {
+        const auto tr = runAbs(c.name, l, c.ref0, 6.0f, steady(c.goal, 60));
+        const float sg = c.turn >= 0 ? 1.0f : -1.0f, end = c.ref0 + c.turn;
+        const AbsStat r = absStat(tr, 0, tr.size(), end, sg);
+        std::printf("       %s: Ende ψ_ref %.3f° (Soll %.1f), Überschwingen %.3f°, w bis %.1f °/s, Änderung je Takt %.4f/%.4f, Ruckstufe %.5f/%.5f, erreicht %d\n",
+                    c.name, double(tr.back().ref), double(end), double(r.over), double(r.wpk), double(r.dw), double(dw_ok), double(r.ddw), double(ddw_ok), tr.back().done ? 1 : 0);
+        char what[200];
+        std::snprintf(what, sizeof what, "%s: kürzerer Weg, Ziel auf ±0,5°, ohne Überschwingen/Umkehr, w ≤ 60, alpha/Ruck eingehalten, angekommen", c.name);
+        check(std::fabs(tr.back().ref - end) < 0.5f && r.over < 0.05f && !r.reversed && r.wpk <= 60.0f + 1e-3f && r.dw <= dw_ok
+              && r.ddw <= ddw_ok && tr.back().done && tr.back().w == 0, what);
+    }
+    // Ziel springt während der Drehung (bei 0,6 s): ±10° und +120°; fließend, ohne Neustart
+    struct Jump { const char* name; float first, second; };
+    for (const Jump& j : {Jump{"kursabs_sprung_p10", 90, 100}, Jump{"kursabs_sprung_m10", 90, 80}, Jump{"kursabs_sprung_p120", 50, 170},
+                          Jump{"kursabs_sprung_zurueck", 90, 20}}) {
+        const auto tr = runAbs(j.name, l, 0, 7.0f, [j](std::uint32_t t, float, AEv& e) {
+            e = absEv(t, t < 600000 ? j.first : j.second, 60); return true; });
+        const AbsStat r = absStat(tr, 0, tr.size(), j.second, j.second >= tr[150].ref ? 1.0f : -1.0f);
+        std::printf("       %s: Ende ψ_ref %.3f°, Änderung je Takt %.3f °/s (alpha·dt %.3f), Ruckstufe %.4f\n", j.name, double(tr.back().ref), double(r.dw), double(360.0f * dt), double(r.ddw));
+        char what[200];
+        std::snprintf(what, sizeof what, "%s: neues Ziel fließend übernommen (alpha/Ruck eingehalten, kein Sprung), Ende auf ±0,5°, angekommen", j.name);
+        check(std::fabs(tr.back().ref - j.second) < 0.5f && r.dw <= dw_ok && r.ddw <= ddw_ok && tr.back().done && r.wpk <= 60.0f + 1e-3f, what);
+    }
+    {   // Wackeln ±0,5° im Halten: kein Drehen, bleibt erreicht; Sprung um 2° danach dreht wieder
+        const auto tr = runAbs("kursabs_wackeln", l, 0, 7.0f, [](std::uint32_t t, float, AEv& e) {
+            const float wob = t < 3000000 ? 0.0f : 0.5f * std::sin(float(t) * 1e-6f * 7.0f);
+            e = absEv(t, (t < 5000000 ? 45.0f : 47.0f) + wob, 60); return true; });
+        const std::size_t a = 3000000 / kTickUs, b = 5000000 / kTickUs;
+        bool calm = true; for (std::size_t i = a; i < b; ++i) if (tr[i].w != 0 || !tr[i].done) calm = false;
+        check(tr[a - 1].done && calm, "Wackeln ±0,5° im Halten: w bleibt 0, bleibt erreicht");
+        check(std::fabs(tr.back().ref - 47.0f) < 1.0f && tr.back().done, "Ziel 2° weiter: dreht wieder und kommt an");
+    }
+    {   // w_max-Änderung während der Drehung: 90 -> 30 °/s bei 0,8 s, mit alpha abgebaut; dann 30 -> 80 °/s bei 2 s
+        const auto tr = runAbs("kursabs_wmax", l, 0, 8.0f, [](std::uint32_t t, float, AEv& e) {
+            e = absEv(t, 170, t < 800000 ? 90.0f : t < 2000000 ? 30.0f : 80.0f); return true; });
+        const AbsStat r = absStat(tr, 0, tr.size(), 170, 1);
+        bool slow = true; for (std::size_t i = 1400000 / kTickUs; i < 2000000 / kTickUs; ++i) if (std::fabs(tr[i].w) > 30.0f + 1e-3f) slow = false;
+        check(r.dw <= dw_ok && r.ddw <= ddw_ok && slow, "w_max kleiner: mit alpha/Ruck abgebaut (kein Sprung), danach ≤ 30 °/s");
+        check(std::fabs(tr.back().ref - 170) < 0.5f && tr.back().done && r.over < 0.05f, "w_max-Wechsel: Ziel ohne Überschwingen erreicht");
+    }
+    {   // stückweise über 180°: der Pi führt das Ziel bis 300° nach, je höchstens 170° voraus (gewickelt geschickt)
+        const auto tr = runAbs("kursabs_stueckweise", l, 0, 9.0f, [](std::uint32_t t, float ref, AEv& e) {
+            e = absEv(t, V::wrap180(std::min(300.0f, ref + 170.0f)), 90); return true; });
+        const AbsStat r = absStat(tr, 0, tr.size(), 300, 1);
+        check(std::fabs(tr.back().ref - 300) < 0.5f && !r.reversed && r.dw <= dw_ok && tr.back().done, "stückweise 300°: ohne Umkehr, Ende auf ±0,5°");
+    }
+    {   // Wächter: Rahmen bleiben nach 0,5 s aus -> bremst, Ziel bleibt offen; kommen ab 2 s wieder -> dreht weiter
+        const auto tr = runAbs("kursabs_waechter", l, 0, 7.0f, [](std::uint32_t t, float, AEv& e) {
+            if (t > 500000 && t < 2000000) return false; e = absEv(t, 160, 60); return true; });
+        const std::size_t k = 1900000 / kTickUs;
+        check(tr[k].timed_out && tr[k].w == 0 && !tr[k].done && tr[k].rest > 10, "Wächter: Drehung gebremst, nicht angekommen");
+        check(!tr.back().timed_out && tr.back().done && std::fabs(tr.back().ref - 160) < 0.5f, "Rahmen wieder da: dreht weiter und kommt an");
+    }
+    {   // aus der Fahrt (v 46, w 20 °/s, alter Rahmen) ins absolute Kursziel: v bremst mit a des alten Rahmens, w ohne Sprung
+        std::uint8_t d[V::kFrameLen]; frameBytes(d, true, 46, 128, 641, 200, 360, 1800);
+        const auto tr = runAbs("kursabs_aus_fahrt", l, 0, 6.0f, [&d](std::uint32_t t, float, AEv& e) {
+            if (t < 1000000) { e.len = V::kFrameLen; std::memcpy(e.d, d, sizeof d); } else e = absEv(t, 60, 60);
+            return true; });
+        const std::size_t k = 1000000 / kTickUs;
+        float amax = 0; for (std::size_t i = k; i < tr.size(); ++i) amax = std::max(amax, std::fabs(tr[i].a));
+        check(near(tr[k - 1].w, 20, 1e-4f) && std::fabs(tr[k + 1].w - tr[k].w) <= dw_ok && std::fabs(tr[k].w - tr[k - 1].w) <= dw_ok,
+              "aus der Fahrt: w ohne Sprung");
+        check(amax <= 128.0f + 1e-3f && tr.back().v == 0 && tr.back().done && std::fabs(tr.back().ref - 60) < 0.5f,
+              "aus der Fahrt: v auf 0 mit a des alten Rahmens, Ziel erreicht");
+    }
+    {   // Wechsel: absolutes Kursziel -> altes Kursziel (bit2) setzt dort ein neues relatives Ziel; Diagnose
+        V::State s; V::Frame fa; const AEv e = absEv(0, 0.2f, 0); V::parseFrame(e.d, e.len, fa);
+        V::receive(s, l, fa, 0); V::tick(s, l, 0, 0, 0, 0, 0.0f); V::tick(s, l, 4000, 0, 0, 0, 0.0f);
+        std::uint8_t g[V::kDiagLen]; V::fillDiag(g, s, l);
+        check(s.course_abs && (g[0] & 32) && (g[0] & 64) && g[1] == V::kCaps, "0x1a lesen: bit5 Kursziel läuft, bit6 erreicht (Rest 0,2°)");
+        V::Frame fr; fr.course_mode = true; fr.dpsi = 30; fr.alpha = 360;
+        V::receive(s, l, fr, 8000);
+        check(!s.course_abs && s.course_on && !s.course_done && near(s.course_rest, 30), "altes Kursziel nach absolutem: neues Ziel Δψ 30°");
+        V::receive(s, l, fa, 12000);
+        check(s.course_abs && !s.course_done, "absolutes Kursziel nach altem: neu");
+        V::tick(s, l, 16000);   // ohne Bezug: nicht raten
+        check(!s.course_done && s.w == 0, "ohne ψ_ref: kein Drehen, nicht erreicht");
+        V::cancel(s); check(!s.course_abs && !s.course_on, "cancel beendet das absolute Kursziel");
+    }
+}
+
 // --- Strecke mit Halt (bit3, 15 Byte). Nachgebildet: der Pi schickt alle 100 ms s = S − gefahrene Strecke (Odometrie
 // = ∫ v_meas), v_meas folgt gain·v_soll mit der Zeitkonstante tau (0: v_meas = gain·v_soll des vorigen Takts); gain ≠ 1
 // bildet die dauerhafte Tempoabweichung am Rider nach (vorwärts ~0,9 ×, rückwärts ~1,09 ×, runde9).
@@ -511,6 +694,7 @@ int main() {
     generatorTests();
     kappaTests();
     courseTests();
+    absTests();
     distTests();
     // --- Format
     {
@@ -605,6 +789,8 @@ int main() {
         e.reg = 0x1b; e.length = 14; check(validCommand(e) && commandKind(e) == CommandKind::VelocityLimits, "0x1b mit 14 Byte gültig");
         e.length = 6; check(!validCommand(e), "0x1b mit 6 Byte ungültig (altes Format)");
         e.length = 16; check(!validCommand(e), "0x1b mit 16 Byte ungültig");
+        e.reg = 0x1a; e.length = 4; check(!validCommand(e), "0x1a mit 4 Byte ungültig");
+        e.reg = 0x1b;
         e.length = 14;
         e.length = 6;
         e.reg = 0xa0; e.length = 1; check(!validCommand(e), "0xa0 (max_forward) entfernt");

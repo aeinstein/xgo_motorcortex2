@@ -32,7 +32,7 @@ firmware/tests/run.sh [filter]        # Host-Tests (g++, nach build.sh); am PC k
 | 05-actions | Not-Aus, Aufstehen, Neustart, Aktionstabelle, Akku-Warnung hebt sich auf, kein Selbststart nach Sturz | 254, 253, 237 |
 | 06-leds | Helligkeit, Lauflicht beim Kalibrieren, LEDs Sache des Clients, Blau beim Herunterfahren | 0x12, 234/233 |
 | 07-balance | Positionshalten beim Drehen, Roll-Trimm, Roll halten, Fahr-Integral, Einlegen in Kurven (aus) | 232/231 |
-| 08-velocity | Fahrrahmen in mm/s und °/s, Sollwertgenerator, Krümmungsbetrieb, Kursziel, Geschwindigkeits- und Drehratenregler | 0x1a, 0x1b |
+| 08-velocity | Fahrrahmen in mm/s und °/s, Sollwertgenerator, Krümmungsbetrieb, Kursziel, absolutes Kursziel (bit5, 5 Byte; gebaut, nicht geflasht), Geschwindigkeits- und Drehratenregler | 0x1a, 0x1b |
 
 ## Stand am Rider
 
