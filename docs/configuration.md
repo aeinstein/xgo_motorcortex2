@@ -366,6 +366,7 @@ All keys with comments: `PetCfg` in `xgonav/config.py`.
 | `v` | 0.30 | speed, factor of `max_v` (`patrol`, path following in the `follow` search; `explore` uses `explore.v`, every planned path in `pet` uses `pet.drive_v`) |
 | `start_v` | 0.45 | "Zum Start": mode `home` and the drive home in `pet`, +50 % (2026-11-22); final straight run `startbild.gerade_v` |
 | `kp_turn` | 1.5 | 1/s, turn rate per heading error (follow uses `behavior.kp_turn`) |
+| `lenk_bogen` | true | steering while driving as pure pursuit: arc through the look-ahead point, κ = 2·sin(error)/distance, w = κ·v continuously (no `min_w`), with `robot.vel_kappa` the firmware holds the arc (2026-11-26); false = `kp_turn` × error with `min_w` |
 | `turn_w_max` | 0.50 | cap for turning in place (path follower, final alignment), factor of `max_w` (absolute 0.25); 1.0 = `robot.max_w`. Turning at 0.5 rolled the Rider 7° and upset IMU pitch and pose (2026-11-17) |
 | `turn_enter_deg` / `turn_exit_deg` | 75 / 25 | turn in place above enter until below exit; otherwise drive the curve (speed ≥ 30 %) |
 | `align_heading` / `align_tol_deg` | true / 10 | turn to start heading at goal |

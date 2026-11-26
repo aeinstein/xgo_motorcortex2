@@ -64,7 +64,7 @@ Every mode ends in `Command(v, w)` → `safety()` → `_arc_check()` → `Robot.
 
 | Situation | Planner | v/w from |
 |---|---|---|
-| `home`, `explore`, `patrol`; `follow` search at the last position; every planned path in `pet` (come, roam, search, call search, home) | yes | `PathFollower.drive` (hysteresis, narrow passages, `slow_end`, stuck, push); speed independent of the heading error since 2026-11-26 (before v · (1 − \|err\|/90°)), braking only for curves (`kurve_v`), path end, obstacles, narrow passages |
+| `home`, `explore`, `patrol`; `follow` search at the last position; every planned path in `pet` (come, roam, search, call search, home) | yes | `PathFollower.drive` (hysteresis, narrow passages, `slow_end`, stuck, push); speed independent of the heading error since 2026-11-26 (before v · (1 − \|err\|/90°)), braking only for curves (`kurve_v`), path end, obstacles, narrow passages; steering as pure pursuit arc κ = 2·sin(err)/look-ahead, w = κ·v without minimum (`home.lenk_bogen`, 2026-11-26) |
 | fixed test path `POST /bahn` (mode `manual`) | no | `PathFollower.drive` on a given snake, then 180° and back (`Manual.bahn`) |
 | `follow` with target in view (also `pet` following) | no | `Servo` (PD on bearing, distance Kalman filter) |
 | `pet` without room map / without path | no | `PetBrain._drive` (straight to the spot) |

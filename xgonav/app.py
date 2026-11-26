@@ -660,15 +660,16 @@ class App:
         b.turn(deg, w, tol_deg, time.monotonic(), self.yaw, timeout)
 
     def set_bahn(self, laenge_m: float = 3.0, winkel_deg: float = 20.0, welle_m: float = 1.5,
-                 zurueck: bool = True) -> list[tuple[float, float]]:
+                 zurueck: bool = True, v: float | None = None) -> list[tuple[float, float]]:
         """Feste Testbahn (Modus manual, POST /bahn): Schlangenlinie laenge_m geradeaus ab der Pose,
         y = A · sin(2π x / welle_m) mit höchstens winkel_deg gegen die Fahrtrichtung (0 = gerade), Punkte alle 5 cm;
         mit zurueck am Ende 180° wenden und zurück. Fortschritt in /status bahn. Rückgabe: Punkte (Raumkarte)."""
         b = self.behavior
         if b.name != "manual":
             raise ModeNotAllowed("Bahn nur im Modus manual")
-        if not (0.2 <= laenge_m <= 6.0 and 0.0 <= winkel_deg <= 45.0 and 0.3 <= welle_m <= 6.0):
-            raise ValueError("Grenzen: laenge 0.2..6, winkel 0..45, welle 0.3..6")
+        if not (0.2 <= laenge_m <= 6.0 and 0.0 <= winkel_deg <= 45.0 and 0.3 <= welle_m <= 6.0
+                and (v is None or 0.05 <= v <= 1.0)):
+            raise ValueError("Grenzen: laenge 0.2..6, winkel 0..45, welle 0.3..6, v 0.05..1")
         if not self.robot.state.balancing:
             raise ModeNotAllowed("Bahn nur balancierend")
         if not self.pipeline_on or self.gridmap is None or not self.gridmap.pose_ok:
@@ -682,9 +683,9 @@ class App:
             u = laenge_m * i / n
             q = amp * math.sin(2.0 * math.pi * u / welle_m)
             pts.append((x0 + u * c - q * s, y0 + u * s + q * c))
-        b.bahn(pts, zurueck, self.cfg.home)
-        log.info("Bahn: %.1f m, %.0f°, Welle %.1f m (Ausschlag %.2f m)%s", laenge_m, winkel_deg, welle_m, amp,
-                 ", zurück" if zurueck else "")
+        b.bahn(pts, zurueck, self.cfg.home, v)
+        log.info("Bahn: %.1f m, %.0f°, Welle %.1f m (Ausschlag %.2f m), v %s%s", laenge_m, winkel_deg, welle_m, amp,
+                 "home.v" if v is None else "%.2f" % v, ", zurück" if zurueck else "")
         return pts
 
     # Aktionen der Firmware, die vorwärts/rückwärts fahren (5 dreht nur auf der Stelle)

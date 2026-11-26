@@ -162,13 +162,13 @@ class Manual(Behavior):
         self._bahn: dict | None = None
         self.bahn_info: dict | None = None   # /status bahn: phase, fertig, grund
 
-    def bahn(self, hin: list, zurueck: bool, hcfg: HomeCfg) -> None:
+    def bahn(self, hin: list, zurueck: bool, hcfg: HomeCfg, v: float | None = None) -> None:
         """Feste Bahn (POST /bahn, Testfahrt): hin entlang der Punkte (Raumkarte), am Ende halten, mit zurueck auf
         der Stelle um 180° wenden und dieselbe Bahn zurück. Fährt über den PathFollower wie explore/home, geprüft
         (safety() + Bahnprüfung). Ein Sollwert oder /turn bricht ab."""
         self._v = self._w = 0.0
         self._turn = None
-        f = PathFollower(self.cfg, self.rcfg, hcfg)
+        f = PathFollower(self.cfg, self.rcfg, hcfg, v=v)     # v: Anteil von max_v, sonst home.v
         f.set_path(hin)
         self._bahn = {"f": f, "hin": list(hin), "zurueck": zurueck, "phase": "hin", "t": None, "ziel": None}
         self.checked = True
@@ -1100,9 +1100,21 @@ class PathFollower:
             wc = dreh_w(err, self.h.kp_turn, self.h.turn_w_max, self.rcfg)
             return Command(0.0, wc, hmm, "%s – drehe (%+.0f°)" % (label, math.degrees(err)), extra={"tight": tight},
                            kurs=(err, self.rcfg.w_of(self.h.turn_w_max)))
-        wc = clamp(yaw_rate_to_w(self.h.kp_turn * err, self.rcfg), -1.0, 1.0)     # Kurve: Lenken beim Fahren
-        if abs(wc) < self.rcfg.w_of(self.h.min_w) and abs(err) > math.radians(self.h.min_w_err_deg):
-            wc = math.copysign(self.rcfg.w_of(self.h.min_w), err)
+        kpp = None
+        if self.h.lenk_bogen:
+            # Bogenlenkung (Pure Pursuit, seit 2026-11-26): Kreisbogen durch den Punkt voraus, κ = 2·sin(err)/Abstand,
+            # w = κ·v stufenlos (ein Rad etwas schneller als das andere); vorher w = kp·err mit Mindestlenkung min_w
+            # (unter 4° gar nicht, darüber gleich ±min_w: Lenken in Stößen, Nutzer 2026-11-26)
+            ld = math.hypot(gap[0], gap[1]) if mitte else math.hypot(tx - x, ty - y)
+            kpp = 2.0 * math.sin(err) / max(ld, 0.05)
+            wc = 0.0
+        else:
+            wc = clamp(yaw_rate_to_w(self.h.kp_turn * err, self.rcfg), -1.0, 1.0)     # Kurve: Lenken beim Fahren
+            if abs(wc) < self.rcfg.w_of(self.h.min_w) and abs(err) > math.radians(self.h.min_w_err_deg):
+                wc = math.copysign(self.rcfg.w_of(self.h.min_w), err)
+
+        def w_bogen(vv: float) -> float:
+            return clamp(yaw_rate_to_w(kpp * vv * self.rcfg.vx_limit, self.rcfg), -1.0, 1.0)
         # Tempo hängt nicht am Winkelfehler (bis 2026-11-26: v · (1 − |err|/90°), Nutzer: „er zuckt bei jeder
         # Kursänderung, das Tempo soll bleiben und nur der Kurs geändert werden“); gebremst wird nur vor Kurven
         # (kurve_v), am Wegende, vor Hindernissen und in Engstellen, sehr steil dreht er oben auf der Stelle
@@ -1126,7 +1138,7 @@ class PathFollower:
             if w.arc_free_fn is not None and v > 0:
                 # derselbe Bogen wie die Bahnprüfung, nur weiter voraus: Sie bremste im Simulator, während der Weg
                 # frei war, weil der Bogen ein paar Zentimeter neben dem Weg an einer Kante vorbeiführt
-                bogen = w.arc_free_fn(v, wc, tight)
+                bogen = w.arc_free_fn(v, wc if kpp is None else w_bogen(v), tight)
             frei = min(knick, weg - self.h.free_rest_m, bogen - self.h.free_rest_m)
             # für die Rohaufnahme (meta.jsonl "frei"): welche Strecke begrenzt, None = frei
             info = {k: (None if s == math.inf else round(s, 2)) for k, s in
@@ -1139,6 +1151,8 @@ class PathFollower:
         # Bogen des Befehls als Krümmung (gleiche Lenkung wie bisher: κ = Drehrate/Tempo im eingeschwungenen Zustand);
         # mit robot.vel_kappa hält die Firmware ihn auch beim Anfahren und Bremsen (ARBEITSPLAN.md Punkt 5 Stufe 1)
         vm = v * self.rcfg.vx_limit
+        if kpp is not None:
+            wc = w_bogen(v)
         kappa = w_to_yaw_rate(wc, self.rcfg) / vm if vm > 1e-3 else None
         return Command(v, wc, hmm, "%s (%+.0f°%s%s)" % (label, math.degrees(err), ", Lücke" if mitte else ", eng" if tight else "",
                                                        frei_txt), extra={"tight": tight, "frei": info}, kappa=kappa)

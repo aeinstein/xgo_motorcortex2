@@ -722,6 +722,10 @@ class HomeCfg:
     # ~15° nach; ständiges Wechseln zwischen Drehen und Fahren brachte ihn nicht vom Fleck
     # (2026-11-05). Deshalb in Kurven weiterfahren, auf der Stelle nur bei großem Fehler drehen.
     kp_turn: float = 1.5               # 1/s (Folgen: behavior.kp_turn)
+    # Lenken beim Fahren als Kreisbogen durch den Punkt voraus (Pure Pursuit): κ = 2·sin(Fehler)/Abstand, w = κ·v
+    # stufenlos, mit robot.vel_kappa hält die Firmware den Bogen. Seit 2026-11-26 (Nutzer: kontinuierlich lenken,
+    # ein Rad etwas schneller als das andere); false = wie vorher w = kp_turn·Fehler mit Mindestlenkung min_w.
+    lenk_bogen: bool = True
     turn_enter_deg: float = 75.0       # ab diesem Winkelfehler auf der Stelle drehen ...
     turn_exit_deg: float = 25.0        # ... bis er darunter ist
     # Kleine Lenkbefehle ignoriert die Firmware (u8 128 ± 6): darunter sonst keine Korrektur

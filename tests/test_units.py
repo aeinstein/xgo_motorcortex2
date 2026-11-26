@@ -2330,6 +2330,27 @@ def test_pathfollower_tempo_ohne_winkelfehler():
     assert m.bahn_info["fertig"] and m.bahn_info["grund"] == "angekommen" and not m.checked
 
 
+def test_pathfollower_bogenlenkung_stufenlos():
+    """Bogenlenkung (home.lenk_bogen): w = κ·v mit κ = 2·sin(Fehler)/Abstand, stufenlos ohne Mindestlenkung,
+    Krümmung im Befehl = κ des Bogens (Nutzer 2026-11-26: kontinuierlich lenken)."""
+    from xgonav.behaviors import PathFollower, World
+    from xgonav.mathe import w_to_yaw_rate
+    cfg = Config.neutral()
+    cfg.home.kurve_a_mps2 = 0.0
+    cfg.home.free_slow = False
+    f = PathFollower(cfg.behavior, cfg.robot, cfg.home)
+    f.set_path([(0.0, 0.0), (3.0, 0.0)])
+    welt = lambda deg: World(t=0.0, dt=0.05, W=640, H=480, hfov=1.6, ego=None, tracks=[], free=None, balancing=True,
+                             yaw=0.0, cmd_v=0.0, pose=(0.0, 0.0, -math.radians(deg)))
+    ws = [f.drive(welt(d), "T", slow_end=False).w for d in (1, 2, 4, 8)]
+    assert all(0.0 < a < b for a, b in zip(ws, ws[1:]))            # wächst stufenlos mit dem Fehler, kein Sprung
+    assert ws[0] < cfg.robot.w_of(cfg.home.min_w) / 4
+    c = f.drive(welt(8), "T", slow_end=False)
+    vm = c.v * cfg.robot.vx_limit
+    assert c.kappa == pytest.approx(2.0 * math.sin(math.radians(8)) / cfg.home.lookahead_m, rel=0.02)
+    assert w_to_yaw_rate(c.w, cfg.robot) == pytest.approx(c.kappa * vm, rel=1e-6)
+
+
 def test_frontier_keeps_goal_instead_of_switching():
     """Ein bestehendes Ziel bleibt, auch wenn ein anderes gerade besser ist (sonst pendelt er)."""
     from xgonav.frontier import next_goal
@@ -2420,10 +2441,12 @@ def test_pathfollower_detour_is_not_stuck():
 
 
 def test_pathfollower_small_error_still_steers():
-    """Unter ~11° Fehler läge der Lenkbefehl unter der Totzone der Firmware (u8 128 ± 6)."""
+    """Ohne Bogenlenkung (home.lenk_bogen false): unter ~11° Fehler läge der Lenkbefehl unter der Totzone der
+    Firmware (u8 128 ± 6), deshalb Mindestlenkung min_w."""
     from xgonav.behaviors import PathFollower, World
     from xgonav.egomotion import EgoResult
     cfg = Config.neutral()
+    cfg.home.lenk_bogen = False
     f = PathFollower(cfg.behavior, cfg.robot, cfg.home)
     f.set_path([(0.0, 0.0), (3.0, 0.0)])
 
