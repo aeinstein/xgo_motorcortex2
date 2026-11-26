@@ -78,7 +78,11 @@ später: Rest-w ~4e-5 °/s); `Robot` mit `vel_kursabs` und Fähigkeitsbit bit4: 
 Durchlauf `kursabs`, Nachbau folgt dem festen Ziel (Versatz Firmware-Kurs → Generatorwinkel einmal beim Start); ohne
 IMU-Strom das Kursziel Δψ. `App._kurs_fw`: Ziel = IMU-Kurs zur Bildzeit des Regelschritts + Restfehler (±170°), über
 `ImuSource.fw_kurs_deg` (Kursfaktoren zurückgerechnet) in den Rohkurs. Simulator home 60 s `--wheels` mit/ohne:
-1–1,4 cm / ±1–1,4° gegen 1,8 cm / 0,1° (Hysterese 1° der Firmware). Nicht gefahren.
+1–1,4 cm / ±1–1,4° gegen 1,8 cm / 0,1° (Hysterese 1° der Firmware).
+Gefahren 2026-11-26 (Firmware c7a97230 geflasht, Fähigkeiten 23, `vel_kursabs = true` am Rider, Teppich, `POST /turn`
+über MCP): +44,8/−44,5, +89,7/−89,5, +179,5/−179,6, +359,6/−359,3°; IMU-Kurs nach allen Drehungen +0,4° gegen den Start,
+Pose 3 cm. Während −90° meldete die Firmware Kurs absolut läuft, danach erreicht (relatives Kursziel-Bit 0). Offen:
+explore gegen den Stand mit Stufe 2.
 
 ## Strecke mit Halt und home gefahren (2026-11-25)
 
