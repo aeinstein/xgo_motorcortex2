@@ -80,7 +80,7 @@ API = {"GET": ["/status", "/ws?nick=2|3 (WebSocket: Bilder, Bestätigung je Bild
        "POST": ["/mode?name=..&target=..", "/stop", "/action?n=3|4|5 (Fahr-Aktion der Firmware, nur idle; Bahnprüfung bleibt)","/pipeline?on=0|1", "/ruhe?on=0|1 (Ruhemodus; Wecken startet nichts)", "/wlan?on=0|1 (WLAN-Einrichtung: QR-Code; wie Tasten C+D halten)", "/record?on=0|1 (Rohaufzeichnung, nur balancierend)",
                 "/drive?v=..&w=..&sicher=0|1&bogen=0|1&strecke=M (nur Modus manual; v, w Anteile von max_v/max_w; sicher=1: mit Bodengrenze und Bahnprüfung; bogen=1: als Kreisbogen κ = w/v, mit robot.vel_kappa in der Firmware; strecke=M: nach M Metern halten, mit robot.vel_strecke in der Firmware)",
                 "/turn?deg=..&w=0.5&tol=3 (nur Modus manual: um deg drehen, + = links; Fortschritt in /status turn)",
-                "/bahn?laenge=3&winkel=20&welle=1.5&zurueck=1&v=0.3 (nur Modus manual: feste Schlangenlinie hin, 180° wenden, zurück; v Anteil von max_v, sonst home.v; /status bahn)",
+                "/bahn?laenge=3&winkel=20&welle=1.5&zurueck=1&v=0.3&kurve=1 (nur Modus manual: feste Schlangenlinie hin, 180° wenden, zurück; v Anteil von max_v, sonst home.v; kurve=0 ohne Kurventempo-Grenze; /status bahn)",
                 "/exposure?us=0|100..max (0 = Automatik)", "/gain?g=0|1..63.9 (0 = Automatik)",
                 "/bild?k=0.5..4&s=0.5..4&b=-0.5..0.5 (Kontrast/Sättigung/Helligkeit im ISP)",
                 "/map/reset (Raumkarte leeren, Pose auf 0)", "/map/pose?aktion=start|hier|verwerfen (Standort bestätigen)", "/level (Beine neu ausrichten, 3 s)",
@@ -377,7 +377,8 @@ def serve(app: App, host: str, port: int, fps: int, render_cpus=None) -> Threadi
                 except ValueError:
                     return self._send(400, b'{"error":"laenge/winkel/welle/v ungueltig"}')
                 try:
-                    pts = app.set_bahn(laenge, winkel, welle, q.get("zurueck", ["1"])[0] != "0", vb)
+                    pts = app.set_bahn(laenge, winkel, welle, q.get("zurueck", ["1"])[0] != "0", vb,
+                                       q.get("kurve", ["1"])[0] != "0")
                 except ValueError as e:   # ModeNotAllowed: 409, Grenzen: 400
                     return self._send(409 if type(e).__name__ == "ModeNotAllowed" else 400,
                                       json.dumps({"error": str(e)}).encode())
