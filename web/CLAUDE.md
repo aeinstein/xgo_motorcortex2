@@ -10,6 +10,7 @@ Weboberfläche des RiderPi in PHP (`web/index.php`, `web/api.php`) hinter nginx 
 
 - nginx mit TLS auf 443, Oberfläche direkt unter `/` (`root /opt/xgonav/web`); Port 80 leitet dorthin um, alte Adressen `/xgonav/…` schreibt nginx intern auf `/…` um. Zertifikat und Schlüssel unter `/etc/xgonav/tls`.
 - Bilder per WebSocket `/ws` direkt von xgonav, mit Bestätigung je Bild.
+- `obs.php`: nur das Kamerabild (OBS-Browserquelle), `?roh=1` ohne Overlay (`/ws?roh=1`, JPEG q80); seit 2026-11-26.
 - Laufzeitdaten (CPU, WLAN, IMU, xgonav-Status) ohne Polling per WebSocket `/live` vom PHP-CLI-Dienst `tools/live.php` (`xgonav-live.service`, Port 8089; 1 s, IMU 0,3 s balancierend); schläft ohne Browser.
 - Gegensprechen per WebSocket `/sprech` vom PHP-CLI-Dienst `tools/sprech.php` (`xgonav-sprech.service`, Port 8090, `www-data` + Gruppe `audio`): nur im Modus `manual`, 8 kHz mono in beide Richtungen über `arecord`/`aplay` auf `plughw:CARD=wm8960soundcard,DEV=0`, nur während eines Gesprächs; Wandeln, Echo-Dämpfung, Pegel im Browser. Gemeinsame WebSocket-Helfer `tools/ws.inc.php`. Dazu „Kamera senden“: zweite WebSocket `/sprech?bild`, der Browser schickt fertige RGB565-Bilder 320×240, der Dienst reicht sie ins Display-FIFO `/tmp/lcd0` (Besitz über `/tmp/lcd0.owner` wie `tools/emotion.sh`, am Ende Emotion „cute“). Seit 2026-11-21 am Rider.
 - Emotionen erzeugt `tools/eyes.py` nach `/opt/xgonav/emotions`.

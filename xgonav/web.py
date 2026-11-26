@@ -488,10 +488,12 @@ def serve(app: App, host: str, port: int, fps: int, render_cpus=None) -> Threadi
             So bleibt es bei einer Verbindung, ohne dass sich Bilder in TCP-Puffern stauen
             (MJPEG über schwaches WLAN: bis 20 s). Binärnachricht: 4 Byte Bildnummer + JPEG.
             nick=2: Kopf aus ws_kopf (IMU-Wert des Bildes: Zeilen, Roll, cx, Nick, Kurs, Alter, Nickraten, Zustand);
-            der Browser verschiebt/dreht damit und zeigt die Werte je Bild an."""
+            der Browser verschiebt/dreht damit und zeigt die Werte je Bild an.
+            roh=1: Kamerabild ohne Overlay (web/obs.php, OBS-Browserquelle), JPEG-Qualität 80."""
             pin_thread(render_cpus, "Bild-Thread", quiet=True)
             stufe = q.get("nick", ["0"])[0]
             nick, mit_pose = stufe in ("2", "3"), stufe == "3"
+            roh = q.get("roh", ["0"])[0] == "1"
             key = self.headers.get("Sec-WebSocket-Key")
             if not key or "websocket" not in self.headers.get("Upgrade", "").lower():
                 return self._send(400, b'{"error":"WebSocket erwartet"}')
@@ -516,11 +518,11 @@ def serve(app: App, host: str, port: int, fps: int, render_cpus=None) -> Threadi
                         break
                     if (app.ruhe or not app.pipeline_on) and snap.idx == last:
                         continue                    # Ruhe/Bildverarbeitung aus: dasselbe Bild nicht neu kodieren
-                    hl = horizont_linie(app, snap)
-                    img = render(snap, text=False, horizont=hl)   # Statuszeilen zeigt die Oberfläche
+                    hl = horizont_linie(app, snap) if nick or not roh else None
+                    img = snap.frame if roh else render(snap, text=False, horizont=hl)   # Statuszeilen zeigt die Oberfläche
                     if img is None:
                         continue
-                    jpg = jpeg.encode(img, 70)
+                    jpg = jpeg.encode(img, 80 if roh else 70)
                     if jpg is None:
                         continue
                     last = snap.idx

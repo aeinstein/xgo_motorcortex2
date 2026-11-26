@@ -166,11 +166,21 @@ Replaced MJPEG (`/stream`, removed 2026-11-17): on weak Wi-Fi, TCP buffers queue
 ## Live data (WebSocket)
 
 Daemon `tools/live.php` (PHP CLI, unit `xgonav-live.service`, user `www-data`, `Nice=10`), not under `web/`
+| Raw | `?roh=1`: camera image without overlay, JPEG quality 80 (overlay 70); combinable with `nick` |
 (would be callable via php-fpm). Reads `/proc` directly, works without xgonav. One shared read per tick for all tabs.
 
 | Item | Value |
 |---|---|
 | Path | `/live` (nginx → `127.0.0.1:8089`) |
+### OBS (`web/obs.php`)
+
+| Item | Value |
+|---|---|
+| URL | `https://<rider>/obs.php?roh=1` (raw image), without `roh` with overlay as in the web view |
+| OBS | source „Browser“, 640 × 480; self-signed certificate: start OBS with `--ignore-certificate-errors` |
+| Page | image only on black (`object-fit: contain`), `/ws` with ack per image, reconnect after 1 s, last image stays when the pipeline is off |
+| Cost on the Pi | like another open web tab: ≤ 10 JPEG/s in the hardware encoder; `roh=1` skips drawing the overlay |
+
 | Idle | no client: blocks in `stream_select`, no `/proc` reads, 0 % CPU |
 | `sys` + `status`, 1 s (sleep mode 5 s) | `sys`: `t`, `cpu` `[[total, idle+iowait], …]` per core (jiffies), `temp_c`, `load`, `mhz` `[cur, max]` (cpu0 cpufreq) or `null`, `battery`, `height`, `roll`, `state`, `wlan` `"rx_bytes tx_bytes dBm quality"` (`-` = unknown); `status`: xgonav `/status` verbatim (timeout 0.5 s) or `null` + `status_fehler` |
 | `imu`, 0.3 s if `state` = 1 (balancing), else 1 s; none in sleep mode | `seq`, `imu` `[[seq, t_ms, roll, pitch, yaw], …]` (°), `wseq`, `wheels` `[[seq, t_ms, ticks_left, ticks_right], …]`, `state`; only samples newer than the last sent per connection |
