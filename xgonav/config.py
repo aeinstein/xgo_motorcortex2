@@ -57,13 +57,15 @@ class RobotCfg:
     # 3,97 seit 2026-11-25: Strecke mit Halt zählte in drei Fahrten 1,6–2,0 % weniger als die Radticks (Maßstab vom
     # Maßband, odom.scale 1,008); vorher 3,9 aus tools/fw_einheit.py mit Raddurchmesser 60 mm ohne diesen Maßstab
     fw_speed_unit_mm: float = 3.97
-    vel_accel_mps2: float = 0.5
-    vel_decel_mps2: float = 1.0
+    # 1,79 seit 2026-11-26 (Nutzer: 50 % von 3,57 = g·tan 20°; vorher 0,5 / 1,0 / 1,5). Tempotests am selben Tag: mit
+    # 3,57 bis +29° Vorlage, sauber; die Radgrenze liegt bei ~1,1 m/s (max_v hält Reserve)
+    vel_accel_mps2: float = 1.79
+    vel_decel_mps2: float = 1.79
     # Ruck 0 = ohne Ruckgrenze (Firmware velocity_cmd.h): Rampe nur mit a_max auf das Soll-Tempo. Seit 2026-11-26
     # (Nutzer: Fahrrahmen = Soll-Tempo + höchste Beschleunigung; das weiche Anlaufen macht der Rider von selbst, weil er
     # erst nach vorn kippen muss); vorher 2,5 bzw. 10 (S-Kurve)
     vel_jerk_mps3: float = 0.0
-    vel_brake_mps2: float = 1.5
+    vel_brake_mps2: float = 1.79
     vel_brake_jerk_mps3: float = 0.0
     vel_alpha_dps2: float = 360.0
     vel_jerk_w_dps3: float = 1800.0

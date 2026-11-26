@@ -83,13 +83,13 @@
       {
        "key": "vel_accel_mps2",
        "typ": "float",
-       "default": 0.5,
-       "hilfe": ""
+       "default": 1.79,
+       "hilfe": "1,79 seit 2026-11-26 (Nutzer: 50 % von 3,57 = g·tan 20°; vorher 0,5 / 1,0 / 1,5). Tempotests am selben Tag: mit 3,57 bis +29° Vorlage, sauber; die Radgrenze liegt bei ~1,1 m/s (max_v hält Reserve)"
       },
       {
        "key": "vel_decel_mps2",
        "typ": "float",
-       "default": 1.0,
+       "default": 1.79,
        "hilfe": ""
       },
       {
@@ -101,7 +101,7 @@
       {
        "key": "vel_brake_mps2",
        "typ": "float",
-       "default": 1.5,
+       "default": 1.79,
        "hilfe": ""
       },
       {

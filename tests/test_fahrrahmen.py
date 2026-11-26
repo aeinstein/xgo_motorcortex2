@@ -239,8 +239,10 @@ def test_generator_wie_firmware():
 def _cfg(**kw):
     c = Config.neutral().robot
     assert c.vel_frame                                                     # Default: wie am Rider mit 08-velocity
-    # Die Rahmen-Tests rechnen mit der S-Kurve (Ruck 2,5 / 10 wie bis 2026-11-26); ohne Ruck: test_ohne_ruck_*
+    # Die Rahmen-Tests rechnen mit den Werten bis 2026-11-26 (S-Kurve, Ruck 2,5 / 10; a 0,5 / 1,0 / 1,5); ohne Ruck:
+    # test_ohne_ruck_*
     c.vel_jerk_mps3, c.vel_brake_jerk_mps3 = 2.5, 10.0
+    c.vel_accel_mps2, c.vel_decel_mps2, c.vel_brake_mps2 = 0.5, 1.0, 1.5
     for k, v in kw.items():
         setattr(c, k, v)
     return c
