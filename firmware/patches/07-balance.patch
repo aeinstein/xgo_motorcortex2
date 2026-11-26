@@ -1,29 +1,35 @@
 balance: Positionshalten beim Drehen, Roll-Trimm, Roll halten, Fahr-Integral, Einlegen in Kurven
 
 diff --git a/firmware/src/control/rider_leg_imu.cpp b/firmware/src/control/rider_leg_imu.cpp
-index 24d302f..acbf10f 100644
+index 24d302f..22a62f5 100644
 --- a/firmware/src/control/rider_leg_imu.cpp
 +++ b/firmware/src/control/rider_leg_imu.cpp
-@@ -27,12 +27,16 @@ std::uint32_t extensionTicks(float extension) {
+@@ -27,12 +27,20 @@ std::uint32_t extensionTicks(float extension) {
  
  void updateLegTargets(LegState &s, float height, float command_roll_deg,
                        bool leveling, float roll_pid_increment,
 -                      std::uint16_t zero_a, std::uint16_t zero_b) {
 +                      std::uint16_t zero_a, std::uint16_t zero_b, float lean_deg) {
      // 0x400d4514; float stores are retained at original rounding boundaries.
+-    if (leveling) s.roll_target_deg += roll_pid_increment;
+-    else s.roll_target_deg = float(double(s.roll_target_deg) * 0.95 +
+-                                  double(command_roll_deg) * 0.050000000000000044);
 +    // Im Original klang das Ziel nach dem Nivellieren wieder auf den Rollbefehl ab; gerade blieb der Rider
 +    // nur, solange die Beinservos in ihrer Totzone standen, jede Höhenänderung machte ihn wieder schief (~2°).
 +    // Hier bleibt die gefundene Differenz als Trimm stehen. Ohne Nivellieren ist roll_trim_deg 0 = Original.
-     if (leveling) s.roll_target_deg += roll_pid_increment;
-     else s.roll_target_deg = float(double(s.roll_target_deg) * 0.95 +
--                                  double(command_roll_deg) * 0.050000000000000044);
++    if (leveling) {
++        s.roll_target_deg += roll_pid_increment;
++        if (lean_deg != s.lean_prev_deg) s.roll_target_deg += lean_deg - s.lean_prev_deg;   // Vorsteuerung des Einlegens
++    }
++    s.lean_prev_deg = leveling ? lean_deg : 0.0f;
++    if (!leveling) s.roll_target_deg = float(double(s.roll_target_deg) * 0.95 +
 +                                  double(command_roll_deg + s.roll_trim_deg) * 0.050000000000000044);
      s.roll_target_deg = clamp(s.roll_target_deg, -20.0f, 20.0f);
 +    if (leveling) s.roll_trim_deg = clamp(s.roll_target_deg - command_roll_deg - lean_deg, -10.0f, 10.0f);   // ohne Einlegen
      const double difference = std::sin(double(s.roll_target_deg) / 57.3) * 43.0;
      const float a = float(double(height) + difference);
      const float b = float(double(height) - difference);
-@@ -42,6 +46,26 @@ void updateLegTargets(LegState &s, float height, float command_roll_deg,
+@@ -42,6 +50,26 @@ void updateLegTargets(LegState &s, float height, float command_roll_deg,
      s.servo_b = std::uint16_t(std::uint32_t(zero_b) + extensionTicks(s.extension_b));
  }
  
@@ -50,7 +56,7 @@ index 24d302f..acbf10f 100644
  void offsetLegExtension(LegState &s, float offset_a_m, float offset_b_m,
                          std::uint16_t zero_a, std::uint16_t zero_b) {
      // Convert the actor's metric extension offsets to the firmware's length
-@@ -255,6 +279,7 @@ bool updateImu(ImuState &s, const std::uint8_t *raw, std::size_t size,
+@@ -255,6 +283,7 @@ bool updateImu(ImuState &s, const std::uint8_t *raw, std::size_t size,
      s.roll_deg = float(std::atan(u[0] / u[2]) * 57.2958);
      // Kurs: Drehrate um die Senkrechte (w . u), nicht nur die Hochachse des Sensors; erst nach der
      // Startkalibrierung integrieren (ohne Totband): vorher ist gyro_bias[2] eine Teilsumme.
@@ -59,22 +65,24 @@ index 24d302f..acbf10f 100644
          s.yaw_deg = float(double(s.yaw_deg) + (w[0] * u[0] + w[1] * u[1] + w[2] * u[2]) * kR2D * dt);
  
 diff --git a/firmware/src/control/rider_leg_imu.h b/firmware/src/control/rider_leg_imu.h
-index faadf8e..01f6a03 100644
+index faadf8e..0894be2 100644
 --- a/firmware/src/control/rider_leg_imu.h
 +++ b/firmware/src/control/rider_leg_imu.h
-@@ -10,12 +10,35 @@ struct LegState {
+@@ -10,12 +10,37 @@ struct LegState {
      float roll_target_deg = 0;              // command structure 3ffc30b4 +12
      float extension_a = 45, extension_b = 45; // +16,+20; firmware length units
      std::uint16_t servo_a = 0, servo_b = 0; // 3ffbe170+2, 3ffbe15c+2
 +    // Rolldifferenz, die das Nivellieren gefunden hat (Ziel - Rollbefehl, ±10°). Sie bleibt nach
 +    // dem Abschalten stehen, auch über Höhenänderungen; zurückgesetzt nur mit dem LegState (Aufstehen, Fallen).
 +    float roll_trim_deg = 0;
++    float lean_prev_deg = 0;   // lean_deg des letzten Takts (Vorsteuerung des Einlegens)
  };
  // roll_pid_increment is updatePid(roll PID)'s output when leveling is enabled.
  // The caller sets its target=0 and feedback=measured roll (IMU +96).
 +// lean_deg = Sollroll des Einlegens (curveLean), wenn der Roll-PID darauf statt auf 0 regelt. Er geht
 +// nicht in den Roll-Trimm ein (sonst bliebe die Schräglage stehen, wenn das Nivellieren mitten in der Kurve endet).
-+// 0 = bitgleich zum Original.
++// Vorsteuerung: jede Änderung von lean_deg geht sofort auf das Beinziel, der Roll-PID (Integrator, ~0,15 s) regelt
++// nur den Rest. 0 = bitgleich zum Original.
  void updateLegTargets(LegState &state, float height, float command_roll_deg,
                        bool leveling, float roll_pid_increment,
 -                      std::uint16_t zero_a, std::uint16_t zero_b);
@@ -90,7 +98,7 @@ index faadf8e..01f6a03 100644
 +    float target_deg = 0;   // Sollroll für den Roll-PID (°)
 +};
 +constexpr float kLeanMaxDeg = 6.0f;      // ° Betrag
-+constexpr float kLeanTau = 0.25f;        // s, Tiefpass des Ziels
++constexpr float kLeanTau = 0.08f;        // s, Tiefpass des Ziels
 +constexpr float kLeanRateDegS = 20.0f;   // °/s, Ratenbegrenzung des Ziels
 +constexpr float kLeanLegMargin = 10.0f;  // Längeneinheiten (mm) Abstand jedes Beins zu 0 bzw. 36
 +constexpr float kLeanGravity = 9.81f;    // m/s^2
@@ -99,7 +107,7 @@ index faadf8e..01f6a03 100644
  // Actor leg channels: add a metric extension offset to each leg target and
  // recompute the servo tick values with the original acos linkage mapping.
  // Offsets are clamped so the extension stays inside the 45..81 mm range.
-@@ -51,6 +74,7 @@ struct ImuState {
+@@ -51,6 +76,7 @@ struct ImuState {
      std::int32_t wheel_ticks[2]{}, last_ticks[2]{};
      bool wheels_fresh = false, ticks_seen = false;
      float speed_m_s = 0;

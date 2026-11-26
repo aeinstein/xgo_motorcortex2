@@ -118,10 +118,50 @@ static void testClosedLoop() {
     check(c.r.legs.roll_target_deg == d.r.legs.roll_target_deg, "ohne Roll halten: Ziel wirkungslos");
 }
 
+// Schlangenlinie (Fahrt 20261126-201922: ±3°, Periode 1,7 s): mit Vorsteuerung folgt der Körper-Roll dem Ziel ohne
+// den Verzug des Roll-Integrators; mit dem Tiefpass des Ziels zusammen bleibt der Verzug klein.
+static float lagSeconds(const float* ref, const float* out, int n, float* gain) {
+    int best = 0; float best_e = 1e30f;
+    for (int sh = 0; sh < 200; ++sh) {
+        float e = 0;
+        for (int k = 200; k < n; ++k) { const float d = out[k] - ref[k - sh]; e += d * d; }
+        if (e < best_e) { best_e = e; best = sh; }
+    }
+    float ro = 0, rr = 0;
+    for (int k = 200; k < n; ++k) { ro += out[k] * ref[k - best]; rr += ref[k - best] * ref[k - best]; }
+    *gain = ro / rr;
+    return best * kDt;
+}
+
+static void testWeave(float sign) {
+    constexpr int n = 2000;   // 6 s
+    static float target[n], roll[n], want[n];
+    Run r;
+    for (std::uint32_t k = 0; k < 600; ++k) step(r, k, true, 0, 2.0f, sign);   // Störung ausgleichen
+    CurveLean cl;
+    for (int k = 0; k < n; ++k) {
+        const float t = k * kDt;
+        // v 0,9 m/s, Gierrate so, dass -atan(v·w/g) = 3°·sin(ωt)
+        want[k] = 3.0f * std::sin(2.0f * 3.14159265f * t / 1.7f);
+        const float w = -std::tan(want[k] / 57.29578f) * 9.81f / 0.9f * 57.29578f;
+        target[k] = updateCurveLean(cl, true, 0.9f, w, kHeight, kDt);
+        step(r, 600 + k, true, target[k], 2.0f, sign);
+        roll[k] = r.roll;
+    }
+    float g1, g2;
+    const float lag_pid = lagSeconds(target, roll, n, &g1);
+    const float lag_all = lagSeconds(want, roll, n, &g2);
+    std::printf("       Schlangenlinie: Roll hinter Ziel %.0f ms (Verstärkung %.2f), hinter -atan(v·w/g) %.0f ms (%.2f)\n",
+                lag_pid * 1000, g1, lag_all * 1000, g2);
+    check(lag_pid <= 0.015f && std::fabs(g1 - 1) < 0.1f, "Vorsteuerung: Körper-Roll folgt dem Ziel ohne Integrator-Verzug");
+    check(lag_all <= 0.08f && std::fabs(g2 - 1) < 0.15f, "Schlangenlinie 1,7 s: gesamter Verzug höchstens 80 ms");
+}
+
 int main() {
     testTarget();
     testDynamics();
     testClosedLoop();
+    testWeave(1.0f);   // Vorzeichen +1: nur damit ist Roll halten stabil (testClosedLoop)
     std::printf(fail ? "FEHLER\n" : "alles ok\n");
     return fail;
 }
