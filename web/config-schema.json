@@ -2390,8 +2390,8 @@
       {
        "key": "kurve_a_mps2",
        "typ": "float",
-       "default": 0.3,
-       "hilfe": "Kurventempo (PathFollower.kurve_v): höchstens sqrt(kurve_a_mps2 / Krümmung) in jeder Kurve des Wegs bis kurve_vorschau_m voraus, davor mit end_decel_mps2 abbremsen (wie am Wegende). 0 = aus."
+       "default": 0.0,
+       "hilfe": "Kurventempo (PathFollower.kurve_v): höchstens sqrt(kurve_a_mps2 / Krümmung) in jeder Kurve des Wegs bis kurve_vorschau_m voraus, davor mit end_decel_mps2 abbremsen (wie am Wegende). 0 = aus. Aus seit 2026-11-26 (Nutzer: „Kurventempo-Grenze? weg damit!“, das Tempo soll in Kurven bleiben); vorher 0,3."
       },
       {
        "key": "kurve_vorschau_m",
