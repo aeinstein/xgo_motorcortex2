@@ -1943,6 +1943,8 @@ def safety(cmd: Command, w: World, cfg: BehaviorCfg) -> Command:
     """Letzte Instanz: liegt/gefallen -> Stopp; Hindernis/TTC -> keine Vorwärtsfahrt."""
     if not w.balancing:
         return Command(0, 0, None, stopp_text(w.fw_mode), cmd.target_id)
+    if cfg.bremsen_aus:
+        return cmd                 # Arbeit am Fahrstil: keine Bremse (behavior.bremsen_aus)
     if w.blind:
         return Command(0, 0, None, "BLIND – keine Bodengrenze (FloorNet), Stopp", cmd.target_id)
     # Anschub des Wegfolgers (extra anschub): Freiraum und TTC sehen die Kante/Stufe, an der er hängt; seine

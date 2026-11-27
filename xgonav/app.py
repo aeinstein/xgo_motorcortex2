@@ -1722,7 +1722,7 @@ class App:
     def _arc_check(self, cmd: Command) -> Command:
         """Geplanten Bogen gegen die Hinderniskarte prüfen (auch außerhalb des Sichtfelds)."""
         bogen_w(cmd, self.robot, self.cfg.robot)
-        if self.lmap is None or abs(cmd.v) < 1e-3:
+        if self.lmap is None or abs(cmd.v) < 1e-3 or self.cfg.behavior.bremsen_aus:
             return cmd
         v = cmd.v * self.cfg.robot.vx_limit
         wr = w_to_yaw_rate(cmd.w, self.cfg.robot)

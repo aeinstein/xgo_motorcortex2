@@ -407,6 +407,9 @@ class BehaviorCfg:
     slow_free: float = 0.55        # darunter proportional abbremsen
     ttc_avoid_s: float = 1.2       # Erkunden: Time-to-contact darunter -> ausweichen
     ttc_stop_s: float = 0.8        # Sicherheitsschicht: darunter keine Vorwärtsfahrt
+    # Nur zum Arbeiten am Fahrstil (Nutzer 2026-11-27, „alle Bremsen weg“), nie Standard: safety() ohne BLIND,
+    # Freiraum und TTC, App._arc_check ohne Sperrzonen und Bahnprüfung. Liegt/gefallen hält weiter an.
+    bremsen_aus: bool = False
     # Anschub: Drückt er vorwärts, ohne voranzukommen (PathFollower.PRESS_S), und zeigt das Bodenmodell
     # vorn noch push_free_m frei, fährt er push_s lang mit push_v statt gleich zurückzusetzen. Höchstens
     # push_n Mal, bis er wieder 0,3 m weitergekommen ist. Anlass: RiderPi 2026-11-17, Rille im Teppich

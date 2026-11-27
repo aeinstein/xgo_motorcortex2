@@ -4601,3 +4601,15 @@ def test_koerperhoehe_aus_dem_strom(tmp_path):
     assert abs(r.height_mm - (cfg.height_min_mm + (cfg.height_max_mm - cfg.height_min_mm) * 250 / 255)) < 1e-9
     (tmp_path / "body_height").write_text("")                    # liegt: unbekannt, Sollwert zählt nicht mehr
     assert r.height_mm is None
+
+
+def test_bremsen_aus_nur_liegen_haelt():
+    """behavior.bremsen_aus (Arbeit am Fahrstil): safety() lässt BLIND, Freiraum und TTC durch, liegt hält weiter."""
+    from types import SimpleNamespace
+    from xgonav.behaviors import Command, safety
+    cfg = Config.neutral().behavior
+    cfg.bremsen_aus = True
+    w = SimpleNamespace(balancing=True, blind=True, free=None, ego=SimpleNamespace(ttc=0.1), cmd_v=0.5, fw_mode=1)
+    assert safety(Command(0.5, 0.0), w, cfg).v == 0.5
+    w.balancing = False
+    assert safety(Command(0.5, 0.0), w, cfg).v == 0

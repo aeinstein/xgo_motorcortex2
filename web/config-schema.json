@@ -1908,6 +1908,12 @@
        "hilfe": "Sicherheitsschicht: darunter keine Vorwärtsfahrt"
       },
       {
+       "key": "bremsen_aus",
+       "typ": "bool",
+       "default": false,
+       "hilfe": "Nur zum Arbeiten am Fahrstil (Nutzer 2026-11-27, „alle Bremsen weg“), nie Standard: safety() ohne BLIND, Freiraum und TTC, App._arc_check ohne Sperrzonen und Bahnprüfung. Liegt/gefallen hält weiter an."
+      },
+      {
        "key": "push_v",
        "typ": "float",
        "default": 0.9,
