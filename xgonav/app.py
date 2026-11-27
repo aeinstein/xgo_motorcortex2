@@ -664,7 +664,8 @@ class App:
     def set_bahn(self, laenge_m: float = 3.0, winkel_deg: float = 20.0, welle_m: float = 1.5,
                  zurueck: bool = True, v: float | None = None, kurve: bool = True) -> list[tuple[float, float]]:
         """Feste Testbahn (Modus manual, POST /bahn): Schlangenlinie laenge_m geradeaus ab der Pose,
-        y = A · sin(2π x / welle_m) mit höchstens winkel_deg gegen die Fahrtrichtung (0 = gerade), Punkte alle 5 cm;
+        y = A · sin(2π x / welle_m) mit höchstens winkel_deg gegen die Fahrtrichtung (0 = gerade), Ausschlag über die
+        erste und letzte halbe Welle weich ein-/ausgeblendet (gerader Anfang und gerades Ende), Punkte alle 5 cm;
         mit zurueck am Ende 180° wenden und zurück; kurve False: ohne Kurventempo-Grenze (home.kurve_a_mps2, Test der
         Schräglage in der Kurve). Fortschritt in /status bahn. Rückgabe: Punkte (Raumkarte)."""
         b = self.behavior
@@ -682,9 +683,13 @@ class App:
         n = max(2, int(round(laenge_m / 0.05)))
         c, s = math.cos(th), math.sin(th)
         pts = []
+        # Ausschlag über die erste und letzte halbe Welle weich ein-/ausblenden (sin²): die Schlange beginnt und endet
+        # gerade, hin wie zurück gleich (vorher begann sie mit voller Steigung, hin schwang er sich erst ein)
+        rampe = min(welle_m / 2.0, laenge_m / 2.0)
         for i in range(n + 1):
             u = laenge_m * i / n
-            q = amp * math.sin(2.0 * math.pi * u / welle_m)
+            g = min(1.0, u / rampe, (laenge_m - u) / rampe) if rampe > 0 else 1.0
+            q = amp * math.sin(0.5 * math.pi * g) ** 2 * math.sin(2.0 * math.pi * u / welle_m)
             pts.append((x0 + u * c - q * s, y0 + u * s + q * c))
         from dataclasses import replace
         b.bahn(pts, zurueck, self.cfg.home if kurve else replace(self.cfg.home, kurve_a_mps2=0.0), v)
