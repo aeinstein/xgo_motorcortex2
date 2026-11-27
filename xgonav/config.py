@@ -101,8 +101,9 @@ class RobotCfg:
     # und Bremsen × pursuit_accel_faktor und Nivellieren mit Einlegen in Kurven wie level_always. pursuit = Startwert.
     pursuit: bool = False
     pursuit_accel_faktor: float = 1.5
-    # Pursuit: Körperhöhe sinkt linear mit dem Tempo bis hierher bei v_max (nie unter height_min_mm + 10)
-    pursuit_hoehe_min_mm: float = 75.0
+    # Pursuit: Körperhöhe sinkt linear mit dem Tempo bis zu dieser Kamerahöhe (mm, über [camera] cam_h_u8) bei v_max;
+    # ohne Mindestabstand (Nutzer 2026-11-27), ganz eingefahren ~105 mm
+    pursuit_kamera_min_mm: float = 110.0
     keepalive_s: float = 0.3       # Sollwert periodisch neu schreiben
     stall_timeout_s: float = 0.5   # kein drive() mehr -> Stopp (Userspace-Watchdog)
     kernel_watchdog_ms: int = 1000 # nur wirksam mit Kernel-Patch (settings/motion_timeout_ms)

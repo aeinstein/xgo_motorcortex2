@@ -149,6 +149,7 @@ class Robot:
         self._tempo = 1.0
         self._pursuit = bool(getattr(cfg, "pursuit", False))
         self._p_h_u: int | None = None          # zuletzt von Pursuit geschriebene Höhe (u8), None = keine
+        self.cam_h_u8 = (109.4, 0.1126)          # Kamerahöhe mm = a + b·u8 (App setzt [camera] cam_h_u8)
         self.tempo = getattr(cfg, "tempo", 1.0)
         self._lock = threading.Lock()
         self._target = (0.0, 0.0)
@@ -549,23 +550,23 @@ class Robot:
 
     def _pursuit_hoehe(self) -> None:
         """Pursuit: Körperhöhe sinkt mit dem Tempo, linear von der eingestellten Höhe (Sollwert von Verhalten oder Web)
-        bis robot.pursuit_hoehe_min_mm bei v_max (Tempo des Generators, also dem Soll). Geschrieben nur bei
-        Änderungen ab 2 u8; der Sollwert selbst bleibt die Basis (_height_text: kein „von außen“)."""
+        bis zur Kamerahöhe robot.pursuit_kamera_min_mm bei v_max (Tempo des Generators, also dem Soll); ohne
+        Mindestabstand (Nutzer 2026-11-27: „schmeiß das Minimum raus“), nur 0..255. Geschrieben nur bei Änderungen ab
+        2 u8; der Sollwert selbst bleibt die Basis (_height_text: kein „von außen“)."""
         c = self.cfg
         aktiv = self._pursuit and self.state.balancing and self.vel and self._height_mm is not None
         span = c.height_max_mm - c.height_min_mm
         if not aktiv:
             if self._p_h_u is not None:
                 if self.state.balancing and self._height_mm is not None:
-                    u = int(round(255 * (self._height_mm - c.height_min_mm) / span))
-                    self._p_h_schreiben(u)
+                    self._p_h_schreiben(int(round(255 * (self._height_mm - c.height_min_mm) / span)))
                 self._p_h_u = None
             return
-        basis = self._height_mm
-        ziel_min = min(basis, max(c.pursuit_hoehe_min_mm, c.height_min_mm + 10.0))
+        u_basis = 255 * (self._height_mm - c.height_min_mm) / span
+        a, b = self.cam_h_u8
+        u_min = min(u_basis, max(0.0, (c.pursuit_kamera_min_mm - a) / b))
         frac = min(1.0, abs(self._gen_v.x) / max(self.v_max_mps, 1e-6))
-        mm = basis - frac * (basis - ziel_min)
-        u = int(round(255 * (mm - c.height_min_mm) / span))
+        u = int(round(max(0.0, min(255.0, u_basis - frac * (u_basis - u_min)))))
         if self._p_h_u is None or abs(u - self._p_h_u) >= 2:
             self._p_h_schreiben(u)
 

@@ -729,7 +729,7 @@ def test_pursuit_beschleunigung_nivellieren_hoehe():
     assert _writes(r, "height")[-1] == 128
     r._gen_v.x = r.v_max_mps
     r._pursuit_hoehe()
-    u_min = round(255 * (c.pursuit_hoehe_min_mm - c.height_min_mm) / (c.height_max_mm - c.height_min_mm))
+    u_min = round((c.pursuit_kamera_min_mm - r.cam_h_u8[0]) / r.cam_h_u8[1])   # Kamerahöhe 110 mm ~ u8 5
     assert _writes(r, "height")[-1] == u_min
     assert r._height_mm == pytest.approx(r.height_u8_to_mm(128))          # Basis bleibt
     r.pursuit = False

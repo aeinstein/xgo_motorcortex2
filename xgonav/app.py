@@ -133,6 +133,8 @@ class App:
         self.pitch_src = "bild"
         self.last_pitch_dev = 0.0
         self.robot = robot
+        if len(cfg.camera.cam_h_u8) == 2:
+            robot.cam_h_u8 = tuple(cfg.camera.cam_h_u8)   # Pursuit rechnet seine Mindesthöhe als Kamerahöhe
         self.src = source or make_source(cfg.camera)
         size = (cfg.camera.width, cfg.camera.height)
         self.hfov = math.radians(cfg.camera.hfov_deg)

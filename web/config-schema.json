@@ -201,10 +201,10 @@
        "hilfe": ""
       },
       {
-       "key": "pursuit_hoehe_min_mm",
+       "key": "pursuit_kamera_min_mm",
        "typ": "float",
-       "default": 75.0,
-       "hilfe": "Pursuit: Körperhöhe sinkt linear mit dem Tempo bis hierher bei v_max (nie unter height_min_mm + 10)"
+       "default": 110.0,
+       "hilfe": "Pursuit: Körperhöhe sinkt linear mit dem Tempo bis zu dieser Kamerahöhe (mm, über [camera] cam_h_u8) bei v_max; ohne Mindestabstand (Nutzer 2026-11-27), ganz eingefahren ~105 mm"
       },
       {
        "key": "keepalive_s",
