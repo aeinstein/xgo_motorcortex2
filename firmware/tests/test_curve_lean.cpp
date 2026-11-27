@@ -1,5 +1,5 @@
 // Host-Test 07-balance: In schnellen Kurven einlegen (control::updateCurveLean, MotionRequest::roll_target_deg).
-// Ziel = -atan(v * Gierrate / g): Vorzeichen, Betrag, Grenze nur die Mechanik (24,74°), Höhe weicht aus, Tiefpass + Rate, aus = zurück auf 0.
+// Ziel = -atan(v * Gierrate / g): Vorzeichen, Betrag, Grenze nur die Mechanik (24,74°), Höhe weicht aus, nur Tiefpass, aus = zurück auf 0.
 // Regelkreis wie test_roll_hold.cpp: Körper-Roll = Störung + Vorzeichen * Roll-Sollwert der Beine; mit Ziel geht
 // der Körper-Roll auf das Ziel, der Roll-Trimm nimmt die Schräglage nicht auf, Ziel 0 ist bitgleich zu ohne.
 // Aufruf: firmware/tests/run.sh test_curve_lean
@@ -50,13 +50,15 @@ static void testTarget() {
 
 static void testDynamics() {
     CurveLean s;
-    float max_step = 0, prev = 0;
-    for (int k = 0; k < 400; ++k) {
-        updateCurveLean(s, true, 1.5f, 150, kDt);
-        max_step = std::fmax(max_step, std::fabs(s.target_deg - prev));
-        prev = s.target_deg;
-    }
-    check(max_step <= rider::control::kLeanRateDegS * kDt + 1e-6f, "Sprung: Ziel ändert sich höchstens 20 °/s");
+    // Sprung auf -15,57° (Fahrt 084257): nur Tiefpass kLeanTau, keine Rate -> nach 3 kLeanTau (0,24 s) bei 95 %
+    const float want = -std::atan(0.87f * 180 * 0.017453292f / 9.81f) * 57.29578f;
+    updateCurveLean(s, true, 0.87f, 180, kDt);
+    const float first = s.target_deg;
+    for (int k = 1; k < 80; ++k) updateCurveLean(s, true, 0.87f, 180, kDt);
+    std::printf("       Sprung auf %.2f°: erster Takt %.3f°, nach 0,24 s %.2f°\n", want, first, s.target_deg);
+    check(std::fabs(first - want * kDt / rider::control::kLeanTau) < 1e-4f, "Sprung: erster Takt = Tiefpass (kein Sprung im Ziel)");
+    check(s.target_deg / want > 0.94f, "keine Ratenbegrenzung: nach 3 kLeanTau über 94 % (mit 20 °/s waren es 0,24 s × 20 = 4,8°)");
+    for (int k = 0; k < 400; ++k) updateCurveLean(s, true, 1.5f, 150, kDt);
     const float before = s.target_deg;
     updateCurveLean(s, true, 1.5f, 150, 0.0f);
     updateCurveLean(s, true, 1.5f, 150, 0.5f);
