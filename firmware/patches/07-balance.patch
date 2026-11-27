@@ -1,10 +1,10 @@
 balance: Positionshalten beim Drehen, Roll-Trimm, Roll halten, Fahr-Integral, Einlegen in Kurven
 
 diff --git a/firmware/src/control/rider_leg_imu.cpp b/firmware/src/control/rider_leg_imu.cpp
-index 24d302f..1592e38 100644
+index 24d302f..de14fbb 100644
 --- a/firmware/src/control/rider_leg_imu.cpp
 +++ b/firmware/src/control/rider_leg_imu.cpp
-@@ -27,13 +27,25 @@ std::uint32_t extensionTicks(float extension) {
+@@ -27,13 +27,27 @@ std::uint32_t extensionTicks(float extension) {
  
  void updateLegTargets(LegState &s, float height, float command_roll_deg,
                        bool leveling, float roll_pid_increment,
@@ -31,11 +31,13 @@ index 24d302f..1592e38 100644
 +    if (leveling) s.roll_trim_deg = clamp(s.roll_target_deg - command_roll_deg - lean_deg, -10.0f, 10.0f);   // ohne Einlegen
      const double difference = std::sin(double(s.roll_target_deg) / 57.3) * 43.0;
 +    // Schräglage vor Höhe (Kopfkommentar): Höhe so weit zur Mitte, dass beide Beine die Differenz ganz ausführen
++    const float height_cmd = height;
 +    if (lean) height = float(std::fmax(std::fabs(difference), std::fmin(36.0 - std::fabs(difference), double(height))));
++    s.height_shift = lean ? height - height_cmd : 0.0f;
      const float a = float(double(height) + difference);
      const float b = float(double(height) - difference);
      s.extension_a = clamp(a, 0.0f, 36.0f) + 45.0f;
-@@ -42,6 +54,20 @@ void updateLegTargets(LegState &s, float height, float command_roll_deg,
+@@ -42,6 +56,20 @@ void updateLegTargets(LegState &s, float height, float command_roll_deg,
      s.servo_b = std::uint16_t(std::uint32_t(zero_b) + extensionTicks(s.extension_b));
  }
  
@@ -56,7 +58,7 @@ index 24d302f..1592e38 100644
  void offsetLegExtension(LegState &s, float offset_a_m, float offset_b_m,
                          std::uint16_t zero_a, std::uint16_t zero_b) {
      // Convert the actor's metric extension offsets to the firmware's length
-@@ -255,6 +281,7 @@ bool updateImu(ImuState &s, const std::uint8_t *raw, std::size_t size,
+@@ -255,6 +283,7 @@ bool updateImu(ImuState &s, const std::uint8_t *raw, std::size_t size,
      s.roll_deg = float(std::atan(u[0] / u[2]) * 57.2958);
      // Kurs: Drehrate um die Senkrechte (w . u), nicht nur die Hochachse des Sensors; erst nach der
      // Startkalibrierung integrieren (ohne Totband): vorher ist gyro_bias[2] eine Teilsumme.
@@ -65,10 +67,10 @@ index 24d302f..1592e38 100644
          s.yaw_deg = float(double(s.yaw_deg) + (w[0] * u[0] + w[1] * u[1] + w[2] * u[2]) * kR2D * dt);
  
 diff --git a/firmware/src/control/rider_leg_imu.h b/firmware/src/control/rider_leg_imu.h
-index faadf8e..17057cd 100644
+index faadf8e..374b9f4 100644
 --- a/firmware/src/control/rider_leg_imu.h
 +++ b/firmware/src/control/rider_leg_imu.h
-@@ -10,12 +10,38 @@ struct LegState {
+@@ -10,12 +10,41 @@ struct LegState {
      float roll_target_deg = 0;              // command structure 3ffc30b4 +12
      float extension_a = 45, extension_b = 45; // +16,+20; firmware length units
      std::uint16_t servo_a = 0, servo_b = 0; // 3ffbe170+2, 3ffbe15c+2
@@ -76,6 +78,9 @@ index faadf8e..17057cd 100644
 +    // dem Abschalten stehen, auch über Höhenänderungen; zurückgesetzt nur mit dem LegState (Aufstehen, Fallen).
 +    float roll_trim_deg = 0;
 +    float lean_prev_deg = 0;   // lean_deg des letzten Takts (Vorsteuerung des Einlegens)
++    // Höhe, die die Beine wirklich haben ((Bein A + Bein B) / 2 − 45) minus der Sollhöhe: ≠ 0 nur, wenn das Einlegen die
++    // Höhe zur Mitte gerückt hat (Schräglage vor Höhe); Balance und Nick-Ausgleich rechnen mit Sollhöhe + height_shift.
++    float height_shift = 0;
  };
  // roll_pid_increment is updatePid(roll PID)'s output when leveling is enabled.
  // The caller sets its target=0 and feedback=measured roll (IMU +96).
@@ -108,7 +113,7 @@ index faadf8e..17057cd 100644
  // Actor leg channels: add a metric extension offset to each leg target and
  // recompute the servo tick values with the original acos linkage mapping.
  // Offsets are clamped so the extension stays inside the 45..81 mm range.
-@@ -51,6 +77,7 @@ struct ImuState {
+@@ -51,6 +80,7 @@ struct ImuState {
      std::int32_t wheel_ticks[2]{}, last_ticks[2]{};
      bool wheels_fresh = false, ticks_seen = false;
      float speed_m_s = 0;
@@ -317,7 +322,7 @@ index 7be19d8..129e30f 100644
  }
  }
 diff --git a/firmware/src/motion_controller.cpp b/firmware/src/motion_controller.cpp
-index 7021d0b..f8f2fe3 100644
+index 7021d0b..02e2e1b 100644
 --- a/firmware/src/motion_controller.cpp
 +++ b/firmware/src/motion_controller.cpp
 @@ -14,6 +14,7 @@ void MotionController::resetHold(uint32_t now) {
@@ -328,12 +333,19 @@ index 7021d0b..f8f2fe3 100644
  }
  MotionResult MotionController::step(const MotionInput& i,MotionRequest& request) {
      MotionResult o;
-@@ -34,16 +35,23 @@ MotionResult MotionController::step(const MotionInput& i,MotionRequest& request)
-                                     i.pitch_deg,i.roll_deg,command_.filtered_height,i.pitch_trim);
+@@ -30,20 +31,29 @@ MotionResult MotionController::step(const MotionInput& i,MotionRequest& request)
+     command_.roll_phase=request.roll_phase;command_.height_phase=request.height_phase;
+     o.physical_position=control::wheelDistance(i.encoder11,i.encoder21);
+     o.position=control::wheelDistance(i.encoder11,request.original_position_feedback?int32_t(i.leg12_position):i.encoder21);
++    // Höhe der Beine wie im letzten Takt gestellt: Sollhöhe + Ausweichen beim Einlegen (0 ohne Einlegen = Original)
++    const float leg_height=legs_.height_shift==0.0f?command_.filtered_height:command_.filtered_height+legs_.height_shift;
+     o.bias=control::updateBalanceBias(bias_,previous_mode_,i.mode,i.calibrated,
+-                                    i.pitch_deg,i.roll_deg,command_.filtered_height,i.pitch_trim);
++                                    i.pitch_deg,i.roll_deg,leg_height,i.pitch_trim);
      previous_mode_=i.mode;
      o.balance=control::updateBalance(balance_,next_forward_,i.speed11,i.speed21,
 -              i.pitch_deg,o.bias,i.pitch_rate_rad_s,command_.filtered_height,hold_.mode==2,o.wheels);
-+              i.pitch_deg,o.bias,i.pitch_rate_rad_s,command_.filtered_height,hold_.mode==2,o.wheels,
++              i.pitch_deg,o.bias,i.pitch_rate_rad_s,leg_height,hold_.mode==2,o.wheels,
 +              request.drive_integral);
      control::addWheelSpeedCorrection(o.wheels,command_.filtered_forward,command_.filtered_turn,i.speed11,i.speed21);
      control::updateCommandTargets(command_,command);

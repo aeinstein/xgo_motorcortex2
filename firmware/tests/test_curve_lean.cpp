@@ -166,7 +166,7 @@ static void testLegPriority() {
     using rider::control::LegState;
     using rider::control::updateLegTargets;
     constexpr std::uint16_t ZA = 2048, ZB = 2048;
-    bool ok_full = true, ok_range = true;
+    bool ok_full = true, ok_range = true, ok_shift = true;
     for (float h : {2.0f, 9.0f, 18.0f, 27.0f, 34.0f}) for (float lean : {-15.5f, 15.5f, -24.0f}) {
         LegState s;
         updateLegTargets(s, h, 0, true, 0, ZA, ZB, lean);
@@ -174,13 +174,15 @@ static void testLegPriority() {
         const float want = float(std::sin(double(lean) / 57.3) * 43.0);
         ok_full = ok_full && std::fabs((a - b) * 0.5f - want) < 1e-3f;
         ok_range = ok_range && a >= 0 && a <= 36 && b >= 0 && b <= 36;
+        ok_shift = ok_shift && std::fabs((a + b) * 0.5f - (h + s.height_shift)) < 1e-3f;   // gemeldete Höhe = (A + B) / 2
         if (std::fabs(want) <= std::fmin(h, 36 - h)) ok_full = ok_full && std::fabs((a + b) * 0.5f - h) < 1e-3f;   // passt: Höhe bleibt
     }
     check(ok_full && ok_range, "Schräglage vor Höhe: Beine führen die volle Differenz aus, Höhe rückt nur so weit wie nötig");
+    check(ok_shift, "Höhe für Balance und Nick-Ausgleich: Sollhöhe + height_shift = (Bein A + Bein B) / 2");
     LegState o; o.roll_target_deg = 15;   // Roll halten ohne Einlegen bei Höhe 2: wie im Original klemmt ein Bein
     updateLegTargets(o, 2.0f, 0, true, 0, ZA, ZB, 0.0f);
     const float d15 = float(std::sin(15.0 / 57.3) * 43.0);
-    check(o.extension_b == 45.0f && std::fabs(o.extension_a - (45.0f + 2.0f + d15)) < 1e-3f, "ohne Einlegen: Höhe bleibt, Bein klemmt (Original)");
+    check(o.height_shift == 0.0f && o.extension_b == 45.0f && std::fabs(o.extension_a - (45.0f + 2.0f + d15)) < 1e-3f, "ohne Einlegen: Höhe bleibt, Bein klemmt (Original)");
     LegState m;
     updateLegTargets(m, 18.0f, 0, true, 0, ZA, ZB, -24.0f);
     check(std::fabs(m.roll_target_deg + 24.0f) < 1e-4f, "mit Einlegen: Rollziel bis kLeanMaxDeg statt ±20°");

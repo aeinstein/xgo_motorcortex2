@@ -340,7 +340,7 @@ index 776c330..e0bb356 100644
  void addWheelFriction(Wheels &);
  
 diff --git a/firmware/src/main.cpp b/firmware/src/main.cpp
-index 75d1306..1b124bf 100644
+index 129e30f..bc8dcef 100644
 --- a/firmware/src/main.cpp
 +++ b/firmware/src/main.cpp
 @@ -28,6 +28,7 @@ extern "C" {extern const volatile uint32_t rider_rl_only_build=0x524c4f31;}
@@ -568,7 +568,7 @@ index 75d1306..1b124bf 100644
  }
  }
 diff --git a/firmware/src/motion_controller.cpp b/firmware/src/motion_controller.cpp
-index f8f2fe3..e98d586 100644
+index 02e2e1b..3437c6b 100644
 --- a/firmware/src/motion_controller.cpp
 +++ b/firmware/src/motion_controller.cpp
 @@ -15,6 +15,7 @@ void MotionController::resetStoppedPid() {
@@ -579,16 +579,16 @@ index f8f2fe3..e98d586 100644
  }
  MotionResult MotionController::step(const MotionInput& i,MotionRequest& request) {
      MotionResult o;
-@@ -36,7 +37,7 @@ MotionResult MotionController::step(const MotionInput& i,MotionRequest& request)
+@@ -38,7 +39,7 @@ MotionResult MotionController::step(const MotionInput& i,MotionRequest& request)
      previous_mode_=i.mode;
      o.balance=control::updateBalance(balance_,next_forward_,i.speed11,i.speed21,
-               i.pitch_deg,o.bias,i.pitch_rate_rad_s,command_.filtered_height,hold_.mode==2,o.wheels,
+               i.pitch_deg,o.bias,i.pitch_rate_rad_s,leg_height,hold_.mode==2,o.wheels,
 -              request.drive_integral);
 +              request.drive_integral,&request.velocity_control);
      control::addWheelSpeedCorrection(o.wheels,command_.filtered_forward,command_.filtered_turn,i.speed11,i.speed21);
      control::updateCommandTargets(command_,command);
      // switching the feedback changes the units of hold_.position -> start over.
-@@ -54,7 +55,8 @@ MotionResult MotionController::step(const MotionInput& i,MotionRequest& request)
+@@ -56,7 +57,8 @@ MotionResult MotionController::step(const MotionInput& i,MotionRequest& request)
                                roll_increment,i.zero_a,i.zero_b,lean);
      heading_.pid.p_limit=heading_.pid.i_limit=heading_.pid.d_limit=request.heading_term_limit;
      control::addHeadingCorrection(heading_,o.wheels,i.now_ms,i.mode,request.heading_hold,
