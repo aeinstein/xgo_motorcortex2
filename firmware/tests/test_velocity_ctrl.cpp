@@ -38,11 +38,12 @@ static float step(BalanceState& b, float target, float speed, float pitch, bool 
 // Fahrmodell in Firmware-Einheiten: v' = g/Einheit · tan(θ − Last − (n0 − c·v)), θ folgt dem Soll mit tau.
 constexpr float kUnit = 3.9f, kNeedC = 0.05f;
 static float g_fwd_extra = 0;   // zusätzlicher Nick-Bedarf nur vorwärts (°), messfahrt0d: ~1,5 (rückwärts stimmte es)
+static float g_plant_gain = 1;  // Anteil von g·tan(...); < 1 = träger Rider (Handfahrt 20261127-080241: Räder nach 0,5 s erst 0,6–0,7 m/s)
 struct Plant { float v = 0, theta = 0; };
 static void plantStep(Plant& p, float theta_target, float load_deg, float tau = 0.1f) {
     p.theta += (theta_target - p.theta) * kDt / tau;
     const float need = 0.8f - kNeedC * p.v + g_fwd_extra * std::max(0.0f, std::min(1.0f, p.v / 10.0f));
-    p.v += V::clampAbs(kGravityMmS2 / kUnit * std::tan((p.theta - load_deg - need) * 0.0174533f), 20000.0f) * kDt;
+    p.v += V::clampAbs(g_plant_gain * kGravityMmS2 / kUnit * std::tan((p.theta - load_deg - need) * 0.0174533f), 20000.0f) * kDt;
 }
 
 struct LoopResult { float err_end = 0, err_peak = 0, osc_late = 0, v_end = 0, t90 = -1, th_end = 0, v_peak = 0; };
@@ -87,17 +88,22 @@ int main() {
     // --- Vorsteuerung
     {
         BalanceState b; VelocityControl vc; vc.on = true; vc.accel = 500; vc.ki = 0; vc.kf = 0; vc.dt = kDt;
-        const float th = step(b, 100, 100, 0, false, true, &vc);
+        const float th0 = step(b, 100, 100, 0, false, true, &vc);
+        check(th0 > 0 && th0 < 0.1f * std::atan(500.0f / 9810.0f) * 57.29578f, "Vorsteuerung: kein Sprung, folgt mit kVelFfTau");
+        float th = 0;
+        for (int i = 0; i < 250; ++i) th = step(b, 100, 100, 0, false, true, &vc);   // 1 s, > 10 kVelFfTau
         check(near(th, std::atan(500.0f / 9810.0f) * 57.29578f, 1e-3f), "Vorsteuerung: 500 mm/s² -> +2,92° ohne Fehler");
         vc.accel = -800; vc.ff_gain = 0.5f;
-        const float th2 = step(b, 100, 100, 0, false, true, &vc);
+        float th2 = 0;
+        for (int i = 0; i < 250; ++i) th2 = step(b, 100, 100, 0, false, true, &vc);
         check(near(th2, -0.5f * std::atan(800.0f / 9810.0f) * 57.29578f, 1e-3f), "Vorsteuerung: Vorzeichen und Anteil ff_gain");
     }
     // --- Einheit in der Vorsteuerung
     {
         BalanceState b; VelocityControl vc; vc.on = true; vc.ki = 0; vc.kf = 0; vc.dt = kDt;
         vc.accel = 128.2f; vc.unit_mm = 3.9f;   // 0,5 m/s² in Einheiten von 3,9 mm/s
-        const float th = step(b, 100, 100, 0, false, true, &vc);
+        float th = 0;
+        for (int i = 0; i < 250; ++i) th = step(b, 100, 100, 0, false, true, &vc);
         check(near(th, std::atan(500.0f / 9810.0f) * 57.29578f, 2e-3f), "Vorsteuerung mit Einheit 3,9 -> 2,92° bei 0,5 m/s²");
     }
     // --- Integral erst bei ruhendem Generator
@@ -238,11 +244,50 @@ int main() {
             worst_end = std::max(worst_end, std::fabs(r.v_end / s - 1));
             if (std::fabs(r.th_end - (0.8f - 0.05f * s + (s > 0 ? 1.5f : 0.0f))) > 0.2f) need_ok = false;   // Bedarf am Soll
         }
-        check(worst_t90 < 2.7f, "Versatz: 90 % des Solls spätestens 2,7 s nach der Rampe (Modell träger als der Rider: runde2 +46 ~1,0 s)");
+        check(worst_t90 < 2.8f, "Versatz: 90 % des Solls spätestens 2,8 s nach der Rampe (Modell träger als der Rider: runde2 +46 ~1,0 s; +46 2,71 s, +69 0,02 s, vor der Führungsgröße 2,62/2,04 s)");
         check(worst_peak < 1.35f && worst_end < 0.03f, "Versatz: vorwärts Spitze < 1,35 × (gemessen 1,4–1,5 ×), beide Richtungen nach 6 s auf ±3 %");
         check(need_ok, "Versatz: Soll-Nick am Soll = Bedarf (vorwärts 2,3° − 0,05·v, rückwärts 0,8° − 0,05·v)");
         g_fwd_extra = 0;
     }
+    // --- Anfahrruck (Handfahrt 20261127-080241): Rahmen 0,9 m/s, a 1,79 m/s², ohne Ruck, nach 3 s Stopp. Führungsgröße und
+    // geglättete Vorsteuerung: kein Sprung im Soll-Nick (vorher ~10° in einem Takt beim Anfahren und am Rampenende),
+    // v_ref höchstens kVelLead vor den Rädern. Das Modell (auch träge, 0,7) folgt schneller als der Rider und schießt über; die
+// Grenzen für Spitze und Rückschwung sichern nur gegen Rückschritte (alt: Spitze 1,05–1,27 ×, Rückschwung 0,09–0,25 ×).
+    for (float gain : {1.0f, 0.7f}) for (float dir : {1.0f, -1.0f}) {
+        g_plant_gain = gain;
+        BalanceState b; Plant p; V::State gs; V::Limits gl; gl.v_max = 600; gl.w_max = 300; gl.set = true; gl.unit_mm = kUnit;
+        V::Frame f; f.v = dir * 231; f.a = 459; f.jerk = 0;   // 0,9 m/s, 1,79 m/s² in Einheiten von 3,9 mm/s
+        V::receive(gs, gl, f, 0); V::tick(gs, gl, 0);
+        VelocityControl vc; vc.on = true;
+        float th_prev = 0, max_step = 0, lead = 0, t90 = -1, peak = 0, back = 0, t_stop = -1;
+        const int n_go = int(3.0f / kDt), n = 2 * n_go;
+        for (int i = 0; i < n; ++i) {
+            const std::uint32_t t = std::uint32_t((i + 1) * kDt * 1e6f);
+            if (i == n_go) { V::Frame z = f; z.v = 0; V::receive(gs, gl, z, t); }
+            V::tick(gs, gl, t);
+            vc.accel = gs.fwd.a; vc.dt = kDt; vc.unit_mm = kUnit;
+            const float th = step(b, gs.v, p.v, p.theta, false, false, &vc);
+            if (i > 0) max_step = std::max(max_step, std::fabs(th - th_prev));
+            th_prev = th;
+            plantStep(p, th, 0);
+            lead = std::max(lead, (b.vel_ref - p.v) * (i < n_go ? dir : -dir));   // Vorlauf in Richtung der Änderung
+            if (i < n_go) {
+                peak = std::max(peak, p.v * dir);
+                if (t90 < 0 && p.v * dir >= 0.9f * 231) t90 = (i + 1) * kDt;
+            } else {
+                back = std::max(back, -p.v * dir);
+                if (t_stop < 0 && std::fabs(p.v) < 0.05f * 231) t_stop = (i + 1 - n_go) * kDt;
+            }
+        }
+        std::printf("       Modell %.1f, Anfahrt %+.0f: größter Schritt Soll-Nick %.2f°/Takt, Vorlauf v_ref %.1f, 90 %% nach %.2f s (Rampe 0,50 s), "
+                    "Spitze %.2f ×, Stopp in %.2f s, Rückschwung %.2f ×\n", double(gain), double(dir * 231), double(max_step), double(lead),
+                    double(t90), double(peak / 231), double(t_stop), double(back / 231));
+        check(max_step < 1.0f, "Anfahrt/Stopp ohne Ruck im Rahmen: Soll-Nick ändert sich höchstens 1° je Takt (vorher ~10°)");
+        check(lead <= kVelLead + 2.0f, "Führungsgröße höchstens kVelLead vor den Rädern");
+        check(t90 > 0 && t90 < 1.2f && peak < 1.4f * 231, "Anfahrt: 90 % nach höchstens 1,2 s, Spitze < 1,4 × (das Modell schießt auch mit dem alten Regler 1,05–1,27 × über)");
+        check(t_stop > 0 && t_stop < 1.2f && back < 0.4f * 231, "Stopp: unter 5 % nach höchstens 1,2 s, Rückschwung < 40 % (alter Regler im Modell 9–25 %)");
+    }
+    g_plant_gain = 1;
     std::printf(fail ? "\nFEHLER\n" : "\nalle ok\n");
     return fail;
 }
