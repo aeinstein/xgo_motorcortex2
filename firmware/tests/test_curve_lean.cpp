@@ -1,5 +1,5 @@
 // Host-Test 07-balance: In schnellen Kurven einlegen (control::updateCurveLean, MotionRequest::roll_target_deg).
-// Ziel = -atan(v * Gierrate / g): Vorzeichen, Betrag, Grenze nur aus den Beinen (kein fester Höchstwinkel), Tiefpass + Rate, aus = zurück auf 0.
+// Ziel = -atan(v * Gierrate / g): Vorzeichen, Betrag, Grenze nur die Mechanik (24,74°), Höhe weicht aus, Tiefpass + Rate, aus = zurück auf 0.
 // Regelkreis wie test_roll_hold.cpp: Körper-Roll = Störung + Vorzeichen * Roll-Sollwert der Beine; mit Ziel geht
 // der Körper-Roll auf das Ziel, der Roll-Trimm nimmt die Schräglage nicht auf, Ziel 0 ist bitgleich zu ohne.
 // Aufruf: firmware/tests/run.sh test_curve_lean
@@ -25,9 +25,9 @@ static void check(bool ok, const char* what) {
 static constexpr float kDt = 0.003f;   // Regeltakt ~333 Hz
 static constexpr float kHeight = 18;   // Mittelstellung (Byte 128)
 
-static float settle(float v, float w_deg_s, float height = kHeight, float seconds = 3.0f) {
+static float settle(float v, float w_deg_s, float seconds = 3.0f) {
     CurveLean s;
-    for (int k = 0; k < int(seconds / kDt); ++k) updateCurveLean(s, true, v, w_deg_s, height, kDt);
+    for (int k = 0; k < int(seconds / kDt); ++k) updateCurveLean(s, true, v, w_deg_s, kDt);
     return s.target_deg;
 }
 
@@ -39,17 +39,12 @@ static void testTarget() {
     check(settle(0.5f, -90) > 4.5f, "Drehung rechts: Ziel positiv");
     check(settle(-0.5f, 90) > 4.5f, "rückwärts: Vorzeichen dreht sich um");
     check(settle(0, 120) == 0.0f, "auf der Stelle (v = 0): kein Einlegen");
-    // Fahrt 20261127-084257: 0,87 m/s, −180 °/s -> −atan(v·w/g) = 15,5°, nicht mehr auf 6° gekappt
-    const float sharp = settle(0.87f, 180, 33.0f);   // Höhe 33: Platz 36 - 33 - 10 < 0 -> 0
-    const float mid = settle(0.87f, 180);   // Höhe 18: Platz 8 -> asin(8/43) = 10,72°
+    // Fahrt 20261127-084257: 0,87 m/s, 180 °/s -> -atan(v·w/g) = -15,5°, ganz (Schräglage vor Höhe)
     const float want15 = -std::atan(0.87f * 180 * 0.017453292f / 9.81f) * 57.29578f;
-    std::printf("       0,87 m/s, 180 °/s: nötig %.2f°, Ziel bei Höhe 18 %.2f°\n", want15, mid);
-    check(sharp == 0.0f && std::fabs(mid + 10.72f) < 0.01f, "kein fester Höchstwinkel: Ziel bis zur Beingrenze (Höhe 18: 10,72°)");
-    check(std::fabs(settle(0.4f, 120) - (-std::atan(0.4f * 120 * 0.017453292f / 9.81f) * 57.29578f)) < 0.01f, "unter der Beingrenze: volles -atan(v·w/g)");
-    const float low = settle(1.5f, 150, 15.0f);   // Platz 15 - 10 = 5 -> asin(5/43) = 6,68°
-    const float lower = settle(1.5f, 150, 12.0f); // Platz 2 -> asin(2/43) = 2,67°
-    check(std::fabs(low + 6.677f) < 0.01f && std::fabs(lower + 2.666f) < 0.01f, "Beingrenze: bei niedriger Höhe weniger Schräglage");
-    check(settle(1.5f, 150, 9.0f) == 0.0f && settle(1.5f, 150, 27.0f) == 0.0f, "Bein näher als 10 an 0 bzw. 36: kein Einlegen");
+    const float sharp = settle(0.87f, 180);
+    std::printf("       0,87 m/s, 180 °/s: nötig %.2f°, Ziel %.2f°\n", want15, sharp);
+    check(std::fabs(sharp - want15) < 0.01f, "scharfe Kurve: volles -atan(v·w/g) = -15,5° (keine Winkel- oder Höhengrenze)");
+    check(std::fabs(settle(3.0f, 150) + rider::control::kLeanMaxDeg) < 1e-4f, "Betrag nur durch die Mechanik begrenzt (asin(18/43) = 24,74°)");
     check(settle(NAN, 90) == 0.0f && settle(0.5f, NAN) == 0.0f, "ungültige Eingänge: Ziel 0");
 }
 
@@ -57,16 +52,16 @@ static void testDynamics() {
     CurveLean s;
     float max_step = 0, prev = 0;
     for (int k = 0; k < 400; ++k) {
-        updateCurveLean(s, true, 1.5f, 150, kHeight, kDt);
+        updateCurveLean(s, true, 1.5f, 150, kDt);
         max_step = std::fmax(max_step, std::fabs(s.target_deg - prev));
         prev = s.target_deg;
     }
     check(max_step <= rider::control::kLeanRateDegS * kDt + 1e-6f, "Sprung: Ziel ändert sich höchstens 20 °/s");
     const float before = s.target_deg;
-    updateCurveLean(s, true, 1.5f, 150, kHeight, 0.0f);
-    updateCurveLean(s, true, 1.5f, 150, kHeight, 0.5f);
+    updateCurveLean(s, true, 1.5f, 150, 0.0f);
+    updateCurveLean(s, true, 1.5f, 150, 0.5f);
     check(s.target_deg == before, "dt 0 oder > 0,1 s: keine Änderung");
-    for (int k = 0; k < 1000; ++k) updateCurveLean(s, false, 1.5f, 150, kHeight, kDt);
+    for (int k = 0; k < 1000; ++k) updateCurveLean(s, false, 1.5f, 150, kDt);
     check(std::fabs(s.target_deg) < 1e-3f, "aus: Ziel läuft auf 0 zurück (3 s)");
 }
 
@@ -150,7 +145,7 @@ static void testWeave(float sign) {
         // v 0,9 m/s, Gierrate so, dass -atan(v·w/g) = 3°·sin(ωt)
         want[k] = 3.0f * std::sin(2.0f * 3.14159265f * t / 1.7f);
         const float w = -std::tan(want[k] / 57.29578f) * 9.81f / 0.9f * 57.29578f;
-        target[k] = updateCurveLean(cl, true, 0.9f, w, kHeight, kDt);
+        target[k] = updateCurveLean(cl, true, 0.9f, w, kDt);
         step(r, 600 + k, true, target[k], 2.0f, sign);
         roll[k] = r.roll;
     }
@@ -163,11 +158,38 @@ static void testWeave(float sign) {
     check(lag_all <= 0.08f && std::fabs(g2 - 1) < 0.15f, "Schlangenlinie 1,7 s: gesamter Verzug höchstens 80 ms");
 }
 
+// Schräglage vor Höhe (updateLegTargets mit lean_deg): passt die Beindifferenz nicht um die Höhe, rückt die Höhe zur
+// Mitte und beide Beine führen die Schräglage ganz aus; ohne Einlegen bitgleich (Beine klemmen wie im Original).
+static void testLegPriority() {
+    using rider::control::LegState;
+    using rider::control::updateLegTargets;
+    constexpr std::uint16_t ZA = 2048, ZB = 2048;
+    bool ok_full = true, ok_range = true;
+    for (float h : {2.0f, 9.0f, 18.0f, 27.0f, 34.0f}) for (float lean : {-15.5f, 15.5f, -24.0f}) {
+        LegState s;
+        updateLegTargets(s, h, 0, true, 0, ZA, ZB, lean);
+        const float a = s.extension_a - 45, b = s.extension_b - 45;
+        const float want = float(std::sin(double(lean) / 57.3) * 43.0);
+        ok_full = ok_full && std::fabs((a - b) * 0.5f - want) < 1e-3f;
+        ok_range = ok_range && a >= 0 && a <= 36 && b >= 0 && b <= 36;
+        if (std::fabs(want) <= std::fmin(h, 36 - h)) ok_full = ok_full && std::fabs((a + b) * 0.5f - h) < 1e-3f;   // passt: Höhe bleibt
+    }
+    check(ok_full && ok_range, "Schräglage vor Höhe: Beine führen die volle Differenz aus, Höhe rückt nur so weit wie nötig");
+    LegState o; o.roll_target_deg = 15;   // Roll halten ohne Einlegen bei Höhe 2: wie im Original klemmt ein Bein
+    updateLegTargets(o, 2.0f, 0, true, 0, ZA, ZB, 0.0f);
+    const float d15 = float(std::sin(15.0 / 57.3) * 43.0);
+    check(o.extension_b == 45.0f && std::fabs(o.extension_a - (45.0f + 2.0f + d15)) < 1e-3f, "ohne Einlegen: Höhe bleibt, Bein klemmt (Original)");
+    LegState m;
+    updateLegTargets(m, 18.0f, 0, true, 0, ZA, ZB, -24.0f);
+    check(std::fabs(m.roll_target_deg + 24.0f) < 1e-4f, "mit Einlegen: Rollziel bis kLeanMaxDeg statt ±20°");
+}
+
 int main() {
     testTarget();
     testDynamics();
     testClosedLoop();
     testWeave(1.0f);   // Vorzeichen +1: nur damit ist Roll halten stabil (testClosedLoop)
+    testLegPriority();
     std::printf(fail ? "FEHLER\n" : "alles ok\n");
     return fail;
 }
