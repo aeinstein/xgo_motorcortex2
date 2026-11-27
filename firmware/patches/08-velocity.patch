@@ -340,7 +340,7 @@ index 776c330..e0bb356 100644
  void addWheelFriction(Wheels &);
  
 diff --git a/firmware/src/main.cpp b/firmware/src/main.cpp
-index 129e30f..bc8dcef 100644
+index 4798539..49c374c 100644
 --- a/firmware/src/main.cpp
 +++ b/firmware/src/main.cpp
 @@ -28,6 +28,7 @@ extern "C" {extern const volatile uint32_t rider_rl_only_build=0x524c4f31;}
@@ -444,7 +444,7 @@ index 129e30f..bc8dcef 100644
              case EventKind::ResetOdometry:odometry={};odometry.last_ms=millis();break;
              case EventKind::Protocol:dispatch(event.command);break;
              }
-@@ -504,7 +521,7 @@ public:
+@@ -506,7 +523,7 @@ public:
          default:break;
          }
          const auto power=board.state();
@@ -453,7 +453,7 @@ index 129e30f..bc8dcef 100644
          if(power.stop_required)actions.requestMode(250,true);
          // Akku-Warnung aufgehoben -> aus 250 nach 253 (disarmed, bereit; Aufstehen mit 253/255)
          if(battery_low_seen&&!power.low_stage){
-@@ -524,6 +541,7 @@ public:
+@@ -526,6 +543,7 @@ public:
  #if !RIDER2_RL_ONLY
          if(!trim_stage)return;
          if(trim_stage==1){actions.enable(millis());s.calibration.pitch_trim=0;trim_stage=2;trim_stable=0;}
@@ -461,7 +461,7 @@ index 129e30f..bc8dcef 100644
          auto& a=actions.state();a.command.forward=a.command.turn=a.command.roll=128;a.command.height=144;
          a.action_id=0;a.roll_phase=a.height_phase=0;
          if(!driving||a.mode!=1||outputGuard(guard(millis()))!=StopReason::None){trim_stable=0;return;}
-@@ -707,13 +725,34 @@ public:
+@@ -709,13 +727,34 @@ public:
          in.encoder11=bus.sample(11).encoder_ticks;in.encoder21=bus.sample(21).encoder_ticks;in.leg12_position=bus.sample(12).position_ticks;
          in.zero_a=s.calibration.zero_a;in.zero_b=s.calibration.zero_b;in.pitch_trim=s.calibration.pitch_trim;
          request.command=a.command;
@@ -497,7 +497,7 @@ index 129e30f..bc8dcef 100644
          // Positionshalten auch beim Drehen auf der Stelle, Integral beim Fahren (Byteweg)
          request.turn_hold=true;request.drive_integral=true;
          // Roll laufend auf 0 halten, nur balancierend und ohne eigenen Rollbefehl (Gesten, Rollwelle)
-@@ -897,6 +936,7 @@ public:
+@@ -899,6 +938,7 @@ public:
          fillDiag(t.diag);
          fillRawDiag(t.rawdiag);
          fillLiftDiag(t.liftdiag);
@@ -505,7 +505,7 @@ index 129e30f..bc8dcef 100644
          t.leg12_zero=s.calibration.zero_a;t.leg22_zero=s.calibration.zero_b;
          t.policy_mode=uint8_t(s.policy.mode);t.policy_model_id=policy.model().id;
          t.policy_trained=s.policy.trained;t.policy_valid=s.policy.model_valid;
-@@ -1100,6 +1140,43 @@ void console(const char* line,Print& out) {
+@@ -1102,6 +1142,43 @@ void console(const char* line,Print& out) {
      {float g=0;if(sscanf(line,"!gain %f",&g)==1){wheel_gain=g;out.printf("wheel gain %.3f\n",g);return;}}
      {float g=0;if(sscanf(line,"!speedcal %f",&g)==1){if(g>=.2f&&g<=4.f&&!shared.driving){speed_cal=g;out.printf("policy speed scale %.3f\n",g);}else out.println("ERR speedcal 0.2..4.0 and standstill");return;}}
      {int ms=0;if(sscanf(line,"!smooth %d",&ms)==1&&ms>=0){wheel_smooth_ms=unsigned(ms);out.printf("wheel smoothing %d ms\n",ms);return;}}
@@ -549,7 +549,7 @@ index 129e30f..bc8dcef 100644
      char cmd[20]={};int a=0,b=0,c=0,d=0;
      const int count=sscanf(line,"%19s %d %d %d %d",cmd,&a,&b,&c,&d);
      if(count==3&&!strcmp(cmd,"!move")){if(a<0||a>255||b<0||b>255){out.println("ERR expected bytes 0..255");return;}valueCommand(CommandKind::Forward,a,out);valueCommand(CommandKind::Turn,b,out);return;}
-@@ -1108,14 +1185,14 @@ void console(const char* line,Print& out) {
+@@ -1110,14 +1187,14 @@ void console(const char* line,Print& out) {
          const struct{const char* text;CommandKind kind;} maps[]={
              {"!action",CommandKind::Action},{"!loop",CommandKind::ActionLoop},{"!height",CommandKind::Height},
              {"!roll",CommandKind::Roll},{"!level",CommandKind::Leveling},{"!heading",CommandKind::HeadingHold},
@@ -624,7 +624,7 @@ index 8cf9b55..b3898d0 100644
      float pitchTarget() const {return balance_.pitch.target;}
 diff --git a/firmware/src/velocity_cmd.h b/firmware/src/velocity_cmd.h
 new file mode 100644
-index 0000000..7f188c5
+index 0000000..39cbb9d
 --- /dev/null
 +++ b/firmware/src/velocity_cmd.h
 @@ -0,0 +1,407 @@
@@ -704,7 +704,7 @@ index 0000000..7f188c5
 +//   0x1a lesen, 12 Byte: 0 u8 Flags (bit0 Rahmenweg aktiv, bit1 Beschleunigungsbetrieb, bit2 Wächter hat gegriffen,
 +//        bit3 Grenzen gesetzt, bit4 Krümmungsbetrieb, bit5 Kursziel läuft, bit6 Kursziel erreicht, bit7 Strecke
 +//        erreicht; bit5/bit6 auch fürs absolute Kursziel) | 1 u8 Fähigkeiten (bit0 Krümmung, bit1 Kursziel, bit2 Strecke;
-+//        bit3 Strom 0x16 kommt noch; bit4 absolutes Kursziel samt 0x1b mit 18 Byte; die
++//        bit3 Strom 0x16 kommt noch; bit4 absolutes Kursziel samt 0x1b mit 18 Byte; bit5 IMU-Strom 0x11 mit Höhe (28 Byte Nutzdaten, imu_stream.h); die
 +//        Pi-Seite schaltet einen Betrieb nur bei gesetztem Bit ein) | 2 i16 v-Soll mm/s | 4 i16 w-Soll 0,1 °/s | 6 u16 v_max | 8 u16 w_max 0,1 °/s
 +//        | 10 u16 Wächter ms
 +//
@@ -718,7 +718,7 @@ index 0000000..7f188c5
 +constexpr std::uint8_t kFrameLen = 13, kFrameLenDist = 15, kFrameLenAbs = 5, kLimitsLen = 14, kLimitsLenAbs = 18, kDiagLen = 12;
 +constexpr std::uint8_t kFlagNoSpeed = 1, kFlagKappa = 2, kFlagCourse = 4, kFlagDist = 8, kFlagCourseSeq = 16, kFlagCourseAbs = 32;
 +constexpr std::uint8_t kFlagsKnown = kFlagNoSpeed | kFlagKappa | kFlagCourse | kFlagDist | kFlagCourseSeq | kFlagCourseAbs;
-+constexpr std::uint8_t kCaps = 1 | 2 | 4 | 16;   // Fähigkeitsbyte 0x1a lesen: bit0 Krümmung, bit1 Kursziel, bit2 Strecke, bit4 absolutes Kursziel
++constexpr std::uint8_t kCaps = 1 | 2 | 4 | 16 | 32;   // Fähigkeitsbyte 0x1a lesen: bit0 Krümmung, bit1 Kursziel, bit2 Strecke, bit4 absolutes Kursziel, bit5 Höhe im IMU-Strom
 +constexpr float kCourseReopen = 1.0f;        // ° Rest, ab dem das absolute Kursziel nach der Ankunft wieder dreht
 +constexpr float kDistArrive = 5.0f;          // mm Reststrecke für „erreicht“
 +constexpr float kDistCoastS = 0.25f;         // s, Nachlauf je Radtempo (gefahren: vorwärts 0,23, rückwärts 0,31)

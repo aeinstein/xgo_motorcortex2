@@ -74,10 +74,10 @@ index 1453ec0..663e6e4 100644
      uint8_t policy_mode=0,policy_action_space=0;
 diff --git a/firmware/src/imu_stream.h b/firmware/src/imu_stream.h
 new file mode 100644
-index 0000000..0c3ea4c
+index 0000000..fc519f7
 --- /dev/null
 +++ b/firmware/src/imu_stream.h
-@@ -0,0 +1,93 @@
+@@ -0,0 +1,106 @@
 +#pragma once
 +// IMU- und Raddaten als Datenstrom an den Pi, statt sie per Leseanfrage abzufragen.
 +// Einschalten: Schreibbefehl auf Register 0x11, 1 Byte = Rate in Hz (0 = aus, höchstens 250 Hz).
@@ -85,11 +85,14 @@ index 0000000..0c3ea4c
 +// 3 ms gelesen (gemessen 2026-11-08, nicht 2 ms wie kImuPeriodUs), die Abstände springen daher
 +// um eine Abtastung (bei 100 Hz 9/12 ms), im Mittel stimmt die Rate. Nach Neustart aus.
 +// Paket im üblichen Rahmen (buildFrame), Typ 0x14 (Antworten haben 0x12), Register 0x11,
-+// 26 Byte Nutzdaten little endian:
++// 28 Byte Nutzdaten little endian (bis 2026-11-27: 26, ohne Höhe):
 +//   0 u16 seq (läuft über; eine Lücke heißt verworfenes Paket)
 +//   2 u32 t_us  micros() der IMU-Lesung
 +//   6/10/14 float Roll, Nick, Kurs (Grad, wie 0x0d)
 +//   18/22 s32 Ticks Rad 11 / Rad 21 (wie 0x0d)
++//   26 u16 Körperhöhe = gestellte Beinlängen (Bein A + Bein B) / 2 in der Skala des Höhenbytes × 100 (12800 = Byte 128,
++//      0..25500; Beinweg 0..36 Längeneinheiten = Byte 0..255), mit allem, was die Beine gerade tun (Einlegen, Aufstehen);
++//      0xFFFF = unbekannt, solange die Beine nicht gestellt werden (liegt, Motoren aus). Fähigkeit: 0x1a lesen, Byte 1 bit5.
 +// Die Regelung legt Proben nur in den Ring (ein Erzeuger, ein Verbraucher, ohne Sperre); loop()
 +// sendet und verwirft, wenn der UART-Puffer voll ist. Senden blockiert die Regelung damit nie.
 +#include <atomic>
@@ -101,7 +104,8 @@ index 0000000..0c3ea4c
 +namespace rider2 { namespace imustream {
 +
 +constexpr std::uint8_t kReg = 0x11, kType = 0x14;
-+constexpr std::size_t kPayload = 26, kFrame = kPayload + 8;
++constexpr std::size_t kPayload = 28, kFrame = kPayload + 8;
++constexpr std::uint16_t kHeightUnknown = 0xFFFF;
 +constexpr std::uint32_t kIdleOffMs = 5000;   // Strom aus, wenn der Pi so lange nichts schickt
 +
 +// Rate in Hz -> Sollabstand in µs (0 = aus), höchstens 250 Hz.
@@ -115,7 +119,15 @@ index 0000000..0c3ea4c
 +    std::uint32_t t_us = 0;
 +    float roll = 0, pitch = 0, yaw = 0;
 +    std::int32_t w11 = 0, w21 = 0;
++    std::uint16_t height = kHeightUnknown;   // Höhenbyte × 100 (Kopfkommentar)
 +};
++// Gestellte Beinlängen (LegState::extension_a/b, 45..81) -> Höhenbyte × 100; nicht endlich -> unbekannt.
++inline std::uint16_t heightX100(float extension_a, float extension_b) {
++    const float units = (extension_a + extension_b) * 0.5f - 45.0f;
++    if (!(units == units) || units > 1e6f || units < -1e6f) return kHeightUnknown;
++    const float v = units * (25500.0f / 36.0f) + 0.5f;
++    return std::uint16_t(v <= 0 ? 0 : (v >= 25500 ? 25500 : v));
++}
 +
 +// Sagt je IMU-Probe (Messzeit t_us), ob sie gesendet werden soll; seq zählt jede fällige Probe,
 +// auch wenn sie nicht gesendet werden kann (ungültig, Ring voll). Liegt die Zeit weit zurück
@@ -167,12 +179,13 @@ index 0000000..0c3ea4c
 +    putU32(d + 2, s.t_us);
 +    putF(d + 6, s.roll); putF(d + 10, s.pitch); putF(d + 14, s.yaw);
 +    putU32(d + 18, std::uint32_t(s.w11)); putU32(d + 22, std::uint32_t(s.w21));
++    d[26] = std::uint8_t(s.height); d[27] = std::uint8_t(s.height >> 8);
 +    return protocol::buildFrame(kType, kReg, d, kPayload, out, cap);
 +}
 +
 +}} // namespace rider2::imustream
 diff --git a/firmware/src/main.cpp b/firmware/src/main.cpp
-index 784e9c7..bb66740 100644
+index 784e9c7..11872c8 100644
 --- a/firmware/src/main.cpp
 +++ b/firmware/src/main.cpp
 @@ -22,6 +22,7 @@ extern "C" {extern const volatile uint32_t rider_rl_only_build=0x524c4f31;}
@@ -224,7 +237,7 @@ index 784e9c7..bb66740 100644
          case CommandKind::PitchCalibration:
  #if RIDER2_RL_ONLY
              ++s.rejected_commands;result("wheel PID pitch trim unavailable in RL-only firmware");break;
-@@ -370,6 +383,16 @@ public:
+@@ -370,6 +383,18 @@ public:
                  rider::control::updateImu(s.imu,raw,12,sample_us,now,actions.state().mode)&&
                  std::isfinite(s.imu.pitch_deg)&&std::isfinite(s.imu.roll_deg)&&std::isfinite(s.imu.yaw_deg)&&std::isfinite(s.imu.pitch_rate_rad_s);
              imu_low_g_only=!imu_valid&&low_g_read;
@@ -235,13 +248,15 @@ index 784e9c7..bb66740 100644
 +                    rider2::imustream::Sample x;x.seq=imu_stream_prod.seq;x.t_us=sample_us;
 +                    x.roll=s.imu.roll_deg;x.pitch=s.imu.pitch_deg;x.yaw=s.imu.yaw_deg;
 +                    x.w11=bus.sample(11).encoder_ticks;x.w21=bus.sample(21).encoder_ticks;
++                    // Höhe aus den zuletzt gestellten Beinlängen; liegt er (Motoren aus), unbekannt
++                    x.height=driving?rider2::imustream::heightX100(s.motion.legs.extension_a,s.motion.legs.extension_b):rider2::imustream::kHeightUnknown;
 +                    imuStreamRing.push(x);
 +                }
 +            }
              if(imu_valid)s.imu_ms=now;else ++s.imu_rejected;
              // A tilt while already stopped is only the operator handling the
              // robot. Requesting mode 0 here would strand it (no arm button in
-@@ -661,6 +684,8 @@ public:
+@@ -661,6 +686,8 @@ public:
          for(size_t n=0;n<3;++n)t.accel[n]=s.imu.acceleration[n];
          t.odometry[0]=odometry.x;t.odometry[1]=odometry.y;t.odometry[2]=odometry.heading;t.odometry[3]=odometry.distance;
          t.leg12_position=bus.sample(12).position_ticks;t.leg22_position=bus.sample(22).position_ticks;
@@ -250,7 +265,7 @@ index 784e9c7..bb66740 100644
          t.leg12_zero=s.calibration.zero_a;t.leg22_zero=s.calibration.zero_b;
          t.policy_mode=uint8_t(s.policy.mode);t.policy_model_id=policy.model().id;
          t.policy_trained=s.policy.trained;t.policy_valid=s.policy.model_valid;
-@@ -896,7 +921,9 @@ void loop() {
+@@ -896,7 +923,9 @@ void loop() {
              else if(used<sizeof(line)-1)line[used++]=char(b);else overflow=true;
          }else receive(Source::Usb,b);
      }
@@ -261,7 +276,7 @@ index 784e9c7..bb66740 100644
      // BLE: Cmd = Binärrahmen, Con = Konsole, Pi = Tunnel zum Pi (pi_tunnel.h).
      static bool previousBle=false;static uint32_t previousDrops=0;static uint8_t tunnelState=0;
      static rider2::tunnel::LineBuffer<96> bleLine;
-@@ -949,5 +976,13 @@ void loop() {
+@@ -949,5 +978,13 @@ void loop() {
          if(trace_usb.finished){trace_usb.finished=false;Serial.printf("# end %u\n",trace_usb.sent);}
      }
      if(uint32_t(now-lastStream)>20){lastStream=now;const auto s=snapshot();if(s.stream&&s.stream_source!=Source::Ble&&uint32_t(now-s.ms)<50){uint8_t out[48];route(s.stream_source,out,buildStreamTelemetry(s.telemetry,out,sizeof out));}}

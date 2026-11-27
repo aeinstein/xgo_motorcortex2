@@ -3,6 +3,7 @@
 // Aufruf: firmware/tests/run.sh test_imu_stream
 #include "imu_stream.h"
 #include "command_protocol.h"
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -51,11 +52,11 @@ int main() {
 
     Sample x;
     x.seq = 0xbeef; x.t_us = 0x12345678u; x.roll = -1.25f; x.pitch = 2.5f; x.yaw = 181.0f;
-    x.w11 = -123456; x.w21 = 7654321;
+    x.w11 = -123456; x.w21 = 7654321; x.height = 0x1234;
     std::uint8_t out[64];
     const std::size_t n = buildPacket(x, out, sizeof out);
-    check(n == kFrame && n == 34, "Paket 34 Byte");
-    check(out[0] == 0x55 && out[1] == 0 && out[2] == 34 && out[3] == 0x14 && out[4] == 0x11 && out[32] == 0 && out[33] == 0xaa,
+    check(n == kFrame && n == 36, "Paket 36 Byte (28 Nutzdaten)");
+    check(out[0] == 0x55 && out[1] == 0 && out[2] == 36 && out[3] == 0x14 && out[4] == 0x11 && out[34] == 0 && out[35] == 0xaa,
           "Rahmen 55 00 len 14 11 ... 00 AA");
     std::uint8_t sum = 0;
     for (std::size_t i = 2; i < n - 2; ++i) sum = std::uint8_t(sum + out[i]);
@@ -64,7 +65,13 @@ int main() {
     check((d[0] | d[1] << 8) == 0xbeef && u32(d + 2) == 0x12345678u && f32(d + 6) == -1.25f && f32(d + 10) == 2.5f &&
           f32(d + 14) == 181.0f && std::int32_t(u32(d + 18)) == -123456 && std::int32_t(u32(d + 22)) == 7654321,
           "Inhalt little endian: seq, t_us, Roll/Nick/Kurs, Räder");
-    check(buildPacket(x, out, 33) == 0, "zu kleiner Puffer -> 0");
+    check((d[26] | d[27] << 8) == 0x1234, "Höhe am Ende (Offset 26, u16 little endian)");
+    check(buildPacket(x, out, 35) == 0, "zu kleiner Puffer -> 0");
+    check(Sample{}.height == kHeightUnknown, "ohne gestellte Beine: Höhe unbekannt (0xFFFF)");
+    // Beinlängen 45..81 -> Höhenbyte × 100: Mitte 18 Einheiten = Byte 127,5; Einlegen ±d ändert die Mitte nicht
+    check(heightX100(63, 63) == 12750 && heightX100(70, 56) == 12750 && heightX100(45, 45) == 0 && heightX100(81, 81) == 25500,
+          "Höhe = (A + B) / 2 in Byte × 100 (18 -> 12750, 0 -> 0, 36 -> 25500)");
+    check(heightX100(NAN, 63) == kHeightUnknown, "nicht endlich -> unbekannt");
 
     // Schreibbefehl auf 0x11 wird vom Parser angenommen
     protocol::StreamParser p;
