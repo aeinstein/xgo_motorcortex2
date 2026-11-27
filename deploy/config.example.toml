@@ -11,7 +11,6 @@ control_hz = 24.0       # jedes Bild (camera.fps)
 [robot]
 # Seit 2026-11-23 sind alle Fahr- und Drehwerte der Modi und die Handsteuerung Anteile davon (gesendet Faktor x tempo x max_v)
 max_v = 0.5           # Nutzer 2026-11-13: 50 % (vorher 0.15); gesendet 0,12 -> 26 cm/s, 0,24 -> 50 cm/s, darüber nie gefahren
-max_w = 0.5           # ~180 °/s; Nutzer 2026-11-13: 50 % (vorher 0.30)
 level_after_standup = true   # Nutzer 2026-11-05: einmal nach jedem Aufstehen nivellieren (Totzone der Beine)
 vx_limit = 1.8           # gemessen 2026-11-05: Befehl 0,15 -> ~27 cm/s (Bahnprüfung rechnet damit)
 kernel_watchdog_ms = 1000

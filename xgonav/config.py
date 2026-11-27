@@ -20,7 +20,7 @@ class RobotCfg:
     # max_v x tempo x 1 (Nutzer 2026-11-23: reverse_gain/manual_forward_gain waren Notlösungen für die alte Firmware). Nutzer 2026-11-13: beide 0,5 (vorher 0,15 / 0,30); 0,5 sind rechnerisch ~0,9 m/s und 180 °/s,
     # über 0,24 (50 cm/s) ist nie gefahren worden.
     max_v: float = 0.5
-    max_w: float = 0.5
+    max_w: float = 1.0             # Nutzer 2026-11-27 (Fahrstil): 360 °/s, sonst reichte die Drehrate für die 40°-Schlange bei 0,9 m/s nicht
     # Tempo (Anteil, 0,05..1): jeder Fahr- und Drehbefehl aller Modi wird nach der Begrenzung auf max_v/max_w
     # damit malgenommen (Robot.drive). Startwert; zur Laufzeit über den Temporegler im Web (POST /tempo),
     # gilt bis zum Neustart. Firmware-Aktionen (POST /action) fahren mit eigener Geschwindigkeit.
@@ -39,8 +39,9 @@ class RobotCfg:
     vel_frame: bool = True
     # Krümmungsbetrieb (ARBEITSPLAN.md Punkt 5 Stufe 1): Wegfolger-Befehle mit Command.kappa gehen als Bahnkrümmung an
     # die Firmware (w = κ · v_soll dort), der Bogen bleibt beim Anfahren und Bremsen. Nur wenn die Firmware das
-    # Fähigkeitsbit meldet. Gefahren 2026-11-25 (κ 2 von Hand), seitdem an (Nutzer).
-    vel_kappa: bool = True
+    # Fähigkeitsbit meldet. Gefahren 2026-11-25 (κ 2 von Hand). Aus seit 2026-11-27 (Nutzer): die Firmware koppelt
+    # v ≤ w_max/|κ| und a ≤ alpha/|κ|, bremste in jeder Kurve (Schlange 40°: 0,4–0,5 statt 0,9 m/s); getrennt v/w hält das Tempo.
+    vel_kappa: bool = False
     # Kursziel (Punkt 5 Stufe 2): Drehen auf einen Kurs (Wegfolger, POST /turn) als Ziel Δψ an die Firmware, die mit
     # Bremsvorausschau dreht; w_max des Modus geht solange über vel_limits. Nur mit Fähigkeitsbit. Gefahren 2026-11-25
     # (±90°/±180° auf ±1,4° mit Firmware 81cb3335), seitdem an (Nutzer).

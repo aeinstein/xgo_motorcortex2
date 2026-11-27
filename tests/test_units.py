@@ -2297,6 +2297,7 @@ def test_pathfollower_align_turn_limit():
     from dataclasses import replace
     from xgonav.behaviors import PathFollower
     cfg = Config.neutral()
+    cfg.robot.max_w = 0.5                                            # Rechnung wie bis 2026-11-27
     f = PathFollower(cfg.behavior, cfg.robot, cfg.home)             # Faktor 0,5 von max_w 0,5: absolut 0,25
     assert f.align(math.radians(170), "x").w == pytest.approx(cfg.robot.w_of(cfg.home.turn_w_max)) == pytest.approx(0.25)
     assert f.align(math.radians(-170), "x").w == pytest.approx(-0.25)

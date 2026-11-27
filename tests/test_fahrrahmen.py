@@ -243,6 +243,8 @@ def _cfg(**kw):
     # test_ohne_ruck_*
     c.vel_jerk_mps3, c.vel_brake_jerk_mps3 = 2.5, 10.0
     c.vel_accel_mps2, c.vel_decel_mps2, c.vel_brake_mps2 = 0.5, 1.0, 1.5
+    # ... und mit max_w 0,5 und Krümmungsbetrieb (Standard bis 2026-11-27)
+    c.max_w, c.vel_kappa = 0.5, True
     for k, v in kw.items():
         setattr(c, k, v)
     return c

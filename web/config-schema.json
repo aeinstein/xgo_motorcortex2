@@ -35,8 +35,8 @@
       {
        "key": "max_w",
        "typ": "float",
-       "default": 0.5,
-       "hilfe": ""
+       "default": 1.0,
+       "hilfe": "Nutzer 2026-11-27 (Fahrstil): 360 °/s, sonst reichte die Drehrate für die 40°-Schlange bei 0,9 m/s nicht"
       },
       {
        "key": "tempo",
@@ -53,8 +53,8 @@
       {
        "key": "vel_kappa",
        "typ": "bool",
-       "default": true,
-       "hilfe": "Krümmungsbetrieb (ARBEITSPLAN.md Punkt 5 Stufe 1): Wegfolger-Befehle mit Command.kappa gehen als Bahnkrümmung an die Firmware (w = κ · v_soll dort), der Bogen bleibt beim Anfahren und Bremsen. Nur wenn die Firmware das Fähigkeitsbit meldet. Gefahren 2026-11-25 (κ 2 von Hand), seitdem an (Nutzer)."
+       "default": false,
+       "hilfe": "Krümmungsbetrieb (ARBEITSPLAN.md Punkt 5 Stufe 1): Wegfolger-Befehle mit Command.kappa gehen als Bahnkrümmung an die Firmware (w = κ · v_soll dort), der Bogen bleibt beim Anfahren und Bremsen. Nur wenn die Firmware das Fähigkeitsbit meldet. Gefahren 2026-11-25 (κ 2 von Hand). Aus seit 2026-11-27 (Nutzer): die Firmware koppelt v ≤ w_max/|κ| und a ≤ alpha/|κ|, bremste in jeder Kurve (Schlange 40°: 0,4–0,5 statt 0,9 m/s); getrennt v/w hält das Tempo."
       },
       {
        "key": "vel_kurs",
