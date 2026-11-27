@@ -118,7 +118,7 @@ def test_robot_height_mapping():
     r.set_height(500)   # begrenzt, identisch -> kein neuer Write
     vals = [v for _, n, v in r.writes if n == "height"]
     assert vals == [0, 128, 205]
-    assert r.height_mm == pytest.approx(60 + 60 * 200 / 255)   # die Firmware fährt höchstens 200
+    assert r.height_mm == pytest.approx(60 + 60 * 205 / 255)   # Firmware nimmt bis 255 (5a80b9ea), xgonav schreibt höchstens 205
 
 
 def test_robot_led_start_flash(tmp_path):
@@ -170,9 +170,9 @@ def test_robot_height_readback(tmp_path):
     assert r.height_mm == pytest.approx(mm(106))
     setze("height", "203")                               # Web während der Fahrt
     takt()
-    assert r.height_mm == pytest.approx(mm(200))         # Firmware begrenzt auf 200
+    assert r.height_mm == pytest.approx(mm(203))         # Firmware nimmt bis 255 (seit 5a80b9ea)
     r.set_height(85)                                     # Verhalten will weiter 85: kein neuer Write
-    assert (tmp_path / "height").read_text() == "203" and r.height_mm == pytest.approx(mm(200))
+    assert (tmp_path / "height").read_text() == "203" and r.height_mm == pytest.approx(mm(203))
     setze("state", "254")                                # absetzen ...
     takt()
     setze("state", "1")                                  # ... und aufstehen

@@ -31,10 +31,11 @@ log = logging.getLogger(__name__)
 NEUTRAL = 128
 # Höhe in der Firmware (xgorider2_rl main.cpp, action_engine.cpp): Solange der Rider nicht balanciert, setzt
 # sie den Sollwert in jedem Takt auf 0; beim Aufstehen nimmt sie die Mittelstellung 128. Gefahren wird nur
-# 55..200. /proc/XGORider/height zeigt dagegen den zuletzt geschriebenen Wert, auch über das Aufstehen hinweg.
+# 55..255 (bis 2026-11-27 hier 200). /proc/XGORider/height zeigt dagegen den zuletzt geschriebenen Wert, auch über das Aufstehen hinweg.
 FW_HEIGHT_STANDUP_U8 = 128
 FW_CURVE_LEAN_ON = 232          # Firmware 07-balance: Einlegen in Kurven an (231 aus), nach ESP-Neustart aus
-FW_HEIGHT_MIN_U8, FW_HEIGHT_MAX_U8 = 55, 200
+FW_CURVE_LEAN_OFF = 231
+FW_HEIGHT_MIN_U8, FW_HEIGHT_MAX_U8 = 55, 255   # oben: seit Firmware 5a80b9ea bis zur Servogrenze jedes Beins (2026-11-27 bis 255 gefahren)
 # Totband der Firmware um 128 (rider_motion.cpp decode: 5 % des Bereichs); darunter fährt er nicht an
 FW_DEADBAND = 0.05
 # Aktionen der Firmware, die selbst fahren oder drehen (action_engine.cpp tick): je Abschnitt
@@ -146,6 +147,8 @@ class Robot:
     def __init__(self, cfg: RobotCfg):
         self.cfg = cfg
         self._tempo = 1.0
+        self._pursuit = bool(getattr(cfg, "pursuit", False))
+        self._p_h_u: int | None = None          # zuletzt von Pursuit geschriebene Höhe (u8), None = keine
         self.tempo = getattr(cfg, "tempo", 1.0)
         self._lock = threading.Lock()
         self._target = (0.0, 0.0)
@@ -295,6 +298,35 @@ class Robot:
         if not (self.TEMPO_MIN <= f <= 1.0):
             raise ValueError(f"Tempo {f} außerhalb {self.TEMPO_MIN}..1")
         self._tempo = f
+
+    @property
+    def pursuit(self) -> bool:
+        """Fahrmodus Pursuit (Schalter im Web, Nutzer 2026-11-27; kein Verhaltensmodus): Beschleunigen, Verzögern und
+        Bremsen × robot.pursuit_accel_faktor, Nivellieren mit Einlegen in Kurven (wie robot.level_always)."""
+        return self._pursuit
+
+    @pursuit.setter
+    def pursuit(self, an: bool) -> None:
+        an = bool(an)
+        if an == self._pursuit:
+            return
+        self._pursuit = an
+        log.info("Fahrmodus Pursuit %s", "an" if an else "aus")
+        self._drive_level_on = False                 # an: _drive_level schaltet beim nächsten Takt ein
+        if not an and not self.cfg.level_always and self.state.balancing:
+            try:
+                self._write("roll_balance", 0)
+                self._write("action", FW_CURVE_LEAN_OFF)
+            except OSError as e:
+                log.error("Pursuit aus: Nivellieren nicht abgeschaltet: %s", e)
+
+    @property
+    def _level_immer(self) -> bool:
+        return self.cfg.level_always or self._pursuit
+
+    @property
+    def _a_faktor(self) -> float:
+        return self.cfg.pursuit_accel_faktor if self._pursuit else 1.0
 
     def drive(self, v: float, w: float, brake: bool = False, kappa: float | None = None,
               kurs: tuple[float, float] | None = None, strecke: float | None = None) -> None:
@@ -513,6 +545,39 @@ class Robot:
             with self._act_lock:
                 if not self._action_tick(now):
                     self._send(now)
+            self._pursuit_hoehe()
+
+    def _pursuit_hoehe(self) -> None:
+        """Pursuit: Körperhöhe sinkt mit dem Tempo, linear von der eingestellten Höhe (Sollwert von Verhalten oder Web)
+        bis robot.pursuit_hoehe_min_mm bei v_max (Tempo des Generators, also dem Soll). Geschrieben nur bei
+        Änderungen ab 2 u8; der Sollwert selbst bleibt die Basis (_height_text: kein „von außen“)."""
+        c = self.cfg
+        aktiv = self._pursuit and self.state.balancing and self.vel and self._height_mm is not None
+        span = c.height_max_mm - c.height_min_mm
+        if not aktiv:
+            if self._p_h_u is not None:
+                if self.state.balancing and self._height_mm is not None:
+                    u = int(round(255 * (self._height_mm - c.height_min_mm) / span))
+                    self._p_h_schreiben(u)
+                self._p_h_u = None
+            return
+        basis = self._height_mm
+        ziel_min = min(basis, max(c.pursuit_hoehe_min_mm, c.height_min_mm + 10.0))
+        frac = min(1.0, abs(self._gen_v.x) / max(self.v_max_mps, 1e-6))
+        mm = basis - frac * (basis - ziel_min)
+        u = int(round(255 * (mm - c.height_min_mm) / span))
+        if self._p_h_u is None or abs(u - self._p_h_u) >= 2:
+            self._p_h_schreiben(u)
+
+    def _p_h_schreiben(self, u: int) -> None:
+        with self._height_lock:
+            try:
+                self._write("height", u)
+            except OSError as e:
+                log.error("Pursuit-Höhe nicht geschrieben: %s", e)
+                return
+            self._height_text = str(u)          # eigener Wert, nicht als Höhe von außen übernehmen
+        self._p_h_u = u
 
     @property
     def levelled(self) -> bool:
@@ -546,10 +611,10 @@ class Robot:
         try:
             if self._level_on_t is not None:
                 if now - self._level_on_t >= self.cfg.level_pulse_s:
-                    if not self.cfg.level_always:
+                    if not self._level_immer:
                         self._write("roll_balance", 0)
                     self._level_on_t = None
-                    self._drive_level_on = self.cfg.level_always
+                    self._drive_level_on = self._level_immer
                 return
             standup = self.cfg.level_after_standup and self._seen_down and not self._standup_levelled
             if (standup or self._level_request) and now - self._balancing_since >= 2.5:
@@ -568,7 +633,7 @@ class Robot:
     def _drive_level(self, now: float) -> None:
         """Nivellieren beim Fahren (robot.level_while_driving): an nach level_drive_delay_s Geradeausfahrt, aus beim
         Drehen, Anhalten, Rollbefehl oder einer Aktion der Firmware. Der Trimm bleibt danach stehen (Firmware-Patch 07-balance)."""
-        if self.cfg.level_always:
+        if self._level_immer:
             if not self._drive_level_on:
                 # Nivellieren auf den scheinbaren Schwerevektor = Einlegen in Kurven (Firmware 07-balance, Aktion 232;
                 # nach jedem ESP-Neustart aus, wirkt nur beim Nivellieren). Entweder-oder (Nutzer 2026-11-27): solange
@@ -576,7 +641,7 @@ class Robot:
                 self._write("roll_balance", 1)
                 self._write("action", FW_CURVE_LEAN_ON)
                 self._drive_level_on = True
-                log.info("Nivellierung dauerhaft an mit Einlegen in Kurven (robot.level_always)")
+                log.info("Nivellierung dauerhaft an mit Einlegen in Kurven (%s)", "Pursuit" if self._pursuit else "robot.level_always")
             return
         v, w = self._cur
         straight = (self.cfg.level_while_driving and self._roll_cmd == 0 and self._act is None
@@ -628,6 +693,7 @@ class Robot:
             a, j = c.vel_accel_mps2, c.vel_jerk_mps3          # schneller in derselben Richtung (oder aus dem Stand)
         else:
             a, j = c.vel_decel_mps2, c.vel_jerk_mps3          # langsamer oder Richtungswechsel
+        a *= self._a_faktor                                 # Pursuit
         # w_max über vel_limits: vor dem Kursziel-Rahmen schreiben (hier, _send folgt) und während eines Kursziels nie
         # senken: die Firmware klemmt w sofort auf w_max, ein Sprung ohne alpha (Firmware-Sitzung 2026-11-25). Also beim
         # Start nicht unter die laufende Drehrate, danach nur anheben; zurück auf das volle w_max erst nach dem Kursziel.
@@ -744,7 +810,7 @@ class Robot:
             self._write("vel", self._frame)
             self._frame_sent = self._frame
             self._last_send_t = now
-            if (self.cfg.level_always and self.state.balancing
+            if (self._level_immer and self.state.balancing
                     and abs(getattr(self, "_frame_w", 0.0)) > W_LEVEL_OFF_DPS):
                 self._write("roll_balance", 1)               # Firmware schaltet sie beim Drehen ab
         except OSError as e:
@@ -768,7 +834,7 @@ class Robot:
                 self._write("speed_x", u[0])
             if prev is None or keepalive or u[1] != prev[1]:
                 self._write("speed_z", u[1])
-                if self.cfg.level_always and self.state.balancing and abs(u[1] - NEUTRAL) > 16:
+                if self._level_immer and self.state.balancing and abs(u[1] - NEUTRAL) > 16:
                     self._write("roll_balance", 1)   # Firmware schaltet sie beim Drehbefehl ab
             self._sent = u
             self._last_send_t = now

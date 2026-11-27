@@ -140,6 +140,7 @@ xgonav unreachable → HTTP 502 `xgonav nicht erreichbar`. Exposure/gain changes
 | POST | `/exposure?us=..`, `/gain?g=..` | 400 if out of range |
 | POST | `/bild?k=0.5..4&s=0.5..4&b=-0.5..0.5` | contrast/saturation/brightness in the camera ISP (`b` optional; also reaches FloorNet and recordings; `meta.jsonl` `cam.contrast`/`saturation`/`brightness`), until restart; `/status` `exposure.contrast`/`saturation`/`brightness`; the web view can compensate with an SVG filter (checkbox, stored in the browser). Camera sliders (exposure, gain, brightness, contrast, saturation, hue) sit in a collapsible „Kamera“ panel below the image (open state stored in the browser); hue is display-only (SVG filter) |
 | POST | `/tempo?f=0.05..1` | speed slider: factor for all drive/turn commands of all modes (after `max_v`/`max_w`), until restart; `GET /status` → `tempo` |
+| POST | `/pursuit?on=0\|1` | drive style *Pursuit* (checkbox right of the speed slider, not a mode), until restart: accel/decel/brake × `robot.pursuit_accel_faktor` (1.5), leveling with curve lean (action 232), body height falls linearly with speed down to `robot.pursuit_hoehe_min_mm` at `v_max`; off: normal ramps, leveling and lean off (231, unless `level_always`), height back; `GET /status` → `pursuit` |
 | POST | `/map/reset` | clear room map, pose = start = 0 |
 | POST | `/map/start` | start point = current pose |
 | POST | `/map/save` | save now to `grid.file`; 404 if no map or no file |

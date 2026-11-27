@@ -23,6 +23,7 @@
  *   POST api.php?a=record&on=0|1              (Rohaufzeichnung; schreibt nur, solange der Rider balanciert)
  *   POST api.php?a=drive&v=-1..1&w=-1..1      (nur Modus manual, alle 0,2 s senden)
  *   POST api.php?a=tempo&f=0.05..1            (Temporegler: Anteil für alle Fahr-/Drehbefehle aller Modi)
+ *   POST api.php?a=pursuit&on=0|1             (Fahrmodus Pursuit: Beschleunigung +50 %, Einlegen, Höhe sinkt mit dem Tempo)
  *   POST api.php?a=bild&k=0.5..4&s=0.5..4&b=-0.5..0.5  (Kontrast/Sättigung/Helligkeit im ISP; Grenzen prüft xgonav)
  *   POST api.php?a=led&i=0..3&c=%23rrggbb
  *   POST api.php?a=led_brightness&p=0..100    (Prozent; n = p·255/100 nach /proc und dauerhaft nach LED_FILE,
@@ -75,7 +76,7 @@ const EMOTION_RAW = '/opt/xgonav/emotions';             // tools/eyes.py, von de
 const STIMMEN = '/opt/xgonav/stimmen';                 // [stimme] dir: bestaetigt/NN(_roh).wav, kandidaten/<Zeit>.wav
 const HEIGHT_MIN = 61;                                   // u8; ~10 mm über dem Minimum, dazu ~4 mm fürs Ausrichten (ein Bein tiefer)
 const LED_FILE = '/var/lib/xgonav/led_brightness';      // n/256 (Firmware-Patch 06-leds), deploy/install.sh legt den Ordner an
-const HEIGHT_MAX = 205;                                 // u8; Firmware nähme 255, bei 235 Stopp 252 (2026-11-06, Ursache offen)
+const HEIGHT_MAX = 255;                                 // u8; seit Firmware 5a80b9ea (2026-11-27) fährt jedes Bein nur bis zur Servogrenze, 255 = so hoch wie möglich
 const CONFIG = '/opt/xgonav/config.toml';               // Gruppe video, 0664 (deploy/install.sh)
 const CONFIG_SCHEMA = __DIR__ . '/config-schema.json';  // tools/config_schema.py
 const CONFIG_BACKUP = '/var/lib/xgonav/config-backup';  // je Speichern eine Sicherung, die letzten 50 bleiben
@@ -531,6 +532,8 @@ switch ($a) {
             $q['b'] = round(zahl('b', -1, 1), 2);                           // fehlt b: Helligkeit bleibt
         }
         xgonav('POST', '/bild?' . http_build_query($q));
+    case 'pursuit':
+        xgonav('POST', '/pursuit?on=' . (($_GET['on'] ?? '0') === '1' ? '1' : '0'));
     case 'tempo':
         xgonav('POST', '/tempo?f=' . round(zahl('f', 0.05, 1), 3));        // Anteil für alle Fahrbefehle
     case 'led':

@@ -97,6 +97,12 @@ class RobotCfg:
     # (je Drehbefehl ein Schreiben mehr). Schaltet nach jedem Aufstehen auch das Einlegen in Kurven ein (Aktion 232);
     # solange es an ist, wirkt ein Roll von außen (Web) nicht (Nutzer 2026-11-27: entweder Einlegen oder Roll).
     level_always: bool = False
+    # Fahrmodus Pursuit (Schalter rechts vom Temporegler, bis zum Neustart; Nutzer 2026-11-27): Beschleunigen, Verzögern
+    # und Bremsen × pursuit_accel_faktor und Nivellieren mit Einlegen in Kurven wie level_always. pursuit = Startwert.
+    pursuit: bool = False
+    pursuit_accel_faktor: float = 1.5
+    # Pursuit: Körperhöhe sinkt linear mit dem Tempo bis hierher bei v_max (nie unter height_min_mm + 10)
+    pursuit_hoehe_min_mm: float = 75.0
     keepalive_s: float = 0.3       # Sollwert periodisch neu schreiben
     stall_timeout_s: float = 0.5   # kein drive() mehr -> Stopp (Userspace-Watchdog)
     kernel_watchdog_ms: int = 1000 # nur wirksam mit Kernel-Patch (settings/motion_timeout_ms)

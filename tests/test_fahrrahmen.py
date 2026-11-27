@@ -704,3 +704,35 @@ def test_ohne_ruck_rampe_nur_mit_amax():
     for _ in range(30):
         ax.schritt(0.5, 2.0, 0.0, 0.01)
     assert ax.x == pytest.approx(0.5) and ax.a == 0.0                     # rastet am Ziel ein
+
+
+def test_pursuit_beschleunigung_nivellieren_hoehe():
+    """Fahrmodus Pursuit (Nutzer 2026-11-27): a × 1,5, Nivellieren + Einlegen (232), Höhe sinkt mit dem Tempo; aus:
+    normale Rampe, Nivellieren und Einlegen aus (231), Höhe zurück auf den Sollwert."""
+    c = Config.neutral().robot
+    r = SimRobot(c)
+    r.vel = True
+    r.state.balancing = True
+    r._height_mm = r.height_u8_to_mm(128)
+    r._ramp_vel((1.0, 0.0), 0.01)
+    x0 = r._gen_v.x
+    assert x0 == pytest.approx(c.vel_accel_mps2 * 0.01)
+    r._gen_reset(resend=False)
+    r.pursuit = True
+    r._ramp_vel((1.0, 0.0), 0.01)
+    assert r._gen_v.x == pytest.approx(x0 * c.pursuit_accel_faktor)
+    r._level_tick(10.0)
+    assert _writes(r, "roll_balance")[-1] == 1 and _writes(r, "action")[-1] == 232
+    # Höhe: im Stand die Basis, bei v_max die Mindesthöhe
+    r._gen_reset(resend=False)
+    r._pursuit_hoehe()
+    assert _writes(r, "height")[-1] == 128
+    r._gen_v.x = r.v_max_mps
+    r._pursuit_hoehe()
+    u_min = round(255 * (c.pursuit_hoehe_min_mm - c.height_min_mm) / (c.height_max_mm - c.height_min_mm))
+    assert _writes(r, "height")[-1] == u_min
+    assert r._height_mm == pytest.approx(r.height_u8_to_mm(128))          # Basis bleibt
+    r.pursuit = False
+    assert _writes(r, "roll_balance")[-1] == 0 and _writes(r, "action")[-1] == 231
+    r._pursuit_hoehe()
+    assert _writes(r, "height")[-1] == 128 and r._p_h_u is None

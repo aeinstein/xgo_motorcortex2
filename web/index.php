@@ -160,6 +160,8 @@ details.hilfe p{margin:4px 0 0}
 .tempo-kopf label{color:var(--leise);font-size:13px}
 .tempo-kopf input{width:120px;margin:0}
 .tempo-kopf .w{font-variant-numeric:tabular-nums;text-align:right;font-size:13px;min-width:3.2em}
+.tempo-kopf label.pursuit{display:inline-flex;align-items:center;gap:4px;color:var(--text);white-space:nowrap}
+.tempo-kopf label.pursuit input{width:auto}
 /* zu schmal (kopfHoehe misst): Tempo bricht selbst um statt das Bodenmodell, Titel fällt weg */
 .kopf-zeile2.tempo-unten .tempo-kopf{order:5}
 header.ohne-titel h1{display:none}
@@ -411,6 +413,7 @@ details.extras[open]>summary{margin-bottom:8px}
         <label for="tempo">Tempo</label>
         <input type="range" id="tempo" min="25" max="100" step="25" value="75">
         <span class="w" id="tempo-w"></span>
+        <label class="pursuit" title="Fahrmodus Pursuit: Beschleunigung +50 %, Nivellieren mit Einlegen in Kurven, Körperhöhe sinkt mit dem Tempo; bis zum Neustart von xgonav"><input type="checkbox" id="pursuit"> Pursuit</label>
       </div>
       <div class="fn-wahl">
         <label for="fn-wahl">Bodenmodell</label>
@@ -540,7 +543,7 @@ details.extras[open]>summary{margin-bottom:8px}
       </div>
       <div class="kamhoehe">
         <label for="hoehe">Kamerahöhe</label>
-        <input type="range" id="hoehe" min="61" max="205" value="128"
+        <input type="range" id="hoehe" min="61" max="255" value="128"
           oninput="hoeheWert(this.value)"
           onchange="befehl('height', {h: this.value})">
         <span class="w" id="hoehe-w" title="Sollwert u8 128">u8 128</span>
@@ -1584,6 +1587,7 @@ function statusZeigen(s, fehler) {
     gainStatus(s.exposure);
     bildStatus(s.exposure);
     tempoStatus(s.tempo);
+    pursuitStatus(s.pursuit);
   } catch (e) { console.error(e); }
 }
 
@@ -1612,6 +1616,13 @@ function tempoStatus(t) {
   if (t == null || tempoBewegt || document.activeElement === tempoRegler) return;
   tempoRegler.value = Math.round(t * 100);                  // rastet auf 25/50/75/100
   $('tempo-w').textContent = Math.round(t * 100) + ' %';    // angezeigt wird der wirkliche Wert
+}
+// Fahrmodus Pursuit (POST /pursuit): Schalter rechts vom Temporegler, angezeigt wird der Wert aus /status
+const pursuitBox = $('pursuit');
+pursuitBox.onchange = () => befehl('pursuit', {on: pursuitBox.checked ? 1 : 0}, true);
+function pursuitStatus(p) {
+  if (p == null || document.activeElement === pursuitBox) return;
+  pursuitBox.checked = !!p;
 }
 // Handsteuerung schickt Vollausschlag 1 = max_v/max_w (Faktoren, seit 2026-11-23), xgonav nimmt mit dem Tempo mal
 function sollwert() {

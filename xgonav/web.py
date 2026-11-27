@@ -170,6 +170,7 @@ def serve(app: App, host: str, port: int, fps: int, render_cpus=None) -> Threadi
                 body["ortung"] = app.ortung.status() if app.ortung is not None else None
                 body["start"] = START
                 body["tempo"] = app.robot.tempo   # Temporegler: Anteil für alle Fahrbefehle (Robot.drive)
+                body["pursuit"] = app.robot.pursuit   # Fahrmodus Pursuit (Schalter neben dem Temporegler)
                 if parse_qs(u.query).get("breakdown"):
                     body["loop_breakdown"] = app.loop_breakdown()
                 e = s.ego                     # Werte der früheren Overlay-Textzeilen
@@ -441,6 +442,10 @@ def serve(app: App, host: str, port: int, fps: int, render_cpus=None) -> Threadi
                     return self._send(400, json.dumps({"error": str(e) or "f ungültig"}).encode())
                 log.info("Tempo -> %.0f %%", app.robot.tempo * 100)
                 return self._send(200, json.dumps({"ok": True, "tempo": app.robot.tempo}).encode())
+            if u.path == "/pursuit":
+                # Fahrmodus Pursuit: Beschleunigung × robot.pursuit_accel_faktor, Nivellieren + Einlegen, Höhe sinkt mit dem Tempo
+                app.robot.pursuit = q.get("on", ["0"])[0] == "1"
+                return self._send(200, json.dumps({"ok": True, "pursuit": app.robot.pursuit}).encode())
             if u.path == "/bild":
                 try:
                     k0, s0, b0 = app.src.bild
