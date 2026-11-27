@@ -996,6 +996,7 @@ class App:
     def _drive(self, cmd: Command) -> None:
         """Fahrbefehl an den Roboter (alle Modi gleich, auch die Handsteuerung: Faktor x tempo x max_v)."""
         bogen_w(cmd, self.robot, self.cfg.robot)
+        self.robot.a_modus = self.cfg.explore.accel_faktor if self.behavior.name == "explore" else 1.0
         kurs = cmd.kurs if abs(cmd.v) < 1e-6 else None
         if kurs is not None and self.robot.kursabs_an:
             kurs = (kurs[0], kurs[1], self._kurs_fw(kurs[0]))

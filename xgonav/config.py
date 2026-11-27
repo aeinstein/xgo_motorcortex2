@@ -772,8 +772,12 @@ class ExploreCfg:
     scan_w: float = 0.14               # Rundumblick am Anfang (langsam: unter grid.max_turn_dps), Anteil von robot.max_w
     # Tempo auf dem Weg zur nächsten Stelle und zurück zum Start (normiert, statt home.v 0,15; Nutzer 2026-11-11:
     # erst 0,30, nach zwei Fahrten am RiderPi 0,20, im Web 2026-11-20 0,4). Anteil von robot.max_v (0,8 = absolut 0,4); in
-    # Engstellen weiter mal home.tight_v, das reaktive Befreien bleibt bei behavior.cruise_v.
-    v: float = 0.80
+    # Engstellen weiter mal home.tight_v, das reaktive Befreien bleibt bei behavior.cruise_v. Nutzer 2026-11-27 nach einer
+    # Erkundung mit Rädern bis 1,07 m/s: 0,5 (immer 50 % × Temporegler).
+    v: float = 0.50
+    # Beschleunigen und Verzögern im Fahrrahmen während explore × accel_faktor (Nutzer 2026-11-27: 50 %); die Vollbremsung
+    # (Bahnprüfung) bleibt voll.
+    accel_faktor: float = 0.5
     min_cluster_m: float = 0.4         # kleinere Frontier-Gruppen zählen nicht
     # Erst wenn sonst kein Ziel mehr bleibt, zählen auch Gruppen dicht an Hindernissen (näher als home.inflate_m,
     # z. B. die Öffnung einer 25-cm-Lücke: in der Karte nur 3–5 Zellen breit) ab dieser Größe, wenn dahinter

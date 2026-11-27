@@ -148,6 +148,7 @@ class Robot:
         self.cfg = cfg
         self._tempo = 1.0
         self._pursuit = bool(getattr(cfg, "pursuit", False))
+        self.a_modus = 1.0                       # Beschleunigungsfaktor des Verhaltensmodus (App: explore.accel_faktor)
         self._p_h_u: int | None = None          # zuletzt von Pursuit geschriebene Höhe (u8), None = keine
         self.cam_h_u8 = (109.4, 0.1126)          # Kamerahöhe mm = a + b·u8 (App setzt [camera] cam_h_u8)
         self.tempo = getattr(cfg, "tempo", 1.0)
@@ -327,7 +328,7 @@ class Robot:
 
     @property
     def _a_faktor(self) -> float:
-        return self.cfg.pursuit_accel_faktor if self._pursuit else 1.0
+        return (self.cfg.pursuit_accel_faktor if self._pursuit else 1.0) * self.a_modus
 
     def drive(self, v: float, w: float, brake: bool = False, kappa: float | None = None,
               kurs: tuple[float, float] | None = None, strecke: float | None = None) -> None:
@@ -694,7 +695,8 @@ class Robot:
             a, j = c.vel_accel_mps2, c.vel_jerk_mps3          # schneller in derselben Richtung (oder aus dem Stand)
         else:
             a, j = c.vel_decel_mps2, c.vel_jerk_mps3          # langsamer oder Richtungswechsel
-        a *= self._a_faktor                                 # Pursuit
+        # Pursuit, explore.accel_faktor; die Vollbremsung nie langsamer (Bremsweg der Bahnprüfung)
+        a *= max(1.0, self._a_faktor) if self._brake and not schneller else self._a_faktor
         # w_max über vel_limits: vor dem Kursziel-Rahmen schreiben (hier, _send folgt) und während eines Kursziels nie
         # senken: die Firmware klemmt w sofort auf w_max, ein Sprung ohne alpha (Firmware-Sitzung 2026-11-25). Also beim
         # Start nicht unter die laufende Drehrate, danach nur anheben; zurück auf das volle w_max erst nach dem Kursziel.

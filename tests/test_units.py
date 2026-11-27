@@ -4346,6 +4346,7 @@ def test_pathfollower_bremst_frueh_vor_dem_wegende():
     from xgonav.behaviors import PathFollower
     cfg = Config.neutral()
     rc, h = cfg.robot, cfg.home
+    cfg.explore.v = 0.80                      # Rechnung mit dem früheren Standard (0,72 m/s), seit 2026-11-27 0,5
     f = PathFollower(cfg.behavior, rc, h, v=cfg.explore.v)
     f.set_path([(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)])       # 3 m Weg, Luftlinie zum Ende 1 m
     assert f.rest_m(0.0, 0.0) == pytest.approx(3.0) and f.rest_m(1.0, 0.5) == pytest.approx(1.5)
@@ -4614,3 +4615,14 @@ def test_bremsen_aus_nur_liegen_haelt():
     assert safety(Command(0.5, 0.0), w, cfg).v == 0.5
     w.balancing = False
     assert safety(Command(0.5, 0.0), w, cfg).v == 0
+
+
+def test_explore_beschleunigung_halb():
+    """explore: Beschleunigen/Verzögern im Fahrrahmen × explore.accel_faktor, Vollbremsung voll (Nutzer 2026-11-27)."""
+    from xgonav.robot import SimRobot
+    cfg = Config.neutral()
+    assert cfg.explore.v == 0.5 and cfg.explore.accel_faktor == 0.5
+    r = SimRobot(cfg.robot)
+    assert r._a_faktor == 1.0
+    r.a_modus = cfg.explore.accel_faktor
+    assert r._a_faktor == 0.5

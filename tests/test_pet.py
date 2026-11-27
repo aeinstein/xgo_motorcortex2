@@ -939,6 +939,7 @@ def test_horchen_findet_person():
 def test_geraeusch_schreck():
     """Nach Stille plötzlich laut von der Seite: quiekt, duckt sich kurz und dreht sich schnell hin."""
     b = brain(call_events=99)
+    b.rcfg.max_w = 0.5                        # Drehrate bleibt durch kp begrenzt; Vergleich mit look_w wie bei max_w 0,5
     _, yaw, _, acts, evs = hoeren(b, 0.0, 12.0, -80.0, db=26.0, ab=3.0)
     assert ("sound", "quiek", True) in evs and ("emotion", "surprised", True) in evs
     assert any(a.height_mm == b.duck_mm for a in acts)
