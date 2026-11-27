@@ -255,6 +255,10 @@ int main(int argc, char **argv) {
 		}
 		wlast = ws;
 		last = seq;
+		/* Körperhöhe (28-Byte-Pakete): neueste Probe */
+		u64 ht; u16 hv;
+		spin_lock(&imu_lock); ht = body_h_t_ns; hv = body_h; spin_unlock(&imu_lock);
+		if (ht) printf("H %llu %u\n", (unsigned long long)ht, hv);
 	}
 
 	/* Exit-Reihenfolge wie imu_proc_exit: Reader zuerst, solange abgefragt wird */

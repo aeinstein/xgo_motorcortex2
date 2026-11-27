@@ -8,6 +8,7 @@ python3 esp32_emu.py <harness> <sekunden> <imu_hz> [--faults] [--wheels --combo]
 Typ 0x14 (seq, t_us der Messung nach eigener, driftender ESP-Uhr, Winkel, Ticks) mit zufälligem Sendeverzug
 (Firmware-loop); aus nach 5 s ohne Byte vom Host. Das Testprogramm bekommt HZ (Standard 100) als Strom-Rate.
 --stream-off: wie --stream, aber die Firmware kennt 0x11 nicht (Rückfall auf Abfrage prüfen).
+--hoehe: Strompakete mit Körperhöhe (28 statt 26 Byte, caps bit5): u16 Höhenbyte-Skala x 100 am Ende.
 --vel: Firmware-Patch 08-velocity. Der Emulator nimmt Fahrrahmen (0x1a, 13 Byte) und Grenzen (0x1b, 14 Byte) an, prüft Länge und
 Prüfsumme und beantwortet 0x1a lesen mit dem Zustand des letzten Rahmens; am Ende vergleicht er die empfangenen Bytes
 mit denen, die das Testprogramm laut VELSENT/VELLIM geschickt hat, und dessen VELDIAG mit dem erwarteten Text.
@@ -43,6 +44,7 @@ STREAM = bool(_st) and "--stream-off" not in args
 STREAM_HZ = int(_st[0].split("=")[1]) if _st and "=" in _st[0] else 100
 T0 = time.monotonic()
 ESP_T0, ESP_PPM = T0 - 12.345, 40e-6       # ESP-Uhr: anderer Nullpunkt, 40 ppm schnell
+HOEHE = "--hoehe" in args
 TPS11, TPS21 = 400.0, -250.0     # Rad-Ticks/s (rechts rückwärts, damit das Vorzeichen geprüft wird)
 
 
@@ -111,10 +113,16 @@ def esp_us(t):
     return int((t - ESP_T0) * (1 + ESP_PPM) * 1e6) & 0xFFFFFFFF
 
 
+def hoehe_truth(t):   # Körperhöhe, Höhenbyte-Skala x 100
+    return 12800 + int(1500 * math.sin(2 * math.pi * 0.3 * t))
+
+
 def stream_frame(seq, t):
     r, p, y = truth(t)
     a, b = wheels_truth(t)
     data = struct.pack("<HIfffII", seq & 0xFFFF, esp_us(t), r, p, y, a, b)
+    if HOEHE:
+        data += struct.pack("<H", hoehe_truth(t))
     ln = len(data) + 8
     chk = 255 - ((ln + 0x14 + 0x11 + sum(data)) % 256)
     return bytes([0x55, 0x00, ln, 0x14, 0x11]) + data + bytes([chk, 0x00, 0xAA])
@@ -251,8 +259,9 @@ stop = True
 lines = p.stdout.splitlines()
 samples = [tuple(map(int, l.split()[1:])) for l in lines if l.startswith("S ")]
 wheels = [tuple(map(int, l.split()[1:])) for l in lines if l.startswith("W ")]
+hoehen = [tuple(map(int, l.split()[1:])) for l in lines if l.startswith("H ")]
 for l in lines:
-    if not l.startswith(("S ", "W ")):
+    if not l.startswith(("S ", "W ", "H ")):
         print(l)
 if wheels:
     wd = (wheels[-1][1] - wheels[0][1]) / 1e9
@@ -263,6 +272,10 @@ if wheels:
                for _, t, t11, t21, *_ in wheels)
     print("WHEELRATE %.1f Hz (%d Proben, %d Lücken), Abweichung median %d p95 %d max %d Ticks"
           % ((len(wheels) - 1) / wd if wd > 0 else 0, len(wheels), wgaps, e[len(e) // 2], e[int(len(e) * .95)], e[-1]))
+if HOEHE or hoehen:
+    he = [abs(h - hoehe_truth(t / 1e9)) for t, h in hoehen]
+    ok = HOEHE and len(hoehen) > 5 and max(he) <= 30 and samples and len(samples) > 5
+    print("HOEHETEST %s: %d Proben, Abweichung max %d (x100-Skala)" % ("ok" if ok else "FEHLER", len(hoehen), max(he) if he else -1))
 print("EMU", stats)
 if VEL:
     sent = [bytes.fromhex(l.split()[1]) for l in lines if l.startswith("VELSENT ")]

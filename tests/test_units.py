@@ -4579,3 +4579,22 @@ def test_merkkarte_spalt_unabhaengig_vom_raster():
             wand = np.column_stack([np.full(len(ys), 0.9), ys])
             p = next_goal(m, (0.0, 0.0, 0.0), cfg.home, cfg.explore, obstacles=wand)
             assert (p.path is not None) == offen, (versatz, spalt)
+
+
+def test_koerperhoehe_aus_dem_strom(tmp_path):
+    """Mit body_height (Treiber + Firmware caps bit5) zählt nur die gestellte Höhe der Firmware, nicht der Sollwert."""
+    from dataclasses import replace
+    from xgonav.robot import ProcRobot
+    cfg = replace(Config.neutral().robot, proc_dir=str(tmp_path))
+    r = ProcRobot(cfg)
+    r.IST_CACHE_S = 0.0
+    r._height_mm = 85.0                                         # Sollwert (alter Weg)
+    assert r.height_mm == 85.0                                  # Treiber ohne body_height
+    (tmp_path / "body_height").write_text("")
+    assert r.height_mm == 85.0                                  # alte Firmware: noch nie eine Höhe
+    (tmp_path / "body_height").write_text("123456789 12800\n")
+    assert abs(r.height_mm - r.height_u8_to_mm(128)) < 1e-9
+    (tmp_path / "body_height").write_text("123456799 14050\n")  # Einlegen: Höhe weicht aus
+    assert abs(r.height_mm - r.height_u8_to_mm(140.5)) < 1e-9
+    (tmp_path / "body_height").write_text("")                    # liegt: unbekannt, Sollwert zählt nicht mehr
+    assert r.height_mm is None

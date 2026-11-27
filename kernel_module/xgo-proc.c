@@ -81,6 +81,23 @@ static int wheels_show(struct seq_file *m, void *v) {
 	return 0;
 }
 
+// /proc/XGORider/body_height: "t_ns hoehe" der neuesten Strom-Probe; hoehe = (Bein A + B)/2 in Höhenbyte-Skala x 100
+// (12800 = Byte 128). Leer ohne Höhe im Strom (Firmware vor caps bit5), bei stehendem Strom oder solange die Beine
+// nicht gestellt sind (liegt).
+static int body_height_show(struct seq_file *m, void *v) {
+	unsigned long flags;
+	u64 t;
+	u16 h;
+
+	spin_lock_irqsave(&imu_lock, flags);
+	t = body_h_t_ns;
+	h = body_h;
+	spin_unlock_irqrestore(&imu_lock, flags);
+	if (t == 0 || h == XGO_HOEHE_UNBEKANNT || !stream_active(ktime_get_ns())) return 0;
+	seq_printf(m, "%llu %u\n", t, h);
+	return 0;
+}
+
 // /proc/XGORider/wheels_log: die letzten WHEEL_LOG_LEN Proben, älteste zuerst
 static int wheels_log_show(struct seq_file *m, void *v) {
 	static struct wheel_sample copy[WHEEL_LOG_LEN];
@@ -130,6 +147,7 @@ static int imu_log_open(struct inode *inode, struct file *file) { return single_
 static int serial_stats_open(struct inode *inode, struct file *file) { return single_open(file, serial_stats_show, NULL); }
 static int wheels_open(struct inode *inode, struct file *file) { return single_open(file, wheels_show, NULL); }
 static int wheels_log_open(struct inode *inode, struct file *file) { return single_open_size(file, wheels_log_show, NULL, WHEEL_LOG_LEN * 64); }
+static int body_height_open(struct inode *inode, struct file *file) { return single_open(file, body_height_show, NULL); }
 
 /*
  * raw_reg (Diagnose, nur root): beliebiges Register des ESP32 *lesen*, nichts schreiben.
@@ -264,6 +282,9 @@ static const struct proc_ops serial_stats_ops = {
 };
 static const struct proc_ops wheels_ops = {
 	.proc_open = wheels_open, .proc_read = seq_read, .proc_lseek = seq_lseek, .proc_release = single_release,
+};
+static const struct proc_ops body_height_ops = {
+	.proc_open = body_height_open, .proc_read = seq_read, .proc_lseek = seq_lseek, .proc_release = single_release,
 };
 static const struct proc_ops wheels_log_ops = {
 	.proc_open = wheels_log_open, .proc_read = seq_read, .proc_lseek = seq_lseek, .proc_release = single_release,
@@ -718,6 +739,7 @@ static int createFilesystem(){
 	proc_create("ble", 0600, proc_imu, &ble_ops);
 	proc_create("wheels", 0444, proc_imu, &wheels_ops);
 	proc_create("wheels_log", 0444, proc_imu, &wheels_log_ops);
+	proc_create("body_height", 0444, proc_imu, &body_height_ops);
 
 	if (!proc_yaw || !proc_state || !proc_battery || !proc_buttons) return -ENOMEM;
 
@@ -754,6 +776,7 @@ static void destroyFilesystem(){
 	remove_proc_entry("ble", proc_imu);
 	remove_proc_entry("wheels", proc_imu);
 	remove_proc_entry("wheels_log", proc_imu);
+	remove_proc_entry("body_height", proc_imu);
 
 	remove_proc_entry("0", proc_leds);
 	remove_proc_entry("1", proc_leds);

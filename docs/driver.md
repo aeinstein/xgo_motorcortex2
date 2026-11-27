@@ -43,10 +43,10 @@ cat /proc/XGORider/serial_stats; cat /proc/XGORider/imu
 | Item | Value |
 |---|---|
 | Enable | `settings/imu_stream_hz` > 0: the IMU thread writes register 0x11 = rate every second (firmware stops after 5 s without a byte from the Pi and after an ESP restart); 0 writes 0 once |
-| Frame | `55 00 22 14 11` + 26 B + checksum `00 AA`: seq u16, t_us u32 (`micros()` right after the IMU read), roll/pitch/yaw float, ticks wheel 11/21 s32 (little endian) |
+| Frame | `55 00 22 14 11` + 26 B + checksum `00 AA`: seq u16, t_us u32 (`micros()` right after the IMU read), roll/pitch/yaw float, ticks wheel 11/21 s32 (little endian); firmware with caps bit5 (2026-11-27): `55 00 24 14 11` + 28 B, + body height u16 = (leg A + B)/2 in height-byte scale × 100 (12800 = byte 128), 0xFFFF = unknown (lying). Driver accepts both |
 | Rates | firmware: 0..250 Hz, divider of its IMU read (~333 Hz on the RiderPi), intervals at 100 Hz 9–12 ms |
 | Time | offset = receive time − 34 B transfer (2.95 ms) − t_us; minimum taken immediately when lower, window minimum every ~2 s (follows ESP clock drift); t_us unwrapped (71 min overflow), ESP restart resets the offset |
-| Logs | each frame → one `imu_log` and one `wheels_log` sample (`fw_ms` = t_us / 1000) |
+| Logs | each frame → one `imu_log` and one `wheels_log` sample (`fw_ms` = t_us / 1000); 28 B frames also the newest `body_height` |
 | Polling | skipped while the stream is active: last frame younger than max(200 ms, 2.5 send intervals) (fixed 200 ms until 2026-11-17); otherwise 0x0d (firmware without stream, stream lost). Emulator, `--wheels --combo --stream=5`, 20 s: 11 polled samples between 100 stream frames (start-up before the first frame only), 17–18 before |
 | Heading | `/proc/XGORider/yaw` is set from every frame (whole degrees, truncated like register 0x68, only while balancing); register 0x68 is polled only without stream (saves ~5 requests/s) |
 | Stats | `serial_stats`: `stream`, `stream_gaps` (seq gaps = frames dropped by the firmware), `stream_hz`, `stream_active`, `stream_offset_us` |
@@ -73,6 +73,7 @@ cat /proc/XGORider/serial_stats; cat /proc/XGORider/imu
 | `imu_log` | r | last 128 samples, oldest first | |
 | `wheels` | r | `seq t_ns ticks_left ticks_right fw_ms` (fw_ms only with 0x0d) | |
 | `wheels_log` | r | last 64 samples | |
+| `body_height` | r | `t_ns height` of the newest stream sample: actual body height (leg A + B)/2 incl. curve lean, height-byte scale × 100; empty without height in the stream (old firmware), while lying or when the stream stopped. xgonav uses only this once it has seen a value (`ProcRobot.height_mm`) | 0x11 |
 | `serial_stats` | r | `frames bad timeouts unsolicited imu_seq imu_hz imu_block wheels wheel_seq stream stream_gaps stream_hz stream_active stream_offset_us tunnel_rx tunnel_drop tunnel_tx pi_ip` (one per line) | |
 | `raw_reg` | rw, root | write `"0x0b 16"` (addr, len), read `"0x0b 16: 00 11 .."`; read-only diagnostics | any |
 | `lift` | r | lift-guard log of firmware patch 03-diagnostics, read from the ESP32 on every open, format as `raw_reg` (`"0x19 32: .."`, layout `firmware/README.md`); old firmware: `Fehler <n>`. xgonav reads it once after a fall (`robot.lift_text`) | 0x19 |

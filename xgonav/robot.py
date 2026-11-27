@@ -790,9 +790,34 @@ class ProcRobot(Robot):
         self.base = cfg.proc_dir
         self._fds: dict[str, int] = {}
         self.has_kernel_watchdog = False
+        self._ist_t = -1.0                       # Körperhöhe aus dem Strom: zuletzt gelesen (monotonic)
+        self._ist_mm: float | None = None
+        self._ist_da = False                     # Strom hat schon eine Höhe geliefert
 
     def _path(self, name: str) -> str:
         return os.path.join(self.base, name)
+
+    IST_CACHE_S = 0.01
+
+    @property
+    def height_mm(self) -> float | None:
+        """Körperhöhe (mm). Sobald Treiber und Firmware sie im Strom gemeldet haben (/proc/XGORider/body_height,
+        caps bit5, seit 2026-11-27), nur noch die gestellte Höhe (Bein A + B)/2 der Firmware, auch beim Einlegen in
+        Kurven und nach dem Aufstehen; None, solange keine kommt (liegt, Strom steht). Vorher (alter Treiber oder
+        alte Firmware) der Sollwert wie bisher."""
+        now = time.monotonic()
+        if now - self._ist_t >= self.IST_CACHE_S:
+            self._ist_t = now
+            try:
+                with open(self._path("body_height")) as f:
+                    p = f.read().split()
+            except OSError:
+                p = []
+            self._ist_mm = self.height_u8_to_mm(int(p[1]) / 100.0) if len(p) == 2 else None
+            if self._ist_mm is not None and not self._ist_da:
+                self._ist_da = True
+                log.info("Körperhöhe aus dem Strom: %.1f mm (Beine gestellt), Sollwert zählt nicht mehr", self._ist_mm)
+        return self._ist_mm if self._ist_da else self._height_mm
 
     def _setup(self) -> None:
         if not os.path.isdir(self.base):

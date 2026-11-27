@@ -132,7 +132,7 @@ static int write_serial_data(const size_t addr, char * buffer, const size_t len)
 }
 
 // ---- IMU/Rad-Strom (nur Reader-Thread) -------------------------------------
-#define STREAM_TX_NS ((u64)(XGO_STREAM_LEN + 8) * 10 * NSEC_PER_SEC / 115200)   // 34 Byte bei 115200 8N1
+#define STREAM_TX_NS(len) ((u64)((len) + 8) * 10 * NSEC_PER_SEC / 115200)   // 34 bzw. 36 Byte bei 115200 8N1
 #define STREAM_WIN_NS (2ULL * NSEC_PER_SEC)
 
 static u16 stream_seq_last;
@@ -152,7 +152,7 @@ static u32 le32(const uint8_t *b) {
  * also gilt das Minimum: sofort, wenn ein kleinerer kommt, und je ~2 s das Minimum des letzten Fensters
  * (führt die Drift der ESP-Uhr nach).
  */
-static void stream_frame(const uint8_t *b, u64 t_rx) {
+static void stream_frame(const uint8_t *b, uint8_t len, u64 t_rx) {
     u16 seq = (u16)(b[0] | (b[1] << 8));
     u32 tus = le32(b + 2);
     u64 tus64;
@@ -176,7 +176,7 @@ static void stream_frame(const uint8_t *b, u64 t_rx) {
     }
     stream_tus_last = tus;
     tus64 = stream_tus_hi + tus;
-    cand = (s64)(t_rx - STREAM_TX_NS) - (s64)(tus64 * 1000);
+    cand = (s64)(t_rx - STREAM_TX_NS(len)) - (s64)(tus64 * 1000);
     if (!stream_off_ok) {
         stream_off_ns = stream_win_min = cand;
         stream_win_start = t_rx;
@@ -203,6 +203,10 @@ static void stream_frame(const uint8_t *b, u64 t_rx) {
     w.fw_ms = (u32)div_u64(tus64, 1000);
 
     spin_lock_irqsave(&imu_lock, flags);
+    if (len >= XGO_STREAM_LEN_HOEHE) {            // Körperhöhe (caps bit5): neueste Probe mit Messzeit
+        body_h_t_ns = s.t_ns;
+        body_h = (u16)(b[26] | (b[27] << 8));
+    }
     s.seq = ++imu_seq;
     imu_log[s.seq % IMU_LOG_LEN] = s;
     w.seq = ++wheel_seq;
@@ -278,8 +282,8 @@ static void handle_frame(void) {
         return;
     }
 
-    if (rx_TYPE == XGO_STREAM_TYPE && rx_ADDR == XGO_STREAM && dlen == XGO_STREAM_LEN) {
-        stream_frame(rx_buf, ktime_get_ns());
+    if (rx_TYPE == XGO_STREAM_TYPE && rx_ADDR == XGO_STREAM && (dlen == XGO_STREAM_LEN || dlen == XGO_STREAM_LEN_HOEHE)) {
+        stream_frame(rx_buf, dlen, ktime_get_ns());
         return;
     }
 

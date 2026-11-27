@@ -70,6 +70,8 @@ v_meas = Sollwert (ohne Nachlauf); Handsteuerung `/drive?strecke=M` bzw. MCP `fa
 `odom_m` ab dem ersten Regelschritt. Wegfolger und Bahnprüfung schicken noch keine Strecke. Außerdem: xgonav fragt alle
 5 s nach, wenn der Fahrrahmen beim Start fehlte (Flashen), und schaltet dann um.
 
+Körperhöhe im Strom (2026-11-27, Nutzer: „aktuelle Höhe mit in den Strom, nur noch darauf hören“): Strom 0x11 Typ 0x14 28 statt 26 Byte, am Ende u16 LE = (Bein A + B)/2 in Höhenbyte-Skala × 100 (12800 = Byte 128), 0xFFFF im Liegen; caps bit5 (0x37). Firmware 8cb3eebb (af6303b) gebaut. Treiber nimmt 26 und 28 Byte an, `/proc/XGORider/body_height` „t_ns höhe“ (driver-test `--stream --hoehe` grün), am Rider eingespielt 2026-11-27 vor dem Flashen. xgonav: `ProcRobot.height_mm` nur noch aus dem Strom, sobald einmal eine Höhe kam; Höhenänderungen weiter über `/height`.
+
 Stand Stufe 2b (2026-11-26): Firmware c7a97230 gebaut, alle Host-Tests grün, **nicht geflasht** (alte 28 Vektoren
 bytegleich). Treiber `kursabs PSI W` (5 Byte), `vel_limits` mit 9 Feldern (18 Byte), Zustand 15 Felder (`abs_grenzen`:
 Treiber hat zuletzt 18 Byte geschrieben); driver-test `--vel` und `--faults` grün auf kimmy; am Rider nicht gebaut.

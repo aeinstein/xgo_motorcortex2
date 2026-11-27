@@ -35,10 +35,14 @@
 #define XGO_IMU_ALL 0x65        // R-1.1.6: accel[3] + roll/pitch/yaw, 6 Floats (24 Byte) in einer Antwort
 #define XGO_COMBO 0x0d          // Firmware-Patch 02-pi-interface: roll, pitch, yaw (float) + w11/w21_ticks (int32) + t_ms (uint32), 24 Byte
 #define XGO_STREAM 0x11         // Firmware-Patch 02-pi-interface: Strom-Rate in Hz (0 aus, <= 250); Pakete Typ 0x14, 26 Byte:
-                                // seq u16, t_us u32 (micros() der IMU-Lesung), roll/pitch/yaw float, Ticks Rad 11/21 s32
+                                // seq u16, t_us u32 (micros() der IMU-Lesung), roll/pitch/yaw float, Ticks Rad 11/21 s32;
+                                // seit 2026-11-27 (caps bit5) 28 Byte: dazu Körperhöhe u16 = (Bein A + B)/2 in Höhenbyte-Skala
+                                // x 100 (12800 = Byte 128), 0xFFFF = unbekannt (Beine nicht gestellt)
 #define XGO_LED_BRIGHTNESS 0x12 // Firmware-Patch 06-leds: Helligkeit aller LEDs, n/256 (0 dunkel, 32 Default, 255 voll)
 #define XGO_STREAM_TYPE 0x14
 #define XGO_STREAM_LEN 26
+#define XGO_STREAM_LEN_HOEHE 28
+#define XGO_HOEHE_UNBEKANNT 0xFFFF
 #define XGO_ROLL 0x62
 #define XGO_PITCH 0x63
 #define XGO_YAW 0x64

@@ -97,6 +97,10 @@ static int XGO_LED_BRIGHTNESS_SET = -1;         // zuletzt geschriebene LED-Hell
 static unsigned int XGO_IMU_STREAM_HZ = 0;      // 0 = kein Strom, Abfrage über 0x0d
 static atomic_t stat_stream = ATOMIC_INIT(0);
 static atomic_t stat_stream_gaps = ATOMIC_INIT(0);
+// Körperhöhe aus dem Strom (28-Byte-Pakete, caps bit5): Messzeit (CLOCK_MONOTONIC, 0 = nie) und Wert in
+// Höhenbyte-Skala x 100, XGO_HOEHE_UNBEKANNT solange die Beine nicht gestellt sind; unter imu_lock
+static u64 body_h_t_ns;
+static u16 body_h = XGO_HOEHE_UNBEKANNT;
 static u64 stream_last_rx_ns;                   // Empfang des letzten Pakets (CLOCK_MONOTONIC), 0 = nie
 
 // Strom läuft: letztes Paket jünger als 2,5 Sendeabstände, mindestens 200 ms. Mit festen 200 ms galt er bei
