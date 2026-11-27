@@ -778,6 +778,9 @@ class ExploreCfg:
     # Beschleunigen und Verzögern im Fahrrahmen während explore × accel_faktor (Nutzer 2026-11-27: 50 %); die Vollbremsung
     # (Bahnprüfung) bleibt voll.
     accel_faktor: float = 0.5
+    # Drehen auf der Stelle (Drehwert und Kursziel-Drehrate) während explore × dreh_faktor (Nutzer 2026-11-27: halbieren;
+    # mit max_w 1,0 drehte er ~200 °/s); Lenken in der Fahrt bleibt, sonst würden Bögen weiter
+    dreh_faktor: float = 0.5
     min_cluster_m: float = 0.4         # kleinere Frontier-Gruppen zählen nicht
     # Erst wenn sonst kein Ziel mehr bleibt, zählen auch Gruppen dicht an Hindernissen (näher als home.inflate_m,
     # z. B. die Öffnung einer 25-cm-Lücke: in der Karte nur 3–5 Zellen breit) ab dieser Größe, wenn dahinter

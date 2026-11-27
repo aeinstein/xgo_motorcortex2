@@ -2022,6 +2022,12 @@
        "hilfe": "Beschleunigen und Verzögern im Fahrrahmen während explore × accel_faktor (Nutzer 2026-11-27: 50 %); die Vollbremsung (Bahnprüfung) bleibt voll."
       },
       {
+       "key": "dreh_faktor",
+       "typ": "float",
+       "default": 0.5,
+       "hilfe": "Drehen auf der Stelle (Drehwert und Kursziel-Drehrate) während explore × dreh_faktor (Nutzer 2026-11-27: halbieren; mit max_w 1,0 drehte er ~200 °/s); Lenken in der Fahrt bleibt, sonst würden Bögen weiter"
+      },
+      {
        "key": "min_cluster_m",
        "typ": "float",
        "default": 0.4,
