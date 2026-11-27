@@ -33,6 +33,7 @@ NEUTRAL = 128
 # sie den Sollwert in jedem Takt auf 0; beim Aufstehen nimmt sie die Mittelstellung 128. Gefahren wird nur
 # 55..200. /proc/XGORider/height zeigt dagegen den zuletzt geschriebenen Wert, auch über das Aufstehen hinweg.
 FW_HEIGHT_STANDUP_U8 = 128
+FW_CURVE_LEAN_ON = 232          # Firmware 07-balance: Einlegen in Kurven an (231 aus), nach ESP-Neustart aus
 FW_HEIGHT_MIN_U8, FW_HEIGHT_MAX_U8 = 55, 200
 # Totband der Firmware um 128 (rider_motion.cpp decode: 5 % des Bereichs); darunter fährt er nicht an
 FW_DEADBAND = 0.05
@@ -448,6 +449,8 @@ class Robot:
         if not self._height_down:
             return
         self._height_down = False
+        if getattr(self, "_ist_da", False):
+            return                              # Höhe kommt aus dem Strom
         with self._height_lock:
             self._height_mm = self.height_u8_to_mm(FW_HEIGHT_STANDUP_U8)
             self._height_cmd_mm = None
@@ -564,9 +567,13 @@ class Robot:
         Drehen, Anhalten, Rollbefehl oder einer Aktion der Firmware. Der Trimm bleibt danach stehen (Firmware-Patch 07-balance)."""
         if self.cfg.level_always:
             if not self._drive_level_on:
+                # Nivellieren auf den scheinbaren Schwerevektor = Einlegen in Kurven (Firmware 07-balance, Aktion 232;
+                # nach jedem ESP-Neustart aus, wirkt nur beim Nivellieren). Entweder-oder (Nutzer 2026-11-27): solange
+                # das gilt, nimmt die Firmware keinen Roll von außen (Web); ohne level_always geht der Roll wieder.
                 self._write("roll_balance", 1)
+                self._write("action", FW_CURVE_LEAN_ON)
                 self._drive_level_on = True
-                log.info("Nivellierung dauerhaft an (robot.level_always)")
+                log.info("Nivellierung dauerhaft an mit Einlegen in Kurven (robot.level_always)")
             return
         v, w = self._cur
         straight = (self.cfg.level_while_driving and self._roll_cmd == 0 and self._act is None
@@ -991,7 +998,8 @@ class ProcRobot(Robot):
         if first:
             log.info("Körperhöhe laut Treiber: %.1f mm (u8 %s)", mm, text)
         elif self._height_cmd_mm is None or abs(mm - self._height_cmd_mm) >= 1.0:
-            log.warning("Körperhöhe von außen: %.1f mm (u8 %s), Geometrie folgt", mm, text)
+            log.warning("Körperhöhe von außen: %.1f mm (u8 %s), %s", mm, text,
+                        "Geometrie nimmt die Höhe aus dem Strom" if getattr(self, "_ist_da", False) else "Geometrie folgt")
 
 
 class SimRobot(Robot):

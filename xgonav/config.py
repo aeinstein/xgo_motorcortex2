@@ -94,7 +94,8 @@ class RobotCfg:
     level_drive_delay_s: float = 1.0
     # Test (Nutzer 2026-11-24): Nivellierung nie ausschalten, solange er balanciert, auch im Drehen und im Stand. Die
     # Firmware schaltet sie bei jedem Drehbefehl ab 128±16 selbst ab, deshalb schreibt xgonav sie dann gleich mit neu
-    # (je Drehbefehl ein Schreiben mehr).
+    # (je Drehbefehl ein Schreiben mehr). Schaltet nach jedem Aufstehen auch das Einlegen in Kurven ein (Aktion 232);
+    # solange es an ist, wirkt ein Roll von außen (Web) nicht (Nutzer 2026-11-27: entweder Einlegen oder Roll).
     level_always: bool = False
     keepalive_s: float = 0.3       # Sollwert periodisch neu schreiben
     stall_timeout_s: float = 0.5   # kein drive() mehr -> Stopp (Userspace-Watchdog)

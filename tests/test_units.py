@@ -992,6 +992,7 @@ def test_level_always():
     r.state.balancing = True
     r._level_tick(0.0)
     assert lv() == [1]
+    assert [w[2] for w in r.writes if w[1] == "action"] == [232]   # Einlegen in Kurven mit an
     r._cur = (0.0, 0.5); r._send(1.0)
     assert lv() == [1, 1]
     r._cur = (0.0, 0.0); r._level_tick(2.0); r._send(2.0)

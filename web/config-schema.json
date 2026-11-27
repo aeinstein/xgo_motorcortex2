@@ -186,7 +186,7 @@
        "key": "level_always",
        "typ": "bool",
        "default": false,
-       "hilfe": "Test (Nutzer 2026-11-24): Nivellierung nie ausschalten, solange er balanciert, auch im Drehen und im Stand. Die Firmware schaltet sie bei jedem Drehbefehl ab 128±16 selbst ab, deshalb schreibt xgonav sie dann gleich mit neu (je Drehbefehl ein Schreiben mehr)."
+       "hilfe": "Test (Nutzer 2026-11-24): Nivellierung nie ausschalten, solange er balanciert, auch im Drehen und im Stand. Die Firmware schaltet sie bei jedem Drehbefehl ab 128±16 selbst ab, deshalb schreibt xgonav sie dann gleich mit neu (je Drehbefehl ein Schreiben mehr). Schaltet nach jedem Aufstehen auch das Einlegen in Kurven ein (Aktion 232); solange es an ist, wirkt ein Roll von außen (Web) nicht (Nutzer 2026-11-27: entweder Einlegen oder Roll)."
       },
       {
        "key": "keepalive_s",
