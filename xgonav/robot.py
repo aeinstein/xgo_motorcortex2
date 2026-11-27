@@ -437,7 +437,10 @@ class Robot:
 
     def height_u8_to_mm(self, u: int) -> float:
         """Sollwert u8 -> Körperhöhe (mm), mit der Begrenzung der Firmware."""
-        u = max(FW_HEIGHT_MIN_U8, min(FW_HEIGHT_MAX_U8, u))
+        return self.u8_to_mm(max(FW_HEIGHT_MIN_U8, min(FW_HEIGHT_MAX_U8, u)))
+
+    def u8_to_mm(self, u: float) -> float:
+        """Höhenbyte-Skala -> Körperhöhe (mm) ohne Begrenzung (gestellte Höhe aus dem Strom, 0..255)."""
         return self.cfg.height_min_mm + (self.cfg.height_max_mm - self.cfg.height_min_mm) * u / 255
 
     def _height_tick(self) -> None:
@@ -820,7 +823,7 @@ class ProcRobot(Robot):
                     p = f.read().split()
             except OSError:
                 p = []
-            self._ist_mm = self.height_u8_to_mm(int(p[1]) / 100.0) if len(p) == 2 else None
+            self._ist_mm = self.u8_to_mm(int(p[1]) / 100.0) if len(p) == 2 else None
             if self._ist_mm is not None and not self._ist_da:
                 self._ist_da = True
                 log.info("Körperhöhe aus dem Strom: %.1f mm (Beine gestellt), Sollwert zählt nicht mehr", self._ist_mm)

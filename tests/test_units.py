@@ -4597,5 +4597,7 @@ def test_koerperhoehe_aus_dem_strom(tmp_path):
     assert abs(r.height_mm - r.height_u8_to_mm(128)) < 1e-9
     (tmp_path / "body_height").write_text("123456799 14050\n")  # Einlegen: Höhe weicht aus
     assert abs(r.height_mm - r.height_u8_to_mm(140.5)) < 1e-9
+    (tmp_path / "body_height").write_text("123456809 25000\n")  # über der Sollwertgrenze 200: nicht kappen
+    assert abs(r.height_mm - (cfg.height_min_mm + (cfg.height_max_mm - cfg.height_min_mm) * 250 / 255)) < 1e-9
     (tmp_path / "body_height").write_text("")                    # liegt: unbekannt, Sollwert zählt nicht mehr
     assert r.height_mm is None
