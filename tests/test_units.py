@@ -4435,6 +4435,7 @@ def test_pathfollower_tempo_nach_freier_strecke():
     from dataclasses import replace
     from xgonav.behaviors import PathFollower, World
     cfg = Config.neutral()
+    cfg.home.wende_bogen = False              # Bremsen vor scharfen Ecken gibt es nur ohne Wende im Bogen
     f = PathFollower(cfg.behavior, cfg.robot, cfg.home, v=0.8)
 
     def welt(frei, v_rad=0.65, v_erw=None):
@@ -4626,3 +4627,31 @@ def test_explore_beschleunigung_halb():
     assert r._a_faktor == 1.0
     r.a_modus = cfg.explore.accel_faktor
     assert r._a_faktor == 0.5
+
+
+def test_pathfollower_wende_im_bogen():
+    """home.wende_bogen (Nutzer 2026-11-27): Liegt das Ziel hinten und er fährt schon, behält er das Tempo und dreht im
+    Bogen (w = wende_a_mps2 / v, Richtung bleibt bis unter turn_exit_deg); aus dem Stand dreht er auf der Stelle."""
+    from xgonav.behaviors import PathFollower, World
+    from xgonav.mathe import w_to_yaw_rate
+    cfg = Config.neutral()
+    cfg.home.free_slow = False
+    rc, h = cfg.robot, cfg.home
+    welt = lambda th, v_rad: World(t=0.0, dt=0.05, W=640, H=480, hfov=1.6, ego=None, tracks=[], free=None,
+                                   balancing=True, yaw=0.0, cmd_v=0.0, pose=(0.0, 0.0, th), v_rad=v_rad)
+    f = PathFollower(cfg.behavior, rc, h)
+    f.set_path([(0.0, 0.0), (-3.0, 0.1)])                          # Ziel hinten, leicht links
+    c = f.drive(welt(0.0, 0.45), "x", slow_end=False)
+    assert "wende im Bogen" in c.status and c.v == pytest.approx(rc.v_of(h.v)) and c.w > 0
+    assert w_to_yaw_rate(c.w, rc) == pytest.approx(h.wende_a_mps2 / (c.v * rc.vx_limit), rel=1e-6)
+    c2 = f.drive(welt(math.radians(-5), 0.45), "x", slow_end=False)   # Vorzeichen des Fehlers kippt: Richtung bleibt
+    assert c2.w > 0 and "wende" in c2.status
+    assert "wende" not in f.drive(welt(math.pi - 0.05, 0.45), "x", slow_end=False).status   # unter turn_exit_deg
+    f2 = PathFollower(cfg.behavior, rc, h)
+    f2.set_path([(0.0, 0.0), (-3.0, 0.1)])
+    s = f2.drive(welt(0.0, 0.0), "x", slow_end=False)               # aus dem Stand: auf der Stelle
+    assert s.v == 0.0 and "drehe" in s.status
+    cfg.home.wende_bogen = False
+    f3 = PathFollower(cfg.behavior, rc, cfg.home)
+    f3.set_path([(0.0, 0.0), (-3.0, 0.1)])
+    assert f3.drive(welt(0.0, 0.45), "x", slow_end=False).v == 0.0

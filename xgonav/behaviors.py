@@ -781,6 +781,7 @@ class PathFollower:
         self._v_hoch_t = -math.inf               # zuletzt Räder >= kante_v
         self._kante: tuple | None = None         # (x, y, t): Räder standen schlagartig still
         self._turning = False
+        self._wende: float | None = None          # Wende im Bogen läuft: Drehrichtung (+1 links, -1 rechts)
         self._anchor: tuple[float, float] | None = None
         self._t_prog = 0.0
         self._err_ref = 0.0
@@ -1096,6 +1097,29 @@ class PathFollower:
         else:
             self._turning = abs(err) > math.radians(self.h.tight_turn_enter_deg if tight else self.h.turn_enter_deg)
         self._watch(w.t, x, y, err)
+        h, rc = self.h, self.rcfg
+        if not self._turning:
+            self._wende = None
+        elif self._wende is None and h.wende_bogen and not tight:
+            v_ist = w.v_rad if w.v_rad is not None else w.cmd_v * rc.vx_limit
+            if v_ist >= h.wende_min_mps:
+                self._wende = 1.0 if err >= 0 else -1.0   # Richtung bleibt (bei ~180° springt das Vorzeichen)
+        if self._turning and self._wende is not None and not tight:
+            # Wende im Bogen: Tempo bleibt, die Drehung kommt dazu (home.wende_bogen)
+            v = rc.v_of(self.v)
+            vm = v * rc.vx_limit
+            wr = min(h.wende_a_mps2 / max(vm, 1e-3), math.radians(rc.vyaw_limit_dps) * rc.w_of(h.turn_w_max))
+            wc = math.copysign(clamp(yaw_rate_to_w(wr, rc), 0.0, 1.0), self._wende)
+            if w.arc_free_fn is not None and h.free_slow:
+                frei = w.arc_free_fn(v, wc, tight) - h.free_rest_m
+                if frei < math.inf:
+                    v = min(v, self.brems_v(w, frei))
+                    vm = v * rc.vx_limit
+                    wc = math.copysign(clamp(yaw_rate_to_w(min(h.wende_a_mps2 / max(vm, 1e-3), wr), rc), 0.0, 1.0),
+                                       self._wende)
+            kappa = w_to_yaw_rate(wc, rc) / vm if vm > 1e-3 else None
+            return Command(v, wc, hmm, "%s – wende im Bogen (%+.0f°)" % (label, math.degrees(err)),
+                           extra={"tight": tight}, kappa=kappa)
         if self._turning:
             wc = dreh_w(err, self.h.kp_turn, self.h.turn_w_max, self.rcfg)
             return Command(0.0, wc, hmm, "%s – drehe (%+.0f°)" % (label, math.degrees(err)), extra={"tight": tight},
@@ -1137,7 +1161,9 @@ class PathFollower:
             # Tempo nach freier Strecke: vor dem ersten Hindernis der Merkkarte entlang des Wegs und vor einer
             # scharfen Ecke so bremsen wie am Wegende (home.free_slow)
             if knick is None:
-                knick = self.knick_m(x, y, None if slow_end else weiter)
+                # mit Wende im Bogen kein Bremsen vor scharfen Ecken (er fährt sie mit Tempo, home.wende_bogen)
+                knick = (math.inf if self.h.wende_bogen and not tight
+                         else self.knick_m(x, y, None if slow_end else weiter))
             weg = bogen = math.inf
             if w.path_free_fn is not None:
                 weg = w.path_free_fn(self.ahead_pts(x, y), w.pose, tight)

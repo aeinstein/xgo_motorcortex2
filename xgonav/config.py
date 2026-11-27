@@ -746,6 +746,15 @@ class HomeCfg:
     lenk_bogen: bool = True
     turn_enter_deg: float = 75.0       # ab diesem Winkelfehler auf der Stelle drehen ...
     turn_exit_deg: float = 25.0        # ... bis er darunter ist
+    # Wende im Bogen statt auf der Stelle (Nutzer 2026-11-27: „er fährt die ganze Zeit konstant und die Drehung kommt nur
+    # dazu“): Ist der Fehler über turn_enter_deg und fährt er schon (Räder >= wende_min_mps), behält er das Tempo und
+    # dreht im engsten Bogen, den die Querbeschleunigung wende_a_mps2 erlaubt (w = a/v, höchstens turn_w_max), bis er
+    # unter turn_exit_deg ist; vor Ecken bremst er dann nicht mehr (free_slow ohne Knick). Aus dem Stand und in
+    # Engstellen dreht er weiter auf der Stelle. Vorher: abbremsen und auf der Stelle drehen (Nick -10..-12°,
+    # Fahrt 20261127-161929). false = wie vorher.
+    wende_bogen: bool = True
+    wende_a_mps2: float = 0.8
+    wende_min_mps: float = 0.10
     # Kleine Lenkbefehle ignoriert die Firmware (u8 128 ± 6): darunter sonst keine Korrektur
     # unter ~11° Fehler. Ab min_w_err_deg Fehler deshalb mindestens min_w.
     min_w: float = 0.11                # Anteil von robot.max_w (vorher absolut 0,055)
