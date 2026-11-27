@@ -1,7 +1,7 @@
 balance: Positionshalten beim Drehen, Roll-Trimm, Roll halten, Fahr-Integral, Einlegen in Kurven
 
 diff --git a/firmware/src/control/rider_leg_imu.cpp b/firmware/src/control/rider_leg_imu.cpp
-index 24d302f..22a62f5 100644
+index 24d302f..8cf32ba 100644
 --- a/firmware/src/control/rider_leg_imu.cpp
 +++ b/firmware/src/control/rider_leg_imu.cpp
 @@ -27,12 +27,20 @@ std::uint32_t extensionTicks(float extension) {
@@ -29,7 +29,7 @@ index 24d302f..22a62f5 100644
      const double difference = std::sin(double(s.roll_target_deg) / 57.3) * 43.0;
      const float a = float(double(height) + difference);
      const float b = float(double(height) - difference);
-@@ -42,6 +50,26 @@ void updateLegTargets(LegState &s, float height, float command_roll_deg,
+@@ -42,6 +50,25 @@ void updateLegTargets(LegState &s, float height, float command_roll_deg,
      s.servo_b = std::uint16_t(std::uint32_t(zero_b) + extensionTicks(s.extension_b));
  }
  
@@ -43,8 +43,7 @@ index 24d302f..22a62f5 100644
 +        // Beingrenzen: Differenz sin(Roll) * 43 darf keinem Bein mehr als bis kLeanLegMargin vor 0 bzw. 36 nehmen
 +        const float room = std::fmin(height, 36.0f - height) - kLeanLegMargin;
 +        const float leg_max = room > 0.0f ? std::asin(clamp(room / 43.0f, 0.0f, 1.0f)) * 57.29578f : 0.0f;
-+        const float limit = std::fmin(kLeanMaxDeg, leg_max);
-+        want = clamp(want, -limit, limit);
++        want = clamp(want, -leg_max, leg_max);
 +    }
 +    const float filtered = s.target_deg + (want - s.target_deg) * (dt < kLeanTau ? dt / kLeanTau : 1.0f);
 +    const float step = kLeanRateDegS * dt;
@@ -56,7 +55,7 @@ index 24d302f..22a62f5 100644
  void offsetLegExtension(LegState &s, float offset_a_m, float offset_b_m,
                          std::uint16_t zero_a, std::uint16_t zero_b) {
      // Convert the actor's metric extension offsets to the firmware's length
-@@ -255,6 +283,7 @@ bool updateImu(ImuState &s, const std::uint8_t *raw, std::size_t size,
+@@ -255,6 +282,7 @@ bool updateImu(ImuState &s, const std::uint8_t *raw, std::size_t size,
      s.roll_deg = float(std::atan(u[0] / u[2]) * 57.2958);
      // Kurs: Drehrate um die Senkrechte (w . u), nicht nur die Hochachse des Sensors; erst nach der
      // Startkalibrierung integrieren (ohne Totband): vorher ist gyro_bias[2] eine Teilsumme.
@@ -65,10 +64,10 @@ index 24d302f..22a62f5 100644
          s.yaw_deg = float(double(s.yaw_deg) + (w[0] * u[0] + w[1] * u[1] + w[2] * u[2]) * kR2D * dt);
  
 diff --git a/firmware/src/control/rider_leg_imu.h b/firmware/src/control/rider_leg_imu.h
-index faadf8e..0894be2 100644
+index faadf8e..c622b54 100644
 --- a/firmware/src/control/rider_leg_imu.h
 +++ b/firmware/src/control/rider_leg_imu.h
-@@ -10,12 +10,37 @@ struct LegState {
+@@ -10,12 +10,36 @@ struct LegState {
      float roll_target_deg = 0;              // command structure 3ffc30b4 +12
      float extension_a = 45, extension_b = 45; // +16,+20; firmware length units
      std::uint16_t servo_a = 0, servo_b = 0; // 3ffbe170+2, 3ffbe15c+2
@@ -92,12 +91,11 @@ index faadf8e..0894be2 100644
 +// (Vorzeichen wie der Abzug der Querbeschleunigung in updateImu: dort zeigt v*w[2] > 0 die Kurvenmitte bei +x,
 +// nach innen geneigt ist roll_deg dann negativ). v aus den Rädern (ImuState::speed_m_s), Gierrate um die Senkrechte
 +// (ImuState::yaw_rate_vertical_deg_s). Auf der Stelle (v = 0) ergibt das 0. Das Ziel folgt mit kLeanTau und höchstens
-+// kLeanRateDegS, Betrag <= kLeanMaxDeg und so, dass kein Bein näher als kLeanLegMargin an seine Grenze kommt
++// kLeanRateDegS, ohne eigene Winkelgrenze, nur so, dass kein Bein näher als kLeanLegMargin an seine Grenze kommt
 +// (Beinrechnung updateLegTargets: Differenz sin(Roll) * 43, Höhe 0..36). Nur die Lageschätzung bleibt unberührt.
 +struct CurveLean {
 +    float target_deg = 0;   // Sollroll für den Roll-PID (°)
 +};
-+constexpr float kLeanMaxDeg = 6.0f;      // ° Betrag
 +constexpr float kLeanTau = 0.08f;        // s, Tiefpass des Ziels
 +constexpr float kLeanRateDegS = 20.0f;   // °/s, Ratenbegrenzung des Ziels
 +constexpr float kLeanLegMargin = 10.0f;  // Längeneinheiten (mm) Abstand jedes Beins zu 0 bzw. 36
@@ -107,7 +105,7 @@ index faadf8e..0894be2 100644
  // Actor leg channels: add a metric extension offset to each leg target and
  // recompute the servo tick values with the original acos linkage mapping.
  // Offsets are clamped so the extension stays inside the 45..81 mm range.
-@@ -51,6 +76,7 @@ struct ImuState {
+@@ -51,6 +75,7 @@ struct ImuState {
      std::int32_t wheel_ticks[2]{}, last_ticks[2]{};
      bool wheels_fresh = false, ticks_seen = false;
      float speed_m_s = 0;

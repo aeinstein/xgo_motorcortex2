@@ -1,5 +1,5 @@
 // Host-Test 07-balance: In schnellen Kurven einlegen (control::updateCurveLean, MotionRequest::roll_target_deg).
-// Ziel = -atan(v * Gierrate / g): Vorzeichen, Betrag, Grenzen (6°, Beine), Tiefpass + Rate, aus = zurück auf 0.
+// Ziel = -atan(v * Gierrate / g): Vorzeichen, Betrag, Grenze nur aus den Beinen (kein fester Höchstwinkel), Tiefpass + Rate, aus = zurück auf 0.
 // Regelkreis wie test_roll_hold.cpp: Körper-Roll = Störung + Vorzeichen * Roll-Sollwert der Beine; mit Ziel geht
 // der Körper-Roll auf das Ziel, der Roll-Trimm nimmt die Schräglage nicht auf, Ziel 0 ist bitgleich zu ohne.
 // Aufruf: firmware/tests/run.sh test_curve_lean
@@ -39,10 +39,16 @@ static void testTarget() {
     check(settle(0.5f, -90) > 4.5f, "Drehung rechts: Ziel positiv");
     check(settle(-0.5f, 90) > 4.5f, "rückwärts: Vorzeichen dreht sich um");
     check(settle(0, 120) == 0.0f, "auf der Stelle (v = 0): kein Einlegen");
-    check(std::fabs(settle(1.5f, 150) + rider::control::kLeanMaxDeg) < 1e-4f, "Betrag begrenzt auf 6°");
-    const float low = settle(1.5f, 150, 15.0f);   // Platz 15 - 10 = 5 -> asin(5/43) = 6,68° > 6
+    // Fahrt 20261127-084257: 0,87 m/s, −180 °/s -> −atan(v·w/g) = 15,5°, nicht mehr auf 6° gekappt
+    const float sharp = settle(0.87f, 180, 33.0f);   // Höhe 33: Platz 36 - 33 - 10 < 0 -> 0
+    const float mid = settle(0.87f, 180);   // Höhe 18: Platz 8 -> asin(8/43) = 10,72°
+    const float want15 = -std::atan(0.87f * 180 * 0.017453292f / 9.81f) * 57.29578f;
+    std::printf("       0,87 m/s, 180 °/s: nötig %.2f°, Ziel bei Höhe 18 %.2f°\n", want15, mid);
+    check(sharp == 0.0f && std::fabs(mid + 10.72f) < 0.01f, "kein fester Höchstwinkel: Ziel bis zur Beingrenze (Höhe 18: 10,72°)");
+    check(std::fabs(settle(0.4f, 120) - (-std::atan(0.4f * 120 * 0.017453292f / 9.81f) * 57.29578f)) < 0.01f, "unter der Beingrenze: volles -atan(v·w/g)");
+    const float low = settle(1.5f, 150, 15.0f);   // Platz 15 - 10 = 5 -> asin(5/43) = 6,68°
     const float lower = settle(1.5f, 150, 12.0f); // Platz 2 -> asin(2/43) = 2,67°
-    check(std::fabs(low + 6.0f) < 1e-4f && std::fabs(lower + 2.666f) < 0.01f, "Beingrenze: bei niedriger Höhe weniger Schräglage");
+    check(std::fabs(low + 6.677f) < 0.01f && std::fabs(lower + 2.666f) < 0.01f, "Beingrenze: bei niedriger Höhe weniger Schräglage");
     check(settle(1.5f, 150, 9.0f) == 0.0f && settle(1.5f, 150, 27.0f) == 0.0f, "Bein näher als 10 an 0 bzw. 36: kein Einlegen");
     check(settle(NAN, 90) == 0.0f && settle(0.5f, NAN) == 0.0f, "ungültige Eingänge: Ziel 0");
 }
