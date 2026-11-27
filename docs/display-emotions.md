@@ -65,6 +65,7 @@ python tools/eyes.py --gaze DIR      # eye atlas for mode pet: 11 gaze positions
 |---|---|
 | `Angry` | lids slanted down toward the center, trembling, two pulses |
 | `angst` | wide eyes, small pupils darting left/right, worried lids (inner corners up), trembling (fear of the dark) |
+| `aufwachen` | eyes start closed, open halfway, close again, open fully, look left and right, one blink (boot) |
 | `cute` | large round eyes without pupils, smiling lower edge, gentle bob, head tilt, short `^ ^` squint |
 | `doubt` | one eye raised, other squinted, glance right then left |
 | `embarrassed` | darting glances left/right, then trembling `> <` |
@@ -82,7 +83,7 @@ python tools/eyes.py --gaze DIR      # eye atlas for mode pet: 11 gaze positions
 
 | Emotion | Trigger | Source |
 |---|---|---|
-| `cute` | boot | `rc.local` |
+| `aufwachen` | boot (eyes closed, open with a blink, look left and right, end neutral) | `rc.local` |
 | `sleep` | shutdown from web UI (before `poweroff`, timeout 10 s) | `api.php` |
 | `sleep` | sleep mode (web **Ruhe**); closed eyes stay on the display, xgonav writes nothing and plays no emotions meanwhile | `api.php` |
 | `surprised` | person appears after ≥ `gap_s` (5 s) without person | `xgonav/emotion.py` |

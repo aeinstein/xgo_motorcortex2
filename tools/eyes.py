@@ -14,7 +14,7 @@ Emotion eine Bildfolge direkt im Format von tools/emotion.sh build:
   python tools/eyes.py --gaze DIR                  # Augen-Atlas des Modus pet (Blick x Lid)
 
 Abgespielt wird wie bisher mit tools/emotion.sh play OUTDIR/<Name> (25 fps). Jede
-Animation beginnt mit den neutralen Augen; außer sleep (endet geschlossen) endet
+Animation außer aufwachen (beginnt geschlossen) beginnt mit den neutralen Augen; außer sleep (endet geschlossen) endet
 sie auch dort, lässt sich also nahtlos wiederholen.
 """
 from __future__ import annotations
@@ -401,6 +401,18 @@ def angst(t: float, T: float):
     return dict(), l, r
 
 
+def aufwachen(t: float, T: float):
+    """Beim Hochfahren (deploy/rc.local): Augen zu, gehen blinzelnd auf (halb auf, kurz wieder zu, ganz auf),
+    schauen links und rechts, ein Lidschlag, Ende neutral. Beginnt als einzige geschlossen."""
+    zu = track(t, [(0.3, 1.0), (1.0, 0.45), (1.25, 0.8), (1.9, 0.0)])
+    blick = track(t, [(2.0, 0), (2.3, -0.6), (2.7, -0.6), (3.05, 0.6), (3.45, 0.6), (3.75, 0)])
+    l = neutral(dx=34.0 * blick, w=NEUTRAL["w"] * (1 - 0.10 * blick))
+    r = neutral(dx=34.0 * blick, w=NEUTRAL["w"] * (1 + 0.10 * blick))
+    for p in (l, r):
+        p["blink"] = zu + blink(t, 4.0, 0.2)
+    return dict(), l, r
+
+
 def vertigo(t: float, T: float):
     e = envelope(t, T, 0.3, 0.35)
     l, r = neutral(), neutral()
@@ -415,6 +427,7 @@ def vertigo(t: float, T: float):
 EMOTIONS = {
     "Angry": (angry, 2.4),
     "angst": (angst, 2.6),
+    "aufwachen": (aufwachen, 4.4),
     "cute": (cute, 3.0),
     "doubt": (doubt, 3.0),
     "embarrassed": (embarrassed, 2.8),
