@@ -130,6 +130,17 @@ details.hilfe summary::before{content:"i";display:inline-grid;place-items:center
   border:1px solid currentColor;border-radius:50%;font:600 10px/1 system-ui,sans-serif;vertical-align:1px}
 details.hilfe[open] summary{color:var(--text)}
 details.hilfe p{margin:4px 0 0}
+/* Hilfeblase: ⓘ öffnet ein schwebendes Kästchen (details, schließt bei Klick daneben) */
+details.blase{position:relative;display:inline-block}
+details.blase summary{cursor:pointer;list-style:none;user-select:none;display:inline-grid;place-items:center;width:15px;height:15px;
+  border:1px solid currentColor;border-radius:50%;font:600 10px/1 system-ui,sans-serif;color:var(--leise)}
+details.blase summary::-webkit-details-marker{display:none}
+details.blase[open] summary{color:var(--text)}
+details.blase .blase-text{position:absolute;right:0;top:calc(100% + 6px);z-index:50;width:min(300px,calc(100vw - 32px));
+  padding:8px 10px;background:var(--panel,#1b2028);color:var(--text);border:1px solid #3a4350;border-radius:8px;
+  box-shadow:0 4px 16px rgba(0,0,0,.4);font-size:12px;line-height:1.45;white-space:normal;text-align:left}
+details.blase .blase-text p{margin:0 0 6px}
+details.blase .blase-text p:last-child{margin:0}
 
 /* --- Bild und Modus */
 #bild-rahmen{overflow:hidden;background:#000;border:1px solid var(--rand);border-radius:var(--r)}
@@ -414,6 +425,13 @@ details.extras[open]>summary{margin-bottom:8px}
         <input type="range" id="tempo" min="25" max="100" step="25" value="75">
         <span class="w" id="tempo-w"></span>
         <label class="pursuit" title="Fahrmodus Pursuit: Beschleunigung +50 %, Nivellieren mit Einlegen in Kurven, Körperhöhe sinkt mit dem Tempo; bis zum Neustart von xgonav"><input type="checkbox" id="pursuit"> Pursuit</label>
+        <details class="blase" data-i18n-html="hilfe-pursuit"><summary>i</summary><div class="blase-text">
+          <p><b>Pursuit</b> ist ein Fahrmodus für alle Modi, gilt bis zum Neustart von xgonav:</p>
+          <p>• Tempo fest auf 100 % (Regler gesperrt, beim Ausschalten kommt der alte Wert zurück)<br>
+          • Anfahren und Bremsen 1,5× so stark<br>
+          • Nivellieren dauerhaft an, der Rider legt sich in Kurven ein<br>
+          • Körperhöhe sinkt mit dem Tempo: bei vollem Tempo bis zur Kamerahöhe 110 mm, im Stand die eingestellte Höhe</p>
+        </div></details>
       </div>
       <div class="fn-wahl">
         <label for="fn-wahl">Bodenmodell</label>
@@ -948,6 +966,12 @@ const EN = {
   'besetzt (anderes Bild läuft)': 'busy (another image is running)', 'Display-Daemon läuft nicht': 'display daemon not running',
 };
 const EN_HTML = {
+  'hilfe-pursuit': `<summary>i</summary><div class="blase-text">
+      <p><b>Pursuit</b> is a driving style for all modes, until xgonav restarts:</p>
+      <p>• speed fixed at 100 % (slider locked, the old value returns when switched off)<br>
+      • accelerating and braking 1.5× as hard<br>
+      • levelling always on, the Rider leans into curves<br>
+      • body height drops with speed: down to 110 mm camera height at full speed, the set height when standing</p></div>`,
   'hilfe-radar': `<summary>Ray = sound · length = loudness · fades in 12 s</summary>
       <p>Direction from the time difference between the two microphones (<code>[ortung]</code>). Up is forward;
         when the Rider turns, rays and spokes turn with it (IMU yaw), older rays keep pointing at the source.
@@ -1613,16 +1637,48 @@ tempoRegler.oninput = () => $('tempo-w').textContent = tempoRegler.value + ' %';
 tempoRegler.onchange = () => { tempoBewegt = false; befehl('tempo', {f: (Number(tempoRegler.value) / 100).toFixed(2)}, true); };
 tempoRegler.oninput();
 function tempoStatus(t) {
-  if (t == null || tempoBewegt || document.activeElement === tempoRegler) return;
+  if (t != null) tempoRegler.dataset.ist = Math.round(t * 100);
+  if (t == null || tempoBewegt || document.activeElement === tempoRegler || pursuitBox.checked) return;
   tempoRegler.value = Math.round(t * 100);                  // rastet auf 25/50/75/100
   $('tempo-w').textContent = Math.round(t * 100) + ' %';    // angezeigt wird der wirkliche Wert
 }
 // Fahrmodus Pursuit (POST /pursuit): Schalter rechts vom Temporegler, angezeigt wird der Wert aus /status
+// Mit Pursuit ist das Tempo auf 100 % festgenagelt (Regler gesperrt); beim Ausschalten kommt der Wert von vorher zurück.
 const pursuitBox = $('pursuit');
-pursuitBox.onchange = () => befehl('pursuit', {on: pursuitBox.checked ? 1 : 0}, true);
+let tempoVorPursuit = null, tempoNagelZeit = 0;
+function tempoNageln(an) {
+  tempoRegler.disabled = an;
+  if (an && Number(tempoRegler.value) !== 100) {
+    if (tempoVorPursuit == null) tempoVorPursuit = Number(tempoRegler.value);
+    tempoRegler.value = 100; tempoRegler.oninput();
+  }
+  // nur nachschicken, wenn /status noch etwas anderes meldet, und höchstens alle 2 s
+  if (an && Math.round(Number(tempoRegler.dataset.ist ?? 100)) !== 100 && Date.now() - tempoNagelZeit > 2000) {
+    tempoNagelZeit = Date.now();
+    befehl('tempo', {f: '1.00'}, true);
+  }
+}
+pursuitBox.onchange = () => {
+  const an = pursuitBox.checked;
+  befehl('pursuit', {on: an ? 1 : 0}, true);
+  if (an) { tempoVorPursuit = Number(tempoRegler.value); tempoRegler.dataset.ist = tempoVorPursuit; tempoNagelZeit = 0; tempoNageln(true); }
+  else {
+    tempoRegler.disabled = false;
+    if (tempoVorPursuit != null && tempoVorPursuit !== 100) {
+      tempoRegler.value = tempoVorPursuit; tempoRegler.oninput();
+      befehl('tempo', {f: (tempoVorPursuit / 100).toFixed(2)}, true);
+    }
+    tempoVorPursuit = null;
+  }
+};
+// Hilfeblasen schließen bei Klick daneben
+document.addEventListener('click', e => {
+  for (const b of document.querySelectorAll('details.blase[open]')) if (!b.contains(e.target)) b.open = false;
+});
 function pursuitStatus(p) {
-  if (p == null || document.activeElement === pursuitBox) return;
-  pursuitBox.checked = !!p;
+  if (p == null) return;
+  if (document.activeElement !== pursuitBox) pursuitBox.checked = !!p;
+  if (pursuitBox.checked) tempoNageln(true); else tempoRegler.disabled = false;
 }
 // Handsteuerung schickt Vollausschlag 1 = max_v/max_w (Faktoren, seit 2026-11-23), xgonav nimmt mit dem Tempo mal
 function sollwert() {
