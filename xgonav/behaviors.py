@@ -1121,7 +1121,13 @@ class PathFollower:
         v = self.rcfg.v_of(self.v)
         if tight:
             v *= self.h.tight_v
-        if slow_end:
+        strecke = None
+        if slow_end and self.rcfg.vel_strecke:
+            # Wegende bremst die Firmware (Strecke mit Halt, Nutzer 2026-11-27: „je mehr die Firmware macht, desto
+            # besser, sie hat die genaue Strecke seit dem letzten Befehl“): Restweg mitschicken, kein Profil am Pi.
+            # Ohne Fähigkeitsbit der Firmware ignoriert Robot die Strecke, dann fehlt das Abbremsen (siehe vel_strecke).
+            strecke = self.rest_m(x, y)
+        elif slow_end:
             v = min(v, self.end_v(w, x, y))
         frei_txt, info = "", None
         vk, sk = self.kurve_v(w, x, y)                  # Kurventempo (home.kurve_a_mps2)
@@ -1155,7 +1161,8 @@ class PathFollower:
             wc = w_bogen(v)
         kappa = w_to_yaw_rate(wc, self.rcfg) / vm if vm > 1e-3 else None
         return Command(v, wc, hmm, "%s (%+.0f°%s%s)" % (label, math.degrees(err), ", Lücke" if mitte else ", eng" if tight else "",
-                                                       frei_txt), extra={"tight": tight, "frei": info}, kappa=kappa)
+                                                       frei_txt), extra={"tight": tight, "frei": info}, kappa=kappa,
+                       strecke=strecke)
 
     def ausrichten(self, err: float, label: str = "am Start – richte aus") -> Command | None:
         """Am Ziel auf den Endkurs drehen (home.align_heading, align_tol_deg); None = steht schon richtig."""
