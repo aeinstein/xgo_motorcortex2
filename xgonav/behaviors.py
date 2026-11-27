@@ -79,6 +79,9 @@ class World:
     # arc_free_fn(v, w, tight) = freie Strecke (m) auf dem Bogen des Fahrbefehls (normiert) laut Merkkarte bis
     # zur Reichweite der Merkkarte (2,5 m), wie die Bahnprüfung (gleicher Bogen, gleicher Radius), inf frei
     arc_free_fn: object = None
+    # known_fn(pts, reach_m) = Strecke (m) entlang pts (Welt-m, ab der Pose), auf der die Raumkarte jede Zelle als
+    # frei kennt, inf ab reach_m. Für das Tempo nach Kenntnis (home.bekannt_v/unbekannt_v).
+    known_fn: object = None
 
     def bearing(self, x: float) -> float:
         """Bildspalte -> Winkel rad (links positiv)."""
@@ -1061,6 +1064,25 @@ class PathFollower:
         s = max(0.0, s - max(0.0, v_ist) * h.end_lag_s)
         return max(rc.v_of(h.end_min_v), math.sqrt(2.0 * h.end_decel_mps2 * s) / rc.vx_limit)
 
+    def v_kenntnis(self, w: World, x: float, y: float) -> tuple[float, str]:
+        """Fahrwert (normiert) auf freier Strecke nach Kenntnis der Raumkarte (home.bekannt_v/unbekannt_v): v ×
+        bekannt_v, solange der Weg bis bekannt_vorschau_m voraus als frei bekannt ist, sonst vor dem ersten
+        unbekannten Stück wie am Wegende auf v × unbekannt_v herunter. Ohne known_fn: v."""
+        h, rc = self.h, self.rcfg
+        if w.known_fn is None or self.path is None:
+            return rc.v_of(self.v), ""
+        vb, vu = rc.v_of(self.v * h.bekannt_v), rc.v_of(self.v * h.unbekannt_v)
+        s = w.known_fn(self.ahead_pts(x, y), h.bekannt_vorschau_m)
+        if s == math.inf:
+            return vb, ", bekannt"
+        v_ist = w.v_rad if w.v_rad is not None else w.cmd_v * rc.vx_limit
+        if getattr(w, "v_erw", None) is not None:
+            v_ist = max(v_ist, w.v_erw)
+        s_eff = max(0.0, s - max(0.0, v_ist) * h.end_lag_s)
+        vum = vu * rc.vx_limit
+        v = min(vb, math.sqrt(vum * vum + 2.0 * h.end_decel_mps2 * s_eff) / rc.vx_limit)
+        return v, (", unbekannt" if s <= 0.0 else ", unbekannt in %.2fm" % s)
+
     def drive(self, w: World, label: str, slow_end: bool = True, weiter=None) -> Command:
         """Fahrbefehl entlang des Wegs; label steht vorn im Status. slow_end: zum Wegende hin rechtzeitig
         abbremsen (end_v; aus nur, wenn er ohne Halt weiterfährt). Ohne: Mit explore.v 0,30 rollte er über den
@@ -1106,7 +1128,7 @@ class PathFollower:
                 self._wende = 1.0 if err >= 0 else -1.0   # Richtung bleibt (bei ~180° springt das Vorzeichen)
         if self._turning and self._wende is not None and not tight:
             # Wende im Bogen: Tempo bleibt, die Drehung kommt dazu (home.wende_bogen)
-            v = rc.v_of(self.v)
+            v, _ = self.v_kenntnis(w, x, y)
             vm = v * rc.vx_limit
             wr = min(h.wende_a_mps2 / max(vm, 1e-3), math.radians(rc.vyaw_limit_dps) * rc.w_of(h.turn_w_max))
             wc = math.copysign(clamp(yaw_rate_to_w(wr, rc), 0.0, 1.0), self._wende)
@@ -1142,7 +1164,7 @@ class PathFollower:
         # Tempo hängt nicht am Winkelfehler (bis 2026-11-26: v · (1 − |err|/90°), Nutzer: „er zuckt bei jeder
         # Kursänderung, das Tempo soll bleiben und nur der Kurs geändert werden“); gebremst wird nur vor Kurven
         # (kurve_v), am Wegende, vor Hindernissen und in Engstellen, sehr steil dreht er oben auf der Stelle
-        v = self.rcfg.v_of(self.v)
+        v, kenntnis_txt = self.v_kenntnis(w, x, y)      # bekannt schneller, ins Unbekannte langsamer
         if tight:
             v *= self.h.tight_v
         strecke = None
@@ -1153,7 +1175,7 @@ class PathFollower:
             strecke = self.rest_m(x, y)
         elif slow_end:
             v = min(v, self.end_v(w, x, y))
-        frei_txt, info = "", None
+        frei_txt, info = kenntnis_txt, None
         vk, sk = self.kurve_v(w, x, y)                  # Kurventempo (home.kurve_a_mps2)
         if vk < v:
             v, frei_txt = vk, ", Kurve in %.2fm" % sk

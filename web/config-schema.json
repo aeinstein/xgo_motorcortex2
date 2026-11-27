@@ -2490,6 +2490,24 @@
        "hilfe": ""
       },
       {
+       "key": "bekannt_v",
+       "typ": "float",
+       "default": 1.25,
+       "hilfe": "Tempo nach Kenntnis (Nutzer 2026-11-27: „wenn Bahn in unbekanntes Gebiet führt langsamer, wenn bekannt schneller“): Ist der Weg bis bekannt_vorschau_m voraus Zelle für Zelle als frei bekannt (Raumkarte), fährt er v × bekannt_v, sonst v × unbekannt_v; vor dem ersten unbekannten Stück bremst er wie am Wegende darauf herunter. 1,0 / 1,0 = aus (wie vorher, immer v)."
+      },
+      {
+       "key": "unbekannt_v",
+       "typ": "float",
+       "default": 0.75,
+       "hilfe": ""
+      },
+      {
+       "key": "bekannt_vorschau_m",
+       "typ": "float",
+       "default": 1.5,
+       "hilfe": ""
+      },
+      {
        "key": "min_w",
        "typ": "float",
        "default": 0.11,

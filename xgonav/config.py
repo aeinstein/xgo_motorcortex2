@@ -755,6 +755,13 @@ class HomeCfg:
     wende_bogen: bool = True
     wende_a_mps2: float = 0.8
     wende_min_mps: float = 0.10
+    # Tempo nach Kenntnis (Nutzer 2026-11-27: „wenn Bahn in unbekanntes Gebiet führt langsamer, wenn bekannt
+    # schneller“): Ist der Weg bis bekannt_vorschau_m voraus Zelle für Zelle als frei bekannt (Raumkarte), fährt er
+    # v × bekannt_v, sonst v × unbekannt_v; vor dem ersten unbekannten Stück bremst er wie am Wegende darauf herunter.
+    # 1,0 / 1,0 = aus (wie vorher, immer v).
+    bekannt_v: float = 1.25
+    unbekannt_v: float = 0.75
+    bekannt_vorschau_m: float = 1.5
     # Kleine Lenkbefehle ignoriert die Firmware (u8 128 ± 6): darunter sonst keine Korrektur
     # unter ~11° Fehler. Ab min_w_err_deg Fehler deshalb mindestens min_w.
     min_w: float = 0.11                # Anteil von robot.max_w (vorher absolut 0,055)

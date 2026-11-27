@@ -1225,6 +1225,8 @@ class App:
                     if self.lmap is not None and self.cfg.home.free_slow:
                         w.path_free_fn = self._path_free     # Tempo nach freier Strecke (nur beim Fahren gerufen)
                         w.arc_free_fn = self._arc_free
+                    if self.cfg.home.bekannt_v != 1.0 or self.cfg.home.unbekannt_v != 1.0:
+                        w.known_fn = self.gridmap.known_m   # Tempo nach Kenntnis (nur beim Fahren gerufen)
                     if self.cfg.home.tight_m > 0:           # Engstellen: der Wegfolger fragt nur bei Bedarf
                         w.wall_fn = self.gridmap.wall_dist
                         if self.lmap is not None and self.cfg.home.tight_center:

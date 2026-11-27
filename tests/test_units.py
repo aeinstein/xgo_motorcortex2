@@ -4655,3 +4655,32 @@ def test_pathfollower_wende_im_bogen():
     f3 = PathFollower(cfg.behavior, rc, cfg.home)
     f3.set_path([(0.0, 0.0), (-3.0, 0.1)])
     assert f3.drive(welt(0.0, 0.45), "x", slow_end=False).v == 0.0
+
+
+def test_pathfollower_tempo_nach_kenntnis():
+    """home.bekannt_v/unbekannt_v (Nutzer 2026-11-27): Weg bis bekannt_vorschau_m voraus als frei bekannt -> v x
+    bekannt_v; Unbekanntes direkt voraus -> v x unbekannt_v; dazwischen Bremsprofil. GridMap.known_m misst die Strecke."""
+    from xgonav.behaviors import PathFollower, World
+    from xgonav.geometry import CamGeometry
+    from xgonav.gridmap import GridMap
+    cfg = Config.neutral()
+    cfg.home.free_slow = False
+    rc, h = cfg.robot, cfg.home
+    g = GridMap(cfg.grid, CamGeometry(640, 480, 91.0, 1.39, 43.0, 85.0), 160, 120)
+    r, c = g.cell(np.arange(0.0, 1.0, 0.02), np.zeros(50))
+    g.lo[r, c] = -2.0                                              # 0..1 m frei bekannt, dahinter unbekannt
+    weg = [(0.0, 0.0), (3.0, 0.0)]
+    assert g.known_m(weg, 1.5) == pytest.approx(1.0, abs=0.03)
+    assert g.known_m([(0.0, 0.0), (0.8, 0.0)], 1.5) == pytest.approx(0.8)     # Weg endet im Bekannten
+    g.lo[r[0], c[0]:c[0] + 80] = -2.0
+    assert g.known_m(weg, 1.5) == math.inf
+    welt = lambda kf, v_rad=0.0: World(t=0.0, dt=0.05, W=640, H=480, hfov=1.6, ego=None, tracks=[], free=None,
+                                       balancing=True, yaw=0.0, cmd_v=0.0, pose=(0.0, 0.0, 0.0), v_rad=v_rad,
+                                       known_fn=kf)
+    f = PathFollower(cfg.behavior, rc, h, v=0.6)
+    f.set_path(weg)
+    assert f.drive(welt(lambda p, m: math.inf), "x", slow_end=False).v == pytest.approx(rc.v_of(0.6 * h.bekannt_v))
+    assert f.drive(welt(lambda p, m: 0.0), "x", slow_end=False).v == pytest.approx(rc.v_of(0.6 * h.unbekannt_v))
+    mitte = f.drive(welt(lambda p, m: 0.8, 0.3), "x", slow_end=False).v
+    assert rc.v_of(0.6 * h.unbekannt_v) < mitte < rc.v_of(0.6 * h.bekannt_v)
+    assert f.drive(welt(None), "x", slow_end=False).v == pytest.approx(rc.v_of(0.6))   # ohne Raumkarte wie bisher

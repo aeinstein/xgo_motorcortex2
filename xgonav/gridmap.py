@@ -399,6 +399,28 @@ class GridMap:
         d = np.hypot((cc + c0 + 0.5 - self.n / 2) * self.res - x, (rr + r0 + 0.5 - self.n / 2) * self.res - y).min()
         return float(d) if d < reach_m else math.inf
 
+    def known_m(self, pts, reach_m: float) -> float:
+        """Strecke (m) entlang der Punktfolge pts (Welt-m, ab der Pose), auf der jede Zelle als frei bekannt ist
+        (Log-Odds < -l_show), inf ab reach_m. Abgetastet alle halbe Zelle; für das Tempo im Wegfolger
+        (home.bekannt_v)."""
+        p = np.asarray(pts, np.float64).reshape(-1, 2)
+        if len(p) < 2:
+            return math.inf
+        seg = np.hypot(np.diff(p[:, 0]), np.diff(p[:, 1]))
+        s = np.concatenate([[0.0], np.cumsum(seg)])
+        if s[-1] < 1e-6:
+            return math.inf
+        d = np.arange(0.0, min(reach_m, s[-1]) + 1e-9, self.res / 2)
+        x, y = np.interp(d, s, p[:, 0]), np.interp(d, s, p[:, 1])
+        r, c = self.cell(x, y)
+        ok = (r >= 0) & (r < self.n) & (c >= 0) & (c < self.n)
+        frei = np.zeros(len(d), bool)
+        with self._lock:
+            frei[ok] = self.lo[r[ok], c[ok]] < -self.cfg.l_show
+        if frei.all():
+            return math.inf if s[-1] >= reach_m else float(s[-1])
+        return float(d[int(np.argmin(frei))])
+
     # ---- Eintragen ----------------------------------------------------
     def pose(self) -> tuple[float, float, float]:
         with self._lock:
