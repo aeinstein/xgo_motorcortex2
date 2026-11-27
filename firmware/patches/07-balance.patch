@@ -1,10 +1,24 @@
 balance: Positionshalten beim Drehen, Roll-Trimm, Roll halten, Fahr-Integral, Einlegen in Kurven
 
 diff --git a/firmware/src/control/rider_leg_imu.cpp b/firmware/src/control/rider_leg_imu.cpp
-index 24d302f..de14fbb 100644
+index 24d302f..b06ce55 100644
 --- a/firmware/src/control/rider_leg_imu.cpp
 +++ b/firmware/src/control/rider_leg_imu.cpp
-@@ -27,13 +27,27 @@ std::uint32_t extensionTicks(float extension) {
+@@ -23,25 +23,73 @@ std::uint32_t extensionTicks(float extension) {
+     const double angle = std::acos((double(extension) * 0.5) / 48.0);
+     return std::uint32_t(((1.1408376963350786 - angle) / 6.283185307179586) * 1024.0);
+ }
++// Größter Beinweg (0..36), den der Servo mit diesem Nullpunkt noch stellen kann: höchstens max_ticks Ticks
++// (Bein A: zero_a − Ticks ≥ 0, Bein B: zero_b + Ticks ≤ 1023). 36 = ganzer Weg wie im Original.
++float legRange(std::int32_t max_ticks) {
++    if (max_ticks >= std::int32_t(extensionTicks(81.0f))) return 36.0f;
++    if (max_ticks < std::int32_t(extensionTicks(45.0f))) return 0.0f;
++    // Umkehrung von extensionTicks; einen Hauch kürzer, damit das Abschneiden nicht über max_ticks landet
++    double ext = 96.0 * std::cos(1.1408376963350786 - double(max_ticks) / 1024.0 * 6.283185307179586) - 1e-3;
++    while (ext > 45.0 && extensionTicks(float(ext)) > std::uint32_t(max_ticks)) ext -= 1e-3;
++    return float(std::fmax(0.0, std::fmin(36.0, ext - 45.0)));
++}
+ }
  
  void updateLegTargets(LegState &s, float height, float command_roll_deg,
                        bool leveling, float roll_pid_increment,
@@ -30,14 +44,27 @@ index 24d302f..de14fbb 100644
 +    s.roll_target_deg = clamp(s.roll_target_deg, -roll_max, roll_max);
 +    if (leveling) s.roll_trim_deg = clamp(s.roll_target_deg - command_roll_deg - lean_deg, -10.0f, 10.0f);   // ohne Einlegen
      const double difference = std::sin(double(s.roll_target_deg) / 57.3) * 43.0;
-+    // Schräglage vor Höhe (Kopfkommentar): Höhe so weit zur Mitte, dass beide Beine die Differenz ganz ausführen
++    // Beinweg, den die Servos mit diesen Nullpunkten stellen können (sonst läuft servo_a/b über 0..1023 und der Regler
++    // steigt aus: Höhenbyte 255 am 2026-11-27). Bei Nullpunkten mit Platz ist das 0..36 wie im Original.
++    const float range_a = legRange(std::int32_t(zero_a)), range_b = legRange(1023 - std::int32_t(zero_b));
++    // Schräglage vor Höhe (Kopfkommentar): Höhe so weit, dass beide Beine die Differenz ganz ausführen
 +    const float height_cmd = height;
-+    if (lean) height = float(std::fmax(std::fabs(difference), std::fmin(36.0 - std::fabs(difference), double(height))));
-+    s.height_shift = lean ? height - height_cmd : 0.0f;
++    if (lean) {
++        const double lo = std::fabs(difference), hi = std::fmin(range_a - difference, range_b + difference);
++        if (lo <= hi) height = float(std::fmax(lo, std::fmin(hi, double(height))));
++        else height = float(0.5 * (lo + hi));   // Schräglage größer als der Beinweg: Beine klemmen, Mitte halten
++    }
      const float a = float(double(height) + difference);
      const float b = float(double(height) - difference);
-     s.extension_a = clamp(a, 0.0f, 36.0f) + 45.0f;
-@@ -42,6 +56,20 @@ void updateLegTargets(LegState &s, float height, float command_roll_deg,
+-    s.extension_a = clamp(a, 0.0f, 36.0f) + 45.0f;
+-    s.extension_b = clamp(b, 0.0f, 36.0f) + 45.0f;
++    const float ca = clamp(a, 0.0f, range_a), cb = clamp(b, 0.0f, range_b);
++    s.extension_a = ca + 45.0f;
++    s.extension_b = cb + 45.0f;
++    // Höhe der Beine für Balance/Nick-Ausgleich: (A + B) / 2, sobald sie von der Sollhöhe abweicht (Ausweichen, Klemmen)
++    const bool clamped = ca != a || cb != b;
++    s.height_shift = (lean || clamped) ? (ca + cb) * 0.5f - height_cmd : 0.0f;
+     s.servo_a = std::uint16_t(std::uint32_t(zero_a) - extensionTicks(s.extension_a));
      s.servo_b = std::uint16_t(std::uint32_t(zero_b) + extensionTicks(s.extension_b));
  }
  
@@ -58,7 +85,7 @@ index 24d302f..de14fbb 100644
  void offsetLegExtension(LegState &s, float offset_a_m, float offset_b_m,
                          std::uint16_t zero_a, std::uint16_t zero_b) {
      // Convert the actor's metric extension offsets to the firmware's length
-@@ -255,6 +283,7 @@ bool updateImu(ImuState &s, const std::uint8_t *raw, std::size_t size,
+@@ -255,6 +303,7 @@ bool updateImu(ImuState &s, const std::uint8_t *raw, std::size_t size,
      s.roll_deg = float(std::atan(u[0] / u[2]) * 57.2958);
      // Kurs: Drehrate um die Senkrechte (w . u), nicht nur die Hochachse des Sensors; erst nach der
      // Startkalibrierung integrieren (ohne Totband): vorher ist gyro_bias[2] eine Teilsumme.
@@ -67,10 +94,10 @@ index 24d302f..de14fbb 100644
          s.yaw_deg = float(double(s.yaw_deg) + (w[0] * u[0] + w[1] * u[1] + w[2] * u[2]) * kR2D * dt);
  
 diff --git a/firmware/src/control/rider_leg_imu.h b/firmware/src/control/rider_leg_imu.h
-index faadf8e..374b9f4 100644
+index faadf8e..3d0095c 100644
 --- a/firmware/src/control/rider_leg_imu.h
 +++ b/firmware/src/control/rider_leg_imu.h
-@@ -10,12 +10,41 @@ struct LegState {
+@@ -10,12 +10,43 @@ struct LegState {
      float roll_target_deg = 0;              // command structure 3ffc30b4 +12
      float extension_a = 45, extension_b = 45; // +16,+20; firmware length units
      std::uint16_t servo_a = 0, servo_b = 0; // 3ffbe170+2, 3ffbe15c+2
@@ -79,7 +106,8 @@ index faadf8e..374b9f4 100644
 +    float roll_trim_deg = 0;
 +    float lean_prev_deg = 0;   // lean_deg des letzten Takts (Vorsteuerung des Einlegens)
 +    // Höhe, die die Beine wirklich haben ((Bein A + Bein B) / 2 − 45) minus der Sollhöhe: ≠ 0 nur, wenn das Einlegen die
-+    // Höhe zur Mitte gerückt hat (Schräglage vor Höhe); Balance und Nick-Ausgleich rechnen mit Sollhöhe + height_shift.
++    // Höhe verschoben hat (Schräglage vor Höhe) oder ein Bein am Ende seines Wegs klemmt (Servogrenze, 0..36);
++    // Balance und Nick-Ausgleich rechnen mit Sollhöhe + height_shift.
 +    float height_shift = 0;
  };
  // roll_pid_increment is updatePid(roll PID)'s output when leveling is enabled.
@@ -89,7 +117,8 @@ index faadf8e..374b9f4 100644
 +// Vorsteuerung: jede Änderung von lean_deg geht sofort auf das Beinziel, der Roll-PID (Integrator, ~0,15 s) regelt
 +// nur den Rest. Schräglage vor Höhe: passt die Beindifferenz bei lean_deg != 0 nicht um die Höhe in 0..36, wird die
 +// Höhe so weit zur Mitte verschoben, dass beide Beine sie ganz ausführen (Kurvenlage ist vorübergehend); das Rollziel
-+// darf dann bis kLeanMaxDeg statt ±20°. 0 = bitgleich zum Original.
++// darf dann bis kLeanMaxDeg statt ±20°. Jedes Bein fährt nur so weit, wie sein Servo mit dem Nullpunkt reicht
++// (servo 0..1023, sonst stieg der Regler aus); mit Platz an beiden Enden 0..36 wie im Original. 0 = bitgleich zum Original.
  void updateLegTargets(LegState &state, float height, float command_roll_deg,
                        bool leveling, float roll_pid_increment,
 -                      std::uint16_t zero_a, std::uint16_t zero_b);
@@ -113,7 +142,7 @@ index faadf8e..374b9f4 100644
  // Actor leg channels: add a metric extension offset to each leg target and
  // recompute the servo tick values with the original acos linkage mapping.
  // Offsets are clamped so the extension stays inside the 45..81 mm range.
-@@ -51,6 +80,7 @@ struct ImuState {
+@@ -51,6 +82,7 @@ struct ImuState {
      std::int32_t wheel_ticks[2]{}, last_ticks[2]{};
      bool wheels_fresh = false, ticks_seen = false;
      float speed_m_s = 0;
@@ -241,7 +270,7 @@ index e6276d0..f50eb2e 100644
      o.position=o.physical_position=control::wheelDistance(i.encoder11,i.encoder21);
      o.valid=std::isfinite(o.command.filtered_forward)&&std::isfinite(o.command.filtered_turn)&&
 diff --git a/firmware/src/main.cpp b/firmware/src/main.cpp
-index 7be19d8..129e30f 100644
+index 678c674..4798539 100644
 --- a/firmware/src/main.cpp
 +++ b/firmware/src/main.cpp
 @@ -99,6 +99,9 @@ constexpr const char* kBuildId="rider2-rl-only | rider_balance_v6 | lift guard v
@@ -270,7 +299,7 @@ index 7be19d8..129e30f 100644
              else if(!leg_calibrating)actions.request(value,now);
              break;
          case CommandKind::PositionHoldProtection:a.hold_protection=value!=0;break;
-@@ -709,6 +714,16 @@ public:
+@@ -711,6 +716,16 @@ public:
  #endif
          request.roll_phase=a.roll_phase;request.height_phase=a.height_phase;
          request.leveling=a.leveling;request.heading_hold=a.heading_hold;request.hold_protection=a.hold_protection;request.heading_term_limit=heading_limit;
@@ -287,7 +316,7 @@ index 7be19d8..129e30f 100644
          s.motion=controller.step(in,request);a.roll_phase=request.roll_phase;a.height_phase=request.height_phase;
          diag_ctrl11=s.motion.wheels.id11;diag_ctrl21=s.motion.wheels.id21;
          if(!s.motion.valid){actions.requestMode(252,true);stop(StopReason::InvalidControl,true);result("invalid control output; stop latched");}
-@@ -809,7 +824,7 @@ public:
+@@ -811,7 +826,7 @@ public:
      // 6/8 i16 Reglerausgang 11/21 | 10/12 i16 an den Bus 11/21 | 14 i16 Balance-Ausgang |
      // 16 i16 Soll-Nick x100 (°) | 18 i16 gemessener Nick + Bias x100 (°) |
      // 20 i16 Positionshalten-Korrektur x10 | 22 u8 Haltemodus | 23 u8 Flags (bit0 fährt,
@@ -296,7 +325,7 @@ index 7be19d8..129e30f 100644
      // 26 i16 Halteposition (mm, läuft über) | 28 i16 gefiltert vorwärts x10 | 30 i16 gefiltert Drehung x10
      void fillDiag(uint8_t* d) {
          auto i16=[](float v){return int16_t(std::max(-32768.0f,std::min(32767.0f,std::isfinite(v)?std::round(v):0.0f)));};
-@@ -824,6 +839,7 @@ public:
+@@ -826,6 +841,7 @@ public:
          put(20,i16(s.motion.hold.correction*10.0f));
          d[22]=s.motion.hold.mode;
          d[23]=uint8_t((driving?1:0)|(lift_acting?2:0)
@@ -304,7 +333,7 @@ index 7be19d8..129e30f 100644
              );
          put(24,wrap_mm(s.motion.physical_position));put(26,wrap_mm(controller.holdPosition()));
          put(28,i16(s.motion.command.filtered_forward*10.0f));put(30,i16(s.motion.command.filtered_turn*10.0f));
-@@ -1021,6 +1037,8 @@ void console(const char* line,Print& out) {
+@@ -1023,6 +1039,8 @@ void console(const char* line,Print& out) {
      Event e;
      if(!strcmp(line,"!arm")){e.kind=EventKind::Arm;enqueue(e);return;}
      if(!strcmp(line,"!standup")){valueCommand(CommandKind::Action,253,out);return;}
@@ -313,7 +342,7 @@ index 7be19d8..129e30f 100644
      if(!strcmp(line,"!shutdown on")){valueCommand(CommandKind::Action,234,out);return;}
      if(!strcmp(line,"!shutdown off")){valueCommand(CommandKind::Action,233,out);return;}
      if(!strcmp(line,"!restart")){valueCommand(CommandKind::Action,237,out);return;}   // nur wenn er nicht balanciert
-@@ -1097,6 +1115,7 @@ void console(const char* line,Print& out) {
+@@ -1099,6 +1117,7 @@ void console(const char* line,Print& out) {
      out.print("!status | !policy off/shadow/active/status | !stop | !arm | !neutral | !move FORWARD TURN (bytes,128 neutral) | !height BYTE | !roll BYTE | !action 0..6/255 | !loop 0/1 | !level 0/1 | !heading 0/1 | !heightwave BYTE | !rollwave BYTE | !maxforward BYTE | !maxturn BYTE | !rgb INDEX R G B | !cal begin | !cal save | !trim | !odom reset | !trace dump | !trace usb on/off | !liftguard on/off/status | !fallguard on/off/status/clear/ms N | !dzcomp [off|on|reset|MAX [HYST [RAMP [START [GROW]]]]]");
      out.print(" | !standup | !restart");
      out.print(" | !led BYTE | !shutdown on/off");

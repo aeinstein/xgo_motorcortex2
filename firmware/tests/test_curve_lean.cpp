@@ -165,7 +165,7 @@ static void testWeave(float sign) {
 static void testLegPriority() {
     using rider::control::LegState;
     using rider::control::updateLegTargets;
-    constexpr std::uint16_t ZA = 2048, ZB = 2048;
+    constexpr std::uint16_t ZA = 512, ZB = 512;   // Nullpunkte mit Platz an beiden Enden
     bool ok_full = true, ok_range = true, ok_shift = true;
     for (float h : {2.0f, 9.0f, 18.0f, 27.0f, 34.0f}) for (float lean : {-15.5f, 15.5f, -24.0f}) {
         LegState s;
@@ -182,10 +182,29 @@ static void testLegPriority() {
     LegState o; o.roll_target_deg = 15;   // Roll halten ohne Einlegen bei Höhe 2: wie im Original klemmt ein Bein
     updateLegTargets(o, 2.0f, 0, true, 0, ZA, ZB, 0.0f);
     const float d15 = float(std::sin(15.0 / 57.3) * 43.0);
-    check(o.height_shift == 0.0f && o.extension_b == 45.0f && std::fabs(o.extension_a - (45.0f + 2.0f + d15)) < 1e-3f, "ohne Einlegen: Höhe bleibt, Bein klemmt (Original)");
+    check(std::fabs(o.height_shift - ((o.extension_a + o.extension_b) * 0.5f - 45.0f - 2.0f)) < 1e-4f && o.extension_b == 45.0f && std::fabs(o.extension_a - (45.0f + 2.0f + d15)) < 1e-3f, "ohne Einlegen: Höhe bleibt, Bein klemmt (Original); Balance rechnet mit (A + B) / 2");
     LegState m;
     updateLegTargets(m, 18.0f, 0, true, 0, ZA, ZB, -24.0f);
     check(std::fabs(m.roll_target_deg + 24.0f) < 1e-4f, "mit Einlegen: Rollziel bis kLeanMaxDeg statt ±20°");
+
+    // Höhentest 2026-11-27: Byte 255 (Weg 36, Länge 81 = 93 Ticks) stieg aus, 245 (89 Ticks) nicht -> Servo am Ende
+    // seines Bereichs. Mit Nullpunkten nahe am Rand fährt jedes Bein nur so weit, wie sein Servo reicht.
+    bool servo_ok = true, mean_ok = true;
+    for (std::uint16_t zb : {std::uint16_t(931), std::uint16_t(934), std::uint16_t(1000)})
+        for (std::uint16_t za : {std::uint16_t(89), std::uint16_t(512)})
+            for (float h : {36.0f, 30.0f, 18.0f}) for (float lean : {0.0f, -24.0f, 24.0f}) {
+                LegState t;
+                for (int k = 0; k < 3; ++k) updateLegTargets(t, h, 0, true, 0, za, zb, lean);
+                servo_ok = servo_ok && t.servo_a <= 1023 && t.servo_b <= 1023;
+                const float a = t.extension_a - 45, b = t.extension_b - 45;
+                mean_ok = mean_ok && std::fabs((h + t.height_shift) - (a + b) * 0.5f) < 1e-3f;
+            }
+    check(servo_ok, "Nullpunkt nahe am Rand: Servo-Sollwerte bleiben in 0..1023 (Höhe 36, Einlegen ±24°)");
+    check(mean_ok, "Höhe für Balance = (A + B) / 2 auch, wenn ein Bein am Servo-Ende klemmt");
+    LegState full;
+    for (int k = 0; k < 3; ++k) updateLegTargets(full, 36, 0, true, 0, 512, 932, 0);
+    std::printf("       Nullpunkt B 932: Höhe 36 -> Bein A %.2f, Bein B %.2f, servo_b %u\n", full.extension_a - 45, full.extension_b - 45, full.servo_b);
+    check(full.servo_b <= 1023 && full.servo_b >= 1022 && full.extension_a == 81.0f, "Nullpunkt B 932: Bein B bis zum Servo-Ende, Bein A ganz aus");
 }
 
 int main() {
