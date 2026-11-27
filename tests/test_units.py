@@ -4622,7 +4622,7 @@ def test_explore_beschleunigung_halb():
     """explore: Beschleunigen/Verzögern im Fahrrahmen × explore.accel_faktor, Vollbremsung voll (Nutzer 2026-11-27)."""
     from xgonav.robot import SimRobot
     cfg = Config.neutral()
-    assert cfg.explore.v == 0.5 and cfg.explore.accel_faktor == 0.5
+    assert cfg.explore.v == 0.6 and cfg.explore.accel_faktor == 0.5
     r = SimRobot(cfg.robot)
     assert r._a_faktor == 1.0
     r.a_modus = cfg.explore.accel_faktor

@@ -782,8 +782,8 @@ class ExploreCfg:
     # Tempo auf dem Weg zur nächsten Stelle und zurück zum Start (normiert, statt home.v 0,15; Nutzer 2026-11-11:
     # erst 0,30, nach zwei Fahrten am RiderPi 0,20, im Web 2026-11-20 0,4). Anteil von robot.max_v (0,8 = absolut 0,4); in
     # Engstellen weiter mal home.tight_v, das reaktive Befreien bleibt bei behavior.cruise_v. Nutzer 2026-11-27 nach einer
-    # Erkundung mit Rädern bis 1,07 m/s: 0,5 (immer 50 % × Temporegler).
-    v: float = 0.50
+    # Erkundung mit Rädern bis 1,07 m/s: 0,5 (immer 50 % × Temporegler); nach guter Fahrt am selben Tag +20 % auf 0,6.
+    v: float = 0.60
     # Beschleunigen und Verzögern im Fahrrahmen während explore × accel_faktor (Nutzer 2026-11-27: 50 %); die Vollbremsung
     # (Bahnprüfung) bleibt voll.
     accel_faktor: float = 0.5
