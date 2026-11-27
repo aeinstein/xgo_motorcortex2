@@ -11,6 +11,10 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <pthread.h>
+#include <string.h>
+#include <math.h>
+#include <ifaddrs.h>
+#include <netinet/in.h>
 
 static int framesize = 320 * 240 * 2;
 static char *framebuffer;
@@ -22,6 +26,72 @@ static int running = 1;
 // der Mutex hält SPI-Zugriffe von Lese-Thread (Bild) und Hauptthread (Schlafbefehl) auseinander.
 static pthread_mutex_t spi_lock = PTHREAD_MUTEX_INITIALIZER;
 static volatile int asleep = 0;
+
+// Kein Netz: wlan0 ohne IPv4 (alle NETZ_PRUEF_S geprüft) -> oben rechts ein WLAN-Symbol mit rotem Strich über jedem
+// Bild; framebuffer behält das Bild ohne Symbol, beim Wechsel wird es neu gezeichnet (auch bei stehendem Bild).
+#define NETZ_PRUEF_S 2
+#define ICON 24
+#define ICON_X (320 - ICON - 4)
+#define ICON_Y 4
+static uint16_t icon[ICON * ICON];
+static char *out;                          // angezeigtes Bild (framebuffer + Symbol)
+static volatile int kein_netz = 0;
+static int bild_da = 0;
+
+static void icon_bauen(void) {
+    const uint16_t schwarz = 0x0000, weiss = 0xFFFF, rot = 0xF800;
+    for (int y = 0; y < ICON; y++) {
+        for (int x = 0; x < ICON; x++) {
+            uint16_t c = schwarz;
+            float dx = x + 0.5f - ICON / 2.0f, dy = (ICON - 3) - (y + 0.5f);   // Fußpunkt unten Mitte
+            float d = sqrtf(dx * dx + dy * dy);
+            if (dy > 0 && fabsf(dx) <= dy) {                                  // Fächer ±45°
+                if (d < 2.5f || fabsf(d - 8) < 1.3f || fabsf(d - 13.5f) < 1.3f || fabsf(d - 19) < 1.3f) c = weiss;
+            } else if (d < 2.5f) {
+                c = weiss;
+            }
+            if (fabsf((float)x - (float)y) < 1.6f && x > 1 && x < ICON - 2) c = rot;   // Querstrich
+            icon[y * ICON + x] = c;
+        }
+    }
+}
+
+static int wlan_hat_ip(void) {
+    struct ifaddrs *ifa, *p;
+    int ok = 0;
+    if (getifaddrs(&ifa) != 0) return 1;           // im Zweifel kein Symbol
+    for (p = ifa; p; p = p->ifa_next) {
+        if (p->ifa_addr && p->ifa_addr->sa_family == AF_INET && p->ifa_name && strcmp(p->ifa_name, "wlan0") == 0) ok = 1;
+    }
+    freeifaddrs(ifa);
+    return ok;
+}
+
+// unter spi_lock
+static void anzeigen(void) {
+    if (asleep || !bild_da) return;
+    memcpy(out, framebuffer, framesize);
+    if (kein_netz) {
+        uint16_t *o = (uint16_t *)out;
+        for (int y = 0; y < ICON; y++) memcpy(o + (ICON_Y + y) * 320 + ICON_X, icon + y * ICON, ICON * 2);
+    }
+    st7789_basic_draw_picture_16bits(0, 0, 319, 239, (uint16_t *)out);
+}
+
+static void *netz_pruefen(void *arg) {
+    (void)arg;
+    while (running) {
+        int neu = !wlan_hat_ip();
+        if (neu != kein_netz) {
+            pthread_mutex_lock(&spi_lock);
+            kein_netz = neu;
+            anzeigen();
+            pthread_mutex_unlock(&spi_lock);
+        }
+        sleep(NETZ_PRUEF_S);
+    }
+    return NULL;
+}
 
 /**
  * @brief     signal handler
@@ -102,7 +172,9 @@ static void init_framebuffer(){
     struct stat sb;
 
     framebuffer = malloc(framesize);
-    if(!framebuffer) st7789_interface_debug_print("cant allocate framebuffer");
+    out = malloc(framesize);
+    if(!framebuffer || !out) st7789_interface_debug_print("cant allocate framebuffer");
+    icon_bauen();
 
     int i;
     for(i = 0; i < framesize; i++) {
@@ -117,6 +189,8 @@ static void init_framebuffer(){
 
     pthread_t framereader;
     pthread_create (&framereader, NULL, read_framebuffer, "");
+    pthread_t netz;
+    pthread_create(&netz, NULL, netz_pruefen, NULL);
 }
 
 

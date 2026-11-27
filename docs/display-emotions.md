@@ -10,6 +10,7 @@
 | Start | `deploy/rc.local` (or `st7789_display.service` via `make install` — not both) |
 | Permissions | `/tmp/lcd0` group `video`, g+w |
 | Throughput | > 40 fps (measured) |
+| No network | `wlan0` without IPv4 (checked every 2 s): Wi-Fi symbol with red slash (24×24 px, top right) over every frame; redrawn on change, also on a static image (2026-11-27). Hotspot counts as network |
 
 ```
 make -C st7789/project/riderpi && sudo cp st7789/project/riderpi/st7789_server /usr/bin/
