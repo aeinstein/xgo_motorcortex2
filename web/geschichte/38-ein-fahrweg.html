@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ein Fahrweg</title>
+<link rel="stylesheet" href="stil.css">
+</head>
+<body>
+<main>
+<p class="kopf"><a href="./">Zwei Wochen auf zwei Rädern</a> · Kapitel 38 · 23. November</p>
+<h1>Ein Fahrweg</h1>
+<p>Am 23. November um 17:13: „Wir müssen über den Planer sprechen: Wird der Planer überall, wo Fahrbefehle verwendet werden, benutzt? …“. Das wurde er nicht. Es gab drei Lenkregler, den Wegfolger, den Servo für <code>follow</code> und eine eigene Lenkung in <code>pet</code>, dazu je Modus eigene Drehwerte. „Haben wir noch mehr doppelten Code? Funktionen, die das Gleiche machen?“ Die gab es. Die Geschwindigkeiten waren Faktoren von Faktoren, mit Gerätefaktoren obendrauf. „Das ist sehr verwirrend. Bitte so machen, dass max_v auch wirklich max_v ist und alles andere ein Faktor zu Tempo, der als Faktor zu max_v gilt“.</p>
+<p>Seitdem fährt jeder geplante Weg über den Wegfolger und jede Drehung über einen einzigen Drehregler. Gesendet wird Faktor mal Tempo mal <code>max_v</code>, der Simulator bekam dieselben Werte wie der Rider, und doppelter Code wanderte nach <code>mathe.py</code>. „Mach weiter, nicht auf die slow-Tests warten“. Danach bestanden vier von fünf Closed-Loop-Tests, „pet findet die Person wieder“ klappte in zwei von vier Läufen. Um 18:09 war es eingespielt. Drei Wochen lang hatte jeder Modus seine eigene Vorstellung vom Lenken. Jetzt haben alle dieselbe, und ob sie stimmt, sagt der nächste Flur.</p>
+<nav class="blaettern">
+<a href="37-rufen-in-der-kueche.html" rel="prev">← Rufen in der Küche</a>
+<a href="./">Inhalt</a>
+<a href="39-fuenf-zentimeter-rechts-elf-dahinter.html" rel="next">Fünf Zentimeter rechts, elf dahinter →</a>
+</nav>
+</main>
+</body>
+</html>

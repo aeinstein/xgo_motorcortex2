@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wer misst hier eigentlich was?</title>
+<link rel="stylesheet" href="stil.css">
+</head>
+<body>
+<main>
+<p class="kopf"><a href="./">Zwei Wochen auf zwei Rädern</a> · Kapitel 5 · 3.–5. November</p>
+<h1>Wer misst hier eigentlich was?</h1>
+<p>Die neue Firmware brachte auch ein Odometrie-Register mit, 0x0b. Es reproduziert laut Referenzquelle absichtlich die fehlerhafte Originalrechnung und meldete im Stillstand fröhlich eine zurückgelegte Strecke von 226 263. Also bekamen wir eigene Encoder-Register, und diesmal stimmte es: Das Maßband zeigte 215 cm, die Räder 215,3.</p>
+<p>Dieses Muster zog sich durch die ganze erste Woche. Fast jede Messgröße hatte einen Haken:</p>
+<ul>
+<li><strong>Der Unterschied zwischen den Rädern:</strong> Das linke Rad maß 2 % anders. Ich hielt das für einen Messfehler. Es war ein Reifen, der nicht richtig drauf saß.</li>
+<li><strong>Der Kamerakurs:</strong> Bei einer schnurgeraden Fahrt zeigte er −8,9°, weil Tiefenunterschiede ins Rotationsmodell leckten. Dein Kommentar: „Er ist nicht nach rechts gefahren, es war perfekt geradeaus“.</li>
+<li><strong>Der Gyro-Nullpunkt:</strong> Er wurde nur beim Booten gemessen, und der balancierende Rider drehte sich in aller Ruhe mit etwa 2,6°/s weg, wie jemand, der sich unauffällig aus einem Gespräch verabschiedet.</li>
+<li><strong>Die Linsenabschattung:</strong> Ich hatte sie mit falschen Kameraeinstellungen kalibriert. Du erzähltest das, nach eigener Aussage, seit zwei Stunden. Du hattest recht.</li>
+</ul>
+<p>Am 4. November kam deine beste Frage der ersten Woche: „Warum Farben statt Kanten?“ Das Kantenverfahren drückte die Fehlalarme auf einer Aufnahme von 24 % auf 0,2 %. Auf anderen Aufnahmen war der Gewinn kleiner, aber <code>kanten</code> entschied danach knapp eine Woche lang am Rider.</p>
+<p>Die Personenerkennung machte es uns auch nicht leicht. In Fahrt 11 wechselte der Rider das Ziel, als du aus dem Bild gingst, und steuerte zielstrebig eine sitzende Person in etwa fünf Metern Entfernung an. Nahe Beine hielt YOLO später für ein Bett.</p>
+<nav class="blaettern">
+<a href="04-ein-esp32-wird-verhoert.html" rel="prev">← Ein ESP32 wird verhört</a>
+<a href="./">Inhalt</a>
+<a href="06-wegrollen-beim-drehen.html" rel="next">Wegrollen beim Drehen →</a>
+</nav>
+</main>
+</body>
+</html>

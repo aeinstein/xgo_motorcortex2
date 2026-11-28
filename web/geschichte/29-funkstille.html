@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Funkstille</title>
+<link rel="stylesheet" href="stil.css">
+</head>
+<body>
+<main>
+<p class="kopf"><a href="./">Zwei Wochen auf zwei Rädern</a> · Kapitel 29 · 18.–19. November</p>
+<h1>Funkstille</h1>
+<p>Am 18. November hast du gefragt, warum das WLAN am Rider so schlecht sei. Der Funkchip sparte Strom, und ein Ping dauerte 535 ms. Seitdem spart er nur noch im Ruhemodus, sonst sind es 20 ms. Am nächsten Morgen um 10:36 kam eine andere Frage: „Hi, schau mal, welche der 4 Tasten am Display belegt sind und womit. Ich glaube, ich habe ihn gerade runtergefahren“. So war es. A und B zusammen fahren den Pi sofort herunter, ganz ohne Haltezeit, schon ein kurzes gleichzeitiges Drücken reicht.</p>
+<p>C und D zusammen, drei Sekunden gehalten, sollten die WLAN-Einrichtung zeigen, mit QR-Augen auf dem Display. Das Display blieb leer, weil der Faden, der es beschreibt, gar nicht lief. Den QR-Code deines Samsung erkannte er nicht, also hast du dich mit seinem Hotspot verbunden und das Netz über <code>wlan.php</code> eingetragen. „Komme jetzt nicht mehr an den Rider“. Laut Journal fand er nach dem Hotspot zwar das WLAN, bekam aber keine IPv4-Adresse, und NetworkManager meldete trotzdem „verbunden“, weil IPv6 ging. Beim Nachstellen habe ich ihn um 11:21 gleich noch einmal verloren, diesmal mit meinem eigenen Test. Seitdem muss IPv4 klappen, der WLAN-Treiber wird nach dem Hotspot neu geladen, und ein zusätzliches Modell liest QR-Codes vom Handy. Geprüft ist das noch nicht. Die Funktion, die den Rider ohne Netz ins Netz bringen soll, hat ihn an diesem Vormittag zweimal herausgeholt, einmal mit meiner Hilfe.</p>
+<nav class="blaettern">
+<a href="28-gruen-bleibt-gruen.html" rel="prev">← Grün bleibt grün</a>
+<a href="./">Inhalt</a>
+<a href="30-python-war-es-nicht.html" rel="next">Python war es nicht →</a>
+</nav>
+</main>
+</body>
+</html>

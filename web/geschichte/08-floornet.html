@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FloorNet</title>
+<link rel="stylesheet" href="stil.css">
+</head>
+<body>
+<main>
+<p class="kopf"><a href="./">Zwei Wochen auf zwei Rädern</a> · Kapitel 8 · 6.–8. November</p>
+<h1>FloorNet</h1>
+<p>Parallel entstand am 6. November ein eigenes Bodennetz, „Sozusagen ein Staubsaugerroboter-Modell“. Das Budget war eng, etwa 18 Millionen Rechenoperationen je Bild, und die Inferenz läuft in C++. In meinem ersten Blindvergleich schnitt das Netz glänzend ab: nur 2 grob fälschlich freie Bilder gegen 10 bei Kanten.</p>
+<p>Dann hast du Handlinien gezeichnet, den ganzen Abend, Bild für Bild, und der Vorsprung schrumpfte deutlich. Die Labels unter einem Meter passten nur zu 25 bis 30 %, weil sie aus demselben Kantenverfahren stammten, das dunkle Schränke übersieht. Das Netz hatte gelernt, die Fehler seines Lehrers sehr gewissenhaft nachzumachen. Die Endprüfung auf 194 frischen Bildern verfehlte das Ziel, nach der vorher vereinbarten Regel blieb <code>kanten</code> am Steuer. Enttäuschend, aber genau dafür war die Regel da.</p>
+<p>Die Prüffahrt brachte nebenbei einen ganz anderen Fehler ans Licht. Du hattest die Körperhöhe im Web geändert, xgonav bekam davon nichts mit und rechnete mit 128 statt rund 150 mm Kamerahöhe. Alle Entfernungen lagen damit etwa 18 % daneben.</p>
+<p>Am 8. November kam der ungewöhnlichste Einfall: Ein Bildbearbeitungsmodell in ComfyUI färbt den Boden grün und liefert so Labels. Es hatte allerdings eine Schwäche. Was im Prompt stand, malte es auch, und so stand in etwa der Hälfte der Bilder plötzlich der erwähnte „kleine Roboter“ auf dem Boden. Ohne ihn im Prompt wurde es besser, mit Prompt 8 lag die Quote fälschlich freier Stellen im nächsten Bereich bei 9 % gegen 65 % bei Kanten.</p>
+<nav class="blaettern">
+<a href="07-die-treppe.html" rel="prev">← Die Treppe</a>
+<a href="./">Inhalt</a>
+<a href="09-stufe-fuer-stufe.html" rel="next">Stufe für Stufe →</a>
+</nav>
+</main>
+</body>
+</html>

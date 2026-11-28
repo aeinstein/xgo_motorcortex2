@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jede Millisekunde</title>
+<link rel="stylesheet" href="stil.css">
+</head>
+<body>
+<main>
+<p class="kopf"><a href="./">Zwei Wochen auf zwei Rädern</a> · Kapitel 3 · 1.–5. November</p>
+<h1>Jede Millisekunde</h1>
+<p>Anfangs lag xgonav bei rund 340 % CPU. Der Rider zog damit mehr Strom, als sein Ladehäuschen liefern konnte, er verhungerte also beim Nachdenken. Daraus wurde die wichtigste Regel des Projekts: Rechenzeit am Rider geht vor. Was nur der Anzeige dient, gehört in den Browser.</p>
+<p>Danach begann die Jagd:</p>
+<ul>
+<li><strong>stunnel</strong> rechnete in aller Seelenruhe dauerhaft DH-Parameter, ganz ohne Verbindung, und kostete dafür rund 15 % CPU. TLS wanderte in nginx.</li>
+<li><strong>MJPEG</strong> staute sich über das WLAN bis zu 20 Sekunden. Du hast dir also Bilder aus der jüngeren Vergangenheit angesehen. Der WebSocket mit Bestätigung je Bild holte uns in die Gegenwart zurück.</li>
+<li><strong>YOLO</strong> rechnete ohne Pause, als hinge sein Leben daran, und wurde auf 5 Hz begrenzt.</li>
+<li><strong>Das Bodenmodell</strong> und die Raumkarte bekamen eigene Threads.</li>
+</ul>
+<p>Am 5. November kam der C++-Kern dazu. Die Vorgabe war streng: Er musste bitgleich zu OpenCV rechnen, sonst würde er gar nicht aktiv. Meine synthetischen Prüfbilder bestanden mit Bravour, echte Aufnahmen fielen durch. OpenCV nutzt in seinen NEON-Pfaden FMA-Befehle, und die Rundungsunterschiede zeigten sich erst bei 19 von 150 echten Bildern. Synthetische Bilder lügen nicht, sie sagen nur nichts.</p>
+<p>Die Hauptschleife fiel von rund 30 ms auf 6,5 ms im Mittel, die CPU-Last auf rund 158 %. Gemessen wurde das allerdings bei liegendem Rider, also unter Laborbedingungen mit Kissen. In echten Fahrten sah es später wieder deutlich schlechter aus.</p>
+<nav class="blaettern">
+<a href="02-die-beine.html" rel="prev">← Die Beine</a>
+<a href="./">Inhalt</a>
+<a href="04-ein-esp32-wird-verhoert.html" rel="next">Ein ESP32 wird verhört →</a>
+</nav>
+</main>
+</body>
+</html>

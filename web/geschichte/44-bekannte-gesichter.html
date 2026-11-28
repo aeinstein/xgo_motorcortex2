@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bekannte Gesichter</title>
+<link rel="stylesheet" href="stil.css">
+</head>
+<body>
+<main>
+<p class="kopf"><a href="./">Zwei Wochen auf zwei Rädern</a> · Kapitel 44 · 27.–28. November</p>
+<h1>Bekannte Gesichter</h1>
+<p>Am 27. November um 22:57: „Mit welchem Modell kann ich auf dem Rider Gesichtserkennung machen? Ziel: Der Rider soll meine Frau erkennen.“ Um 22:59: „Ja, mit MobileFaceNet auf ncnn“. Am nächsten Morgen lief es. YuNet findet die Gesichter, MobileFaceNet macht aus jedem 512 Zahlen, und wer ähnlich genug ist, wird begrüßt. Dazu kamen zwei Wünsche: „Ok, bei ihr möchte ich, dass der Rider die Augen rötlich färbt“, und „Dann möchte ich nicht mehr, dass er die Like-Animation bei Person erkannt, sondern nur noch, wenn eine bekannte Person erkannt wird“. Die Freude ist seitdem Bekannten vorbehalten.</p>
+<p>Um 10:58 kam die Frage: „Geht die Gesichtserkennung auch im Liegen? Zum Testen?“ Erkannt hat er auch liegend, begrüßt aber nur im Stehen. Das habe ich geändert, und um 11:04 war das erste angelernte Gesicht erkannt. Gemessen: Die angelernte Person lag bei 0,45 bis 0,55 Ähnlichkeit, zwei Fremde bei 0,31 und 0,19. Ein Gesicht kostet den CM4 129 bis 145 ms, geschätzt hatte ich 70 bis 100. „Setz auf 0,5, sie liegt normalerweise bei > 0,7“. Seitdem gilt ab 0,5 als erkannt.</p>
+<p>Um 12:17 dann: „Als meine Frau erkannt wurde, haben sich die Augen nicht verfärbt, warum nicht?“ In ihrer Begrüßung fehlte die Augenfarbe, die Seite im Browser war noch die alte ohne Farbauswahl. „Sorry, mein Fehler“. Nach vier Wochen erkennt der Rider zum ersten Mal jemanden wieder. Die Farbe musste nur noch jemand auswählen.</p>
+<nav class="blaettern">
+<a href="43-schraeglage-vor-hoehe.html" rel="prev">← Schräglage vor Höhe</a>
+<a href="./">Inhalt</a>
+<a href="45-augen-aus-formen.html" rel="next">Augen aus Formen →</a>
+</nav>
+</main>
+</body>
+</html>

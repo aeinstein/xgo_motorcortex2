@@ -6,7 +6,7 @@
  *
  * Aufbau: Kopfleiste (fest oben: Sprache, Absetzen, Aufspringen, Aufstehen, Bildverarbeitung an/aus, Aufzeichnen,
  * Einstellungen, Ruhe, STOPP) – links Bild mit Steuerkreuz als Auflage und Kameraleiste, Modus, Kennzahlen, Verlauf
- * (eingeklappt) – rechts Lage, Schallradar, Extras (Anleitung, Schaubild, Herunterfahren, Aktionen, LEDs, Emotionen),
+ * (eingeklappt) – rechts Lage, Schallradar, Extras (Anleitung, Schaubild, Geschichte, Herunterfahren, Aktionen, LEDs, Emotionen),
  * Raumkarte; Tempo in der Modusleiste.
  * Sprache: Deutsch steht im HTML, Englisch im Wörterbuch EN (nur im Browser umgeschaltet).
  */
@@ -661,6 +661,7 @@ details.extras[open]>summary{margin-bottom:8px}
     <div class="knoepfe">
       <button onclick="window.open('anleitung/index.html', '_blank')" title="Anleitung: Installation, erste Schritte, Oberfläche, Verhalten, FloorNet-Training (englisch, statisch, kostet am Pi nichts)">Anleitung</button>
       <button onclick="window.open('schaubild.html', '_blank')" title="Schaubild der Bildpipeline: Stufen, Korrekturen, Threads, Eingänge und Abnehmer (statisch, kostet am Pi nichts)">Schaubild</button>
+      <button onclick="window.open('geschichte/', '_blank')" title="Geschichte des Projekts, ein Kapitel je Seite (statisch, kostet am Pi nichts)">Geschichte</button>
       <button onclick="espNeustart()" title="Aktion 237: ESP32 neu starten, nur wenn er nicht balanciert">ESP-Neustart</button>
       <button id="aus" class="gefahr" onclick="herunterfahren()" title="Rider herunterfahren">Herunterfahren</button>
     </div>
@@ -794,7 +795,7 @@ const EN = {
   'WLAN-Empfang (Pegel) und Durchsatz des Riders: ↓ empfangen, ↑ gesendet': 'Wi-Fi signal (level) and throughput of the Rider: ↓ received, ↑ sent',
   'Sprache': 'Language',
   'Alle Einstellungen aus config.toml ändern (mit Sicherung), xgonav neu starten': 'Edit all settings in config.toml (with backup), restart xgonav',
-  'Einstellungen': 'Settings', 'Schaubild': 'Diagram', 'Anleitung': 'Manual', 'Anleitung: Installation, erste Schritte, Oberfläche, Verhalten, FloorNet-Training (englisch, statisch, kostet am Pi nichts)': 'Manual: install, quick start, UI, behaviours, FloorNet training (static, no cost on the Pi)', 'Schaubild der Bildpipeline: Stufen, Korrekturen, Threads, Eingänge und Abnehmer (statisch, kostet am Pi nichts)': 'Image pipeline diagram: stages, corrections, threads, inputs and consumers (static, no cost on the Pi)', 'Rider herunterfahren': 'Shut down the Rider', 'Herunterfahren': 'Shut down',
+  'Einstellungen': 'Settings', 'Schaubild': 'Diagram', 'Geschichte': 'Story', 'Geschichte des Projekts, ein Kapitel je Seite (statisch, kostet am Pi nichts)': 'Project story, one chapter per page (static, no cost on the Pi)', 'Anleitung': 'Manual', 'Anleitung: Installation, erste Schritte, Oberfläche, Verhalten, FloorNet-Training (englisch, statisch, kostet am Pi nichts)': 'Manual: install, quick start, UI, behaviours, FloorNet training (static, no cost on the Pi)', 'Schaubild der Bildpipeline: Stufen, Korrekturen, Threads, Eingänge und Abnehmer (statisch, kostet am Pi nichts)': 'Image pipeline diagram: stages, corrections, threads, inputs and consumers (static, no cost on the Pi)', 'Rider herunterfahren': 'Shut down the Rider', 'Herunterfahren': 'Shut down',
   'Ruhemodus: absetzen, Bildverarbeitung aus, Abfragen aus, CPU-Takt runter, Schlafaugen am Display':
     'Rest mode: sit down, vision off, polling off, CPU clock down, sleepy eyes on the display',
   'Ruhe': 'Rest', 'Stillstand, Modus idle': 'Stand still, mode idle', 'STOPP': 'STOP', 'Ruhemodus': 'Rest mode',

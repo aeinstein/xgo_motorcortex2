@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Messen, zum zweiten Mal</title>
+<link rel="stylesheet" href="stil.css">
+</head>
+<body>
+<main>
+<p class="kopf"><a href="./">Zwei Wochen auf zwei Rädern</a> · Kapitel 13 · 10.–12. November</p>
+<h1>Messen, zum zweiten Mal</h1>
+<p>Das neue Kalibriermuster hast du dir selbst ausgedruckt, 20 Blätter mit Gitterlinien. Dein Drucker hatte eigene Vorstellungen von 200 mm und schnitt jede Seite bei 192,5 mm ab. Also haben wir das Muster an den Drucker angepasst statt umgekehrt. Am Boden bestätigte das Gitter deine gemessene Kamerahöhe. Der Faktor ×0,921 vom 7. November war falsch und flog raus. Dein „Was ich nicht verstehe, die Kamerahöhe haben wir mehrfach nachgemessen“ war berechtigt. Ich hatte dir zwischendurch sogar −3,4 % gemeldet, aus einer Aufnahme mit nur geschätztem Abstand. Und die Linse ist zum Rand hin tatsächlich so schlecht, wie du sagtest.</p>
+<p>In der Firmware ging es ähnlich. Am 10. November blieb der Rider bis zu einem Meter vor dem Start stehen, obwohl der Fahrbefehl ankam: Der Geschwindigkeitsregler hatte praktisch kein Integral. Patch 0015 gab ihm eins, und am Abend pumpte der Rider bei gleichem Befehl zwischen 0,09 und 0,51 m/s hin und her wie ein Auto mit Schluckauf. Abgeschaltet „fährt besser“, die entschärfte Fassung ist geflasht, aber noch nicht gefahren.</p>
+<p>Am 12. November war der Rider nach einem Neustart nicht mehr erreichbar. Du hattest die Netzadresse geändert und dort die Ursache vermutet. Es war meine: Zwei Tage vorher hatte ich <code>rc.local</code> vom Windows-PC mit Windows-Zeilenenden auf den Rider kopiert. Das Skript brach in der ersten Zeile ab, Treiber, Display und xgonav fehlten. Zwei unsichtbare Zeichen am Zeilenende hatten einen ganzen Roboter lahmgelegt, mit zwei Tagen Verzögerung. Seitdem erzwingt das Repo Unix-Zeilenenden.</p>
+<nav class="blaettern">
+<a href="12-das-netz-hatte-recht.html" rel="prev">← Das Netz hatte recht</a>
+<a href="./">Inhalt</a>
+<a href="14-karte-und-weg.html" rel="next">Karte und Weg →</a>
+</nav>
+</main>
+</body>
+</html>

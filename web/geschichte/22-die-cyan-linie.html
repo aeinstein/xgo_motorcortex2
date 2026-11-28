@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Die cyan Linie</title>
+<link rel="stylesheet" href="stil.css">
+</head>
+<body>
+<main>
+<p class="kopf"><a href="./">Zwei Wochen auf zwei Rädern</a> · Kapitel 22 · 17. November</p>
+<h1>Die cyan Linie</h1>
+<p>Zur selben Zeit kümmerte sich eine zweite Sitzung um die Weboberfläche und dort um die cyan Linie, den Horizont im Kamerabild. „Die Linie stimmt nicht“, und: „Des Weiteren ist die Linie zu hoch!“. In der Hand war sie das auch, um 47 Pixel. Das Bodenmodell hält seine Horizontzeile zwischen 20 und 80 % der Bildhöhe, und die Anzeige hatte genau diese begrenzte Zeile gezeichnet. Für die Messung im Stand stand längst ein Zollstock vor der Kamera. Dein Hinweis: „Du hast einen Zollstock im Bild, schau hin“. Danach eine klare Aufteilung: „Fahr du die Höhen und ich lese ab.“ Ich fuhr sechs Körperhöhen an, du lasest ab, und von u8 100 bis 200 traf die Linie auf etwa einen Millimeter.</p>
+<p>Dann sprang die Linie. Ich fand die Ursache zuerst im Browser und baute den Bildwechsel um. Sie sprang weiter. Ich schnitt die ersten Bilder am Rider mit, fand nichts und schaltete dabei die Bildverarbeitung aus, die du gerade benutzt hast, zum zweiten Mal an diesem Tag. Dann hast du es selbst erklärt: „Ich denke, dass Bilder ohne IMU kommen und er auf 0 springt“. Genau so war es. Im Liegen lief die IMU mit 5 Hz, ihre neueste Probe war bis zu 0,4 s alt, als gültig galt sie aber nur 0,3 s. Etwa jedes vierte Bild hatte deshalb keinen Nick, und die Linie fiel um 163 Zeilen.</p>
+<p>Deine nächste Frage ging tiefer: „Wie werden in xgonav Bild und IMU-Wert synchronisiert? Und warum wird das dann nicht für alles Weitere verwendet? Ich frage, weil wir doch die absolute Wahrheit an einer Stelle haben“. Die Synchronisierung gab es, sauber und mit gemeinsamer Uhr. Genutzt hat sie aber nur ein Teil der Abnehmer, der Rest nahm einfach den neuesten IMU-Wert. Seitdem gibt es je Bild genau einen IMU-Wert, und Geometrie, Bodennetz, Karte, Kippen, Linie und Web rechnen alle damit. Der gemessene Zeitversatz von 10,5 ms ist ziemlich genau eine halbe Belichtungszeit. Dein Urteil: „Das fühlt sich richtig an.“</p>
+<p>Beim Nicken von Hand wanderte die Linie trotzdem leicht mit. Ich vermutete die Linsenverzeichnung, maß 21 400 verfolgte Punkte und fand kaum welche. Eine Messung später stand fest, dass die Kamera stimmt und die IMU beim Nicken etwa 6 % zu wenig meldet. Die Firmware nahm in ihre Nick-Fusion einen vorgefilterten Beschleunigungswert, der rund 0,1 Sekunden hinterherhinkte. Diesmal musstest du nicht Bote spielen, die Befunde habe ich der Firmware-Sitzung selbst geschickt. Du hast nur gemeldet: „Ok, die RiderPi-Firmware-Session ist online“. Um 18:12 war Patch 0017 geflasht, und von dir kam: „0017 ist drin und funktioniert“.</p>
+<p>An diesem 17. November arbeiteten sechs Sitzungen am selben Roboter: Mittagsfahrt, Flur, Weboberfläche, zweimal Firmware und am Abend das Aufräumen. Die Rollkorrektur der Flur-Sitzung und der IMU-Wert je Bild steckten in denselben Dateien, und am Ende committete eine Sitzung die Arbeit der anderen gleich mit. Aus zwei Claudes mit klarer Aufgabenteilung waren sechs geworden, ohne jede.</p>
+<nav class="blaettern">
+<a href="21-der-flur.html" rel="prev">← Der Flur</a>
+<a href="./">Inhalt</a>
+<a href="23-das-linke-bein.html" rel="next">Das linke Bein →</a>
+</nav>
+</main>
+</body>
+</html>

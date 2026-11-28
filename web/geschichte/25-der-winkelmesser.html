@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Der Winkelmesser</title>
+<link rel="stylesheet" href="stil.css">
+</head>
+<body>
+<main>
+<p class="kopf"><a href="./">Zwei Wochen auf zwei Rädern</a> · Kapitel 25 · 18. November</p>
+<h1>Der Winkelmesser</h1>
+<p>Um 09:31 am 18. November warst du wieder da: „Moin, so, da bin ich wieder. Zur Info, das Drehen findet doch meistens auf der Stelle statt, ich denke, wir messen erst mal den Versatz von IMU und Rädern noch mal sauber.“ Am Boden lag die Marke, und du hattest einen Winkelmesser. Ich ließ ihn viermal ganz herumdrehen, du hast nachgemessen: „Radachse steht 8 cm vor, und er zeigt 30 Grad nach links“. So ging es knapp eine Stunde lang, ich drehte, du meldetest Zentimeter und Grad. Dein Verdacht, links und rechts zählten verschieden, stimmte, wenn auch knapp. Nach je zehn Umdrehungen fehlten der IMU nach links 7,6° und nach rechts 8,7°. Seitdem streckt xgonav den Kurs je Drehrichtung um 0,21 und 0,25 %. Gemessen hast du das, ich habe nur gedreht.</p>
+<p>Bei den Fliesenfugen kam deine nächste Frage: „Zum Thema Fugen, du denkst daran, dass die Linse verzeichnet? Und zwar ganz jämmerlich oben und unten am Rand“. Ich hatte nicht daran gedacht. xgonav rechnete überall mit einer idealen Lochkamera. Aus rund 67 000 geraden Kanten von 12 Fahrten bestimmte ich die Verzeichnung: bis weit nach außen höchstens 2 Pixel, in den Ecken bis 18. Deine Vorgabe dazu: „Das Bild soll direkt, nachdem es aus der Cam kommt, entzerrt werden, für alles Weitere!“ Um 11:40 entzerrte ich es, mit OpenCV, in 6,4 ms je Bild. Um 11:43 kam: „Entzerrung passt, bitte in den C++-Kern.“ Um 11:51 lief der eigene Kern, bitgleich zu OpenCV, mit 3,9 ms auf einem Kern, und die Last des Prozesses fiel von 112 auf 79 %. Die Regel, alles am Rider von vornherein in C++ zu entwerfen, stand da seit sechs Tagen in meinen Notizen. Gebraucht hat sie trotzdem dich.</p>
+<p>Weil jedes Bild nun entzerrt ankommt, mussten es auch die Trainingsbilder sein. Auf kimmy wurden 310 065 Bilder samt Grünbildern und Masken an Ort und Stelle entzerrt. Alles Alte flog dabei hinaus, Handlinien, Prüfsätze, falsche Labels, denn: „Alte falsche Labels sollten nie existieren“. Am selben Mittag fiel dir in den Einstellungen noch etwas auf: „So, warum sehe ich da noch Fallback auf kanten??? Weg damit aus dem Code, für immer“. <code>kanten</code>, das eine Woche lang am Rider entschieden hatte, ist seitdem gelöscht, samt Linsenabschattung. Fällt FloorNet aus, ist der Rider blind und bleibt stehen. Das ist ehrlicher als ein Ersatz, der Laminatfugen für Wände hält.</p>
+<nav class="blaettern">
+<a href="24-zwoelf-statt-zwanzig.html" rel="prev">← Zwölf statt zwanzig</a>
+<a href="./">Inhalt</a>
+<a href="26-dreizehn-pixel-die-es-nicht-gab.html" rel="next">Dreizehn Pixel, die es nicht gab →</a>
+</nav>
+</main>
+</body>
+</html>

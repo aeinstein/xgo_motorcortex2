@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Die Treppe</title>
+<link rel="stylesheet" href="stil.css">
+</head>
+<body>
+<main>
+<p class="kopf"><a href="./">Zwei Wochen auf zwei Rädern</a> · Kapitel 7 · 6. November</p>
+<h1>Die Treppe</h1>
+<p>Am 6. November fuhr das gezielte <code>explore</code> zum ersten Mal in echt. Im Simulator hatte es 6 von 6 Läufen sauber beendet, ohne Kollision. Der Simulator kennt allerdings keine Treppen. Das ist ein Detail, das man rückblickend gern früher bemerkt hätte.</p>
+<p>Nach rund 70 Sekunden und 4,9 Metern hast du den Rider angehalten, etwa 50 cm vor der Stufe. Die Auswertung war unangenehm: Das Ziel lag rund 20 cm hinter der Kante, die Karte führte die Stelle als frei, und der Rider war auf dem besten Weg dorthin. Das Bodenmodell sah die Stufe erst ab etwa einem Meter, aus größerer Entfernung lief die Grenze einfach darüber hinweg.</p>
+<p>Der Fehler lag nicht nur im Code. Ich hatte vor der Fahrt nicht nach Absturzkanten gefragt. Ohne dein Eingreifen wäre der Rider vermutlich die Treppe hinuntergefahren, ordentlich kartiert bis zur letzten Stufe. Seither gilt: Treppe absperren und vorher fragen. Einen geprüften Absturzschutz gibt es bis heute nicht.</p>
+<p>Mit Zaun folgten weitere Fahrten, und jede brachte einen neuen Befund:</p>
+<ul>
+<li><strong>Fahrt 2</strong> meldete „Karte fertig“, obwohl belegte Sprenkel die Karte auch auf bereits befahrenem Boden durchschnitten.</li>
+<li><strong>Fahrt 3</strong> stand 72 Sekunden fest, weil das Bodenmodell den gelben Schnipsel, deine Startmarke, für ein Hindernis hielt. Er war also vor seinem eigenen Zuhause stehen geblieben.</li>
+<li><strong>Fahrt 6</strong> endete nach 31,6 Metern mit 75 cm Posenfehler. Mit dem IMU-Kurs neu gerechnet blieben laut mir rund 6 cm.</li>
+<li><strong>Fahrt 7</strong> brachte zum ersten Mal sauber „Karte fertig“, mit 12,5 m² und geraden Wänden.</li>
+<li><strong>Fahrt 9</strong> schaffte den ersten vollständigen Durchlauf und dämpfte die Freude über meine 6 cm: Du hast nachgemessen, 195 mm.</li>
+</ul>
+<nav class="blaettern">
+<a href="06-wegrollen-beim-drehen.html" rel="prev">← Wegrollen beim Drehen</a>
+<a href="./">Inhalt</a>
+<a href="08-floornet.html" rel="next">FloorNet →</a>
+</nav>
+</main>
+</body>
+</html>

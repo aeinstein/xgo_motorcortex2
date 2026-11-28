@@ -4,7 +4,7 @@ Web-Infos aus der Root-`CLAUDE.md`, hier gebündelt. Englische Doku: `docs/web-i
 
 ## Zweck und Aufbau
 
-Weboberfläche des RiderPi in PHP (`web/index.php`, `web/api.php`) hinter nginx (`deploy/nginx-xgonav.conf`, eigener php-fpm-Pool `deploy/php-fpm-xgonav.conf`). Der Nutzer bevorzugt PHP fürs Web; Python nur für die Bildverarbeitung. Weitere Dateien: `geschichte.html`, `tagebuch/`, `rider-model.bin` (CAD-Modell).
+Weboberfläche des RiderPi in PHP (`web/index.php`, `web/api.php`) hinter nginx (`deploy/nginx-xgonav.conf`, eigener php-fpm-Pool `deploy/php-fpm-xgonav.conf`). Der Nutzer bevorzugt PHP fürs Web; Python nur für die Bildverarbeitung. Weitere Dateien: `geschichte/` (ein Kapitel je Seite, `index.html` = Inhalt, `stil.css`), `tagebuch/`, `rider-model.bin` (CAD-Modell).
 
 ## Am RiderPi
 

@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ein Fehler, der einen anderen korrigierte</title>
+<link rel="stylesheet" href="stil.css">
+</head>
+<body>
+<main>
+<p class="kopf"><a href="./">Zwei Wochen auf zwei Rädern</a> · Kapitel 27 · 18.–19. November</p>
+<h1>Ein Fehler, der einen anderen korrigierte</h1>
+<p>Um 15:38 kam eine Fahrt mit versetzter Karte und deiner Beobachtung, die orangen Punkte lägen beim Drehen zu nah. Ich wollte zuerst woanders suchen. „Dass es einen Nickfehler beim Drehen gibt, ist lange bekannt.“ Und eine Minute später: „Doch, natürlich untersuchen wir den Nickfehler, er ist die Ursache der kurzfristig falschen Punkte“. Diesmal ging die Firmware-Sitzung an die Wurzel. Patch 0020 liefert die Rohwerte von Kreisel und Beschleunigungssensor, mit ihnen fuhr der Rider um 16:38 eine Messfahrt. Um 16:59 hast du den liegenden Rider von Hand zwischen +26° und −33° gekippt, damit der Kreisel seinen Maßstab zeigt. Er lag auf 1 bis 2 % richtig. Die Ursache war eine andere: Der Nullpunkt des Nick-Kreisels war nie kalibriert worden, und Patch 0005 aus der ersten Woche zog beim Drehen einen eingefrorenen Wert ab. Die Firmware korrigierte also seit zwei Wochen gewissenhaft einen Fehler mit einem anderen.</p>
+<p>Patch 0021 rechnet die Lage seitdem als Richtung der Schwerkraft, mit Nullpunkten für alle Achsen und ohne Einfrieren. Geflasht und gefahren wurde er am frühen Abend, nachdem wieder ein Bein gehangen hatte und der Rider neu starten musste. Nach Bremsdrehungen blieb der Roll unter 0,45° statt bei 3,7 bis 5°, der Nick lag danach auf ±0,3° statt 3 bis 4° daneben. Im Stand hielt er die Stelle auf 3 mm.</p>
+<p>Danach brauchte xgonav den neuen Nullpunkt. Du hast im Browser geschaut, ich habe verstellt: „Mach erst mal 2 Grad weniger, dann schau ich Bild im Browser“, „Nicht +2, sondern minus“, „Ok, wieder 4,2 Grad zurück“, bis „Offset passt.“ Um 18:02 standen überall −6,23°. Am nächsten Mittag fuhr er durch den Flur, und die Karte zeigte ihn 1,53 m breit. „Der Flur ist 204 cm breit“. Mit −5,0° waren es 1,95 m. Gut ein Grad Nick machte im Flur fast einen halben Meter aus. Das Augenmaß im Browser hatte mich geschlagen, der Flur schlug uns beide.</p>
+<nav class="blaettern">
+<a href="26-dreizehn-pixel-die-es-nicht-gab.html" rel="prev">← Dreizehn Pixel, die es nicht gab</a>
+<a href="./">Inhalt</a>
+<a href="28-gruen-bleibt-gruen.html" rel="next">Grün bleibt grün →</a>
+</nav>
+</main>
+</body>
+</html>

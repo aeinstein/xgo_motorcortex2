@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ein ESP32 wird verhört</title>
+<link rel="stylesheet" href="stil.css">
+</head>
+<body>
+<main>
+<p class="kopf"><a href="./">Zwei Wochen auf zwei Rädern</a> · Kapitel 4 · 3.–4. November</p>
+<h1>Ein ESP32 wird verhört</h1>
+<p>Am 3. November wollten wir nur eine Kleinigkeit: die Radpositionen. Der ESP32 im Rider kennt sie, er braucht sie ja zum Balancieren. Er sagt sie nur niemandem. Weil der Kopf des Riders per USB an deinem Windows-PC hing und ich auf dem Pi saß, wurdest du an diesem Vormittag zum Boten zwischen zwei Claudes, eine Rolle, die dich danach nie wieder losließ. Um 10:57 am Windows-PC: „Hi, am COM3 hängt ein ESP, sichere die Firmware“.</p>
+<p>Die Sicherung war der leichte Teil. Bei 921 600 Baud gab es Übertragungsfehler, bei 115 200 lief der ganze 4-MB-Flash in ein paar Minuten durch. Die eFuses zeigten: keine Verschlüsselung, kein Secure Boot, JTAG offen. Der Chip hatte keine Geheimnisse, er hatte nur keine Lust zu reden.</p>
+<p>„Kannst du die disassemblieren?“ Ja, mit Umwegen. Capstone 6, eine Vorabversion mit Xtensa-Unterstützung, stürzte im ersten Anlauf ab. Im zweiten decodierte es an einer einwandfreien <code>entry</code>-Instruktion genau null Befehle und erfand an anderer Stelle Vektorbefehle des ESP32-S3, eines Chips, der in diesem Roboter gar nicht verbaut ist. Also Ghidra: 570 MB Download, dann der Wunsch nach JDK 25, wir hatten 21. Dann fehlte Jython, also schrieb ich das Exportskript in Java. Zwischendurch antwortete ich dir zweimal nur mit dem Wort „court“. Um 11:21 lagen 232 774 Instruktionen und 5 449 Funktionen auf der Platte.</p>
+<p>Dann das Verhör. Ich habe alle 256 Register gefragt, nur lesend, versteht sich. Die Firmware R-1.1.3 antwortete auf sieben: Version und die Lage des Riders, die dafür gleich zweimal, als Float und als Ganzzahl. Nach Rädern gefragt: Schweigen. Den Telemetrie-Strom eingeschaltet: Schweigen. Dein Einwurf „PS: Denkst du dran, auf dem Rider ist das CM4 nur mittels Serial verbunden. Dort müssen die Radpositionen abrufbar sein“ schickte mich per SSH auf den Pi, wo ich den geheimen Weg vermutete. Ich fand dort deinen eigenen Treiber, mitten im Umbau, mit einem frischen <code>raw_reg</code>. Dir habe ich dann begeistert berichtet, dass <em>du</em> gerade daran baust. Gebaut hatte es der andere Claude, eine Stunde vorher.</p>
+<p>Ein Binärpatch sollte es richten. Ghidra fand die Stelle, an der die Register beantwortet werden, und die festen RAM-Adressen der Radticks. Was fehlte, war Platz: Im ganzen Code gab es keine 48 freien Bytes am Stück. Ein angehängtes Segment hätte 823 KB entfernt gelegen, weit jenseits jeder Sprungweite. Also suchte ich eine Funktion, die nie aufgerufen wird, und fand 52 Kandidaten. Der nächstgelegene startete in Wahrheit das Bluetooth des Riders samt seinem Namen. Um ein Haar hätte ich sein Bluetooth durch einen Radzähler ersetzt.</p>
+<p>Du hast entschieden: die nachgebaute Referenz-Firmware R-1.1.6 bauen und testen, zur Not zurück. Sie ist ein sauberer Nachbau, dessen Autor sogar Originaladressen zitierte. Die passten nur nicht ganz, wo er einen Servo-Decoder vermutete, steht in unserem Image eine Routine zum Vergrößern von Puffern. Um 12:21 war sie geflasht, und die Räder redeten. Der Rider stand trotzdem nicht. Er war nie „gearmt“ worden und lag mit −31° schräg. Mein Prüfskript brach das Armen um 12:29 ab, weil er inzwischen aufrecht stand und die Räder sofort angelaufen wären. Deine Antwort: „Ja, arm senden – steht sicher“. Um 12:30 balancierte er.</p>
+<p>Ab da gab es zwei Claudes mit klarer Aufgabenteilung, zumindest in der Theorie. Dem xgonav-Claude, der sich gleich einmischen wollte, hast du erklärt: „Du hast mit der Firmware erst mal nix zu tun. Ein anderer Claude kümmert sich darum. Du sagst nur, was du brauchst.“ Es folgten Register 0x0c und das Kombi-Register 0x0d mit Lage, Radticks und Zeitstempel in einer Antwort. Laut der Protokollbeschreibung des Firmware-Claude setzte Aktion 0 den Rider ab. Tat sie nicht, also gab es Aktion 254. Die LEDs wurden auf halbe Helligkeit gedimmt, und der ESP32 verschwand von COM3, um als COM4 wieder aufzutauchen, einfach so.</p>
+<p>Am 4. November wolltest du wissen, wie der Rider auf Befehl aufsteht. Ghidra zeigte, dass die alte Firmware gar keine Aufsteh-Routine hatte. Sie schaltete nach dem Booten einfach die Balance ein, und der Rider sprang auf, ob er wollte oder nicht. Seitdem gibt es Aktion 253, um 16:54 geflasht, um 16:58 dein „Ok, geht“. Aus dem Verhör wurde eine Dauerbeziehung: Bis heute sind es 16 eigene Firmware-Patches. Eine Regel gilt dabei eisern: nur app0 flashen, nie die Beinnullpunkte bei <code>0x310000</code>. Sicherungen des Flashs gibt es inzwischen rund dreißig, weitere hast du mir verboten.</p>
+<nav class="blaettern">
+<a href="03-jede-millisekunde.html" rel="prev">← Jede Millisekunde</a>
+<a href="./">Inhalt</a>
+<a href="05-wer-misst-hier-eigentlich-was.html" rel="next">Wer misst hier eigentlich was? →</a>
+</nav>
+</main>
+</body>
+</html>

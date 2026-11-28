@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wegrollen beim Drehen</title>
+<link rel="stylesheet" href="stil.css">
+</head>
+<body>
+<main>
+<p class="kopf"><a href="./">Zwei Wochen auf zwei Rädern</a> · Kapitel 6 · 5.–7. November</p>
+<h1>Wegrollen beim Drehen</h1>
+<p>Sollte der Rider auf der Stelle drehen, rollte er links rückwärts und rechts vorwärts, je Drehung 30 bis 50 cm. Eine Pirouette mit Ortswechsel. Du hast das Ziel klar gesetzt: exakt auf der Stelle drehen, „und wenn wir 100-mal die Firmware bauen“.</p>
+<p>Patch 0005 nahm die Gierrate aus der Nickschätzung heraus. Das half bei langsamen Drehungen, bei schnellen rollte er weiter. Meine nächste Theorie war die Fliehkraft, also fror Patch 0006 die Beschleunigungswinkel beim Drehen ein. Der Gewinn: nicht messbar. Zwei Tage später zeigte das CAD-Modell, dass die IMU fast genau über der Radachse sitzt und nicht 11 cm daneben, wie ich angenommen hatte. Ich hatte also mit großer Sorgfalt eine Kraft bekämpft, die es an dieser Stelle gar nicht gibt.</p>
+<p>Erst ein Diagnose-Register brachte die Erklärung: Die Firmware schaltet beim Drehen das Positionshalten ab. Patch 0008 ließ es an, und der Rider wich nur noch höchstens 2,3 cm ab statt bis zu 29 cm. Am 7. November schloss die Feineinstellung von 0005 mit 2,4 % Übersprechen im Nick-Kreisel die Kette: Der Nickfehler nach der Drehung fiel von bis zu 2,3° auf höchstens 0,25°.</p>
+<p>Auch der Rollwinkel von gut 2° im Stand führte mich zuerst in die Irre. Die Beinnullpunkte waren es nicht, das widerlegte der Höhentest. Der Spieltest fand eine rund 2,6° breite Totzone in den Beinservos. Nach dem Aufstehen nivelliert der Rider deshalb einmal kurz, und Patch 0012 behält den Trimm über Höhenänderungen. Der Höhentest dazu steht noch aus.</p>
+<nav class="blaettern">
+<a href="05-wer-misst-hier-eigentlich-was.html" rel="prev">← Wer misst hier eigentlich was?</a>
+<a href="./">Inhalt</a>
+<a href="07-die-treppe.html" rel="next">Die Treppe →</a>
+</nav>
+</main>
+</body>
+</html>
