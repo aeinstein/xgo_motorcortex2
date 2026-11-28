@@ -1149,6 +1149,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#inner-life-and-battery-xgonavinnenpy-2026-11-28" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Inner life and battery (xgonav/innen.py, 2026-11-28)
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -1519,6 +1530,17 @@
     <span class="md-ellipsis">
       
         Faint
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#inner-life-and-battery-xgonavinnenpy-2026-11-28" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Inner life and battery (xgonav/innen.py, 2026-11-28)
       
     </span>
   </a>
@@ -1977,6 +1999,10 @@ sleep mode → <code>aus</code>.</p>
 <td><code>trauer.wav</code> (2 falling "wah", 1.1 s) after <code>lost_s</code> (2 s) without person</td>
 </tr>
 <tr>
+<td>Hungry / exhausted (pet)</td>
+<td><code>pet_knurren_&lt;n&gt;.wav</code> (growling noise 150–700 Hz with tremolo, 0.9 s), <code>pet_gaehnen_&lt;n&gt;.wav</code> (rising, long falling with vibrato, 1.4 s); see <a href="#inner-life-and-battery-xgonavinnenpy-2026-11-28">inner life</a></td>
+</tr>
+<tr>
 <td>Fall</td>
 <td><code>pet_schrei_&lt;n&gt;.wav</code> (scream, 0.9 s) when firmware state goes 1 → 0 (tilt/fall fault); all modes, also with pipeline stopped</td>
 </tr>
@@ -2268,7 +2294,7 @@ sleep mode → <code>aus</code>.</p>
 <td>waits; gives up after <code>nap_max_s</code> (60 s)</td>
 </tr>
 <tr>
-<td>battery known and &gt; <code>battery_low</code></td>
+<td>battery known and &gt; <code>battery_low</code>, and battery stage not exhausted/empty</td>
 <td>as above</td>
 </tr>
 <tr>
@@ -2278,6 +2304,114 @@ sleep mode → <code>aus</code>.</p>
 </tbody>
 </table>
 <p>One attempt only.</p>
+<h3 id="inner-life-and-battery-xgonavinnenpy-2026-11-28">Inner life and battery (<code>xgonav/innen.py</code>, 2026-11-28)<a class="headerlink" href="#inner-life-and-battery-xgonavinnenpy-2026-11-28" title="Permanent link">&para;</a></h3>
+<p>Simulator and unit tests only, not run on the Rider. Drives only shift the existing times, speed, gestures, eyes and
+height: with a full battery, by day and rested every factor is exactly 1 (behaviour as before).</p>
+<table>
+<thead>
+<tr>
+<th>Battery (median 60 s, stage up only 3 points above the limit)</th>
+<th>Stage</th>
+<th>Behaviour</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>≥ 60 %</td>
+<td>munter</td>
+<td>energy 1, as before</td>
+</tr>
+<tr>
+<td>40–60 %</td>
+<td>gesetzt</td>
+<td>energy 0.85</td>
+</tr>
+<tr>
+<td>25–40 %</td>
+<td>hungrig</td>
+<td>energy 0.6; no driving (as before, <code>roam_battery</code>); person in view (zone mitte/nah/knien): begs (<code>grievance</code>, <code>wimmern</code>, head tilt) every <code>bettel_repeat_s</code> 120 s; alone: stomach growl (<code>knurren</code>) every <code>knurr_repeat_s</code> 180 s; detector at <code>doze_hz</code> without a target</td>
+</tr>
+<tr>
+<td>10–25 %</td>
+<td>erschoepft</td>
+<td><code>sad</code> + yawn (<code>gaehnen</code>); with start image and farther than 0.3 m from the start: drives home like <code>home</code> (allowed down to 10 %, nothing in view interrupts it, at most 180 s), then sets down and sleep mode; without: closes the eyes, after 2.5 s sets down and sleep mode. Lying: sleep mode. No faint, no stand-up</td>
+</tr>
+<tr>
+<td>&lt; 10 %</td>
+<td>leer</td>
+<td><code>sleep</code> + sigh, at once set down and sleep mode</td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr>
+<th>Drive</th>
+<th>Source</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>energy</td>
+<td>stage factor (1 / 0.85 / 0.6 / 0.35 / 0.15) × (1 − tiredness) × night factor</td>
+<td>roaming after <code>roam_after_s</code> / (energy × (0.5 + <code>verspielt</code>)), also its repeat; dozing and set-down after <code>doze_s</code>, <code>timeout_s</code> × (0.3 + 0.7 E); speed (<code>drive_v</code>, path follower, time limits) and gestures × (0.6 + 0.4 E); eyelid at least min(0.35, (0.8 − E) / 2); blink rate 15 × (0.6 + 0.4 E) + 8 × arousal; base height − <code>hoehe_muede_mm</code> × (1 − E), never below <code>duck_mm</code>; dum-di-dum only while E ≥ 0.6 (off below 0.55)</td>
+</tr>
+<tr>
+<td>tiredness</td>
+<td>driven metres + 0.1 m per rad turned, decays with 30 min</td>
+<td>0 up to <code>muede_ab_m</code> (20 m), 0.4 at <code>muede_m</code> (60 m)</td>
+</tr>
+<tr>
+<td>night</td>
+<td>local time (Rider only, <code>App.uhr</code>) between <code>nacht_von</code> and <code>nacht_bis</code> (22–7)</td>
+<td>energy × <code>nacht_energie</code> (0.7)</td>
+</tr>
+<tr>
+<td>longing</td>
+<td>rises without a person in view over <code>gesellig_s</code> (600 s) × (0.5 + <code>anhaenglich</code>), falls within 20 s with a person near</td>
+<td>≥ <code>gesellig_freude</code> (0.6) and a person (no known face) after ≥ 20 s alone: reunion joy (<code>cute</code>, <code>traellern</code>, wiggle), longing back to 0.3</td>
+</tr>
+<tr>
+<td>arousal</td>
+<td>fright + joy (decays 10 s)</td>
+<td>blink rate</td>
+</tr>
+<tr>
+<td>mood</td>
+<td>0.45 E + 0.35 (1 − longing) + 0.2 trust − 0.5 fright, smoothed 60 s</td>
+<td><code>info</code> only</td>
+</tr>
+<tr>
+<td>curiosity</td>
+<td>time alone / scaled <code>roam_after_s</code></td>
+<td><code>info</code>; at 1 (wants to roam but may not): glances twice as often</td>
+</tr>
+</tbody>
+</table>
+<p>Sleep mode from pet (<code>App._pet_ruhe</code>): leaves pet first (height, roll back), then like the fear of the dark (sleep eyes,
+<code>set_ruhe</code>, <code>xgo-ruhe</code>). Charging watch (<code>innen.Ladewaechter</code>, every loop pass, also in sleep mode), only for a sleep
+mode pet started itself (a wake-up from web/MCP or a mode change forgets it):</p>
+<table>
+<thead>
+<tr>
+<th>Event</th>
+<th>Reaction</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>battery (smoothed) ≥ 2 points above its minimum of the last 10 min, at the earliest 5 min after the load changed</td>
+<td>purr (<code>gurren</code>, sound only, sleep eyes stay)</td>
+</tr>
+<tr>
+<td>battery ≥ <code>laden_wach</code> (90 %)</td>
+<td>sleep mode off, eyes <code>aufwachen</code>, yawn, image processing on, mode <code>pet</code> lying (never stands up by itself)</td>
+</tr>
+</tbody>
+</table>
+<p><code>/status</code> → <code>pet</code>: <code>akku</code> {wert, stufe, laedt}, <code>energie</code>, <code>muede</code>, <code>gesellig</code>, <code>erregung</code>, <code>stimmung</code>, <code>neugier</code>.
+Pi cost: a few float operations per control step, a median of ≤ 60 values once a second.</p>
 
 
 

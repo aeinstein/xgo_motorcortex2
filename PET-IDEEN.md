@@ -4,8 +4,17 @@ Stand 2026-11-28. Nutzerwunsch: Erweiterungen, die `pet` lebensechter machen, au
 aufschreiben; mehr Töne und Animationen; Augengenerator; Akkustand im Verhalten. ✦ = gewagt. In Klammern die
 Kosten am Pi (Rechenzeit hat Vorrang, CLAUDE.md).
 
-**Umgesetzt:** Augengenerator im Display-Daemon (2026-11-28, `docs/display-emotions.md`, am Rider eingespielt und
-liegend geprüft). Alles andere ist offen.
+**Umgesetzt:**
+- Augengenerator im Display-Daemon (2026-11-28, `docs/display-emotions.md`, am Rider eingespielt und liegend
+  geprüft).
+- Innenleben mit Akku, Blöcke C und H (2026-11-28, `xgonav/innen.py`, `docs/display-emotions.md`), nur Simulator
+  und Unit-Tests. Abweichungen:
+  - Triebe verschieben nur Schwellen (Nutzerentscheidung), keine Tätigkeitswahl nach Nutzwert.
+  - Neugier ist kein eigener Zustand.
+  - Die Wiedersehensfreude zeigt `cute`, weil `like` bekannten Gesichtern vorbehalten ist.
+  - Kein Akku-Symbol im Auge, keine LEDs.
+
+Alles andere ist offen.
 
 ## Bestand (2026-11-28)
 
@@ -74,7 +83,7 @@ Aufteilung nach Rechenzeit:
 6. **Dauerhafter Ausgang**: Der ALSA-Ausgang bleibt in einem Thread offen, statt je Ton einen `aplay`-Prozess zu
    starten. Das spart fork/exec, erlaubt Überblenden und Abbrechen und macht `klingt()` exakt. (weniger als heute)
 
-## C. Innenleben
+## C. Innenleben (umgesetzt 2026-11-28 als Faktoren auf Schwellen, siehe oben)
 
 1. **Triebe** (0..1, mit 1 Hz fortgeschrieben, ein paar Floats je Sekunde):
    - Energie: Akku, Tageszeit, Aktivität seit der letzten Ruhe
@@ -96,7 +105,7 @@ Aufteilung nach Rechenzeit:
 6. **Energie** = Akku (Block H) × Müdigkeit aus Aktivität (gefahrene Meter + Drehungen der letzten 30 min) ×
    Tageszeit; der Akku setzt die Obergrenze.
 
-## H. Akku im Verhalten (Nutzerwunsch 2026-11-28)
+## H. Akku im Verhalten (Nutzerwunsch 2026-11-28, umgesetzt 2026-11-28)
 
 **Grundlage:**
 - `/proc/XGORider/battery` liefert nur Prozent, etwa alle 2 s.
@@ -233,7 +242,7 @@ Datei `/var/lib/xgonav/gedaechtnis.json`, höchstens einmal je Minute geschriebe
 
 1. Augengenerator: am Rider. Offen ist das Aufräumen (nur mit Zustimmung des Nutzers): −1 GB SD und −2,5 min
    Einspielen.
-2. Innenleben mit Akku (C, H) und Gedächtnis (D), damit Energie und Stimmung die Augen färben.
+2. ~~Innenleben mit Akku (C, H)~~ (umgesetzt), Gedächtnis (D) offen.
 3. Stimmgenerator (B).
 4. Kleine Körpersprache (E1, E2, A5), am Rider mit Beobachtung.
 5. Spiele nach Wahl des Nutzers (F).

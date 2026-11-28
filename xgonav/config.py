@@ -1079,6 +1079,32 @@ class PetCfg:
     active_hz: float = 4.0             # Detektor in pet; spart gegen ~7 Hz fast die Hälfte
     doze_hz: float = 1.0
     gaze_dir: str = "/opt/xgonav/eyes_gaze"   # von tools/eyes.py --gaze (deploy/install.sh)
+    # Innenleben mit Akku (xgonav/innen.py, Nutzer 2026-11-28): Akku geglättet in Stufen munter / gesetzt / hungrig /
+    # erschöpft / Akku leer; Triebe (Energie, Geselligkeit, Erregung) verschieben die Zeiten oben, Tempo, Gesten,
+    # Augen und Höhe. Bei vollem Akku, am Tag und ausgeruht ist jeder Faktor 1 (Verhalten wie ohne Innenleben).
+    akku_gesetzt: int = 60             # %: darunter gesetzt (ruhiger)
+    akku_hungrig: int = 40             # %: darunter hungrig (kein Streifen, bettelt, knurrt, Detektor auf doze_hz)
+    akku_erschoepft: int = 25          # %: darunter erschöpft (heim mit Startbild, absetzen, Ruhemodus)
+    akku_leer: int = 10                # %: darunter Akku leer (sofort absetzen, Ruhemodus)
+    akku_hyst: int = 3                 # %: eine Stufe hinauf erst so weit über ihrer Grenze
+    akku_median_s: float = 60.0        # Glättung: Median über so viele Sekunden (beim Fahren sackt der Wert ab)
+    akku_ruhe: bool = True             # erschöpft/leer: absetzen und Ruhemodus (false: nichts)
+    akku_heim: bool = True             # erschöpft: mit Startbild erst zum Startpunkt (auch unter roam_battery)
+    laden_punkte: int = 2              # Laden erkannt: geglättet so viele Punkte über dem Minimum ...
+    laden_fenster_s: float = 600.0     # ... der letzten so vielen Sekunden, ohne Fahrt (nur im Ruhemodus von pet)
+    laden_wach: int = 90               # %: geladen, Ruhemodus von pet aus, liegend weiter in pet (0 = nie von selbst)
+    bettel_repeat_s: float = 120.0     # hungrig, Person in Sicht: betteln (grievance, wimmern, Kopf schief)
+    knurr_repeat_s: float = 180.0      # hungrig, allein: Magenknurren
+    muede_ab_m: float = 20.0           # Müdigkeit: gefahrene Meter (+ 0,1 m je rad Drehung, Zerfall 30 min) ab hier ...
+    muede_m: float = 60.0              # ... bis hier steigt sie auf höchstens 0,4
+    nacht_von: float = 22.0            # Uhrzeit (h): nachts weniger Energie
+    nacht_bis: float = 7.0
+    nacht_energie: float = 0.7         # Energie-Faktor nachts
+    gesellig_s: float = 600.0          # Geselligkeit (Sehnsucht) steigt allein in so vielen Sekunden von 0 auf 1
+    gesellig_freude: float = 0.6       # ab dieser Sehnsucht: Wiedersehensfreude (like, trällern, wackeln)
+    hoehe_muede_mm: float = 6.0        # müde: Grundhöhe bis so viel tiefer (nie unter duck_mm)
+    verspielt: float = 0.5             # Persönlichkeit 0..1: 0,5 = Standard; höher streift er früher
+    anhaenglich: float = 0.5           # Persönlichkeit 0..1: 0,5 = Standard; höher vermisst er schneller
 
 
 @dataclass

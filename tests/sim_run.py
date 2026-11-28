@@ -81,10 +81,11 @@ def fahrweise(L) -> dict | None:
 
 def run(mode="follow", secs=25.0, video=None, shake=1.0, quiet=True, imu=False, fs_thread=False, wheels=False, vx_true=None, dyn=False,
         overrides=None, scene="raum", record=None, phantoms=0, animal="person", speed=None, video_step=1, dunkel=None,
-        yaw_scale=1.0, view=None, live_port=None):
+        yaw_scale=1.0, view=None, live_port=None, akku=None):
     """overrides: siehe apply_overrides. record: Liste, bekommt je Eintrag in die Raumkarte die Beobachtung
     (tools/map_eval.py spielt sie offline ab); dafür trägt die Karte im Regelschritt ein.
-    animal, speed (m/s): nur Modus pet, wer auf den Rider zukommt (person, cat, dog)."""
+    animal, speed (m/s): nur Modus pet, wer auf den Rider zukommt (person, cat, dog).
+    akku: (Start %, % je Minute) – der Akku fällt mit der Zeit (Innenleben von pet); sonst fest 100."""
     logging.basicConfig(level=logging.WARNING if quiet else logging.INFO)
     cfg = Config.neutral()
     home = mode == "home"
@@ -96,6 +97,10 @@ def run(mode="follow", secs=25.0, video=None, shake=1.0, quiet=True, imu=False, 
     if record is not None:
         cfg.grid.threaded = False
     robot = SimRobot(cfg.robot)
+    if akku:
+        a0, pro_min = akku[0], (akku[1] if len(akku) > 1 else 0.0)
+        t_akku = time.monotonic()                # der Simulator läuft in Echtzeit
+        robot.akku_fn = lambda: max(1, int(round(a0 - pro_min * (time.monotonic() - t_akku) / 60.0)))
     sc = SCENES[scene]()
     person = Person(sc.person_weg or [(3.2, 1.3), (4.8, 4.6), (1.4, 5.0), (1.2, 3.0)], speed=0.3) if mode not in ("explore", "home", "patrol") else None
     if mode in ("follow", "pet") and scene in ("zwei", "spalt"):
@@ -247,6 +252,7 @@ def run(mode="follow", secs=25.0, video=None, shake=1.0, quiet=True, imu=False, 
            "startbild": app.startbild.info() if getattr(app, "startbild", None) else None,
            "fahrweise": fahrweise(L)}
     if mode == "pet":
+        out.update(ruhe=app.ruhe, akku_app=app.lade.akku.info(), lade_schlaf=app.lade.schlaf)
         out.update(pet=app.behavior.info() if app.behavior.name == "pet" else None,
                    aktionen=[v for _, n, v in robot.writes if n == "action"],
                    weg_von_start_m=round(math.hypot(world.x - L[0]["x"], world.y - L[0]["y"]), 3))
@@ -281,7 +287,7 @@ def run(mode="follow", secs=25.0, video=None, shake=1.0, quiet=True, imu=False, 
 if __name__ == "__main__":
     mode = sys.argv[1] if len(sys.argv) > 1 else "follow"
     secs = float(sys.argv[2]) if len(sys.argv) > 2 and not sys.argv[2].startswith("--") else 25
-    args = [a for i, a in enumerate(sys.argv) if i >= 3 and not a.startswith("--") and sys.argv[i - 1] not in ("--set", "--scene", "--phantoms", "--animal", "--speed", "--video-step", "--vx-true", "--dunkel", "--yaw-scale", "--view", "--live-port")]
+    args = [a for i, a in enumerate(sys.argv) if i >= 3 and not a.startswith("--") and sys.argv[i - 1] not in ("--set", "--scene", "--phantoms", "--animal", "--speed", "--video-step", "--vx-true", "--dunkel", "--yaw-scale", "--view", "--live-port", "--akku")]
     rider = "--rider" in sys.argv
     ov = dict(RIDER) if rider else {}
     for i, a in enumerate(sys.argv):
@@ -298,6 +304,7 @@ if __name__ == "__main__":
               animal=sys.argv[sys.argv.index("--animal") + 1] if "--animal" in sys.argv else "person",
               speed=float(sys.argv[sys.argv.index("--speed") + 1]) if "--speed" in sys.argv else None,
               dunkel=[float(v) for v in sys.argv[sys.argv.index("--dunkel") + 1].split(",")] if "--dunkel" in sys.argv else None,
+              akku=[float(v) for v in sys.argv[sys.argv.index("--akku") + 1].split(",")] if "--akku" in sys.argv else None,
               yaw_scale=float(sys.argv[sys.argv.index("--yaw-scale") + 1]) if "--yaw-scale" in sys.argv else 1.0,
               view=sys.argv[sys.argv.index("--view") + 1] if "--view" in sys.argv else None,
               live_port=(int(sys.argv[sys.argv.index("--live-port") + 1]) if "--live-port" in sys.argv else 8765)

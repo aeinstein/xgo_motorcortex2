@@ -92,6 +92,28 @@ def wimmern(k: float) -> np.ndarray:
                            _tone(800 * k, 560 * k, 0.5, vib_hz=9.0, vib_depth=0.04, harm=0.3)])
 
 
+def knurren(k: float) -> np.ndarray:
+    """Magenknurren (pet, Akku hungrig): grollendes Rauschen 150–700 Hz (der kleine Lautsprecher kann kaum tiefer)
+    mit unregelmäßigem Tremolo über einem fallenden, rauen Ton."""
+    n = int(0.9 * RATE)
+    t = np.arange(n) / RATE
+    rng = np.random.default_rng(int(k * 1000))               # gleich bei jedem Erzeugen
+    spec = np.fft.rfft(rng.standard_normal(n))
+    f = np.fft.rfftfreq(n, 1.0 / RATE)
+    spec[(f < 150 * k) | (f > 700 * k)] = 0.0
+    grollen = np.fft.irfft(spec, n)
+    grollen /= max(1e-9, float(np.abs(grollen).max()))
+    trem = 0.55 + 0.45 * np.sin(2 * np.pi * 14.0 * t + 3.0 * np.sin(2 * np.pi * 1.7 * t))
+    ton = _tone(210 * k, 160 * k, 0.9, vib_hz=7.0, vib_depth=0.06, harm=0.9)[:n]
+    return (0.6 * grollen + 0.5 * ton) * trem * _env(n, 0.05, 0.2)
+
+
+def gaehnen(k: float) -> np.ndarray:
+    """Gähnen (pet, erschöpft und beim Aufwachen nach dem Laden): steigt an, fällt lang mit Vibrato."""
+    return np.concatenate([_tone(420 * k, 760 * k, 0.45, vib_hz=5.0, vib_depth=0.01, harm=0.6),
+                           _tone(760 * k, 330 * k, 0.95, vib_hz=5.5, vib_depth=0.025, harm=0.6)])
+
+
 def gurren(k: float) -> np.ndarray:
     return np.concatenate([_tone(520 * k, 780 * k, 0.22, vib_hz=26.0, vib_depth=0.05, harm=0.35), _silence(0.03),
                            _tone(780 * k, 980 * k, 0.28, vib_hz=26.0, vib_depth=0.05, harm=0.35)])
@@ -184,7 +206,7 @@ def brabbeln(k: float) -> np.ndarray:
 PET = {"traellern": traellern, "quiek": quiek, "kichern": kichern, "seufzen": seufzen, "wimmern": wimmern,
        "gurren": gurren, "hey": hey, "ohnmacht": ohnmacht, "aufwachen": aufwachen,
        "schrei": schrei, "aufrappeln": aufrappeln, "dudeln": dudeln, "angst": angst,
-       "horch": horch, "brabbeln": brabbeln}
+       "horch": horch, "brabbeln": brabbeln, "knurren": knurren, "gaehnen": gaehnen}
 VARIANTS = (1.0, 0.92, 1.09)
 
 

@@ -39,6 +39,7 @@ from dataclasses import dataclass, field, replace
 from .behaviors import Behavior, Command, Follow, Home, PathFollower, World, _wrap, clamp, dreh_auf_kurs, dreh_w, fahrzeit_s
 from .mathe import polar
 from .config import ExploreCfg, HomeCfg, PetCfg, RobotCfg
+from .innen import Akku, Innenleben
 from .planner import path_length
 
 log = logging.getLogger(__name__)
@@ -53,6 +54,8 @@ STALL_S, STALL_M = 2.5, 0.02         # Fahrt befohlen, aber so lange kaum Weg: B
 CALL_LEG_M = 3.0                     # Rufen ohne Grenze: je Ruf so weit auf die Stimme zu
 CALL_FREE_M = 1.0                    # Rufziel: vorn weniger frei (Raumkarte) -> hinten, wenn dort mehr Platz
 HOME_NEAR_M = 0.3                    # näher am Start: nach dem Suchen nicht mehr hinfahren
+WIEDERSEHEN_S = 20.0                 # Wiedersehensfreude erst nach so langem Alleinsein
+AKKU_HEIM_MAX_S = 180.0              # erschöpft zum Körbchen: länger nicht (Pose verloren), dann an Ort und Stelle
 GAZE_BINS = 11                       # Blickrichtungen im Augen-Atlas (tools/eyes.py --gaze): 10 Stufen, ungerade für eine exakte Mitte
 GAZE_CENTER = GAZE_BINS // 2
 BLINK_S = 0.4                        # Lidschlag über alle Lidstellungen; bei 24 Hz Regelschritt je ~42 ms eine Stufe
@@ -130,6 +133,7 @@ class Sense:
     # den Weg durch die Tür nach 3 s.
     nav_extern: bool = False
     nav_stuck: bool = False
+    stunde: float | None = None      # Uhrzeit (h, Ortszeit) fürs Innenleben, nur am Rider; None = unbekannt
 
 
 @dataclass
@@ -164,6 +168,18 @@ class PetBrain:
         self.rolled = False                  # Roll wurde benutzt: beim Verlassen neu ausrichten
         self.det_hz = cfg.active_hz
         self.want_set_down = self.want_stand_up = self.want_idle = False
+        self.want_ruhe: str | None = None    # Akku: absetzen und Ruhemodus (App._pet_ruhe), Grund
+        # Innenleben (xgonav/innen.py): Akku in Stufen, Triebe als Faktoren auf Zeiten, Tempo, Gesten, Augen, Höhe
+        self.akku = Akku(cfg)
+        self.innen = Innenleben(cfg)
+        self._akku_stufe: str | None = None  # Stufe im letzten Schritt (Reaktionen nur beim Wechsel)
+        self._akku_heim = False              # erschöpft: Heimfahrt läuft (nichts lenkt sie ab)
+        self._akku_heim_versucht = False
+        self._akku_heim_t0 = 0.0
+        self._akku_det = False               # Detektor wegen des Akkus auf doze_hz
+        self._ruhe_at: float | None = None   # dann want_ruhe setzen (erst noch gähnen)
+        self._ruhe_grund = ""
+        self.neugier = 0.0                   # Bereitschaft zu streifen (info, Augen)
         self.base_h: float | None = None
         self.zone: str | None = None
         self.target: Seen | None = None
@@ -316,6 +332,99 @@ class PetBrain:
             self._task_reset(t)                      # Schreck, Ohnmacht, abgesetzt: Aufgabe vorbei
         self.state, self._state_t = name, t
 
+    # ---- Innenleben (xgonav/innen.py) ---------------------------------------
+    def _innen(self, s: Sense) -> None:
+        """Akku glätten, Triebe fortschreiben; ein paar Floats je Regelschritt."""
+        if self._ruhe_at is not None and s.t >= self._ruhe_at:
+            self.want_ruhe, self._ruhe_at = self._ruhe_grund, None
+        self.akku.update(s.t, s.battery)
+        tg = self.target                                     # aus dem letzten Schritt
+        person_da = any(x.cls == "person" for x in s.seen)
+        person_nah = person_da and (self.zone in ("mitte", "nah", "knien")
+                                    or (self._talk_n >= 2 and tg is not None and tg.cls == "person"))
+        dyaw = _wrap(s.yaw - self.yaw) if s.balancing else 0.0
+        self.innen.update(s.dt, self.akku.stufe, s.ds if s.balancing else 0.0, dyaw, person_da, person_nah,
+                          self.fright, self.trust, s.stunde)
+        alone = s.t - self._seen_t if self._seen_t is not None else 0.0
+        self.neugier = clamp(alone / max(1e-3, self.cfg.roam_after_s * self.innen.f_streifen()), 0.0, 1.0)
+
+    @property
+    def dudeln_ok(self) -> bool:
+        return self.innen.dudeln_ok
+
+    def _akku_tick(self, s: Sense) -> None:
+        """Akku-Stufen (Nutzer 2026-11-28): hungrig: Detektor langsamer (betteln/knurren in _wach); erschöpft: mit
+        Startbild heim, dann absetzen + Ruhemodus; leer: sofort. Jede Reaktion einmal je Stufe."""
+        c, t = self.cfg, s.t
+        stufe = self.akku.stufe
+        neu = stufe != self._akku_stufe
+        if neu and self._akku_stufe is not None:
+            log.info("pet: Akku %s (%.0f %%)", stufe, self.akku.wert if self.akku.wert is not None else -1)
+        self._akku_stufe = stufe
+        if self._akku_heim and t - self._akku_heim_t0 > AKKU_HEIM_MAX_S:
+            log.warning("pet: Heimfahrt zum Körbchen dauert zu lange")
+            self._task_reset(t)
+        if self._ruhe_at is not None or self.want_ruhe is not None or not c.akku_ruhe:
+            return
+        if stufe == "leer":
+            self._react(t, "sleep", "seufzen", urgent=True)
+            self._ruhe(s, "Akku leer")
+            return
+        if stufe != "erschoepft":
+            self._akku_heim = False
+            return
+        if self._akku_heim:
+            if self.task == "heim":
+                return                                       # unterwegs zum Körbchen
+            self._akku_heim = False
+            self._ruhe(s, "erschöpft, Heimfahrt vorbei")
+            return
+        self._react(t, "sad", "gaehnen", urgent=True)
+        if self.state == "wach" and c.akku_heim and not self._akku_heim_versucht and s.balancing:
+            self._akku_heim_versucht = True
+            if self.task is not None:
+                self._task_reset(t)
+            if self._go_home(s, akku=True):
+                log.info("pet: erschöpft, fahre zum Körbchen (Startpunkt)")
+                self._akku_heim, self._akku_heim_t0 = True, t
+                return
+        self._ruhe(s, "erschöpft", nach_s=2.5)              # Gähnen noch sehen lassen
+
+    def _akku_detektor(self) -> None:
+        """Ab hungrig: Detektor ohne Ziel auf doze_hz (Rechenzeit ist Strom); mit Ziel wie sonst, damit Schreck und
+        Folgen schnell bleiben. Wieder satt: zurück. Folgen (det_hz None) bleibt unberührt."""
+        c = self.cfg
+        if self.akku.stufe in ("hungrig", "erschoepft", "leer"):
+            if self.det_hz is not None:
+                self.det_hz = c.active_hz if self.target is not None else c.doze_hz
+                self._akku_det = True
+        elif self._akku_det:
+            self._akku_det = False
+            if self.det_hz is not None and not self._dozing:
+                self.det_hz = c.active_hz
+
+    def _ruhe(self, s: Sense, grund: str, nach_s: float = 0.0) -> None:
+        """Still werden (Augen zu); nach nach_s App: absetzen und Ruhemodus (want_ruhe)."""
+        log.warning("pet: %s -> absetzen, Ruhemodus", grund)
+        self._set_state("aus", s.t)
+        self._ruhe_grund, self._ruhe_at = grund, s.t + nach_s
+        if nach_s <= 0.0:
+            self.want_ruhe, self._ruhe_at = grund, None
+
+    def _hunger(self, s: Sense, tg: Seen | None) -> None:
+        """hungrig: bei einer Person betteln, allein knurrt der Magen."""
+        c, t = self.cfg, s.t
+        if tg is not None and tg.cls == "person" and self.zone in ("mitte", "nah", "knien"):
+            if self._ready("betteln", t, c.bettel_repeat_s):
+                log.info("pet: hungrig, bettelt")
+                self._react(t, "grievance", "wimmern")
+                if c.gestures and self.roll_mag > 0 and self.task is None:
+                    self._gesture = ("kopf", t, t + c.tilt_s)
+                    self.roll_deg = self.rng.choice((-1.0, 1.0)) * self.roll_mag
+                    self.rolled = True
+        elif tg is None and self._ready("knurren", t, c.knurr_repeat_s):
+            self._react(t, None, "knurren")
+
     def _odom(self, s: Sense) -> None:
         """Eigene Stelle aus Rädern und Kurs; liegend zählt nichts (getragen, Aufstehen rollt vor)."""
         if s.balancing and s.ds:
@@ -338,6 +447,7 @@ class PetBrain:
         if self.augen is not None and s.t - self._augen_t > c.eye_hold_s:
             log.info("pet: Augen wieder Standard")
             self.augen = None
+        self._innen(s)
         self._odom(s)
         if self.state == "start":
             self._seen_t = s.t
@@ -355,13 +465,19 @@ class PetBrain:
         self.target = self._pick(s)
         self._ev = self._hear_new(s)
         self._parrot_new(s)
+        if self.state in ("wach", "liegt"):
+            self._akku_tick(s)
         act = {"wach": self._wach, "schreck": self._schreck, "ab": self._ab, "nap": self._nap,
                "lugen": self._lugen, "warnen": self._warnen, "hoch": self._hoch, "settle": self._settle, "liegt": self._liegt,
                "aus": self._aus}[self.state](s)
         if act.v != 0.0 or act.w != 0.0:
             self._move_t = s.t
         if act.height_mm is None and s.balancing and self.state in ("wach", "schreck", "settle"):
-            act.height_mm = self.base_h
+            # müde etwas tiefer (Energie 1: genau base_h), nie unter duck_mm
+            minus = self.innen.hoehe_minus()
+            act.height_mm = (self.base_h if minus <= 0.0 or self.base_h is None
+                             else max(min(self.duck_mm, self.base_h), self.base_h - minus))
+        self._akku_detektor()
         act.target_id = self.target.id if self.target is not None else None
         act.status = "pet: %s%s%s, Vertrauen %.2f" % (self.state, " " + self.zone if self.zone else "",
                                                      " %s/%s" % (self.task, self.phase) if self.task else "", self.trust)
@@ -401,14 +517,25 @@ class PetBrain:
             self._seen_t = t                         # Stimmen zählen als Gesellschaft
             self._react(t, "surprised", "horch")
         if tg is not None:
+            allein = t - self._person_t                      # seit der letzten Person (Tiere zählen nicht)
             if self._dozing:
                 self._dozing = False
                 self.det_hz = c.active_hz
                 self._react(t, "surprised", "gefunden")
-            if self.task is not None and self.task not in ("kommen", "folgen"):
+            if (self.task is not None and self.task not in ("kommen", "folgen")
+                    and not (self.task == "heim" and self._akku_heim)):   # erschöpft heim: nichts lenkt ab
                 if self.task == "horchen":
                     self._voice_t = t                # er hat hingehört und jemanden gefunden: redet mit
                 self._task_found(s)
+            if (tg.cls == "person" and tg.who is None and allein >= WIEDERSEHEN_S
+                    and self.innen.gesellig >= c.gesellig_freude and self._ready("wiedersehen", t, 60.0)):
+                # Wiedersehensfreude: er hat sie vermisst (Geselligkeit, xgonav/innen.py). like bleibt den bekannten
+                # Gesichtern vorbehalten (_greet), deshalb cute
+                log.info("pet: Wiedersehen nach %.0f s (Sehnsucht %.2f)", allein, self.innen.gesellig)
+                self.innen.wiedersehen()
+                self._react(t, "cute", "traellern")
+                if c.gestures and self.task is None:
+                    self._gesture = ("wackeln", t, t + c.wiggle_s)
             self._seen_t = t
             self._bored_t = -1e9
             self._roam_left = self.roam_m            # nach einer Begegnung darf er wieder streifen
@@ -425,6 +552,8 @@ class PetBrain:
         if tg is not None and tg.cls == "person":
             self._person(s, tg, act)
         self._person_presence(s, person)
+        if self.akku.stufe == "hungrig":
+            self._hunger(s, tg)
         self._nudge_check(s)
         self._hear_wach(s, tg)
         self._follow_check(s, tg)
@@ -850,7 +979,7 @@ class PetBrain:
         log.info("pet: Rufsuche: Öffnung %d, %.1f m (Weg %.1f m)", self._ruf["n"], luft, weg_m or luft)
         self._phase_set("fahren", t)
         if weg_m is not None:                                # Zeit nach dem Weg, nicht nach der Luftlinie
-            v = max(self.rcfg.v_of(self.cfg.drive_v) * self.rcfg.vx_limit, 1e-3)
+            v = max(self.rcfg.v_of(self.cfg.drive_v * self.innen.f_tempo()) * self.rcfg.vx_limit, 1e-3)
             self._drive_t_max = max(self._drive_t_max, t + 8.0 + 2.5 * weg_m / v)
 
     def _ruf_umgeschaut(self, s: Sense) -> None:
@@ -871,14 +1000,17 @@ class PetBrain:
     def _lonely(self, s: Sense) -> bool:
         """Niemand in Sicht: Langeweile, Dösen, nach timeout_s absetzen. True: nichts weiter zu tun."""
         c, t = self.cfg, s.t
+        if self._akku_heim:
+            return False                     # erschöpft auf dem Heimweg: weder dösen noch absetzen
         alone = t - self._seen_t
-        if alone >= c.timeout_s:
+        fz, fs = self.innen.f_zeit(), self.innen.f_streifen()   # Energie 1: beide genau 1 (wie ohne Innenleben)
+        if alone >= c.timeout_s * fz:
             log.info("pet: %.0f s niemand, setze ab (Akku)", alone)
             self.want_set_down = self.want_idle = True
             self._set_state("aus", t)
             self._react(t, "sleep", "seufzen")
             return True
-        if alone >= c.doze_s:
+        if alone >= c.doze_s * fz:
             if not self._dozing:
                 self._dozing = True
                 self.det_hz = c.doze_hz
@@ -886,8 +1018,8 @@ class PetBrain:
                 self._task_reset(t)
                 self._react(t, "sleep", "seufzen")
             return True
-        if (c.look and c.gestures and self.task is None and alone >= c.roam_after_s
-                and t >= self._roam_t + c.roam_repeat_s):
+        if (c.look and c.gestures and self.task is None and alone >= c.roam_after_s * fs
+                and t >= self._roam_t + c.roam_repeat_s * fs):
             self._roam_t = t
             self._look_dir = self.rng.choice((-1.0, 1.0))
             self._task_start("streifen", s)
@@ -1166,8 +1298,8 @@ class PetBrain:
     def _stop_m(self) -> float:
         return NACHLAUF_S * self.rcfg.v_of(self.cfg.drive_v) * self.rcfg.vx_limit
 
-    def _no_drive(self, s: Sense, budget: float) -> str | None:
-        """Grund, nicht zu fahren, oder None."""
+    def _no_drive(self, s: Sense, budget: float, akku_min: int | None = None) -> str | None:
+        """Grund, nicht zu fahren, oder None. akku_min: Akkugrenze statt roam_battery (erschöpft heim)."""
         c = self.cfg
         if budget <= self._stop_m() + 0.05:
             return "Budget"
@@ -1177,7 +1309,7 @@ class PetBrain:
             return "keine Räder"
         if not s.floor_ok or s.free_center is None:
             return "Bodenmodell"
-        if s.battery is None or s.battery < c.roam_battery:
+        if s.battery is None or s.battery < (c.roam_battery if akku_min is None else akku_min):
             return "Akku"
         return None
 
@@ -1207,7 +1339,7 @@ class PetBrain:
         self._yaw_goal = None
         if name == "fahren":
             rest = math.hypot(self._goal[0] - self.x, self._goal[1] - self.y)
-            self._drive_t_max = t + fahrzeit_s(rest, self.cfg.drive_v, self.rcfg, 1e-3)
+            self._drive_t_max = t + fahrzeit_s(rest, self.cfg.drive_v * self.innen.f_tempo(), self.rcfg, 1e-3)
 
     def _task_reset(self, t: float) -> None:
         self._seek_ear = self._ear_again = False
@@ -1259,25 +1391,28 @@ class PetBrain:
         if kind == "suchen" and self.cfg.seek_home and (self.cfg.lost_home or not person):
             self._go_home(s)
 
-    def _go_home(self, s: Sense) -> None:
-        """Alles abgesucht: zurück zum Start (wo er aufstand), wie explore am Ende. Der Weg kommt vom Planer."""
+    def _go_home(self, s: Sense, akku: bool = False) -> bool:
+        """Alles abgesucht: zurück zum Start (wo er aufstand), wie explore am Ende. Der Weg kommt vom Planer.
+        akku: erschöpft, fährt auch unter roam_battery (bis akku_leer). True: Heimfahrt läuft."""
         if s.heim_m is not None:
             d = s.heim_m                                     # Kartenstart (Aufspringen/Absetzen), dorthin fährt Pet
         elif self._home is None:
-            return
+            return False
         else:
             d = math.hypot(self._home[0] - self.x, self._home[1] - self.y)
         if d <= max(HOME_NEAR_M, self._stop_m() + 0.1):
-            return
-        why = "kein Startbild" if not s.anker else self._no_drive(s, math.inf)
+            return False
+        why = ("kein Startbild" if not s.anker
+               else self._no_drive(s, math.inf, self.cfg.akku_leer if akku else None))
         if why is not None:
             log.info("pet: bleibe hier, %.1f m vom Start (%s)", d, why)
-            return
+            return False
         # Gefahren wird wie im Modus home (Pet.step: Planer, Vorpunkt, gerade Schlussfahrt, Abgleich am Startbild)
         log.info("pet: heim, fahre zum Start (%.1f m) wie home", d)
         self.task, self._task_left, self._heim_result = "heim", math.inf, None
         self._looks, self._fails, self._goal_flip = [], 0, None
         self._phase_set("extern", s.t)
+        return True
 
     def heim_ende(self, why: str) -> None:
         """Pet: Heimfahrt fertig oder aufgegeben."""
@@ -1285,7 +1420,7 @@ class PetBrain:
 
     def _heim_extern(self, s: Sense, act: Act) -> None:
         """Heimfahrt läuft in Pet (wie home); hier nur Ende und Fahrverbot prüfen."""
-        why = self._heim_result or self._no_drive(s, math.inf)
+        why = self._heim_result or self._no_drive(s, math.inf, self.cfg.akku_leer if self._akku_heim else None)
         if why is not None:
             self._task_end(s, why)
 
@@ -1349,7 +1484,7 @@ class PetBrain:
         if why is not None:
             self._halt(s, why, rest)
             return
-        act.v = self.rcfg.v_of(c.drive_v)
+        act.v = self.rcfg.v_of(c.drive_v * self.innen.f_tempo())   # müde langsamer (Energie 1: drive_v)
         act.w = self._turn_to(err)
 
     def _out_of_radius(self) -> bool:
@@ -1475,7 +1610,7 @@ class PetBrain:
             period = 0.2 if g[0] == "wackeln" else 0.6
             if g[0] != "kopf":
                 sign = 1.0 if int((t - g[1]) / period) % 2 == 0 else -1.0
-                act.w = sign * self.rcfg.w_of(c.wiggle_w if g[0] == "wackeln" else c.slow_w)
+                act.w = sign * self.rcfg.w_of((c.wiggle_w if g[0] == "wackeln" else c.slow_w) * self.innen.f_tempo())
             return
         if tg is not None:
             act.w = self._turn_to(tg.bearing)
@@ -1492,7 +1627,7 @@ class PetBrain:
         while self._faints and self._faints[0] < t - c.faint_window_s:
             self._faints.popleft()
         return (c.faint and len(self._faints) < c.faint_max
-                and s.battery is not None and s.battery > c.battery_low)
+                and s.battery is not None and s.battery > c.battery_low and self.akku.stufe not in ("erschoepft", "leer"))
 
     def _faint(self, s: Sense) -> None:
         t = s.t
@@ -1545,6 +1680,7 @@ class PetBrain:
         """Ist die Luft rein? Niemand im Bild, egal wie weit weg: Im Liegen stimmt die Bodengeometrie nicht,
         und wer ihn erschreckt hat, soll weg sein. Dazu Akku bekannt und die Liegelage als Referenz."""
         return (not s.seen and s.battery is not None and s.battery > self.cfg.battery_low
+                and self.akku.stufe not in ("erschoepft", "leer")
                 and self._nap_ref is not None and s.t - self._ear_last_t >= self.cfg.clear_s)   # und niemand spricht
 
     def _nap_check(self, s: Sense) -> bool:
@@ -1676,7 +1812,8 @@ class PetBrain:
             if abs(raw - goal) > 0.6:                        # Hysterese, sonst zittert der Blick
                 goal = int(round(raw))
         elif t >= self._next_glance:
-            self._next_glance = t + self.rng.uniform(3.0, 7.0)
+            # neugierig, darf aber nicht streifen (Akku, Boden): Blicke wandern öfter
+            self._next_glance = t + self.rng.uniform(3.0, 7.0) * (0.5 if self.neugier >= 1.0 else 1.0)
             goal = GAZE_CENTER + self.rng.choice((-3, -1, 0, 0, 1, 3))
         self._gaze_goal = goal
         if xf is None:
@@ -1705,6 +1842,7 @@ class PetBrain:
             lid = LID_HALF + int(round((LID_SHUT - LID_HALF) * closing))
         else:
             base = clamp(self.cfg.eyes_fix_lid, LID_OPEN, LID_SHUT) if fix else LID_OPEN
+            base = max(base, int(round(self.innen.lid_muede() * LID_SHUT)))   # müde: schwerere Lider
             lid = base + int(round((LID_SHUT - base) * closing))
         self.gaze = (int(gx), int(lid))
         self.augen_ziel = self._augen_ziel(s, xf, fix)
@@ -1732,11 +1870,14 @@ class PetBrain:
             lid = LID_HALF / LID_SHUT
         else:
             lid = clamp(self.cfg.eyes_fix_lid, LID_OPEN, LID_SHUT) / LID_SHUT if fix else 0.0
-        rate = 0.0 if lid >= 1.0 else (AUGEN_RATE_MUEDE if muede else AUGEN_RATE)
+        if lid < 1.0:
+            lid = max(lid, self.innen.lid_muede())          # müde: Lider schwerer (Energie 1: nichts)
+        rate = 0.0 if lid >= 1.0 else (AUGEN_RATE_MUEDE if muede else self.innen.rate())
         return (float(xf), float(yf), float(lid), float(nah), rate)
 
     def info(self) -> dict:
         return {"zustand": self.state, "zone": self.zone, "vertrauen": round(self.trust, 2),
+                "akku": self.akku.info(), **self.innen.info(), "neugier": round(self.neugier, 2),
                 "schreck": round(self.fright, 2), "ziel": self.target.cls if self.target else None,
                 "schrecks": self.n_startle, "ruck": self.n_retreat, "ohnmacht": self.n_faint, "liegt_weil": self.why_down or None,
                 "aufgabe": "%s/%s" % (self.task, self.phase) if self.task else None, "suchen": self.n_seek, "folgen": self.n_follow,
@@ -1776,6 +1917,7 @@ class Pet(Behavior):
         self.want_set_down = False           # App._step
         self.want_stand_up = False           # App._pet_tick
         self.want_idle = False
+        self.want_ruhe: str | None = None   # App._pet_tick: absetzen und Ruhemodus (Akku)
         self.gaze = self.brain.gaze          # lcd.py liest das aus seinem Thread (Tupel, atomar ersetzt)
         self.augen_ziel = self.brain.augen_ziel   # ebenso, für den Augengenerator
         self.augen: str | None = None        # Augenfarbe (brain.augen): lcd.py und App -> Emotions.farbe
@@ -2074,7 +2216,7 @@ class Pet(Behavior):
                   karte=w.pose is not None and w.pose_ok,
                   heim_m=math.hypot(w.goal[0] - w.pose[0], w.goal[1] - w.pose[1])
                   if w.pose is not None and w.goal is not None else None,
-                  nav_extern=self._pfad_faehrt(w), nav_stuck=self._nav_stucks >= 2, **self._nav(w))
+                  nav_extern=self._pfad_faehrt(w), nav_stuck=self._nav_stucks >= 2, stunde=w.stunde, **self._nav(w))
         act = b.update(s)
         heim = self._heim(w)
         if heim is None:
@@ -2085,6 +2227,7 @@ class Pet(Behavior):
                 return fc
         if heim is None and self._pfad_faehrt(w):
             # Geplanter Weg: wie home abfahren (Engstellen, Lücke, Anschub); Bahnprüfung der App bremst ohnehin
+            self.f.v = self.pcfg.drive_v * b.innen.f_tempo()        # müde langsamer (Energie 1: drive_v)
             heim = self.f.drive(w, "Rufsuche" if b._ruf is not None else b.task, slow_end=True)
         self._flags(b)
         if heim is not None:
@@ -2099,6 +2242,8 @@ class Pet(Behavior):
             b.want_stand_up, self.want_stand_up = False, True
         if b.want_idle:
             b.want_idle, self.want_idle = False, True
+        if b.want_ruhe:
+            b.want_ruhe, self.want_ruhe = None, b.want_ruhe
         self.gaze = b.gaze
         self.augen_ziel = b.augen_ziel
         self.augen = b.augen

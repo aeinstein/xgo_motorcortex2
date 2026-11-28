@@ -2921,6 +2921,36 @@ Sounds: <code>sound</code> true, <code>sound_dir</code> <code>/opt/xgonav/sounds
 <td><code>/opt/xgonav/eyes_gaze</code></td>
 <td>eye atlas</td>
 </tr>
+<tr>
+<td><code>akku_gesetzt</code>, <code>akku_hungrig</code>, <code>akku_erschoepft</code>, <code>akku_leer</code>, <code>akku_hyst</code>, <code>akku_median_s</code></td>
+<td>60, 40, 25, 10 %, 3, 60</td>
+<td>battery stages (<a href="display-emotions.html#inner-life-and-battery-xgonavinnenpy-2026-11-28">inner life</a>)</td>
+</tr>
+<tr>
+<td><code>akku_ruhe</code>, <code>akku_heim</code></td>
+<td>true, true</td>
+<td>exhausted/empty: set down + sleep mode; exhausted: first home with start image</td>
+</tr>
+<tr>
+<td><code>laden_punkte</code>, <code>laden_fenster_s</code>, <code>laden_wach</code></td>
+<td>2, 600, 90 %</td>
+<td>charging in pet's own sleep mode: purr; wake at 90 % (0 = never)</td>
+</tr>
+<tr>
+<td><code>bettel_repeat_s</code>, <code>knurr_repeat_s</code></td>
+<td>120, 180</td>
+<td>hungry: beg (person in view), stomach growl (alone)</td>
+</tr>
+<tr>
+<td><code>muede_ab_m</code>, <code>muede_m</code>, <code>nacht_von</code>, <code>nacht_bis</code>, <code>nacht_energie</code></td>
+<td>20, 60, 22, 7, 0.7</td>
+<td>tiredness from activity, night</td>
+</tr>
+<tr>
+<td><code>gesellig_s</code>, <code>gesellig_freude</code>, <code>hoehe_muede_mm</code>, <code>verspielt</code>, <code>anhaenglich</code></td>
+<td>600, 0.6, 6, 0.5, 0.5</td>
+<td>longing, reunion joy, tired height; personality (0.5 = factor 1)</td>
+</tr>
 </tbody>
 </table>
 <h3 id="ruhe-sleep-mode-see-web-interfacemd"><code>[ruhe]</code> (sleep mode, see <a href="web-interface.html#sleep-mode-ruhe">web-interface.md</a>)<a class="headerlink" href="#ruhe-sleep-mode-see-web-interfacemd" title="Permanent link">&para;</a></h3>

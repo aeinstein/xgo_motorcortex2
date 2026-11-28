@@ -38,6 +38,7 @@ from .robot import FW_ACTIONS, Robot, action_cmds, stopp_text
 from .tracker import Tracker
 from .wlan import Helfer, HoldDetector, PressDetector, WlanSetup
 from .dunkel import Dunkelangst, sperr_rechteck
+from .innen import Ladewaechter
 from .verstaerkung import GainSwitch, bildwerte
 
 log = logging.getLogger(__name__)
@@ -233,6 +234,9 @@ class App:
         self._loop_hist = collections.deque(maxlen=250)   # letzte Schleifenzeiten (ms): p95/max
         self._seg_hist = collections.deque(maxlen=250)    # je Bild: Abschnittszeiten, siehe loop_breakdown()
         self.emotions = None           # emotion.Emotions, von __main__ gesetzt (nur am Rider)
+        self.uhr = None                # () -> Ortszeit in Stunden, von __main__ gesetzt (nur am Rider; Innenleben)
+        # Ruhemodus, in den pet wegen des Akkus ging (innen.Ladewaechter): Laden erkennen, geladen aufwachen
+        self.lade = Ladewaechter(self.cfg.pet)
         self.rawrec = None             # rawrec.RawRecorder, von __main__ gesetzt
         self._ruhe_saved: dict[str, str] | None = None   # Ruhemodus: alte Treiber-Einstellungen, sonst None
         # WLAN-Einrichtung über die Tasten (wlan.py): läuft in der Hauptschleife statt _step
@@ -448,6 +452,7 @@ class App:
             self.robot.ruhe_tick_s = self.cfg.ruhe.tick_s
             log.info("Ruhemodus an (Treiber: %s)", ", ".join(f"{k} {v}->aus" for k, v in saved.items()) or "-")
         else:
+            self.lade.vergessen()                 # geweckt (Web, MCP, Ladewächter): nicht von selbst noch einmal
             saved, self._ruhe_saved = self._ruhe_saved, None
             self.robot.ruhe_tick_s = None
             for name, old in saved.items():
@@ -556,6 +561,56 @@ class App:
         if self._dunkel_zonen:
             self._dunkel_zonen_setzen([], "gelöscht (Ruhemodus)")
         self._ruhe_system(True)
+
+    # ------------------------------------------------------------------ Akku in pet (innen.py)
+    def _pet_ruhe(self, grund: str) -> None:
+        """pet, Akku erschöpft oder leer: absetzen und Ruhemodus wie die Dunkelangst; der Ladewächter weckt ihn,
+        wenn er geladen ist."""
+        if self.ruhe:
+            return                                    # schon (Dunkelangst im selben Schritt)
+        log.warning("pet: %s – setzt sich, Ruhemodus", grund)
+        # erst pet verlassen, solange er noch balanciert (Höhe base_h, Roll 0): Im Ruhemodus liest der Roboter den
+        # Zustand nur noch selten, _pet_leave schriebe sonst während des Absetzens
+        self._pet_leave()
+        with self._mode_lock:
+            self._pending_mode = None
+            self.behavior = self._make("idle")
+        self.robot.stop()
+        if self.emotions is not None:
+            try:
+                self.emotions.play("sleep")
+            except Exception as e:
+                log.warning("pet: Schlafaugen: %s", e)
+        self.set_ruhe(True)
+        self._ruhe_system(True)
+        self.lade.einschlafen()
+
+    def _lade_tick(self, now: float) -> None:
+        """Je Schleifendurchlauf (auch im Ruhemodus): Akku glätten; im Ruhemodus von pet Laden erkennen (gurren)
+        und geladen aufwachen: Ruhemodus aus, Bildverarbeitung an, pet liegend (steht nie von selbst auf)."""
+        for aktion in self.lade.update(now, self.robot.state.battery, self.ruhe):
+            if aktion == "gurren":
+                log.info("pet: lädt (Akku %.0f %%)", self.lade.akku.wert or 0)
+                if self.emotions is not None:
+                    self.emotions.express("sound", "gurren", urgent=True)   # nur der Ton, die Schlafaugen bleiben
+            elif aktion == "wecken":
+                self._pet_wecken()
+
+    def _pet_wecken(self) -> None:
+        log.warning("pet: geladen (Akku %.0f %%), wacht auf", self.lade.akku.wert or 0)
+        self.set_ruhe(False)
+        self._ruhe_system(False)
+        if self.emotions is not None:
+            try:
+                self.emotions.play("aufwachen")
+                self.emotions.express("sound", "gaehnen", urgent=True)
+            except Exception as e:
+                log.warning("pet: Aufwachen: %s", e)
+        try:
+            self.set_pipeline(True)
+            self.set_mode("pet")
+        except ValueError as e:                       # ModeNotAllowed
+            log.warning("pet: nach dem Laden nicht wieder in pet: %s", e)
 
     def _ruhe_system(self, on: bool) -> None:
         """CPU-Takt wie api.php (sudo xgo-ruhe on|off), im Hintergrund; fehlt die Regel, nur eine Warnung."""
@@ -796,6 +851,7 @@ class App:
         gilt beim Laden Pose = Start)."""
         self._make(name, target)  # validiert (KeyError)
         self._check_mode(name, confirmed, target)
+        self.lade.vergessen()                         # Modus von Hand (auch der Ladewächter, nach seinem Wecken)
         if name == "patrol" and not confirmed:
             raise ModeNotAllowed("Streife: bitte bestätigen, dass der Rider am Startpunkt steht")
         if name == "patrol":
@@ -928,6 +984,7 @@ class App:
                     break
                 self._wlan_buttons()
                 self._ortung_tick()
+                self._lade_tick(time.monotonic())     # Akku in pet: auch im Ruhemodus (Laden, Aufwachen)
                 if self.wlan is not None:
                     last = self._wlan_tick(last)
                     continue
@@ -1194,6 +1251,7 @@ class App:
                       fw_mode=self.robot.state.mode,
                       yaw=self.yaw, cmd_v=self.robot.command[0],
                       geo=self.geo, pitch_dev=pitch_dev, battery=self.robot.state.battery,
+                      stunde=self.uhr() if self.uhr is not None else None,
                       blind=self.fs_worker is not None and self.fs_worker.blind,
                       v_rad=self._v_rad, clear_fn=self._clear_ahead if self.lmap is not None else None,
                       v_erw=self._v_erwartet())
@@ -1572,6 +1630,12 @@ class App:
             b.want_stand_up = False
             log.warning("pet: stehe von selbst auf")
             self.robot.stand_up()
+        if b.want_set_down:
+            # vor dem Moduswechsel: Mit want_idle im selben Schritt tauschte _step das Verhalten, bevor es das
+            # Absetzen sah (timeout_s: „setzt ab“ ging verloren)
+            b.want_set_down = False
+            log.warning("pet: setze ab")
+            self.robot.set_down()
         if b.want_idle:
             b.want_idle = False
             self.set_mode("idle")
@@ -1604,6 +1668,9 @@ class App:
                     self.emotions.express(kind, name, urgent)
                 except Exception as e:                # Anzeige darf die Regelung nie stören
                     log.warning("pet: %s %s: %s", kind, name, e)
+        if b.want_ruhe:                               # zuletzt: danach schreibt in diesem Schritt nichts mehr
+            grund, b.want_ruhe = b.want_ruhe, None
+            self._pet_ruhe(grund)
 
     def _pet_leave(self) -> None:
         """Beim Verlassen von pet: Höhe, Roll und Detektorrate zurück."""
@@ -1631,8 +1698,12 @@ class App:
         if self.emotions is not None and not self.ruhe:
             try:
                 brain = getattr(self.behavior, "brain", None)          # pet: sucht oder streift
-                self.emotions.update(time.monotonic(), self.behavior.name, person, self.robot.state.battery,
-                                     self.robot.state.mode, sucht=getattr(brain, "task", None) is not None)
+                # pet: den Akku zeigt pet selbst (hungrig, erschöpft), kein shy; dudeln nur mit genug Energie
+                pet = self.behavior.name == "pet"
+                self.emotions.update(time.monotonic(), self.behavior.name, person,
+                                     None if pet else self.robot.state.battery, self.robot.state.mode,
+                                     sucht=(getattr(brain, "task", None) is not None
+                                            and getattr(brain, "dudeln_ok", True)))
             except Exception as e:                  # Anzeige darf die Regelung nie stören
                 log.warning("Emotion: %s", e)
 

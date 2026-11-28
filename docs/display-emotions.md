@@ -152,6 +152,7 @@ sleep mode → `aus`.
 |---|---|
 | Found | `freude.wav` (3 rising chirps, 0.5 s) when a person appears |
 | Lost | `trauer.wav` (2 falling "wah", 1.1 s) after `lost_s` (2 s) without person |
+| Hungry / exhausted (pet) | `pet_knurren_<n>.wav` (growling noise 150–700 Hz with tremolo, 0.9 s), `pet_gaehnen_<n>.wav` (rising, long falling with vibrato, 1.4 s); see [inner life](#inner-life-and-battery-xgonavinnenpy-2026-11-28) |
 | Fall | `pet_schrei_<n>.wav` (scream, 0.9 s) when firmware state goes 1 → 0 (tilt/fall fault); all modes, also with pipeline stopped |
 | Back up | `pet_aufrappeln_<n>.wav` (effortful rise + 2 chirps, 0.8 s) on the next balancing (1) after a fall, whoever triggered the stand-up; in `pet` also after a faint |
 | Mapping / searching | `pet_dudeln_<n>.wav` (cheerful "dum-di-dum-di-dum", 3 melodies, ~0.9 s) in `[emotion] dudeln_modes` (explore, patrol, home) and in `pet` while searching or roaming; first after `dudeln_start_s` 1.5 s, then every `dudeln_s` 25 s ±30 %; skipped while another sound plays (`emotion.Dudler`) |
@@ -250,7 +251,42 @@ It stands up by itself only if all hold:
 | still in mode `pet` (`POST /stop`, any mode change, web action 254) | stand-up cancelled |
 | IMU within `nap_tilt_deg` (5°) and wheels within `nap_moved_m` (1 cm) of the resting pose; `state` unchanged and not 0/250/251/252; all three known | stays down |
 | no detection in the image, any class among person/cat/dog, any confidence | waits; gives up after `nap_max_s` (60 s) |
-| battery known and > `battery_low` | as above |
+| battery known and > `battery_low`, and battery stage not exhausted/empty | as above |
 | fewer than `faint_max` (3) faints in 10 min | scare instead of faint |
 
 One attempt only.
+
+### Inner life and battery (`xgonav/innen.py`, 2026-11-28)
+
+Simulator and unit tests only, not run on the Rider. Drives only shift the existing times, speed, gestures, eyes and
+height: with a full battery, by day and rested every factor is exactly 1 (behaviour as before).
+
+| Battery (median 60 s, stage up only 3 points above the limit) | Stage | Behaviour |
+|---|---|---|
+| ≥ 60 % | munter | energy 1, as before |
+| 40–60 % | gesetzt | energy 0.85 |
+| 25–40 % | hungrig | energy 0.6; no driving (as before, `roam_battery`); person in view (zone mitte/nah/knien): begs (`grievance`, `wimmern`, head tilt) every `bettel_repeat_s` 120 s; alone: stomach growl (`knurren`) every `knurr_repeat_s` 180 s; detector at `doze_hz` without a target |
+| 10–25 % | erschoepft | `sad` + yawn (`gaehnen`); with start image and farther than 0.3 m from the start: drives home like `home` (allowed down to 10 %, nothing in view interrupts it, at most 180 s), then sets down and sleep mode; without: closes the eyes, after 2.5 s sets down and sleep mode. Lying: sleep mode. No faint, no stand-up |
+| < 10 % | leer | `sleep` + sigh, at once set down and sleep mode |
+
+| Drive | Source | Effect |
+|---|---|---|
+| energy | stage factor (1 / 0.85 / 0.6 / 0.35 / 0.15) × (1 − tiredness) × night factor | roaming after `roam_after_s` / (energy × (0.5 + `verspielt`)), also its repeat; dozing and set-down after `doze_s`, `timeout_s` × (0.3 + 0.7 E); speed (`drive_v`, path follower, time limits) and gestures × (0.6 + 0.4 E); eyelid at least min(0.35, (0.8 − E) / 2); blink rate 15 × (0.6 + 0.4 E) + 8 × arousal; base height − `hoehe_muede_mm` × (1 − E), never below `duck_mm`; dum-di-dum only while E ≥ 0.6 (off below 0.55) |
+| tiredness | driven metres + 0.1 m per rad turned, decays with 30 min | 0 up to `muede_ab_m` (20 m), 0.4 at `muede_m` (60 m) |
+| night | local time (Rider only, `App.uhr`) between `nacht_von` and `nacht_bis` (22–7) | energy × `nacht_energie` (0.7) |
+| longing | rises without a person in view over `gesellig_s` (600 s) × (0.5 + `anhaenglich`), falls within 20 s with a person near | ≥ `gesellig_freude` (0.6) and a person (no known face) after ≥ 20 s alone: reunion joy (`cute`, `traellern`, wiggle), longing back to 0.3 |
+| arousal | fright + joy (decays 10 s) | blink rate |
+| mood | 0.45 E + 0.35 (1 − longing) + 0.2 trust − 0.5 fright, smoothed 60 s | `info` only |
+| curiosity | time alone / scaled `roam_after_s` | `info`; at 1 (wants to roam but may not): glances twice as often |
+
+Sleep mode from pet (`App._pet_ruhe`): leaves pet first (height, roll back), then like the fear of the dark (sleep eyes,
+`set_ruhe`, `xgo-ruhe`). Charging watch (`innen.Ladewaechter`, every loop pass, also in sleep mode), only for a sleep
+mode pet started itself (a wake-up from web/MCP or a mode change forgets it):
+
+| Event | Reaction |
+|---|---|
+| battery (smoothed) ≥ 2 points above its minimum of the last 10 min, at the earliest 5 min after the load changed | purr (`gurren`, sound only, sleep eyes stay) |
+| battery ≥ `laden_wach` (90 %) | sleep mode off, eyes `aufwachen`, yawn, image processing on, mode `pet` lying (never stands up by itself) |
+
+`/status` → `pet`: `akku` {wert, stufe, laedt}, `energie`, `muede`, `gesellig`, `erregung`, `stimmung`, `neugier`.
+Pi cost: a few float operations per control step, a median of ≤ 60 values once a second.

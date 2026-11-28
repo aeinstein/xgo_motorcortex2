@@ -1087,6 +1087,7 @@ class SimRobot(Robot):
 
     def __init__(self, cfg: RobotCfg, log_cmds: bool = False, proc_dir: str | None = None):
         super().__init__(cfg)
+        self.akku_fn = None                  # Simulator: () -> Akku in % (tests/sim_run.py --akku), sonst 100
         self.log_cmds = log_cmds
         self.writes: list[tuple[float, str, int | str]] = []
         self._up_at: float | None = None     # Aufspringen läuft, balanciert ab dann
@@ -1187,7 +1188,10 @@ class SimRobot(Robot):
         if self._up_at is not None and now >= self._up_at:
             self.state.balancing, self.state.mode = True, 1
             self._up_at = None
-        self.state.battery = 100
+        akku = 100 if self.akku_fn is None else self.akku_fn()
+        if self.proc_dir and akku != self.state.battery and self.akku_fn is not None:
+            self._proc_schreiben("battery", str(akku))   # fürs Web (sim_rider)
+        self.state.battery = akku
         self.state.t = now
         if self.proc_dir:
             st = "1" if self.state.balancing else str(self.state.mode)

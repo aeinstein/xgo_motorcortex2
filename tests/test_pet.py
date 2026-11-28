@@ -433,7 +433,7 @@ def test_steht_nach_stoerung_nie_von_selbst_auf(stoerung):
 
 @pytest.mark.parametrize("sperre", [dict(battery=15), dict(battery=None)])
 def test_akku_verhindert_aufstehen(sperre):
-    b = brain(faint=True)
+    b = brain(faint=True, akku_ruhe=False)       # ohne Ruhemodus bei erschöpftem Akku (eigene Tests)
     t0 = bis_nap(b)
     lauf(b, t0, t0 + 62.0, **sperre)
     assert not b.want_stand_up and b.state == "liegt"
@@ -479,7 +479,7 @@ def test_hund_nah_ohnmacht_nur_wenn_erlaubt():
     assert b.state == "schreck"
 
 
-@pytest.mark.parametrize("kw,sense", [(dict(faint_max=0), {}), ({}, dict(battery=15))])
+@pytest.mark.parametrize("kw,sense", [(dict(faint_max=0), {}), (dict(akku_ruhe=False), dict(battery=15))])
 def test_keine_ohnmacht_bei_limit_oder_akku(kw, sense):
     b = brain(faint=True, **kw)
     b.update(Sense(t=0.0, seen=[seen("dog", 0.4, 0.0)], **sense))
@@ -1500,3 +1500,76 @@ def test_dreh_w_gemeinsamer_drehregler():
     assert dreh_w(math.radians(170), 1.5, 0.4, r) == pytest.approx(r.w_of(0.4))       # Obergrenze je Modus (Faktor)
     assert dreh_w(math.radians(40), 1.5, 0.8, r) == pytest.approx(math.degrees(1.5 * math.radians(40)) / r.vyaw_limit_dps)
     assert dreh_w(math.radians(2), 1.5, 0.4, r, w_min=0.0) == pytest.approx(math.degrees(1.5 * math.radians(2)) / r.vyaw_limit_dps)
+
+
+# ---- Innenleben mit Akku (xgonav/innen.py, Nutzer 2026-11-28) -------------------------------------------------
+FAHRBAR = dict(floor_ok=True, free_center=1.0)
+
+
+def test_akku_hungrig_bettelt_und_knurrt():
+    b = brain()
+    t, _, evs = run(b, 0.0, 2.0, battery=35)                    # allein: Magen knurrt
+    assert b.akku.stufe == "hungrig" and ("sound", "knurren", False) in evs
+    assert b.det_hz == b.cfg.doze_hz                            # ohne Ziel: Detektor langsam
+    t, _, evs = run(b, t, t + 3.0, lambda t: [seen("person", 2.0, t, vs=0)], battery=35)
+    assert ("emotion", "grievance", False) in evs and ("sound", "wimmern", False) in evs
+    assert b.det_hz == b.cfg.active_hz                          # mit Ziel: wie sonst
+    _, _, evs = run(b, t, t + 3.0, lambda t: [seen("person", 2.0, t, vs=0)], battery=35)
+    assert ("emotion", "grievance", False) not in evs           # erst nach bettel_repeat_s wieder
+
+
+def test_akku_erschoepft_ohne_startbild_ruhe():
+    b = brain()
+    t, _, evs = run(b, 0.0, 1.0, battery=20)
+    assert b.state == "aus" and b.want_ruhe is None             # gähnt noch
+    assert ("sound", "gaehnen", True) in evs
+    run(b, t, 3.0, battery=20)
+    assert b.want_ruhe == "erschöpft"
+
+
+def test_akku_erschoepft_mit_startbild_heim_dann_ruhe():
+    b = brain()
+    s = dict(battery=20, anker=True, heim_m=2.0, **FAHRBAR)    # unter roam_battery (40): heim trotzdem
+    t, _, _ = run(b, 0.0, 0.5, **s)
+    assert b.task == "heim" and b._akku_heim and b.want_ruhe is None
+    t, _, _ = run(b, t, t + 1.0, lambda t: [seen("person", 2.0, t, vs=0)], **s)
+    assert b.task == "heim"                                     # eine Person lenkt ihn nicht ab
+    b.heim_ende("am Start")
+    run(b, t, t + 0.5, **s)
+    assert b.want_ruhe is not None and b.state == "aus"
+
+
+def test_akku_leer_sofort_ruhe():
+    b = brain()
+    _, _, evs = run(b, 0.0, 0.2, battery=8)
+    assert b.want_ruhe == "Akku leer" and ("emotion", "sleep", True) in evs
+
+
+def test_akku_erschoepft_liegend_ruhe():
+    b = brain()
+    b.update(Sense(t=0.0, balancing=False, fw_mode=254, battery=20))
+    assert b.state in ("liegt", "aus")
+    t = 0.05
+    while t < 4.0 and b.want_ruhe is None:
+        b.update(Sense(t=t, balancing=False, fw_mode=254, battery=20))
+        t += 0.05
+    assert b.want_ruhe == "erschöpft"
+
+
+def test_wiedersehensfreude():
+    b = brain(gesellig_s=20.0, gestures=False)                 # vermisst schnell
+    t, _, _ = run(b, 0.0, 30.0)
+    assert b.innen.gesellig >= b.cfg.gesellig_freude
+    _, _, evs = run(b, t, t + 1.5, lambda t: [seen("person", 2.5, t, vs=0)])
+    assert ("emotion", "cute", False) in evs and ("sound", "traellern", False) in evs
+    assert b.innen.gesellig < 0.35
+
+
+def test_muede_augen_und_hoehe():
+    b = brain(height_mm=100.0)
+    run(b, 0.0, 1.0, battery=35)                                # hungrig: Energie 0,6
+    _, acts, _ = run(b, 1.0, 1.5, lambda t: [seen("person", 2.0, t, vs=0)], battery=35)
+    x, y, lid, nah, rate = b.augen_ziel
+    assert lid == pytest.approx(0.1) and rate == pytest.approx(15 * 0.84)
+    assert acts[-1].height_mm == pytest.approx(100.0 - 6.0 * 0.4)
+    assert b.info()["akku"]["stufe"] == "hungrig" and b.info()["energie"] == pytest.approx(0.6)

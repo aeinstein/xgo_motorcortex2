@@ -3427,6 +3427,144 @@
        "typ": "str",
        "default": "/opt/xgonav/eyes_gaze",
        "hilfe": "von tools/eyes.py --gaze (deploy/install.sh)"
+      },
+      {
+       "key": "akku_gesetzt",
+       "typ": "int",
+       "default": 60,
+       "hilfe": "Innenleben mit Akku (xgonav/innen.py, Nutzer 2026-11-28): Akku geglättet in Stufen munter / gesetzt / hungrig / erschöpft / Akku leer; Triebe (Energie, Geselligkeit, Erregung) verschieben die Zeiten oben, Tempo, Gesten, Augen und Höhe. Bei vollem Akku, am Tag und ausgeruht ist jeder Faktor 1 (Verhalten wie ohne Innenleben). %: darunter gesetzt (ruhiger)"
+      },
+      {
+       "key": "akku_hungrig",
+       "typ": "int",
+       "default": 40,
+       "hilfe": "%: darunter hungrig (kein Streifen, bettelt, knurrt, Detektor auf doze_hz)"
+      },
+      {
+       "key": "akku_erschoepft",
+       "typ": "int",
+       "default": 25,
+       "hilfe": "%: darunter erschöpft (heim mit Startbild, absetzen, Ruhemodus)"
+      },
+      {
+       "key": "akku_leer",
+       "typ": "int",
+       "default": 10,
+       "hilfe": "%: darunter Akku leer (sofort absetzen, Ruhemodus)"
+      },
+      {
+       "key": "akku_hyst",
+       "typ": "int",
+       "default": 3,
+       "hilfe": "%: eine Stufe hinauf erst so weit über ihrer Grenze"
+      },
+      {
+       "key": "akku_median_s",
+       "typ": "float",
+       "default": 60.0,
+       "hilfe": "Glättung: Median über so viele Sekunden (beim Fahren sackt der Wert ab)"
+      },
+      {
+       "key": "akku_ruhe",
+       "typ": "bool",
+       "default": true,
+       "hilfe": "erschöpft/leer: absetzen und Ruhemodus (false: nichts)"
+      },
+      {
+       "key": "akku_heim",
+       "typ": "bool",
+       "default": true,
+       "hilfe": "erschöpft: mit Startbild erst zum Startpunkt (auch unter roam_battery)"
+      },
+      {
+       "key": "laden_punkte",
+       "typ": "int",
+       "default": 2,
+       "hilfe": "Laden erkannt: geglättet so viele Punkte über dem Minimum ..."
+      },
+      {
+       "key": "laden_fenster_s",
+       "typ": "float",
+       "default": 600.0,
+       "hilfe": "... der letzten so vielen Sekunden, ohne Fahrt (nur im Ruhemodus von pet)"
+      },
+      {
+       "key": "laden_wach",
+       "typ": "int",
+       "default": 90,
+       "hilfe": "%: geladen, Ruhemodus von pet aus, liegend weiter in pet (0 = nie von selbst)"
+      },
+      {
+       "key": "bettel_repeat_s",
+       "typ": "float",
+       "default": 120.0,
+       "hilfe": "hungrig, Person in Sicht: betteln (grievance, wimmern, Kopf schief)"
+      },
+      {
+       "key": "knurr_repeat_s",
+       "typ": "float",
+       "default": 180.0,
+       "hilfe": "hungrig, allein: Magenknurren"
+      },
+      {
+       "key": "muede_ab_m",
+       "typ": "float",
+       "default": 20.0,
+       "hilfe": "Müdigkeit: gefahrene Meter (+ 0,1 m je rad Drehung, Zerfall 30 min) ab hier ..."
+      },
+      {
+       "key": "muede_m",
+       "typ": "float",
+       "default": 60.0,
+       "hilfe": "... bis hier steigt sie auf höchstens 0,4"
+      },
+      {
+       "key": "nacht_von",
+       "typ": "float",
+       "default": 22.0,
+       "hilfe": "Uhrzeit (h): nachts weniger Energie"
+      },
+      {
+       "key": "nacht_bis",
+       "typ": "float",
+       "default": 7.0,
+       "hilfe": ""
+      },
+      {
+       "key": "nacht_energie",
+       "typ": "float",
+       "default": 0.7,
+       "hilfe": "Energie-Faktor nachts"
+      },
+      {
+       "key": "gesellig_s",
+       "typ": "float",
+       "default": 600.0,
+       "hilfe": "Geselligkeit (Sehnsucht) steigt allein in so vielen Sekunden von 0 auf 1"
+      },
+      {
+       "key": "gesellig_freude",
+       "typ": "float",
+       "default": 0.6,
+       "hilfe": "ab dieser Sehnsucht: Wiedersehensfreude (like, trällern, wackeln)"
+      },
+      {
+       "key": "hoehe_muede_mm",
+       "typ": "float",
+       "default": 6.0,
+       "hilfe": "müde: Grundhöhe bis so viel tiefer (nie unter duck_mm)"
+      },
+      {
+       "key": "verspielt",
+       "typ": "float",
+       "default": 0.5,
+       "hilfe": "Persönlichkeit 0..1: 0,5 = Standard; höher streift er früher"
+      },
+      {
+       "key": "anhaenglich",
+       "typ": "float",
+       "default": 0.5,
+       "hilfe": "Persönlichkeit 0..1: 0,5 = Standard; höher vermisst er schneller"
       }
      ]
     },

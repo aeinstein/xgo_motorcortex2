@@ -84,6 +84,9 @@ def main(argv=None) -> int:
     if cfg.output.web_port:
         from .web import serve
         serve(app, cfg.output.web_host, cfg.output.web_port, cfg.output.web_fps, cfg.cpu.render_cpus)
+    if kind == "proc":
+        # Ortszeit fürs Innenleben von pet (nachts weniger Energie); Simulator und Tests ohne Uhr
+        app.uhr = lambda: (lambda lt: lt.tm_hour + lt.tm_min / 60.0)(time.localtime())
     augen = None
     if kind == "proc" and cfg.emotion.augen_fifo:
         # Augengenerator im Display-Daemon: pet-Augen und Emotionen als Befehle statt Bilder

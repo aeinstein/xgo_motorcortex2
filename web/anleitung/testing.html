@@ -1457,6 +1457,16 @@
 <td>&lt;1 s</td>
 </tr>
 <tr>
+<td><code>python -m pytest -q tests/test_innen.py</code></td>
+<td>inner life of pet: battery median and stages with hysteresis, charging only at rest, drive factors exactly 1 at full energy, tiredness, night, longing, charging watch; app in the simulator: empty battery → sleep mode, charged → pet again (lying)</td>
+<td>~4 s</td>
+</tr>
+<tr>
+<td><code>python tests/sim_run.py pet 200 --wheels --dyn --rider --akku 50,10</code></td>
+<td>battery falls 10 %/min from 50 %: hungry, exhausted → home (start image) → set down + sleep mode; prints <code>ruhe</code>, <code>akku_app</code>, <code>lade_schlaf</code></td>
+<td></td>
+</tr>
+<tr>
 <td><code>python -m pytest -q tests/test_pet.py</code></td>
 <td>mode <code>pet</code>: synthetic distance tracks, budgets, every stand-up condition</td>
 <td>&lt;1 s</td>

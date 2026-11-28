@@ -49,6 +49,7 @@ class World:
     # der Rider steht vor dem Hindernis, ohne wegzudrehen (RiderPi 2026-11-04).
     path_blocked: bool = False
     battery: int | None = None        # % oder None (unbekannt)
+    stunde: float | None = None       # Ortszeit in Stunden (nur am Rider, App.uhr), fürs Innenleben von pet
     # Für den Modus pet (xgonav/pet.py), sonst nicht gefüllt
     ds: float = 0.0                   # Strecke seit dem letzten Regelschritt (m)
     ds_measured: bool = False         # ds stammt von den Rädern, nicht aus dem Fahrbefehl
