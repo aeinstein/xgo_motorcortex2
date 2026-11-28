@@ -63,7 +63,7 @@ cat /proc/XGORider/serial_stats; cat /proc/XGORider/imu
 | `height` | rw | u8 0..255 (web UI min 43); read: last written value, empty until first write; not reset when the firmware stands up at 128 | 0x35 |
 | `roll` | rw | int −20..20 °, mapped linearly to 0..255; read: last written value, empty until first write | 0x36 |
 | `roll_balance` | w | 0/1 | 0x61 |
-| `action` | w | u8; R-1.1.6+patch: 1..6 actions, 237 restart the ESP32 (firmware patch 05-actions, refused while balancing), 253 stand up from lying, 254 disarm/emergency stop, 255 arm, 0 = no action | 0x3e |
+| `action` | w | u8; R-1.1.6+patch: 1..6 actions, 233/234 Pi up / shutting down, 235 Pi off (sent by the driver, see below), 237 restart the ESP32 (firmware patch 05-actions, refused while balancing), 253 stand up from lying, 254 disarm/emergency stop, 255 arm, 0 = no action | 0x3e |
 | `leds/0`..`leds/3` | w | `#RRGGBB` | 0x69..0x6c |
 | `battery` | r | % | 0x01 |
 | `state` | r | firmware state: 1 = balancing, 254 = lying (set down by action 254, LEDs orange), 0 = fallen (tilt, LEDs red; with firmware patch 05-actions stays until a command, also upright), 253 = ready (disarmed, starts when upright), 250 = low battery, 251 = actuator fault, 252 = other fault; names in `robot.FW_ZUSTAND` | |
@@ -95,6 +95,20 @@ cat /proc/XGORider/serial_stats; cat /proc/XGORider/imu
 | `calibration` | — | write 1 = start leg calibration (motors limp), 0 = **save** zero points to flash |
 | `pitch_calibration` | — | write 1: firmware balances in place, stores pitch trim (reg 0x09); Rider must balance |
 
+## Pi off signal (action 235)
+
+| When | Sent by | Value |
+|---|---|---|
+| module load | driver (`send_pi_on`) | 233: clears 234/235 |
+| shutdown starts (systemd stops units) | `xgo-shutdown-led.service` | 234: LEDs blue |
+| last moment: reboot notifier, priority `INT_MIN` | driver (`xgo_reboot_notify` → `send_pi_off`) | 235 on poweroff, halt **and** reboot |
+
+- Notifier runs in `kernel_shutdown_prepare()` before `device_shutdown()`: userspace gone, filesystems unmounted, UART still up. Driver waits 20 ms for the 9 bytes to leave.
+- After 235 the send queue refuses all writes (`-ESHUTDOWN`); read requests still pass. 235 is always the last write.
+- Firmware (patch 06-leds): sets down like 254 (wheels off, legs limp), IMU stream off, LEDs blink blue 3× then off. Cleared by 233, arm/stand-up (255/253), ESP restart. Accepted at low battery.
+- No signal on `emergency_restart` (SysRq b), panic, power loss. Kernel log of the notifier is not in the journal (already unmounted): check on the ESP32 USB console (`pi off: stop, imu stream off, leds`).
+- Pi cost: none at runtime.
+
 ## UART raw mode (required)
 
 `deploy/rc.local`:
@@ -117,6 +131,7 @@ stty -F /dev/ttyAMA0 115200 cs8 -cstopb -parenb -brkint -imaxbel -opost -onlcr -
 ```
 driver-test/run.sh kernel_module [seconds=6] [imu_hz=50] [--wheels --combo] [--stream[=HZ] | --stream-off] [--tunnel] [--faults]
 ```
+Always checked (`PIOFFTEST`): 233 is the first action, 235 the last write while other threads keep writing, writes after it return `-ESHUTDOWN`.
 `--tunnel` (firmware patch 01-ble): the emulator sends data through the BLE tunnel (frames type 0x15), the harness echoes it via register 0x17; checked complete and in order next to polling and stream (2026-11-20 with `--stream --faults`: 892 bytes in 45 records, none dropped).
 Compiles the real `xgo-serial.c` and IMU code against `kshim.h`, runs it against `esp32_emu.py`. Without `--wheels --combo` the emulator has no 0x0d and the driver does not poll IMU/wheels (stream only).
 Result (polling 0x0d): 49 Hz at target 50, pitch error 0.06° median, parser recovers from drops, noise bytes, bad checksums.

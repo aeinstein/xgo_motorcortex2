@@ -270,7 +270,7 @@ index e6276d0..f50eb2e 100644
      o.position=o.physical_position=control::wheelDistance(i.encoder11,i.encoder21);
      o.valid=std::isfinite(o.command.filtered_forward)&&std::isfinite(o.command.filtered_turn)&&
 diff --git a/firmware/src/main.cpp b/firmware/src/main.cpp
-index 678c674..4798539 100644
+index c6752b1..46e6741 100644
 --- a/firmware/src/main.cpp
 +++ b/firmware/src/main.cpp
 @@ -99,6 +99,9 @@ constexpr const char* kBuildId="rider2-rl-only | rider_balance_v6 | lift guard v
@@ -282,8 +282,8 @@ index 678c674..4798539 100644
 +volatile bool curve_lean_enabled=false;
  // Pi fährt herunter (Aktion 234 an / 233 aus, !shutdown on|off): LEDs blau, sonst nichts. Nicht gespeichert.
  volatile bool shutdown_leds=false;
- // Ausgleich des Gleichgewichtspunkts: Die Lagefusion liefert den wahren Nick, der gespeicherte Nick-Trimm ist
-@@ -195,6 +198,7 @@ public:
+ // Pi ist aus (Aktion 235, !shutdown pi): der Treiber sendet sie als letzten Befehl beim Ausschalten und Neustart des Pi.
+@@ -200,6 +203,7 @@ public:
      uint8_t sensor_loops=0,trim_stage=0;
      rider2::lift::State lift_state;rider2::lift::Config lift_config;bool lift_acting=false;uint32_t control_dt_us=0;
      rider2::lift::Log lift_log;   // überlebt stop(), Register 0x19
@@ -291,15 +291,15 @@ index 678c674..4798539 100644
      int16_t diag_ctrl11=0,diag_ctrl21=0;   // classic controller output before gain/smoothing/slew (0x0e)
      rider::control::YawBiasTracker yaw_bias_tracker;   // gyro-z bias tracking
      float ctrlPitch() const {return s.imu.pitch_deg+kBalanceOffsetDeg;}   // Nick für Regler und Wächter
-@@ -386,6 +390,7 @@ public:
-             else if(value==253)standup();
-             else if(value==237)restart();
-             else if(value==234||value==233){shutdown_leds=value==234;result(value==234?"shutdown leds on":"shutdown leds off");}
+@@ -395,6 +399,7 @@ public:
+                 emergencyStop();imuStreamPeriodUs.store(0);pi_off_ms=now;pi_off=true;
+                 result("pi off: stop, imu stream off, leds");}
+             else if(value==234||value==233){shutdown_leds=value==234;if(value==233)pi_off=false;result(value==234?"shutdown leds on":"shutdown leds off");}
 +            else if(value==232||value==231){curve_lean_enabled=value==232;result(value==232?"curve lean on":"curve lean off");}
              else if(!leg_calibrating)actions.request(value,now);
              break;
          case CommandKind::PositionHoldProtection:a.hold_protection=value!=0;break;
-@@ -711,6 +716,16 @@ public:
+@@ -720,6 +725,16 @@ public:
  #endif
          request.roll_phase=a.roll_phase;request.height_phase=a.height_phase;
          request.leveling=a.leveling;request.heading_hold=a.heading_hold;request.hold_protection=a.hold_protection;request.heading_term_limit=heading_limit;
@@ -316,7 +316,7 @@ index 678c674..4798539 100644
          s.motion=controller.step(in,request);a.roll_phase=request.roll_phase;a.height_phase=request.height_phase;
          diag_ctrl11=s.motion.wheels.id11;diag_ctrl21=s.motion.wheels.id21;
          if(!s.motion.valid){actions.requestMode(252,true);stop(StopReason::InvalidControl,true);result("invalid control output; stop latched");}
-@@ -811,7 +826,7 @@ public:
+@@ -820,7 +835,7 @@ public:
      // 6/8 i16 Reglerausgang 11/21 | 10/12 i16 an den Bus 11/21 | 14 i16 Balance-Ausgang |
      // 16 i16 Soll-Nick x100 (°) | 18 i16 gemessener Nick + Bias x100 (°) |
      // 20 i16 Positionshalten-Korrektur x10 | 22 u8 Haltemodus | 23 u8 Flags (bit0 fährt,
@@ -325,7 +325,7 @@ index 678c674..4798539 100644
      // 26 i16 Halteposition (mm, läuft über) | 28 i16 gefiltert vorwärts x10 | 30 i16 gefiltert Drehung x10
      void fillDiag(uint8_t* d) {
          auto i16=[](float v){return int16_t(std::max(-32768.0f,std::min(32767.0f,std::isfinite(v)?std::round(v):0.0f)));};
-@@ -826,6 +841,7 @@ public:
+@@ -835,6 +850,7 @@ public:
          put(20,i16(s.motion.hold.correction*10.0f));
          d[22]=s.motion.hold.mode;
          d[23]=uint8_t((driving?1:0)|(lift_acting?2:0)
@@ -333,7 +333,7 @@ index 678c674..4798539 100644
              );
          put(24,wrap_mm(s.motion.physical_position));put(26,wrap_mm(controller.holdPosition()));
          put(28,i16(s.motion.command.filtered_forward*10.0f));put(30,i16(s.motion.command.filtered_turn*10.0f));
-@@ -1023,6 +1039,8 @@ void console(const char* line,Print& out) {
+@@ -1032,6 +1048,8 @@ void console(const char* line,Print& out) {
      Event e;
      if(!strcmp(line,"!arm")){e.kind=EventKind::Arm;enqueue(e);return;}
      if(!strcmp(line,"!standup")){valueCommand(CommandKind::Action,253,out);return;}
@@ -341,11 +341,11 @@ index 678c674..4798539 100644
 +    if(!strcmp(line,"!lean off")){valueCommand(CommandKind::Action,231,out);return;}
      if(!strcmp(line,"!shutdown on")){valueCommand(CommandKind::Action,234,out);return;}
      if(!strcmp(line,"!shutdown off")){valueCommand(CommandKind::Action,233,out);return;}
-     if(!strcmp(line,"!restart")){valueCommand(CommandKind::Action,237,out);return;}   // nur wenn er nicht balanciert
-@@ -1099,6 +1117,7 @@ void console(const char* line,Print& out) {
+     if(!strcmp(line,"!shutdown pi")){valueCommand(CommandKind::Action,235,out);return;}
+@@ -1109,6 +1127,7 @@ void console(const char* line,Print& out) {
      out.print("!status | !policy off/shadow/active/status | !stop | !arm | !neutral | !move FORWARD TURN (bytes,128 neutral) | !height BYTE | !roll BYTE | !action 0..6/255 | !loop 0/1 | !level 0/1 | !heading 0/1 | !heightwave BYTE | !rollwave BYTE | !maxforward BYTE | !maxturn BYTE | !rgb INDEX R G B | !cal begin | !cal save | !trim | !odom reset | !trace dump | !trace usb on/off | !liftguard on/off/status | !fallguard on/off/status/clear/ms N | !dzcomp [off|on|reset|MAX [HYST [RAMP [START [GROW]]]]]");
      out.print(" | !standup | !restart");
-     out.print(" | !led BYTE | !shutdown on/off");
+     out.print(" | !led BYTE | !shutdown on/off/pi");
 +    out.print(" | !lean on/off");
      out.println();
  }

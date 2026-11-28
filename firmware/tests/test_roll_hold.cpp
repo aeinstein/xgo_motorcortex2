@@ -94,10 +94,10 @@ static void testShutdownLeds() {
     using namespace rider::board;
     LedControl c;
     LedPixels px{};
-    check(!renderShutdownLeds(c, px), "Shutdown aus: nichts zu zeichnen");
+    check(!renderShutdownLeds(c, 0, px), "Shutdown aus: nichts zu zeichnen");
     c.shutdown = true;
     c.robot_mode = 0; c.fault = LedFault::Tilt;
-    bool blue = renderShutdownLeds(c, px);
+    bool blue = renderShutdownLeds(c, 0, px);
     for (const auto& p : px) blue = blue && p.r == 0 && p.g == 0 && p.b == kShutdownColor.b;
     check(blue, "Shutdown an: alle LEDs blau, auch über der Kippfarbe");
     c.shutdown = false;

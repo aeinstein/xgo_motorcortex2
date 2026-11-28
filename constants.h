@@ -29,6 +29,9 @@
 #define XGO_BODYHEIGHT 0x35
 #define XGO_ROTATE_X_PERIODIC 0x39
 #define XGO_ACTION 0x3e
+#define XGO_ACTION_SHUTDOWN_LEDS 234   // Firmware-Patch 06-leds: Pi fährt herunter, LEDs blau (xgo-shutdown-led.service)
+#define XGO_ACTION_PI_ON 233           // hebt 234 und 235 auf (Treiber beim Laden, xgonav beim Start)
+#define XGO_ACTION_PI_OFF 235          // Pi ist aus: Treiber zuletzt aus dem Reboot-Notifier; Firmware setzt ab, LEDs, Strom sparen
 #define XGO_ROLL_ANGLE 0x36      // Roll-Sollwinkel, 0..255 -> -20..+20 Grad
 #define XGO_ROLL_MAX_DEG 20
 #define XGO_IMU 0x61

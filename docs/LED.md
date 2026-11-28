@@ -40,7 +40,8 @@ Fault colour depends on `last_stop_reason` (`ledFaultFor(driving,last_stop)`), n
 
 | Colour | Pattern | Meaning |
 |---|---|---|
-| **Blue** (R0 G0 B200), steady, all 4 | constant | **Pi shut down** (action 234, set by `xgo-shutdown-led.service` on Pi shutdown/reboot). Before every other display, nothing else changes; cleared by action 233 (xgonav on start) or ESP restart. |
+| **Blue** (R0 G0 B200), steady, all 4 | constant | **Pi shutting down** (action 234, set by `xgo-shutdown-led.service` on Pi shutdown/reboot). Before every other display, nothing else changes; cleared by action 233 (driver on load, xgonav on start) or ESP restart. |
+| **Blue** blinking 3× (250 ms on/off), then **all off** | 1.5 s, then dark | **Pi off** (action 235, sent by the driver as last command on poweroff/halt/reboot): Rider also sets down (like 254) and stops the IMU stream. Before every other display, also before 234. Cleared by 233, arm/stand-up (255/253) or ESP restart. |
 
 ## Low battery
 

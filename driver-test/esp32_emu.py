@@ -200,6 +200,8 @@ def serve():
             mode, addr = fr[3], fr[4]
             if mode == 0x01:
                 stats["write"] += 1
+                wdata = fr[5:ln - 3]
+                writes_log.append((addr, bytes(wdata), fr[ln - 3] == 255 - ((ln + mode + addr + sum(wdata)) % 256)))
                 if addr == 0x11 and STREAM and len(fr) >= 6:
                     if fr[5] and not stream_rate:
                         stats["stream_on"] += 1
@@ -247,6 +249,7 @@ def serve():
                 send(out)
 
 
+writes_log = []   # alle Schreibbefehle (Register, Daten, Prüfsumme ok) in Ankunftsreihenfolge
 th = threading.Thread(target=serve, daemon=True)
 th.start()
 threading.Thread(target=streamer, daemon=True).start()
@@ -277,6 +280,14 @@ if HOEHE or hoehen:
     ok = HOEHE and len(hoehen) > 5 and max(he) <= 30 and samples and len(samples) > 5
     print("HOEHETEST %s: %d Proben, Abweichung max %d (x100-Skala)" % ("ok" if ok else "FEHLER", len(hoehen), max(he) if he else -1))
 print("EMU", stats)
+# Pi-Zustand: 233 beim Laden zuerst, 235 (Reboot-Notifier) als letzter Schreibbefehl, danach abgewiesen
+_act = [(i, d) for i, (a, d, ok) in enumerate(writes_log) if a == 0x3e and ok and len(d) == 1]
+_after = next((l.split()[-1] for l in lines if l.startswith("PIOFF danach ")), "")
+_ok = (_act and _act[0][1] == bytes([233]) and _act[-1][1] == bytes([235]) and _act[-1][0] == len(writes_log) - 1
+       and sum(1 for _, d in _act if d == bytes([235])) == 1 and _after.startswith("-"))
+print("PIOFFTEST %s: %d Aktionen, letzte %s, Schreibbefehle danach %d, Schreiben nach 235 -> %s"
+      % ("ok" if _ok else "FEHLER", len(_act), _act[-1][1][0] if _act else "-",
+         len(writes_log) - 1 - _act[-1][0] if _act else -1, _after or "-"))
 if VEL:
     sent = [bytes.fromhex(l.split()[1]) for l in lines if l.startswith("VELSENT ")]
     lsent = [bytes.fromhex(l.split()[1]) for l in lines if l.startswith("VELLIM ")]

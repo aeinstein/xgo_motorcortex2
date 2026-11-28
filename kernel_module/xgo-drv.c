@@ -266,6 +266,25 @@ static void checkState(void) {
     }
 }
 
+/*
+ * Letzter Moment vor dem Abschalten: kernel_power_off()/kernel_restart() rufen die Reboot-Notifier vor
+ * device_shutdown(); der Userspace ist dann beendet, die Dateisysteme sind ausgehängt, die UART läuft noch.
+ * INT_MIN = als letzter Notifier. Bei poweroff, halt und reboot dasselbe: Aktion 235 (Pi aus).
+ * Kein Signal bei emergency_restart (SysRq b), Panic oder Stromverlust.
+ */
+static int xgo_reboot_notify(struct notifier_block *nb, unsigned long code, void *unused) {
+    cancel_delayed_work_sync(&motion_wd);
+    pr_info("XGORider: %s -> Aktion %d (Pi aus)\n",
+            code == SYS_RESTART ? "Neustart" : code == SYS_HALT ? "Halt" : "Ausschalten", XGO_ACTION_PI_OFF);
+    send_pi_off();
+    return NOTIFY_DONE;
+}
+
+static struct notifier_block xgo_reboot_nb = {
+    .notifier_call = xgo_reboot_notify,
+    .priority = INT_MIN,
+};
+
 static int __init imu_proc_init(void) {
   	pr_info("              ******       ******");
 	pr_info("            **********   **********");
@@ -319,8 +338,17 @@ static int __init imu_proc_init(void) {
         imu_thread = NULL;
         goto err_main;
     }
+
+    send_pi_on();
+    ret = register_reboot_notifier(&xgo_reboot_nb);
+    if (ret) {
+        pr_err("XGORider: Reboot-Notifier nicht registriert (%d)\n", ret);
+        goto err_imu;
+    }
     return 0;
 
+err_imu:
+    kthread_stop(imu_thread);
 err_main:
     kthread_stop(thread);
 err_fs:
@@ -333,6 +361,7 @@ err_serial:
 }
 
 static void __exit imu_proc_exit(void) {
+    unregister_reboot_notifier(&xgo_reboot_nb);
     cancel_delayed_work_sync(&motion_wd);
     // Reader zuerst stoppen, solange IMU/Main noch abfragen -> es kommen Bytes,
     // kernel_read kehrt zurück, der Thread sieht kthread_should_stop().

@@ -340,7 +340,7 @@ index 776c330..e0bb356 100644
  void addWheelFriction(Wheels &);
  
 diff --git a/firmware/src/main.cpp b/firmware/src/main.cpp
-index 4798539..49c374c 100644
+index 46e6741..b4ef2c8 100644
 --- a/firmware/src/main.cpp
 +++ b/firmware/src/main.cpp
 @@ -28,6 +28,7 @@ extern "C" {extern const volatile uint32_t rider_rl_only_build=0x524c4f31;}
@@ -362,7 +362,7 @@ index 4798539..49c374c 100644
  // In schnellen Kurven einlegen (Aktion 232 an / 231 aus, !lean on|off): Roll halten regelt auf
  // -atan(v * Gierrate / g) statt auf 0 (control::updateCurveLean). Default aus, nicht gespeichert.
  volatile bool curve_lean_enabled=false;
-@@ -198,6 +203,9 @@ public:
+@@ -203,6 +208,9 @@ public:
      uint8_t sensor_loops=0,trim_stage=0;
      rider2::lift::State lift_state;rider2::lift::Config lift_config;bool lift_acting=false;uint32_t control_dt_us=0;
      rider2::lift::Log lift_log;   // überlebt stop(), Register 0x19
@@ -372,7 +372,7 @@ index 4798539..49c374c 100644
      rider::control::CurveLean curve_lean{};uint32_t lean_us=0;
      int16_t diag_ctrl11=0,diag_ctrl21=0;   // classic controller output before gain/smoothing/slew (0x0e)
      rider::control::YawBiasTracker yaw_bias_tracker;   // gyro-z bias tracking
-@@ -206,7 +214,6 @@ public:
+@@ -211,7 +219,6 @@ public:
      rider2::fall::State fall_state,fall_deep_state;rider2::fall::Config fall_config,fall_deep_config=rider2::fall::deepConfig();uint32_t fall_last_us=0;
      double trim_to_save=0;
      bool save_trim_pending=false;
@@ -380,7 +380,7 @@ index 4798539..49c374c 100644
      void result(const char* text){std::snprintf(s.last_result,sizeof s.last_result,"%s",text);}
      void resetFusion(){s.imu={};s.imu.last_us=micros();imu_valid=false;imu_low_g_only=false;controller.reset(millis());policy.resetHistory();}
      bool prepareMotorBus() {
-@@ -249,6 +256,7 @@ public:
+@@ -254,6 +261,7 @@ public:
          loadExtendedTrim();
      }
      void stop(StopReason reason,bool latch) {
@@ -388,7 +388,7 @@ index 4798539..49c374c 100644
          if(!manual_stop||latch)s.last_stop_reason=reason;
          if(driving)standup_phase=false;
          if(latch)standup_requested=false;
-@@ -304,6 +312,7 @@ public:
+@@ -309,6 +317,7 @@ public:
          {auto& st=actions.state();if(st.command.height==0)st.command.height=128;}
  #endif
          cancelTrim();
@@ -396,7 +396,7 @@ index 4798539..49c374c 100644
          manual_stop=false;actions.cancel(millis());actions.requestMode(253,true);
          controller.reset(millis(),s.imu.yaw_deg);policy.resetHistory();stop_sent=false;
          auto_rearm_ticks=0;
-@@ -379,13 +388,25 @@ public:
+@@ -385,13 +394,25 @@ public:
          case CommandKind::YawSlew:yaw_slew_per_second=1000.0f+float(value)*18000.0f/255.0f;result("yaw slew updated");break;
          case CommandKind::HeadingHold:a.heading_hold=value!=0;break;
          case CommandKind::LedBrightness:rider::board::setLedBrightness(value);result("led brightness updated");break;   // n/256
@@ -424,7 +424,7 @@ index 4798539..49c374c 100644
              if(value==255)arm();else if(value==254)emergencyStop();
              else if(value==253)standup();
              else if(value==237)restart();
-@@ -395,10 +416,6 @@ public:
+@@ -404,10 +425,6 @@ public:
              break;
          case CommandKind::PositionHoldProtection:a.hold_protection=value!=0;break;
          case CommandKind::Leveling:a.leveling=value!=0;break;
@@ -435,7 +435,7 @@ index 4798539..49c374c 100644
          case CommandKind::Rgb0:case CommandKind::Rgb1:case CommandKind::Rgb2:case CommandKind::Rgb3:
              if(e.length==12){for(uint8_t n=0;n<4;++n)board.setUserLed(n,e.data[n*3],e.data[n*3+1],e.data[n*3+2]);}
              else board.setUserLed(uint8_t(e.reg-0x69),e.data[0],e.data[1],e.data[2]);
-@@ -420,7 +437,7 @@ public:
+@@ -429,7 +446,7 @@ public:
          for(unsigned n=0;n<4&&xQueueReceive(commands,&event,0)==pdTRUE;++n) {
              switch(event.kind){
              case EventKind::Arm:arm();break;
@@ -444,7 +444,7 @@ index 4798539..49c374c 100644
              case EventKind::ResetOdometry:odometry={};odometry.last_ms=millis();break;
              case EventKind::Protocol:dispatch(event.command);break;
              }
-@@ -506,7 +523,7 @@ public:
+@@ -515,7 +532,7 @@ public:
          default:break;
          }
          const auto power=board.state();
@@ -453,7 +453,7 @@ index 4798539..49c374c 100644
          if(power.stop_required)actions.requestMode(250,true);
          // Akku-Warnung aufgehoben -> aus 250 nach 253 (disarmed, bereit; Aufstehen mit 253/255)
          if(battery_low_seen&&!power.low_stage){
-@@ -526,6 +543,7 @@ public:
+@@ -535,6 +552,7 @@ public:
  #if !RIDER2_RL_ONLY
          if(!trim_stage)return;
          if(trim_stage==1){actions.enable(millis());s.calibration.pitch_trim=0;trim_stage=2;trim_stable=0;}
@@ -461,7 +461,7 @@ index 4798539..49c374c 100644
          auto& a=actions.state();a.command.forward=a.command.turn=a.command.roll=128;a.command.height=144;
          a.action_id=0;a.roll_phase=a.height_phase=0;
          if(!driving||a.mode!=1||outputGuard(guard(millis()))!=StopReason::None){trim_stable=0;return;}
-@@ -709,13 +727,34 @@ public:
+@@ -718,13 +736,34 @@ public:
          in.encoder11=bus.sample(11).encoder_ticks;in.encoder21=bus.sample(21).encoder_ticks;in.leg12_position=bus.sample(12).position_ticks;
          in.zero_a=s.calibration.zero_a;in.zero_b=s.calibration.zero_b;in.pitch_trim=s.calibration.pitch_trim;
          request.command=a.command;
@@ -497,7 +497,7 @@ index 4798539..49c374c 100644
          // Positionshalten auch beim Drehen auf der Stelle, Integral beim Fahren (Byteweg)
          request.turn_hold=true;request.drive_integral=true;
          // Roll laufend auf 0 halten, nur balancierend und ohne eigenen Rollbefehl (Gesten, Rollwelle)
-@@ -899,6 +938,7 @@ public:
+@@ -908,6 +947,7 @@ public:
          fillDiag(t.diag);
          fillRawDiag(t.rawdiag);
          fillLiftDiag(t.liftdiag);
@@ -505,7 +505,7 @@ index 4798539..49c374c 100644
          t.leg12_zero=s.calibration.zero_a;t.leg22_zero=s.calibration.zero_b;
          t.policy_mode=uint8_t(s.policy.mode);t.policy_model_id=policy.model().id;
          t.policy_trained=s.policy.trained;t.policy_valid=s.policy.model_valid;
-@@ -1102,6 +1142,43 @@ void console(const char* line,Print& out) {
+@@ -1112,6 +1152,43 @@ void console(const char* line,Print& out) {
      {float g=0;if(sscanf(line,"!gain %f",&g)==1){wheel_gain=g;out.printf("wheel gain %.3f\n",g);return;}}
      {float g=0;if(sscanf(line,"!speedcal %f",&g)==1){if(g>=.2f&&g<=4.f&&!shared.driving){speed_cal=g;out.printf("policy speed scale %.3f\n",g);}else out.println("ERR speedcal 0.2..4.0 and standstill");return;}}
      {int ms=0;if(sscanf(line,"!smooth %d",&ms)==1&&ms>=0){wheel_smooth_ms=unsigned(ms);out.printf("wheel smoothing %d ms\n",ms);return;}}
@@ -549,7 +549,7 @@ index 4798539..49c374c 100644
      char cmd[20]={};int a=0,b=0,c=0,d=0;
      const int count=sscanf(line,"%19s %d %d %d %d",cmd,&a,&b,&c,&d);
      if(count==3&&!strcmp(cmd,"!move")){if(a<0||a>255||b<0||b>255){out.println("ERR expected bytes 0..255");return;}valueCommand(CommandKind::Forward,a,out);valueCommand(CommandKind::Turn,b,out);return;}
-@@ -1110,14 +1187,14 @@ void console(const char* line,Print& out) {
+@@ -1120,14 +1197,14 @@ void console(const char* line,Print& out) {
          const struct{const char* text;CommandKind kind;} maps[]={
              {"!action",CommandKind::Action},{"!loop",CommandKind::ActionLoop},{"!height",CommandKind::Height},
              {"!roll",CommandKind::Roll},{"!level",CommandKind::Leveling},{"!heading",CommandKind::HeadingHold},
@@ -561,7 +561,7 @@ index 4798539..49c374c 100644
 -    out.print("!status | !policy off/shadow/active/status | !stop | !arm | !neutral | !move FORWARD TURN (bytes,128 neutral) | !height BYTE | !roll BYTE | !action 0..6/255 | !loop 0/1 | !level 0/1 | !heading 0/1 | !heightwave BYTE | !rollwave BYTE | !maxforward BYTE | !maxturn BYTE | !rgb INDEX R G B | !cal begin | !cal save | !trim | !odom reset | !trace dump | !trace usb on/off | !liftguard on/off/status | !fallguard on/off/status/clear/ms N | !dzcomp [off|on|reset|MAX [HYST [RAMP [START [GROW]]]]]");
 +    out.print("!status | !policy off/shadow/active/status | !stop | !arm | !neutral | !move FORWARD TURN (bytes,128 neutral) | !height BYTE | !roll BYTE | !action 0..6/255 | !loop 0/1 | !level 0/1 | !heading 0/1 | !heightwave BYTE | !rollwave BYTE | !rgb INDEX R G B | !cal begin | !cal save | !trim | !odom reset | !trace dump | !trace usb on/off | !liftguard on/off/status | !fallguard on/off/status/clear/ms N | !dzcomp [off|on|reset|MAX [HYST [RAMP [START [GROW]]]]]");
      out.print(" | !standup | !restart");
-     out.print(" | !led BYTE | !shutdown on/off");
+     out.print(" | !led BYTE | !shutdown on/off/pi");
      out.print(" | !lean on/off");
 +    out.print(" | !vel limits VMAX_mm_s WMAX_deg_s TIMEOUT_ms | !vel V_mm_s W_deg_s | !vel accel A_mm_s2 W_deg_s | !vel kappa V_mm_s K_1_per_m | !vel turn DEG | !vel dist V_mm_s S_mm | !vel status | !velctl KI FF IMAX [KP [KF]] | !turnctl KP KD FF [KI_HOLD]");
      out.println();

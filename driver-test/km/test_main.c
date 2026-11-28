@@ -220,6 +220,7 @@ int main(int argc, char **argv) {
 	char fw[11] = {0};
 	int r = read_addr_sync(XGO_FIRMWARE_VERSION, 10, (uint8_t *)fw, 500);
 	printf("FW %d '%.10s'\n", r, fw);
+	send_pi_on();   /* wie imu_proc_init */
 	imu_detect_combo();
 	printf("BLOCK %d\n", combo_supported ? 3 : 0);
 	printf("WHEELS %d\n", combo_supported);
@@ -260,6 +261,11 @@ int main(int argc, char **argv) {
 		spin_lock(&imu_lock); ht = body_h_t_ns; hv = body_h; spin_unlock(&imu_lock);
 		if (ht) printf("H %llu %u\n", (unsigned long long)ht, hv);
 	}
+
+	/* Reboot-Notifier: 235 als letzter Schreibbefehl, während writer/main_like weiter schreiben wollen */
+	send_pi_off();
+	msleep(300);
+	{ uint8_t v = 1; printf("PIOFF danach %d\n", write_serial_data(XGO_ACTION, (char *)&v, 1)); }
 
 	/* Exit-Reihenfolge wie imu_proc_exit: Reader zuerst, solange abgefragt wird */
 	u64 t0 = ktime_get_ns();

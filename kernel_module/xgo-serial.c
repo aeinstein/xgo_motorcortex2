@@ -95,7 +95,10 @@ static int read_addr_sync(uint8_t addr, uint8_t len, uint8_t *out, unsigned int 
     return ret;
 }
 
-static int write_serial_data(const size_t addr, char * buffer, const size_t len){
+enum queue_kind { Q_READ, Q_WRITE, Q_FINAL };
+static bool enqueue(const char *cmd, size_t len, enum queue_kind kind);
+
+static int write_frame(const size_t addr, const char *buffer, const size_t len, enum queue_kind kind){
     int value_sum = 0;
     unsigned char cmd[MAX_DATA_LEN + 8];
 
@@ -127,8 +130,30 @@ static int write_serial_data(const size_t addr, char * buffer, const size_t len)
         pr_info("XGORider: write addr 0x%02zX len %zu\n", addr, len);
     }
 
-    addToSendQueue(cmd, len + 8);
-    return 0;
+    return enqueue(cmd, len + 8, kind) ? 0 : -ESHUTDOWN;
+}
+
+static int write_serial_data(const size_t addr, char *buffer, const size_t len){
+    return write_frame(addr, buffer, len, Q_WRITE);
+}
+
+/*
+ * Pi ist aus (Reboot-Notifier, bei poweroff, halt und reboot): Aktion 235 als letzter Schreibbefehl. Danach nimmt
+ * die Schlange keine Schreibbefehle mehr an. 20 ms warten, damit die UART die 9 Byte (0,8 ms bei 115200) los ist,
+ * bevor device_shutdown() und das Abschalten folgen.
+ */
+static void send_pi_off(void) {
+    const uint8_t v = XGO_ACTION_PI_OFF;
+
+    if (IS_ERR_OR_NULL(serial_file)) return;
+    write_frame(XGO_ACTION, (const char *)&v, 1, Q_FINAL);
+    msleep(20);
+}
+
+// Treiber geladen: 233 hebt "Pi fährt herunter" (234) und "Pi aus" (235) auf, auch wenn xgonav nicht startet.
+static void send_pi_on(void) {
+    uint8_t v = XGO_ACTION_PI_ON;
+    write_serial_data(XGO_ACTION, (char *)&v, 1);
 }
 
 // ---- IMU/Rad-Strom (nur Reader-Thread) -------------------------------------
@@ -433,8 +458,13 @@ static s32 f32le_to_milli(const uint8_t *b) {
     return sign ? (s32)-v : (s32)v;
 }
 
-// Funktion: Nachricht zur Sende-Warteschlange hinzufügen
+// Leseanfrage zur Sende-Warteschlange hinzufügen
 static bool addToSendQueue(const char *cmd, size_t len) {
+    return enqueue(cmd, len, Q_READ);
+}
+
+// Nachricht zur Sende-Warteschlange hinzufügen. Nach Q_FINAL (send_pi_off) werden Schreibbefehle verworfen (false).
+static bool enqueue(const char *cmd, size_t len, enum queue_kind kind) {
     struct message *new_msg;
 
     // Speicher für neue Nachricht reservieren
@@ -456,6 +486,13 @@ static bool addToSendQueue(const char *cmd, size_t len) {
 
     // Nachricht zur Warteschlange hinzufügen
     mutex_lock(&queue_lock);
+    if (pi_down && kind != Q_READ) {
+        mutex_unlock(&queue_lock);
+        kfree(new_msg->data);
+        kfree(new_msg);
+        return false;
+    }
+    if (kind == Q_FINAL) pi_down = true;
     list_add_tail(&new_msg->list, &send_queue);
     mutex_unlock(&queue_lock);
 

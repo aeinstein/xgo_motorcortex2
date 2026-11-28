@@ -103,6 +103,33 @@ int main() {
     check(out[0].b == 128 && out[0].r == 0, "Nick-Trimm: blau");
     check(Rgb{1, 2, 3} == Rgb{1, 2, 3} && Rgb{1, 2, 3} != Rgb{1, 2, 4}, "Rgb-Vergleich");
 
+    // Pi fährt herunter (234): blau fest; Pi aus (235): kPiOffBlinks-mal blau blinken, danach aus, geht allem vor
+    LedControl d;
+    d.robot_mode = 254;
+    check(!renderShutdownLeds(d, 0, out), "weder 234 noch 235: nichts");
+    d.shutdown = true;
+    check(renderShutdownLeds(d, 5000, out) && out[0] == kShutdownColor && out[3] == kShutdownColor, "234: blau fest");
+    d.pi_off = true;
+    d.pi_off_ms = 10000;
+    const std::uint32_t B = kPiOffBlinkMs;
+    int an = 0, wechsel = 0;
+    bool prev = false, gleich = true;
+    for (std::uint32_t t = 0; t < 2 * kPiOffBlinks * B; t += 10) {
+        renderShutdownLeds(d, d.pi_off_ms + t, out);
+        const bool blau = out[0] == kShutdownColor;
+        gleich = gleich && out[0] == out[1] && out[1] == out[2] && out[2] == out[3] && (blau || out[0] == Rgb{});
+        if (blau && !prev) ++an;
+        if (t && blau != prev) ++wechsel;
+        prev = blau;
+    }
+    check(gleich, "235: alle vier LEDs gleich, blau oder aus");
+    check(an == int(kPiOffBlinks) && wechsel == int(2 * kPiOffBlinks - 1), "235: genau kPiOffBlinks-mal blau");
+    bool dunkel = true;
+    for (std::uint32_t t = 2 * kPiOffBlinks * B; t < 600000; t += 997)
+        dunkel = dunkel && renderShutdownLeds(d, d.pi_off_ms + t, out) && out[0] == Rgb{} && out[3] == Rgb{};
+    check(dunkel, "235: danach alle LEDs aus (auch vor 234-Blau)");
+    check(renderShutdownLeds(d, d.pi_off_ms + 0x7FFFFFFFu, out) && out[0] == Rgb{}, "235: nach 24 Tagen noch aus");
+
     std::printf(fail ? "FEHLER\n" : "alles ok\n");
     return fail;
 }

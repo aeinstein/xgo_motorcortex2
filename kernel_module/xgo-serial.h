@@ -139,12 +139,18 @@ static atomic_t stat_tunnel_tx = ATOMIC_INIT(0);
 static struct task_struct *reader_thread;
 static struct file *serial_file;
 
+// Pi fährt herunter (Reboot-Notifier, send_pi_off): danach gehen keine Schreibbefehle mehr an den ESP32, Aktion 235
+// bleibt der letzte. Leseanfragen laufen weiter (ändern nichts). Unter queue_lock gesetzt und geprüft.
+static bool pi_down;
+
 static int ble_rx_pop(uint8_t *out);
 static int ble_tx(const uint8_t *data, size_t len);
 
 static int write_serial_data(size_t addr, char *buffer, size_t len);
 static int read_addr_sync(uint8_t addr, uint8_t len, uint8_t *out, unsigned int timeout_ms);
 static bool addToSendQueue(const char *cmd, size_t len);
+static void send_pi_off(void);
+static void send_pi_on(void);
 static void doQueue(void);
 static int read_loop(void *data);
 static void stop_read_loop(void);
