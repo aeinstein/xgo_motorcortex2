@@ -13,7 +13,7 @@ Recognises learned faces in mode `pet` and greets them. Since 2026-11-27, unit t
 | Features | MobileFaceNet `w600k_mbf` from InsightFace `buffalo_s`, ncnn (`models/mobilefacenet_ncnn`), RGB, (x − 127.5)/127.5, 512 values, L2-normalised. **Weights: non-commercial use only** |
 | Match | cosine against every stored photo, maximum per name; ≥ `match_sim` = 0.45 (provisional) → name |
 | Track | `Detection.who` → `Track.who`; the name stays with the track until it is lost, named tracks are not checked again |
-| Reaction | `pet`: `Seen.who` → emotion and sound of that person (`gruss.json`, set in the web card), else `greet_emotion` (`like`) / `greet_sound` (`traellern`); trust = 1.0; again only after `greet_repeat_s` = 600 s without recognising that name |
+| Reaction | `pet`: `Seen.who` → emotion and sound of that person (`gruss.json`, set in the web card), else `greet_emotion` (`like`) / `greet_sound` (`traellern`); trust = 1.0; again only after `greet_repeat_s` = 600 s without recognising that name; awake and lying (state `liegt`: the greeting replaces the generic `surprised`/`gefunden`) |
 | Eye colour | per person (`augen` in `gruss.json`, `tools/eyes.py` `PALETTE`): `PetBrain.augen` set before the greeting, held while recognised and `eye_hold_s` = 20 s after; emotions from `emotions_<colour>/`, pet eyes from `eyes_gaze_<colour>/` ([display-emotions.md](display-emotions.md)); no per-frame cost |
 | Display | overlay label shows the name instead of the class; `GET /status` → `tracks[].who`, `who_sim`, `gesicht_ms` |
 

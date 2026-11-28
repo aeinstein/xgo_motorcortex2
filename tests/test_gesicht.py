@@ -174,6 +174,26 @@ def test_pet_begruesst_erkannte():
     assert ("emotion", "like", False) not in evs and evs.count(gruss) == 1
 
 
+def test_pet_begruesst_liegend():
+    b = PetBrain(PetCfg(seek_m=0.0, roam_m=0.0, faint=False, follow_m=0.0, greet_repeat_s=60.0),
+                 Config.neutral().robot, seed=1)
+    b.gruss_fuer = lambda n: {"anna": {"augen": "rot"}}.get(n, {})
+
+    def lauf(t0, t1, who):
+        evs, t = [], t0
+        while t < t1:
+            b.update(Sense(t=t, dt=0.05, balancing=False, seen=[Seen(1, "person", 2.0, 0.0, False, 77.0, t, who=who)]))
+            evs += b.drain()
+            t += 0.05
+        return evs
+    gruss = ("sound", "traellern", False)
+    evs = lauf(0.0, 2.0, "anna")
+    assert b.state == "liegt"
+    assert ("emotion", "like", False) in evs and evs.count(gruss) == 1 and b.augen == "rot"
+    assert ("sound", "gefunden", False) not in evs                # Begrüßung statt allgemeinem Aufmerken
+    assert gruss not in lauf(2.0, 30.0, "anna")
+
+
 def test_schnittstelle_hochladen(tmp_path):
     from xgonav.web import serve
     g = fake(tmp_path)

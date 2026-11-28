@@ -438,11 +438,13 @@ class PetBrain:
         self._apply_gesture(s, act, tg)
         return act
 
-    def _greet(self, s: Sense) -> None:
+    def _greet(self, s: Sense) -> bool:
         """Erkanntes Gesicht ([gesicht]): begrüßen und sofort voll vertrauen; erneut erst nach greet_repeat_s ohne sie.
         Emotion, Ton und Augenfarbe je Person (Web, gruss.json), sonst greet_emotion/greet_sound/Türkis; "-" = nichts.
-        Die Augenfarbe gilt, solange die Person erkannt wird, und noch eye_hold_s danach (update)."""
+        Die Augenfarbe gilt, solange die Person erkannt wird, und noch eye_hold_s danach (update). Wach und liegend.
+        -> True, wenn in diesem Schritt jemand begrüßt wurde."""
         c, t = self.cfg, s.t
+        gruss = False
         for x in s.seen:
             if not x.who:
                 continue
@@ -459,6 +461,8 @@ class PetBrain:
                 log.info("pet: %s erkannt – Begrüßung (%s, %s)", x.who, emo or "-", ton or "-")
                 self._react(t, emo if emo and emo != "-" else None, ton if ton and ton != "-" else None)
                 self.trust = 1.0
+                gruss = True
+        return gruss
 
     # ---- Nachplappern (stimme.Stimmen) --------------------------------------
     def _parrot_new(self, s: Sense) -> None:
@@ -1622,14 +1626,17 @@ class PetBrain:
         return Act()
 
     def _liegt(self, s: Sense) -> Act:
-        """Nur Ausdruck. Bleibt liegen, bis ihn jemand aufstellt."""
+        """Nur Ausdruck. Bleibt liegen, bis ihn jemand aufstellt. Bekannte Gesichter begrüßt er auch liegend."""
         if s.balancing:
             self._blind_until = s.t + self.cfg.settle_s
             self._set_state("settle", s.t)
-        elif self.target is not None:
+            return Act()
+        gruss = self._greet(s)
+        if self.target is not None:
             # Nur beim Auftauchen: Wer die ganze Zeit zu sehen ist, löst nichts mehr aus. Kurze Aussetzer des Detektors
             # zählen nicht als weg (gone_s), die Abklingzeit fängt das Kommen und Gehen an der Bildkante ab.
-            if s.t - self._lying_seen_t >= self.cfg.gone_s and self._ready("liegend", s.t, 10.0):
+            # Eine Begrüßung ersetzt das allgemeine Aufmerken.
+            if not gruss and s.t - self._lying_seen_t >= self.cfg.gone_s and self._ready("liegend", s.t, 10.0):
                 self._react(s.t, "surprised", "gefunden")
             self._lying_seen_t = s.t
         elif self._ev is not None and self._talk_n >= 2 and self._ready("liegend_hoeren", s.t, 15.0):
