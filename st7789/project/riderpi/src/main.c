@@ -352,6 +352,7 @@ static void *augen_zeichnen(void *arg) {
         uint8_t rgb[3];
         leben_farbe(leben, t, rgb);
         int laeuft = leben_ausdruck_laeuft(leben, t);   // nach diesem Bild noch
+        double naechstes = leben_naechstes(leben, t);
         if (art == 0) {                      // nichts zu zeichnen: auf den nächsten Befehl warten
             if (generator_besitzt) besitz_abgeben();
             pthread_cond_wait(&augen_cond, &augen_lock);
@@ -417,8 +418,11 @@ static void *augen_zeichnen(void *arg) {
             raster_us = spi_us = pixel = 0;
         }
 
-        // nächstes Bild: 25 fps, solange sich etwas bewegt, sonst 10 fps (Atmen); ein Befehl weckt sofort
-        double schritt = art == 1 ? 0.04 : 0.1;
+        // nächstes Bild: 25 fps, solange sich etwas bewegt, 10 fps beim Atmen, sonst erst zum nächsten Lidschlag
+        // bzw. zur nächsten Mikrosakkade (höchstens 1 s); ein Befehl weckt sofort
+        double schritt = art == 1 ? 0.04 : (art == 2 ? 0.1 : naechstes - t);
+        if (schritt < 0.04) schritt = 0.04;
+        if (schritt > 1.0) schritt = 1.0;
         double bis = t + schritt;
         struct timespec ts;
         ts.tv_sec = (time_t)bis;

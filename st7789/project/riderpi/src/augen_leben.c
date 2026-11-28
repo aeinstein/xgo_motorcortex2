@@ -160,7 +160,14 @@ int leben_befehl(leben_t *l, const char *zeile, double jetzt)
         if (!l->an) lidschlag_planen(l, jetzt);
         l->an = 1;
     } else if (!strcmp(c, "aus")) {
+        /* Blick, Schielen und Lid zurück in die Mitte: sonst stünden die nächsten Ausdrücke (und das nächste "an")
+         * dort, wohin zuletzt geschaut wurde (am Rider 2026-11-28: nach einem Test alles zu weit links) */
         l->an = 0;
+        l->bx = l->by = l->x = l->y = 0.0f;
+        l->mx = l->my = l->mzx = l->mzy = 0.0f;
+        l->sakkade = 0;
+        l->nah = l->vg = 0.0f;
+        l->lid = l->lid_ziel = 0.0f;
     } else if (!strcmp(c, "ausdruck") && n >= 2) {
         int i = augen_ausdruck_index(tok[1]);
         if (i < 0) return 0;
@@ -330,7 +337,7 @@ int leben_bild(leben_t *l, double jetzt, bild_t *b)
 
     if (aus_i < 0) {
         *b = lb;
-        return bewegt ? 1 : (l->atmen ? 2 : 1);
+        return bewegt ? 1 : (l->atmen ? 2 : 3);
     }
     /* Ausdruck über die lebenden Augen: Blick bleibt dazu, Ein- und Ausblenden je 0,15 s */
     bild_t e;

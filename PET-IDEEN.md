@@ -4,8 +4,8 @@ Stand 2026-11-28. Nutzerwunsch: Erweiterungen, die `pet` lebensechter machen, au
 aufschreiben; mehr Töne und Animationen; Augengenerator; Akkustand im Verhalten. ✦ = gewagt. In Klammern die
 Kosten am Pi (Rechenzeit hat Vorrang, CLAUDE.md).
 
-**Umgesetzt:** Augengenerator im Display-Daemon (2026-11-28, `docs/display-emotions.md`, am Rider noch nicht
-gelaufen). Alles andere ist offen.
+**Umgesetzt:** Augengenerator im Display-Daemon (2026-11-28, `docs/display-emotions.md`, am Rider eingespielt und
+liegend geprüft). Alles andere ist offen.
 
 ## Bestand (2026-11-28)
 
@@ -213,7 +213,7 @@ Datei `/var/lib/xgonav/gedaechtnis.json`, höchstens einmal je Minute geschriebe
 
 | Voraussetzung | für | Art | Stand |
 |---|---|---|---|
-| Augengenerator im Display-Daemon | A, Ausdruck überall | C, Daemon | gebaut 2026-11-28, am Rider offen |
+| Augengenerator im Display-Daemon | A, Ausdruck überall | C, Daemon | 2026-11-28 am Rider, liegend geprüft |
 | Stimmgenerator + dauerhafter ALSA-Ausgang | B | C | neu |
 | Pet-Zustand dauerhaft (Gedächtnisdatei) | C, D | Python, selten | neu |
 | Bestätigte Pose über Sitzungen | D2, D3, G1 | Karte | laufender Abgleich falsch, Startbild-Abgleich ok |
@@ -231,8 +231,8 @@ Datei `/var/lib/xgonav/gedaechtnis.json`, höchstens einmal je Minute geschriebe
 
 ## Vorgeschlagene Reihenfolge
 
-1. Augengenerator: gebaut. Offen sind die Prüfung am Rider und danach das Aufräumen, beides mit Zustimmung des
-   Nutzers. Das Aufräumen bringt −1 GB SD und −2,5 min Einspielen.
+1. Augengenerator: am Rider. Offen ist das Aufräumen (nur mit Zustimmung des Nutzers): −1 GB SD und −2,5 min
+   Einspielen.
 2. Innenleben mit Akku (C, H) und Gedächtnis (D), damit Energie und Stimmung die Augen färben.
 3. Stimmgenerator (B).
 4. Kleine Körpersprache (E1, E2, A5), am Rider mit Beobachtung.

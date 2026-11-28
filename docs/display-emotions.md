@@ -89,7 +89,7 @@ from the colour folder and `lcd.py` shows the colour atlas (loaded once, at most
 ## Eye generator in the display daemon
 
 Same model as `tools/eyes.py`, drawn live by `st7789_server` (2026-11-28). xgonav, `tools/emotion.sh` and the web UI
-send text lines, nothing is pre-rendered for it. Not yet run on the Rider.
+send text lines, nothing is pre-rendered for it. On the Rider since 2026-11-28, checked lying (expressions, pet eyes, cost); not seen while driving.
 
 | Item | Value |
 |---|---|
@@ -98,15 +98,15 @@ send text lines, nothing is pre-rendered for it. Not yet run on the Rider.
 | Names | `/tmp/lcd0.augen.namen`: expressions the daemon knows (`emotion.sh` uses the generator only for these) |
 | Raster | signed distance per pixel inside the eye rectangles, coverage `clamp(0.65 − d)` (cv2 LINE_AA draws ~0.15 px larger), strokes +0.1 px; sampled at (i + 0.375, j + 0.375) like INTER_AREA of the 4× mask |
 | Match with `tools/eyes.py` | mean ≤ 0.13 %, area ≤ 2 %, summed ≤ 5.4 % (`sleep`: distance to the flat half-ellipse approximated) |
-| Frame rate | 25 fps while something moves (expression, saccade, blink, colour fade), 10 fps while only breathing, none when off |
+| Frame rate | 25 fps while something moves (expression, saccade, blink, colour fade), 10 fps while only breathing, without breathing only at the next blink or microsaccade (≤ 1 s), none when off |
 | SPI | only the union of old and new eye rectangle (window of `st7789_basic_draw_picture_16bits`) |
-| Cost | raster 0.16–0.4 ms per frame on kimmy, CM4 estimated 1–3 ms; `/tmp/lcd0.augen.stat` every 10 s: frames/s, µs raster, µs SPI, pixels |
+| Cost | raster per frame: kimmy 0.16–0.4 ms; CM4 at 1.5 GHz 1.2–3.4 ms (mean 2.1 ms, living eyes 1.4 ms), at the idle clock (600–700 MHz, ondemand) ~5 ms. Daemon CPU on the Rider 2026-11-28 (idle clock): off 0 %, living eyes without breathing 1.7 %, with breathing 5.6 % (10 fps), expressions back to back 16 % of a core; pet lying with image processing (1.5 GHz) 4.1 %. `/tmp/lcd0.augen.stat` every 10 s: frames/s, µs raster, µs SPI, pixels |
 | Priority | raw frames on `/tmp/lcd0` win: generator pauses 0.5 s after the last one and while another PID owns `/tmp/lcd0.owner` (< 10 s old). During an expression the daemon writes its own PID there (xgonav pauses its output, a newer player aborts the expression) and discards raw frames |
 | Off | `[emotion] augen_fifo = ""`; without a daemon with generator xgonav uses the atlas and `emotion.sh` raw frames |
 
 | Command | Effect |
 |---|---|
-| `an` / `aus` | living eyes on (pet) / off, last frame stays |
+| `an` / `aus` | living eyes on (pet) / off, last frame stays; `aus` puts gaze, vergence and lid back to the centre (otherwise later expressions kept the last gaze, Rider 2026-11-28) |
 | `ausdruck NAME [STRENGTH]` | expression once; with `an` blended over the living eyes (0.15 s in/out, gaze kept), otherwise as pre-rendered (`sleep` ends closed) |
 | `blick X Y` | −1..1; X > 0 = right in the image (eye moves 34 px, eye on that side 10 % wider), Y > 0 = down (22 px); change > 0.15 = saccade (30–110 ms, 50 % blink above 0.5), smaller follows (τ 0.12 s) |
 | `nah M` | distance of the fixated target (m, 0 = off); below 0.6 m the eyes move together (up to 9 px each) |

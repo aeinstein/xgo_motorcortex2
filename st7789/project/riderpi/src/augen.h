@@ -64,7 +64,8 @@ void leben_frei(leben_t *l);
 /* Eine Befehlszeile (ohne Zeilenende); 1 = verstanden, 0 = ignoriert. */
 int leben_befehl(leben_t *l, const char *zeile, double jetzt);
 /* Bild zur Zeit jetzt. Rückgabe: 0 = nichts zu zeichnen (aus), 1 = Bild, bewegt sich (nächstes in 40 ms),
- * 2 = Bild, nur Atmen (nächstes in 100 ms). */
+ * 2 = Bild, nur Atmen (nächstes in 100 ms), 3 = Bild, steht (nächstes erst zu leben_naechstes oder bei einem
+ * Befehl). "aus" setzt Blick, Schielen und Lid auf die Mitte zurück. */
 int leben_bild(leben_t *l, double jetzt, bild_t *b);
 int leben_ausdruck_laeuft(const leben_t *l, double jetzt);
 /* Augenfarbe zur Zeit jetzt (Überblendung) */

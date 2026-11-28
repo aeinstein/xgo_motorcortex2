@@ -204,6 +204,34 @@ def test_vergenz():
     assert b.l.dx - b.r.dx == pytest.approx(2 * 9 * (0.3 / 0.45), abs=1.5)
 
 
+def test_aus_setzt_blick_zurueck():
+    """Am Rider 2026-11-28: Nach einem Test mit Blick nach links standen alle folgenden Ausdrücke links."""
+    le = Leben()
+    le.befehl("an")
+    le.befehl("rate 0")
+    le.befehl("blick -0.5 0.2")
+    le.befehl("nah 0.3")
+    le.befehl("lid 0.5")
+    for _ in range(30):
+        le.bild()
+    le.befehl("aus")
+    le.befehl("an")
+    _, b = le.bild()
+    assert abs(b.l.dx) < 1.5 and abs(b.r.dx) < 1.5 and abs(b.l.dy) < 1.5 and b.l.blink == pytest.approx(0.0)
+
+
+def test_steht_ohne_atmen():
+    """Ohne Atmen und ohne Bewegung meldet leben_bild 3 (steht): der Daemon zeichnet erst beim nächsten Ereignis."""
+    le = Leben()
+    le.befehl("an")
+    le.befehl("rate 0")
+    le.befehl("atmen 0")
+    arten = [le.bild()[0] for _ in range(100)]
+    assert arten[-1] == 3 and arten.count(3) > 50
+    le.befehl("atmen 1")
+    assert le.bild()[0] in (1, 2)
+
+
 def test_ausdruck_ueber_lebenden_augen():
     le = Leben()
     le.befehl("an")
