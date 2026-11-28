@@ -1200,8 +1200,8 @@
       {
        "key": "match_sim",
        "typ": "float",
-       "default": 0.45,
-       "hilfe": "Kosinus ab hier = erkannt. Vorläufig (ArcFace-Modelle trennen sonst meist um 0,3-0,5), an echten Fotos und Rider-Bildern festlegen."
+       "default": 0.5,
+       "hilfe": "Kosinus ab hier = erkannt. Nutzer 2026-11-28: 0,5 (vorher 0,45). Gemessen am Rider liegend: Kerk 0,45-0,55, Unbekannte 0,19 und 0,31; laut Nutzer sonst meist > 0,7."
       },
       {
        "key": "threads",

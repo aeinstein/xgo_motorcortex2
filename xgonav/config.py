@@ -1232,9 +1232,9 @@ class GesichtCfg:
     max_hz: float = 2.0                # Prüfungen je Sekunde höchstens (je Prüfung alle Personen ohne Namen)
     min_face_px: float = 40.0          # schmalere Gesichter (f 310: weiter als ~1,2 m) nicht prüfen
     det_conf: float = 0.7              # YuNet-Schwelle
-    # Kosinus ab hier = erkannt. Vorläufig (ArcFace-Modelle trennen sonst meist um 0,3-0,5), an echten Fotos und
-    # Rider-Bildern festlegen.
-    match_sim: float = 0.45
+    # Kosinus ab hier = erkannt. Nutzer 2026-11-28: 0,5 (vorher 0,45). Gemessen am Rider liegend: Kerk 0,45-0,55,
+    # Unbekannte 0,19 und 0,31; laut Nutzer sonst meist > 0,7.
+    match_sim: float = 0.5
     # ncnn-Threads. Läuft im Detektor-Thread nach YOLO (nacheinander, dieselben Kerne detector_cpus), darum wie YOLO 2.
     # MobileFaceNet hat 892 MFLOP (YOLO 256 px ~1 GFLOP, CM4 93 ms): am CM4 geschätzt 70-100 ms je Gesicht, nur wenn
     # YuNet ein Gesicht >= min_face_px findet. Am PC (2026-11-27) 9,7 ms Merkmal, 2 ms YuNet. Am Rider nicht gemessen.

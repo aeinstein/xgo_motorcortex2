@@ -1,6 +1,6 @@
 # Face recognition (`xgonav/gesicht.py`)
 
-Recognises learned faces in mode `pet` and greets them. Since 2026-11-27, unit tests only, **not run on the Rider**.
+Recognises learned faces in mode `pet` and greets them. Since 2026-11-27; first run on the Rider 2026-11-28 (lying, one person, recognised correctly).
 
 ## Pipeline
 
@@ -11,7 +11,7 @@ Recognises learned faces in mode `pet` and greets them. Since 2026-11-27, unit t
 | Find | YuNet `face_detection_yunet_2023mar.onnx` via `cv2.FaceDetectorYN` (OpenCV ≥ 4.8, MIT), 5 landmarks; faces narrower than `min_face_px` = 40 are skipped |
 | Align | 5 points → ArcFace template, `cv2.estimateAffinePartial2D` + `warpAffine` 112×112 |
 | Features | MobileFaceNet `w600k_mbf` from InsightFace `buffalo_s`, ncnn (`models/mobilefacenet_ncnn`), RGB, (x − 127.5)/127.5, 512 values, L2-normalised. **Weights: non-commercial use only** |
-| Match | cosine against every stored photo, maximum per name; ≥ `match_sim` = 0.45 (provisional) → name |
+| Match | cosine against every stored photo, maximum per name; ≥ `match_sim` = 0.5 → name |
 | Track | `Detection.who` → `Track.who`; the name stays with the track until it is lost, named tracks are not checked again |
 | Reaction | `pet`: `Seen.who` → emotion and sound of that person (`gruss.json`, set in the web card), else `greet_emotion` (`like`) / `greet_sound` (`traellern`); trust = 1.0; again only after `greet_repeat_s` = 600 s without recognising that name; awake and lying (state `liegt`: the greeting replaces the generic `surprised`/`gefunden`) |
 | Eye colour | per person (`augen` in `gruss.json`, `tools/eyes.py` `PALETTE`): `PetBrain.augen` set before the greeting, held while recognised and `eye_hold_s` = 20 s after; emotions from `emotions_<colour>/`, pet eyes from `eyes_gaze_<colour>/` ([display-emotions.md](display-emotions.md)); no per-frame cost |
@@ -48,5 +48,6 @@ Recognises learned faces in mode `pet` and greets them. Since 2026-11-27, unit t
 |---|---|
 | Range | face ≥ 40 px: at f 310 px a 15 cm face is 46 px at 1 m, 23 px at 2 m → up to ≈ 1.2 m |
 | Viewpoint | camera ≈ 13 cm above floor: a standing head is in the image only from ≈ 1.8 m, then too small → works when sitting, kneeling or bending down |
-| Threshold | `match_sim` not tuned on Rider images; photos from a phone differ from the Rider camera (angle, lens) |
+| Threshold | `match_sim` 0.5 (user, 2026-11-28); measured on Rider images lying (~40 s): known 0.45–0.55, unknown 0.19/0.31; photos from a phone differ from the Rider camera (angle, lens) |
+| Cost | 129–145 ms per face on the CM4 (detector thread, ≤ `max_hz`, only persons without a name) |
 | Privacy | features and crops stay on the Rider |

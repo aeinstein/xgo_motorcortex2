@@ -1382,7 +1382,7 @@
 
 
 <h1 id="face-recognition-xgonavgesichtpy">Face recognition (<code>xgonav/gesicht.py</code>)<a class="headerlink" href="#face-recognition-xgonavgesichtpy" title="Permanent link">&para;</a></h1>
-<p>Recognises learned faces in mode <code>pet</code> and greets them. Since 2026-11-27, unit tests only, <strong>not run on the Rider</strong>.</p>
+<p>Recognises learned faces in mode <code>pet</code> and greets them. Since 2026-11-27; first run on the Rider 2026-11-28 (lying, one person, recognised correctly).</p>
 <h2 id="pipeline">Pipeline<a class="headerlink" href="#pipeline" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
@@ -1414,7 +1414,7 @@
 </tr>
 <tr>
 <td>Match</td>
-<td>cosine against every stored photo, maximum per name; ≥ <code>match_sim</code> = 0.45 (provisional) → name</td>
+<td>cosine against every stored photo, maximum per name; ≥ <code>match_sim</code> = 0.5 → name</td>
 </tr>
 <tr>
 <td>Track</td>
@@ -1521,7 +1521,11 @@
 </tr>
 <tr>
 <td>Threshold</td>
-<td><code>match_sim</code> not tuned on Rider images; photos from a phone differ from the Rider camera (angle, lens)</td>
+<td><code>match_sim</code> 0.5 (user, 2026-11-28); measured on Rider images lying (~40 s): known 0.45–0.55, unknown 0.19/0.31; photos from a phone differ from the Rider camera (angle, lens)</td>
+</tr>
+<tr>
+<td>Cost</td>
+<td>129–145 ms per face on the CM4 (detector thread, ≤ <code>max_hz</code>, only persons without a name)</td>
 </tr>
 <tr>
 <td>Privacy</td>

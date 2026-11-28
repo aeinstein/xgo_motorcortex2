@@ -273,7 +273,7 @@ All keys with comments: `PetCfg` in `xgonav/config.py`.
 | `enabled`, `dir` | true, `/opt/xgonav/gesichter` | off in the simulator (`Config.neutral()`); needs the detector and package `ncnn` |
 | `model`, `det_model` | `models/mobilefacenet_ncnn`, `models/face_detection_yunet_2023mar.onnx` | `tools/export_face.sh` |
 | `modes`, `max_hz`, `threads` | `["pet"]`, 2, 2 | checks per second at most; ncnn threads (after YOLO on `detector_cpus`) |
-| `min_face_px`, `det_conf`, `match_sim` | 40, 0.7, 0.45 | smaller faces skipped; YuNet threshold; cosine for a name (provisional) |
+| `min_face_px`, `det_conf`, `match_sim` | 40, 0.7, 0.5 | smaller faces skipped; YuNet threshold; cosine for a name |
 
 ### `[stimme]` (voice samples in `pet`, see [audio.md](audio.md#voice-samples-xgonavstimmepy-mode-pet))
 | Key | Default | Meaning |
