@@ -1013,6 +1013,34 @@
   
   
     <li class="md-nav__item">
+      <a href="faces.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Face recognition
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="wifi-setup.html" class="md-nav__link">
         
   
@@ -1671,7 +1699,7 @@
 </tr>
 <tr>
 <td><code>python tools/sim_rider.py --proc DIR [--port 8793] [--view-port 8792] [--scene unten]</code></td>
-<td>virtual Rider (default scene <code>unten</code>): endless simulator (idle, Rider values, person) with the real xgonav API on 127.0.0.1:8793; <code>DIR</code> plays <code>/proc/XGORider</code> (<code>SimRobot(proc_dir=…)</code>: <code>height</code>, <code>roll</code>, <code>action</code> 253/254, <code>state</code>, <code>battery</code>; <code>imu_log</code>, <code>wheels_log</code> at 50 Hz for <code>tools/live.php</code>); 3D view of the last 5 min</td>
+<td>virtual Rider (default scene <code>unten</code>): endless simulator (idle, Rider values, person) with the real xgonav API on 127.0.0.1:8793; <code>DIR</code> plays <code>/proc/XGORider</code> (<code>SimRobot(proc_dir=…)</code>: <code>height</code>, <code>roll</code>, <code>action</code> 253/254, <code>state</code>, <code>battery</code>; <code>imu_log</code>, <code>wheels_log</code> at 50 Hz for <code>tools/live.php</code>); 3D view of the last 5 min. World runs at <code>[camera] fps</code> (24; <code>--fps</code>), and keeps moving without images while the image pipeline is stopped (manual drive works as on the Rider)</td>
 </tr>
 <tr>
 <td><code>./tools/sim_kimmy.sh</code></td>

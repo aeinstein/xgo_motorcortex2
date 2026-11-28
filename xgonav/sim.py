@@ -559,6 +559,29 @@ class SimWorld(FrameSource):
         self._publish(img, now)
         return True
 
+    # Bildverarbeitung gestoppt (FrameSource.pause): Der echte Rider fährt in der Handsteuerung auch ohne Kamera. Die
+    # Welt läuft deshalb ohne Bilder weiter (nur Bewegung, kein Rendern), sonst stünde der virtuelle Rider und spränge
+    # beim Wiedereinschalten um die ganze Pause weiter.
+    def _suspend(self) -> None:
+        self._pause_stop = threading.Event()
+        self._pause_thread = threading.Thread(target=self._pause_run, name="sim-pause", daemon=True)
+        self._pause_thread.start()
+
+    def _resume_device(self) -> None:
+        th = getattr(self, "_pause_thread", None)
+        if th is not None:
+            self._pause_stop.set()
+            th.join()
+            self._pause_thread = None
+
+    def _pause_run(self) -> None:
+        while not self._pause_stop.wait(1.0 / self.fps) and not self._stop.is_set():
+            if self._t0 is None:
+                continue
+            now = time.monotonic()
+            dt, self._last = now - self._last, now
+            self._integrate(now - self._t0, dt)
+
     def _integrate(self, t: float, dt: float) -> None:
         vn, wn = self.robot.command
         v = vn * self.vx_mps

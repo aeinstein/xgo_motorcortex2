@@ -100,8 +100,11 @@ class Spiegel:
         self._stop.set()
 
 
-def baue(proc: str, port: int, scene: str = "raum", person: bool = True, phantoms: int = 0, overrides=None):
-    """Welt, SimRobot mit /proc-Spiegel und App wie tests/sim_run.py (--wheels --dyn --rider --fs-thread)."""
+def baue(proc: str, port: int, scene: str = "raum", person: bool = True, phantoms: int = 0, overrides=None,
+         fps: int | None = None):
+    """Welt, SimRobot mit /proc-Spiegel und App wie tests/sim_run.py (--wheels --dyn --rider --fs-thread).
+    fps: Bildrate der Welt; Standard wie die Kamera des Riders ([camera] fps, 24), damit auch der Regelschritt im
+    selben Takt läuft (tests/sim_run.py rechnet mit 20)."""
     cfg = Config.neutral()
     cfg.behavior.mode = "idle"
     cfg.output.web_host, cfg.output.web_port = "127.0.0.1", port
@@ -112,7 +115,8 @@ def baue(proc: str, port: int, scene: str = "raum", person: bool = True, phantom
     sc = SCENES[scene]()
     pers = Person(sc.person_weg or [(3.2, 1.3), (4.8, 4.6), (1.4, 5.0), (1.2, 3.0)], speed=0.3) if person else None
     world = SimWorld(cfg.camera, robot, pers, start=sc.start or (1.0, 1.2, 0.2),
-                     mount_offset_mm=cfg.camera.mount_offset_mm, vx_mps=RIDER_VX, dynamics=True, scene=sc)
+                     mount_offset_mm=cfg.camera.mount_offset_mm, vx_mps=RIDER_VX, dynamics=True, scene=sc,
+                     fps=fps or cfg.camera.fps)
     net = SimFloorNet(world)
     app = App(cfg, robot, world, imu=SimImu(world, cfg.imu), wheels=SimWheels(world, cfg.odom), floor_net=net)
     app.det = FakeDetector(world)
@@ -130,6 +134,7 @@ def main() -> None:
     ap.add_argument("--scene", default="unten", choices=sorted(SCENES))
     ap.add_argument("--ohne-person", action="store_true")
     ap.add_argument("--phantoms", type=int, default=0)
+    ap.add_argument("--fps", type=int, default=0, help="Bildrate der Welt (0 = wie [camera] fps)")
     ap.add_argument("--set", action="append", default=[], help="abschnitt.name=wert (Zahl, True/False, Liste)")
     a = ap.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
@@ -140,7 +145,7 @@ def main() -> None:
     for s in a.set:
         k, v = s.split("=", 1)
         ov[k] = ast.literal_eval(v)
-    cfg, robot, world, app = baue(a.proc, a.port, a.scene, not a.ohne_person, a.phantoms, ov)
+    cfg, robot, world, app = baue(a.proc, a.port, a.scene, not a.ohne_person, a.phantoms, ov, a.fps or None)
 
     from xgonav.web import serve
     serve(app, cfg.output.web_host, cfg.output.web_port, cfg.output.web_fps, None)

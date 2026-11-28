@@ -90,3 +90,42 @@ def test_hub_begrenzt_kopf_bleibt():
     for s in ["k", "x"]:
         voll.add(s)
     assert voll.ab(0) == (["k", "x"], 2)
+
+
+def test_handsteuerung_ohne_bildverarbeitung(tmp_path):
+    """Bildverarbeitung gestoppt: Die Welt läuft ohne Bilder weiter, die Handsteuerung fährt wie am echten Rider;
+    beim Wiedereinschalten kein Sprung um die Pause."""
+    import threading
+    from tools.sim_rider import baue
+    cfg, robot, world, app = baue(str(tmp_path), 0, "raum", person=False)
+    assert world.fps == cfg.camera.fps
+    th = threading.Thread(target=lambda: app.run(duration=None), daemon=True)
+    th.start()
+    try:
+        ende = time.monotonic() + 10.0
+        while not world.log and time.monotonic() < ende:
+            time.sleep(0.05)
+        app.set_pipeline(False)
+        time.sleep(0.4)
+        app.set_mode("manual")
+        while app.behavior.name != "manual" and time.monotonic() < ende:
+            time.sleep(0.02)
+        x0, y0, n0 = world.x, world.y, len(world.log)
+        t0 = time.monotonic()
+        while time.monotonic() - t0 < 1.5:
+            app.set_manual(1.0, 0.0)
+            time.sleep(0.1)
+        weg = ((world.x - x0) ** 2 + (world.y - y0) ** 2) ** 0.5
+        assert weg > 0.25, weg                       # 0,5 m/s² über 1,5 s: rund 0,45 m
+        assert len(world.log) - n0 > 20              # Welt läuft im Bildtakt weiter
+        app.set_manual(0.0, 0.0)
+        time.sleep(2.0)                              # steht
+        x1, y1 = world.x, world.y
+        time.sleep(1.0)
+        app.set_pipeline(True)
+        time.sleep(0.6)
+        assert ((world.x - x1) ** 2 + (world.y - y1) ** 2) ** 0.5 < 0.02
+        assert max(e["t"] - a["t"] for a, e in zip(world.log[n0:], world.log[n0 + 1:])) < 0.5
+    finally:
+        app.stop()
+        th.join(timeout=5)

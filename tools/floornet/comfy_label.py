@@ -15,7 +15,7 @@ import uuid
 import cv2
 import numpy as np
 
-URL = "http://127.0.0.1:8188"
+URL = os.environ.get("COMFY_URL", "http://127.0.0.1:8190")   # 8188 belegt der virtuelle Rider (tools/sim_rider.py)
 NCOLS, W, H = 80, 640, 480
 PROMPT = os.environ.get("FN_PROMPT") or (
     "Recolor the floor to solid pure green (#00FF00). The floor is every part of the ground the camera sees, up to "
