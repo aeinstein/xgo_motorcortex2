@@ -56,8 +56,8 @@ def test_ausdruck_parameter_wie_eyes(name):
 def test_raster_deckungsgleich(name):
     """Abdeckung aus denselben Parametern wie tools/eyes.py render(): je Bild im Mittel < 0,5 %, summiert < 8 %
     der Augenfläche (ein geschlossenes Auge ist nur 7 px hoch, dort zählen die halb bedeckten Randzeilen viel),
-    Fläche um höchstens 3 % verschieden. Gemessen 2026-11-28: im Mittel höchstens 0,13 %, summiert höchstens 5,4 %
-    (sleep: Abstand zur flachen Halbellipse genähert), Fläche höchstens 2 %."""
+    Fläche um höchstens 3 % verschieden. Gemessen 2026-11-28 (kimmy): im Mittel höchstens 0,13 %, summiert höchstens
+    2 %, Fläche höchstens 2 %."""
     fn, T = eyes.EMOTIONS[name]
     schlecht = []
     for t in _zeiten(T, 7):

@@ -68,20 +68,20 @@ static void angry(float t, float T, bild_t *b)
 static void cute(float t, float T, bild_t *b)
 {
     neutral2(b);
-    float e = envelope(t, T, 0.4f, 0.4f);
-    float hops = 0.03f * sinf(ZWEI_PI * 1.5f * t);
-    float hap = smooth((t - 1.45f) / 0.15f) * (1 - smooth((t - 2.05f) / 0.15f));
+    float e = envelope(t, T, 0.45f, 0.45f);
+    float kneif = smooth((t - 1.3f) / 0.25f) * (1 - smooth((t - 1.85f) / 0.3f));
+    float wipp = 4 * (blink(t, 0.55f, 0.3f) + blink(t, 0.9f, 0.3f));
     auge_t *ps[2] = {&b->l, &b->r};
     for (int i = 0; i < 2; i++) {
         auge_t *p = ps[i];
-        Z(*p, w, 100, e); Z(*p, h, 100, e); Z(*p, r, 1.0f, e); Z(*p, bcurve, 0.16f, e);
-        Z(*p, dy, -4 * hops / 0.03f, e); Z(*p, sc, 1.0f + hops, e);
-        p->kind = ART_HAPPY;
-        p->mix = hap;
-        p->blink = hap * 0.6f;
+        Z(*p, w, 84, e); Z(*p, h, 100, e); Z(*p, r, 0.75f, e); Z(*p, sc, 1.06f, e); Z(*p, dy, -4, e);
+        Z(*p, dx, i == 0 ? 3 : -3, e);
+        p->dy -= wipp * e;
+        p->bcurve = 0.36f * kneif;
+        p->h -= 6 * kneif;
+        p->blink = blink(t, 2.1f, 0.5f);
     }
-    b->tilt = e * 9 * sinf(ZWEI_PI * (t - 0.4f) / 1.6f) * (t > 0.4f);
-    b->gy = -3 * e;
+    b->tilt = e * TRACK(t, {0.2f, 0}, {0.7f, 9}, {1.3f, 9}, {1.75f, -7}, {2.3f, -7}, {2.7f, 0});
 }
 
 static void doubt(float t, float T, bild_t *b)
@@ -128,10 +128,10 @@ static void grievance(float t, float T, bild_t *b)
     auge_t *ps[2] = {&b->l, &b->r};
     for (int i = 0; i < 2; i++) {
         auge_t *p = ps[i];
-        Z(*p, dy, -6, e); Z(*p, w, 90, e); Z(*p, h, 98, e); Z(*p, r, 0.75f, e); Z(*p, top, 0.14f, e);
-        Z(*p, tslope, 16, e); Z(*p, bot, 0.10f, e); Z(*p, pupil, 0.70f, e); Z(*p, ppy, -0.22f, e);
-        Z(*p, hl, 1.0f, e);
-        p->bot += 0.035f * wackel;
+        Z(*p, dy, -8, e); Z(*p, w, 86, e); Z(*p, h, 100, e); Z(*p, r, 0.5f, e); Z(*p, top, 0.12f, e);
+        Z(*p, tslope, 16, e); Z(*p, bot, 0.04f, e); Z(*p, pupil, 0.38f, e); Z(*p, ppy, -0.12f, e);
+        Z(*p, hl, 0.45f, e); Z(*p, ppx, i == 0 ? 0.08f : -0.08f, e);
+        p->bot += 0.03f * wackel;
         p->dx += 0.8f * wackel;
     }
     if (t >= 0.7f && t <= 2.6f) b->r.tear = (t - 0.7f) / 1.9f;
@@ -160,17 +160,20 @@ static void hate(float t, float T, bild_t *b)
 static void laugh(float t, float T, bild_t *b)
 {
     neutral2(b);
-    float e = envelope(t, T, 0.25f, 0.3f);
-    float hupf = -9 * fabsf(sinf(ZWEI_PI * 3.2f * t)) * e;
-    float kipp = 5 * sinf(ZWEI_PI * 1.6f * t) * e;
+    float e = envelope(t, T, 0.25f, 0.35f);
+    float salve = TRACK(t, {0.25f, 0}, {0.4f, 1.0f}, {1.15f, 1.0f}, {1.35f, 0.45f}, {1.75f, 0.45f}, {1.95f, 0});
+    float hupf = fabsf(sinf(ZWEI_PI * 2.2f * (t - 0.3f))) * salve;     /* 0 = aufgesetzt, 1 = oben */
+    float platt = (1 - hupf) * salve;
     auge_t *ps[2] = {&b->l, &b->r};
     for (int i = 0; i < 2; i++) {
-        ps[i]->kind = ART_HAPPY;
-        ps[i]->mix = e;
-        ps[i]->dy = hupf;
-        ps[i]->blink = 0.7f * e;
+        auge_t *p = ps[i];
+        Z(*p, w, 92, e); Z(*p, h, 86, e); Z(*p, r, 0.8f, e); Z(*p, bcurve, 0.40f, e); Z(*p, bot, 0.04f, e);
+        Z(*p, dy, -6, e);
+        p->dy -= 10 * hupf;
+        p->w += 6 * platt;
+        p->h -= 6 * platt;
     }
-    b->tilt = kipp;
+    b->tilt = 3 * sinf(ZWEI_PI * 1.1f * t) * e;
 }
 
 static void like(float t, float T, bild_t *b)
@@ -230,17 +233,19 @@ static void sleep_(float t, float T, bild_t *b)
 {
     (void)T;
     neutral2(b);
-    float top = TRACK(t, {0.2f, 0}, {1.0f, 0.55f}, {1.15f, 0.12f}, {2.0f, 0.72f}, {2.15f, 0.35f}, {3.0f, 0.88f});
-    float zu = smooth((t - 2.85f) / 0.25f);
-    float atem = 3 * sinf(ZWEI_PI * 0.6f * (t - 3.1f)) * smooth((t - 3.0f) / 0.3f);
+    float top = TRACK(t, {0.2f, 0}, {1.0f, 0.55f}, {1.15f, 0.12f}, {2.0f, 0.72f}, {2.15f, 0.35f});
+    float zu = smooth((t - 2.15f) / 0.85f);
+    float a = t - 3.0f < 0 ? 0 : (t - 3.0f > 1 ? 1 : t - 3.0f);
+    float atem = sinf(PI_F * a) * sinf(PI_F * a);
     auge_t *ps[2] = {&b->l, &b->r};
     for (int i = 0; i < 2; i++) {
         auge_t *p = ps[i];
-        p->top = top;
-        p->tslope = 10 * (t / 1.0f < 1.0f ? t / 1.0f : 1.0f);
-        p->dy = 8 * smooth(t / 3.0f) + atem;
-        p->kind = ART_CLOSED;
-        p->mix = zu;
+        p->top = top * (1 - zu);
+        p->tslope = 10 * (t / 1.0f < 1.0f ? t / 1.0f : 1.0f) * (1 - zu);
+        p->blink = zu;
+        p->r = lerp(0.36f, 1.0f, smooth((t - 2.75f) / 0.25f));
+        p->dy = lerp(8 * smooth(t / 3.0f), 20, zu) + 3 * atem;
+        p->w = 78 + 4 * atem;
     }
 }
 

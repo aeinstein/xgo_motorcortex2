@@ -255,18 +255,20 @@ def angry(t: float, T: float):
 
 
 def cute(t: float, T: float):
-    e = envelope(t, T, 0.4, 0.4)
-    # große runde Augen ohne Pupille, Unterrand leicht lächelnd, sanftes Wippen
-    hops = 0.03 * math.sin(2 * math.pi * 1.5 * t)
-    z = dict(w=100, h=100, r=1.0, bcurve=0.16, dy=-4 * hops / 0.03, sc=1.0 + hops)
-    l, r = pose(neutral(), z, e), pose(neutral(), z, e)
-    # in der Mitte kurz fröhlich zukneifen (^ ^)
-    hap = smooth((t - 1.45) / 0.15) * (1 - smooth((t - 2.05) / 0.15))
+    """Große, weich gerundete Augen rücken etwas zusammen, Kopf schief, zweimal sanft wippen; dann glücklich
+    zukneifen (Unterlid wölbt sich hoch, Kopf kippt zur anderen Seite), langsamer Lidschlag."""
+    e = envelope(t, T, 0.45, 0.45)
+    kneif = smooth((t - 1.3) / 0.25) * (1 - smooth((t - 1.85) / 0.3))
+    wipp = 4 * (blink(t, 0.55, 0.3) + blink(t, 0.9, 0.3))
+    z = dict(w=84, h=100, r=0.75, sc=1.06, dy=-4)
+    l, r = pose(neutral(), dict(z, dx=3), e), pose(neutral(), dict(z, dx=-3), e)
     for p in (l, r):
-        p.update(kind="happy", mix=hap)
-        p["blink"] = hap * 0.6
-    tilt = e * 9 * math.sin(2 * math.pi * (t - 0.4) / 1.6) * (t > 0.4)
-    return dict(tilt=tilt, gy=-3 * e), l, r
+        p["dy"] -= wipp * e
+        p["bcurve"] = 0.36 * kneif
+        p["h"] -= 6 * kneif
+        p["blink"] = blink(t, 2.1, 0.5)
+    tilt = e * track(t, [(0.2, 0), (0.7, 9), (1.3, 9), (1.75, -7), (2.3, -7), (2.7, 0)])
+    return dict(tilt=tilt), l, r
 
 
 def doubt(t: float, T: float):
@@ -292,12 +294,14 @@ def embarrassed(t: float, T: float):
 
 
 def grievance(t: float, T: float):
+    """Flehender Blick: besorgte Lider (innen hoch), mittelgroße Pupillen nach oben und leicht nach innen, kleiner
+    Glanz, Unterlid zittert, Träne."""
     e = envelope(t, T, 0.4, 0.45)
     wackel = math.sin(2 * math.pi * 7 * t) * e
-    z = dict(dy=-6, w=90, h=98, r=0.75, top=0.14, tslope=16, bot=0.10, pupil=0.70, ppy=-0.22, hl=1.0)
-    l, r = pose(neutral(), z, e), pose(neutral(), z, e)
+    z = dict(dy=-8, w=86, h=100, r=0.5, top=0.12, tslope=16, bot=0.04, pupil=0.38, ppy=-0.12, hl=0.45)
+    l, r = pose(neutral(), dict(z, ppx=0.08), e), pose(neutral(), dict(z, ppx=-0.08), e)
     for p in (l, r):
-        p["bot"] += 0.035 * wackel
+        p["bot"] += 0.03 * wackel
         p["dx"] += 0.8 * wackel
     if 0.7 <= t <= 2.6:
         r["tear"] = (t - 0.7) / 1.9
@@ -320,13 +324,19 @@ def hate(t: float, T: float):
 
 
 def laugh(t: float, T: float):
-    e = envelope(t, T, 0.25, 0.3)
-    hupf = -9 * abs(math.sin(2 * math.pi * 3.2 * t)) * e
-    kipp = 5 * math.sin(2 * math.pi * 1.6 * t) * e
-    l, r = neutral(), neutral()
+    """Lachaugen: das Unterlid wölbt sich hoch, übrig bleiben gefüllte Bögen; zwei Lachsalven hüpfen, beim
+    Aufsetzen breiter und flacher, der Kopf wackelt leicht."""
+    e = envelope(t, T, 0.25, 0.35)
+    salve = track(t, [(0.25, 0), (0.4, 1.0), (1.15, 1.0), (1.35, 0.45), (1.75, 0.45), (1.95, 0)])
+    hupf = abs(math.sin(2 * math.pi * 2.2 * (t - 0.3))) * salve      # 0 = aufgesetzt, 1 = oben
+    platt = (1 - hupf) * salve
+    z = dict(w=92, h=86, r=0.8, bcurve=0.40, bot=0.04, dy=-6)
+    l, r = pose(neutral(), z, e), pose(neutral(), z, e)
     for p in (l, r):
-        p.update(kind="happy", mix=e, dy=hupf, blink=0.7 * e)
-    return dict(tilt=kipp), l, r
+        p["dy"] -= 10 * hupf
+        p["w"] += 6 * platt
+        p["h"] -= 6 * platt
+    return dict(tilt=3 * math.sin(2 * math.pi * 1.1 * t) * e), l, r
 
 
 def like(t: float, T: float):
@@ -367,14 +377,16 @@ def shy(t: float, T: float):
 
 
 def sleep(t: float, T: float):
-    # schwere Lider, zweimal hochgeschreckt, dann zu; danach ruhiges Atmen
-    top = track(t, [(0.2, 0), (1.0, 0.55), (1.15, 0.12), (2.0, 0.72), (2.15, 0.35), (3.0, 0.88)])
-    zu = smooth((t - 2.85) / 0.25)
-    atem = 3 * math.sin(2 * math.pi * 0.6 * (t - 3.1)) * smooth((t - 3.0) / 0.3)
+    # schwere Lider, zweimal hochgeschreckt; dann fallen die Lider und das Auge wird zum flachen Strich unterhalb der
+    # Mitte (wie der Lidschlag, Lider entspannt waagrecht), ein langsamer Atemzug, Ende in Ruhe
+    top = track(t, [(0.2, 0), (1.0, 0.55), (1.15, 0.12), (2.0, 0.72), (2.15, 0.35)])
+    zu = smooth((t - 2.15) / 0.85)
+    atem = math.sin(math.pi * min(1.0, max(0.0, t - 3.0))) ** 2
     l, r = neutral(), neutral()
     for p in (l, r):
-        p.update(top=top, tslope=10 * min(1.0, t / 1.0), dy=8 * smooth(t / 3.0) + atem,
-                 kind="closed", mix=zu)
+        p.update(top=top * (1 - zu), tslope=10 * min(1.0, t / 1.0) * (1 - zu), blink=zu,
+                 r=lerp(0.36, 1.0, smooth((t - 2.75) / 0.25)), dy=lerp(8 * smooth(t / 3.0), 20, zu) + 3 * atem,
+                 w=78 + 4 * atem)
     return dict(), l, r
 
 

@@ -73,16 +73,16 @@ from the colour folder and `lcd.py` shows the colour atlas (loaded once, at most
 | `Angry` | lids slanted down toward the center, trembling, two pulses |
 | `angst` | wide eyes, small pupils darting left/right, worried lids (inner corners up), trembling (fear of the dark) |
 | `aufwachen` | eyes start closed, open halfway, close again, open fully, look left and right, one blink (boot) |
-| `cute` | large round eyes without pupils, smiling lower edge, gentle bob, head tilt, short `^ ^` squint |
+| `cute` | larger soft rounded eyes move closer, head tilt, two gentle bobs, happy squint (lower lid arches up, filled) with tilt to the other side, slow blink |
 | `doubt` | one eye raised, other squinted, glance right then left |
 | `embarrassed` | darting glances left/right, then trembling `> <` |
-| `grievance` | round pleading eyes looking up, sad lids, quivering lower lid, tear |
+| `grievance` | pleading: worried lids (inner corners up), medium pupils looking up and slightly inward, small glint, quivering lower lid, tear |
 | `hate` | eye roll upward, then narrowed frowning slits, side glance |
-| `laugh` | `^ ^` arcs bouncing |
+| `laugh` | filled laughing arcs (lower lid arches up), two bursts of hops, wider and flatter on each landing, slight head wobble |
 | `like` | heart eyes beating |
 | `sad` | lids drooping outward, eyes sink, slow blink |
 | `shy` | smaller half-closed eyes looking down/aside, one glance back |
-| `sleep` | lids get heavy, two jerks awake, closed `‿ ‿`, breathing |
+| `sleep` | lids get heavy, two jerks awake, then the eyes close to a flat bar below the centre (like a blink, lids level), one slow breath |
 | `surprised` | eyes pop to large circles (overshoot), double blink |
 | `vertigo` | rotating spirals circling in opposite phase |
 
@@ -97,7 +97,7 @@ send text lines, nothing is pre-rendered for it. On the Rider since 2026-11-28, 
 | Input | FIFO `/tmp/lcd0.augen` (created by the daemon, root:video 0660), one command per line (< 128 bytes, atomic) |
 | Names | `/tmp/lcd0.augen.namen`: expressions the daemon knows (`emotion.sh` uses the generator only for these) |
 | Raster | signed distance per pixel inside the eye rectangles, coverage `clamp(0.65 − d)` (cv2 LINE_AA draws ~0.15 px larger), strokes +0.1 px; sampled at (i + 0.375, j + 0.375) like INTER_AREA of the 4× mask |
-| Match with `tools/eyes.py` | mean ≤ 0.13 %, area ≤ 2 %, summed ≤ 5.4 % (`sleep`: distance to the flat half-ellipse approximated) |
+| Match with `tools/eyes.py` | mean ≤ 0.13 %, area ≤ 2 %, summed ≤ 2 % (kimmy 2026-11-28) |
 | Frame rate | 25 fps while something moves (expression, saccade, blink, colour fade), 10 fps while only breathing, without breathing only at the next blink or microsaccade (≤ 1 s), none when off |
 | SPI | only the union of old and new eye rectangle (window of `st7789_basic_draw_picture_16bits`) |
 | Cost | raster per frame: kimmy 0.16–0.4 ms; CM4 at 1.5 GHz 1.2–3.4 ms (mean 2.1 ms, living eyes 1.4 ms), at the idle clock (600–700 MHz, ondemand) ~5 ms. Daemon CPU on the Rider 2026-11-28 (idle clock): off 0 %, living eyes without breathing 1.7 %, with breathing 5.6 % (10 fps), expressions back to back 16 % of a core; pet lying with image processing (1.5 GHz) 4.1 %. `/tmp/lcd0.augen.stat` every 10 s: frames/s, µs raster, µs SPI, pixels |
