@@ -265,7 +265,7 @@ height: with a full battery, by day and rested every factor is exactly 1 (behavi
 |---|---|---|
 | ≥ 60 % | munter | energy 1, as before |
 | 40–60 % | gesetzt | energy 0.85 |
-| 25–40 % | hungrig | energy 0.6; no driving (as before, `roam_battery`); person in view (zone mitte/nah/knien): begs (`grievance`, `wimmern`, head tilt) every `bettel_repeat_s` 120 s; alone: stomach growl (`knurren`) every `knurr_repeat_s` 180 s; detector at `doze_hz` without a target |
+| 25–40 % | hungrig | energy 0.6; no driving (as before, `roam_battery`); person in view (zone mitte/nah/knien): begs (`grievance`, `wimmern`, head tilt) every `bettel_repeat_s` 120 s; alone: stomach growl (`knurren`) every `knurr_repeat_s` 180 s; detector at `doze_hz` without a target; nobody around for `timeout_s` (scaled): sleep mode instead of `idle` (user 2026-11-28) |
 | 10–25 % | erschoepft | `sad` + yawn (`gaehnen`); with start image and farther than 0.3 m from the start: drives home like `home` (allowed down to 10 %, nothing in view interrupts it, at most 180 s), then sets down and sleep mode; without: closes the eyes, after 2.5 s sets down and sleep mode. Lying: sleep mode. No faint, no stand-up |
 | < 10 % | leer | `sleep` + sigh, at once set down and sleep mode |
 

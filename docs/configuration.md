@@ -248,7 +248,7 @@ All keys with comments: `PetCfg` in `xgonav/config.py`.
 | `doze_s`, `timeout_s` | 180, 600 | nobody around: doze; set down and `idle` |
 | `gaze_dir` | `/opt/xgonav/eyes_gaze` | eye atlas |
 | `akku_gesetzt`, `akku_hungrig`, `akku_erschoepft`, `akku_leer`, `akku_hyst`, `akku_median_s` | 60, 40, 25, 10 %, 3, 60 | battery stages ([inner life](display-emotions.md#inner-life-and-battery-xgonavinnenpy-2026-11-28)) |
-| `akku_ruhe`, `akku_heim` | true, true | exhausted/empty: set down + sleep mode; exhausted: first home with start image |
+| `akku_ruhe`, `akku_heim` | true, true | exhausted/empty, and hungry after `timeout_s`: set down + sleep mode; exhausted: first home with start image |
 | `laden_punkte`, `laden_fenster_s`, `laden_wach` | 2, 600, 90 % | charging in pet's own sleep mode: purr; wake at 90 % (0 = never) |
 | `bettel_repeat_s`, `knurr_repeat_s` | 120, 180 | hungry: beg (person in view), stomach growl (alone) |
 | `muede_ab_m`, `muede_m`, `nacht_von`, `nacht_bis`, `nacht_energie` | 20, 60, 22, 7, 0.7 | tiredness from activity, night |

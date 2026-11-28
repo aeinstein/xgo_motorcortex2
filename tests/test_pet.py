@@ -1573,3 +1573,13 @@ def test_muede_augen_und_hoehe():
     assert lid == pytest.approx(0.1) and rate == pytest.approx(15 * 0.84)
     assert acts[-1].height_mm == pytest.approx(100.0 - 6.0 * 0.4)
     assert b.info()["akku"]["stufe"] == "hungrig" and b.info()["energie"] == pytest.approx(0.6)
+
+
+def test_lange_allein_wenig_akku_ruhe():
+    """Nutzer 2026-11-28: bei wenig Akku (hungrig) nach timeout_s Ruhemodus statt idle; voller Akku wie bisher."""
+    b = brain(doze_s=5.0, timeout_s=8.0, gestures=False)
+    run(b, 0.0, 6.0, battery=35)                         # hungrig: timeout_s x 0,72 = 5,76 s
+    assert b.want_ruhe is not None and not b.want_idle and not b.want_set_down and b.state == "aus"
+    b2 = brain(doze_s=5.0, timeout_s=8.0, gestures=False)
+    run(b2, 0.0, 9.0)
+    assert b2.want_idle and b2.want_set_down and b2.want_ruhe is None

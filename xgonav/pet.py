@@ -1005,6 +1005,11 @@ class PetBrain:
         alone = t - self._seen_t
         fz, fs = self.innen.f_zeit(), self.innen.f_streifen()   # Energie 1: beide genau 1 (wie ohne Innenleben)
         if alone >= c.timeout_s * fz:
+            if c.akku_ruhe and self.akku.stufe != "munter" and self.akku.stufe != "gesetzt":
+                # wenig Akku (ab hungrig): Ruhemodus statt idle, der Ladewächter weckt ihn (Nutzer 2026-11-28)
+                self._react(t, "sleep", "seufzen", urgent=True)
+                self._ruhe(s, "%.0f s niemand, Akku %s" % (alone, self.akku.stufe))
+                return True
             log.info("pet: %.0f s niemand, setze ab (Akku)", alone)
             self.want_set_down = self.want_idle = True
             self._set_state("aus", t)
