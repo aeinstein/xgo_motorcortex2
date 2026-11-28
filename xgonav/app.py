@@ -22,6 +22,7 @@ from .detector import Detection, DetectorWorker
 from .egomotion import EgoMotion, EgoResult, warp_box
 from .fahrrahmen import KURSABS_VORAUS_DEG
 from .floornet import FloorNet
+from .gesicht import Gesichter
 from .freespace import FreeSpace, FreeSpaceEstimator, FreeSpaceWorker, column_runs
 from .gridmap import GridMap, GridWorker
 from .mathe import to_world, w_to_yaw_rate, wrap
@@ -249,6 +250,7 @@ class App:
         self._gain_fest = float(cfg.camera.analogue_gain) or 16.0
         self.ortung = None             # ortung.Ortung (Schallrichtung), von __main__ gesetzt (nur am Rider)
         self.stimmen = None            # stimme.Stimmen (Nachplappern in pet), hängt an der Ortung
+        self.gesichter: Gesichter | None = None   # Gesichter wiedererkennen (gesicht.py), in run() geladen
         # Fahr-Aktion der Firmware (robot.FW_ACTIONS): vom Web angefragt, im Regelschritt geprüft und gestartet
         self._action_pending: int | None = None
         self._action_note: tuple[str, float] | None = None   # (Meldung, anzeigen bis) für die Statuszeile
@@ -369,6 +371,8 @@ class App:
                           petcfg=self.cfg.pet, sbcfg=self.cfg.startbild if getattr(self, "startbild", None) else None)
         if name == "patrol" and getattr(self, "gridmap", None) is not None:
             b.set_route(self.gridmap.route, self.gridmap.route_loop)
+        if name == "pet":                                    # Begrüßung je Person (Web); Gesichter erst in run()
+            b.brain.gruss_fuer = lambda n: self.gesichter.gruss(n) if self.gesichter is not None else {}
         return b
 
     def set_route(self, points, loop: bool, zones=None) -> list[str]:
@@ -900,6 +904,12 @@ class App:
         self.robot.start()
         self.src.start()
         has_det = self.det.start()
+        if has_det and self.gesichter is None and self.cfg.gesicht.enabled:
+            g = Gesichter(self.cfg.gesicht)
+            if g.start():
+                self.gesichter = g
+        if self.gesichter is not None:
+            self.det.gesichter = self.gesichter
         if self.fs_worker is not None and self.cfg.freespace.threaded:
             self.fs_worker.start()
         if self.wheels is not None and not self.wheels.start():
@@ -1110,13 +1120,18 @@ class App:
             self._det_count += 1
             T = self.ego.transform_between(batch.frame_idx, f.idx)
             if T is not None:
-                dets = [Detection(warp_box(T, d.box), d.cls, d.conf) for d in batch.dets]
+                dets = [Detection(warp_box(T, d.box), d.cls, d.conf, getattr(d, "who", None), getattr(d, "who_sim", None))
+                        for d in batch.dets]
                 self.tracker.update(dets, f.t, lag=f.t - batch.t)
             else:
                 log.debug("Detektion zu alt, verworfen")
         self.tracker.prune(f.t)
         if self.behavior.name in self.DET_MODES:
-            self.det.offer(f, ego.sharpness, self.ego.sharpness_median())
+            g = self.gesichter
+            named = None              # Gesichtsprüfung nur in [gesicht] modes; benannte Tracks nicht noch einmal
+            if g is not None and g.ok and g.merkmale and self.behavior.name in self.cfg.gesicht.modes:
+                named = [t.box for t in self.tracker.tracks if t.who]
+            self.det.offer(f, ego.sharpness, self.ego.sharpness_median(), named)
         tm.mark("det")
 
         bal = self.robot.state.balancing
@@ -1287,7 +1302,8 @@ class App:
                         ego=ego, cmd=self._cmd, sent=self.robot.command,
                         stats={"fps": round(self.src.fps_measured, 1), "loop_ms": round(self._loop_ms, 1),
                                **self._loop_spread(),
-                               "det_ms": round(self.det.infer_ms, 1), "det_batches": self._det_count,
+                               "det_ms": round(self.det.infer_ms, 1),
+                               "gesicht_ms": None if self.gesichter is None else round(self.gesichter.ms, 1), "det_batches": self._det_count,
                                "plan_ms": round(self.planner.ms, 1) if self.planner is not None else None,
                                "explore": self.behavior.info() if self.behavior.name == "explore" and hasattr(self.behavior, "info") else None,
                                "patrol": self.behavior.info() if self.behavior.name == "patrol" else None,
@@ -1580,6 +1596,8 @@ class App:
             hz = b.brain.det_hz if b.brain.det_hz is not None else self._pet_det_hz   # None: wie im Modus follow
             if det.max_hz != hz:
                 det.max_hz = hz
+        if self.emotions is not None:
+            self.emotions.farbe = b.brain.augen       # Augenfarbe der erkannten Person (vor ihrer Begrüßung)
         for kind, name, urgent in b.brain.drain():
             if self.emotions is not None:
                 try:
@@ -1592,6 +1610,8 @@ class App:
         b = self.behavior
         if b.name != "pet":
             return
+        if self.emotions is not None:
+            self.emotions.farbe = None
         det = getattr(self.det, "cfg", None)
         if det is not None and getattr(self, "_pet_det_hz", None) is not None:
             det.max_hz, self._pet_det_hz = self._pet_det_hz, None
@@ -1883,7 +1903,7 @@ def render(snap: Snapshot, text: bool = True, horizont: tuple[float, float, floa
         tgt = t.id == snap.cmd.target_id
         col = (0, 0, 255) if tgt else (0, 200, 0)
         cv2.rectangle(img, (x1, y1), (x2, y2), col, 3 if tgt else 1)
-        cv2.putText(img, f"#{t.id} {t.cls} {t.conf:.2f}", (x1, max(12, y1 - 4)),
+        cv2.putText(img, f"#{t.id} {t.who or t.cls} {t.conf:.2f}", (x1, max(12, y1 - 4)),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.45, col, 1, cv2.LINE_AA)
     e = snap.ego
     if e is not None:

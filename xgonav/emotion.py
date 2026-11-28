@@ -174,6 +174,7 @@ class Emotions:
         self._snd_proc: subprocess.Popen | None = None
         self._aplay = shutil.which("aplay")
         self.stimme_datei = None                     # NN -> Pfad (stimme.Stimmen.datei), von __main__ gesetzt
+        self.farbe: str | None = None                # Augenfarbe (pet, erkannte Person): <dir>_<farbe>/, sonst dir
         self.sounds = {"gefunden": os.path.join(cfg.sound_dir, cfg.sound_found),
                        "verloren": os.path.join(cfg.sound_dir, cfg.sound_lost)}
         self.sound_enabled = bool(cfg.sound and self._aplay
@@ -216,6 +217,10 @@ class Emotions:
 
     def _play_display(self, name: str) -> None:
         d = os.path.join(self.cfg.dir, name)
+        if self.farbe:
+            df = os.path.join(f"{self.cfg.dir}_{self.farbe}", name)
+            if os.path.isdir(df):
+                d = df
         if not os.path.isdir(d):
             log.warning("Emotion %s fehlt in %s", name, self.cfg.dir)
             return

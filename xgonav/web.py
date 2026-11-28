@@ -22,8 +22,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 import cv2
+import numpy as np
 
-from . import stimme
+from . import gesicht, stimme
 from .affinity import pin_thread
 from .app import App, ModeNotAllowed, render
 from .jpeg import Jpeg
@@ -76,7 +77,8 @@ API = {"GET": ["/status", "/ws?nick=2|3 (WebSocket: Bilder, Bestätigung je Bild
                "/map.png?px=480&view=6 (Raumkarte)",
                "/startbild.jpg (Bild am Startpunkt, Anker des Abgleichs; 404 ohne, z. B. nach dem Absetzen)",
                "/detector (wählbare Ziele für follow/approach: Klassen des Detektors)",
-               "/floornet (wählbare Bodenmodelle in [freespace] net_dir, aktives und geladenes)"],
+               "/floornet (wählbare Bodenmodelle in [freespace] net_dir, aktives und geladenes)",
+               "/gesicht (Gesichtserkennung: an/aus, Namen mit Fotoanzahl, ms je Prüfung)"],
        "POST": ["/mode?name=..&target=..", "/stop", "/action?n=3|4|5 (Fahr-Aktion der Firmware, nur idle; Bahnprüfung bleibt)","/pipeline?on=0|1", "/ruhe?on=0|1 (Ruhemodus; Wecken startet nichts)", "/wlan?on=0|1 (WLAN-Einrichtung: QR-Code; wie Tasten C+D halten)", "/record?on=0|1 (Rohaufzeichnung, nur balancierend)",
                 "/drive?v=..&w=..&sicher=0|1&bogen=0|1&strecke=M (nur Modus manual; v, w Anteile von max_v/max_w; sicher=1: mit Bodengrenze und Bahnprüfung; bogen=1: als Kreisbogen κ = w/v, mit robot.vel_kappa in der Firmware; strecke=M: nach M Metern halten, mit robot.vel_strecke in der Firmware)",
                 "/turn?deg=..&w=0.5&tol=3 (nur Modus manual: um deg drehen, + = links; Fortschritt in /status turn)",
@@ -87,9 +89,14 @@ API = {"GET": ["/status", "/ws?nick=2|3 (WebSocket: Bilder, Bestätigung je Bild
                 "/floornet?name=<datei>.bin (Bodenmodell wechseln: laden, prüfen, Symlink [freespace] net umstellen; nur idle/manual)",
                 "/stimme/spielen?name=NN", "/stimme/loeschen?name=NN|<Zeit>",
                 "/stimme/fest?name=NN&an=0|1 (schützen: fällt nie raus)",
-                "/stimme/hochladen?fertig=0|1 (Body: WAV mono int16, 16 kHz bzw. fertig 48 kHz ohne Filter, höchstens 1000 KB; reiht als feste bestätigte Probe ein)"]}
+                "/stimme/hochladen?fertig=0|1 (Body: WAV mono int16, 16 kHz bzw. fertig 48 kHz ohne Filter, höchstens 1000 KB; reiht als feste bestätigte Probe ein)",
+                "/gesicht/hochladen?name=.. (Body: JPEG/PNG, höchstens 4 MB; größtes Gesicht anlernen, Antwort nr + Ausschnitt base64)",
+                "/gesicht/loeschen?name=..&nr=NN (ohne nr: alle Fotos des Namens)",
+                "/gesicht/gruss?name=..&emotion=..&sound=..&augen=.. (Begrüßung je Person; leer = [pet] greet_*, "
+                "- = keine, sound auch stimme:NN, augen = Farbe aus tools/eyes.py PALETTE)"]}
 
 
+GESICHT_UPLOAD_MAX = 4 * 1024 * 1024   # der Browser verkleinert auf 1024 px, das sind meist < 300 KB
 STIMME_UPLOAD_MAX = 1000 * 1024  # fertig: 8 s bei 48 kHz mono int16 sind 750 KB (nginx: 1 MB)
 WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 WS_ACK_TIMEOUT_S = 10.0     # ohne Bestätigung so lange: Verbindung gilt als tot
@@ -160,7 +167,9 @@ def serve(app: App, host: str, port: int, fps: int, render_cpus=None) -> Threadi
                         "status": app._cmd.status if not app.pipeline_on else s.cmd.status, "target": s.cmd.target_id,
                         "cmd": {"v": round(s.sent[0], 3), "w": round(s.sent[1], 3)},
                         "tracks": [{"id": t.id, "cls": t.cls, "conf": round(t.conf, 2),
-                                    "box": [round(x) for x in t.box]} for t in s.tracks],
+                                    "box": [round(x) for x in t.box], "who": getattr(t, "who", None),
+                                    "who_sim": None if getattr(t, "who_sim", None) is None else round(t.who_sim, 3)}
+                                   for t in s.tracks],
                         "free": [round(x, 2) for x in (s.free.sectors if s.free else [])],
                         "ttc": round(s.ego.ttc, 2) if s.ego and s.ego.ttc < 99 else None,
                         **s.stats}
@@ -230,6 +239,9 @@ def serve(app: App, host: str, port: int, fps: int, render_cpus=None) -> Threadi
                 return self._send(200, json.dumps(body).encode())
             if u.path == "/floornet":
                 return self._send(200, json.dumps(app.floornet_info()).encode())
+            if u.path == "/gesicht":
+                g = getattr(app, "gesichter", None)
+                return self._send(200, json.dumps(g.status() if g is not None else {"on": False}).encode())
             if u.path == "/map.png":
                 return self._map_png(parse_qs(u.query))
             if u.path == "/startbild.jpg":
@@ -275,6 +287,37 @@ def serve(app: App, host: str, port: int, fps: int, render_cpus=None) -> Threadi
                 except OSError as e:
                     return self._send(500, json.dumps({"error": f"Symlink nicht umstellbar: {e}"}).encode())
                 return self._send(200, json.dumps({"ok": True, "geladen": name}).encode())
+            if u.path in ("/gesicht/hochladen", "/gesicht/loeschen", "/gesicht/gruss"):
+                g = getattr(app, "gesichter", None)
+                if g is None or not g.ok:
+                    return self._send(404, b'{"error":"Gesichtserkennung aus (Modelle fehlen oder Detektor aus)"}')
+                name = q.get("name", [""])[0]
+                if u.path == "/gesicht/gruss":
+                    if not g.gruss_setzen(name, q.get("emotion", [""])[0], q.get("sound", [""])[0],
+                                          q.get("augen", [""])[0]):
+                        return self._send(400, json.dumps({"error": "Name nicht angelernt oder Emotion/Ton/Augen ungültig"}).encode())
+                    return self._send(200, json.dumps({"ok": True, "gruss": g.gruesse.get(name, {})}).encode())
+                if u.path == "/gesicht/loeschen":
+                    nr = q.get("nr", [None])[0]
+                    if not g.loeschen(name, nr):
+                        return self._send(404, b'{"error":"nicht vorhanden"}')
+                    return self._send(200, b'{"ok":true}')
+                try:
+                    n = int(self.headers.get("Content-Length", "0"))
+                except ValueError:
+                    n = -1
+                if n <= 0 or n > GESICHT_UPLOAD_MAX:
+                    return self._send(413, b'{"error":"Bild fehlt oder zu gross (max. 4 MB)"}')
+                img = cv2.imdecode(np.frombuffer(self.rfile.read(n), np.uint8), cv2.IMREAD_COLOR)
+                if img is None:
+                    return self._send(400, b'{"error":"Bild nicht lesbar"}')
+                pin_thread(render_cpus, "Bild-Thread", quiet=True)
+                try:
+                    nr, jpg = g.anlernen(img, name)
+                except gesicht.GesichtFehler as e:
+                    return self._send(400, json.dumps({"error": str(e)}).encode())
+                return self._send(200, json.dumps({"ok": True, "name": name, "nr": nr,
+                                                   "jpg": base64.b64encode(jpg).decode()}).encode())
             if u.path == "/stimme/hochladen":
                 # Kachel „Samples“: der Browser hat schon in 16 kHz mono gewandelt; hier nur Tor, Filter, Merkmale
                 st = getattr(app, "stimmen", None)

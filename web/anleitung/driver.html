@@ -938,6 +938,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#pi-off-signal-action-235" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pi off signal (action 235)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#uart-raw-mode-required" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1134,6 +1145,34 @@
     
   
     Audio
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="faces.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Face recognition
   
 
     
@@ -1382,6 +1421,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#pi-off-signal-action-235" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pi off signal (action 235)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#uart-raw-mode-required" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1551,7 +1601,7 @@ cat /proc/XGORider/serial_stats; cat /proc/XGORider/imu
 </tr>
 <tr>
 <td>Frame</td>
-<td><code>55 00 22 14 11</code> + 26 B + checksum <code>00 AA</code>: seq u16, t_us u32 (<code>micros()</code> right after the IMU read), roll/pitch/yaw float, ticks wheel 11/21 s32 (little endian)</td>
+<td><code>55 00 22 14 11</code> + 26 B + checksum <code>00 AA</code>: seq u16, t_us u32 (<code>micros()</code> right after the IMU read), roll/pitch/yaw float, ticks wheel 11/21 s32 (little endian); firmware with caps bit5 (2026-11-27): <code>55 00 24 14 11</code> + 28 B, + body height u16 = (leg A + B)/2 in height-byte scale × 100 (12800 = byte 128), 0xFFFF = unknown (lying). Driver accepts both</td>
 </tr>
 <tr>
 <td>Rates</td>
@@ -1563,7 +1613,7 @@ cat /proc/XGORider/serial_stats; cat /proc/XGORider/imu
 </tr>
 <tr>
 <td>Logs</td>
-<td>each frame → one <code>imu_log</code> and one <code>wheels_log</code> sample (<code>fw_ms</code> = t_us / 1000)</td>
+<td>each frame → one <code>imu_log</code> and one <code>wheels_log</code> sample (<code>fw_ms</code> = t_us / 1000); 28 B frames also the newest <code>body_height</code></td>
 </tr>
 <tr>
 <td>Polling</td>
@@ -1639,7 +1689,7 @@ cat /proc/XGORider/serial_stats; cat /proc/XGORider/imu
 <tr>
 <td><code>action</code></td>
 <td>w</td>
-<td>u8; R-1.1.6+patch: 1..6 actions, 237 restart the ESP32 (firmware patch 05-actions, refused while balancing), 253 stand up from lying, 254 disarm/emergency stop, 255 arm, 0 = no action</td>
+<td>u8; R-1.1.6+patch: 1..6 actions, 233/234 Pi up / shutting down, 235 Pi off (sent by the driver, see below), 237 restart the ESP32 (firmware patch 05-actions, refused while balancing), 253 stand up from lying, 254 disarm/emergency stop, 255 arm, 0 = no action</td>
 <td>0x3e</td>
 </tr>
 <tr>
@@ -1695,6 +1745,12 @@ cat /proc/XGORider/serial_stats; cat /proc/XGORider/imu
 <td>r</td>
 <td>last 64 samples</td>
 <td></td>
+</tr>
+<tr>
+<td><code>body_height</code></td>
+<td>r</td>
+<td><code>t_ns height</code> of the newest stream sample: actual body height (leg A + B)/2 incl. curve lean, height-byte scale × 100; empty without height in the stream (old firmware), while lying or when the stream stopped. xgonav uses only this once it has seen a value (<code>ProcRobot.height_mm</code>)</td>
+<td>0x11</td>
 </tr>
 <tr>
 <td><code>serial_stats</code></td>
@@ -1789,6 +1845,40 @@ cat /proc/XGORider/serial_stats; cat /proc/XGORider/imu
 </tr>
 </tbody>
 </table>
+<h2 id="pi-off-signal-action-235">Pi off signal (action 235)<a class="headerlink" href="#pi-off-signal-action-235" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>When</th>
+<th>Sent by</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>module load</td>
+<td>driver (<code>send_pi_on</code>)</td>
+<td>233: clears 234/235</td>
+</tr>
+<tr>
+<td>shutdown starts (systemd stops units)</td>
+<td><code>xgo-shutdown-led.service</code></td>
+<td>234: LEDs blue</td>
+</tr>
+<tr>
+<td>last moment: reboot notifier, priority <code>INT_MIN</code></td>
+<td>driver (<code>xgo_reboot_notify</code> → <code>send_pi_off</code>)</td>
+<td>235 on poweroff, halt <strong>and</strong> reboot</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li>Notifier runs in <code>kernel_shutdown_prepare()</code> before <code>device_shutdown()</code>: userspace gone, filesystems unmounted, UART still up. Driver waits 20 ms for the 9 bytes to leave.</li>
+<li>After 235 the send queue refuses all writes (<code>-ESHUTDOWN</code>); read requests still pass. 235 is always the last write.</li>
+<li>Firmware (patch 06-leds): sets down like 254 (wheels off, legs limp), IMU stream off, LEDs blink blue 3× then off. Cleared by 233, arm/stand-up (255/253), ESP restart. Accepted at low battery.</li>
+<li>No signal on <code>emergency_restart</code> (SysRq b), panic, power loss. Kernel log of the notifier is not in the journal (already unmounted): check on the ESP32 USB console (<code>pi off: stop, imu stream off, leds</code>).</li>
+<li>Pi cost: none at runtime.</li>
+</ul>
 <h2 id="uart-raw-mode-required">UART raw mode (required)<a class="headerlink" href="#uart-raw-mode-required" title="Permanent link">&para;</a></h2>
 <p><code>deploy/rc.local</code>:
 <div class="highlight"><pre><span></span><code>stty -F /dev/ttyAMA0 115200 cs8 -cstopb -parenb -brkint -imaxbel -opost -onlcr -isig -icanon -iexten \
@@ -1806,6 +1896,7 @@ cat /proc/XGORider/serial_stats; cat /proc/XGORider/imu
 <h2 id="userspace-test">Userspace test<a class="headerlink" href="#userspace-test" title="Permanent link">&para;</a></h2>
 <p><div class="highlight"><pre><span></span><code>driver-test/run.sh kernel_module [seconds=6] [imu_hz=50] [--wheels --combo] [--stream[=HZ] | --stream-off] [--tunnel] [--faults]
 </code></pre></div>
+Always checked (<code>PIOFFTEST</code>): 233 is the first action, 235 the last write while other threads keep writing, writes after it return <code>-ESHUTDOWN</code>.
 <code>--tunnel</code> (firmware patch 01-ble): the emulator sends data through the BLE tunnel (frames type 0x15), the harness echoes it via register 0x17; checked complete and in order next to polling and stream (2026-11-20 with <code>--stream --faults</code>: 892 bytes in 45 records, none dropped).
 Compiles the real <code>xgo-serial.c</code> and IMU code against <code>kshim.h</code>, runs it against <code>esp32_emu.py</code>. Without <code>--wheels --combo</code> the emulator has no 0x0d and the driver does not poll IMU/wheels (stream only).
 Result (polling 0x0d): 49 Hz at target 50, pitch error 0.06° median, parser recovers from drops, noise bytes, bad checksums.

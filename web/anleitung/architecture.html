@@ -1159,6 +1159,34 @@
   
   
     <li class="md-nav__item">
+      <a href="faces.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Face recognition
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="wifi-setup.html" class="md-nav__link">
         
   
@@ -1618,7 +1646,12 @@
 <tr>
 <td><code>home</code>, <code>explore</code>, <code>patrol</code>; <code>follow</code> search at the last position; every planned path in <code>pet</code> (come, roam, search, call search, home)</td>
 <td>yes</td>
-<td><code>PathFollower.drive</code> (hysteresis, narrow passages, <code>slow_end</code>, stuck, push)</td>
+<td><code>PathFollower.drive</code> (hysteresis, narrow passages, <code>slow_end</code>, stuck, push); speed independent of the heading error since 2026-11-26 (before v · (1 − |err|/90°)), braking only for curves (<code>kurve_v</code>), path end, obstacles, narrow passages; steering as pure pursuit arc κ = 2·sin(err)/look-ahead, w = κ·v without minimum (<code>home.lenk_bogen</code>, 2026-11-26)</td>
+</tr>
+<tr>
+<td>fixed test path <code>POST /bahn</code> (mode <code>manual</code>)</td>
+<td>no</td>
+<td><code>PathFollower.drive</code> on a given snake, then 180° and back (<code>Manual.bahn</code>)</td>
 </tr>
 <tr>
 <td><code>follow</code> with target in view (also <code>pet</code> following)</td>

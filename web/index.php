@@ -303,6 +303,10 @@ details.extras[open]>summary{margin-bottom:8px}
 .samples button.pin.aktiv{opacity:1}
 .samples tr.spielt td{background:var(--karte2)}
 .samples-hoch{align-items:center}
+.gesichter{display:flex;flex-wrap:wrap;gap:4px;margin:4px 0}
+.gesichter figure{margin:0;position:relative}
+.gesichter img{width:56px;height:56px;border-radius:4px;display:block}
+.gesichter figure button{position:absolute;top:1px;right:1px;padding:0 4px;font-size:11px;line-height:1.3}
 .samples-hoch input[type=file]{font-size:12px;line-height:1.4;padding:2px 4px;cursor:pointer;max-width:100%}
 .samples-hoch input[type=file]::file-selector-button{font:inherit;padding:0 6px;margin-right:6px;border-radius:4px;border:1px solid var(--rand2);background:var(--karte);color:var(--text);cursor:pointer}
 .samples-hoch label{font-size:12px;white-space:nowrap}
@@ -624,6 +628,28 @@ details.extras[open]>summary{margin-bottom:8px}
         16 kHz mono (höchstens 3 s), der Rider filtert sie wie eine gelernte und reiht sie ohne Prüfung ein („fertig bearbeitet“: 48 kHz, höchstens
         8 s, unverändert ohne Filter). 📌 schützt eine Stimme: sie fällt nie raus (nur ✕ löscht sie), noch einmal
         klicken löst den Schutz; hochgeladene sind von Anfang an geschützt. Liste nur beim Aufklappen und nach „Neu laden“, kein Nachladen.</p>
+    </details>
+  </details>
+  <details class="karte extras" id="gesichtkarte" ontoggle="gesichterUmschalten()">
+    <summary><h2>Gesichter</h2><span class="leise" id="gesichter-zustand">eingeklappt: kein Nachladen</span></summary>
+    <div class="unter">Angelernte Gesichter <button class="rechts" onclick="gesichterLaden()" title="Liste neu von der Platte lesen">Neu laden</button></div>
+    <div id="gesichter-liste"></div>
+    <div class="knoepfe samples-hoch">
+      <input type="text" id="gesicht-name" maxlength="32" size="10" placeholder="Name" title="Buchstaben, Ziffern, _ und -">
+      <input type="file" id="gesicht-dateien" accept="image/*" multiple>
+      <button onclick="gesichterHochladen()" title="Je Foto das größte Gesicht: im Browser auf 1024 px verkleinert, am Rider einmal ausgerichtet und gemerkt">Hochladen</button>
+      <span class="leise" id="gesicht-hoch-zustand"></span>
+    </div>
+    <details class="hilfe" data-i18n-html="hilfe-gesichter"><summary>Anlernen und Grenzen</summary>
+      <p>Der Modus Haustier erkennt angelernte Gesichter wieder (<code>[gesicht]</code>, Ablage
+        <code>/opt/xgonav/gesichter</code>) und begrüßt sie, je Person mit eigener Emotion und eigenem Ton (Auswahl
+        unter dem Namen; Standard: <code>[pet] greet_*</code>). Die Augenfarbe gilt, solange die Person erkannt wird,
+        und noch 20 s danach (<code>[pet] eye_hold_s</code>), auch für alle Emotionen in dieser Zeit. Als Ton geht auch eine Stimmprobe aus „Samples“: am
+        besten eine hochgeladene oder per 📌 geschützte, sonst kann sie ersetzt werden. Je Foto zählt das größte
+        Gesicht; die Kachel zeigt den ausgerichteten Ausschnitt, den der Rider sich merkt: unscharfe oder schiefe
+        gleich wieder löschen (✕). 10–20 Fotos, verschiedene Licht- und Blickwinkel, gern auch von unten.
+        Erkannt wird nur bis etwa 1,2 m (das Gesicht braucht 40 px), stehend ist der Kopf aus der Höhe des Riders
+        erst weiter weg im Bild: am besten sitzend, kniend oder heruntergebeugt. Liste nur beim Aufklappen.</p>
     </details>
   </details>
   <details class="karte extras" id="extras" ontoggle="extrasUmschalten()">
@@ -957,6 +983,18 @@ const EN = {
   'Schützen: fällt dann nie raus': 'Protect: will never be replaced',
   'Wird im Browser in 16 kHz mono gewandelt (höchstens 3 s) und am Rider wie eine gelernte Stimme gefiltert; hochgeladene fallen nie raus':
     'Converted to 16 kHz mono in the browser (at most 3 s) and filtered on the Rider like a learned voice; uploaded ones are never replaced',
+  'Gesichter': 'Faces', 'Angelernte Gesichter': 'Learned faces', 'noch keine angelernt': 'none learned yet',
+  'erst einen Namen eingeben': 'enter a name first', 'erst Fotos wählen': 'choose photos first',
+  '{n} Fotos': '{n} photos', '{a} Namen · {b} Fotos': '{a} names · {b} photos', 'Foto löschen': 'Delete photo',
+  'Alle Fotos von {n} löschen?': 'Delete all photos of {n}?', 'alle löschen': 'delete all',
+  '{i}/{n}: {e}': '{i}/{n}: {e}', '{ok} von {n} angelernt': '{ok} of {n} learned',
+  'Buchstaben, Ziffern, _ und -': 'letters, digits, _ and -',
+  'Begrüßung': 'Greeting', 'Standard': 'default', 'keine': 'none', 'Stimme {s}': 'Voice {s}', 'Augen': 'eyes',
+  'rot': 'red', 'rosa': 'pink', 'gelb': 'yellow', 'gruen': 'green', 'lila': 'purple',
+  'Begrüßung, wenn der Haustier-Modus diese Person erkennt; Standard = [pet] greet_emotion/greet_sound, Augen türkis':
+    'Greeting when pet mode recognises this person; default = [pet] greet_emotion/greet_sound, turquoise eyes',
+  'Je Foto das größte Gesicht: im Browser auf 1024 px verkleinert, am Rider einmal ausgerichtet und gemerkt':
+    'Largest face per photo: shrunk to 1024 px in the browser, aligned once on the Rider and stored',
   'Kamera senden': 'Send camera', 'hier': 'here', 'Lautstärke hier': 'Volume here', 'Lautstärke am Rider': 'Volume on the Rider',
   'Verstärkung der eigenen Stimme zum Rider (mit weichem Begrenzer, kein Übersteuern)': 'Gain of your voice to the Rider (soft limiter, no clipping)', 'Telefon': 'Phone', 'bereit': 'ready', 'Bilder je Sekunde': 'Frames per second',
   'Eigenes Kamerabild aufs Display des Riders (320×240, im Browser umgerechnet; 0,75 MB/s bei 5 Bildern/s, am Rider ~9 % eines Kerns, bei 10/s doppelt). Nur während eines Gesprächs.':
@@ -987,6 +1025,16 @@ const EN_HTML = {
         no filter). 📌 protects a voice: it is never replaced (only ✕ deletes it), click again to release;
         uploaded ones start protected.
         The list is read only when opened and on “Reload”, no polling.</p>`,
+  'hilfe-gesichter': `<summary>Learning and limits</summary>
+      <p>Pet mode recognises learned faces (<code>[gesicht]</code>, stored in <code>/opt/xgonav/gesichter</code>) and
+        greets them, each person with their own emotion and sound (choice below the name; default:
+        <code>[pet] greet_*</code>). The eye colour holds while the person is recognised and 20 s longer
+        (<code>[pet] eye_hold_s</code>), for every emotion in that time. A voice sample from “Samples” works as sound too: best an uploaded or 📌-protected
+        one, otherwise it may be replaced. Per photo the largest face counts; the tile shows the aligned crop the
+        Rider stores: delete blurred or skewed ones right away (✕). 10–20 photos, different light and angles, also
+        from below. Recognition only up to about 1.2 m (the face needs 40 px); from the Rider's height a standing
+        person's head only enters the image further away: best sitting, kneeling or bending down. The list is read
+        only when opened.</p>`,
   'hilfe-lage': `<summary>Camera height, roll, stand up and sit down</summary>
       <p>Camera height: value of the floor geometry from <code>cam_h_u8</code> (lens centre above floor, setpoint u8
         in the tooltip); the legs need about 1 s afterwards. The value matches the folding-rule measurement
@@ -3316,6 +3364,73 @@ async function sampleLoeschen(name) {
   await befehl('stimme_loeschen', {name}, true);
   samplesLaden();
 }
+// Klappfeld „Gesichter“: Liste nur beim Aufklappen (api.php liest die Platte), Verkleinern im Browser
+function gesichterUmschalten() {
+  try { localStorage.setItem('xgonav.gesichter', $('gesichtkarte').open ? '1' : '0'); } catch (e) {}
+  if ($('gesichtkarte').open) gesichterLaden(); else $('gesichter-zustand').textContent = tr('eingeklappt: kein Nachladen');
+}
+async function gesichterLaden() {
+  let d = null;
+  try { const r = await fetch('api.php?a=gesichter', {cache: 'no-store'}); if (r.ok) d = await r.json(); } catch (e) {}
+  if (!d) { $('gesichter-zustand').textContent = tr('nicht lesbar'); return; }
+  let fotos = 0;
+  $('gesichter-liste').innerHTML = d.namen.length ? d.namen.map(g => {
+    const n = esc(g.name);
+    fotos += g.fotos.length;
+    const gr = g.gruss || {};
+    const auswahl = (feld, werte, namen, keine = true) => `<select id="gruss-${feld}-${n}" onchange="gesichtGruss('${n}')">` +
+      [['', tr('Standard')], ...(keine ? [['-', tr('keine')]] : []), ...werte.map((w, i) => [w, namen[i]])].map(([w, t]) =>
+        `<option value="${esc(w)}"${(gr[feld] || '') === w ? ' selected' : ''}>${esc(t)}</option>`).join('') + '</select>';
+    const toene = [...d.toene, ...d.stimmen.map(s => 'stimme:' + s)];
+    return '<div class="unter">' + n + ' · ' + esc(tr('{n} Fotos', {n: g.fotos.length})) +
+      ' <button title="' + esc(tr('alle löschen')) + `" onclick="gesichtLoeschen('${n}', '')">✕</button></div>` +
+      '<div style="margin:2px 0" title="' + esc(tr('Begrüßung, wenn der Haustier-Modus diese Person erkennt; Standard = [pet] greet_emotion/greet_sound, Augen türkis')) +
+      '">' + esc(tr('Begrüßung')) + ' ' + auswahl('emotion', d.emotionen, d.emotionen) + ' ' +
+      auswahl('sound', toene, [...d.toene, ...d.stimmen.map(s => tr('Stimme {s}', {s}))]) + ' ' + esc(tr('Augen')) + ' ' +
+      auswahl('augen', d.farben || [], (d.farben || []).map(f => tr(f)), false) + '</div>' +
+      '<div class="gesichter">' + g.fotos.map(f =>
+        '<figure><img loading="lazy" src="api.php?' + new URLSearchParams({a: 'gesicht_jpg', name: g.name, nr: f.nr, t: f.zeit}) +
+        '" alt="' + n + ' ' + f.nr + '"><button title="' + esc(tr('Foto löschen')) +
+        `" onclick="gesichtLoeschen('${n}', '${f.nr}')">✕</button></figure>`).join('') + '</div>';
+  }).join('') : '<div class="leise">' + tr('noch keine angelernt') + '</div>';
+  $('gesichter-zustand').textContent = tr('{a} Namen · {b} Fotos', {a: d.namen.length, b: fotos});
+}
+async function gesichtVerkleinern(f) {
+  const bmp = await createImageBitmap(f, {imageOrientation: 'from-image'});
+  const k = Math.min(1, 1024 / Math.max(bmp.width, bmp.height));
+  const c = document.createElement('canvas');
+  c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
+  c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+  bmp.close();
+  return await new Promise(ok => c.toBlob(ok, 'image/jpeg', 0.92));
+}
+async function gesichterHochladen() {
+  const name = $('gesicht-name').value.trim(), dateien = [...$('gesicht-dateien').files], z = $('gesicht-hoch-zustand');
+  if (!/^[A-Za-z0-9_-]{1,32}$/.test(name)) { z.textContent = tr('erst einen Namen eingeben') + ' (' + tr('Buchstaben, Ziffern, _ und -') + ')'; return; }
+  if (!dateien.length) { z.textContent = tr('erst Fotos wählen'); return; }
+  let ok = 0; const fehler = [];
+  for (let i = 0; i < dateien.length; i++) {
+    z.textContent = tr('lade hoch …') + ' ' + (i + 1) + '/' + dateien.length;
+    try {
+      const r = await fetch('api.php?' + new URLSearchParams({a: 'gesicht_hochladen', name}),
+                            {method: 'POST', headers: {'Content-Type': 'image/jpeg'}, body: await gesichtVerkleinern(dateien[i])});
+      const j = await r.json().catch(() => ({}));
+      if (r.ok) ok++; else fehler.push(tr('{i}/{n}: {e}', {i: i + 1, n: dateien.length, e: j.error || r.status}));
+    } catch (e) { fehler.push(tr('{i}/{n}: {e}', {i: i + 1, n: dateien.length, e: e.message || e})); }
+  }
+  z.textContent = tr('{ok} von {n} angelernt', {ok, n: dateien.length}) + (fehler.length ? ' · ' + fehler.join(' · ') : '');
+  $('gesicht-dateien').value = '';
+  gesichterLaden();
+}
+async function gesichtGruss(name) {
+  await befehl('gesicht_gruss', {name, emotion: $('gruss-emotion-' + name).value, sound: $('gruss-sound-' + name).value,
+                                 augen: $('gruss-augen-' + name).value}, true);
+}
+async function gesichtLoeschen(name, nr) {
+  if (!nr && !confirm(tr('Alle Fotos von {n} löschen?', {n: name}))) return;
+  await befehl('gesicht_loeschen', {name, nr}, true);
+  gesichterLaden();
+}
 function raumkarteUmschalten() {
   try { localStorage.setItem('xgonav.raumkarte', $('raumkarte').open ? '1' : '0'); } catch (e) {}
   if ($('raumkarte').open) karteAnstoss(); else clearTimeout(karteTimer);
@@ -3402,6 +3517,7 @@ try {
   if (localStorage.getItem('xgonav.extras') === '1') $('extras').open = true;
   if (localStorage.getItem('xgonav.radar') !== '0') $('radarkarte').open = true;   // Standard: offen
   if (localStorage.getItem('xgonav.samples') === '1') $('samplekarte').open = true;
+  if (localStorage.getItem('xgonav.gesichter') === '1') $('gesichtkarte').open = true;
   if (localStorage.getItem('xgonav.laufzeit') !== '0') $('laufzeit').open = true;   // Standard: offen
 } catch (e) { $('lagekarte').open = true; $('raumkarte').open = true; $('laufzeit').open = true; }
 liveVerbinden();

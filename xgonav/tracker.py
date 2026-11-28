@@ -45,6 +45,10 @@ class Track:
     # Breite der letzten Detektion (px), ungeglättet; 0 = links oder rechts am Bildrand abgeschnitten. w selbst ist
     # geglättet und zwischen Detektionen vorhergesagt: Sein Nachziehen sah für pet wie Annäherung aus (2026-11-13)
     w_meas: float = 0.0
+    # Gesicht erkannt (gesicht.py): der Name bleibt am Track, bis er verloren geht; danach prüft der Detektor ihn nicht
+    # mehr (Rechenzeit). Ein anderer erkannter Name ersetzt ihn.
+    who: str | None = None
+    who_sim: float | None = None
 
     @property
     def box(self):
@@ -121,6 +125,7 @@ class Tracker:
                 tr.set_box(d.box)
                 tr.clip = self._clip_flags(d.box)
                 tr.w_meas = 0.0 if (tr.clip[0] or tr.clip[2]) else tr.w
+                tr.who, tr.who_sim = getattr(d, "who", None), getattr(d, "who_sim", None)
                 self.tracks.append(tr)
         self.prune(now)
 
@@ -191,5 +196,7 @@ class Tracker:
         tr.vy = float(np.clip(tr.vy, -lim, lim))
         tr.vs = float(np.clip(tr.vs, -1.5, 1.5))
         tr.conf = 0.5 * tr.conf + 0.5 * d.conf
+        if getattr(d, "who", None):
+            tr.who, tr.who_sim = d.who, d.who_sim
         tr.t_seen = now
         tr.hits += 1

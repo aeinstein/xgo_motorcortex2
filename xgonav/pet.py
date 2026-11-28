@@ -82,6 +82,7 @@ class Seen:
     tall: bool = False               # groß im Bild (zählt auch im Liegen, wo die Bodengeometrie nicht stimmt)
     side_free: bool = True           # Box links/rechts nicht am Bildrand: nur dann taugt die Breite
     wide: bool = False               # Box breiter als hoch: Person liegt oder sitzt am Boden (Nutzer 2026-11-22)
+    who: str | None = None           # erkanntes Gesicht ([gesicht], Name am Track)
 
 
 @dataclass
@@ -267,6 +268,10 @@ class PetBrain:
         # Nachplappern (stimme.Stimmen): gelernte Proben, fällige Wiederholungen neu bestätigter, Abspielzähler
         self.hoert_zu = False                # App schneidet Stimmproben mit, solange das gilt
         self._parrot_person_t = -1e9         # zuletzt eine Person im Bild (auch liegend)
+        self._who_t: dict[str, float] = {}   # Name -> zuletzt erkannt (Begrüßung)
+        self.gruss_fuer = None               # Name -> {emotion, sound, augen} je Person (gesicht.Gesichter.gruss), von App
+        self.augen: str | None = None        # Augenfarbe der zuletzt erkannten Person (tools/eyes.py PALETTE)
+        self._augen_t = -1e9
         self.n_parrot = 0
         self._parrot_ids: tuple = ()
         self._parrot_due: list[tuple[float, str]] = []
@@ -326,6 +331,9 @@ class PetBrain:
             self.base_h = s.height_mm if s.height_mm is not None else c.height_mm
         self.fright *= math.exp(-c.fright_decay * s.dt)
         self.habit *= math.exp(-s.dt / max(c.habit_tau_s, 1e-3))
+        if self.augen is not None and s.t - self._augen_t > c.eye_hold_s:
+            log.info("pet: Augen wieder Standard")
+            self.augen = None
         self._odom(s)
         if self.state == "start":
             self._seen_t = s.t
@@ -409,6 +417,7 @@ class PetBrain:
         if tg is not None and tg.cls == "cat":
             self._cat(s, tg, act)
         person = next((x for x in s.seen if x.cls == "person"), None)
+        self._greet(s)
         if tg is not None and tg.cls == "person":
             self._person(s, tg, act)
         self._person_presence(s, person)
@@ -424,6 +433,28 @@ class PetBrain:
             return act
         self._apply_gesture(s, act, tg)
         return act
+
+    def _greet(self, s: Sense) -> None:
+        """Erkanntes Gesicht ([gesicht]): begrüßen und sofort voll vertrauen; erneut erst nach greet_repeat_s ohne sie.
+        Emotion, Ton und Augenfarbe je Person (Web, gruss.json), sonst greet_emotion/greet_sound/Türkis; "-" = nichts.
+        Die Augenfarbe gilt, solange die Person erkannt wird, und noch eye_hold_s danach (update)."""
+        c, t = self.cfg, s.t
+        for x in s.seen:
+            if not x.who:
+                continue
+            g = self.gruss_fuer(x.who) if self.gruss_fuer is not None else {}
+            if g.get("augen"):
+                if self.augen != g["augen"]:
+                    log.info("pet: Augen %s (%s)", g["augen"], x.who)
+                self.augen, self._augen_t = g["augen"], t      # vor der Begrüßung: sie läuft schon in der Farbe
+            last = self._who_t.get(x.who)
+            self._who_t[x.who] = t
+            if last is None or t - last >= c.greet_repeat_s:
+                emo = g.get("emotion") or c.greet_emotion
+                ton = g.get("sound") or c.greet_sound
+                log.info("pet: %s erkannt – Begrüßung (%s, %s)", x.who, emo or "-", ton or "-")
+                self._react(t, emo if emo and emo != "-" else None, ton if ton and ton != "-" else None)
+                self.trust = 1.0
 
     # ---- Nachplappern (stimme.Stimmen) --------------------------------------
     def _parrot_new(self, s: Sense) -> None:
@@ -602,7 +633,7 @@ class PetBrain:
         self._looks, self._fails, self._come_lost_t = [], 0, None
         self._goal = (self.x, self.y)
         self._come_goal(tg)
-        self._react(s.t, "like", "traellern")
+        self._react(s.t, "cute", "traellern")         # like (Herzaugen) nur für bekannte Gesichter (_greet)
         self._phase_set("fahren", s.t)
         self._drive_t_max = s.t + 30.0                       # das Ziel wandert mit ihr; Hänger fangen STALL_S bzw. nav_stuck ab
 
@@ -1080,7 +1111,7 @@ class PetBrain:
             if c.gestures:
                 self._gesture = ("wackeln", t, t + c.wiggle_s)
         elif z == "knien":
-            self._react(t, "like", "traellern")
+            self._react(t, "cute", "traellern")           # like nur für bekannte Gesichter (Nutzer 2026-11-28)
         elif z == "zunah":
             self._react(t, "shy", None)
 
@@ -1195,7 +1226,7 @@ class PetBrain:
             self._blind_until = max(self._blind_until, t + NACHLAUF_S + 0.5)
         if self.task == "suchen":
             self.n_found += 1
-            self._react(t, "like", "gefunden")
+            self._react(t, "cute", "gefunden")
         else:
             self._react(t, "surprised", "gefunden")
         log.info("pet: %s: gefunden", self.task)
@@ -1699,6 +1730,7 @@ class Pet(Behavior):
         self.want_stand_up = False           # App._pet_tick
         self.want_idle = False
         self.gaze = self.brain.gaze          # lcd.py liest das aus seinem Thread (Tupel, atomar ersetzt)
+        self.augen: str | None = None        # Augenfarbe (brain.augen): lcd.py und App -> Emotions.farbe
         # Folgen: genau die Routine des Modus follow (Nutzer 2026-11-22), solange die Aufgabe folgen läuft
         self.follow_drive: Follow | None = None
         self._f_seek = self._f_found = 0     # Suchfahrten/Wiederfunde früherer Folgen (info)
@@ -1970,7 +2002,7 @@ class Pet(Behavior):
             wm = getattr(tr, "w_meas", tr.w)             # gemessen, nicht geglättet/vorhergesagt
             out.append(Seen(tr.id, tr.cls, dist, w.bearing(tr.cx), not tr.clip[1] and y1 > 0.03 * w.H, wm or tr.w,
                             tr.t_seen, tr.conf, tr.hits, tr.clip[3] or tr.h > 0.5 * w.H,
-                            wm > 0 and x1 > 0.03 * w.W and x2 < 0.97 * w.W, _wide(tr)))
+                            wm > 0 and x1 > 0.03 * w.W and x2 < 0.97 * w.W, _wide(tr), getattr(tr, "who", None)))
         return out
 
     def step(self, w: World) -> Command:
@@ -2020,6 +2052,7 @@ class Pet(Behavior):
         if b.want_idle:
             b.want_idle, self.want_idle = False, True
         self.gaze = b.gaze
+        self.augen = b.augen
 
     def _heim(self, w: World) -> Command | None:
         """Heimfahrt des Gehirns (Aufgabe heim, Phase extern) mit behaviors.Home fahren: Planer, Vorpunkt, gerade

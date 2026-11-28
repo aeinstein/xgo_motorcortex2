@@ -1042,6 +1042,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#gesicht-face-recognition-in-pet-see-facesmd" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [gesicht] (face recognition in pet, see faces.md)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#stimme-voice-samples-in-pet-see-audiomd" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1343,6 +1354,34 @@
     
   
     Audio
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="faces.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Face recognition
   
 
     
@@ -1751,6 +1790,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#gesicht-face-recognition-in-pet-see-facesmd" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        [gesicht] (face recognition in pet, see faces.md)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#stimme-voice-samples-in-pet-see-audiomd" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1926,7 +1976,7 @@
 </table>
 <h2 id="parameters">Parameters<a class="headerlink" href="#parameters" title="Permanent link">&para;</a></h2>
 <p>Default = <code>config.py</code> = the RiderPi values (<code>/opt/xgonav/config.toml</code> without <code>/opt</code> paths). (sim: …) = <code>Config.neutral()</code> (<code>NEUTRAL</code> in <code>config.py</code>), used by <code>tests/sim_run.py</code> and the tests; since 2026-11-23 it differs only where the simulator cannot model the hardware (camera, IMU auto sync, wheel scale, levelling, detector rate, FloorNet, display, CPU pinning) — all drive, turn, behaviour, map and timing values are the Rider's.</p>
-<p><strong>Speeds (since 2026-11-23):</strong> every drive and turn value of a mode (<code>home.v</code>, <code>explore.v</code>, <code>pet.drive_v</code>, <code>behavior.search_w</code>, …) and the hand control are <strong>factors 0..1 of <code>robot.max_v</code> / <code>robot.max_w</code></strong>. Sent = factor × <code>tempo</code> × <code>max_v</code> (hand control: stick × <code>tempo</code> × <code>max_v</code>); capped at ±1 (firmware range). Values below are factors; absolute = factor × 0.5 on the RiderPi.</p>
+<p><strong>Speeds (since 2026-11-23):</strong> every drive and turn value of a mode (<code>home.v</code>, <code>explore.v</code>, <code>pet.drive_v</code>, <code>behavior.search_w</code>, …) and the hand control are <strong>factors 0..1 of <code>robot.max_v</code> / <code>robot.max_w</code></strong>. Sent = factor × <code>tempo</code> × <code>max_v</code> (hand control: stick × <code>tempo</code> × <code>max_v</code>); capped at ±1 (firmware range). Values below are factors; absolute = factor × <code>max_v</code> 0.5 / <code>max_w</code> 1.0 on the RiderPi.</p>
 <p>RiderPi = <code>deploy/config.example.toml</code> where it still differs (blank = default). [K] = device-specific, calibrate.</p>
 <h3 id="top-level">top level<a class="headerlink" href="#top-level" title="Permanent link">&para;</a></h3>
 <table>
@@ -1966,9 +2016,9 @@
 </tr>
 <tr>
 <td><code>max_w</code></td>
-<td>0.5</td>
+<td>1.0</td>
 <td></td>
-<td>maximum turn value; 0.25 ≈ 90 °/s (firmware scale assumed); RiderPi 0.30 → 0.5 on 2026-11-13 (user)</td>
+<td>maximum turn value; 1.0 = 360 °/s (<code>vyaw_limit_dps</code>); 0.30 → 0.5 on 2026-11-13, → 1.0 on 2026-11-27 (user: 180 °/s was not enough for a 40° snake at 0.9 m/s)</td>
 </tr>
 <tr>
 <td><code>tempo</code></td>
@@ -1995,6 +2045,18 @@
 <td>firmware leveling (0x61) on after <code>level_drive_delay_s</code> (1.0) of straight driving (|w| ≤ <code>level_drive_w_max</code> 0.06, roll command 0), off when turning, stopping or rolling; trim stays (patch 0012)</td>
 </tr>
 <tr>
+<td><code>level_always</code></td>
+<td>false (Rider: true)</td>
+<td></td>
+<td>leveling (0x61) always on while balancing, rewritten after each turn command; after each stand-up also curve lean on (action 232: roll to the apparent gravity vector). Either/or: while on, a roll from outside (web) has no effect</td>
+</tr>
+<tr>
+<td><code>pursuit</code></td>
+<td>false</td>
+<td></td>
+<td>start value of the drive style <em>Pursuit</em> (web checkbox, <code>POST /pursuit</code>): accel/decel/brake × <code>pursuit_accel_faktor</code> (1.5), leveling + curve lean like <code>level_always</code>, body height falls with speed down to camera height <code>pursuit_kamera_min_mm</code> (110 mm via <code>[camera] cam_h_u8</code>, ≈ u8 5; no minimum margin, fully retracted ≈ 105 mm) at <code>v_max</code></td>
+</tr>
+<tr>
 <td><code>vx_limit</code></td>
 <td>1.8</td>
 <td></td>
@@ -2014,9 +2076,9 @@
 </tr>
 <tr>
 <td><code>vel_kappa</code></td>
-<td>true</td>
+<td>false</td>
 <td></td>
-<td>curvature mode (ARBEITSPLAN.md item 5, stage 1): path-follower commands carry <code>Command.kappa</code> and go out as <code>kap</code> frames (κ in 0.001 1/m); the firmware sets w = κ · v_target and limits v/a/jerk instead of w, so the arc holds while accelerating and braking. Only if the firmware reports capability bit0 (reg 0x1a byte 1); otherwise turn-rate frames and a log warning. A stop after an arc brakes on the same arc. Driven 2026-11-25 (κ 2 by hand), on since</td>
+<td>curvature mode (ARBEITSPLAN.md item 5, stage 1): path-follower commands carry <code>Command.kappa</code> and go out as <code>kap</code> frames (κ in 0.001 1/m); the firmware sets w = κ · v_target and limits v/a/jerk instead of w, so the arc holds while accelerating and braking. Only if the firmware reports capability bit0 (reg 0x1a byte 1); otherwise turn-rate frames and a log warning. A stop after an arc brakes on the same arc. Driven 2026-11-25 (κ 2 by hand). Off since 2026-11-27 (user): the firmware couples v ≤ w_max/</td>
 </tr>
 <tr>
 <td><code>vel_kurs</code></td>
@@ -2044,15 +2106,15 @@
 </tr>
 <tr>
 <td><code>vel_accel_mps2</code> / <code>vel_decel_mps2</code> / <code>vel_jerk_mps3</code></td>
-<td>0.5 / 1.0 / 2.5</td>
+<td>1.79 / 1.79 / 0</td>
 <td></td>
-<td>faster in the same direction / slower or reversing; cautious start values, to be measured (0.5 m/s² ≈ 2.9° lean)</td>
+<td>faster in the same direction / slower or reversing (1.79 m/s² ≈ 10° lean, half of g·tan 20°; before 0.5 / 1.0); jerk 0 = no jerk limit, the frame carries target speed + max acceleration only (2026-11-26, before 2.5 = S-curve)</td>
 </tr>
 <tr>
 <td><code>vel_brake_mps2</code> / <code>vel_brake_jerk_mps3</code></td>
-<td>1.5 / 10</td>
+<td>1.79 / 0</td>
 <td></td>
-<td><code>drive(brake=True)</code></td>
+<td><code>drive(brake=True)</code>; jerk 0 = no limit (before 1.5 / 10)</td>
 </tr>
 <tr>
 <td><code>vel_alpha_dps2</code> / <code>vel_jerk_w_dps3</code></td>
@@ -2637,6 +2699,11 @@
 <td></td>
 </tr>
 <tr>
+<td><code>bremsen_aus</code></td>
+<td>false</td>
+<td></td>
+</tr>
+<tr>
 <td><code>push_v</code> / <code>push_s</code> / <code>push_n</code> / <code>push_free_m</code></td>
 <td>0.90 (factor, absolute 0.45) / 1.2 / 2 / 0.4</td>
 <td>push: forward commanded, &lt; 2 cm progress for 2.5 s (1 s after a push) and FloorNet ≥ <code>push_free_m</code> free ahead → drive <code>push_v</code> for <code>push_s</code>; at most <code>push_n</code> times until 0.3 m progress, then back up as before. Path following, <code>home</code>, <code>patrol</code>, and the reactive escape of <code>explore</code>. 0 = off. Not driven (carpet groove 2026-11-17)</td>
@@ -2674,6 +2741,16 @@ Sounds: <code>sound</code> true, <code>sound_dir</code> <code>/opt/xgonav/sounds
 </tr>
 </thead>
 <tbody>
+<tr>
+<td><code>greet_emotion</code>, <code>greet_sound</code>, <code>greet_repeat_s</code></td>
+<td><code>like</code>, <code>traellern</code>, 600</td>
+<td>greeting of a recognised face (<a href="faces.html">faces.md</a>); again after so long without it</td>
+</tr>
+<tr>
+<td><code>eye_hold_s</code></td>
+<td>20</td>
+<td>eye colour of a recognised person (web) stays so long after the last recognition</td>
+</tr>
 <tr>
 <td><code>retreat_m</code></td>
 <td>0 (off)</td>
@@ -2922,6 +2999,38 @@ Sounds: <code>sound</code> true, <code>sound_dir</code> <code>/opt/xgonav/sounds
 <td><code>min_quality</code>, <code>nachhall_s</code>, <code>retry_s</code></td>
 <td>0.4, 0.3, 10</td>
 <td>drop below; deaf after own sounds; retry when <code>arecord</code> ends</td>
+</tr>
+</tbody>
+</table>
+<h3 id="gesicht-face-recognition-in-pet-see-facesmd"><code>[gesicht]</code> (face recognition in <code>pet</code>, see <a href="faces.html">faces.md</a>)<a class="headerlink" href="#gesicht-face-recognition-in-pet-see-facesmd" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Default</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>enabled</code>, <code>dir</code></td>
+<td>true, <code>/opt/xgonav/gesichter</code></td>
+<td>off in the simulator (<code>Config.neutral()</code>); needs the detector and package <code>ncnn</code></td>
+</tr>
+<tr>
+<td><code>model</code>, <code>det_model</code></td>
+<td><code>models/mobilefacenet_ncnn</code>, <code>models/face_detection_yunet_2023mar.onnx</code></td>
+<td><code>tools/export_face.sh</code></td>
+</tr>
+<tr>
+<td><code>modes</code>, <code>max_hz</code>, <code>threads</code></td>
+<td><code>["pet"]</code>, 2, 2</td>
+<td>checks per second at most; ncnn threads (after YOLO on <code>detector_cpus</code>)</td>
+</tr>
+<tr>
+<td><code>min_face_px</code>, <code>det_conf</code>, <code>match_sim</code></td>
+<td>40, 0.7, 0.45</td>
+<td>smaller faces skipped; YuNet threshold; cosine for a name (provisional)</td>
 </tr>
 </tbody>
 </table>
@@ -3321,8 +3430,8 @@ Sounds: <code>sound</code> true, <code>sound_dir</code> <code>/opt/xgonav/sounds
 </tr>
 <tr>
 <td><code>kurve_a_mps2</code> / <code>kurve_vorschau_m</code></td>
-<td>0.3 / 1.5</td>
-<td>curve speed (<code>PathFollower.kurve_v</code>): in every corner of the path up to <code>kurve_vorschau_m</code> ahead at most √(a / curvature), braking before it with <code>end_decel_mps2</code> (≈ 0.3 m/s on a 0.3 m arc). Status <code>Kurve in …m</code>. 0 = off</td>
+<td>0 / 1.5</td>
+<td>curve speed (<code>PathFollower.kurve_v</code>): in every corner of the path up to <code>kurve_vorschau_m</code> ahead at most √(a / curvature), braking before it with <code>end_decel_mps2</code> (0.3 ≈ 0.3 m/s on a 0.3 m arc). Status <code>Kurve in …m</code>. 0 = off (since 2026-11-26, user: speed stays in curves; before 0.3)</td>
 </tr>
 <tr>
 <td><code>arrive_m</code></td>
@@ -3337,7 +3446,7 @@ Sounds: <code>sound</code> true, <code>sound_dir</code> <code>/opt/xgonav/sounds
 <tr>
 <td><code>free_slow</code> / <code>free_rest_m</code></td>
 <td>true / 0.10</td>
-<td>same braking profile before the first local-map obstacle along the path and on the arc of the drive command (same arc and radius as the arc check, up to 2.5 m; s minus <code>free_rest_m</code>) and before the first sharp corner (&gt; <code>turn_enter_deg</code>; with pass-through also into the next path). Status <code>frei …m</code> when it limits. Before: only the arc check (look-ahead = braking distance + 0.15 m, ~0.85 m at 0.65 m/s) reacted, with a full brake (RiderPi 2026-11-24). The arc check now derives its allowed speed from the faster of command and wheels, so an early lowered command no longer forces a full brake (sim <code>spalt</code>: that closed the door via brake spots)</td>
+<td>same braking profile before the first local-map obstacle along the path and on the arc of the drive command (same arc and radius as the arc check, up to 2.5 m; s minus <code>free_rest_m</code>) and before the first sharp corner (&gt; <code>turn_enter_deg</code>; with pass-through also into the next path; only with <code>wende_bogen</code> off or in tight spots). Status <code>frei …m</code> when it limits. Before: only the arc check (look-ahead = braking distance + 0.15 m, ~0.85 m at 0.65 m/s) reacted, with a full brake (RiderPi 2026-11-24). The arc check now derives its allowed speed from the faster of command and wheels, so an early lowered command no longer forces a full brake (sim <code>spalt</code>: that closed the door via brake spots)</td>
 </tr>
 <tr>
 <td><code>replan_s</code></td>
@@ -3370,6 +3479,11 @@ Sounds: <code>sound</code> true, <code>sound_dir</code> <code>/opt/xgonav/sounds
 <td>1/s, turn rate per heading error (follow uses <code>behavior.kp_turn</code>)</td>
 </tr>
 <tr>
+<td><code>lenk_bogen</code></td>
+<td>true</td>
+<td>steering while driving as pure pursuit: arc through the look-ahead point, κ = 2·sin(error)/distance, w = κ·v continuously (no <code>min_w</code>), with <code>robot.vel_kappa</code> the firmware holds the arc (2026-11-26); false = <code>kp_turn</code> × error with <code>min_w</code></td>
+</tr>
+<tr>
 <td><code>turn_w_max</code></td>
 <td>0.50</td>
 <td>cap for turning in place (path follower, final alignment), factor of <code>max_w</code> (absolute 0.25); 1.0 = <code>robot.max_w</code>. Turning at 0.5 rolled the Rider 7° and upset IMU pitch and pose (2026-11-17)</td>
@@ -3378,6 +3492,16 @@ Sounds: <code>sound</code> true, <code>sound_dir</code> <code>/opt/xgonav/sounds
 <td><code>turn_enter_deg</code> / <code>turn_exit_deg</code></td>
 <td>75 / 25</td>
 <td>turn in place above enter until below exit; otherwise drive the curve (speed ≥ 30 %)</td>
+</tr>
+<tr>
+<td><code>wende_bogen</code> / <code>wende_a_mps2</code> / <code>wende_min_mps</code></td>
+<td>true / 0.8 / 0.10</td>
+<td>above <code>turn_enter_deg</code> while already moving (wheels ≥ <code>wende_min_mps</code>) and not in a tight spot: keep the speed and turn on the tightest arc the lateral acceleration allows (w = a / v, at most <code>turn_w_max</code>; direction kept until below <code>turn_exit_deg</code>; slowed only by the free arc ahead). No braking before sharp corners then (<code>free_slow</code> without the corner term). From standstill and in tight spots it still turns in place. Since 2026-11-27 (before: brake and turn in place, pitch −10…−12°), not driven</td>
+</tr>
+<tr>
+<td><code>bekannt_v</code> / <code>unbekannt_v</code> / <code>bekannt_vorschau_m</code></td>
+<td>1.25 / 0.75 / 1.5</td>
+<td>speed by map knowledge (path follower, all modes with a planned path): if every cell of the path up to <code>bekannt_vorschau_m</code> ahead is known free in the room map, drive v × <code>bekannt_v</code> (status <code>bekannt</code>), otherwise brake (end profile) to v × <code>unbekannt_v</code> before the first unknown cell (status <code>unbekannt in …m</code>). Explore at 0.6: ≈ 0.68 / 0.41 m/s. 1.0 / 1.0 = off. Since 2026-11-27, not driven</td>
 </tr>
 <tr>
 <td><code>align_heading</code> / <code>align_tol_deg</code></td>

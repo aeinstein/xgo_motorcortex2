@@ -943,6 +943,12 @@ class PetCfg:
     trust_start: float = 0.3
     trust_gain: float = 0.01           # 1/s, während jemand sanft in der Nähe ist
     trust_loss: float = 0.05           # je Schreck
+    # Begrüßung einer erkannten Person ([gesicht], Nutzer 2026-11-27): Emotion + Ton, Vertrauen sofort voll;
+    # erneut erst, wenn der Name so lange nicht mehr erkannt war
+    greet_emotion: str = "like"
+    greet_sound: str = "traellern"
+    greet_repeat_s: float = 600.0
+    eye_hold_s: float = 20.0           # Augenfarbe der Person (Web) bleibt so lange nach ihrer letzten Erkennung
     fright_decay: float = 0.05         # 1/s
     habit_tau_s: float = 60.0          # Gewöhnung klingt so schnell ab
     # Ohnmacht: absetzen, nap_s liegen, von selbst aufstehen. Beim Aufspringen rollt er ~20 cm vor:
@@ -1210,6 +1216,29 @@ class StimmeCfg:
 
 
 @dataclass
+class GesichtCfg:
+    # Gesichter wiedererkennen (xgonav/gesicht.py, Nutzer 2026-11-27): YuNet findet, MobileFaceNet (ncnn, InsightFace
+    # w600k_mbf, nur nicht-kommerziell) rechnet 512 Merkmale, Kosinus gegen die angelernten Fotos (Web-Upload).
+    # Läuft im Detektor-Thread nach YOLO, nur auf dem Kopf einer Personenbox ohne Namen, nur in modes.
+    # Modelle: tools/export_face.sh (am PC). Fehlen sie: Warnung, aus.
+    enabled: bool = True
+    model: str = "models/mobilefacenet_ncnn"           # model.ncnn.param/.bin
+    det_model: str = "models/face_detection_yunet_2023mar.onnx"
+    dir: str = "/opt/xgonav/gesichter"                 # <Name>/NN.npy (Merkmal) + NN.jpg (ausgerichteter Ausschnitt)
+    modes: list = field(default_factory=lambda: ["pet"])
+    max_hz: float = 2.0                # Prüfungen je Sekunde höchstens (je Prüfung alle Personen ohne Namen)
+    min_face_px: float = 40.0          # schmalere Gesichter (f 310: weiter als ~1,2 m) nicht prüfen
+    det_conf: float = 0.7              # YuNet-Schwelle
+    # Kosinus ab hier = erkannt. Vorläufig (ArcFace-Modelle trennen sonst meist um 0,3-0,5), an echten Fotos und
+    # Rider-Bildern festlegen.
+    match_sim: float = 0.45
+    # ncnn-Threads. Läuft im Detektor-Thread nach YOLO (nacheinander, dieselben Kerne detector_cpus), darum wie YOLO 2.
+    # MobileFaceNet hat 892 MFLOP (YOLO 256 px ~1 GFLOP, CM4 93 ms): am CM4 geschätzt 70-100 ms je Gesicht, nur wenn
+    # YuNet ein Gesicht >= min_face_px findet. Am PC (2026-11-27) 9,7 ms Merkmal, 2 ms YuNet. Am Rider nicht gemessen.
+    threads: int = 2
+
+
+@dataclass
 class WlanCfg:
     # WLAN-Einrichtung über die Tasten (xgonav/wlan.py): Tasten halten -> WLAN-QR vor die Kamera. Den Hotspot
     # (offen, RiderKerk) öffnet xgo-wlan-auto.service von selbst, wenn wlan0 60 s nicht verbunden ist.
@@ -1332,7 +1361,7 @@ NEUTRAL = {"camera.gain_switch": False, "robot.level_after_standup": False, "rob
            "imu.stream_hz": 0, "imu.pitch_sign": 0, "imu.yaw_scale_left": 1.0, "imu.yaw_scale_right": 1.0,
            "imu.time_offset_ms": None, "imu.pitch_ref_deg": 0.0, "imu.use_roll": False,
            "odom.scale_left": 1.0, "odom.scale_right": 1.0,
-           "detector.max_hz": 0.0, "detector.classes": [], "freespace.threaded": False, "freespace.net": "",
+           "detector.max_hz": 0.0, "detector.classes": [], "gesicht.enabled": False, "freespace.threaded": False, "freespace.net": "",
            "output.lcd_fifo": "/tmp/lcd0",
            "cpu.main_cpus": [], "cpu.detector_cpus": [], "cpu.render_cpus": [], "cpu.freespace_cpus": []}
 
@@ -1364,6 +1393,7 @@ class Config:
     dunkel: DunkelCfg = field(default_factory=DunkelCfg)
     ortung: OrtungCfg = field(default_factory=OrtungCfg)
     stimme: StimmeCfg = field(default_factory=StimmeCfg)
+    gesicht: GesichtCfg = field(default_factory=GesichtCfg)
     # Regelschritte je Sekunde. Mit Bildverarbeitung an dem Bild, das dem Takt am nächsten liegt (App._step), also
     # höchstens die Bildrate: 24 = jedes Bild. Bis 2026-11-17 stand hier 20, geregelt wurde am Rider aber nur jedes
     # 2. Bild (~12 Hz). Ohne Bildverarbeitung (manual) nach der Uhr.

@@ -1013,6 +1013,34 @@
   
   
     <li class="md-nav__item">
+      <a href="faces.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Face recognition
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="wifi-setup.html" class="md-nav__link">
         
   
@@ -1549,7 +1577,12 @@ Stock firmware R-1.1.3 may differ (not analysed).</p>
 <tr>
 <td><strong>Blue</strong> (R0 G0 B200), steady, all 4</td>
 <td>constant</td>
-<td><strong>Pi shut down</strong> (action 234, set by <code>xgo-shutdown-led.service</code> on Pi shutdown/reboot). Before every other display, nothing else changes; cleared by action 233 (xgonav on start) or ESP restart.</td>
+<td><strong>Pi shutting down</strong> (action 234, set by <code>xgo-shutdown-led.service</code> on Pi shutdown/reboot). Before every other display, nothing else changes; cleared by action 233 (driver on load, xgonav on start) or ESP restart.</td>
+</tr>
+<tr>
+<td><strong>Blue</strong> blinking 3× (250 ms on/off), then <strong>all off</strong></td>
+<td>1.5 s, then dark</td>
+<td><strong>Pi off</strong> (action 235, sent by the driver as last command on poweroff/halt/reboot): Rider also sets down (like 254) and stops the IMU stream. Before every other display, also before 234. Cleared by 233, arm/stand-up (255/253) or ESP restart.</td>
 </tr>
 </tbody>
 </table>

@@ -1231,6 +1231,34 @@
   
   
     <li class="md-nav__item">
+      <a href="faces.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Face recognition
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="wifi-setup.html" class="md-nav__link">
         
   
@@ -1662,6 +1690,10 @@
 <td>Samples (collapsed, after Schallradar)</td>
 <td>voice samples of <code>pet</code> from <code>[stimme] dir</code>: learned (NN, 📌 protect/release (uploaded start protected), length, times heard, last heard; ▶ parrot version / raw in the browser, 🔊 on the Rider, ✕ delete with confirm), upload (file → 16 kHz mono ≤ 3 s in the browser → <code>api.php?a=stimme_hochladen</code>; <em>already edited</em>: 48 kHz ≤ 8 s, no filter) and candidates (▶, ✕); list via <code>api.php?a=stimmen</code> only when opened or on Reload, playback in the browser (<code>&lt;audio&gt;</code>), open/closed in <code>localStorage</code> <code>xgonav.samples</code></td>
 </tr>
+<tr>
+<td>Gesichter (collapsed, after Samples)</td>
+<td>learned faces of <code>pet</code> from <code>[gesicht] dir</code> (<a href="faces.html">faces.md</a>): per name the aligned crops (✕ per photo, ✕ per name with confirm) and the greeting (emotion + sound or voice sample + eye colour, default/none → <code>api.php?a=gesicht_gruss</code>); upload: name + photos, shrunk to ≤ 1024 px JPEG in the browser → <code>api.php?a=gesicht_hochladen</code>; list via <code>api.php?a=gesichter</code> only when opened or on Reload; open/closed in <code>localStorage</code> <code>xgonav.gesichter</code></td>
+</tr>
 </tbody>
 </table>
 <p>Language: German is in the HTML, English in the dictionaries <code>EN</code>/<code>EN_HTML</code> of <code>index.php</code> (keyed by the German text; long help blocks via <code>data-i18n-html</code>). Switched in the browser only, choice in <code>localStorage</code> <code>xgonav.lang</code>; free text from xgonav/<code>api.php</code> (status, errors) stays German. <code>?i18n=debug</code> logs missing translations to the console. No cost on the Pi.</p>
@@ -2050,6 +2082,11 @@ works without xgonav.</p>
 </tr>
 <tr>
 <td>POST</td>
+<td><code>/bahn?laenge=3&amp;winkel=20&amp;welle=1.5&amp;zurueck=1&amp;v=0.3&amp;kurve=1</code></td>
+<td>mode <code>manual</code>, balancing, pipeline and room map with known pose (409 otherwise; 400 outside laenge 0.2..6 m, winkel 0..45°, welle 0.3..6 m, v 0.05..1 = factor of <code>max_v</code>, default <code>home.v</code>; <code>kurve=0</code> without the curve speed limit <code>home.kurve_a_mps2</code>, for lean tests): fixed test path from the current pose, snake y = A·sin(2πx/welle) with at most <code>winkel</code> against the heading, points every 5 cm; driven by the path follower like <code>explore</code>/<code>home</code> (checked: <code>safety()</code> + arc check, braking only for curves, path end, obstacles), at the end hold 1 s, with <code>zurueck</code> turn 180° on the spot and drive the same path back. Progress in <code>/status</code> <code>bahn</code> (<code>phase</code> hin/halt/wenden/zurueck/fertig, <code>fertig</code>, <code>grund</code>: <code>angekommen</code>, <code>festgefahren</code>, <code>abgebrochen</code>, <code>liegt</code>); any <code>/drive</code> or <code>/turn</code> cancels (2026-11-26)</td>
+</tr>
+<tr>
+<td>POST</td>
 <td><code>/drive?v=..&amp;w=..[&amp;sicher=1]</code></td>
 <td>409 if not mode <code>manual</code>; <code>v</code>, <code>w</code> −1..1 are factors of <code>robot.max_v</code>/<code>max_w</code> (sent v · <code>tempo</code> · <code>max_v</code>; D-pad sends ±1); <code>sicher=1</code> (used by the <a href="mcp.html">MCP server</a>): this setpoint passes <code>safety()</code> and the arc check like the autonomous modes; with the pipeline stopped it only turns</td>
 </tr>
@@ -2067,6 +2104,11 @@ works without xgonav.</p>
 <td>POST</td>
 <td><code>/tempo?f=0.05..1</code></td>
 <td>speed slider: factor for all drive/turn commands of all modes (after <code>max_v</code>/<code>max_w</code>), until restart; <code>GET /status</code> → <code>tempo</code></td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/pursuit?on=0\|1</code></td>
+<td>drive style <em>Pursuit</em> (checkbox right of the speed slider, not a mode), until restart: accel/decel/brake × <code>robot.pursuit_accel_faktor</code> (1.5), leveling with curve lean (action 232), body height falls linearly with speed down to camera height <code>robot.pursuit_kamera_min_mm</code> (110 mm) at <code>v_max</code>; off: normal ramps, leveling and lean off (231, unless <code>level_always</code>), height back; <code>GET /status</code> → <code>pursuit</code></td>
 </tr>
 <tr>
 <td>POST</td>
@@ -2112,6 +2154,26 @@ works without xgonav.</p>
 <td>POST</td>
 <td><code>/stimme/hochladen?fertig=0\|1</code></td>
 <td>body WAV mono int16, 16 kHz (filtered) or with <code>fertig=1</code> 48 kHz (stored unchanged), ≤ 1000 KB: queue as fixed confirmed sample → <code>{ok, name, ersetzt}</code>; 400 bad WAV/rate, 409 all slots uploaded, 413 empty/too large, 404 without <code>[stimme]</code></td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/gesicht</code></td>
+<td>face recognition: <code>on</code>, names with photo count, <code>gruesse</code> (greeting per name), <code>ms</code> per check (<a href="faces.html">faces.md</a>)</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/gesicht/hochladen?name=..</code></td>
+<td>body JPEG/PNG ≤ 4 MB: learn the largest face → <code>{ok, name, nr, jpg}</code> (aligned crop, base64); 400 no face/bad name/image, 413 empty/too large, 404 recognition off</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/gesicht/loeschen?name=..&amp;nr=NN</code></td>
+<td>delete one photo (without <code>nr</code>: all of the name); 404 missing</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/gesicht/gruss?name=..&amp;emotion=..&amp;sound=..&amp;augen=..</code></td>
+<td>greeting of a learned name (empty = <code>[pet] greet_*</code>/turquoise, <code>-</code> = none, sound also <code>stimme:NN</code>, <code>augen</code> = <code>PALETTE</code> colour) → <code>{ok, gruss}</code>; 400 unknown name/bad value</td>
 </tr>
 <tr>
 <td>GET</td>

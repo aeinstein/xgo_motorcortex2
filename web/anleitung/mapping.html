@@ -1209,6 +1209,34 @@
   
   
     <li class="md-nav__item">
+      <a href="faces.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Face recognition
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="wifi-setup.html" class="md-nav__link">
         
   
@@ -1994,7 +2022,7 @@ Status JSON <code>grid</code>: <code>pose [x m, y m, yaw °]</code>, <code>start
 </tr>
 <tr>
 <td>Speed</td>
-<td><code>explore.v</code> 0.80 × <code>max_v</code> (RiderPi 0.4 absolute since 2026-11-20, ≈ 72 cm/s at <code>vx_limit</code> 1.8) to goals and back to the start (<code>home.v</code> 0.30); factors of <code>robot.max_v</code> like every speed (since 2026-11-23, before explore could exceed <code>max_v</code>). Tight spots × <code>home.tight_v</code>, wander at <code>behavior.cruise_v</code>. Slows down towards the path end unless the next goal is already planned. RiderPi 2026-11-11: two runs at 0.30, no contact</td>
+<td><code>explore.v</code> 0.60 × <code>max_v</code> × tempo (since 2026-11-27, before 0.80: wheels up to 1.07 m/s, then 0.50; RiderPi 0.30 absolute, ≈ 54 cm/s at <code>vx_limit</code> 1.8); accelerating and slowing down × <code>explore.accel_faktor</code> 0.5 (full brake of the path check unchanged); turning on the spot (turn value and heading-target rate) × <code>explore.dreh_faktor</code> 0.5, steering while driving unchanged to goals and back to the start (<code>home.v</code> 0.30); factors of <code>robot.max_v</code> like every speed (since 2026-11-23, before explore could exceed <code>max_v</code>). Tight spots × <code>home.tight_v</code>, wander at <code>behavior.cruise_v</code>. Slows down towards the path end unless the next goal is already planned. RiderPi 2026-11-11: two runs at 0.30, no contact</td>
 </tr>
 <tr>
 <td>Frontier</td>

@@ -40,6 +40,8 @@ class Detection:
     box: tuple[float, float, float, float]  # x1,y1,x2,y2 in Vollbild-Pixeln
     cls: str
     conf: float
+    who: str | None = None        # erkanntes Gesicht (gesicht.Gesichter), nur Personen
+    who_sim: float | None = None  # Kosinus des besten Namens, auch unter der Schwelle (None = nicht geprüft)
 
 
 @dataclass
@@ -271,6 +273,8 @@ class DetectorWorker:
         self.busy = False
         self.infer_ms = 0.0
         self.failed = False        # gestartet, aber kein Modell nutzbar
+        self.gesichter = None      # gesicht.Gesichter (App setzt es); prüft Personen nach YOLO
+        self._face_t = -1e9
 
     def classes(self) -> list[str]:
         """Wählbare Zielklassen (follow/approach, Web-Auswahl): die Klassen, die das geladene Modell meldet;
@@ -316,8 +320,9 @@ class DetectorWorker:
         if self._thread:
             self._thread.join(timeout=2)
 
-    def offer(self, frame, sharpness: float, median: float) -> None:
-        """Pro Frame aufrufen. Behält den besten Kandidaten seit dem letzten Lauf."""
+    def offer(self, frame, sharpness: float, median: float, named=None) -> None:
+        """Pro Frame aufrufen. Behält den besten Kandidaten seit dem letzten Lauf.
+        named: None = keine Gesichtsprüfung; sonst Boxen (dieses Bilds) von Personen, die schon einen Namen tragen."""
         if self.model is None:
             return
         with self._cond:
@@ -325,7 +330,7 @@ class DetectorWorker:
             if self._cand is None:
                 self._cand_since = now
             if self._cand is None or sharpness >= self._cand[1] or sharpness >= self.cfg.sharpness_rel * median:
-                self._cand = (frame, sharpness, median)
+                self._cand = (frame, sharpness, median, named)
             self._cond.notify()
 
     def poll(self) -> DetectionBatch | None:
@@ -336,7 +341,7 @@ class DetectorWorker:
     def _ready(self) -> bool:
         if self._cand is None:
             return False
-        _, sh, med = self._cand
+        _, sh, med, _ = self._cand
         waited = time.monotonic() - self._cand_since
         return sh >= self.cfg.sharpness_rel * med or waited >= self.cfg.max_wait_s
 
@@ -358,7 +363,7 @@ class DetectorWorker:
                     self._cond.wait(0.02 if self._cand is not None else 1.0)
                 if self._stop.is_set():
                     return
-                frame, _, _ = self._cand
+                frame, _, _, named = self._cand
                 self._cand = None
             self.busy = True
             t_start = time.monotonic()
@@ -369,7 +374,36 @@ class DetectorWorker:
                 log.exception("Inferenz fehlgeschlagen")
                 dets = []
             ms = (time.perf_counter() - t0) * 1000
+            if named is not None and self.gesichter is not None:
+                self._faces(frame.bgr, dets, named)
             self.infer_ms = 0.8 * self.infer_ms + 0.2 * ms if self.infer_ms else ms
             self.busy = False
             with self._cond:
                 self._result = DetectionBatch(frame.idx, frame.t, dets, ms)
+
+    def _faces(self, bgr, dets: list[Detection], named) -> None:
+        """Gesichter der Personen ohne Namen prüfen, höchstens [gesicht] max_hz (gesicht.py)."""
+        g = self.gesichter
+        hz = g.cfg.max_hz
+        now = time.monotonic()
+        if hz > 0 and now - self._face_t < 1.0 / hz:
+            return
+        todo = [d for d in dets if d.cls == "person" and not any(_iou(d.box, b) > 0.5 for b in named)]
+        if not todo:
+            return
+        self._face_t = now
+        for d in todo:
+            try:
+                r = g.pruefen(bgr, d.box)
+            except Exception:
+                log.exception("Gesichtsprüfung fehlgeschlagen")
+                return
+            if r is not None:
+                d.who, d.who_sim = r
+
+
+def _iou(a, b) -> float:
+    x1, y1, x2, y2 = max(a[0], b[0]), max(a[1], b[1]), min(a[2], b[2]), min(a[3], b[3])
+    inter = max(0.0, x2 - x1) * max(0.0, y2 - y1)
+    ua = (a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - inter
+    return inter / ua if ua > 0 else 0.0

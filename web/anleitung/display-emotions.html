@@ -1187,6 +1187,34 @@
   
   
     <li class="md-nav__item">
+      <a href="faces.html" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Face recognition
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="wifi-setup.html" class="md-nav__link">
         
   
@@ -1531,6 +1559,10 @@
 <td>Throughput</td>
 <td>&gt; 40 fps (measured)</td>
 </tr>
+<tr>
+<td>No network</td>
+<td><code>wlan0</code> without IPv4 (checked every 2 s): Wi-Fi symbol with red slash (24×24 px, top right) over every frame; redrawn on change, also on a static image (2026-11-27). Hotspot counts as network</td>
+</tr>
 </tbody>
 </table>
 <div class="highlight"><pre><span></span><code>make -C st7789/project/riderpi &amp;&amp; sudo cp st7789/project/riderpi/st7789_server /usr/bin/
@@ -1601,7 +1633,12 @@ tools/emotion.sh play DIR [FPS]     # plays DIR/*.raw once, default 25 fps
 <div class="highlight"><pre><span></span><code>python tools/eyes.py OUTDIR [--color R,G,B] [--only NAME]... [--png] [--preview DIR]
 python tools/eyes.py --list
 python tools/eyes.py --gaze DIR      # eye atlas for mode pet: 11 gaze positions (10 steps) x 5 lid positions, 55 frames, 8.4 MB
+python tools/eyes.py OUTDIR --farbe rot   # colour from PALETTE (rot, rosa, gelb, gruen, lila); --palette lists them
 </code></pre></div>
+<p>Eye colours per person (<a href="faces.html">faces.md</a>): <code>deploy/install.sh</code> renders every <code>PALETTE</code> colour to
+<code>/opt/xgonav/emotions_&lt;colour&gt;/</code> and <code>/opt/xgonav/eyes_gaze_&lt;colour&gt;/</code> (≈ 170 MB each, once; stamp = md5 of <code>eyes.py</code>).
+While pet recognises a person with an eye colour (and <code>[pet] eye_hold_s</code> = 20 s after), <code>Emotions.farbe</code> plays emotions
+from the colour folder and <code>lcd.py</code> shows the colour atlas (loaded once, at most one kept); missing folder → turquoise.</p>
 <table>
 <thead>
 <tr>
@@ -1659,6 +1696,10 @@ python tools/eyes.py --gaze DIR      # eye atlas for mode pet: 11 gaze positions
 <tr>
 <td><code>angst</code></td>
 <td>wide eyes, small pupils darting left/right, worried lids (inner corners up), trembling (fear of the dark)</td>
+</tr>
+<tr>
+<td><code>aufwachen</code></td>
+<td>eyes start closed, open halfway, close again, open fully, look left and right, one blink (boot)</td>
 </tr>
 <tr>
 <td><code>cute</code></td>
@@ -1721,8 +1762,8 @@ python tools/eyes.py --gaze DIR      # eye atlas for mode pet: 11 gaze positions
 </thead>
 <tbody>
 <tr>
-<td><code>cute</code></td>
-<td>boot</td>
+<td><code>aufwachen</code></td>
+<td>boot (eyes closed, open with a blink, look left and right, end neutral)</td>
 <td><code>rc.local</code></td>
 </tr>
 <tr>
@@ -1898,7 +1939,7 @@ python tools/eyes.py --gaze DIR      # eye atlas for mode pet: 11 gaze positions
 </tr>
 <tr>
 <td>box top free and &lt; 1.9 m (kneeling, sitting, child)</td>
-<td><code>like</code></td>
+<td><code>cute</code> (<code>like</code> only greets known faces, <a href="faces.html">faces.md</a>)</td>
 </tr>
 <tr>
 <td>person approaching &gt; ~1 m/s within 1.6 m</td>
@@ -1940,7 +1981,7 @@ python tools/eyes.py --gaze DIR      # eye atlas for mode pet: 11 gaze positions
 </table>
 <p>Eyes follow the bearing of the target, gliding one position per control step; once the same person has been fixated for <code>eyes_fix_s</code> (1.5 s, gaze arrived) the lids narrow to slits (<code>eyes_fix_lid</code> 2, 2026-11-22). They blink through all lid positions in 0.4 s (atlas, neutral eye style without pupils, replaces the overlay on the LCD; written only when changed, checked at ~33 Hz). Priority: dog, cat, person. Trust (0..1) shifts thresholds; repeated scares weaken (habituation).</p>
 <h3 id="search-and-roam">Search and roam<a class="headerlink" href="#search-and-roam" title="Permanent link">&para;</a></h3>
-<p>Tasks inside state <code>wach</code>; any person/cat/dog in view ends them (search: <code>like</code> + found sound; roam: <code>surprised</code>). Position from wheels and heading (<code>World.yaw</code>), independent of the room map; reset on stand-up.</p>
+<p>Tasks inside state <code>wach</code>; any person/cat/dog in view ends them (search: <code>cute</code> + found sound; roam: <code>surprised</code>). Position from wheels and heading (<code>World.yaw</code>), independent of the room map; reset on stand-up.</p>
 <table>
 <thead>
 <tr>

@@ -53,8 +53,19 @@ echo "Erzeuge Emotionen (einmalig) ..."
 "$DEST/venv/bin/python" tools/sounds.py "$DEST/sounds"
 # Augen des Modus pet (einmalig; am Rider läuft davon nichts je Bild)
 "$DEST/venv/bin/python" tools/eyes.py --gaze "$DEST/eyes_gaze" || echo "Hinweis: Augen-Atlas nicht erzeugt – Modus pet zeigt das Overlay"
+# Augenfarben je Person (tools/eyes.py PALETTE; Web: Gesichter -> Augen): je Farbe Emotionen + Atlas (~170 MB),
+# nur neu, wenn eyes.py sich geändert hat (Stempel)
+STEMPEL=$(md5sum tools/eyes.py | cut -c1-32)
+for F in $("$DEST/venv/bin/python" tools/eyes.py --palette); do
+    if [ "$(cat "$DEST/eyes_gaze_$F/.stempel" 2>/dev/null)" != "$STEMPEL" ]; then
+        echo "Erzeuge Augenfarbe $F (einmalig) ..."
+        "$DEST/venv/bin/python" tools/eyes.py "$DEST/emotions_$F" --farbe "$F"             && "$DEST/venv/bin/python" tools/eyes.py --gaze "$DEST/eyes_gaze_$F" --farbe "$F"             && echo "$STEMPEL" > "$DEST/eyes_gaze_$F/.stempel" || echo "Hinweis: Augenfarbe $F nicht erzeugt"
+    fi
+done
 # Stimmproben des Modus pet ([stimme] dir), bleiben bei jedem Einspielen erhalten
 mkdir -p "$DEST/stimmen"
+# Angelernte Gesichter ([gesicht] dir: <Name>/NN.npy + NN.jpg), bleiben ebenso erhalten; Modelle: tools/export_face.sh
+mkdir -p "$DEST/gesichter"
 chown -R "$USER_NAME":"$USER_NAME" "$DEST"
 usermod -aG video,audio "$USER_NAME"
 # Dauerhafte Einstellungen aus dem Web (LED-Helligkeit): www-data schreibt, xgonav und rc.local lesen

@@ -211,6 +211,8 @@ All keys with comments: `PetCfg` in `xgonav/config.py`.
 
 | Key | Default | Note |
 |---|---|---|
+| `greet_emotion`, `greet_sound`, `greet_repeat_s` | `like`, `traellern`, 600 | greeting of a recognised face ([faces.md](faces.md)); again after so long without it |
+| `eye_hold_s` | 20 | eye colour of a recognised person (web) stays so long after the last recognition |
 | `retreat_m` | 0 (off) | jerk backwards per scare, cap 0.30 m, RiderPi test 0.12. Blind, needs wheels |
 | `creep_m` | 0 (off) | toward a cat per encounter, cap 1.0 m, test 0.4. Needs wheels, floor model, local map |
 | `seek_m` | −1 = no limit | person gone: drive toward the last position, per loss. Needs wheels, floor model, local map |
@@ -264,6 +266,14 @@ All keys with comments: `PetCfg` in `xgonav/config.py`.
 | `noise_up`, `noise_down`, `warm_blocks` | 0.001, 0.2, 25 | noise floor tracking per block; blocks after start without events |
 | `window_blocks`, `min_blocks`, `hang_blocks`, `min_interval_s` | 47, 24, 12, 0 | blocks per estimate (1 s); shorter sounds dropped; pauses bridged; pause after an estimate |
 | `min_quality`, `nachhall_s`, `retry_s` | 0.4, 0.3, 10 | drop below; deaf after own sounds; retry when `arecord` ends |
+
+### `[gesicht]` (face recognition in `pet`, see [faces.md](faces.md))
+| Key | Default | Meaning |
+|---|---|---|
+| `enabled`, `dir` | true, `/opt/xgonav/gesichter` | off in the simulator (`Config.neutral()`); needs the detector and package `ncnn` |
+| `model`, `det_model` | `models/mobilefacenet_ncnn`, `models/face_detection_yunet_2023mar.onnx` | `tools/export_face.sh` |
+| `modes`, `max_hz`, `threads` | `["pet"]`, 2, 2 | checks per second at most; ncnn threads (after YOLO on `detector_cpus`) |
+| `min_face_px`, `det_conf`, `match_sim` | 40, 0.7, 0.45 | smaller faces skipped; YuNet threshold; cosine for a name (provisional) |
 
 ### `[stimme]` (voice samples in `pet`, see [audio.md](audio.md#voice-samples-xgonavstimmepy-mode-pet))
 | Key | Default | Meaning |

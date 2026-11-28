@@ -1081,7 +1081,7 @@ class FakeDetector:
     def classes(self) -> list[str]:
         return [self.world.person.cls if self.world.person is not None else "person"]
 
-    def offer(self, frame, sharpness, median) -> None:
+    def offer(self, frame, sharpness, median, named=None) -> None:
         now = time.monotonic()
         if now < self._next:
             return

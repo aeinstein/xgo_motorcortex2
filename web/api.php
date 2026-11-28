@@ -74,6 +74,8 @@ define('SIM', getenv('XGO_SIM') === '1');
 const EMOTION = '/opt/xgonav/tools/emotion.sh';         // Player (RGB565-Rohbilder statt ffmpeg)
 const EMOTION_RAW = '/opt/xgonav/emotions';             // tools/eyes.py, von deploy/install.sh erzeugt
 const STIMMEN = '/opt/xgonav/stimmen';                 // [stimme] dir: bestaetigt/NN(_roh).wav, kandidaten/<Zeit>.wav
+define('GESICHTER', getenv('XGO_GESICHTER') ?: '/opt/xgonav/gesichter');   // [gesicht] dir: <Name>/NN.npy + NN.jpg
+const SOUNDS = '/opt/xgonav/sounds';                    // [emotion] sound_dir: pet_<Ereignis>_<n>.wav
 const HEIGHT_MIN = 61;                                   // u8; ~10 mm über dem Minimum, dazu ~4 mm fürs Ausrichten (ein Bein tiefer)
 const LED_FILE = '/var/lib/xgonav/led_brightness';      // n/256 (Firmware-Patch 06-leds), deploy/install.sh legt den Ordner an
 const HEIGHT_MAX = 255;                                 // u8; seit Firmware 5a80b9ea (2026-11-27) fährt jedes Bein nur bis zur Servogrenze, 255 = so hoch wie möglich
@@ -374,6 +376,65 @@ if ($a === 'stimme_wav' && !$post) {
     readfile($f);
     exit;
 }
+if ($a === 'gesichter' && !$post) {
+    // Klappfeld „Gesichter“: direkt von der Platte (kostet nur beim Aufklappen); an/aus und ms von xgonav
+    $namen = [];
+    foreach (glob(GESICHTER . '/*', GLOB_ONLYDIR) ?: [] as $d) {
+        $n = basename($d);
+        if (!preg_match('/^[A-Za-z0-9_-]{1,32}$/', $n)) {
+            continue;
+        }
+        $fotos = [];
+        foreach (glob("$d/[0-9][0-9].jpg") ?: [] as $f) {
+            $fotos[] = ['nr' => substr(basename($f), 0, 2), 'zeit' => filemtime($f)];
+        }
+        $gruss = json_decode((string)@file_get_contents("$d/gruss.json"), true) ?: [];
+        $namen[] = ['name' => $n, 'fotos' => $fotos, 'gruss' => (object)$gruss];
+    }
+    // Auswahl der Begrüßung: Emotionen (Bildfolgen), pet-Töne, bestätigte Stimmproben
+    $emo = [];
+    foreach (@scandir(EMOTION_RAW) ?: [] as $e) {
+        if (preg_match('/^[A-Za-z]+$/', $e) && is_dir(EMOTION_RAW . "/$e")) {
+            $emo[] = $e;
+        }
+    }
+    $toene = [];
+    foreach (glob(SOUNDS . '/pet_*.wav') ?: [] as $f) {
+        $t = explode('_', basename($f, '.wav'))[1] ?? '';
+        if (preg_match('/^[a-z]{1,32}$/', $t)) {
+            $toene[$t] = true;
+        }
+    }
+    $stimmen = [];
+    foreach (glob(STIMMEN . '/bestaetigt/[0-9][0-9].wav') ?: [] as $f) {
+        $stimmen[] = substr(basename($f), 0, 2);
+    }
+    $farben = [];                                       // Augenfarben, von deploy/install.sh gerendert
+    foreach (glob('/opt/xgonav/eyes_gaze_*', GLOB_ONLYDIR) ?: [] as $d) {
+        $f = substr(basename($d), 10);
+        if (preg_match('/^[a-z]{1,16}$/', $f) && is_dir(EMOTION_RAW . "_$f")) {
+            $farben[] = $f;
+        }
+    }
+    antwort(200, json_encode(['dir' => GESICHTER, 'namen' => $namen, 'emotionen' => $emo,
+                              'toene' => array_keys($toene), 'stimmen' => $stimmen, 'farben' => $farben]));
+}
+if ($a === 'gesicht_jpg' && !$post) {
+    $n = $_GET['name'] ?? '';
+    $nr = $_GET['nr'] ?? '';
+    if (!preg_match('/^[A-Za-z0-9_-]{1,32}$/', $n) || !preg_match('/^\d\d$/', $nr)) {
+        antwort(400, json_encode(['error' => 'Name oder Nummer ungültig']));
+    }
+    $f = GESICHTER . "/$n/$nr.jpg";
+    if (!is_file($f)) {
+        antwort(404, json_encode(['error' => 'Foto nicht vorhanden']));
+    }
+    header('Content-Type: image/jpeg');
+    header('Content-Length: ' . filesize($f));
+    header('Cache-Control: no-cache');
+    readfile($f);
+    exit;
+}
 if ($a === 'wlan_status' && !$post) {
     [$rc, $z] = wlan_helfer('status');
     antwort($rc === 0 ? 200 : 500, json_encode($rc === 0 ? wlan_kv($z) : ['error' => end($z) ?: "rc $rc"],
@@ -465,6 +526,36 @@ switch ($a) {
             antwort(400, json_encode(['error' => 'keine WAV-Datei oder größer als 1000 KB']));
         }
         xgonav('POST', '/stimme/hochladen?fertig=' . (($_GET['fertig'] ?? '') === '1' ? '1' : '0'), 10, $wav, 'audio/wav');
+    case 'gesicht_hochladen':
+        // Klappfeld „Gesichter“: der Browser hat schon auf höchstens 1024 px verkleinert (JPEG)
+        $n = $_GET['name'] ?? '';
+        if (!preg_match('/^[A-Za-z0-9_-]{1,32}$/', $n)) {
+            antwort(400, json_encode(['error' => 'Name ungültig (Buchstaben, Ziffern, _ und -)']));
+        }
+        $jpg = (string)file_get_contents('php://input');
+        if (strlen($jpg) < 100 || strlen($jpg) > 4 * 1024 * 1024) {
+            antwort(400, json_encode(['error' => 'kein Bild oder größer als 4 MB']));
+        }
+        xgonav('POST', '/gesicht/hochladen?name=' . rawurlencode($n), 10, $jpg, 'image/jpeg');
+    case 'gesicht_loeschen':
+        $n = $_GET['name'] ?? '';
+        $nr = $_GET['nr'] ?? '';
+        if (!preg_match('/^[A-Za-z0-9_-]{1,32}$/', $n) || ($nr !== '' && !preg_match('/^\d\d$/', $nr))) {
+            antwort(400, json_encode(['error' => 'Name oder Nummer ungültig']));
+        }
+        xgonav('POST', '/gesicht/loeschen?name=' . rawurlencode($n) . ($nr !== '' ? '&nr=' . $nr : ''));
+    case 'gesicht_gruss':
+        // Begrüßung je Person: leer = Standard [pet] greet_*, "-" = keine; Ton auch stimme:NN (Stimmprobe)
+        $n = $_GET['name'] ?? '';
+        $e = $_GET['emotion'] ?? '';
+        $t = $_GET['sound'] ?? '';
+        $au = $_GET['augen'] ?? '';
+        if (!preg_match('/^[A-Za-z0-9_-]{1,32}$/', $n) || !preg_match('/^(-|[A-Za-z]{1,32})?$/', $e)
+            || !preg_match('/^([a-z]{1,16})?$/', $au)
+            || !preg_match('/^(-|[a-z]{1,32}|stimme:\d\d)?$/', $t)) {
+            antwort(400, json_encode(['error' => 'Name, Emotion, Ton oder Augenfarbe ungültig']));
+        }
+        xgonav('POST', '/gesicht/gruss?' . http_build_query(['name' => $n, 'emotion' => $e, 'sound' => $t, 'augen' => $au]));
     case 'stop':
         xgonav('POST', '/stop');
     case 'ausrichten':

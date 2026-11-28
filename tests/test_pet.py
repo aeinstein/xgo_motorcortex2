@@ -151,7 +151,7 @@ def test_unsicheres_tier_zaehlt_nicht(kw):
 
 @pytest.mark.parametrize("d,top,zone,emo", [
     (4.0, False, "fern", None), (2.0, False, "mitte", "doubt"), (1.0, False, "nah", "cute"),
-    (1.2, True, "knien", "like"), (0.2, False, "zunah", "shy")])
+    (1.2, True, "knien", "cute"), (0.2, False, "zunah", "shy")])
 def test_zonen(d, top, zone, emo):
     b = brain(gestures=False)
     _, _, evs = run(b, 0.0, 2.0, lambda t: [seen(dist=d, t=t, top_free=top, vs=0.0)])

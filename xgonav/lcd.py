@@ -32,6 +32,8 @@ class LcdOut:
         self._atlas = None              # Augen des Modus pet, beim ersten Bedarf geladen
         self._atlas_tried = False
         self._gaze_sent = None
+        self._farbe = None              # Augenfarbe des gezeigten Atlas (None = Standard)
+        self._farb_atlas: dict = {}     # Farbe -> Atlas (oder None, wenn er fehlt); höchstens einer
         self._wlan_sent = None
         threading.Thread(target=self._run, name="lcd", daemon=True).start()
 
@@ -59,9 +61,20 @@ class LcdOut:
                 log.warning("LCD: kein Augen-Atlas in %s (tools/eyes.py --gaze)", path)
         if self._atlas is None:
             return False
+        atlas = self._atlas
+        farbe = getattr(self.app.behavior, "augen", None)      # erkannte Person mit eigener Augenfarbe (pet)
+        if farbe:
+            if farbe not in self._farb_atlas:
+                path = f"{self.app.cfg.pet.gaze_dir}_{farbe}"
+                self._farb_atlas = {farbe: load_gaze(path)}     # nur einen halten (je 8 MB)
+                if self._farb_atlas[farbe] is None:
+                    log.warning("LCD: kein Augen-Atlas in %s (deploy/install.sh)", path)
+            atlas = self._farb_atlas[farbe] or self._atlas
+        if farbe != self._farbe:
+            self._farbe, self._gaze_sent = farbe, None
         if gaze != self._gaze_sent:
             try:
-                os.write(self._fd, self._atlas[gaze])
+                os.write(self._fd, atlas[gaze])
                 self._gaze_sent = gaze
             except OSError:
                 os.close(self._fd)

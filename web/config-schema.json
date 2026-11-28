@@ -1141,6 +1141,75 @@
        "hilfe": "Kante über die Zeit beruhigen (floornet.ZeilenGlaetter): die letzten net_smooth_n Ausgaben werden über Pose und Nicken auf das aktuelle Bild umgerechnet, je Spalte gilt der Median. 3: ein Ausreißer in einem einzelnen Bild verschwindet, ein neues Hindernis erscheint ein Netzbild (83 ms) später. 0 oder 1 = aus. Braucht die Kartenpose; ohne sie gilt die Ausgabe unverändert."
       }
      ]
+    },
+    {
+     "name": "gesicht",
+     "doc": "",
+     "felder": [
+      {
+       "key": "enabled",
+       "typ": "bool",
+       "default": true,
+       "hilfe": "Gesichter wiedererkennen (xgonav/gesicht.py, Nutzer 2026-11-27): YuNet findet, MobileFaceNet (ncnn, InsightFace w600k_mbf, nur nicht-kommerziell) rechnet 512 Merkmale, Kosinus gegen die angelernten Fotos (Web-Upload). Läuft im Detektor-Thread nach YOLO, nur auf dem Kopf einer Personenbox ohne Namen, nur in modes. Modelle: tools/export_face.sh (am PC). Fehlen sie: Warnung, aus."
+      },
+      {
+       "key": "model",
+       "typ": "str",
+       "default": "models/mobilefacenet_ncnn",
+       "hilfe": "model.ncnn.param/.bin"
+      },
+      {
+       "key": "det_model",
+       "typ": "str",
+       "default": "models/face_detection_yunet_2023mar.onnx",
+       "hilfe": ""
+      },
+      {
+       "key": "dir",
+       "typ": "str",
+       "default": "/opt/xgonav/gesichter",
+       "hilfe": "<Name>/NN.npy (Merkmal) + NN.jpg (ausgerichteter Ausschnitt)"
+      },
+      {
+       "key": "modes",
+       "typ": "liste",
+       "elem": "zahl",
+       "default": [
+        "pet"
+       ],
+       "hilfe": ""
+      },
+      {
+       "key": "max_hz",
+       "typ": "float",
+       "default": 2.0,
+       "hilfe": "Prüfungen je Sekunde höchstens (je Prüfung alle Personen ohne Namen)"
+      },
+      {
+       "key": "min_face_px",
+       "typ": "float",
+       "default": 40.0,
+       "hilfe": "schmalere Gesichter (f 310: weiter als ~1,2 m) nicht prüfen"
+      },
+      {
+       "key": "det_conf",
+       "typ": "float",
+       "default": 0.7,
+       "hilfe": "YuNet-Schwelle"
+      },
+      {
+       "key": "match_sim",
+       "typ": "float",
+       "default": 0.45,
+       "hilfe": "Kosinus ab hier = erkannt. Vorläufig (ArcFace-Modelle trennen sonst meist um 0,3-0,5), an echten Fotos und Rider-Bildern festlegen."
+      },
+      {
+       "key": "threads",
+       "typ": "int",
+       "default": 2,
+       "hilfe": "ncnn-Threads. Läuft im Detektor-Thread nach YOLO (nacheinander, dieselben Kerne detector_cpus), darum wie YOLO 2. MobileFaceNet hat 892 MFLOP (YOLO 256 px ~1 GFLOP, CM4 93 ms): am CM4 geschätzt 70-100 ms je Gesicht, nur wenn YuNet ein Gesicht >= min_face_px findet. Am PC (2026-11-27) 9,7 ms Merkmal, 2 ms YuNet. Am Rider nicht gemessen."
+      }
+     ]
     }
    ]
   },
@@ -2854,6 +2923,30 @@
        "typ": "float",
        "default": 0.05,
        "hilfe": "je Schreck"
+      },
+      {
+       "key": "greet_emotion",
+       "typ": "str",
+       "default": "like",
+       "hilfe": "Begrüßung einer erkannten Person ([gesicht], Nutzer 2026-11-27): Emotion + Ton, Vertrauen sofort voll; erneut erst, wenn der Name so lange nicht mehr erkannt war"
+      },
+      {
+       "key": "greet_sound",
+       "typ": "str",
+       "default": "traellern",
+       "hilfe": ""
+      },
+      {
+       "key": "greet_repeat_s",
+       "typ": "float",
+       "default": 600.0,
+       "hilfe": ""
+      },
+      {
+       "key": "eye_hold_s",
+       "typ": "float",
+       "default": 20.0,
+       "hilfe": "Augenfarbe der Person (Web) bleibt so lange nach ihrer letzten Erkennung"
       },
       {
        "key": "fright_decay",

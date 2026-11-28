@@ -82,6 +82,7 @@ nav:
       - FloorNet: floornet.md
       - Display and emotions: display-emotions.md
       - Audio: audio.md
+      - Face recognition: faces.md
       - Wi-Fi setup: wifi-setup.md
       - Bluetooth: ble.md
       - LEDs: LED.md

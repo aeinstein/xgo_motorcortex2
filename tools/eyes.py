@@ -7,6 +7,8 @@ Emotion eine Bildfolge direkt im Format von tools/emotion.sh build:
 
   python tools/eyes.py OUTDIR                      # alle Emotionen, Farbe Türkis
   python tools/eyes.py OUTDIR --color 255,160,0    # andere Farbe (R,G,B)
+  python tools/eyes.py OUTDIR --farbe rot          # Farbe aus PALETTE (Augenfarbe je Person, xgonav/gesicht.py)
+  python tools/eyes.py --palette                   # Namen der PALETTE
   python tools/eyes.py OUTDIR --only sad --only shy
   python tools/eyes.py OUTDIR --png                # zusätzlich <Name><n>.png
   python tools/eyes.py OUTDIR --preview VORSCHAU   # Kontaktabzug (PNG) und MP4 je Emotion
@@ -32,6 +34,10 @@ FPS = 25                    # Standard von tools/emotion.sh play
 SS = 4                      # Überabtastung: gezeichnet wird in 4x, dann INTER_AREA
 SHIFT = 2                   # Subpixel-Bits für cv2-Zeichenfunktionen
 FARBE = (0, 225, 210)       # Türkis (R, G, B)
+# Augenfarben je Person (Web: Gesichter -> Begrüßung -> Augen); deploy/install.sh rendert je Name
+# <emotions>_<name>/ und <eyes_gaze>_<name>/, xgonav nimmt sie, solange die Person da ist
+PALETTE = {"rot": (255, 80, 70), "rosa": (255, 120, 200), "gelb": (255, 200, 0),
+           "gruen": (60, 230, 90), "lila": (170, 110, 255)}
 
 # Neutrales Auge (Bildschirm-Koordinaten). L = links im Bild, R = rechts.
 CX_L, CX_R, CY = 98.0, 222.0, 118.0
@@ -500,6 +506,8 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="Augen-Animationen (RGB565 320x240) für tools/emotion.sh")
     ap.add_argument("outdir", nargs="?", type=Path, help="Zielverzeichnis, je Emotion ein Unterverzeichnis")
     ap.add_argument("--color", default=",".join(map(str, FARBE)), help="Farbe R,G,B (Standard Türkis)")
+    ap.add_argument("--farbe", choices=list(PALETTE), help="Farbe aus der Palette (statt --color)")
+    ap.add_argument("--palette", action="store_true", help="Namen der Palette ausgeben")
     ap.add_argument("--only", action="append", help="nur diese Emotion (mehrfach möglich)")
     ap.add_argument("--png", action="store_true", help="zusätzlich <Name><n>.png schreiben")
     ap.add_argument("--no-raw", action="store_true", help="keine .raw-Dateien schreiben")
@@ -508,6 +516,9 @@ def main() -> int:
     ap.add_argument("--gaze", type=Path, help="Augen-Atlas für den Modus pet hierhin (g<Blick>_l<Lid>.raw)")
     a = ap.parse_args()
 
+    if a.palette:
+        print(" ".join(PALETTE))
+        return 0
     if a.list:
         for name, (_, d) in EMOTIONS.items():
             print(f"{name:12s} {int(round(d * FPS)):3d} Bilder  {d:.1f} s")
@@ -515,7 +526,7 @@ def main() -> int:
     if a.outdir is None and a.preview is None and a.gaze is None:
         ap.error("OUTDIR, --preview oder --gaze angeben")
     try:
-        farbe = tuple(int(c) for c in a.color.split(","))
+        farbe = PALETTE[a.farbe] if a.farbe else tuple(int(c) for c in a.color.split(","))
         assert len(farbe) == 3 and all(0 <= c <= 255 for c in farbe)
     except (ValueError, AssertionError):
         ap.error("--color erwartet R,G,B mit Werten 0..255")

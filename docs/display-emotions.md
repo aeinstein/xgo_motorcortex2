@@ -48,7 +48,13 @@ Stylized eyes only, one color on black (antialiased), same output format as `emo
 python tools/eyes.py OUTDIR [--color R,G,B] [--only NAME]... [--png] [--preview DIR]
 python tools/eyes.py --list
 python tools/eyes.py --gaze DIR      # eye atlas for mode pet: 11 gaze positions (10 steps) x 5 lid positions, 55 frames, 8.4 MB
+python tools/eyes.py OUTDIR --farbe rot   # colour from PALETTE (rot, rosa, gelb, gruen, lila); --palette lists them
 ```
+
+Eye colours per person ([faces.md](faces.md)): `deploy/install.sh` renders every `PALETTE` colour to
+`/opt/xgonav/emotions_<colour>/` and `/opt/xgonav/eyes_gaze_<colour>/` (≈ 170 MB each, once; stamp = md5 of `eyes.py`).
+While pet recognises a person with an eye colour (and `[pet] eye_hold_s` = 20 s after), `Emotions.farbe` plays emotions
+from the colour folder and `lcd.py` shows the colour atlas (loaded once, at most one kept); missing folder → turquoise.
 
 | Item | Value |
 |---|---|
@@ -135,7 +141,7 @@ Started by hand (web UI „Haustier“, `--mode pet`). Not run on the Rider yet,
 | person 1.5–3 m | turns toward, tilts head (roll), `doubt`; a drive command (v ≠ 0, not turning) sets roll back to 0 and levels once (`Robot.request_level`, 2026-11-22) |
 | person < 1.5 m | `cute`, trill, wiggle |
 | person < ~0.5 m | `shy`, ducks |
-| box top free and < 1.9 m (kneeling, sitting, child) | `like` |
+| box top free and < 1.9 m (kneeling, sitting, child) | `cute` (`like` only greets known faces, [faces.md](faces.md)) |
 | person approaching > ~1 m/s within 1.6 m | `surprised`, squeak, duck, optional jerk back |
 | person gone < 3 s and back | `laugh`, giggle |
 | person gone > 3 s | looks after them, `doubt`, searches (below), `sad` if not found |
@@ -150,7 +156,7 @@ Eyes follow the bearing of the target, gliding one position per control step; on
 
 ### Search and roam
 
-Tasks inside state `wach`; any person/cat/dog in view ends them (search: `like` + found sound; roam: `surprised`). Position from wheels and heading (`World.yaw`), independent of the room map; reset on stand-up.
+Tasks inside state `wach`; any person/cat/dog in view ends them (search: `cute` + found sound; roam: `surprised`). Position from wheels and heading (`World.yaw`), independent of the room map; reset on stand-up.
 
 | Task | Sequence |
 |---|---|
