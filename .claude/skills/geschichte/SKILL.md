@@ -13,9 +13,6 @@ Ordner `web/geschichte/` (statisch, kein PHP; nginx `location /geschichte/`, `/g
 - Letzte Seite ist immer `NN-stand-heute.html`, mit der Fußnote (`<hr>` + Quellen) vor der Blätterleiste.
 - `stil.css`: gemeinsames CSS, hell und dunkel. Kein neues CSS.
 
-Daneben steht `web/tagebuch/index.html` (Tag für Tag, sachlicher). Die Geschichte erzählt, das Tagebuch protokolliert;
-beide nicht vermischen.
-
 ## Ablauf
 
 1. **Stil prüfen, bevor geschrieben wird.** Alle Kapitel lesen (nicht nur das Ende) und kurz festhalten:
@@ -29,13 +26,12 @@ beide nicht vermischen.
    … für es“). Die Korrekturen in der Antwort auflisten.
 3. **Stoff seit dem letzten Stand sammeln** (Datum aus Schritt 1). Quellen, in dieser Reihenfolge:
    - `git log --since=<Datum> --stat` und Commit-Nachrichten,
-   - `web/tagebuch/index.html` (falls schon nachgetragen),
    - Projektnotizen: `MEMORY.md` samt verlinkten Dateien im Memory-Ordner, `TODO.md`, `docs/limitations.md`,
    - Sitzungsverläufe (`~/.claude/projects/G--ALLPROJECTS-PycharmProjects-xgo-motorcortex2*/*.jsonl`, auch `-web`
      und `-firmware`, früher `C:\rider`) für **wörtliche Nutzerzitate** und den tatsächlichen Hergang. Zitate nur
      übernehmen, wenn sie dort so stehen, und nie erfinden. Korrigiert wird nur die Rechtschreibung (Schritt 2).
    Die Durchsicht der Verläufe an Explore-Agenten geben, mit Zeitraum und der Bitte um wörtliche Zitate samt Uhrzeit.
-4. **Gliedern.** Neue Kapitel nach Themen, nicht nach Tagen (Tage gehören ins Tagebuch). Jedes Kapitel hat einen
+4. **Gliedern.** Neue Kapitel nach Themen, nicht nach Tagen. Jedes Kapitel hat einen
    Bogen: Vorhaben → was schiefging → Befund (meist: der Nutzer hatte recht oder die Messung widersprach) → Stand.
    Jedes neue Kapitel ist eine neue Datei vor „Stand heute“. Danach „Stand heute“ umnummerieren, den Eintrag im Inhalt
    ergänzen und die Blätterlinks der Nachbarn anpassen (vorheriges Kapitel → neues, neues → „Stand heute“). Gibt es

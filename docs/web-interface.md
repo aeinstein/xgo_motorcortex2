@@ -10,7 +10,7 @@
 | Auth | **none** — LAN only |
 | Installed to | `/opt/xgonav/web/` |
 | LLM access | `https://<rider>/mcp.php` → [MCP server](mcp.md) (`web/mcp.php`), level in `/etc/xgonav/mcp.json` |
-| Static pages | `https://<rider>/tagebuch/` → `web/tagebuch/index.html` (dev diary, nginx only); `https://<rider>/anleitung/` → `web/anleitung/` (this manual, built on the PC by `tools/build_manual.sh` from `docs/` with MkDocs Material, committed, nginx only) |
+| Static pages | `https://<rider>/geschichte/` → `web/geschichte/` (project story, one chapter per page, nginx only); `https://<rider>/anleitung/` → `web/anleitung/` (this manual, built on the PC by `tools/build_manual.sh` from `docs/` with MkDocs Material, committed, nginx only) |
 
 ## Layout (`web/index.php`)
 

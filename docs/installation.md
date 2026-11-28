@@ -117,7 +117,7 @@ sudo systemctl enable --now xgonav
 | Location | Target |
 |---|---|
 | `:80` | redirect to https |
-| `/` | `/opt/xgonav/web/` (PHP via php-fpm, `tagebuch/` static) |
+| `/` | `/opt/xgonav/web/` (PHP via php-fpm, `geschichte/` static) |
 | `/xgonav/…` | rewritten internally to `/…` (old links) |
 | `/ws`, `/frame`, `/map.png` | proxied to xgonav `127.0.0.1:8088` |
 | `/live` | WebSocket, proxied to `xgonav-live` `127.0.0.1:8089` |
