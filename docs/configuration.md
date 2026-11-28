@@ -203,7 +203,7 @@ Floor boundary from FloorNet only (`xgonav/freespace.py`, `docs/floornet.md`). T
 `web_host` 127.0.0.1, `web_port` 8088 (0 = off), `web_fps` 10, `jpeg_native` true (browser JPEG in the hardware encoder `jpeg_dev` = `/dev/video31`, fallback `cv2.imencode`), `lcd_fifo` `""` = off (sim: `/tmp/lcd0`), `lcd_fps` 15, `record_dir` `~/fahrt` (raw recording), `record_min_free_mb` 500 (below: recording switches itself off), `record_jpeg_q_hw` 95 (raw-recording JPEG in the hardware encoder; RiderPi: 4.6 instead of 8.6 ms CPU per image, mean deviation 0.70 vs 0.63, 51 vs 41 KB; above 95 only larger), `record_jpeg_q_cv` 92 (libjpeg fallback), `record_map_s` 2.0 (room map PNG every n s into `karte/`, 0 = off), `record_map_px` 480, `record_map_view_m` 6.0. `meta.jsonl` names the encoder per image (`"jpeg": "hw95"`/`"cv92"`; missing before 2026-11-19 = libjpeg q92).
 
 ### `[emotion]`
-`enabled` true, `dir` `/opt/xgonav/emotions`, `fifo` `/tmp/lcd0`, `gap_s` 5, `lost_s` 2, `battery_low` 20 %, `battery_repeat_s` 300.
+`enabled` true, `dir` `/opt/xgonav/emotions`, `fifo` `/tmp/lcd0`, `augen_fifo` `/tmp/lcd0.augen` (eye generator in the display daemon, `""` = off, [display-emotions.md](display-emotions.md#eye-generator-in-the-display-daemon)), `gap_s` 5, `lost_s` 2, `battery_low` 20 %, `battery_repeat_s` 300.
 Sounds: `sound` true, `sound_dir` `/opt/xgonav/sounds`, `sound_found` `freude.wav`, `sound_lost` `trauer.wav`, `sound_device` `""` (ALSA default).
 
 ### `[pet]` (mode `pet`, see [display-emotions.md](display-emotions.md))

@@ -3453,6 +3453,12 @@
        "hilfe": "unabhängig von output.lcd_fifo (Overlay)"
       },
       {
+       "key": "augen_fifo",
+       "typ": "str",
+       "default": "/tmp/lcd0.augen",
+       "hilfe": "Augengenerator im Display-Daemon (xgonav/augen.py): Befehle statt Bilder; \"\" = aus (dann Atlas und tools/emotion.sh wie früher). Fehlt der Daemon mit Generator, greift der alte Weg von selbst."
+      },
+      {
        "key": "gap_s",
        "typ": "float",
        "default": 5.0,

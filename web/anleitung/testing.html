@@ -1447,6 +1447,16 @@
 <td></td>
 </tr>
 <tr>
+<td><code>XGONAV_AUGENLIB=st7789/project/riderpi/libxgoaugen.so python -m pytest -q tests/test_augen.py</code></td>
+<td>eye generator of the display daemon (<a href="display-emotions.html#eye-generator-in-the-display-daemon">display-emotions.md</a>) against <code>tools/eyes.py</code>: parameters of all 15 expressions, raster vs <code>render()</code> (mean ≤ 0.5 %, summed ≤ 8 %, area ≤ 3 %), LUT, autonomous layer (blink rate over 10 min, saccade, lid, vergence, blending, commands); library from <code>make -C st7789/project/riderpi augen-lib</code> or built with gcc on the fly; skipped on the Windows PC. 42 passed on kimmy 2026-11-28</td>
+<td>&lt;1 s</td>
+</tr>
+<tr>
+<td><code>python -m pytest -q tests/test_augen_zeilen.py</code></td>
+<td><code>xgonav/augen.py</code>: only changed lines, colours, <code>aus</code>, missing daemon; <code>Emotions</code> via the generator</td>
+<td>&lt;1 s</td>
+</tr>
+<tr>
 <td><code>python -m pytest -q tests/test_pet.py</code></td>
 <td>mode <code>pet</code>: synthetic distance tracks, budgets, every stand-up condition</td>
 <td>&lt;1 s</td>

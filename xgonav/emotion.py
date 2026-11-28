@@ -2,10 +2,10 @@
 Dazu Geräusche über den Lautsprecher (aplay): freudig, wenn eine Person auftaucht,
 traurig, wenn sie lost_s lang verschwunden ist (unabhängig vom Display).
 
-Abgespielt wird mit tools/emotion.sh (vorkonvertierte RGB565-Bilder aus
-EmotionCfg.dir). Der Player läuft als eigener Prozess; ein neuerer Player
-(auch aus der Weboberfläche) beendet einen älteren über $FIFO.owner.
-Hochfahren (cute) spielt rc.local, Herunterfahren (sleep) web/api.php.
+Abgespielt wird über den Augengenerator im Display-Daemon (xgonav/augen.py: eine Zeile "ausdruck NAME"), ohne
+ihn mit tools/emotion.sh (vorkonvertierte RGB565-Bilder aus EmotionCfg.dir) als eigener Prozess. Der neueste
+Spieler gewinnt (auch aus der Weboberfläche), über $FIFO.owner; der Generator trägt sich dort ebenso ein.
+Hochfahren (aufwachen) spielt rc.local, Herunterfahren (sleep) web/api.php.
 """
 from __future__ import annotations
 
@@ -167,9 +167,10 @@ class Dudler:
 class Emotions:
     """Startet den Player; aus, wenn EmotionCfg.dir fehlt (z. B. am PC)."""
 
-    def __init__(self, cfg: EmotionCfg, fifo: str):
+    def __init__(self, cfg: EmotionCfg, fifo: str, augen=None):
         self.cfg, self.fifo = cfg, fifo
-        self.enabled = bool(cfg.enabled and fifo and os.path.isdir(cfg.dir) and PLAYER.exists())
+        self.augen = augen                           # augen.Augen (Generator im Display-Daemon) oder None
+        self.enabled = bool(cfg.enabled and fifo and (augen is not None or os.path.isdir(cfg.dir) and PLAYER.exists()))
         self._proc: subprocess.Popen | None = None
         self._snd_proc: subprocess.Popen | None = None
         self._aplay = shutil.which("aplay")
@@ -216,6 +217,9 @@ class Emotions:
         return self._snd_proc is not None and self._snd_proc.poll() is None
 
     def _play_display(self, name: str) -> None:
+        if self.augen is not None and self.augen.ausdruck(name, self.farbe):
+            log.info("Emotion %s (Augengenerator)", name)
+            return
         d = os.path.join(self.cfg.dir, name)
         if self.farbe:
             df = os.path.join(f"{self.cfg.dir}_{self.farbe}", name)

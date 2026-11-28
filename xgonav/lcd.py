@@ -1,4 +1,7 @@
-"""Ausgabe aufs 2"-Display über den st7789-Daemon (FIFO /tmp/lcd0, RGB565 320x240)."""
+"""Ausgabe aufs 2"-Display über den st7789-Daemon (FIFO /tmp/lcd0, RGB565 320x240).
+
+Modus pet mit Augengenerator im Daemon (xgonav/augen.py): nur Zeilen (Blick, Lid, Abstand, Farbe), keine Bilder;
+ohne ihn der Augen-Atlas aus tools/eyes.py --gaze."""
 from __future__ import annotations
 
 import errno
@@ -25,8 +28,10 @@ def to_rgb565(bgr: np.ndarray) -> bytes:
 
 
 class LcdOut:
-    def __init__(self, app: App, fifo: str, fps: int, overlay: bool = True):
+    def __init__(self, app: App, fifo: str, fps: int, overlay: bool = True, augen=None):
         self.app, self.fifo, self.period = app, fifo, 1.0 / max(1, fps)
+        self.augen = augen              # augen.Augen oder None
+        self._augen_an = False          # lebende Augen im Daemon eingeschaltet
         self.overlay = overlay          # False: nur WLAN-Einrichtung und pet-Augen, kein Kamerabild
         self._fd: int | None = None
         self._atlas = None              # Augen des Modus pet, beim ersten Bedarf geladen
@@ -82,6 +87,11 @@ class LcdOut:
         time.sleep(min(self.period, 0.03))   # schneller als der Regelschritt, sonst fehlen Stufen des Lidschlags; schreibt nur bei Änderung
         return True
 
+    def _augen_aus(self, farbe: bool = True) -> None:
+        if self._augen_an:
+            self.augen.aus(farbe_zurueck=farbe)
+            self._augen_an = False
+
     def _run(self) -> None:
         while not self.app.running:
             time.sleep(0.1)
@@ -90,9 +100,25 @@ class LcdOut:
             if self.app.ruhe:
                 # Ruhemodus: am Display stehen die Schlafaugen (api.php), nichts schreiben. Das FIFO bleibt
                 # offen, dann wartet der Daemon im read() statt nachzusehen.
+                self._augen_aus(farbe=False)
                 self._gaze_sent = None
                 time.sleep(1.0)
                 continue
+            wlan = self.app.wlan
+            ziel = getattr(self.app.behavior, "augen_ziel", None)
+            if self.augen is not None and ziel is not None and wlan is None and self.augen.ok:
+                # pet mit Augengenerator: die Augen leben im Daemon, hier nur die Ziele (auch während eines
+                # Ausdrucks, der Daemon legt ihn darüber; fremde Bilder haben dort Vorrang)
+                if self._fd is not None:
+                    os.close(self._fd)
+                    self._fd = None
+                x, y, lid, nah, rate = ziel
+                self.augen.leben(x, y, lid, nah, rate, getattr(self.app.behavior, "augen", None))
+                self._augen_an = True
+                self._gaze_sent = None
+                time.sleep(1.0 / 24)
+                continue
+            self._augen_aus()
             if emotion_active(self.fifo):
                 # Emotion läuft: FIFO freigeben. Erst wenn alle Schreiber zu sind, setzt
                 # der Daemon seinen Bildanfang zurück (falls ein Player mitten im Bild endete).
@@ -102,7 +128,6 @@ class LcdOut:
                 self._gaze_sent = None          # danach das Augenbild neu schreiben
                 time.sleep(0.2)
                 continue
-            wlan = self.app.wlan
             gaze = getattr(self.app.behavior, "gaze", None)
             if not self.overlay and wlan is None and (gaze is None or self._atlas_tried and self._atlas is None):
                 # nichts zu zeigen: FIFO frei lassen (Emotionen, Schlafaugen bleiben stehen)

@@ -20,10 +20,16 @@
 # beenden dürfen. Die Datei legt rc.local als root an (Gruppe video, 664) –
 # wegen fs.protected_regular darf sie nicht einem der Benutzer gehören.
 # Leer = keine Emotion aktiv (xgonav pausiert so lange seine LCD-Ausgabe).
+#
+# Mit Augengenerator im Display-Daemon (st7789_server liest $FIFO.augen, Namen seiner Ausdrücke in
+# $FIFO.augen.namen) geht statt der Bilder nur eine Zeile "ausdruck NAME" hin; der Daemon zeichnet selbst und
+# trägt sich für die Dauer in $FIFO.owner ein. Farbe aus dem Ordnernamen emotions_<farbe>. Ohne Generator oder
+# für Namen, die er nicht kennt: Rohbilder wie bisher.
 set -euo pipefail
 
 FIFO=${LCD_FIFO:-/tmp/lcd0}
 OWNER=$FIFO.owner
+AUGEN=$FIFO.augen
 export LC_ALL=C     # Dezimalpunkt für awk/read -t (deutsche Locale am Rider)
 
 build() {
@@ -50,8 +56,38 @@ build() {
     done
 }
 
+# generator NAME [FARBE]: 0, wenn der Augengenerator den Ausdruck gespielt hat (wartet bis zum Ende)
+generator() {
+    local name=$1 farbe=${2:-} zeilen i cur pid=
+    [ -p "$AUGEN" ] && grep -qx -- "$name" "$AUGEN.namen" 2>/dev/null || return 1
+    zeilen="ausdruck $name"
+    [ -n "$farbe" ] && zeilen="farbe $farbe 0.2
+$zeilen"
+    # Öffnen zum Schreiben wartet auf einen Leser: läuft der Daemon nicht, nach 0,5 s aufgeben
+    timeout 0.5 sh -c 'printf "%s\n" "$1" > "$2"' _ "$zeilen" "$AUGEN" 2>/dev/null || return 1
+    exec 4<> <(:)               # read -t auf leerer Pipe = sleep ohne fork
+    for i in $(seq 15); do      # bis 0,3 s: der Daemon trägt sich ein
+        read -r cur < "$OWNER" 2>/dev/null || cur=
+        [ -n "$cur" ] && { pid=$cur; break; }
+        read -r -t 0.02 -u 4 || true
+    done
+    [ -n "$pid" ] || return 0
+    for i in $(seq 250); do     # bis 10 s: Ausdruck vorbei (leer) oder ein neuerer Spieler
+        read -r cur < "$OWNER" 2>/dev/null || cur=
+        [ "$cur" = "$pid" ] || return 0
+        read -r -t 0.04 -u 4 || true
+    done
+    return 0
+}
+
 play() {
-    local dir=$1 fps=${2:-25} pause f
+    local dir=$1 fps=${2:-25} pause f name eltern farbe=
+    name=$(basename "$dir")
+    eltern=$(basename "$(dirname "$dir")")
+    case "$eltern" in *_*) farbe=${eltern##*_} ;; esac
+    if [[ $name =~ ^[A-Za-z]+$ ]] && generator "$name" "$farbe"; then
+        return 0
+    fi
     shopt -s nullglob
     local frames=("$dir"/*.raw)
     if [ ${#frames[@]} -eq 0 ]; then

@@ -1397,6 +1397,28 @@ def test_augen_schlitze_beim_fixieren():
     assert b.gaze[1] == LID_OPEN
 
 
+def test_augenziel_fuer_generator():
+    """Augengenerator im Display-Daemon: Blick stufenlos zur Peilung (links vom Rider = rechts im Bild), zur nahen
+    stehenden Person hoch, Abstand fürs Schielen; Schlitze beim Fixieren als Grundlid, den Lidschlag macht der
+    Daemon (Rate statt Stufen)."""
+    b = brain(eyes_fix_s=1.5, eyes_fix_lid=2)
+    t, _, _ = run(b, 0.0, 1.0, lambda t: [seen("person", 0.8, t, bearing=0.2, vs=0)])
+    x, y, lid, nah, rate = b.augen_ziel
+    assert x == pytest.approx(0.2 / math.radians(45.0)) and y == pytest.approx(-0.6)
+    assert nah == pytest.approx(0.8) and lid == 0.0 and rate == 15.0
+    run(b, t, 3.0, lambda t: [seen("person", 0.8, t, bearing=0.2, vs=0)])
+    assert b.augen_ziel[2] == pytest.approx(0.5)               # fixiert: Schlitze (eyes_fix_lid 2 von 4)
+    b2 = brain()
+    run(b2, 0.0, 0.5, lambda t: [seen("cat", 0.6, t, bearing=-0.3, vs=0)])
+    x, y, _, nah, _ = b2.augen_ziel
+    assert x < 0 and y == pytest.approx(0.3) and nah == pytest.approx(0.6)   # Katze unten
+    b2.state = "nap"
+    z = b2._augen_ziel(Sense(t=1.0), 0.0, False)
+    assert z[2] == 1.0 and z[4] == 0.0                         # zu, keine Lidschläge
+    b2.state, b2._dozing = "wach", True
+    assert b2._augen_ziel(Sense(t=1.0), 0.0, False)[2::2] == (0.5, 6.0)
+
+
 def test_kommen_ohne_planerweg_faehrt_direkt():
     """Am Rider 2026-11-22 endete Kommen sofort mit „kein Weg“: Sie ist zu sehen, dann geradeaus."""
     b = brain(come_m=-1.0)

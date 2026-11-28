@@ -238,7 +238,7 @@ def test_emotion_in_farbe(tmp_path):
         (tmp_path / d).mkdir(parents=True)
     e = Emotions.__new__(Emotions)
     e.cfg = types.SimpleNamespace(dir=str(tmp_path / "emo"))
-    e.farbe, e._proc, e.fifo = None, None, "/tmp/kein"
+    e.farbe, e._proc, e.fifo, e.augen = None, None, "/tmp/kein", None
     gespielt = []
     import xgonav.emotion as em
     alt = em.subprocess.Popen

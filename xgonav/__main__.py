@@ -84,13 +84,19 @@ def main(argv=None) -> int:
     if cfg.output.web_port:
         from .web import serve
         serve(app, cfg.output.web_host, cfg.output.web_port, cfg.output.web_fps, cfg.cpu.render_cpus)
+    augen = None
+    if kind == "proc" and cfg.emotion.augen_fifo:
+        # Augengenerator im Display-Daemon: pet-Augen und Emotionen als Befehle statt Bilder
+        from .augen import Augen
+        augen = Augen(cfg.emotion.augen_fifo)
     if kind == "proc" and (cfg.output.lcd_fifo or cfg.emotion.fifo):
         # immer: WLAN-Einrichtung und pet-Augen gehen aufs Display; das Kamera-Overlay nur mit lcd_fifo
         from .lcd import LcdOut
-        LcdOut(app, cfg.output.lcd_fifo or cfg.emotion.fifo, cfg.output.lcd_fps, overlay=bool(cfg.output.lcd_fifo))
+        LcdOut(app, cfg.output.lcd_fifo or cfg.emotion.fifo, cfg.output.lcd_fps, overlay=bool(cfg.output.lcd_fifo),
+               augen=augen)
     if cfg.emotion.enabled and kind == "proc":
         from .emotion import Emotions
-        app.emotions = Emotions(cfg.emotion, cfg.emotion.fifo)
+        app.emotions = Emotions(cfg.emotion, cfg.emotion.fifo, augen=augen)
     if cfg.ortung.enabled and kind == "proc":
         from .ortung import Ortung
         emo = app.emotions

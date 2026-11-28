@@ -58,6 +58,7 @@ GAZE_CENTER = GAZE_BINS // 2
 BLINK_S = 0.4                        # Lidschlag über alle Lidstellungen; bei 24 Hz Regelschritt je ~42 ms eine Stufe
 GAZE_RANGE = math.radians(45.0)      # Peilung bei voll ausgelenktem Blick
 GAZE_LIDS = 5                        # Lidstellungen im Atlas, 0 = offen .. 4 = zu
+AUGEN_RATE, AUGEN_RATE_MUEDE = 15.0, 6.0   # Lidschläge je Minute im Augengenerator: wach, dösend/liegend
 LID_OPEN, LID_HALF, LID_SHUT = 0, 2, 4
 # Firmware-Zustände, aus denen er nie von selbst aufsteht (docs/LED.md)
 BAD_FW_MODES = {0, 250, 251, 252}
@@ -156,6 +157,9 @@ class PetBrain:
         self.events: list[tuple[str, str, bool]] = []      # (emotion|sound, Name, dringend)
         self._queue: list[tuple[float, str, str, bool]] = []
         self.gaze = (GAZE_CENTER, LID_OPEN)
+        # Augengenerator im Display-Daemon (xgonav/augen.py): (Blick x, Blick y je -1..1, Grundlid 0..1,
+        # Abstand m, Lidschläge/min); stufenlos, Lidschlag und Sakkaden macht der Daemon selbst
+        self.augen_ziel = (0.0, 0.0, 0.0, 0.0, AUGEN_RATE)
         self.roll_deg = 0.0
         self.rolled = False                  # Roll wurde benutzt: beim Verlassen neu ausrichten
         self.det_hz = cfg.active_hz
@@ -1639,28 +1643,37 @@ class PetBrain:
     def _update_gaze(self, s: Sense) -> None:
         t = s.t
         goal = self._gaze_goal
+        xf = None                            # stufenlos für den Augengenerator (-1..1); None: aus goal
         if self.state == "lugen" and self.target is None:
             # schaut langsam nach links und rechts
-            goal = GAZE_CENTER + int(round(GAZE_CENTER * 0.8 * math.sin(2 * math.pi * (t - self._peek_t) / 3.0)))
+            xf = 0.8 * math.sin(2 * math.pi * (t - self._peek_t) / 3.0)
+            goal = GAZE_CENTER + int(round(GAZE_CENTER * xf))
         elif self.phase == "schauen" and self.target is None and self._yaw_goal is None:
             # beim Umschauen im Stehen: Blick wandert, beim Drehen schaut er in Drehrichtung
-            goal = GAZE_CENTER + int(round(GAZE_CENTER * 0.8 * math.sin(2 * math.pi * (t - self._phase_t) / 2.0)))
+            xf = 0.8 * math.sin(2 * math.pi * (t - self._phase_t) / 2.0)
+            goal = GAZE_CENTER + int(round(GAZE_CENTER * xf))
         elif self.task == "horchen" and self.target is None:
             # beim Hindrehen in Drehrichtung, beim Lauschen geradeaus
-            goal = GAZE_CENTER + (int(round(GAZE_CENTER * 0.8 * self._look_dir)) if self.phase == "drehen" else 0)
+            xf = 0.8 * self._look_dir if self.phase == "drehen" else 0.0
+            goal = GAZE_CENTER + int(round(GAZE_CENTER * xf))
         elif self.task is not None and self.target is None:
-            goal = GAZE_CENTER + (int(round(GAZE_CENTER * 0.6 * self._look_dir)) if self.phase == "schauen" else 0)
+            xf = 0.6 * self._look_dir if self.phase == "schauen" else 0.0
+            goal = GAZE_CENTER + int(round(GAZE_CENTER * xf))
         elif self.target is None and self._ear_gaze is not None and t < self._ear_gaze[0]:
-            goal = GAZE_CENTER + int(round(clamp(self._ear_gaze[1] / GAZE_RANGE, -1.0, 1.0) * GAZE_CENTER))
+            xf = clamp(self._ear_gaze[1] / GAZE_RANGE, -1.0, 1.0)
+            goal = GAZE_CENTER + int(round(xf * GAZE_CENTER))
         elif self.target is not None:
             # Links vom Rider ist für den, der ihn anschaut, rechts im Bild
-            raw = GAZE_CENTER + clamp(self.target.bearing / GAZE_RANGE, -1.0, 1.0) * GAZE_CENTER
+            xf = clamp(self.target.bearing / GAZE_RANGE, -1.0, 1.0)     # Generator: ohne Hysterese, er glättet selbst
+            raw = GAZE_CENTER + xf * GAZE_CENTER
             if abs(raw - goal) > 0.6:                        # Hysterese, sonst zittert der Blick
                 goal = int(round(raw))
         elif t >= self._next_glance:
             self._next_glance = t + self.rng.uniform(3.0, 7.0)
             goal = GAZE_CENTER + self.rng.choice((-3, -1, 0, 0, 1, 3))
         self._gaze_goal = goal
+        if xf is None:
+            xf = (goal - GAZE_CENTER) / GAZE_CENTER
         gx = self.gaze[0]
         gx += (goal > gx) - (goal < gx)                      # gleitet, springt nicht
         # Fixieren: dieselbe Person, Blick angekommen (±1 Stufe), seit eyes_fix_s -> Schlitze
@@ -1687,6 +1700,33 @@ class PetBrain:
             base = clamp(self.cfg.eyes_fix_lid, LID_OPEN, LID_SHUT) if fix else LID_OPEN
             lid = base + int(round((LID_SHUT - base) * closing))
         self.gaze = (int(gx), int(lid))
+        self.augen_ziel = self._augen_ziel(s, xf, fix)
+
+    def _augen_ziel(self, s: Sense, xf: float, fix: bool) -> tuple:
+        """Augengenerator: Blick x/y, Grundlid ohne Lidschlag (den macht der Daemon), Abstand fürs Schielen,
+        Lidschlagrate. Lid wie der Atlas: Stufe / LID_SHUT."""
+        tg = self.target
+        yf, nah = 0.0, 0.0
+        if tg is not None:
+            if tg.dist is not None:
+                nah = tg.dist if tg.dist > 0 else CLOSE_M          # 0: Fußpunkt abgeschnitten, sehr nah
+            if tg.cls == "person" and not tg.wide:
+                # Kopf oben aus dem Bild: hochschauen; sonst nah etwas, fern kaum
+                yf = -0.6 if not tg.top_free else (-0.3 if 0 < nah < 1.5 else -0.1)
+            elif tg.cls != "person":
+                yf = 0.3 if 0 < nah < 1.0 else 0.15                  # Tier am Boden
+        muede = self._dozing or self.state == "liegt"
+        if self.state in ("nap", "ab", "aus"):
+            lid = 1.0
+        elif self.state == "lugen":
+            x = clamp((s.t - self._peek_t) / max(self.cfg.eyes_open_s, 1e-3), 0.0, 1.0)
+            lid = 1.0 if tg is not None else 1.0 - x
+        elif muede:
+            lid = LID_HALF / LID_SHUT
+        else:
+            lid = clamp(self.cfg.eyes_fix_lid, LID_OPEN, LID_SHUT) / LID_SHUT if fix else 0.0
+        rate = 0.0 if lid >= 1.0 else (AUGEN_RATE_MUEDE if muede else AUGEN_RATE)
+        return (float(xf), float(yf), float(lid), float(nah), rate)
 
     def info(self) -> dict:
         return {"zustand": self.state, "zone": self.zone, "vertrauen": round(self.trust, 2),
@@ -1730,6 +1770,7 @@ class Pet(Behavior):
         self.want_stand_up = False           # App._pet_tick
         self.want_idle = False
         self.gaze = self.brain.gaze          # lcd.py liest das aus seinem Thread (Tupel, atomar ersetzt)
+        self.augen_ziel = self.brain.augen_ziel   # ebenso, für den Augengenerator
         self.augen: str | None = None        # Augenfarbe (brain.augen): lcd.py und App -> Emotions.farbe
         # Folgen: genau die Routine des Modus follow (Nutzer 2026-11-22), solange die Aufgabe folgen läuft
         self.follow_drive: Follow | None = None
@@ -2052,6 +2093,7 @@ class Pet(Behavior):
         if b.want_idle:
             b.want_idle, self.want_idle = False, True
         self.gaze = b.gaze
+        self.augen_ziel = b.augen_ziel
         self.augen = b.augen
 
     def _heim(self, w: World) -> Command | None:

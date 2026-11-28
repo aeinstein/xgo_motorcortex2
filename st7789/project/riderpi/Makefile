@@ -81,13 +81,18 @@ INSTL_INCS := $(wildcard ../../src/*.h)
 # set all sources files
 SRCS := $(wildcard ../../src/*.c)
 
+# Augengenerator (src/augen*.c, ohne Abhängigkeiten außer libm): im Daemon und als libxgoaugen.so für
+# tests/test_augen.py und tools/augen_vergleich.py (make augen-lib, auch am PC/kimmy)
+AUGEN := ./src/augen.c ./src/augen_ausdruck.c ./src/augen_leben.c
+
 # set the server source
 SERVER := $(SRCS) \
 		$(wildcard ../../example/*.c) \
 		$(wildcard ../../test/*.c) \
 		$(wildcard ./interface/src/*.c) \
 		$(wildcard ./driver/src/*.c) \
-		$(wildcard ./src/main.c)
+		$(wildcard ./src/main.c) \
+		$(AUGEN)
 
 # set the main source
 #MAIN := $(wildcard ./src/client.c)
@@ -110,6 +115,12 @@ all: $(APP_NAME)_server $(SHARED_LIB_NAME).$(VERSION) $(STATIC_LIB_NAME)
 # set the server app
 $(APP_NAME)_server : $(SERVER)
 					$(CC) $(CFLAGS) $^ $(INC_DIRS) $(LIBS) -o $@
+
+.PHONY: augen-lib
+augen-lib : libxgoaugen.so
+
+libxgoaugen.so : $(AUGEN) ./src/augen.h
+		$(CC) -O2 -shared -fPIC -Wall $(AUGEN) -lm -o $@.tmp && mv $@.tmp $@
 
 # set the shared lib
 $(SHARED_LIB_NAME).$(VERSION) : $(SRCS)
@@ -158,4 +169,4 @@ uninstall :
 
 # clean the project
 clean :
-		rm -rf $(APP_NAME)_server $(SHARED_LIB_NAME).$(VERSION) $(STATIC_LIB_NAME)
+		rm -rf $(APP_NAME)_server $(SHARED_LIB_NAME).$(VERSION) $(STATIC_LIB_NAME) libxgoaugen.so
