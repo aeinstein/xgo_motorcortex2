@@ -643,7 +643,10 @@ details.extras[open]>summary{margin-bottom:8px}
     <details class="hilfe" data-i18n-html="hilfe-gesichter"><summary>Anlernen und Grenzen</summary>
       <p>Der Modus Haustier erkennt angelernte Gesichter wieder (<code>[gesicht]</code>, Ablage
         <code>/opt/xgonav/gesichter</code>) und begrüßt sie, je Person mit eigener Emotion und eigenem Ton (Auswahl
-        unter dem Namen; Standard: <code>[pet] greet_*</code>). Die Augenfarbe gilt, solange die Person erkannt wird,
+        unter dem Namen; Standard: <code>[pet] greet_*</code>). Wie, hängt davon ab, wie lange sie weg war (Gedächtnis,
+        auch über Neustarts, <code>/var/lib/xgonav/gedaechtnis.json</code>): ab 5 min nur ihr Ton, ab 1 h ganz, ab
+        8 h danach noch ein Freudenausbruch. Je Person merkt er sich auch das Vertrauen: Wer ihn erschreckt, dem traut
+        er länger weniger. Die Augenfarbe gilt, solange die Person erkannt wird,
         und noch 20 s danach (<code>[pet] eye_hold_s</code>), auch für alle Emotionen in dieser Zeit. Als Ton geht auch eine Stimmprobe aus „Samples“: am
         besten eine hochgeladene oder per 📌 geschützte, sonst kann sie ersetzt werden. Je Foto zählt das größte
         Gesicht; die Kachel zeigt den ausgerichteten Ausschnitt, den der Rider sich merkt: unscharfe oder schiefe
@@ -990,6 +993,8 @@ const EN = {
   '{i}/{n}: {e}': '{i}/{n}: {e}', '{ok} von {n} angelernt': '{ok} of {n} learned',
   'Buchstaben, Ziffern, _ und -': 'letters, digits, _ and -',
   'Begrüßung': 'Greeting', 'Standard': 'default', 'keine': 'none', 'Stimme {s}': 'Voice {s}', 'Augen': 'eyes',
+  'zuletzt {d}': 'last seen {d}', 'noch nicht gesehen': 'not seen yet', '{n} Begegnungen': '{n} encounters',
+  'Vertrauen {v}': 'trust {v}', 'vor {m} min': '{m} min ago', 'vor {h} h': '{h} h ago', 'vor {t} Tagen': '{t} days ago',
   'rot': 'red', 'rosa': 'pink', 'gelb': 'yellow', 'gruen': 'green', 'lila': 'purple',
   'Begrüßung, wenn der Haustier-Modus diese Person erkennt; Standard = [pet] greet_emotion/greet_sound, Augen türkis':
     'Greeting when pet mode recognises this person; default = [pet] greet_emotion/greet_sound, turquoise eyes',
@@ -1028,7 +1033,10 @@ const EN_HTML = {
   'hilfe-gesichter': `<summary>Learning and limits</summary>
       <p>Pet mode recognises learned faces (<code>[gesicht]</code>, stored in <code>/opt/xgonav/gesichter</code>) and
         greets them, each person with their own emotion and sound (choice below the name; default:
-        <code>[pet] greet_*</code>). The eye colour holds while the person is recognised and 20 s longer
+        <code>[pet] greet_*</code>). How depends on how long they were away (memory, also across restarts,
+        <code>/var/lib/xgonav/gedaechtnis.json</code>): from 5 min only their sound, from 1 h in full, from 8 h followed
+        by a burst of joy. He also remembers trust per person: whoever startles him is trusted less for longer.
+        The eye colour holds while the person is recognised and 20 s longer
         (<code>[pet] eye_hold_s</code>), for every emotion in that time. A voice sample from “Samples” works as sound too: best an uploaded or 📌-protected
         one, otherwise it may be replaced. Per photo the largest face counts; the tile shows the aligned crop the
         Rider stores: delete blurred or skewed ones right away (✕). 10–20 photos, different light and angles, also
@@ -3369,6 +3377,13 @@ function gesichterUmschalten() {
   try { localStorage.setItem('xgonav.gesichter', $('gesichtkarte').open ? '1' : '0'); } catch (e) {}
   if ($('gesichtkarte').open) gesichterLaden(); else $('gesichter-zustand').textContent = tr('eingeklappt: kein Nachladen');
 }
+function gedVor(s) {
+  s = Math.max(0, s);
+  if (s < 120) return tr('vor {s} s', {s: s.toFixed(0)});
+  if (s < 7200) return tr('vor {m} min', {m: (s / 60).toFixed(0)});
+  if (s < 172800) return tr('vor {h} h', {h: (s / 3600).toFixed(0)});
+  return tr('vor {t} Tagen', {t: (s / 86400).toFixed(0)});
+}
 async function gesichterLaden() {
   let d = null;
   try { const r = await fetch('api.php?a=gesichter', {cache: 'no-store'}); if (r.ok) d = await r.json(); } catch (e) {}
@@ -3382,8 +3397,12 @@ async function gesichterLaden() {
       [['', tr('Standard')], ...(keine ? [['-', tr('keine')]] : []), ...werte.map((w, i) => [w, namen[i]])].map(([w, t]) =>
         `<option value="${esc(w)}"${(gr[feld] || '') === w ? ' selected' : ''}>${esc(t)}</option>`).join('') + '</select>';
     const toene = [...d.toene, ...d.stimmen.map(s => 'stimme:' + s)];
+    const m = g.gedaechtnis;                      // Gedächtnis von pet: zuletzt, Begegnungen, Vertrauen
+    const gedText = !m ? '' : '<div class="leise">' + esc([
+      m.zuletzt ? tr('zuletzt {d}', {d: gedVor(Date.now() / 1000 - m.zuletzt)}) : tr('noch nicht gesehen'),
+      tr('{n} Begegnungen', {n: m.begegnungen}), tr('Vertrauen {v}', {v: m.vertrauen.toFixed(2)})].join(' · ')) + '</div>';
     return '<div class="unter">' + n + ' · ' + esc(tr('{n} Fotos', {n: g.fotos.length})) +
-      ' <button title="' + esc(tr('alle löschen')) + `" onclick="gesichtLoeschen('${n}', '')">✕</button></div>` +
+      ' <button title="' + esc(tr('alle löschen')) + `" onclick="gesichtLoeschen('${n}', '')">✕</button></div>` + gedText +
       '<div style="margin:2px 0" title="' + esc(tr('Begrüßung, wenn der Haustier-Modus diese Person erkennt; Standard = [pet] greet_emotion/greet_sound, Augen türkis')) +
       '">' + esc(tr('Begrüßung')) + ' ' + auswahl('emotion', d.emotionen, d.emotionen) + ' ' +
       auswahl('sound', toene, [...d.toene, ...d.stimmen.map(s => tr('Stimme {s}', {s}))]) + ' ' + esc(tr('Augen')) + ' ' +

@@ -211,7 +211,10 @@ All keys with comments: `PetCfg` in `xgonav/config.py`.
 
 | Key | Default | Note |
 |---|---|---|
-| `greet_emotion`, `greet_sound`, `greet_repeat_s` | `like`, `traellern`, 600 | greeting of a recognised face ([faces.md](faces.md)); again after so long without it |
+| `greet_emotion`, `greet_sound` | `like`, `traellern` | greeting of a recognised face ([faces.md](faces.md)) |
+| `greet_kurz_s`, `greet_voll_s`, `greet_ausbruch_s` | 300, 3600, 28800 | greeting by absence: only the sound, emotion + sound, then a burst of joy (`laugh`, `traellern`, wiggle); `greet_repeat_s` removed 2026-11-28 (warning) |
+| `gedaechtnis` | `/var/lib/xgonav/gedaechtnis.json` | memory of pet per name (trust, last seen, encounters), survives mode changes and restarts; `""` = RAM only (`Config.neutral()`) |
+| `trust_start`, `trust_bekannt`, `trust_fremd`, `fremd_n` | 0.3, 1.0, 0.1, 2 | trust of people without a name (session), of a learned person when first recognised (then stored), of a stranger (face checks without a match ≥ `fremd_n`) |
 | `eye_hold_s` | 20 | eye colour of a recognised person (web) stays so long after the last recognition |
 | `retreat_m` | 0 (off) | jerk backwards per scare, cap 0.30 m, RiderPi test 0.12. Blind, needs wheels |
 | `creep_m` | 0 (off) | toward a cat per encounter, cap 1.0 m, test 0.4. Needs wheels, floor model, local map |

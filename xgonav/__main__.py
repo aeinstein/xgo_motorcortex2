@@ -87,6 +87,7 @@ def main(argv=None) -> int:
     if kind == "proc":
         # Ortszeit fürs Innenleben von pet (nachts weniger Energie); Simulator und Tests ohne Uhr
         app.uhr = lambda: (lambda lt: lt.tm_hour + lt.tm_min / 60.0)(time.localtime())
+        app.wanduhr = time.time          # Gedächtnis von pet: Abwesenheit auch über Neustarts
     augen = None
     if kind == "proc" and cfg.emotion.augen_fifo:
         # Augengenerator im Display-Daemon: pet-Augen und Emotionen als Befehle statt Bilder

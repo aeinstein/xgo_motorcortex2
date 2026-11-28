@@ -943,14 +943,23 @@ class PetCfg:
     cat_stop_m: float = 0.8
     animal_repeat_s: float = 20.0
     # Vertrauen 0..1 und Schreckpegel
-    trust_start: float = 0.3
+    trust_start: float = 0.3           # Personen ohne Namen (kein Gesicht erkannt), nur für die Sitzung
     trust_gain: float = 0.01           # 1/s, während jemand sanft in der Nähe ist
     trust_loss: float = 0.05           # je Schreck
-    # Begrüßung einer erkannten Person ([gesicht], Nutzer 2026-11-27): Emotion + Ton, Vertrauen sofort voll;
-    # erneut erst, wenn der Name so lange nicht mehr erkannt war
+    # Gedächtnis (xgonav/gedaechtnis.py, Nutzer 2026-11-28): je angelernter Person Vertrauen, letzte Begegnung und
+    # Begegnungen; übersteht Moduswechsel und Neustart. "" = nur im Speicher
+    gedaechtnis: str = "/var/lib/xgonav/gedaechtnis.json"
+    trust_bekannt: float = 1.0         # Vertrauen einer angelernten Person beim ersten Erkennen (danach gespeichert)
+    trust_fremd: float = 0.1           # Fremde (Gesicht gesehen, nicht erkannt): Startwert je Track
+    fremd_n: int = 2                   # so viele Gesichtsprüfungen ohne Treffer: fremd
+    # Begrüßung einer erkannten Person ([gesicht], Nutzer 2026-11-27) nach ihrer Abwesenheit (Nutzer 2026-11-28):
+    # ab greet_kurz_s nur ihr Ton, ab greet_voll_s Emotion + Ton, ab greet_ausbruch_s danach noch laugh, trällern,
+    # wackeln. Noch nie gesehen: voll
     greet_emotion: str = "like"
     greet_sound: str = "traellern"
-    greet_repeat_s: float = 600.0
+    greet_kurz_s: float = 300.0
+    greet_voll_s: float = 3600.0
+    greet_ausbruch_s: float = 28800.0
     eye_hold_s: float = 20.0           # Augenfarbe der Person (Web) bleibt so lange nach ihrer letzten Erkennung
     fright_decay: float = 0.05         # 1/s
     habit_tau_s: float = 60.0          # Gewöhnung klingt so schnell ab
@@ -1374,6 +1383,8 @@ ENTFERNT.update({k: "seit 2026-11-25 keine Untergrenze mehr, die Firmware regelt
 ENTFERNT.update({f"robot.{k}": "seit 2026-11-25: Tempo regelt und rampt die Firmware (Fahrrahmen, Firmware-Patch 08-velocity)"
                  for k in ("speed_ctrl", "speed_ctrl_window_s", "speed_ctrl_ti_s", "speed_ctrl_lag_s",
                            "speed_ctrl_max", "accel_v", "accel_w")})
+ENTFERNT.update({"pet.greet_repeat_s": "seit 2026-11-28 drei Stufen nach der Abwesenheit: [pet] greet_kurz_s, "
+                                       "greet_voll_s, greet_ausbruch_s (Gedächtnis)"})
 UMBENANNT = {"freespace.shadow_net": "freespace.net"}
 
 # Die Defaults oben sind die Werte des RiderPi (/opt/xgonav/config.toml ohne Pfade unter /opt). Simulator und Tests
@@ -1391,7 +1402,7 @@ NEUTRAL = {"camera.gain_switch": False, "robot.level_after_standup": False, "rob
            "imu.time_offset_ms": None, "imu.pitch_ref_deg": 0.0, "imu.use_roll": False,
            "odom.scale_left": 1.0, "odom.scale_right": 1.0,
            "detector.max_hz": 0.0, "detector.classes": [], "gesicht.enabled": False, "freespace.threaded": False, "freespace.net": "",
-           "output.lcd_fifo": "/tmp/lcd0",
+           "output.lcd_fifo": "/tmp/lcd0", "pet.gedaechtnis": "",
            "cpu.main_cpus": [], "cpu.detector_cpus": [], "cpu.render_cpus": [], "cpu.freespace_cpus": []}
 
 

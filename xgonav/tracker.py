@@ -49,6 +49,7 @@ class Track:
     # mehr (Rechenzeit). Ein anderer erkannter Name ersetzt ihn.
     who: str | None = None
     who_sim: float | None = None
+    fremd_n: int = 0                  # Gesichtsprüfungen ohne Treffer, solange kein Name (pet: fremd ab [pet] fremd_n)
 
     @property
     def box(self):
@@ -126,6 +127,7 @@ class Tracker:
                 tr.clip = self._clip_flags(d.box)
                 tr.w_meas = 0.0 if (tr.clip[0] or tr.clip[2]) else tr.w
                 tr.who, tr.who_sim = getattr(d, "who", None), getattr(d, "who_sim", None)
+                tr.fremd_n = 1 if tr.who is None and tr.who_sim is not None else 0
                 self.tracks.append(tr)
         self.prune(now)
 
@@ -198,5 +200,7 @@ class Tracker:
         tr.conf = 0.5 * tr.conf + 0.5 * d.conf
         if getattr(d, "who", None):
             tr.who, tr.who_sim = d.who, d.who_sim
+        elif tr.who is None and getattr(d, "who_sim", None) is not None:
+            tr.fremd_n += 1                  # Gesicht gesehen, keinem Namen ähnlich genug
         tr.t_seen = now
         tr.hits += 1

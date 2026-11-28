@@ -39,6 +39,7 @@ from dataclasses import dataclass, field, replace
 from .behaviors import Behavior, Command, Follow, Home, PathFollower, World, _wrap, clamp, dreh_auf_kurs, dreh_w, fahrzeit_s
 from .mathe import polar
 from .config import ExploreCfg, HomeCfg, PetCfg, RobotCfg
+from .gedaechtnis import Gedaechtnis
 from .innen import Akku, Innenleben
 from .planner import path_length
 
@@ -56,6 +57,8 @@ CALL_FREE_M = 1.0                    # Rufziel: vorn weniger frei (Raumkarte) ->
 HOME_NEAR_M = 0.3                    # näher am Start: nach dem Suchen nicht mehr hinfahren
 WIEDERSEHEN_S = 20.0                 # Wiedersehensfreude erst nach so langem Alleinsein
 AKKU_HEIM_MAX_S = 180.0              # erschöpft zum Körbchen: länger nicht (Pose verloren), dann an Ort und Stelle
+AUSBRUCH_S = 2.5                     # Freudenausbruch: so lange nach der Begrüßung laugh, trällern, wackeln
+FREMD_MERK_N = 32                    # Vertrauen so vieler fremder Tracks merken (nur im Speicher)
 GAZE_BINS = 11                       # Blickrichtungen im Augen-Atlas (tools/eyes.py --gaze): 10 Stufen, ungerade für eine exakte Mitte
 GAZE_CENTER = GAZE_BINS // 2
 BLINK_S = 0.4                        # Lidschlag über alle Lidstellungen; bei 24 Hz Regelschritt je ~42 ms eine Stufe
@@ -87,6 +90,7 @@ class Seen:
     side_free: bool = True           # Box links/rechts nicht am Bildrand: nur dann taugt die Breite
     wide: bool = False               # Box breiter als hoch: Person liegt oder sitzt am Boden (Nutzer 2026-11-22)
     who: str | None = None           # erkanntes Gesicht ([gesicht], Name am Track)
+    fremd_n: int = 0                 # Gesichtsprüfungen ohne Treffer (Track ohne Namen); ab [pet] fremd_n: fremd
 
 
 @dataclass
@@ -134,6 +138,7 @@ class Sense:
     nav_extern: bool = False
     nav_stuck: bool = False
     stunde: float | None = None      # Uhrzeit (h, Ortszeit) fürs Innenleben, nur am Rider; None = unbekannt
+    uhr: float | None = None         # Wanduhr (Epoch-s) fürs Gedächtnis, nur am Rider; None = t
 
 
 @dataclass
@@ -288,7 +293,16 @@ class PetBrain:
         # Nachplappern (stimme.Stimmen): gelernte Proben, fällige Wiederholungen neu bestätigter, Abspielzähler
         self.hoert_zu = False                # App schneidet Stimmproben mit, solange das gilt
         self._parrot_person_t = -1e9         # zuletzt eine Person im Bild (auch liegend)
-        self._who_t: dict[str, float] = {}   # Name -> zuletzt erkannt (Begrüßung)
+        # Gedächtnis (xgonav/gedaechtnis.py, Nutzer 2026-11-28): je Name Vertrauen, letzte Begegnung, Begegnungen; die
+        # App gibt ihr Objekt herein (übersteht Moduswechsel und Neustart), sonst nur für dieses Gehirn
+        self.gedaechtnis = Gedaechtnis("", cfg)
+        # Vertrauen je Gegenüber: self.trust ist der Arbeitswert, _vt_key sagt, wem er gehört (None = Personen ohne
+        # Namen und Tiere, ("name", Name) = gespeichert, ("fremd", Track-Id) = nur im Speicher)
+        self._vt_key: tuple | None = None
+        self._vt_anon = self.trust
+        self._vt_fremd: dict[int, float] = {}
+        self._fremd_gezeigt: set[int] = set()   # Tracks, bei denen er schon doubt zeigte
+        self._ausbruch_at: float | None = None   # Freudenausbruch: dann laugh, trällern, wackeln
         self.gruss_fuer = None               # Name -> {emotion, sound, augen} je Person (gesicht.Gesichter.gruss), von App
         self.augen: str | None = None        # Augenfarbe der zuletzt erkannten Person (tools/eyes.py PALETTE)
         self._augen_t = -1e9
@@ -463,10 +477,12 @@ class PetBrain:
             # Sturz (Firmware 0): den Schrei spielt emotion.py in allen Modi, hier nur die Augen
             self._react(s.t, "vertigo", None if s.fw_mode == 0 else "ohnmacht", urgent=True)
         self.target = self._pick(s)
+        self._vertrauen_wechsel()
         self._ev = self._hear_new(s)
         self._parrot_new(s)
         if self.state in ("wach", "liegt"):
             self._akku_tick(s)
+        self._ausbruch(s)
         act = {"wach": self._wach, "schreck": self._schreck, "ab": self._ab, "nap": self._nap,
                "lugen": self._lugen, "warnen": self._warnen, "hoch": self._hoch, "settle": self._settle, "liegt": self._liegt,
                "aus": self._aus}[self.state](s)
@@ -488,8 +504,68 @@ class PetBrain:
             self._parrot_person_t = s.t
         self.hoert_zu = bool(c.parrot and self.state in ("wach", "liegt")
                              and s.t - self._parrot_person_t <= c.parrot_listen_s)
+        self._vertrauen_ablegen()
         self._flush(s.t)
         return act
+
+    # ---- Gedächtnis: Vertrauen je Gegenüber ---------------------------------------
+    def _vt_schluessel(self, tg: Seen | None) -> tuple | None:
+        if tg is None or tg.cls != "person":
+            return None
+        if tg.who:
+            return ("name", tg.who)
+        if tg.fremd_n >= self.cfg.fremd_n > 0:
+            return ("fremd", tg.id)
+        return None
+
+    def _vertrauen_wechsel(self) -> None:
+        """Neues Gegenüber: Vertrauen des alten ablegen, das des neuen holen (Name: Gedächtnis, Fremde: je Track ab
+        trust_fremd, sonst das der Sitzung)."""
+        key = self._vt_schluessel(self.target)
+        if key == self._vt_key:
+            return
+        self._vertrauen_ablegen()
+        self._vt_key = key
+        if key is None:
+            self.trust = self._vt_anon
+        elif key[0] == "name":
+            self.trust = self.gedaechtnis.vertrauen(key[1])
+        else:
+            self.trust = self._vt_fremd.get(key[1], clamp(self.cfg.trust_fremd, 0.0, 1.0))
+
+    def _vertrauen_ablegen(self) -> None:
+        k = self._vt_key
+        if k is None:
+            self._vt_anon = self.trust
+        elif k[0] == "name":
+            self.gedaechtnis.setze_vertrauen(k[1], self.trust)
+        else:
+            self._vt_fremd[k[1]] = self.trust
+            while len(self._vt_fremd) > FREMD_MERK_N:
+                self._vt_fremd.pop(next(iter(self._vt_fremd)))   # ältester zuerst
+
+    def _fremde(self, s: Sense) -> None:
+        """Fremde Person (Gesicht gesehen, nicht erkannt): beim ersten Anblick je Track doubt."""
+        c = self.cfg
+        for x in s.seen:
+            if (x.cls == "person" and not x.who and x.fremd_n >= c.fremd_n > 0
+                    and x.id not in self._fremd_gezeigt):
+                if len(self._fremd_gezeigt) > 4 * FREMD_MERK_N:
+                    self._fremd_gezeigt.clear()
+                self._fremd_gezeigt.add(x.id)
+                log.info("pet: fremde Person (Track %d)", x.id)
+                self._react(s.t, "doubt", None)
+
+    def _ausbruch(self, s: Sense) -> None:
+        """Freudenausbruch nach langer Abwesenheit: AUSBRUCH_S nach der Begrüßung laugh, trällern, wach wackeln."""
+        if self._ausbruch_at is None or s.t < self._ausbruch_at:
+            return
+        self._ausbruch_at = None
+        if self.state not in ("wach", "liegt"):
+            return                                       # inzwischen erschreckt oder abgesetzt
+        self._react(s.t, "laugh", "traellern")
+        if self.cfg.gestures and self.state == "wach" and s.balancing and self.task is None:
+            self._gesture = ("wackeln", s.t, s.t + self.cfg.wiggle_s)
 
     def _pick(self, s: Sense) -> Seen | None:
         """Hund vor Katze vor Person, je das nächste. Tiere erst nach mehreren sicheren Treffern.
@@ -549,6 +625,7 @@ class PetBrain:
             self._cat(s, tg, act)
         person = next((x for x in s.seen if x.cls == "person"), None)
         self._greet(s)
+        self._fremde(s)
         if tg is not None and tg.cls == "person":
             self._person(s, tg, act)
         self._person_presence(s, person)
@@ -567,12 +644,26 @@ class PetBrain:
         self._apply_gesture(s, act, tg)
         return act
 
+    def _gruss_stufe(self, abwesend: float | None) -> str | None:
+        """Begrüßung nach der Abwesenheit (Nutzer 2026-11-28): None = keine, noch nie gesehen = voll."""
+        c = self.cfg
+        if abwesend is None:
+            return "voll"
+        if abwesend >= c.greet_ausbruch_s:
+            return "ausbruch"
+        if abwesend >= c.greet_voll_s:
+            return "voll"
+        return "kurz" if abwesend >= c.greet_kurz_s else None
+
     def _greet(self, s: Sense) -> bool:
-        """Erkanntes Gesicht ([gesicht]): begrüßen und sofort voll vertrauen; erneut erst nach greet_repeat_s ohne sie.
+        """Erkanntes Gesicht ([gesicht]): begrüßen je nach Abwesenheit (Gedächtnis, auch über Neustarts): ab
+        greet_kurz_s nur ihr Ton, ab greet_voll_s Emotion + Ton, ab greet_ausbruch_s danach Freudenausbruch.
         Emotion, Ton und Augenfarbe je Person (Web, gruss.json), sonst greet_emotion/greet_sound/Türkis; "-" = nichts.
         Die Augenfarbe gilt, solange die Person erkannt wird, und noch eye_hold_s danach (update). Wach und liegend.
+        Das Vertrauen kommt aus dem Gedächtnis (_vertrauen_wechsel), die Begrüßung setzt es nicht.
         -> True, wenn in diesem Schritt jemand begrüßt wurde."""
         c, t = self.cfg, s.t
+        jetzt = s.uhr if s.uhr is not None else t
         gruss = False
         for x in s.seen:
             if not x.who:
@@ -582,15 +673,23 @@ class PetBrain:
                 if self.augen != g["augen"]:
                     log.info("pet: Augen %s (%s)", g["augen"], x.who)
                 self.augen, self._augen_t = g["augen"], t      # vor der Begrüßung: sie läuft schon in der Farbe
-            last = self._who_t.get(x.who)
-            self._who_t[x.who] = t
-            if last is None or t - last >= c.greet_repeat_s:
-                emo = g.get("emotion") or c.greet_emotion
-                ton = g.get("sound") or c.greet_sound
-                log.info("pet: %s erkannt – Begrüßung (%s, %s)", x.who, emo or "-", ton or "-")
-                self._react(t, emo if emo and emo != "-" else None, ton if ton and ton != "-" else None)
-                self.trust = 1.0
-                gruss = True
+            ab = self.gedaechtnis.abwesend(x.who, jetzt)
+            self.gedaechtnis.gesehen(x.who, jetzt)
+            stufe = self._gruss_stufe(ab)
+            if stufe is None:
+                continue
+            n = self.gedaechtnis.begegnung(x.who)
+            emo = g.get("emotion") or c.greet_emotion
+            ton = g.get("sound") or c.greet_sound
+            emo = emo if emo and emo != "-" else None
+            ton = ton if ton and ton != "-" else None
+            log.info("pet: %s erkannt – Begrüßung %s nach %s (%s, %s), Begegnung %d, Vertrauen %.2f", x.who, stufe,
+                     "erstem Mal" if ab is None else ("%.0f min" % (ab / 60) if ab < 7200 else "%.1f h" % (ab / 3600)),
+                     emo if stufe != "kurz" and emo else "-", ton or "-", n, self.gedaechtnis.vertrauen(x.who))
+            self._react(t, None if stufe == "kurz" else emo, ton)
+            if stufe == "ausbruch":
+                self._ausbruch_at = t + AUSBRUCH_S
+            gruss = True
         return gruss
 
     # ---- Nachplappern (stimme.Stimmen) --------------------------------------
@@ -1773,6 +1872,7 @@ class PetBrain:
             self._set_state("settle", s.t)
             return Act()
         gruss = self._greet(s)
+        self._fremde(s)
         if self.target is not None:
             # Nur beim Auftauchen: Wer die ganze Zeit zu sehen ist, löst nichts mehr aus. Kurze Aussetzer des Detektors
             # zählen nicht als weg (gone_s), die Abklingzeit fängt das Kommen und Gehen an der Bildkante ab.
@@ -1881,7 +1981,9 @@ class PetBrain:
         return (float(xf), float(yf), float(lid), float(nah), rate)
 
     def info(self) -> dict:
+        k = self._vt_key
         return {"zustand": self.state, "zone": self.zone, "vertrauen": round(self.trust, 2),
+                "vertrauen_von": None if k is None else (k[1] if k[0] == "name" else "fremd"),
                 "akku": self.akku.info(), **self.innen.info(), "neugier": round(self.neugier, 2),
                 "schreck": round(self.fright, 2), "ziel": self.target.cls if self.target else None,
                 "schrecks": self.n_startle, "ruck": self.n_retreat, "ohnmacht": self.n_faint, "liegt_weil": self.why_down or None,
@@ -2197,7 +2299,8 @@ class Pet(Behavior):
             wm = getattr(tr, "w_meas", tr.w)             # gemessen, nicht geglättet/vorhergesagt
             out.append(Seen(tr.id, tr.cls, dist, w.bearing(tr.cx), not tr.clip[1] and y1 > 0.03 * w.H, wm or tr.w,
                             tr.t_seen, tr.conf, tr.hits, tr.clip[3] or tr.h > 0.5 * w.H,
-                            wm > 0 and x1 > 0.03 * w.W and x2 < 0.97 * w.W, _wide(tr), getattr(tr, "who", None)))
+                            wm > 0 and x1 > 0.03 * w.W and x2 < 0.97 * w.W, _wide(tr), getattr(tr, "who", None),
+                            getattr(tr, "fremd_n", 0)))
         return out
 
     def step(self, w: World) -> Command:
@@ -2221,7 +2324,8 @@ class Pet(Behavior):
                   karte=w.pose is not None and w.pose_ok,
                   heim_m=math.hypot(w.goal[0] - w.pose[0], w.goal[1] - w.pose[1])
                   if w.pose is not None and w.goal is not None else None,
-                  nav_extern=self._pfad_faehrt(w), nav_stuck=self._nav_stucks >= 2, stunde=w.stunde, **self._nav(w))
+                  nav_extern=self._pfad_faehrt(w), nav_stuck=self._nav_stucks >= 2, stunde=w.stunde, uhr=w.uhr,
+                  **self._nav(w))
         act = b.update(s)
         heim = self._heim(w)
         if heim is None:

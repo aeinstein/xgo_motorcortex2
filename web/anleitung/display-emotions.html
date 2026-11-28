@@ -1160,6 +1160,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#memory-xgonavgedaechtnispy-2026-11-28" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Memory (xgonav/gedaechtnis.py, 2026-11-28)
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -1541,6 +1552,17 @@
     <span class="md-ellipsis">
       
         Inner life and battery (xgonav/innen.py, 2026-11-28)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#memory-xgonavgedaechtnispy-2026-11-28" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Memory (xgonav/gedaechtnis.py, 2026-11-28)
       
     </span>
   </a>
@@ -2412,6 +2434,35 @@ mode pet started itself (a wake-up from web/MCP or a mode change forgets it):</p
 </table>
 <p><code>/status</code> → <code>pet</code>: <code>akku</code> {wert, stufe, laedt}, <code>energie</code>, <code>muede</code>, <code>gesellig</code>, <code>erregung</code>, <code>stimmung</code>, <code>neugier</code>.
 Pi cost: a few float operations per control step, a median of ≤ 60 values once a second.</p>
+<h3 id="memory-xgonavgedaechtnispy-2026-11-28">Memory (<code>xgonav/gedaechtnis.py</code>, 2026-11-28)<a class="headerlink" href="#memory-xgonavgedaechtnispy-2026-11-28" title="Permanent link">&para;</a></h3>
+<p>Unit tests only, not run on the Rider. Per learned person (<a href="faces.html">faces.md</a>), in <code>[pet] gedaechtnis</code>
+(<code>/var/lib/xgonav/gedaechtnis.json</code>, written at most once a minute and on exit; <code>""</code> = RAM only, simulator and tests).
+The app holds one object for all modes, so it survives mode changes; the file survives restarts. Times are wall clock
+(<code>App.wanduhr</code>, Rider only); a clock running backwards counts as 0 absence.</p>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Behaviour</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>greeting by absence</td>
+<td>never seen: full; ≥ <code>greet_kurz_s</code> (5 min) only their sound; ≥ <code>greet_voll_s</code> (1 h) emotion + sound; ≥ <code>greet_ausbruch_s</code> (8 h) full, 2.5 s later <code>laugh</code> + <code>traellern</code> + wiggle (awake, no task; lying without wiggle); each stage counts one encounter</td>
+</tr>
+<tr>
+<td>trust per counterpart</td>
+<td><code>PetBrain.trust</code> stays the working value; the target decides whose it is: name → stored (start <code>trust_bekannt</code> 1.0, a startle by that person lowers it for good, calm nearness raises it), stranger → per track from <code>trust_fremd</code> (0.1, RAM only), anyone else and animals → session value from <code>trust_start</code> (0.3). The greeting no longer sets trust to 1.0</td>
+</tr>
+<tr>
+<td>stranger</td>
+<td>face seen, no name matched ≥ <code>fremd_n</code> (2) times (<code>Track.fremd_n</code>): trust 0.1 (more distance, startles sooner), <code>doubt</code> once per track</td>
+</tr>
+</tbody>
+</table>
+<p><code>/status</code> → <code>pet.vertrauen_von</code> (name, <code>fremd</code> or null). Web card „Gesichter“: last seen, encounters, trust.
+Pi cost: one dict access per named person and control step, a JSON of a few hundred bytes at most once a minute.</p>
 
 
 

@@ -1422,7 +1422,15 @@
 </tr>
 <tr>
 <td>Reaction</td>
-<td><code>pet</code>: <code>Seen.who</code> → emotion and sound of that person (<code>gruss.json</code>, set in the web card), else <code>greet_emotion</code> (<code>like</code>) / <code>greet_sound</code> (<code>traellern</code>); trust = 1.0; again only after <code>greet_repeat_s</code> = 600 s without recognising that name; awake and lying (state <code>liegt</code>: the greeting replaces the generic <code>surprised</code>/<code>gefunden</code>)</td>
+<td><code>pet</code>: <code>Seen.who</code> → emotion and sound of that person (<code>gruss.json</code>, set in the web card), else <code>greet_emotion</code> (<code>like</code>) / <code>greet_sound</code> (<code>traellern</code>); how depends on the absence (memory, below): ≥ <code>greet_kurz_s</code> 5 min only the sound, ≥ <code>greet_voll_s</code> 1 h emotion + sound, ≥ <code>greet_ausbruch_s</code> 8 h then <code>laugh</code> + <code>traellern</code> + wiggle (lying: no wiggle) 2.5 s later, never seen = full; awake and lying (state <code>liegt</code>: the greeting replaces the generic <code>surprised</code>/<code>gefunden</code>)</td>
+</tr>
+<tr>
+<td>Memory</td>
+<td><code>xgonav/gedaechtnis.py</code>, <code>[pet] gedaechtnis</code> = <code>/var/lib/xgonav/gedaechtnis.json</code> (<code>""</code> = RAM only, simulator): per name trust, last and first seen (wall clock), encounters; one object in the app for all modes, written at most once a minute and on exit. Trust per counterpart: name → stored (start <code>trust_bekannt</code> 1.0; a startle by that person lowers it for good, calm nearness raises it), stranger → per track from <code>trust_fremd</code> 0.1 (RAM only), anyone else → session value from <code>trust_start</code> 0.3. The greeting no longer sets trust. Web card shows last seen, encounters, trust</td>
+</tr>
+<tr>
+<td>Stranger</td>
+<td>face seen but below <code>match_sim</code>: <code>Track.fremd_n</code> counts such checks while the track has no name; ≥ <code>[pet] fremd_n</code> 2 → stranger: trust 0.1 (more distance, startles sooner), <code>doubt</code> once per track</td>
 </tr>
 <tr>
 <td>Eye colour</td>

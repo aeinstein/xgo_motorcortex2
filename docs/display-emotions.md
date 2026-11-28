@@ -290,3 +290,19 @@ mode pet started itself (a wake-up from web/MCP or a mode change forgets it):
 
 `/status` → `pet`: `akku` {wert, stufe, laedt}, `energie`, `muede`, `gesellig`, `erregung`, `stimmung`, `neugier`.
 Pi cost: a few float operations per control step, a median of ≤ 60 values once a second.
+
+### Memory (`xgonav/gedaechtnis.py`, 2026-11-28)
+
+Unit tests only, not run on the Rider. Per learned person ([faces.md](faces.md)), in `[pet] gedaechtnis`
+(`/var/lib/xgonav/gedaechtnis.json`, written at most once a minute and on exit; `""` = RAM only, simulator and tests).
+The app holds one object for all modes, so it survives mode changes; the file survives restarts. Times are wall clock
+(`App.wanduhr`, Rider only); a clock running backwards counts as 0 absence.
+
+| Item | Behaviour |
+|---|---|
+| greeting by absence | never seen: full; ≥ `greet_kurz_s` (5 min) only their sound; ≥ `greet_voll_s` (1 h) emotion + sound; ≥ `greet_ausbruch_s` (8 h) full, 2.5 s later `laugh` + `traellern` + wiggle (awake, no task; lying without wiggle); each stage counts one encounter |
+| trust per counterpart | `PetBrain.trust` stays the working value; the target decides whose it is: name → stored (start `trust_bekannt` 1.0, a startle by that person lowers it for good, calm nearness raises it), stranger → per track from `trust_fremd` (0.1, RAM only), anyone else and animals → session value from `trust_start` (0.3). The greeting no longer sets trust to 1.0 |
+| stranger | face seen, no name matched ≥ `fremd_n` (2) times (`Track.fremd_n`): trust 0.1 (more distance, startles sooner), `doubt` once per track |
+
+`/status` → `pet.vertrauen_von` (name, `fremd` or null). Web card „Gesichter“: last seen, encounters, trust.
+Pi cost: one dict access per named person and control step, a JSON of a few hundred bytes at most once a minute.

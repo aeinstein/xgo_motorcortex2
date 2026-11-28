@@ -2742,9 +2742,24 @@ Sounds: <code>sound</code> true, <code>sound_dir</code> <code>/opt/xgonav/sounds
 </thead>
 <tbody>
 <tr>
-<td><code>greet_emotion</code>, <code>greet_sound</code>, <code>greet_repeat_s</code></td>
-<td><code>like</code>, <code>traellern</code>, 600</td>
-<td>greeting of a recognised face (<a href="faces.html">faces.md</a>); again after so long without it</td>
+<td><code>greet_emotion</code>, <code>greet_sound</code></td>
+<td><code>like</code>, <code>traellern</code></td>
+<td>greeting of a recognised face (<a href="faces.html">faces.md</a>)</td>
+</tr>
+<tr>
+<td><code>greet_kurz_s</code>, <code>greet_voll_s</code>, <code>greet_ausbruch_s</code></td>
+<td>300, 3600, 28800</td>
+<td>greeting by absence: only the sound, emotion + sound, then a burst of joy (<code>laugh</code>, <code>traellern</code>, wiggle); <code>greet_repeat_s</code> removed 2026-11-28 (warning)</td>
+</tr>
+<tr>
+<td><code>gedaechtnis</code></td>
+<td><code>/var/lib/xgonav/gedaechtnis.json</code></td>
+<td>memory of pet per name (trust, last seen, encounters), survives mode changes and restarts; <code>""</code> = RAM only (<code>Config.neutral()</code>)</td>
+</tr>
+<tr>
+<td><code>trust_start</code>, <code>trust_bekannt</code>, <code>trust_fremd</code>, <code>fremd_n</code></td>
+<td>0.3, 1.0, 0.1, 2</td>
+<td>trust of people without a name (session), of a learned person when first recognised (then stored), of a stranger (face checks without a match ≥ <code>fremd_n</code>)</td>
 </tr>
 <tr>
 <td><code>eye_hold_s</code></td>

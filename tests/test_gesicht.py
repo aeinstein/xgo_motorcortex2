@@ -148,7 +148,7 @@ def test_tracker_behaelt_namen():
 
 
 def test_pet_begruesst_erkannte():
-    b = PetBrain(PetCfg(seek_m=0.0, roam_m=0.0, faint=False, follow_m=0.0, greet_repeat_s=60.0),
+    b = PetBrain(PetCfg(seek_m=0.0, roam_m=0.0, faint=False, follow_m=0.0, greet_kurz_s=20.0, greet_voll_s=60.0),
                  Config.neutral().robot, seed=1)
     b.trust = 0.3
 
@@ -175,7 +175,7 @@ def test_pet_begruesst_erkannte():
 
 
 def test_pet_begruesst_liegend():
-    b = PetBrain(PetCfg(seek_m=0.0, roam_m=0.0, faint=False, follow_m=0.0, greet_repeat_s=60.0),
+    b = PetBrain(PetCfg(seek_m=0.0, roam_m=0.0, faint=False, follow_m=0.0, greet_voll_s=60.0),
                  Config.neutral().robot, seed=1)
     b.gruss_fuer = lambda n: {"anna": {"augen": "rot"}}.get(n, {})
 
@@ -192,6 +192,122 @@ def test_pet_begruesst_liegend():
     assert ("emotion", "like", False) in evs and evs.count(gruss) == 1 and b.augen == "rot"
     assert ("sound", "gefunden", False) not in evs                # Begrüßung statt allgemeinem Aufmerken
     assert gruss not in lauf(2.0, 30.0, "anna")
+
+
+class Gehirn:
+    """PetBrain mit Wanduhr (Sense.uhr) und Gedächtnis; lauf() sammelt Ereignisse und Gesten."""
+
+    def __init__(self, gedaechtnis=None, balancing=True, **kw):
+        from xgonav.gedaechtnis import Gedaechtnis
+        self.cfg = PetCfg(seek_m=0.0, roam_m=0.0, faint=False, follow_m=0.0, **kw)
+        self.b = PetBrain(self.cfg, Config.neutral().robot, seed=1)
+        self.g = self.b.gedaechtnis = gedaechtnis if gedaechtnis is not None else Gedaechtnis("", self.cfg)
+        self.t, self.balancing = 0.0, balancing
+
+    def lauf(self, s, who=None, uhr=None, tid=1, fremd_n=0, dist=2.0):
+        """s Sekunden; uhr: Wanduhr am Anfang (dann mitlaufend), None = wie t."""
+        evs, gesten = [], set()
+        t1 = self.t + s
+        u0, t0 = uhr, self.t
+        while self.t < t1:
+            seen = [] if who is False else [Seen(tid, "person", dist, 0.0, False, 77.0, self.t, who=who,
+                                                 fremd_n=fremd_n)]
+            self.b.update(Sense(t=self.t, dt=0.05, balancing=self.balancing, seen=seen,
+                                uhr=None if u0 is None else u0 + (self.t - t0)))
+            evs += self.b.drain()
+            if self.b._gesture is not None:
+                gesten.add(self.b._gesture[0])
+            self.t += 0.05
+        return evs, gesten
+
+
+def test_begruessung_nach_abwesenheit():
+    """Nutzer 2026-11-28: ab 5 min kurz (nur Ton), ab 1 h voll, ab 8 h Freudenausbruch; die Uhr ist die Wanduhr."""
+    k = Gehirn()
+    like, ton, lacht = ("emotion", "like", False), ("sound", "traellern", False), ("emotion", "laugh", False)
+    u = 1_000_000.0
+    evs, _ = k.lauf(2.0, "anna", u)                              # noch nie gesehen: voll
+    assert like in evs and evs.count(ton) == 1 and lacht not in evs
+    assert k.g.personen["anna"]["begegnungen"] == 1
+    evs, _ = k.lauf(2.0, "anna", u + 2.0 + 120.0)                # 2 min weg: nichts
+    assert ton not in evs and like not in evs
+    evs, _ = k.lauf(2.0, "anna", u + 4.0 + 120.0 + 400.0)        # fast 7 min weg: kurz, nur der Ton
+    assert ton in evs and like not in evs
+    evs, _ = k.lauf(2.0, "anna", u + 6.0 + 520.0 + 7200.0)       # 2 h: voll
+    assert like in evs and ton in evs and lacht not in evs
+    evs, gesten = k.lauf(5.0, "anna", u + 8.0 + 7720.0 + 9 * 3600.0)   # 9 h: Ausbruch
+    assert like in evs and lacht in evs and evs.count(ton) == 2 and "wackeln" in gesten
+    assert k.g.personen["anna"]["begegnungen"] == 4
+    assert k.b.info()["vertrauen_von"] == "anna"
+
+
+def test_ausbruch_liegend_ohne_wackeln():
+    k = Gehirn(balancing=False)
+    k.g.gesehen("anna", 0.0)
+    evs, gesten = k.lauf(5.0, "anna", 10 * 3600.0)
+    assert ("emotion", "laugh", False) in evs and not gesten and k.b.state == "liegt"
+
+
+def test_gedaechtnis_uebersteht_neustart(tmp_path):
+    from xgonav.gedaechtnis import Gedaechtnis
+    pfad = str(tmp_path / "gedaechtnis.json")
+    k = Gehirn(Gedaechtnis(pfad, PetCfg()))
+    u = 5_000_000.0
+    evs, _ = k.lauf(2.0, "anna", u)
+    assert ("emotion", "like", False) in evs
+    k.b.trust = 0.7                                              # als hätte sie ihn erschreckt
+    k.lauf(0.1, "anna", u + 2.0)
+    assert k.g.speichern(0.0) and os.path.isfile(pfad)
+    # Neustart: neues Gedächtnis aus der Datei, neues Gehirn; 1 min später keine Begrüßung, Vertrauen wie zuvor
+    k2 = Gehirn(Gedaechtnis(pfad, PetCfg()))
+    evs, _ = k2.lauf(2.0, "anna", u + 62.0)
+    assert ("emotion", "like", False) not in evs and ("sound", "traellern", False) not in evs
+    assert k2.b.trust == pytest.approx(0.7) and k2.g.personen["anna"]["begegnungen"] == 1
+
+
+def test_vertrauen_je_person_nachtragend():
+    k = Gehirn()
+    k.lauf(1.0, None)
+    assert k.b.trust == pytest.approx(0.3) and k.b.info()["vertrauen_von"] is None
+    k.lauf(1.0, "anna")
+    assert k.b.trust == 1.0                                      # angelernt: trust_bekannt
+    k.b._frighten(Sense(t=k.t, dt=0.05), 0.1)                    # Schreck, während sie das Gegenüber ist
+    k.lauf(0.1, "anna")
+    assert k.g.vertrauen("anna") == pytest.approx(0.95)
+    k.lauf(1.0, None, tid=2)                                     # jemand ohne Namen: Vertrauen der Sitzung
+    assert k.b.trust == pytest.approx(0.3)
+    k.lauf(1.0, "anna")
+    assert k.b.trust == pytest.approx(0.95)                      # sie bleibt bei 0,95
+
+
+def test_fremde_vorsichtig():
+    k = Gehirn()
+    doubt = ("emotion", "doubt", False)
+    # in 4 m (Zone fern: dort kein doubt der Zone mitte)
+    evs, _ = k.lauf(1.0, None, fremd_n=1, dist=4.0)              # erst eine Prüfung ohne Treffer: unbekannt
+    assert k.b.trust == pytest.approx(0.3) and doubt not in evs
+    evs, _ = k.lauf(1.0, None, fremd_n=2, dist=4.0)
+    assert k.b.trust == pytest.approx(0.1) and evs.count(doubt) == 1 and k.b.info()["vertrauen_von"] == "fremd"
+    evs, _ = k.lauf(3.0, None, fremd_n=3, dist=4.0)              # derselbe Track: kein zweites doubt
+    assert doubt not in evs
+    evs, _ = k.lauf(1.0, None, tid=7, fremd_n=2, dist=4.0)       # ein anderer Fremder
+    assert evs.count(doubt) == 1 and k.b.trust == pytest.approx(0.1)
+    nah = Seen(7, "person", 0.6, 0.0, False, 77.0, k.t)
+    assert k.b._zone_of(nah) == "zunah"                         # mehr Abstand als bei 0,3
+    k.b.trust = 0.3
+    assert k.b._zone_of(nah) == "nah"
+
+
+def test_tracker_zaehlt_fremde():
+    tr = Tracker(Config.neutral().tracker, (640, 480))
+    tr.update([Detection((100, 100, 200, 400), "person", 0.9, None, 0.2)], 0.0)
+    assert tr.tracks[0].fremd_n == 1
+    tr.update([Detection((102, 100, 202, 400), "person", 0.9)], 0.2)    # keine Prüfung: zählt nicht
+    tr.update([Detection((104, 100, 204, 400), "person", 0.9, None, 0.3)], 0.4)
+    assert tr.tracks[0].fremd_n == 2 and tr.tracks[0].who is None
+    tr.update([Detection((106, 100, 206, 400), "person", 0.9, "anna", 0.6)], 0.6)
+    tr.update([Detection((108, 100, 208, 400), "person", 0.9, None, 0.3)], 0.8)   # Name bleibt, zählt nicht
+    assert tr.tracks[0].who == "anna" and tr.tracks[0].fremd_n == 2
 
 
 def test_schnittstelle_hochladen(tmp_path):

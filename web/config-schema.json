@@ -2910,7 +2910,7 @@
        "key": "trust_start",
        "typ": "float",
        "default": 0.3,
-       "hilfe": "Vertrauen 0..1 und Schreckpegel"
+       "hilfe": "Vertrauen 0..1 und Schreckpegel Personen ohne Namen (kein Gesicht erkannt), nur für die Sitzung"
       },
       {
        "key": "trust_gain",
@@ -2925,10 +2925,34 @@
        "hilfe": "je Schreck"
       },
       {
+       "key": "gedaechtnis",
+       "typ": "str",
+       "default": "/var/lib/xgonav/gedaechtnis.json",
+       "hilfe": "Gedächtnis (xgonav/gedaechtnis.py, Nutzer 2026-11-28): je angelernter Person Vertrauen, letzte Begegnung und Begegnungen; übersteht Moduswechsel und Neustart. \"\" = nur im Speicher"
+      },
+      {
+       "key": "trust_bekannt",
+       "typ": "float",
+       "default": 1.0,
+       "hilfe": "Vertrauen einer angelernten Person beim ersten Erkennen (danach gespeichert)"
+      },
+      {
+       "key": "trust_fremd",
+       "typ": "float",
+       "default": 0.1,
+       "hilfe": "Fremde (Gesicht gesehen, nicht erkannt): Startwert je Track"
+      },
+      {
+       "key": "fremd_n",
+       "typ": "int",
+       "default": 2,
+       "hilfe": "so viele Gesichtsprüfungen ohne Treffer: fremd"
+      },
+      {
        "key": "greet_emotion",
        "typ": "str",
        "default": "like",
-       "hilfe": "Begrüßung einer erkannten Person ([gesicht], Nutzer 2026-11-27): Emotion + Ton, Vertrauen sofort voll; erneut erst, wenn der Name so lange nicht mehr erkannt war"
+       "hilfe": "Begrüßung einer erkannten Person ([gesicht], Nutzer 2026-11-27) nach ihrer Abwesenheit (Nutzer 2026-11-28): ab greet_kurz_s nur ihr Ton, ab greet_voll_s Emotion + Ton, ab greet_ausbruch_s danach noch laugh, trällern, wackeln. Noch nie gesehen: voll"
       },
       {
        "key": "greet_sound",
@@ -2937,9 +2961,21 @@
        "hilfe": ""
       },
       {
-       "key": "greet_repeat_s",
+       "key": "greet_kurz_s",
        "typ": "float",
-       "default": 600.0,
+       "default": 300.0,
+       "hilfe": ""
+      },
+      {
+       "key": "greet_voll_s",
+       "typ": "float",
+       "default": 3600.0,
+       "hilfe": ""
+      },
+      {
+       "key": "greet_ausbruch_s",
+       "typ": "float",
+       "default": 28800.0,
        "hilfe": ""
       },
       {

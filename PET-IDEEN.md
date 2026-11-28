@@ -13,6 +13,13 @@ Kosten am Pi (Rechenzeit hat Vorrang, CLAUDE.md).
   - Neugier ist kein eigener Zustand.
   - Die Wiedersehensfreude zeigt `cute`, weil `like` bekannten Gesichtern vorbehalten ist.
   - Kein Akku-Symbol im Auge, keine LEDs.
+- Gedächtnis für Personen, Block D Teile 1 und 4 (2026-11-28, `xgonav/gedaechtnis.py`, `docs/display-emotions.md`),
+  nur Unit-Tests:
+  - je angelernter Person Vertrauen (nachtragend), letzte Begegnung und Begegnungen
+  - Begrüßung nach Abwesenheit: 5 min nur Ton, 1 h ganz, 8 h danach Freudenausbruch
+  - Fremde (Gesicht gesehen, nicht erkannt) beginnen bei Vertrauen 0,1 und bekommen `doubt`
+  - übersteht Moduswechsel und Neustart (`/var/lib/xgonav/gedaechtnis.json`)
+  - Orte (D2) und Tageslauf (D3) offen.
 
 Alles andere ist offen.
 
@@ -144,7 +151,7 @@ Aufteilung nach Rechenzeit:
 
 Kosten am Pi: ein Median über 30 Werte alle 2 s, ein paar Vergleiche je Regelschritt.
 
-## D. Gedächtnis
+## D. Gedächtnis (Teile 1 und 4 umgesetzt 2026-11-28, siehe oben)
 
 Datei `/var/lib/xgonav/gedaechtnis.json`, höchstens einmal je Minute geschrieben.
 
@@ -224,7 +231,7 @@ Datei `/var/lib/xgonav/gedaechtnis.json`, höchstens einmal je Minute geschriebe
 |---|---|---|---|
 | Augengenerator im Display-Daemon | A, Ausdruck überall | C, Daemon | 2026-11-28 am Rider, liegend geprüft |
 | Stimmgenerator + dauerhafter ALSA-Ausgang | B | C | neu |
-| Pet-Zustand dauerhaft (Gedächtnisdatei) | C, D | Python, selten | neu |
+| Pet-Zustand dauerhaft (Gedächtnisdatei) | C, D | Python, selten | Personen seit 2026-11-28 (`gedaechtnis.py`) |
 | Bestätigte Pose über Sitzungen | D2, D3, G1 | Karte | laufender Abgleich falsch, Startbild-Abgleich ok |
 | Klopf-Ereignis bzw. Beschleunigung im IMU-Strom | F2 | Firmware/Treiber | prüfen |
 | LED-Effekte in der Firmware | E6 | Firmware-Patch | Firmware-Sitzung |
@@ -242,7 +249,8 @@ Datei `/var/lib/xgonav/gedaechtnis.json`, höchstens einmal je Minute geschriebe
 
 1. Augengenerator: am Rider. Offen ist das Aufräumen (nur mit Zustimmung des Nutzers): −1 GB SD und −2,5 min
    Einspielen.
-2. ~~Innenleben mit Akku (C, H)~~ (umgesetzt), Gedächtnis (D) offen.
+2. ~~Innenleben mit Akku (C, H)~~ (umgesetzt), ~~Gedächtnis für Personen (D1, D4)~~ (umgesetzt); Orte und
+   Tageslauf (D2, D3) offen.
 3. Stimmgenerator (B).
 4. Kleine Körpersprache (E1, E2, A5), am Rider mit Beobachtung.
 5. Spiele nach Wahl des Nutzers (F).

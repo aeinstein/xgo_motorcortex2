@@ -75,6 +75,7 @@ const EMOTION = '/opt/xgonav/tools/emotion.sh';         // Player (RGB565-Rohbil
 const EMOTION_RAW = '/opt/xgonav/emotions';             // tools/eyes.py, von deploy/install.sh erzeugt
 const STIMMEN = '/opt/xgonav/stimmen';                 // [stimme] dir: bestaetigt/NN(_roh).wav, kandidaten/<Zeit>.wav
 define('GESICHTER', getenv('XGO_GESICHTER') ?: '/opt/xgonav/gesichter');   // [gesicht] dir: <Name>/NN.npy + NN.jpg
+const GEDAECHTNIS = '/var/lib/xgonav/gedaechtnis.json';  // [pet] gedaechtnis: je Name Vertrauen, zuletzt, Begegnungen
 const SOUNDS = '/opt/xgonav/sounds';                    // [emotion] sound_dir: pet_<Ereignis>_<n>.wav
 const HEIGHT_MIN = 61;                                   // u8; ~10 mm über dem Minimum, dazu ~4 mm fürs Ausrichten (ein Bein tiefer)
 const LED_FILE = '/var/lib/xgonav/led_brightness';      // n/256 (Firmware-Patch 06-leds), deploy/install.sh legt den Ordner an
@@ -379,6 +380,9 @@ if ($a === 'stimme_wav' && !$post) {
 if ($a === 'gesichter' && !$post) {
     // Klappfeld „Gesichter“: direkt von der Platte (kostet nur beim Aufklappen); an/aus und ms von xgonav
     $namen = [];
+    // Gedächtnis von pet (xgonav schreibt es höchstens einmal je Minute): je Name Vertrauen, zuletzt, Begegnungen
+    $ged = json_decode((string)@file_get_contents(GEDAECHTNIS), true);
+    $ged = is_array($ged) && is_array($ged['personen'] ?? null) ? $ged['personen'] : [];
     foreach (glob(GESICHTER . '/*', GLOB_ONLYDIR) ?: [] as $d) {
         $n = basename($d);
         if (!preg_match('/^[A-Za-z0-9_-]{1,32}$/', $n)) {
@@ -389,7 +393,11 @@ if ($a === 'gesichter' && !$post) {
             $fotos[] = ['nr' => substr(basename($f), 0, 2), 'zeit' => filemtime($f)];
         }
         $gruss = json_decode((string)@file_get_contents("$d/gruss.json"), true) ?: [];
-        $namen[] = ['name' => $n, 'fotos' => $fotos, 'gruss' => (object)$gruss];
+        $e = is_array($ged[$n] ?? null) ? $ged[$n] : null;
+        $mem = $e === null ? null : ['vertrauen' => (float)($e['vertrauen'] ?? 0),
+                                     'zuletzt' => isset($e['zuletzt']) ? (float)$e['zuletzt'] : null,
+                                     'begegnungen' => (int)($e['begegnungen'] ?? 0)];
+        $namen[] = ['name' => $n, 'fotos' => $fotos, 'gruss' => (object)$gruss, 'gedaechtnis' => $mem];
     }
     // Auswahl der Begrüßung: Emotionen (Bildfolgen), pet-Töne, bestätigte Stimmproben
     $emo = [];

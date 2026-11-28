@@ -38,6 +38,7 @@ from .robot import FW_ACTIONS, Robot, action_cmds, stopp_text
 from .tracker import Tracker
 from .wlan import Helfer, HoldDetector, PressDetector, WlanSetup
 from .dunkel import Dunkelangst, sperr_rechteck
+from .gedaechtnis import Gedaechtnis
 from .innen import Ladewaechter
 from .verstaerkung import GainSwitch, bildwerte
 
@@ -207,6 +208,8 @@ class App:
         self._plan_seq = 0
         self._yaw_at_ctrl = 0.0
         self._kurs_imu_ref: float | None = None    # IMU-Kurs (rad) zur Bildzeit des letzten Regelschritts: Bezug von self.yaw
+        # Gedächtnis von pet (Personen): ein Objekt für alle Modi, Datei [pet] gedaechtnis übersteht den Neustart
+        self.gedaechtnis = Gedaechtnis(self.cfg.pet.gedaechtnis, self.cfg.pet)
         mode = cfg.behavior.mode
         try:
             self._check_mode(mode)
@@ -235,6 +238,7 @@ class App:
         self._seg_hist = collections.deque(maxlen=250)    # je Bild: Abschnittszeiten, siehe loop_breakdown()
         self.emotions = None           # emotion.Emotions, von __main__ gesetzt (nur am Rider)
         self.uhr = None                # () -> Ortszeit in Stunden, von __main__ gesetzt (nur am Rider; Innenleben)
+        self.wanduhr = None            # () -> Epoch-s, von __main__ gesetzt (nur am Rider; Gedächtnis über Neustarts)
         # Ruhemodus, in den pet wegen des Akkus ging (innen.Ladewaechter): Laden erkennen, geladen aufwachen
         self.lade = Ladewaechter(self.cfg.pet)
         self.rawrec = None             # rawrec.RawRecorder, von __main__ gesetzt
@@ -377,6 +381,7 @@ class App:
             b.set_route(self.gridmap.route, self.gridmap.route_loop)
         if name == "pet":                                    # Begrüßung je Person (Web); Gesichter erst in run()
             b.brain.gruss_fuer = lambda n: self.gesichter.gruss(n) if self.gesichter is not None else {}
+            b.brain.gedaechtnis = self.gedaechtnis       # übersteht den Moduswechsel
         return b
 
     def set_route(self, points, loop: bool, zones=None) -> list[str]:
@@ -985,6 +990,7 @@ class App:
                 self._wlan_buttons()
                 self._ortung_tick()
                 self._lade_tick(time.monotonic())     # Akku in pet: auch im Ruhemodus (Laden, Aufwachen)
+                self.gedaechtnis.speichern(time.monotonic())    # höchstens einmal je Minute, nur wenn neu
                 if self.wlan is not None:
                     last = self._wlan_tick(last)
                     continue
@@ -1030,6 +1036,7 @@ class App:
                 self.planner.close()
             if self.gridmap is not None and self.cfg.grid.file:
                 self.gridmap.save(self.cfg.grid.file)
+            self.gedaechtnis.speichern()
             self.src.close()
             self.robot.close()
             log.info("beendet")
@@ -1252,6 +1259,7 @@ class App:
                       yaw=self.yaw, cmd_v=self.robot.command[0],
                       geo=self.geo, pitch_dev=pitch_dev, battery=self.robot.state.battery,
                       stunde=self.uhr() if self.uhr is not None else None,
+                      uhr=self.wanduhr() if self.wanduhr is not None else None,
                       blind=self.fs_worker is not None and self.fs_worker.blind,
                       v_rad=self._v_rad, clear_fn=self._clear_ahead if self.lmap is not None else None,
                       v_erw=self._v_erwartet())
