@@ -71,8 +71,9 @@ define('XGONAV', getenv('XGO_NAV') ?: 'http://127.0.0.1:8088');
 const MODES = ['idle', 'manual', 'follow', 'explore', 'approach', 'home', 'patrol', 'pet'];
 define('PROC', getenv('XGO_PROC') ?: '/proc/XGORider');
 define('SIM', getenv('XGO_SIM') === '1');
-const EMOTION = '/opt/xgonav/tools/emotion.sh';         // Player (RGB565-Rohbilder statt ffmpeg)
-const EMOTION_RAW = '/opt/xgonav/emotions';             // tools/eyes.py, von deploy/install.sh erzeugt
+const EMOTION = '/opt/xgonav/tools/emotion.sh';         // schickt "ausdruck NAME" an den Augengenerator des Display-Daemons
+const AUGEN_NAMEN = '/tmp/lcd0.augen.namen';            // Ausdrücke, die der Daemon kennt (schreibt er beim Start)
+const AUGEN_FARBEN = ['rot', 'rosa', 'gelb', 'gruen', 'lila'];   // Farbnamen des Daemons (augen_leben.c, tools/eyes.py PALETTE)
 const STIMMEN = '/opt/xgonav/stimmen';                 // [stimme] dir: bestaetigt/NN(_roh).wav, kandidaten/<Zeit>.wav
 define('GESICHTER', getenv('XGO_GESICHTER') ?: '/opt/xgonav/gesichter');   // [gesicht] dir: <Name>/NN.npy + NN.jpg
 const GEDAECHTNIS = '/var/lib/xgonav/gedaechtnis.json';  // [pet] gedaechtnis: je Name Vertrauen, zuletzt, Begegnungen
@@ -157,15 +158,21 @@ function xgonav_versuch(string $path): int
     return (int)$m[1];
 }
 
+// Namen der Emotionen: die Ausdrücke des Augengenerators; ohne laufenden Daemon keine
+function emotionen(): array
+{
+    $namen = @file(AUGEN_NAMEN, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [];
+    return array_values(array_filter($namen, fn($n) => preg_match('/^[A-Za-z]+$/', $n) === 1));
+}
+
 // Schlafaugen abspielen und warten (~4 s, höchstens 10 s); das letzte Bild (Augen zu) bleibt am Display stehen.
 function schlafaugen(): void
 {
-    if (!is_dir(EMOTION_RAW . '/sleep') || !is_writable('/tmp/lcd0')) {
+    if (!in_array('sleep', emotionen(), true)) {
         return;
     }
-    exec('pkill -u www-data -f "[e]motion.sh play|[f]fmpeg.*/tmp/lcd0" 2>/dev/null');
-    exec(sprintf('timeout 10 %s play %s > /dev/null 2>&1', escapeshellarg(EMOTION),
-                 escapeshellarg(EMOTION_RAW . '/sleep')));
+    exec('pkill -u www-data -f "[e]motion.sh play" 2>/dev/null');
+    exec(sprintf('timeout 10 %s play sleep > /dev/null 2>&1', escapeshellarg(EMOTION)));
 }
 
 // Ruhemodus, root-Teil (CPU-Takt, WLAN-Stromsparen); true bei Erfolg.
@@ -399,13 +406,8 @@ if ($a === 'gesichter' && !$post) {
                                      'begegnungen' => (int)($e['begegnungen'] ?? 0)];
         $namen[] = ['name' => $n, 'fotos' => $fotos, 'gruss' => (object)$gruss, 'gedaechtnis' => $mem];
     }
-    // Auswahl der Begrüßung: Emotionen (Bildfolgen), pet-Töne, bestätigte Stimmproben
-    $emo = [];
-    foreach (@scandir(EMOTION_RAW) ?: [] as $e) {
-        if (preg_match('/^[A-Za-z]+$/', $e) && is_dir(EMOTION_RAW . "/$e")) {
-            $emo[] = $e;
-        }
-    }
+    // Auswahl der Begrüßung: Emotionen (Ausdrücke des Augengenerators), pet-Töne, bestätigte Stimmproben
+    $emo = emotionen();
     $toene = [];
     foreach (glob(SOUNDS . '/pet_*.wav') ?: [] as $f) {
         $t = explode('_', basename($f, '.wav'))[1] ?? '';
@@ -417,15 +419,8 @@ if ($a === 'gesichter' && !$post) {
     foreach (glob(STIMMEN . '/bestaetigt/[0-9][0-9].wav') ?: [] as $f) {
         $stimmen[] = substr(basename($f), 0, 2);
     }
-    $farben = [];                                       // Augenfarben, von deploy/install.sh gerendert
-    foreach (glob('/opt/xgonav/eyes_gaze_*', GLOB_ONLYDIR) ?: [] as $d) {
-        $f = substr(basename($d), 10);
-        if (preg_match('/^[a-z]{1,16}$/', $f) && is_dir(EMOTION_RAW . "_$f")) {
-            $farben[] = $f;
-        }
-    }
     antwort(200, json_encode(['dir' => GESICHTER, 'namen' => $namen, 'emotionen' => $emo,
-                              'toene' => array_keys($toene), 'stimmen' => $stimmen, 'farben' => $farben]));
+                              'toene' => array_keys($toene), 'stimmen' => $stimmen, 'farben' => AUGEN_FARBEN]));
 }
 if ($a === 'gesicht_jpg' && !$post) {
     $n = $_GET['name'] ?? '';
@@ -692,15 +687,14 @@ switch ($a) {
         proc('settings/pitch_calibration', '1');
     case 'emotion':
         $name = $_GET['name'] ?? '';
-        if (!preg_match('/^[A-Za-z]+$/', $name) || !is_dir(EMOTION_RAW . '/' . $name)) {
-            antwort(400, json_encode(['error' => 'Emotion unbekannt']));
+        if (!in_array($name, emotionen(), true)) {
+            antwort(400, json_encode(['error' => 'Emotion unbekannt (Display-Daemon mit Augengenerator läuft?)']));
         }
-        if (!is_writable('/tmp/lcd0')) {    // FIFO des Display-Daemons, Gruppe video
-            antwort(500, json_encode(['error' => 'Display nicht beschreibbar (www-data in Gruppe video?)']));
+        if (!is_writable('/tmp/lcd0.augen')) {    // FIFO des Augengenerators, Gruppe video
+            antwort(500, json_encode(['error' => 'Augengenerator nicht beschreibbar (www-data in Gruppe video?)']));
         }
-        // laufende Emotion abbrechen (Player und ggf. ffmpeg-Fallback bzw. altes showEmotion)
-        exec('pkill -u www-data -f "[e]motion.sh play|[f]fmpeg.*/tmp/lcd0" 2>/dev/null');
-        exec(sprintf('%s play %s > /dev/null 2>&1 &', escapeshellarg(EMOTION), escapeshellarg(EMOTION_RAW . '/' . $name)));
+        exec('pkill -u www-data -f "[e]motion.sh play" 2>/dev/null');    // wartende Spieler; der Daemon nimmt den neuesten
+        exec(sprintf('%s play %s > /dev/null 2>&1 &', escapeshellarg(EMOTION), escapeshellarg($name)));
         antwort(200, json_encode(['ok' => true]));
     case 'shutdown':
         // Erst prüfen, ob poweroff erlaubt ist, dann "sleep" abspielen (blockiert ~4 s), dann aus.

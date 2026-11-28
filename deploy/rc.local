@@ -13,10 +13,9 @@ chgrp video /tmp/lcd0
 chmod g+w /tmp/lcd0
 # Besitzer-Datei der Emotions-Player (tools/emotion.sh): root-eigen wegen fs.protected_regular
 install -m 0664 -g video /dev/null /tmp/lcd0.owner
-# Augengenerator des Daemons (FIFO /tmp/lcd0.augen, legt er selbst an): kurz warten, sonst spielt emotion.sh Bilder
-for i in 1 2 3 4 5 6 7 8 9 10; do [ -p /tmp/lcd0.augen ] && break; sleep 0.2; done
-# Hochgefahren: Emotion "aufwachen" (Augen gehen auf, tools/eyes.py bzw. Augengenerator)
-[ -x /opt/xgonav/tools/emotion.sh ] && /opt/xgonav/tools/emotion.sh play /opt/xgonav/emotions/aufwachen >/dev/null 2>&1 &
+# Hochgefahren: Emotion "aufwachen" (Augen gehen auf) über den Augengenerator des Daemons (FIFO /tmp/lcd0.augen,
+# legt er selbst an; emotion.sh wartet bis 5 s darauf)
+[ -x /opt/xgonav/tools/emotion.sh ] && /opt/xgonav/tools/emotion.sh play aufwachen >/dev/null 2>&1 &
 
 exit 0
 

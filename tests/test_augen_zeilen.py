@@ -63,13 +63,17 @@ class _Generator:
         return self.ok_
 
 
-def test_emotions_ueber_generator(tmp_path):
+def test_emotions_nur_ueber_generator(tmp_path):
     g = _Generator()
-    cfg = EmotionCfg(dir=str(tmp_path / "keine_bilder"), sound=False)
+    cfg = EmotionCfg(sound=False)
     e = Emotions(cfg, str(tmp_path / "lcd0"), augen=g)
-    assert e.enabled                                           # ohne vorgerenderte Bilder, nur mit Generator
+    assert e.enabled
     e.farbe = "gelb"
     e.play("cute")
     assert g.calls == [("cute", "gelb")]
+    g.ok_ = False
+    e.play("like")                                             # Daemon weg: nichts, kein Rückfallweg
+    assert g.calls[-1] == ("like", "gelb")
     e2 = Emotions(cfg, str(tmp_path / "lcd0"))
-    assert not e2.enabled                                      # ohne Generator und ohne Bilder: aus
+    assert not e2.enabled                                      # ohne Generator: aus
+    e2.play("cute")                                            # tut nichts

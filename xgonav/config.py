@@ -473,10 +473,9 @@ class OutputCfg:
 class EmotionCfg:
     """Automatische Emotionen (xgonav/emotion.py); nur mit --robot proc."""
     enabled: bool = True
-    dir: str = "/opt/xgonav/emotions"   # von tools/emotion.sh build (deploy/install.sh)
-    fifo: str = "/tmp/lcd0"         # unabhängig von output.lcd_fifo (Overlay)
-    # Augengenerator im Display-Daemon (xgonav/augen.py): Befehle statt Bilder; "" = aus (dann Atlas und
-    # tools/emotion.sh wie früher). Fehlt der Daemon mit Generator, greift der alte Weg von selbst.
+    fifo: str = "/tmp/lcd0"         # nur $FIFO.owner: läuft gerade ein Ausdruck (Daemon, tools/emotion.sh)?
+    # Augengenerator im Display-Daemon (xgonav/augen.py): Emotionen und Augen des Modus pet als Befehle; "" = keine
+    # Augen. Ohne Daemon mit Generator bleibt das Display leer (keine vorgerenderten Bilder mehr seit 2026-11-28).
     augen_fifo: str = "/tmp/lcd0.augen"
     gap_s: float = 5.0              # surprised erst, wenn so lange keine Person zu sehen war
     lost_s: float = 2.0             # so lange keine Person: doubt (follow), sonst embarrassed
@@ -972,7 +971,7 @@ class PetCfg:
     nap_s: float = 10.0                # so lange ganz weg, dann gehen langsam die Augen auf
     eyes_open_s: float = 3.0           # Augen öffnen, dabei schaut er sich um
     # Fixieren (Nutzer 2026-11-22): dieselbe Person so lange ununterbrochen im Blick und der Blick angekommen ->
-    # Augen zu Schlitzen (Lidstellung im Atlas, 0 offen .. 4 zu); 0 s = aus
+    # Augen zu Schlitzen (Lidstufe, 0 offen .. 4 zu); 0 s = aus
     eyes_fix_s: float = 1.5
     eyes_fix_lid: int = 2
     clear_s: float = 2.5               # so lange niemand im Bild: die Luft ist rein, er springt auf
@@ -1087,7 +1086,6 @@ class PetCfg:
     timeout_s: float = 600.0           # so lange niemand: absetzen, Modus idle (Akku)
     active_hz: float = 4.0             # Detektor in pet; spart gegen ~7 Hz fast die Hälfte
     doze_hz: float = 1.0
-    gaze_dir: str = "/opt/xgonav/eyes_gaze"   # von tools/eyes.py --gaze (deploy/install.sh)
     # Innenleben mit Akku (xgonav/innen.py, Nutzer 2026-11-28): Akku geglättet in Stufen munter / gesetzt / hungrig /
     # erschöpft / Akku leer; Triebe (Energie, Geselligkeit, Erregung) verschieben die Zeiten oben, Tempo, Gesten,
     # Augen und Höhe. Bei vollem Akku, am Tag und ausgeruht ist jeder Faktor 1 (Verhalten wie ohne Innenleben).
@@ -1385,6 +1383,8 @@ ENTFERNT.update({f"robot.{k}": "seit 2026-11-25: Tempo regelt und rampt die Firm
                            "speed_ctrl_max", "accel_v", "accel_w")})
 ENTFERNT.update({"pet.greet_repeat_s": "seit 2026-11-28 drei Stufen nach der Abwesenheit: [pet] greet_kurz_s, "
                                        "greet_voll_s, greet_ausbruch_s (Gedächtnis)"})
+ENTFERNT.update({"emotion.dir": "seit 2026-11-28 nur noch der Augengenerator im Display-Daemon, keine Bilder",
+                 "pet.gaze_dir": "seit 2026-11-28 zeichnet der Augengenerator im Display-Daemon die Augen, kein Atlas"})
 UMBENANNT = {"freespace.shadow_net": "freespace.net"}
 
 # Die Defaults oben sind die Werte des RiderPi (/opt/xgonav/config.toml ohne Pfade unter /opt). Simulator und Tests

@@ -1,23 +1,19 @@
-"""Augen-Animationen für die Emotionen auf dem 2"-Display (ST7789, 320x240, RGB565).
+"""Augenmodell und Ausdrücke (Emotionen) des 2"-Displays (ST7789, 320x240): Referenz des Augengenerators.
 
-Nur stilisierte Augen, einfarbig auf Schwarz (mit Antialiasing). Erzeugt für jede
-Emotion eine Bildfolge direkt im Format von tools/emotion.sh build:
+Am Rider zeichnet der Display-Daemon (st7789/project/riderpi/src/augen*.c) die Augen selbst; augen_ausdruck.c ist
+Zeile für Zeile aus EMOTIONS hier übertragen, tests/test_augen.py vergleicht Parameter und Raster. Ausdrücke also
+hier und dort gleich ändern. Dieses Skript läuft nur am PC (Entwurf, Vorschau), am Rider nicht; es gibt keine
+vorgerenderten Bilder mehr (Nutzer 2026-11-28).
 
-  OUTDIR/<Name>/0001.raw ...   je 153600 Byte, RGB565 LE (wie ffmpeg -pix_fmt rgb565)
+Nur stilisierte Augen, einfarbig auf Schwarz (mit Antialiasing):
 
-  python tools/eyes.py OUTDIR                      # alle Emotionen, Farbe Türkis
-  python tools/eyes.py OUTDIR --color 255,160,0    # andere Farbe (R,G,B)
-  python tools/eyes.py OUTDIR --farbe rot          # Farbe aus PALETTE (Augenfarbe je Person, xgonav/gesicht.py)
-  python tools/eyes.py --palette                   # Namen der PALETTE
-  python tools/eyes.py OUTDIR --only sad --only shy
-  python tools/eyes.py OUTDIR --png                # zusätzlich <Name><n>.png
-  python tools/eyes.py OUTDIR --preview VORSCHAU   # Kontaktabzug (PNG) und MP4 je Emotion
-  python tools/eyes.py --list                      # Emotionen mit Bildanzahl
-  python tools/eyes.py --gaze DIR                  # Augen-Atlas des Modus pet (Blick x Lid)
+  python tools/eyes.py --preview VORSCHAU                 # Kontaktabzug (PNG) und MP4 je Emotion
+  python tools/eyes.py --preview VORSCHAU --only sad      # nur diese (mehrfach möglich)
+  python tools/eyes.py --preview VORSCHAU --farbe rot     # Farbe aus PALETTE, oder --color R,G,B
+  python tools/eyes.py --list                             # Emotionen mit Bildanzahl
 
-Abgespielt wird wie bisher mit tools/emotion.sh play OUTDIR/<Name> (25 fps). Jede
-Animation außer aufwachen (beginnt geschlossen) beginnt mit den neutralen Augen; außer sleep (endet geschlossen) endet
-sie auch dort, lässt sich also nahtlos wiederholen.
+Jede Animation außer aufwachen (beginnt geschlossen) beginnt mit den neutralen Augen; außer sleep (endet geschlossen)
+endet sie auch dort, lässt sich also nahtlos wiederholen.
 """
 from __future__ import annotations
 
@@ -30,12 +26,12 @@ import cv2
 import numpy as np
 
 W, H = 320, 240
-FPS = 25                    # Standard von tools/emotion.sh play
+FPS = 25                    # Bildtakt des Daemons, solange sich etwas bewegt
 SS = 4                      # Überabtastung: gezeichnet wird in 4x, dann INTER_AREA
 SHIFT = 2                   # Subpixel-Bits für cv2-Zeichenfunktionen
 FARBE = (0, 225, 210)       # Türkis (R, G, B)
-# Augenfarben je Person (Web: Gesichter -> Begrüßung -> Augen); deploy/install.sh rendert je Name
-# <emotions>_<name>/ und <eyes_gaze>_<name>/, xgonav nimmt sie, solange die Person da ist
+# Augenfarben je Person (Web: Gesichter -> Begrüßung -> Augen); dieselben Namen und Werte kennt der Daemon
+# (augen_leben.c), xgonav schickt "farbe NAME", solange die Person da ist
 PALETTE = {"rot": (255, 80, 70), "rosa": (255, 120, 200), "gelb": (255, 200, 0),
            "gruen": (60, 230, 90), "lila": (170, 110, 255)}
 
@@ -468,25 +464,6 @@ def frames(name: str):
         yield render(fn(i * dauer / (n - 1), dauer))
 
 
-def gaze_alpha(g: int, lid: int) -> np.ndarray:
-    """Augen des Modus pet (xgonav/pet.py): Blick g 0..10 (5 = Mitte, größer = rechts im Bild), Lid 0 offen bis
-    4 zu (langsames Aufwachen). Das neutrale Auge ohne Pupille, wie am Anfang und Ende jeder Emotion: Der Blick
-    entsteht, weil das ganze Auge wandert; das Auge in Blickrichtung wird etwas breiter, das andere schmaler."""
-    x = (g - 5) / 5.0
-    z = dict(dx=34.0 * x, blink=0.25 * lid)          # Lid wie der Lidschlag der Emotionen: zur Mitte hin stauchen
-    return render((dict(), neutral(w=NEUTRAL["w"] * (1 - 0.10 * x), **z), neutral(w=NEUTRAL["w"] * (1 + 0.10 * x), **z)))
-
-
-def write_gaze(ziel: Path, farbe: tuple[int, int, int]) -> int:
-    ziel.mkdir(parents=True, exist_ok=True)
-    n = 0
-    for g in range(11):
-        for lid in range(5):
-            (ziel / f"g{g}_l{lid}.raw").write_bytes(to_rgb565(to_bgr(gaze_alpha(g, lid), farbe)))
-            n += 1
-    return n
-
-
 # ---------------------------------------------------------------- Ausgabe
 
 def to_bgr(alpha: np.ndarray, farbe: tuple[int, int, int]) -> np.ndarray:
@@ -495,7 +472,7 @@ def to_bgr(alpha: np.ndarray, farbe: tuple[int, int, int]) -> np.ndarray:
 
 
 def to_rgb565(bgr: np.ndarray) -> bytes:
-    """Wie ffmpeg -pix_fmt rgb565 (LE), siehe xgonav/lcd.py."""
+    """RGB565 LE wie xgonav/lcd.py; Referenz für die Farbtabelle des Daemons (augen_lut, tests/test_augen.py)."""
     return cv2.cvtColor(bgr, cv2.COLOR_BGR2BGR565).tobytes()
 
 
@@ -515,17 +492,13 @@ def kontaktabzug(bilder: list[np.ndarray], name: str, n: int = 8) -> np.ndarray:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Augen-Animationen (RGB565 320x240) für tools/emotion.sh")
-    ap.add_argument("outdir", nargs="?", type=Path, help="Zielverzeichnis, je Emotion ein Unterverzeichnis")
+    ap = argparse.ArgumentParser(description="Augenmodell des Display-Daemons: Vorschau der Ausdrücke (nur am PC)")
     ap.add_argument("--color", default=",".join(map(str, FARBE)), help="Farbe R,G,B (Standard Türkis)")
     ap.add_argument("--farbe", choices=list(PALETTE), help="Farbe aus der Palette (statt --color)")
     ap.add_argument("--palette", action="store_true", help="Namen der Palette ausgeben")
     ap.add_argument("--only", action="append", help="nur diese Emotion (mehrfach möglich)")
-    ap.add_argument("--png", action="store_true", help="zusätzlich <Name><n>.png schreiben")
-    ap.add_argument("--no-raw", action="store_true", help="keine .raw-Dateien schreiben")
     ap.add_argument("--preview", type=Path, help="Kontaktabzug <Name>.png und <Name>.mp4 hierhin")
     ap.add_argument("--list", action="store_true", help="Emotionen auflisten")
-    ap.add_argument("--gaze", type=Path, help="Augen-Atlas für den Modus pet hierhin (g<Blick>_l<Lid>.raw)")
     a = ap.parse_args()
 
     if a.palette:
@@ -535,17 +508,13 @@ def main() -> int:
         for name, (_, d) in EMOTIONS.items():
             print(f"{name:12s} {int(round(d * FPS)):3d} Bilder  {d:.1f} s")
         return 0
-    if a.outdir is None and a.preview is None and a.gaze is None:
-        ap.error("OUTDIR, --preview oder --gaze angeben")
+    if a.preview is None:
+        ap.error("--preview VERZ oder --list angeben")
     try:
         farbe = PALETTE[a.farbe] if a.farbe else tuple(int(c) for c in a.color.split(","))
         assert len(farbe) == 3 and all(0 <= c <= 255 for c in farbe)
     except (ValueError, AssertionError):
         ap.error("--color erwartet R,G,B mit Werten 0..255")
-    if a.gaze is not None:
-        print(f"Augen-Atlas: {write_gaze(a.gaze, farbe)} Bilder in {a.gaze}")
-        if a.outdir is None and a.preview is None:
-            return 0
     namen = a.only or list(EMOTIONS)
     for n in namen:
         if n not in EMOTIONS:
@@ -553,23 +522,12 @@ def main() -> int:
 
     for name in namen:
         bilder = [to_bgr(al, farbe) for al in frames(name)]
-        if a.outdir is not None:
-            ziel = a.outdir / name
-            ziel.mkdir(parents=True, exist_ok=True)
-            for alt in list(ziel.glob("*.raw")) + list(ziel.glob(f"{name}*.png")):
-                alt.unlink()                        # alte, evtl. längere Folge entfernen
-            for i, b in enumerate(bilder, 1):
-                if not a.no_raw:
-                    (ziel / f"{i:04d}.raw").write_bytes(to_rgb565(b))
-                if a.png:
-                    cv2.imwrite(str(ziel / f"{name}{i}.png"), b)
-        if a.preview is not None:
-            a.preview.mkdir(parents=True, exist_ok=True)
-            cv2.imwrite(str(a.preview / f"{name}.png"), kontaktabzug(bilder, name))
-            vw = cv2.VideoWriter(str(a.preview / f"{name}.mp4"), cv2.VideoWriter_fourcc(*"mp4v"), FPS, (W, H))
-            for b in bilder:
-                vw.write(b)
-            vw.release()
+        a.preview.mkdir(parents=True, exist_ok=True)
+        cv2.imwrite(str(a.preview / f"{name}.png"), kontaktabzug(bilder, name))
+        vw = cv2.VideoWriter(str(a.preview / f"{name}.mp4"), cv2.VideoWriter_fourcc(*"mp4v"), FPS, (W, H))
+        for b in bilder:
+            vw.write(b)
+        vw.release()
         print(f"{name}: {len(bilder)} Bilder")
     return 0
 

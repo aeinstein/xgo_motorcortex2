@@ -1,7 +1,7 @@
 """Ausgabe aufs 2"-Display über den st7789-Daemon (FIFO /tmp/lcd0, RGB565 320x240).
 
-Modus pet mit Augengenerator im Daemon (xgonav/augen.py): nur Zeilen (Blick, Lid, Abstand, Farbe), keine Bilder;
-ohne ihn der Augen-Atlas aus tools/eyes.py --gaze."""
+Bilder nur für Kamera-Overlay und WLAN-Einrichtung. Die Augen des Modus pet zeichnet der Augengenerator im Daemon
+(xgonav/augen.py): nur Zeilen (Blick, Lid, Abstand, Farbe), keine Bilder."""
 from __future__ import annotations
 
 import errno
@@ -15,7 +15,7 @@ import cv2
 import numpy as np
 
 from .app import App, render
-from .emotion import active as emotion_active, load_gaze
+from .emotion import active as emotion_active
 
 log = logging.getLogger(__name__)
 
@@ -32,13 +32,8 @@ class LcdOut:
         self.app, self.fifo, self.period = app, fifo, 1.0 / max(1, fps)
         self.augen = augen              # augen.Augen oder None
         self._augen_an = False          # lebende Augen im Daemon eingeschaltet
-        self.overlay = overlay          # False: nur WLAN-Einrichtung und pet-Augen, kein Kamerabild
+        self.overlay = overlay          # False: nur WLAN-Einrichtung, kein Kamerabild
         self._fd: int | None = None
-        self._atlas = None              # Augen des Modus pet, beim ersten Bedarf geladen
-        self._atlas_tried = False
-        self._gaze_sent = None
-        self._farbe = None              # Augenfarbe des gezeigten Atlas (None = Standard)
-        self._farb_atlas: dict = {}     # Farbe -> Atlas (oder None, wenn er fehlt); höchstens einer
         self._wlan_sent = None
         threading.Thread(target=self._run, name="lcd", daemon=True).start()
 
@@ -55,38 +50,6 @@ class LcdOut:
         self._fd = fd
         return True
 
-    def _gaze_frame(self, gaze) -> bool:
-        """Modus pet: Augenbild statt Overlay; schreibt nur, wenn es sich ändert (spart render + Verkleinern).
-        False: kein Atlas, das Overlay läuft weiter."""
-        if not self._atlas_tried:
-            self._atlas_tried = True
-            path = self.app.cfg.pet.gaze_dir
-            self._atlas = load_gaze(path)
-            if self._atlas is None:
-                log.warning("LCD: kein Augen-Atlas in %s (tools/eyes.py --gaze)", path)
-        if self._atlas is None:
-            return False
-        atlas = self._atlas
-        farbe = getattr(self.app.behavior, "augen", None)      # erkannte Person mit eigener Augenfarbe (pet)
-        if farbe:
-            if farbe not in self._farb_atlas:
-                path = f"{self.app.cfg.pet.gaze_dir}_{farbe}"
-                self._farb_atlas = {farbe: load_gaze(path)}     # nur einen halten (je 8 MB)
-                if self._farb_atlas[farbe] is None:
-                    log.warning("LCD: kein Augen-Atlas in %s (deploy/install.sh)", path)
-            atlas = self._farb_atlas[farbe] or self._atlas
-        if farbe != self._farbe:
-            self._farbe, self._gaze_sent = farbe, None
-        if gaze != self._gaze_sent:
-            try:
-                os.write(self._fd, atlas[gaze])
-                self._gaze_sent = gaze
-            except OSError:
-                os.close(self._fd)
-                self._fd = None
-        time.sleep(min(self.period, 0.03))   # schneller als der Regelschritt, sonst fehlen Stufen des Lidschlags; schreibt nur bei Änderung
-        return True
-
     def _augen_aus(self, farbe: bool = True) -> None:
         if self._augen_an:
             self.augen.aus(farbe_zurueck=farbe)
@@ -101,7 +64,6 @@ class LcdOut:
                 # Ruhemodus: am Display stehen die Schlafaugen (api.php), nichts schreiben. Das FIFO bleibt
                 # offen, dann wartet der Daemon im read() statt nachzusehen.
                 self._augen_aus(farbe=False)
-                self._gaze_sent = None
                 time.sleep(1.0)
                 continue
             wlan = self.app.wlan
@@ -115,7 +77,6 @@ class LcdOut:
                 x, y, lid, nah, rate = ziel
                 self.augen.leben(x, y, lid, nah, rate, getattr(self.app.behavior, "augen", None))
                 self._augen_an = True
-                self._gaze_sent = None
                 time.sleep(1.0 / 24)
                 continue
             self._augen_aus()
@@ -125,11 +86,9 @@ class LcdOut:
                 if self._fd is not None:
                     os.close(self._fd)
                     self._fd = None
-                self._gaze_sent = None          # danach das Augenbild neu schreiben
                 time.sleep(0.2)
                 continue
-            gaze = getattr(self.app.behavior, "gaze", None)
-            if not self.overlay and wlan is None and (gaze is None or self._atlas_tried and self._atlas is None):
+            if not self.overlay and wlan is None:
                 # nichts zu zeigen: FIFO frei lassen (Emotionen, Schlafaugen bleiben stehen)
                 if self._fd is not None:
                     os.close(self._fd)
@@ -140,7 +99,6 @@ class LcdOut:
                     emo = getattr(self.app, "emotions", None)
                     if emo is not None:
                         emo.play("cute")
-                self._gaze_sent = None
                 time.sleep(0.2)
                 continue
             if self._fd is None and not self._open():
@@ -156,16 +114,10 @@ class LcdOut:
                     except OSError:
                         os.close(self._fd)
                         self._fd = None
-                self._gaze_sent = None
                 self._last_idx = None
                 time.sleep(0.05 if wlan.state == "qr" else 0.1)   # QR-Suche: Augen mit 20 Bildern/s
                 continue
             self._wlan_sent = None
-            if gaze is not None and self._gaze_frame(gaze):
-                continue
-            self._gaze_sent = None
-            if not self.overlay:
-                continue                    # pet ohne Atlas: nächste Runde schließt das FIFO
             snap = self.app.snapshot
             if snap.idx == getattr(self, "_last_idx", None):   # kein neues Bild (z. B. pausiert)
                 time.sleep(self.period)

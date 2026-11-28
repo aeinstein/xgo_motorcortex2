@@ -44,8 +44,9 @@ static volatile int kein_netz = 0;
 static int bild_da = 0;
 
 // Augengenerator (augen.h, docs/display-emotions.md): Befehle als Textzeilen in /tmp/lcd0.augen, gezeichnet wird hier.
-// Rohbilder auf /tmp/lcd0 haben Vorrang; während eines Ausdrucks hält der Daemon /tmp/lcd0.owner (wie tools/emotion.sh),
-// dann pausiert xgonav seine Ausgabe, und ein neuerer Besitzer (Player, Gegensprechen) bricht den Ausdruck ab.
+// Rohbilder auf /tmp/lcd0 (Kamera-Overlay, WLAN-Einrichtung, Gegensprechen) haben Vorrang; während eines Ausdrucks
+// hält der Daemon /tmp/lcd0.owner, dann pausiert xgonav seine Ausgabe, und ein neuerer Besitzer (Gegensprechen) bricht
+// den Ausdruck ab.
 static const char *augen_fifo = "/tmp/lcd0.augen";
 static const char *owner_datei = "/tmp/lcd0.owner";
 static const char *stat_datei = "/tmp/lcd0.augen.stat";
@@ -331,7 +332,7 @@ static void *augen_zeichnen(void *arg) {
     pthread_mutex_lock(&augen_lock);
     while (running) {
         double t = jetzt_s();
-        if (neuer_ausdruck) {                // neuester Spieler gewinnt (wie tools/emotion.sh)
+        if (neuer_ausdruck) {                // neuester Spieler gewinnt
             neuer_ausdruck = 0;
             besitz_schreiben(getpid());
             generator_besitzt = 1;
@@ -446,7 +447,7 @@ static void augen_starten(void) {
     struct group *g = getgrnam("video");        // xgonav (aeinstein) und www-data sind in video
     if (g) { if (chown(augen_fifo, 0, g->gr_gid) != 0) { /* egal */ } }
     chmod(augen_fifo, 0660);
-    // Namen der Ausdrücke für tools/emotion.sh (spielt nur diese über den Generator, alles andere als Bilder)
+    // Namen der Ausdrücke für tools/emotion.sh und die Weboberfläche (Liste der Emotionen)
     char namen[64];
     snprintf(namen, sizeof(namen), "%s.namen", augen_fifo);
     FILE *f = fopen(namen, "w");

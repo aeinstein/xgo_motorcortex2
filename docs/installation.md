@@ -83,9 +83,7 @@ Update order from a state before 2026-11-17: xgonav first, then the driver. The 
 | C++ core | `make -C /opt/xgonav/xgonav/native` → `libxgofast.so` (failure → Python ego-motion, warning) |
 | Camera library | `make -C /opt/xgonav/xgonav/native cam` → `libxgocam.so` (libcamera directly; failure → picamera2). No stable libcamera ABI: rebuild after `apt upgrade` |
 | Config | `deploy/config.example.toml` → `/opt/xgonav/config.toml` only if missing |
-| Emotions | `tools/eyes.py /opt/xgonav/emotions` |
 | Sounds | `tools/sounds.py /opt/xgonav/sounds` |
-| Eye atlas (mode `pet`) | `tools/eyes.py --gaze /opt/xgonav/eyes_gaze` |
 | User | `$SUDO_USER` (default `pi`) owns `/opt/xgonav`, added to group `video` |
 | Unit | `/etc/systemd/system/xgonav.service` (not enabled) |
 

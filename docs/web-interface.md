@@ -105,7 +105,7 @@ Environment (unset on the Rider; set by the php-fpm pool of the virtual Rider, `
 | `POST ?a=roll&deg=..` | `/proc/XGORider/roll` | −20..20 |
 | `POST ?a=calibration&on=0\|1` | `settings/calibration` | API only, no UI button |
 | `POST ?a=pitch_calibration` | `settings/pitch_calibration` | API only, no UI button |
-| `POST ?a=emotion&name=..` | `tools/emotion.sh play` | name must exist in `/opt/xgonav/emotions` |
+| `POST ?a=emotion&name=..` | `tools/emotion.sh play NAME` | name must be in `/tmp/lcd0.augen.namen` (eye generator of the display daemon) |
 | `POST ?a=shutdown` | plays `sleep` emotion, `sudo systemctl poweroff` | |
 | `GET ?a=wlan_status` | `sudo -n xgo-wlan status` | JSON `con`, `ssid`, `ip` of wlan0; in the hotspot also `clients`, `letzt` |
 | `GET ?a=wlan_scan` | `sudo -n xgo-wlan scan` | JSON `netze` [`ssid`, `signal`, `security`], cached scan |

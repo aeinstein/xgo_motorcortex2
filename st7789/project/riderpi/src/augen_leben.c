@@ -22,7 +22,7 @@
 #include <strings.h>
 
 #define PI_F 3.14159265358979f
-#define BLICK_PX 34.0f          /* wie tools/eyes.py gaze_alpha: das ganze Auge wandert */
+#define BLICK_PX 34.0f          /* Blick: das ganze Auge wandert, das Auge in Blickrichtung 10 % breiter */
 #define BLICK_Y_PX 22.0f
 #define VERGENZ_PX 9.0f
 #define LIDSCHLAG_S 0.26f

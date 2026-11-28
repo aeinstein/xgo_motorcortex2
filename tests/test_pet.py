@@ -14,7 +14,6 @@ sys.path.insert(0, str(ROOT))
 
 from xgonav.behaviors import World, make_behavior  # noqa: E402
 from xgonav.config import BehaviorCfg, Config, PetCfg, RobotCfg  # noqa: E402
-from xgonav.emotion import LCD_FRAME_BYTES, load_gaze  # noqa: E402
 from xgonav.geometry import CamGeometry  # noqa: E402
 from xgonav.pet import GAZE_BINS, GAZE_CENTER, LID_OPEN, LID_SHUT, Heard, Pet, PetBrain, Seen, Sense  # noqa: E402
 from xgonav.robot import SimRobot  # noqa: E402
@@ -653,26 +652,6 @@ def load_tool(name):
     m = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(m)
     return m
-
-
-def test_augen_atlas(tmp_path):
-    assert load_gaze(str(tmp_path / "fehlt")) is None
-    assert load_tool("eyes").write_gaze(tmp_path / "g", (0, 225, 210)) == GAZE_BINS * 5
-    atlas = load_gaze(str(tmp_path / "g"))
-    assert len(atlas) == GAZE_BINS * 5 and all(len(v) == LCD_FRAME_BYTES for v in atlas.values())
-    assert len(set(atlas.values())) == GAZE_BINS * 5    # jede Stellung sieht anders aus
-    (tmp_path / "g" / "g3_l0.raw").write_bytes(b"kurz")
-    assert load_gaze(str(tmp_path / "g")) is None
-
-
-def test_augen_atlas_im_stil_der_emotionen():
-    eyes = load_tool("eyes")
-    neutral = eyes.render((dict(), eyes.neutral(), eyes.neutral()))
-    # Geradeaus offen ist genau das Bild, mit dem jede Emotion beginnt und endet: kein Sprung beim Wechsel
-    assert np.array_equal(eyes.gaze_alpha(GAZE_CENTER, 0), neutral)
-    # Keine Pupille: Das Auge ist ein volles Rechteck, die Fläche ändert sich mit dem Blick kaum
-    for g in (0, GAZE_BINS - 1):
-        assert abs(eyes.gaze_alpha(g, 0).sum() / neutral.sum() - 1.0) < 0.02
 
 
 def test_toene(tmp_path):

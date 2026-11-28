@@ -13,14 +13,10 @@
 declare(strict_types=1);
 header('Cache-Control: no-store');
 
-const EMOTION_RAW = '/opt/xgonav/emotions';             // tools/eyes.py, von deploy/install.sh erzeugt
+const AUGEN_NAMEN = '/tmp/lcd0.augen.namen';            // Ausdrücke des Augengenerators (Display-Daemon)
 $host = htmlspecialchars(gethostname() ?: 'rider', ENT_QUOTES);
-$emotionen = [];
-foreach (@scandir(EMOTION_RAW) ?: [] as $e) {
-    if (preg_match('/^[A-Za-z]+$/', $e) && is_dir(EMOTION_RAW . '/' . $e)) {
-        $emotionen[] = $e;
-    }
-}
+$emotionen = array_values(array_filter(@file(AUGEN_NAMEN, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [],
+                                       fn($n) => preg_match('/^[A-Za-z]+$/', $n) === 1));
 // LED-Helligkeit n/256 (api.php speichert sie, rc.local und xgonav setzen sie), Anzeige in Prozent; ohne Datei 20 %
 $ledN = @file_get_contents('/var/lib/xgonav/led_brightness');
 $ledP = ($ledN !== false && is_numeric(trim($ledN))) ? (int)round(max(0, min(255, (int)trim($ledN))) * 100 / 255) : 20;
@@ -690,7 +686,7 @@ details.extras[open]>summary{margin-bottom:8px}
     <div class="unter">Emotionen (Display)</div>
     <div class="knoepfe">
       <?php foreach ($emotionen as $e): ?><button onclick="befehl('emotion', {name: '<?= h($e) ?>'})"><?= h($e) ?></button><?php endforeach; ?>
-      <?php if (!$emotionen): ?><span class="leise">keine gefunden in <?= h(EMOTION_RAW) ?></span><?php endif; ?>
+      <?php if (!$emotionen): ?><span class="leise">keine: Display-Daemon mit Augengenerator läuft nicht (<?= h(AUGEN_NAMEN) ?>)</span><?php endif; ?>
     </div>
   </details>
 

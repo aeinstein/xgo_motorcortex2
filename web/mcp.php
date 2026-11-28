@@ -29,8 +29,8 @@ define('XGONAV', getenv('XGO_MCP_XGONAV') ?: 'http://127.0.0.1:8088');
 define('PROC', getenv('XGO_PROC') ?: '/proc/XGORider');
 define('CONF', getenv('XGO_MCP_CONF') ?: '/etc/xgonav/mcp.json');
 define('SCHNELL', (float)(getenv('XGO_MCP_SCHNELL') ?: 1.0));   // Tests: Wartezeiten teilen
-const EMOTION = '/opt/xgonav/tools/emotion.sh';
-const EMOTION_RAW = '/opt/xgonav/emotions';
+const EMOTION = '/opt/xgonav/tools/emotion.sh';         // schickt "ausdruck NAME" an den Augengenerator
+const AUGEN_NAMEN = '/tmp/lcd0.augen.namen';            // Ausdrücke, die der Display-Daemon kennt
 const SPERRE = '/tmp/xgonav-mcp.lock';                  // eine Bewegung zur Zeit
 const PROTOKOLLE = ['2025-06-18', '2025-03-26', '2024-11-05'];
 const STUFEN = ['schauen' => 0, 'drehen' => 1, 'fahren' => 2];
@@ -559,9 +559,9 @@ function w_ruhemodus(array $a): array
     if ($an) {
         braucht('drehen');                                   // setzt ihn ab
         $xgonav();
-        if (is_dir(EMOTION_RAW . '/sleep') && is_writable('/tmp/lcd0')) {
-            exec('pkill -u www-data -f "[e]motion.sh play|[f]fmpeg.*/tmp/lcd0" 2>/dev/null');
-            exec(sprintf('timeout 10 %s play %s > /dev/null 2>&1', escapeshellarg(EMOTION), escapeshellarg(EMOTION_RAW . '/sleep')));
+        if (in_array('sleep', emotionen(), true)) {
+            exec('pkill -u www-data -f "[e]motion.sh play" 2>/dev/null');
+            exec(sprintf('timeout 10 %s play sleep > /dev/null 2>&1', escapeshellarg(EMOTION)));
         }
         $system();
     } else {
@@ -605,9 +605,15 @@ function w_leds(array $a): array
     return [text('LEDs gesetzt.')];
 }
 
+function emotionen(): array
+{
+    $namen = @file(AUGEN_NAMEN, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [];
+    return array_values(array_filter($namen, fn($n) => preg_match('/^[A-Za-z]+$/', $n) === 1));
+}
+
 function w_emotion(array $a): array
 {
-    $namen = array_map('basename', glob(EMOTION_RAW . '/*', GLOB_ONLYDIR) ?: []);
+    $namen = emotionen();
     $name = (string)($a['name'] ?? '');
     if ($name === '') {
         return [text(js(['emotionen' => $namen]))];
@@ -615,11 +621,11 @@ function w_emotion(array $a): array
     if (!preg_match('/^[A-Za-z]+$/', $name) || !in_array($name, $namen, true)) {
         throw new Fehler('Emotion unbekannt. Vorhanden: ' . implode(', ', $namen));
     }
-    if (!is_writable('/tmp/lcd0')) {
-        throw new Fehler('Display nicht beschreibbar.');
+    if (!is_writable('/tmp/lcd0.augen')) {
+        throw new Fehler('Augengenerator nicht beschreibbar.');
     }
-    exec('pkill -u www-data -f "[e]motion.sh play|[f]fmpeg.*/tmp/lcd0" 2>/dev/null');
-    exec(sprintf('%s play %s > /dev/null 2>&1 &', escapeshellarg(EMOTION), escapeshellarg(EMOTION_RAW . '/' . $name)));
+    exec('pkill -u www-data -f "[e]motion.sh play" 2>/dev/null');
+    exec(sprintf('%s play %s > /dev/null 2>&1 &', escapeshellarg(EMOTION), escapeshellarg($name)));
     return [text("Emotion „{$name}“ läuft.")];
 }
 

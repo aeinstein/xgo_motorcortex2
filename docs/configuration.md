@@ -203,7 +203,7 @@ Floor boundary from FloorNet only (`xgonav/freespace.py`, `docs/floornet.md`). T
 `web_host` 127.0.0.1, `web_port` 8088 (0 = off), `web_fps` 10, `jpeg_native` true (browser JPEG in the hardware encoder `jpeg_dev` = `/dev/video31`, fallback `cv2.imencode`), `lcd_fifo` `""` = off (sim: `/tmp/lcd0`), `lcd_fps` 15, `record_dir` `~/fahrt` (raw recording), `record_min_free_mb` 500 (below: recording switches itself off), `record_jpeg_q_hw` 95 (raw-recording JPEG in the hardware encoder; RiderPi: 4.6 instead of 8.6 ms CPU per image, mean deviation 0.70 vs 0.63, 51 vs 41 KB; above 95 only larger), `record_jpeg_q_cv` 92 (libjpeg fallback), `record_map_s` 2.0 (room map PNG every n s into `karte/`, 0 = off), `record_map_px` 480, `record_map_view_m` 6.0. `meta.jsonl` names the encoder per image (`"jpeg": "hw95"`/`"cv92"`; missing before 2026-11-19 = libjpeg q92).
 
 ### `[emotion]`
-`enabled` true, `dir` `/opt/xgonav/emotions`, `fifo` `/tmp/lcd0`, `augen_fifo` `/tmp/lcd0.augen` (eye generator in the display daemon, `""` = off, [display-emotions.md](display-emotions.md#eye-generator-in-the-display-daemon)), `gap_s` 5, `lost_s` 2, `battery_low` 20 %, `battery_repeat_s` 300.
+`enabled` true, `fifo` `/tmp/lcd0` (only `.owner`), `augen_fifo` `/tmp/lcd0.augen` (eye generator in the display daemon, the only way to show eyes and emotions; `""` = none, [display-emotions.md](display-emotions.md#eye-generator-in-the-display-daemon)); `dir` removed 2026-11-28 (warning), `gap_s` 5, `lost_s` 2, `battery_low` 20 %, `battery_repeat_s` 300.
 Sounds: `sound` true, `sound_dir` `/opt/xgonav/sounds`, `sound_found` `freude.wav`, `sound_lost` `trauer.wav`, `sound_device` `""` (ALSA default).
 
 ### `[pet]` (mode `pet`, see [display-emotions.md](display-emotions.md))
@@ -249,7 +249,6 @@ All keys with comments: `PetCfg` in `xgonav/config.py`.
 | `duck_mm`, `roll_deg` | 75, 8 | raised to minimum + 10 mm; cap 12° |
 | `active_hz`, `doze_hz` | 4, 1 | detector rate in this mode |
 | `doze_s`, `timeout_s` | 180, 600 | nobody around: doze; set down and `idle` |
-| `gaze_dir` | `/opt/xgonav/eyes_gaze` | eye atlas |
 | `akku_gesetzt`, `akku_hungrig`, `akku_erschoepft`, `akku_leer`, `akku_hyst`, `akku_median_s` | 60, 40, 25, 10 %, 3, 60 | battery stages ([inner life](display-emotions.md#inner-life-and-battery-xgonavinnenpy-2026-11-28)) |
 | `akku_ruhe`, `akku_heim` | true, true | exhausted/empty, and hungry after `timeout_s`: set down + sleep mode; exhausted: first home with start image |
 | `laden_punkte`, `laden_fenster_s`, `laden_wach` | 2, 600, 90 % | charging in pet's own sleep mode: purr; wake at 90 % (0 = never) |

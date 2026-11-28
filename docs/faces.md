@@ -16,7 +16,7 @@ Recognises learned faces in mode `pet` and greets them. Since 2026-11-27; first 
 | Reaction | `pet`: `Seen.who` → emotion and sound of that person (`gruss.json`, set in the web card), else `greet_emotion` (`like`) / `greet_sound` (`traellern`); how depends on the absence (memory, below): ≥ `greet_kurz_s` 5 min only the sound, ≥ `greet_voll_s` 1 h emotion + sound, ≥ `greet_ausbruch_s` 8 h then `laugh` + `traellern` + wiggle (lying: no wiggle) 2.5 s later, never seen = full; awake and lying (state `liegt`: the greeting replaces the generic `surprised`/`gefunden`) |
 | Memory | `xgonav/gedaechtnis.py`, `[pet] gedaechtnis` = `/var/lib/xgonav/gedaechtnis.json` (`""` = RAM only, simulator): per name trust, last and first seen (wall clock), encounters; one object in the app for all modes, written at most once a minute and on exit. Trust per counterpart: name → stored (start `trust_bekannt` 1.0; a startle by that person lowers it for good, calm nearness raises it), stranger → per track from `trust_fremd` 0.1 (RAM only), anyone else → session value from `trust_start` 0.3. The greeting no longer sets trust. Web card shows last seen, encounters, trust |
 | Stranger | face seen but below `match_sim`: `Track.fremd_n` counts such checks while the track has no name; ≥ `[pet] fremd_n` 2 → stranger: trust 0.1 (more distance, startles sooner), `doubt` once per track |
-| Eye colour | per person (`augen` in `gruss.json`, `tools/eyes.py` `PALETTE`): `PetBrain.augen` set before the greeting, held while recognised and `eye_hold_s` = 20 s after; emotions from `emotions_<colour>/`, pet eyes from `eyes_gaze_<colour>/` ([display-emotions.md](display-emotions.md)); no per-frame cost |
+| Eye colour | per person (`augen` in `gruss.json`, `tools/eyes.py` `PALETTE`): `PetBrain.augen` set before the greeting, held while recognised and `eye_hold_s` = 20 s after; xgonav sends `farbe NAME` to the eye generator, for living eyes and emotions ([display-emotions.md](display-emotions.md)); no per-frame cost |
 | Display | overlay label shows the name instead of the class; `GET /status` → `tracks[].who`, `who_sim`, `gesicht_ms` |
 
 ## Cost on the CM4
@@ -41,7 +41,7 @@ Recognises learned faces in mode `pet` and greets them. Since 2026-11-27; first 
 | Stored | `[gesicht] dir` = `/opt/xgonav/gesichter/<name>/NN.npy` (features) + `NN.jpg` (aligned crop), ≤ 50 per name |
 | List | `api.php?a=gesichter` reads the directory (only when opened); crops via `api.php?a=gesicht_jpg` |
 | Delete | ✕ per photo or name → `POST /gesicht/loeschen?name=&nr=`; the last photo also removes the greeting |
-| Greeting | per name: emotion (`/opt/xgonav/emotions`), eye colour (rendered colours, `eyes_gaze_*`) and sound (`pet_<event>_*.wav` or confirmed voice sample `stimme:NN`) → `api.php?a=gesicht_gruss` → `POST /gesicht/gruss?name=&emotion=&sound=&augen=` → `<name>/gruss.json`; empty = default, `-` = none. A voice sample can be replaced unless uploaded or 📌-protected |
+| Greeting | per name: emotion (expressions of the eye generator, `/tmp/lcd0.augen.namen`), eye colour (`PALETTE` names) and sound (`pet_<event>_*.wav` or confirmed voice sample `stimme:NN`) → `api.php?a=gesicht_gruss` → `POST /gesicht/gruss?name=&emotion=&sound=&augen=` → `<name>/gruss.json`; empty = default, `-` = none. A voice sample can be replaced unless uploaded or 📌-protected |
 | Advice | 10–20 photos, different light and angles, also from below; delete blurred or skewed crops |
 
 ## Limits

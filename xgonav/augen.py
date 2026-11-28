@@ -2,8 +2,8 @@
 
 Gezeichnet wird im Daemon; xgonav schickt nur Textzeilen nach /tmp/lcd0.augen ([emotion] augen_fifo): Blick, Lid,
 Abstand, Lidschlagrate, Farbe, Ausdruck. Die Augen leben dort von selbst (Lidschlag, Sakkaden, Atmen). Ohne
-Daemon mit Generator (FIFO fehlt, kein Leser: ENXIO) ist `ok` False, und alles bleibt beim alten Weg
-(Augen-Atlas in lcd.py, tools/emotion.sh). Pi-Kosten hier: ein os.write von wenigen Byte bei Änderung.
+Daemon mit Generator (FIFO fehlt, kein Leser: ENXIO) ist `ok` False und das Display zeigt keine Augen (kein
+Rückfallweg). Pi-Kosten hier: ein os.write von wenigen Byte bei Änderung.
 """
 from __future__ import annotations
 

@@ -59,11 +59,11 @@ WIEDERSEHEN_S = 20.0                 # Wiedersehensfreude erst nach so langem Al
 AKKU_HEIM_MAX_S = 180.0              # erschöpft zum Körbchen: länger nicht (Pose verloren), dann an Ort und Stelle
 AUSBRUCH_S = 2.5                     # Freudenausbruch: so lange nach der Begrüßung laugh, trällern, wackeln
 FREMD_MERK_N = 32                    # Vertrauen so vieler fremder Tracks merken (nur im Speicher)
-GAZE_BINS = 11                       # Blickrichtungen im Augen-Atlas (tools/eyes.py --gaze): 10 Stufen, ungerade für eine exakte Mitte
+GAZE_BINS = 11                       # Blickstufen von PetBrain.gaze (Fixieren, Umschauen): 10 Stufen, ungerade für eine exakte Mitte
 GAZE_CENTER = GAZE_BINS // 2
 BLINK_S = 0.4                        # Lidschlag über alle Lidstellungen; bei 24 Hz Regelschritt je ~42 ms eine Stufe
 GAZE_RANGE = math.radians(45.0)      # Peilung bei voll ausgelenktem Blick
-GAZE_LIDS = 5                        # Lidstellungen im Atlas, 0 = offen .. 4 = zu
+GAZE_LIDS = 5                        # Lidstufen von PetBrain.gaze, 0 = offen .. 4 = zu
 AUGEN_RATE, AUGEN_RATE_MUEDE = 15.0, 6.0   # Lidschläge je Minute im Augengenerator: wach, dösend/liegend
 LID_OPEN, LID_HALF, LID_SHUT = 0, 2, 4
 # Firmware-Zustände, aus denen er nie von selbst aufsteht (docs/LED.md)
@@ -1954,7 +1954,7 @@ class PetBrain:
 
     def _augen_ziel(self, s: Sense, xf: float, fix: bool) -> tuple:
         """Augengenerator: Blick x/y, Grundlid ohne Lidschlag (den macht der Daemon), Abstand fürs Schielen,
-        Lidschlagrate. Lid wie der Atlas: Stufe / LID_SHUT."""
+        Lidschlagrate. Lid: Stufe / LID_SHUT."""
         tg = self.target
         yf, nah = 0.0, 0.0
         if tg is not None:
@@ -2025,8 +2025,7 @@ class Pet(Behavior):
         self.want_stand_up = False           # App._pet_tick
         self.want_idle = False
         self.want_ruhe: str | None = None   # App._pet_tick: absetzen und Ruhemodus (Akku)
-        self.gaze = self.brain.gaze          # lcd.py liest das aus seinem Thread (Tupel, atomar ersetzt)
-        self.augen_ziel = self.brain.augen_ziel   # ebenso, für den Augengenerator
+        self.augen_ziel = self.brain.augen_ziel   # lcd.py liest das aus seinem Thread (Tupel, atomar ersetzt)
         self.augen: str | None = None        # Augenfarbe (brain.augen): lcd.py und App -> Emotions.farbe
         # Folgen: genau die Routine des Modus follow (Nutzer 2026-11-22), solange die Aufgabe folgen läuft
         self.follow_drive: Follow | None = None
@@ -2353,7 +2352,6 @@ class Pet(Behavior):
             b.want_idle, self.want_idle = False, True
         if b.want_ruhe:
             b.want_ruhe, self.want_ruhe = None, b.want_ruhe
-        self.gaze = b.gaze
         self.augen_ziel = b.augen_ziel
         self.augen = b.augen
 

@@ -2728,7 +2728,7 @@
 <h3 id="output"><code>[output]</code><a class="headerlink" href="#output" title="Permanent link">&para;</a></h3>
 <p><code>web_host</code> 127.0.0.1, <code>web_port</code> 8088 (0 = off), <code>web_fps</code> 10, <code>jpeg_native</code> true (browser JPEG in the hardware encoder <code>jpeg_dev</code> = <code>/dev/video31</code>, fallback <code>cv2.imencode</code>), <code>lcd_fifo</code> <code>""</code> = off (sim: <code>/tmp/lcd0</code>), <code>lcd_fps</code> 15, <code>record_dir</code> <code>~/fahrt</code> (raw recording), <code>record_min_free_mb</code> 500 (below: recording switches itself off), <code>record_jpeg_q_hw</code> 95 (raw-recording JPEG in the hardware encoder; RiderPi: 4.6 instead of 8.6 ms CPU per image, mean deviation 0.70 vs 0.63, 51 vs 41 KB; above 95 only larger), <code>record_jpeg_q_cv</code> 92 (libjpeg fallback), <code>record_map_s</code> 2.0 (room map PNG every n s into <code>karte/</code>, 0 = off), <code>record_map_px</code> 480, <code>record_map_view_m</code> 6.0. <code>meta.jsonl</code> names the encoder per image (<code>"jpeg": "hw95"</code>/<code>"cv92"</code>; missing before 2026-11-19 = libjpeg q92).</p>
 <h3 id="emotion"><code>[emotion]</code><a class="headerlink" href="#emotion" title="Permanent link">&para;</a></h3>
-<p><code>enabled</code> true, <code>dir</code> <code>/opt/xgonav/emotions</code>, <code>fifo</code> <code>/tmp/lcd0</code>, <code>augen_fifo</code> <code>/tmp/lcd0.augen</code> (eye generator in the display daemon, <code>""</code> = off, <a href="display-emotions.html#eye-generator-in-the-display-daemon">display-emotions.md</a>), <code>gap_s</code> 5, <code>lost_s</code> 2, <code>battery_low</code> 20 %, <code>battery_repeat_s</code> 300.
+<p><code>enabled</code> true, <code>fifo</code> <code>/tmp/lcd0</code> (only <code>.owner</code>), <code>augen_fifo</code> <code>/tmp/lcd0.augen</code> (eye generator in the display daemon, the only way to show eyes and emotions; <code>""</code> = none, <a href="display-emotions.html#eye-generator-in-the-display-daemon">display-emotions.md</a>); <code>dir</code> removed 2026-11-28 (warning), <code>gap_s</code> 5, <code>lost_s</code> 2, <code>battery_low</code> 20 %, <code>battery_repeat_s</code> 300.
 Sounds: <code>sound</code> true, <code>sound_dir</code> <code>/opt/xgonav/sounds</code>, <code>sound_found</code> <code>freude.wav</code>, <code>sound_lost</code> <code>trauer.wav</code>, <code>sound_device</code> <code>""</code> (ALSA default).</p>
 <h3 id="pet-mode-pet-see-display-emotionsmd"><code>[pet]</code> (mode <code>pet</code>, see <a href="display-emotions.html">display-emotions.md</a>)<a class="headerlink" href="#pet-mode-pet-see-display-emotionsmd" title="Permanent link">&para;</a></h3>
 <p>All keys with comments: <code>PetCfg</code> in <code>xgonav/config.py</code>.</p>
@@ -2930,11 +2930,6 @@ Sounds: <code>sound</code> true, <code>sound_dir</code> <code>/opt/xgonav/sounds
 <td><code>doze_s</code>, <code>timeout_s</code></td>
 <td>180, 600</td>
 <td>nobody around: doze; set down and <code>idle</code></td>
-</tr>
-<tr>
-<td><code>gaze_dir</code></td>
-<td><code>/opt/xgonav/eyes_gaze</code></td>
-<td>eye atlas</td>
 </tr>
 <tr>
 <td><code>akku_gesetzt</code>, <code>akku_hungrig</code>, <code>akku_erschoepft</code>, <code>akku_leer</code>, <code>akku_hyst</code>, <code>akku_median_s</code></td>

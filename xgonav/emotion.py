@@ -2,9 +2,9 @@
 Dazu Geräusche über den Lautsprecher (aplay): freudig, wenn eine Person auftaucht,
 traurig, wenn sie lost_s lang verschwunden ist (unabhängig vom Display).
 
-Abgespielt wird über den Augengenerator im Display-Daemon (xgonav/augen.py: eine Zeile "ausdruck NAME"), ohne
-ihn mit tools/emotion.sh (vorkonvertierte RGB565-Bilder aus EmotionCfg.dir) als eigener Prozess. Der neueste
-Spieler gewinnt (auch aus der Weboberfläche), über $FIFO.owner; der Generator trägt sich dort ebenso ein.
+Abgespielt wird nur über den Augengenerator im Display-Daemon (xgonav/augen.py: eine Zeile "ausdruck NAME"); ohne
+ihn bleibt das Display leer (keine vorgerenderten Bilder mehr, Nutzer 2026-11-28). Der neueste Spieler gewinnt (auch
+aus der Weboberfläche über tools/emotion.sh), der Daemon trägt sich dafür in $FIFO.owner ein.
 Hochfahren (aufwachen) spielt rc.local, Herunterfahren (sleep) web/api.php.
 """
 from __future__ import annotations
@@ -16,15 +16,11 @@ import random
 import shutil
 import subprocess
 import time
-from pathlib import Path
 from typing import Callable
 
 from .config import EmotionCfg
 
 log = logging.getLogger(__name__)
-
-PLAYER = Path(__file__).resolve().parent.parent / "tools" / "emotion.sh"
-
 
 def active(fifo: str, max_age_s: float = 10.0) -> bool:
     """Spielt gerade irgendein Player (auch aus dem Web)? Eine verwaiste Besitzer-Datei
@@ -34,25 +30,6 @@ def active(fifo: str, max_age_s: float = 10.0) -> bool:
     except OSError:
         return False
     return st.st_size > 0 and time.time() - st.st_mtime < max_age_s
-
-
-LCD_FRAME_BYTES = 320 * 240 * 2
-
-
-def load_gaze(path: str, bins: int = 11, lids: int = 5) -> dict[tuple[int, int], bytes] | None:
-    """Augen-Atlas aus tools/eyes.py --gaze: {(Blick, Lid): RGB565}. None, wenn etwas fehlt."""
-    atlas = {}
-    for g in range(bins):
-        for l in range(lids):
-            try:
-                with open(os.path.join(path, f"g{g}_l{l}.raw"), "rb") as f:
-                    data = f.read()
-            except OSError:
-                return None
-            if len(data) != LCD_FRAME_BYTES:
-                return None
-            atlas[(g, l)] = data
-    return atlas
 
 
 class EmotionTrigger:
@@ -165,17 +142,16 @@ class Dudler:
 
 
 class Emotions:
-    """Startet den Player; aus, wenn EmotionCfg.dir fehlt (z. B. am PC)."""
+    """Emotionen über den Augengenerator, Geräusche über aplay; Emotionen aus ohne Generator (z. B. am PC)."""
 
     def __init__(self, cfg: EmotionCfg, fifo: str, augen=None):
-        self.cfg, self.fifo = cfg, fifo
+        self.cfg, self.fifo = cfg, fifo                # fifo: nur für $FIFO.owner (läuft gerade ein Ausdruck?)
         self.augen = augen                           # augen.Augen (Generator im Display-Daemon) oder None
-        self.enabled = bool(cfg.enabled and fifo and (augen is not None or os.path.isdir(cfg.dir) and PLAYER.exists()))
-        self._proc: subprocess.Popen | None = None
+        self.enabled = bool(cfg.enabled and fifo and augen is not None)
         self._snd_proc: subprocess.Popen | None = None
         self._aplay = shutil.which("aplay")
         self.stimme_datei = None                     # NN -> Pfad (stimme.Stimmen.datei), von __main__ gesetzt
-        self.farbe: str | None = None                # Augenfarbe (pet, erkannte Person): <dir>_<farbe>/, sonst dir
+        self.farbe: str | None = None                # Augenfarbe (pet, erkannte Person), None = Türkis
         self.sounds = {"gefunden": os.path.join(cfg.sound_dir, cfg.sound_found),
                        "verloren": os.path.join(cfg.sound_dir, cfg.sound_lost)}
         self.sound_enabled = bool(cfg.sound and self._aplay
@@ -189,7 +165,7 @@ class Emotions:
                                       self.sound if self.sound_enabled else None)
         self.dudler = Dudler(cfg.dudeln_start_s, cfg.dudeln_s)
         if cfg.enabled and not self.enabled:
-            log.info("Emotionen aus (%s oder %s fehlt)", cfg.dir, PLAYER)
+            log.info("Emotionen aus (kein Augengenerator, [emotion] augen_fifo)")
         if cfg.sound and not self.sound_enabled:
             log.info("Geräusche aus (aplay oder %s fehlt)", " / ".join(self.sounds.values()))
 
@@ -216,28 +192,13 @@ class Emotions:
         """Spielt gerade ein eigener Ton? (Die Schallortung hört dann weg.)"""
         return self._snd_proc is not None and self._snd_proc.poll() is None
 
-    def _play_display(self, name: str) -> None:
-        if self.augen is not None and self.augen.ausdruck(name, self.farbe):
-            log.info("Emotion %s (Augengenerator)", name)
-            return
-        d = os.path.join(self.cfg.dir, name)
-        if self.farbe:
-            df = os.path.join(f"{self.cfg.dir}_{self.farbe}", name)
-            if os.path.isdir(df):
-                d = df
-        if not os.path.isdir(d):
-            log.warning("Emotion %s fehlt in %s", name, self.cfg.dir)
-            return
-        if self._proc is not None:
-            self._proc.poll()                        # Zombie des Vorgängers abräumen
-        log.info("Emotion %s", name)
-        env = dict(os.environ, LCD_FIFO=self.fifo)
-        self._proc = subprocess.Popen([str(PLAYER), "play", d], env=env, stdin=subprocess.DEVNULL,
-                                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
     def play(self, name: str) -> None:
-        if self.enabled:
-            self._play_display(name)
+        if not self.enabled:
+            return
+        if self.augen.ausdruck(name, self.farbe):
+            log.info("Emotion %s", name)
+        else:
+            log.debug("Emotion %s: Augengenerator nicht erreichbar", name)
 
     def express(self, kind: str, name: str, urgent: bool = False) -> None:
         """Ereignis aus dem Modus pet. Dringendes unterbricht (der neueste Player gewinnt), alles andere

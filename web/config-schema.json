@@ -3036,7 +3036,7 @@
        "key": "eyes_fix_s",
        "typ": "float",
        "default": 1.5,
-       "hilfe": "Fixieren (Nutzer 2026-11-22): dieselbe Person so lange ununterbrochen im Blick und der Blick angekommen -> Augen zu Schlitzen (Lidstellung im Atlas, 0 offen .. 4 zu); 0 s = aus"
+       "hilfe": "Fixieren (Nutzer 2026-11-22): dieselbe Person so lange ununterbrochen im Blick und der Blick angekommen -> Augen zu Schlitzen (Lidstufe, 0 offen .. 4 zu); 0 s = aus"
       },
       {
        "key": "eyes_fix_lid",
@@ -3459,12 +3459,6 @@
        "hilfe": ""
       },
       {
-       "key": "gaze_dir",
-       "typ": "str",
-       "default": "/opt/xgonav/eyes_gaze",
-       "hilfe": "von tools/eyes.py --gaze (deploy/install.sh)"
-      },
-      {
        "key": "akku_gesetzt",
        "typ": "int",
        "default": 60,
@@ -3615,22 +3609,16 @@
        "hilfe": ""
       },
       {
-       "key": "dir",
-       "typ": "str",
-       "default": "/opt/xgonav/emotions",
-       "hilfe": "von tools/emotion.sh build (deploy/install.sh)"
-      },
-      {
        "key": "fifo",
        "typ": "str",
        "default": "/tmp/lcd0",
-       "hilfe": "unabhängig von output.lcd_fifo (Overlay)"
+       "hilfe": "nur $FIFO.owner: läuft gerade ein Ausdruck (Daemon, tools/emotion.sh)?"
       },
       {
        "key": "augen_fifo",
        "typ": "str",
        "default": "/tmp/lcd0.augen",
-       "hilfe": "Augengenerator im Display-Daemon (xgonav/augen.py): Befehle statt Bilder; \"\" = aus (dann Atlas und tools/emotion.sh wie früher). Fehlt der Daemon mit Generator, greift der alte Weg von selbst."
+       "hilfe": "Augengenerator im Display-Daemon (xgonav/augen.py): Emotionen und Augen des Modus pet als Befehle; \"\" = keine Augen. Ohne Daemon mit Generator bleibt das Display leer (keine vorgerenderten Bilder mehr seit 2026-11-28)."
       },
       {
        "key": "gap_s",

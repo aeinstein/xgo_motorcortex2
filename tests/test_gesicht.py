@@ -368,28 +368,6 @@ def test_augenfarbe_solange_sie_da_ist():
     assert b.augen is None
 
 
-def test_emotion_in_farbe(tmp_path):
-    from xgonav.emotion import Emotions
-    for d in ("emo/like", "emo_rot/like"):
-        (tmp_path / d).mkdir(parents=True)
-    e = Emotions.__new__(Emotions)
-    e.cfg = types.SimpleNamespace(dir=str(tmp_path / "emo"))
-    e.farbe, e._proc, e.fifo, e.augen = None, None, "/tmp/kein", None
-    gespielt = []
-    import xgonav.emotion as em
-    alt = em.subprocess.Popen
-    em.subprocess.Popen = lambda cmd, **kw: gespielt.append(cmd[-1]) or types.SimpleNamespace(poll=lambda: 0)
-    try:
-        e._play_display("like")
-        e.farbe = "rot"
-        e._play_display("like")
-        e.farbe = "lila"                                          # nicht gerendert: Standard
-        e._play_display("like")
-    finally:
-        em.subprocess.Popen = alt
-    assert gespielt == [str(tmp_path / "emo" / "like"), str(tmp_path / "emo_rot" / "like"), str(tmp_path / "emo" / "like")]
-
-
 MODELLE = ("models/face_detection_yunet_2023mar.onnx", "models/mobilefacenet_ncnn/model.ncnn.param")
 
 

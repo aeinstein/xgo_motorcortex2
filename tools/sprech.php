@@ -16,14 +16,14 @@
  *
  * Bild aufs Display: zweite Verbindung GET /?bild (eigene TCP-Verbindung, große Rahmen halten den Ton nicht
  * auf), nur während eines Gesprächs. Je Binärrahmen ein fertiges Bild RGB565 LE 320×240 (153 600 B, im Browser
- * umgerechnet), durchgereicht ins FIFO des Display-Daemons. Besitz wie tools/emotion.sh über FIFO.owner (PID):
- * xgonav/lcd.py gibt das FIFO dann frei, ältere Emotions-Player beenden sich. Startet jemand eine Emotion,
+ * umgerechnet), durchgereicht ins FIFO des Display-Daemons. Besitz über FIFO.owner (PID): xgonav/lcd.py gibt das
+ * FIFO dann frei, ein laufender Ausdruck des Augengenerators bricht ab. Startet jemand eine Emotion,
  * wird das laufende Bild fertig geschrieben und bis zu ihrem Ende nichts gezeigt. Am Ende läuft „cute“.
  * Server → Browser: Text {"bild": "an"|"aus", "grund": "..."}.
  *
  * Umgebung (für Tests am PC): XGO_SPRECH_PORT (8090), XGO_STATUS_URL (http://127.0.0.1:8088/status),
  * XGO_ARECORD, XGO_APLAY (ganze Befehlszeile, durch Leerzeichen getrennt), XGO_LCD_FIFO (/tmp/lcd0),
- * XGO_LCD_ENDE (Befehl nach dem Bild, Default emotion.sh play …/cute).
+ * XGO_LCD_ENDE (Befehl nach dem Bild, Default emotion.sh play cute).
  */
 declare(strict_types=1);
 
@@ -56,8 +56,7 @@ define('APLAY', befehl('XGO_APLAY', ['aplay', '-q', '-D', 'plughw:CARD=wm8960sou
 define('LCD_FIFO', getenv('XGO_LCD_FIFO') ?: '/tmp/lcd0');
 define('LCD_OWNER', LCD_FIFO . '.owner');
 define('LCD_ENDE', getenv('XGO_LCD_ENDE') !== false ? (string)getenv('XGO_LCD_ENDE')
-    : (is_file(__DIR__ . '/emotion.sh') && is_dir(dirname(__DIR__) . '/emotions/cute')
-        ? escapeshellarg(__DIR__ . '/emotion.sh') . ' play ' . escapeshellarg(dirname(__DIR__) . '/emotions/cute') : ''));
+    : (is_file(__DIR__ . '/emotion.sh') ? escapeshellarg(__DIR__ . '/emotion.sh') . ' play cute' : ''));
 
 if (function_exists('pcntl_signal')) {
     pcntl_signal(SIGPIPE, SIG_IGN);     // aplay oder Browser weg mitten im Schreiben: nicht den Dienst beenden

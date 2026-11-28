@@ -46,22 +46,9 @@ for f in models/floornet/*.bin; do [ -f "$f" ] && modell "$f" "$DEST/$f"; done
 make -C "$DEST/xgonav/native" || echo "Hinweis: C++-Kern nicht gebaut – Ego-Motion läuft in Python"
 # Kamera direkt über libcamera; nach jedem apt upgrade von libcamera neu bauen (keine stabile ABI)
 make -C "$DEST/xgonav/native" cam || echo "Hinweis: libxgocam.so nicht gebaut – Kamera über picamera2"
-# Emotionen einmalig als RGB565 erzeugen (am Rider läuft davon nichts je Bild).
-echo "Erzeuge Emotionen (einmalig) ..."
-"$DEST/venv/bin/python" tools/eyes.py "$DEST/emotions" || echo "Hinweis: Emotionen nicht erzeugt"
+# Emotionen und Augen zeichnet der Display-Daemon selbst (Augengenerator, deploy/install-all.sh baut ihn)
 # Geräusche (freudig/traurig bei Person erkannt/verloren), Wiedergabe per aplay
 "$DEST/venv/bin/python" tools/sounds.py "$DEST/sounds"
-# Augen des Modus pet (einmalig; am Rider läuft davon nichts je Bild)
-"$DEST/venv/bin/python" tools/eyes.py --gaze "$DEST/eyes_gaze" || echo "Hinweis: Augen-Atlas nicht erzeugt – Modus pet zeigt das Overlay"
-# Augenfarben je Person (tools/eyes.py PALETTE; Web: Gesichter -> Augen): je Farbe Emotionen + Atlas (~170 MB),
-# nur neu, wenn eyes.py sich geändert hat (Stempel)
-STEMPEL=$(md5sum tools/eyes.py | cut -c1-32)
-for F in $("$DEST/venv/bin/python" tools/eyes.py --palette); do
-    if [ "$(cat "$DEST/eyes_gaze_$F/.stempel" 2>/dev/null)" != "$STEMPEL" ]; then
-        echo "Erzeuge Augenfarbe $F (einmalig) ..."
-        "$DEST/venv/bin/python" tools/eyes.py "$DEST/emotions_$F" --farbe "$F"             && "$DEST/venv/bin/python" tools/eyes.py --gaze "$DEST/eyes_gaze_$F" --farbe "$F"             && echo "$STEMPEL" > "$DEST/eyes_gaze_$F/.stempel" || echo "Hinweis: Augenfarbe $F nicht erzeugt"
-    fi
-done
 # Stimmproben des Modus pet ([stimme] dir), bleiben bei jedem Einspielen erhalten
 mkdir -p "$DEST/stimmen"
 # Angelernte Gesichter ([gesicht] dir: <Name>/NN.npy + NN.jpg), bleiben ebenso erhalten; Modelle: tools/export_face.sh

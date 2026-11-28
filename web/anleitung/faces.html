@@ -1434,7 +1434,7 @@
 </tr>
 <tr>
 <td>Eye colour</td>
-<td>per person (<code>augen</code> in <code>gruss.json</code>, <code>tools/eyes.py</code> <code>PALETTE</code>): <code>PetBrain.augen</code> set before the greeting, held while recognised and <code>eye_hold_s</code> = 20 s after; emotions from <code>emotions_&lt;colour&gt;/</code>, pet eyes from <code>eyes_gaze_&lt;colour&gt;/</code> (<a href="display-emotions.html">display-emotions.md</a>); no per-frame cost</td>
+<td>per person (<code>augen</code> in <code>gruss.json</code>, <code>tools/eyes.py</code> <code>PALETTE</code>): <code>PetBrain.augen</code> set before the greeting, held while recognised and <code>eye_hold_s</code> = 20 s after; xgonav sends <code>farbe NAME</code> to the eye generator, for living eyes and emotions (<a href="display-emotions.html">display-emotions.md</a>); no per-frame cost</td>
 </tr>
 <tr>
 <td>Display</td>
@@ -1502,7 +1502,7 @@
 </tr>
 <tr>
 <td>Greeting</td>
-<td>per name: emotion (<code>/opt/xgonav/emotions</code>), eye colour (rendered colours, <code>eyes_gaze_*</code>) and sound (<code>pet_&lt;event&gt;_*.wav</code> or confirmed voice sample <code>stimme:NN</code>) → <code>api.php?a=gesicht_gruss</code> → <code>POST /gesicht/gruss?name=&amp;emotion=&amp;sound=&amp;augen=</code> → <code>&lt;name&gt;/gruss.json</code>; empty = default, <code>-</code> = none. A voice sample can be replaced unless uploaded or 📌-protected</td>
+<td>per name: emotion (expressions of the eye generator, <code>/tmp/lcd0.augen.namen</code>), eye colour (<code>PALETTE</code> names) and sound (<code>pet_&lt;event&gt;_*.wav</code> or confirmed voice sample <code>stimme:NN</code>) → <code>api.php?a=gesicht_gruss</code> → <code>POST /gesicht/gruss?name=&amp;emotion=&amp;sound=&amp;augen=</code> → <code>&lt;name&gt;/gruss.json</code>; empty = default, <code>-</code> = none. A voice sample can be replaced unless uploaded or 📌-protected</td>
 </tr>
 <tr>
 <td>Advice</td>
