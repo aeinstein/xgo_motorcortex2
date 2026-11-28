@@ -27,7 +27,7 @@ Recognises learned faces in mode `pet` and greets them. Since 2026-11-27; first 
 | MobileFaceNet | 892 MFLOP per face; PC 9.7 ms (2 threads), CM4 estimated 70–100 ms (YOLO 256 px ≈ 1 GFLOP takes 93 ms) — **not measured** |
 | YuNet | PC 2 ms per head crop |
 | Worst case | 2 Hz × one face on `detector_cpus` (2–3), sequential with YOLO: detector rate drops while an unnamed face ≥ 40 px is visible |
-| Learning | once per uploaded photo, in the web thread |
+| Learning | once per uploaded photo, in the web thread; learning mode see below |
 
 ## Models
 
@@ -43,6 +43,20 @@ Recognises learned faces in mode `pet` and greets them. Since 2026-11-27; first 
 | Delete | ✕ per photo or name → `POST /gesicht/loeschen?name=&nr=`; the last photo also removes the greeting |
 | Greeting | per name: emotion (expressions of the eye generator, `/tmp/lcd0.augen.namen`), eye colour (`PALETTE` names) and sound (`pet_<event>_*.wav` or confirmed voice sample `stimme:NN`) → `api.php?a=gesicht_gruss` → `POST /gesicht/gruss?name=&emotion=&sound=&augen=` → `<name>/gruss.json`; empty = default, `-` = none. A voice sample can be replaced unless uploaded or 📌-protected |
 | Advice | 10–20 photos, different light and angles, also from below; delete blurred or skewed crops |
+| Rename | ✎ per name → `api.php?a=gesicht_umbenennen` → `POST /gesicht/umbenennen?name=&neu=`; existing name: photos merged (≤ 50), greeting of the target stays (else the moved one); memory entry follows (merged: encounters added, lower trust, latest last seen); tracks carrying the old name get the new one |
+
+## Learning mode (mode `anlernen`, since 2026-11-28, unit tests only)
+
+| Item | Value |
+|---|---|
+| Start | button **Anlernen** in the card → `api.php?a=gesicht_anlernen` → `POST /gesicht/anlernen` → `set_mode("anlernen")`; needs recognition on (models + detector); also lying (`LIEGEND_OK`) |
+| Behaviour | stands still (`behaviors.Anlernen`), detector gets frames (`App.DET_MODES`); after the end `App._lern_fertig` returns to the mode before (follow/approach with its class), if not allowed any more: `idle`; any mode change cancels |
+| Collect | detector thread after YOLO, ≤ `max_hz` (2/s): largest face ≥ `min_face_px` over all person boxes (`Gesichter.lern_bild`); dropped: cosine ≥ 0.97 to a candidate (near duplicate), < 0.3 to the candidates' mean (other person) |
+| End | always after the full 30 s (`LERN_S`, user 2026-11-28: different poses); `LERN_KAND` = 80 only bounds RAM (over it the most redundant candidate is dropped; at 2 Hz at most 60); cancel: `POST /gesicht/anlernen?stop=1` |
+| Choose | user 2026-11-28: at least 20, the most different: greedy farthest point (`gesicht.unaehnlichste`: start at the candidate closest to the mean, then the one with the smallest maximum similarity to those chosen); fewer than 20 → nothing stored |
+| Store | `PersonN` (lowest free N) as `00..19.npy` + `.jpg`, written once in the detector thread; result names the most similar known name ≥ `match_sim` (mean over the new photos of the per-name maximum) |
+| Status | `GET /status` → `anlernen`: running `{aktiv, n, ziel, max, rest_s, doppelt, fremd}`, else last result `{aktiv: false, ok, name, n, kandidaten, aehnelt, sim}` or `{ok: false, fehler}` |
+| Cost on the CM4 | normal operation: one attribute check per detector run; while learning: YuNet + MobileFaceNet ≈ 130–145 ms per candidate at ≤ 2 Hz (≤ 60 × ≈ 8.4 s CPU in 30 s, YOLO rate drops meanwhile); end: ≤ 60 × 60 × 512 products + 20 × (2 KB + ~5 KB) writes once; candidates in RAM ≤ 80 × 39 KB |
 
 ## Limits
 

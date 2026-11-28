@@ -146,6 +146,18 @@ class Idle(Behavior):
         return Command(0.0, 0.0, None, "idle")
 
 
+class Anlernen(Behavior):
+    """Gesicht anlernen (gesicht.Gesichter.lern_*): steht still, der Detektor sammelt; die App schaltet danach zurück."""
+    name = "anlernen"
+    info = None                       # App: callable -> dict (Gesichter.lern_info)
+
+    def step(self, w: World) -> Command:
+        i = self.info() if self.info is not None else None
+        if i and i.get("aktiv"):
+            return Command(0.0, 0.0, None, "Anlernen: %d Bilder, noch %.0f s" % (i["n"], i["rest_s"]))
+        return Command(0.0, 0.0, None, "Anlernen")
+
+
 class Manual(Behavior):
     """Handsteuerung aus der Weboberfläche. Der Browser schickt Sollwerte, solange eine
     Fahrtaste gedrückt ist; bleiben sie länger als HOLD_S aus (Verbindung weg, Taste los),
@@ -1988,6 +2000,7 @@ def make_behavior(name: str, cfg: BehaviorCfg, rcfg: RobotCfg, target: str | Non
     return {"idle": lambda: Idle(cfg, rcfg),
             "pet": pet,
             "manual": lambda: Manual(cfg, rcfg),
+            "anlernen": lambda: Anlernen(cfg, rcfg),
             "follow": lambda: Follow(cfg, rcfg, target, hcfg=hcfg, seek=has_map),
             "explore": lambda: MapExplore(cfg, rcfg, hcfg, ecfg) if has_map else Explore(cfg, rcfg),
             "approach": lambda: Approach(cfg, rcfg, target),

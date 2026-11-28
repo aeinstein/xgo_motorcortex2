@@ -259,6 +259,7 @@ class App:
         self.ortung = None             # ortung.Ortung (Schallrichtung), von __main__ gesetzt (nur am Rider)
         self.stimmen = None            # stimme.Stimmen (Nachplappern in pet), hängt an der Ortung
         self.gesichter: Gesichter | None = None   # Gesichter wiedererkennen (gesicht.py), in run() geladen
+        self._lern_zurueck: tuple[str, str | None] = ("idle", None)   # Modus vor anlernen
         # Fahr-Aktion der Firmware (robot.FW_ACTIONS): vom Web angefragt, im Regelschritt geprüft und gestartet
         self._action_pending: int | None = None
         self._action_note: tuple[str, float] | None = None   # (Meldung, anzeigen bis) für die Statuszeile
@@ -273,11 +274,11 @@ class App:
 
     # Nur diese Modi bekommen Bilder für den Detektor (YOLO, ~1 Kern am CM4); sonst schläft sein Thread.
     # Erkennungen dienen nur dem Ziel, nie Freiraum oder Bahnprüfung (Nutzer 2026-11-13).
-    DET_MODES = {"follow", "approach", "pet"}
+    DET_MODES = {"follow", "approach", "pet", "anlernen"}
     # Liegt er (abgesetzt, gefallen), enden alle Modi außer diesen sofort (idle). pet legt sich selbst hin und steht
     # wieder auf, Hand kann ihn aufstellen (Nutzer 2026-11-24: explore sperrte liegend Lücken und trug die
     # Merkkarte in die Raumkarte ein)
-    LIEGEND_OK = {"idle", "manual", "pet"}
+    LIEGEND_OK = {"idle", "manual", "pet", "anlernen"}
     TARGET_MODES = {"follow", "approach"}
 
     def _pose_unbekannt(self, grund: str) -> None:
@@ -352,6 +353,10 @@ class App:
                 raise ModeNotAllowed(f"Modus {name} braucht die Objekterkennung: YOLO ist aus")
             if cls not in avail:
                 raise ModeNotAllowed(f"Ziel {cls!r} erkennt YOLO nicht (aktiv: {', '.join(avail)})")
+        if name == "anlernen":
+            g = getattr(self, "gesichter", None)
+            if g is None or not g.ok:
+                raise ModeNotAllowed("Anlernen braucht die Gesichtserkennung (Modelle oder Detektor fehlen)")
         if name == "home" and getattr(self, "gridmap", None) is None:
             raise ModeNotAllowed("Modus home braucht die Raumkarte ([grid] enabled)")
         gm = getattr(self, "gridmap", None)
@@ -382,6 +387,8 @@ class App:
         if name == "pet":                                    # Begrüßung je Person (Web); Gesichter erst in run()
             b.brain.gruss_fuer = lambda n: self.gesichter.gruss(n) if self.gesichter is not None else {}
             b.brain.gedaechtnis = self.gedaechtnis       # übersteht den Moduswechsel
+        if name == "anlernen":
+            b.info = lambda: self.gesichter.lern_info() if self.gesichter is not None else None
         return b
 
     def set_route(self, points, loop: bool, zones=None) -> list[str]:
@@ -1060,7 +1067,13 @@ class App:
             if self._pending_mode:
                 name, target = self._pending_mode
                 self._pending_mode = None
+                alt = self.behavior.name
                 self._pet_leave()
+                if name == "anlernen" and self.gesichter is not None:
+                    if alt != "anlernen":
+                        self._lern_zurueck = (alt, getattr(self.behavior, "cls", None)
+                                              if alt in self.TARGET_MODES else None)
+                    self.gesichter.lern_start()
                 self.behavior = self._make(name, target)
                 if self.gridmap is not None:
                     self.gridmap.plan = []
@@ -1195,6 +1208,10 @@ class App:
             named = None              # Gesichtsprüfung nur in [gesicht] modes; benannte Tracks nicht noch einmal
             if g is not None and g.ok and g.merkmale and self.behavior.name in self.cfg.gesicht.modes:
                 named = [t.box for t in self.tracker.tracks if t.who]
+            elif g is not None and self.behavior.name == "anlernen":
+                named = []
+                if not g.lernt and not self._pending_mode:      # fertig oder abgebrochen: zurück
+                    self._lern_fertig()
             self.det.offer(f, ego.sharpness, self.ego.sharpness_median(), named)
         tm.mark("det")
 
@@ -1680,9 +1697,32 @@ class App:
             grund, b.want_ruhe = b.want_ruhe, None
             self._pet_ruhe(grund)
 
+    def gesicht_umbenennen(self, alt: str, neu: str) -> None:
+        """Web: angelernten Namen umbenennen (auch zusammenlegen). Gedächtnis und Tracks mit dem alten Namen ziehen
+        mit. Einmal je Klick im Web-Thread."""
+        self.gesichter.umbenennen(alt, neu)
+        if alt != neu:
+            self.gedaechtnis.umbenennen(alt, neu)
+            for t in list(self.tracker.tracks):
+                if getattr(t, "who", None) == alt:
+                    t.who = neu
+        log.info("Gesicht %s -> %s", alt, neu)
+
+    def _lern_fertig(self) -> None:
+        """Anlernen vorbei: zurück in den Modus davor; geht der nicht mehr (liegt, blind, Pose), idle."""
+        name, target = self._lern_zurueck
+        try:
+            self.set_mode(name, target)
+        except (ModeNotAllowed, KeyError) as e:
+            log.info("Anlernen vorbei, %s geht nicht (%s): idle", name, e)
+            with self._mode_lock:
+                self._pending_mode = ("idle", None)
+
     def _pet_leave(self) -> None:
         """Beim Verlassen von pet: Höhe, Roll und Detektorrate zurück."""
         b = self.behavior
+        if b.name == "anlernen" and self.gesichter is not None:
+            self.gesichter.lern_abbrechen("abgebrochen (Moduswechsel)")
         if b.name != "pet":
             return
         if self.emotions is not None:

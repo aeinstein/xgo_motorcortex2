@@ -630,6 +630,11 @@ details.extras[open]>summary{margin-bottom:8px}
     <summary><h2>Gesichter</h2><span class="leise" id="gesichter-zustand">eingeklappt: kein Nachladen</span></summary>
     <div class="unter">Angelernte Gesichter <button class="rechts" onclick="gesichterLaden()" title="Liste neu von der Platte lesen">Neu laden</button></div>
     <div id="gesichter-liste"></div>
+    <div class="knoepfe">
+      <button id="anlern-start" onclick="anlernen(false)" title="Person vor die Kamera (bis ~1 m, Gesicht zur Kamera, Kopf langsam drehen): 30 s lang Bilder in verschiedenen Posen, die 20 unähnlichsten werden PersonN; danach umbenennen (✎)">Anlernen</button>
+      <button id="anlern-stop" onclick="anlernen(true)" hidden>Abbrechen</button>
+      <span class="leise" id="anlern-zustand"></span>
+    </div>
     <div class="knoepfe samples-hoch">
       <input type="text" id="gesicht-name" maxlength="32" size="10" placeholder="Name" title="Buchstaben, Ziffern, _ und -">
       <input type="file" id="gesicht-dateien" accept="image/*" multiple>
@@ -649,6 +654,10 @@ details.extras[open]>summary{margin-bottom:8px}
         gleich wieder löschen (✕). 10–20 Fotos, verschiedene Licht- und Blickwinkel, gern auch von unten.
         Erkannt wird nur bis etwa 1,2 m (das Gesicht braucht 40 px), stehend ist der Kopf aus der Höhe des Riders
         erst weiter weg im Bild: am besten sitzend, kniend oder heruntergebeugt. Liste nur beim Aufklappen.</p>
+      <p>Anlernen am Rider: Der Modus Anlernen steht still (auch liegend) und sammelt 30 s lang Bilder der Person vor
+        der Kamera (Kopf dabei drehen, verschiedene Posen) (das größte Gesicht, fast gleiche und fremde verworfen); die 20 unähnlichsten werden ein
+        neuer Eintrag PersonN, mit weniger als 20 nichts. Danach geht es in den Modus davor zurück. Umbenennen mit ✎;
+        ein schon vorhandener Name legt beide zusammen (Fotos und Gedächtnis).</p>
     </details>
   </details>
   <details class="karte extras" id="extras" ontoggle="extrasUmschalten()">
@@ -984,6 +993,13 @@ const EN = {
   'Wird im Browser in 16 kHz mono gewandelt (höchstens 3 s) und am Rider wie eine gelernte Stimme gefiltert; hochgeladene fallen nie raus':
     'Converted to 16 kHz mono in the browser (at most 3 s) and filtered on the Rider like a learned voice; uploaded ones are never replaced',
   'Gesichter': 'Faces', 'Angelernte Gesichter': 'Learned faces', 'noch keine angelernt': 'none learned yet',
+  'Anlernen': 'Learn', 'umbenennen (bestehender Name: zusammenlegen)': 'rename (existing name: merge)',
+  'Neuer Name für {n} (gibt es ihn schon, werden die Fotos zusammengelegt):': 'New name for {n} (if it exists, the photos are merged):',
+  '{n} Bilder (nötig {z}) · noch {s} s': '{n} images (need {z}) · {s} s left',
+  '{name} angelegt: {n} von {k} Bildern': '{name} created: {n} of {k} images', 'ähnelt {w} ({s})': 'resembles {w} ({s})',
+  'nichts angelegt: {e}': 'nothing created: {e}',
+  'Person vor die Kamera (bis ~1 m, Gesicht zur Kamera, Kopf langsam drehen): 30 s lang Bilder in verschiedenen Posen, die 20 unähnlichsten werden PersonN; danach umbenennen (✎)':
+    'Person in front of the camera (up to ~1 m, face the camera, turn the head slowly): images in different poses for 30 s, the 20 most different become PersonN; rename afterwards (✎)',
   'erst einen Namen eingeben': 'enter a name first', 'erst Fotos wählen': 'choose photos first',
   '{n} Fotos': '{n} photos', '{a} Namen · {b} Fotos': '{a} names · {b} photos', 'Foto löschen': 'Delete photo',
   'Alle Fotos von {n} löschen?': 'Delete all photos of {n}?', 'alle löschen': 'delete all',
@@ -1039,7 +1055,11 @@ const EN_HTML = {
         Rider stores: delete blurred or skewed ones right away (✕). 10–20 photos, different light and angles, also
         from below. Recognition only up to about 1.2 m (the face needs 40 px); from the Rider's height a standing
         person's head only enters the image further away: best sitting, kneeling or bending down. The list is read
-        only when opened.</p>`,
+        only when opened.</p>
+      <p>Learning on the Rider: mode Learn stands still (also lying) and collects images of the person in front of the
+        camera for 30 s (turn the head, different poses) (largest face, near-duplicates and other people dropped); the 20 most different become a
+        new entry PersonN, fewer than 20 nothing. Afterwards it returns to the previous mode. Rename with ✎; an existing
+        name merges both (photos and memory).</p>`,
   'hilfe-lage': `<summary>Camera height, roll, stand up and sit down</summary>
       <p>Camera height: value of the floor geometry from <code>cam_h_u8</code> (lens centre above floor, setpoint u8
         in the tooltip); the legs need about 1 s afterwards. The value matches the folding-rule measurement
@@ -1147,7 +1167,7 @@ const felder = [
 ];
 const ERKUNDEN = {scan: 'Rundumblick', ziel: 'fährt zu einer Stelle', face: 'schaut', settle: 'schaut', backup: 'setzt zurück',
   wander: 'befreit sich', heim: 'fährt zum Start', fertig: 'fertig'};
-const MODI = {idle: 'Idle', manual: 'Hand', follow: 'Folgen', explore: 'Erkunden', approach: 'Anfahren', home: 'Zum Start', patrol: 'Streife', pet: 'Haustier'};
+const MODI = {idle: 'Idle', manual: 'Hand', follow: 'Folgen', explore: 'Erkunden', approach: 'Anfahren', home: 'Zum Start', patrol: 'Streife', pet: 'Haustier', anlernen: 'Anlernen'};
 const STREIFE = {fahrt: 'fährt', schau: 'schaut', backup: 'setzt zurück', heim: 'fährt zum Start', fertig: 'fertig'};
 const esc = t => String(t ?? '-').replace(/[<&]/g, c => c === '<' ? '&lt;' : '&amp;');
 const $ = id => document.getElementById(id);
@@ -1615,6 +1635,7 @@ function statusZeigen(s, fehler) {
     hoeheAusStatus = s.height_u8 != null;
     if (hoeheAusStatus) hoeheSetzen(s.height_u8);
     radarStatus(s.ortung);
+    anlernStatus(s.anlernen);
     $('kurz').innerHTML = felder.map(([k, f, breit]) =>
       '<div class="kachel' + (breit ? ' breit' : '') + '"><div class="k">' + tr(k) + '</div><div class="w">' + esc(f(s)) + '</div></div>').join('');
     document.querySelectorAll('[data-modus]').forEach(b => b.classList.toggle('aktiv', b.dataset.modus === s.mode));
@@ -3399,6 +3420,7 @@ async function gesichterLaden() {
       m.zuletzt ? tr('zuletzt {d}', {d: gedVor(Date.now() / 1000 - m.zuletzt)}) : tr('noch nicht gesehen'),
       tr('{n} Begegnungen', {n: m.begegnungen}), tr('Vertrauen {v}', {v: m.vertrauen.toFixed(2)})].join(' · ')) + '</div>';
     return '<div class="unter">' + n + ' · ' + esc(tr('{n} Fotos', {n: g.fotos.length})) +
+      ' <button title="' + esc(tr('umbenennen (bestehender Name: zusammenlegen)')) + `" onclick="gesichtUmbenennen('${n}')">✎</button>` +
       ' <button title="' + esc(tr('alle löschen')) + `" onclick="gesichtLoeschen('${n}', '')">✕</button></div>` + gedText +
       '<div style="margin:2px 0" title="' + esc(tr('Begrüßung, wenn der Haustier-Modus diese Person erkennt; Standard = [pet] greet_emotion/greet_sound, Augen türkis')) +
       '">' + esc(tr('Begrüßung')) + ' ' + auswahl('emotion', d.emotionen, d.emotionen) + ' ' +
@@ -3437,6 +3459,33 @@ async function gesichterHochladen() {
   z.textContent = tr('{ok} von {n} angelernt', {ok, n: dateien.length}) + (fehler.length ? ' · ' + fehler.join(' · ') : '');
   $('gesicht-dateien').value = '';
   gesichterLaden();
+}
+async function gesichtUmbenennen(name) {
+  const neu = (prompt(tr('Neuer Name für {n} (gibt es ihn schon, werden die Fotos zusammengelegt):', {n: name}), name) || '').trim();
+  if (!neu || neu === name) return;
+  if (!/^[A-Za-z0-9_-]{1,32}$/.test(neu)) { zeige(tr('Buchstaben, Ziffern, _ und -')); return; }
+  if (await befehl('gesicht_umbenennen', {name, neu}, true)) gesichterLaden();
+}
+// Anlernmodus: Fortschritt aus status.anlernen (Live-Strom), nach dem Ergebnis die Liste einmal neu
+let anlernT = null;
+function anlernen(stop) { return befehl('gesicht_anlernen', stop ? {stop: '1'} : {}); }
+function anlernStatus(a) {
+  const aktiv = !!(a && a.aktiv);
+  $('anlern-start').hidden = aktiv;
+  $('anlern-stop').hidden = !aktiv;
+  const z = $('anlern-zustand');
+  if (!a) { z.textContent = ''; return; }
+  if (aktiv) {
+    z.textContent = tr('{n} Bilder (nötig {z}) · noch {s} s', {n: a.n, z: a.ziel, s: Math.round(a.rest_s)});
+    return;
+  }
+  z.textContent = a.ok ? tr('{name} angelegt: {n} von {k} Bildern', {name: a.name, n: a.n, k: a.kandidaten})
+      + (a.aehnelt ? ' · ' + tr('ähnelt {w} ({s})', {w: a.aehnelt, s: a.sim.toFixed(2)}) : '')
+    : tr('nichts angelegt: {e}', {e: a.fehler});
+  if (a.t !== anlernT) {
+    if (anlernT !== null && a.ok && $('gesichtkarte').open) gesichterLaden();
+    anlernT = a.t;
+  }
 }
 async function gesichtGruss(name) {
   await befehl('gesicht_gruss', {name, emotion: $('gruss-emotion-' + name).value, sound: $('gruss-sound-' + name).value,

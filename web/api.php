@@ -547,6 +547,16 @@ switch ($a) {
             antwort(400, json_encode(['error' => 'Name oder Nummer ungültig']));
         }
         xgonav('POST', '/gesicht/loeschen?name=' . rawurlencode($n) . ($nr !== '' ? '&nr=' . $nr : ''));
+    case 'gesicht_anlernen':
+        // Modus anlernen: die Person vor der Kamera als PersonN (20 unähnlichste von bis zu 40 Bildern); stop=1 bricht ab
+        xgonav('POST', '/gesicht/anlernen' . (($_GET['stop'] ?? '') === '1' ? '?stop=1' : ''));
+    case 'gesicht_umbenennen':
+        $n = $_GET['name'] ?? '';
+        $neu = $_GET['neu'] ?? '';
+        if (!preg_match('/^[A-Za-z0-9_-]{1,32}$/', $n) || !preg_match('/^[A-Za-z0-9_-]{1,32}$/', $neu)) {
+            antwort(400, json_encode(['error' => 'Name ungültig (Buchstaben, Ziffern, _ und -)']));
+        }
+        xgonav('POST', '/gesicht/umbenennen?' . http_build_query(['name' => $n, 'neu' => $neu]));
     case 'gesicht_gruss':
         // Begrüßung je Person: leer = Standard [pet] greet_*, "-" = keine; Ton auch stimme:NN (Stimmprobe)
         $n = $_GET['name'] ?? '';

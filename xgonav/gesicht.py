@@ -33,6 +33,30 @@ EMO_RE = re.compile(r"^(-|[A-Za-z]{1,32})?$")                  # "-" = keine, le
 TON_RE = re.compile(r"^(-|[a-z]{1,32}|stimme:\d\d)?$")         # Ereignis pet_<ton>_*.wav oder Stimmprobe NN
 AUGEN_RE = re.compile(r"^([a-z]{1,16})?$")                     # Farbe aus tools/eyes.py PALETTE, leer = Türkis
 FELDER = ("emotion", "sound", "augen")
+# Anlernmodus (Gesichter.lern_*): so viele Bilder je neuer Person, gesammelt über volle LERN_S (Nutzer 2026-11-28:
+# 30 s, damit verschiedene Posen dabei sind); LERN_KAND begrenzt nur den Speicher (bei max_hz 2: höchstens 60)
+LERN_ZIEL = 20
+LERN_KAND = 80
+LERN_S = 30.0
+LERN_DOPPELT = 0.97               # Kosinus zu einem Kandidaten ab hier: fast dasselbe Bild, verworfen
+LERN_FREMD = 0.3                  # Kosinus zum Mittel der Kandidaten darunter: andere Person, verworfen
+
+
+def unaehnlichste(V: np.ndarray, k: int) -> list[int]:
+    """k Zeilen von V (L2-normiert), die einander am wenigsten ähneln: Start mit der typischsten (am nächsten am
+    Mittel, kein Ausreißer), dann je Schritt die, deren größte Ähnlichkeit zu den gewählten am kleinsten ist."""
+    n = len(V)
+    if n <= k:
+        return list(range(n))
+    S = V @ V.T
+    wahl = [int(np.argmax(V @ V.mean(axis=0)))]
+    nah = S[wahl[0]].copy()
+    for _ in range(k - 1):
+        nah[wahl] = np.inf
+        j = int(np.argmin(nah))
+        wahl.append(j)
+        nah = np.maximum(nah, S[j])
+    return sorted(wahl)
 
 
 class GesichtFehler(ValueError):
@@ -74,6 +98,8 @@ class Gesichter:
         self.merkmale: dict[str, np.ndarray] = {}    # Name -> (n, d), L2-normiert
         self.gruesse: dict[str, dict] = {}           # Name -> eigene Begrüßung (gruss.json)
         self.ms = 0.0                                # zuletzt je Prüfung (Finden + Merkmal), geglättet
+        self._lern: dict | None = None               # laufendes Anlernen (lern_start)
+        self.lern_ergebnis: dict | None = None       # letztes Ergebnis fürs Web
 
     # ------------------------------------------------------------------ Laden
     def start(self) -> bool:
@@ -245,6 +271,156 @@ class Gesichter:
             fh.write(jpg.tobytes())
         self.laden()
         return nn, jpg.tobytes()
+
+    # ------------------------------------------------------------------ Anlernmodus (Modus anlernen)
+    # Nutzer 2026-11-28: 20 Bilder der gesehenen Person, Eintrag PersonN, im Web umbenennen; mindestens 20, davon die
+    # unähnlichsten. Gesammelt wird im Detektor-Thread (lern_bild), höchstens [gesicht] max_hz, immer volle LERN_S
+    # (verschiedene Posen); dann die LERN_ZIEL unähnlichsten (gierig: je Schritt der Kandidat, dessen
+    # größte Ähnlichkeit zu den schon gewählten am kleinsten ist), darunter nichts.
+    def lern_start(self) -> None:
+        if not self.ok:
+            raise GesichtFehler("Gesichtserkennung aus (Modelle fehlen?)")
+        with self._lock:
+            self._lern = {"t0": time.monotonic(), "kand": [], "doppelt": 0, "fremd": 0}
+            self.lern_ergebnis = None
+
+    def lern_abbrechen(self, grund: str = "abgebrochen") -> None:
+        with self._lock:
+            if self._lern is not None:
+                self._lern = None
+                self.lern_ergebnis = {"ok": False, "fehler": grund, "t": time.time()}
+                log.info("Anlernen %s", grund)
+
+    @property
+    def lernt(self) -> bool:
+        return self._lern is not None
+
+    def lern_info(self) -> dict | None:
+        L, e = self._lern, self.lern_ergebnis
+        if L is None:
+            return None if e is None else {"aktiv": False, **e}
+        return {"aktiv": True, "n": len(L["kand"]), "ziel": LERN_ZIEL, "max": LERN_KAND,
+                "rest_s": round(max(0.0, LERN_S - (time.monotonic() - L["t0"])), 1),
+                "doppelt": L["doppelt"], "fremd": L["fremd"]}
+
+    def lern_bild(self, bgr: np.ndarray, dets) -> None:
+        """Detektor-Thread, je Lauf im Modus anlernen: größtes Gesicht aller Personenboxen als Kandidat."""
+        L = self._lern
+        if L is None:
+            return
+        if time.monotonic() - L["t0"] >= LERN_S:
+            return self._lern_ende()
+        H, W = bgr.shape[:2]
+        best = None
+        t0 = time.perf_counter()
+        with self._lock:
+            for d in dets:
+                if d.cls != "person":
+                    continue
+                kb = kopf_box(d.box, W, H)
+                if kb is None:
+                    continue
+                x1, y1, x2, y2 = kb
+                aus = bgr[y1:y2, x1:x2]
+                for f in self._finden(aus):
+                    if f[0][2] >= self.cfg.min_face_px and (best is None or f[0][2] * f[0][3] > best[1][0][2] * best[1][0][3]):
+                        best = (aus, f)
+            if best is None:
+                return
+            al = ausrichten(best[0], best[1][1])
+            v = self._merkmal(al)
+        ms = (time.perf_counter() - t0) * 1000
+        self.ms = 0.8 * self.ms + 0.2 * ms if self.ms else ms
+        if self._lern is not L:            # inzwischen abgebrochen
+            return
+        kand = L["kand"]
+        if kand:
+            V = np.stack([k[0] for k in kand])
+            m = V.mean(axis=0)
+            m /= max(float(np.linalg.norm(m)), 1e-9)
+            if float(m @ v) < LERN_FREMD:          # andere Person ins Bild gekommen
+                L["fremd"] += 1
+                return
+            if float(np.max(V @ v)) >= LERN_DOPPELT:    # fast dasselbe Bild
+                L["doppelt"] += 1
+                return
+        kand.append((v, al))
+        if len(kand) > LERN_KAND:                  # nur Speichergrenze: den Doppeltesten wieder weg
+            V = np.stack([k[0] for k in kand])
+            S = V @ V.T - 2 * np.eye(len(kand))
+            kand.pop(int(np.argmax(S.max(axis=1))))
+
+    def _lern_ende(self) -> None:
+        L, self._lern = self._lern, None
+        if L is None:
+            return
+        kand = L["kand"]
+        if len(kand) < LERN_ZIEL:
+            self.lern_ergebnis = {"ok": False, "t": time.time(), "n": len(kand),
+                                  "fehler": f"nur {len(kand)} brauchbare Bilder in {LERN_S:.0f} s, nötig {LERN_ZIEL}"}
+            log.info("Anlernen: nur %d Bilder, nichts angelegt", len(kand))
+            return
+        V = np.stack([k[0] for k in kand])
+        wahl = unaehnlichste(V, LERN_ZIEL)
+        name = self.naechster_name()
+        d = os.path.join(self.cfg.dir, name)
+        os.makedirs(d, exist_ok=True)
+        for i, j in enumerate(wahl):
+            v, al = kand[j]
+            np.save(os.path.join(d, f"{i:02d}.npy"), v)
+            ok, jpg = cv2.imencode(".jpg", al, [cv2.IMWRITE_JPEG_QUALITY, 90])
+            with open(os.path.join(d, f"{i:02d}.jpg"), "wb") as fh:
+                fh.write(jpg.tobytes())
+        # Ähnelt sie einem schon bekannten Namen? (Maximum über dessen Fotos, Mittel über die neuen)
+        aehnelt, sim = None, -1.0
+        for n, M in self.merkmale.items():
+            s = float(np.mean(np.max(V[wahl] @ M.T, axis=1)))
+            if s > sim:
+                aehnelt, sim = n, s
+        self.laden()
+        self.lern_ergebnis = {"ok": True, "t": time.time(), "name": name, "n": len(wahl), "kandidaten": len(kand),
+                              "aehnelt": aehnelt if sim >= self.cfg.match_sim else None,
+                              "sim": None if aehnelt is None else round(sim, 3)}
+        log.info("Anlernen: %s mit %d von %d Bildern angelegt%s", name, len(wahl), len(kand),
+                 f" (ähnelt {aehnelt} {sim:.2f})" if aehnelt is not None and sim >= self.cfg.match_sim else "")
+
+    def naechster_name(self) -> str:
+        d = self.cfg.dir
+        da = set(os.listdir(d)) if os.path.isdir(d) else set()
+        return next(f"Person{i}" for i in range(1, 10000) if f"Person{i}" not in da)
+
+    def umbenennen(self, alt: str, neu: str) -> None:
+        """Verzeichnis umbenennen; gibt es neu schon, kommen die Fotos dazu (zusammenlegen, höchstens MAX_FOTOS),
+        die Begrüßung von neu bleibt (hat neu keine, gilt die von alt)."""
+        if not NAME_RE.match(alt or "") or not NAME_RE.match(neu or ""):
+            raise GesichtFehler("Name ungültig (Buchstaben, Ziffern, _ und -, höchstens 32)")
+        da, dn = os.path.join(self.cfg.dir, alt), os.path.join(self.cfg.dir, neu)
+        if not os.path.isdir(da):
+            raise GesichtFehler(f"{alt} ist nicht angelernt")
+        if alt == neu:
+            return
+        if not os.path.isdir(dn):
+            os.rename(da, dn)
+            self.laden()
+            return
+        fa = sorted(f[:2] for f in os.listdir(da) if f.endswith(".npy"))
+        belegt = {f[:2] for f in os.listdir(dn) if f.endswith(".npy")}
+        if len(fa) + len(belegt) > MAX_FOTOS:
+            raise GesichtFehler(f"zusammen {len(fa) + len(belegt)} Fotos, höchstens {MAX_FOTOS} je Name")
+        frei = (f"{i:02d}" for i in range(100) if f"{i:02d}" not in belegt)
+        for nr in fa:
+            nn = next(frei)
+            for ext in (".npy", ".jpg"):
+                q = os.path.join(da, nr + ext)
+                if os.path.isfile(q):
+                    os.replace(q, os.path.join(dn, nn + ext))
+        g = os.path.join(da, GRUSS)
+        if os.path.isfile(g) and not os.path.isfile(os.path.join(dn, GRUSS)):
+            os.replace(g, os.path.join(dn, GRUSS))
+        for f in os.listdir(da):
+            os.remove(os.path.join(da, f))
+        os.rmdir(da)
+        self.laden()
 
     def loeschen(self, name: str, nr: str | None = None) -> bool:
         """Ein Foto (nr = NN) oder alle eines Namens löschen."""

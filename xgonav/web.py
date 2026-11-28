@@ -92,6 +92,9 @@ API = {"GET": ["/status", "/ws?nick=2|3 (WebSocket: Bilder, Bestätigung je Bild
                 "/stimme/hochladen?fertig=0|1 (Body: WAV mono int16, 16 kHz bzw. fertig 48 kHz ohne Filter, höchstens 1000 KB; reiht als feste bestätigte Probe ein)",
                 "/gesicht/hochladen?name=.. (Body: JPEG/PNG, höchstens 4 MB; größtes Gesicht anlernen, Antwort nr + Ausschnitt base64)",
                 "/gesicht/loeschen?name=..&nr=NN (ohne nr: alle Fotos des Namens)",
+                "/gesicht/anlernen (Modus anlernen: Person vor der Kamera, 30 s lang Bilder sammeln (verschiedene Posen), "
+                "die 20 unähnlichsten als PersonN; ?stop=1 bricht ab; Fortschritt in /status anlernen)",
+                "/gesicht/umbenennen?name=..&neu=.. (gibt es neu schon: Fotos zusammenlegen; Gedächtnis zieht mit)",
                 "/gesicht/gruss?name=..&emotion=..&sound=..&augen=.. (Begrüßung je Person; leer = [pet] greet_*, "
                 "- = keine, sound auch stimme:NN, augen = Farbe aus tools/eyes.py PALETTE)"]}
 
@@ -177,6 +180,8 @@ def serve(app: App, host: str, port: int, fps: int, render_cpus=None) -> Threadi
                 w = app.wlan
                 body["wlan"] = w.status() if w is not None else None
                 body["ortung"] = app.ortung.status() if app.ortung is not None else None
+                g = getattr(app, "gesichter", None)
+                body["anlernen"] = g.lern_info() if g is not None else None
                 body["start"] = START
                 body["tempo"] = app.robot.tempo   # Temporegler: Anteil für alle Fahrbefehle (Robot.drive)
                 body["pursuit"] = app.robot.pursuit   # Fahrmodus Pursuit (Schalter neben dem Temporegler)
@@ -287,11 +292,30 @@ def serve(app: App, host: str, port: int, fps: int, render_cpus=None) -> Threadi
                 except OSError as e:
                     return self._send(500, json.dumps({"error": f"Symlink nicht umstellbar: {e}"}).encode())
                 return self._send(200, json.dumps({"ok": True, "geladen": name}).encode())
-            if u.path in ("/gesicht/hochladen", "/gesicht/loeschen", "/gesicht/gruss"):
+            if u.path in ("/gesicht/hochladen", "/gesicht/loeschen", "/gesicht/gruss", "/gesicht/anlernen",
+                          "/gesicht/umbenennen"):
                 g = getattr(app, "gesichter", None)
                 if g is None or not g.ok:
                     return self._send(404, b'{"error":"Gesichtserkennung aus (Modelle fehlen oder Detektor aus)"}')
                 name = q.get("name", [""])[0]
+                if u.path == "/gesicht/anlernen":
+                    if q.get("stop", [""])[0]:
+                        g.lern_abbrechen()
+                        return self._send(200, b'{"ok":true}')
+                    try:
+                        app.set_mode("anlernen")
+                    except ModeNotAllowed as e:
+                        return self._send(409, json.dumps({"error": str(e)}).encode())
+                    return self._send(200, b'{"ok":true}')
+                if u.path == "/gesicht/umbenennen":
+                    neu = q.get("neu", [""])[0]
+                    try:
+                        app.gesicht_umbenennen(name, neu)
+                    except gesicht.GesichtFehler as e:
+                        return self._send(400, json.dumps({"error": str(e)}).encode())
+                    except OSError as e:
+                        return self._send(500, json.dumps({"error": f"nicht umbenennbar: {e}"}).encode())
+                    return self._send(200, json.dumps({"ok": True, "name": neu}).encode())
                 if u.path == "/gesicht/gruss":
                     if not g.gruss_setzen(name, q.get("emotion", [""])[0], q.get("sound", [""])[0],
                                           q.get("augen", [""])[0]):

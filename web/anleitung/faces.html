@@ -1117,6 +1117,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#learning-mode-mode-anlernen-since-2026-11-28-unit-tests-only" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Learning mode (mode anlernen, since 2026-11-28, unit tests only)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#limits" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1354,6 +1365,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#learning-mode-mode-anlernen-since-2026-11-28-unit-tests-only" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Learning mode (mode anlernen, since 2026-11-28, unit tests only)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#limits" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1469,7 +1491,7 @@
 </tr>
 <tr>
 <td>Learning</td>
-<td>once per uploaded photo, in the web thread</td>
+<td>once per uploaded photo, in the web thread; learning mode see below</td>
 </tr>
 </tbody>
 </table>
@@ -1507,6 +1529,53 @@
 <tr>
 <td>Advice</td>
 <td>10–20 photos, different light and angles, also from below; delete blurred or skewed crops</td>
+</tr>
+<tr>
+<td>Rename</td>
+<td>✎ per name → <code>api.php?a=gesicht_umbenennen</code> → <code>POST /gesicht/umbenennen?name=&amp;neu=</code>; existing name: photos merged (≤ 50), greeting of the target stays (else the moved one); memory entry follows (merged: encounters added, lower trust, latest last seen); tracks carrying the old name get the new one</td>
+</tr>
+</tbody>
+</table>
+<h2 id="learning-mode-mode-anlernen-since-2026-11-28-unit-tests-only">Learning mode (mode <code>anlernen</code>, since 2026-11-28, unit tests only)<a class="headerlink" href="#learning-mode-mode-anlernen-since-2026-11-28-unit-tests-only" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Start</td>
+<td>button <strong>Anlernen</strong> in the card → <code>api.php?a=gesicht_anlernen</code> → <code>POST /gesicht/anlernen</code> → <code>set_mode("anlernen")</code>; needs recognition on (models + detector); also lying (<code>LIEGEND_OK</code>)</td>
+</tr>
+<tr>
+<td>Behaviour</td>
+<td>stands still (<code>behaviors.Anlernen</code>), detector gets frames (<code>App.DET_MODES</code>); after the end <code>App._lern_fertig</code> returns to the mode before (follow/approach with its class), if not allowed any more: <code>idle</code>; any mode change cancels</td>
+</tr>
+<tr>
+<td>Collect</td>
+<td>detector thread after YOLO, ≤ <code>max_hz</code> (2/s): largest face ≥ <code>min_face_px</code> over all person boxes (<code>Gesichter.lern_bild</code>); dropped: cosine ≥ 0.97 to a candidate (near duplicate), &lt; 0.3 to the candidates' mean (other person)</td>
+</tr>
+<tr>
+<td>End</td>
+<td>always after the full 30 s (<code>LERN_S</code>, user 2026-11-28: different poses); <code>LERN_KAND</code> = 80 only bounds RAM (over it the most redundant candidate is dropped; at 2 Hz at most 60); cancel: <code>POST /gesicht/anlernen?stop=1</code></td>
+</tr>
+<tr>
+<td>Choose</td>
+<td>user 2026-11-28: at least 20, the most different: greedy farthest point (<code>gesicht.unaehnlichste</code>: start at the candidate closest to the mean, then the one with the smallest maximum similarity to those chosen); fewer than 20 → nothing stored</td>
+</tr>
+<tr>
+<td>Store</td>
+<td><code>PersonN</code> (lowest free N) as <code>00..19.npy</code> + <code>.jpg</code>, written once in the detector thread; result names the most similar known name ≥ <code>match_sim</code> (mean over the new photos of the per-name maximum)</td>
+</tr>
+<tr>
+<td>Status</td>
+<td><code>GET /status</code> → <code>anlernen</code>: running <code>{aktiv, n, ziel, max, rest_s, doppelt, fremd}</code>, else last result <code>{aktiv: false, ok, name, n, kandidaten, aehnelt, sim}</code> or <code>{ok: false, fehler}</code></td>
+</tr>
+<tr>
+<td>Cost on the CM4</td>
+<td>normal operation: one attribute check per detector run; while learning: YuNet + MobileFaceNet ≈ 130–145 ms per candidate at ≤ 2 Hz (≤ 60 × ≈ 8.4 s CPU in 30 s, YOLO rate drops meanwhile); end: ≤ 60 × 60 × 512 products + 20 × (2 KB + ~5 KB) writes once; candidates in RAM ≤ 80 × 39 KB</td>
 </tr>
 </tbody>
 </table>

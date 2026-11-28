@@ -119,6 +119,24 @@ class Gedaechtnis:
             e["vertrauen"] = v
             self.dirty = True
 
+    def umbenennen(self, alt: str, neu: str) -> None:
+        """Eintrag mitnehmen (Gesicht umbenannt). Kennt es neu schon (zusammengelegt): neu bleibt, Begegnungen addiert,
+        zuletzt/erstmals das spätere/frühere, Vertrauen das kleinere (nachtragend)."""
+        a = self.personen.pop(alt, None)
+        if a is None:
+            return
+        n = self.personen.get(neu)
+        if n is None:
+            self.personen[neu] = a
+        else:
+            n["begegnungen"] += a["begegnungen"]
+            n["vertrauen"] = min(n["vertrauen"], a["vertrauen"])
+            z = [x for x in (n["zuletzt"], a["zuletzt"]) if x is not None]
+            n["zuletzt"] = max(z) if z else None
+            e = [x for x in (n["erstmals"], a["erstmals"]) if x is not None]
+            n["erstmals"] = min(e) if e else None
+        self.dirty = True
+
     def info(self, jetzt: float) -> dict:
         return {n: {"vertrauen": round(e["vertrauen"], 2), "begegnungen": e["begegnungen"],
                     "zuletzt_vor_s": None if e["zuletzt"] is None else round(max(0.0, jetzt - e["zuletzt"]))}

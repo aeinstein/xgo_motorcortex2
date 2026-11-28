@@ -382,3 +382,180 @@ def test_echte_modelle_laden(tmp_path):
     assert v.shape == (512,) and abs(float(np.linalg.norm(v)) - 1.0) < 1e-4
     with pytest.raises(GesichtFehler):
         g.anlernen(np.full((300, 300, 3), 128, np.uint8), "leer")     # graues Bild: kein Gesicht
+
+
+# ---------------------------------------------------------------------------- Anlernmodus (Modus anlernen)
+def _lern_vektoren(n, seed=1, streu=0.25):
+    """n Merkmale derselben Person: Grundrichtung plus Streuung (paarweise < LERN_DOPPELT, zum Mittel > LERN_FREMD)."""
+    rng = np.random.default_rng(seed)
+    basis = np.zeros(16, np.float32)
+    basis[0] = 1.0
+    out = []
+    for _ in range(n):
+        v = basis + streu * rng.standard_normal(16).astype(np.float32)
+        out.append(v / np.linalg.norm(v))
+    return out
+
+
+def _lerner(tmp_path, vs):
+    it = iter(vs)
+    return fake(tmp_path, gesicht_fuer=lambda img: next(it), min_face_px=20)
+
+
+PERSON = [Detection((0, 0, 300, 600), "person", 0.9)]
+
+
+def test_unaehnlichste_waehlt_verschiedene():
+    from xgonav.gesicht import unaehnlichste
+    V = np.stack([einheit(1, 0, 0)] * 5 + [einheit(1, 0.05, 0)] * 3 + [einheit(0.6, 0.8, 0), einheit(0.6, 0, 0.8)])
+    w = unaehnlichste(V, 3)
+    assert 8 in w and 9 in w and len(w) == 3                      # die beiden abweichenden statt der Doppelten
+    assert unaehnlichste(V[:2], 3) == [0, 1]
+
+
+def test_anlernmodus_legt_person_an(tmp_path):
+    from xgonav import gesicht
+    vs = _lern_vektoren(40)
+    g = _lerner(tmp_path, vs)
+    img = np.full((300, 300, 3), 128, np.uint8)
+    g.lern_bild(img, PERSON)                                     # ohne lern_start: nichts
+    assert not g.merkmale and g.lern_info() is None
+    g.lern_start()
+    for i in range(40):
+        g.lern_bild(img, PERSON)
+        if i == 4:
+            assert g.lern_info()["n"] == 5 and g.lern_info()["aktiv"]
+    assert g.lernt                                               # 40 Bilder, aber erst nach LERN_S fertig
+    g._lern["t0"] -= gesicht.LERN_S
+    g.lern_bild(img, PERSON)
+    assert not g.lernt
+    e = g.lern_info()
+    assert e["ok"] and e["name"] == "Person1" and e["n"] == 20 and e["kandidaten"] == 40 and e["aehnelt"] is None
+    d = tmp_path / "gesichter" / "Person1"
+    assert len(list(d.glob("*.npy"))) == 20 and len(list(d.glob("*.jpg"))) == 20
+    assert g.merkmale["Person1"].shape == (20, 16)
+    # gewählt sind die unähnlichsten: kleinere größte Nachbarähnlichkeit als die ersten 20
+    M = g.merkmale["Person1"]
+    S = M @ M.T - 2 * np.eye(20)
+    V = np.stack(vs[:20])
+    S0 = V @ V.T - 2 * np.eye(20)
+    assert S.max(axis=1).mean() < S0.max(axis=1).mean()
+    # dieselbe Person noch einmal: Person2, ähnelt Person1
+    g._netz = (lambda it: (lambda img: next(it)))(iter(_lern_vektoren(40, seed=2)))
+    g.lern_start()
+    for _ in range(40):
+        g.lern_bild(img, PERSON)
+    g._lern["t0"] -= gesicht.LERN_S
+    g.lern_bild(img, PERSON)
+    e = g.lern_info()
+    assert e["name"] == "Person2" and e["aehnelt"] == "Person1" and e["sim"] >= g.cfg.match_sim
+
+
+def test_anlernmodus_verwirft_doppelte_und_fremde(tmp_path):
+    a = _lern_vektoren(3)
+    fremd = np.zeros(16, np.float32)
+    fremd[1] = 1.0
+    g = _lerner(tmp_path, [a[0], a[0], fremd, a[1], a[2]])
+    img = np.full((300, 300, 3), 128, np.uint8)
+    g.lern_start()
+    for _ in range(5):
+        g.lern_bild(img, PERSON)
+    i = g.lern_info()
+    assert i["n"] == 3 and i["doppelt"] == 1 and i["fremd"] == 1
+    g.lern_bild(img, [Detection((0, 0, 300, 600), "dog", 0.9)])   # keine Person: kein Bild, kein Merkmal
+    assert g.lern_info()["n"] == 3
+
+
+def test_anlernmodus_zu_wenige_und_abbrechen(tmp_path):
+    from xgonav import gesicht
+    g = _lerner(tmp_path, _lern_vektoren(40))
+    img = np.full((300, 300, 3), 128, np.uint8)
+    g.lern_start()
+    for _ in range(19):
+        g.lern_bild(img, PERSON)
+    g._lern["t0"] -= gesicht.LERN_S                               # Zeit um
+    g.lern_bild(img, PERSON)
+    e = g.lern_info()
+    assert not e["aktiv"] and not e["ok"] and "19" in e["fehler"] and not g.merkmale
+    assert not (tmp_path / "gesichter").exists() or not any((tmp_path / "gesichter").iterdir())
+    g.lern_start()
+    g.lern_bild(img, PERSON)
+    g.lern_abbrechen()
+    assert not g.lernt and g.lern_info()["fehler"] == "abgebrochen" and not g.merkmale
+    g.lern_abbrechen("nochmal")                                  # nichts mehr zu tun: Ergebnis bleibt
+    assert g.lern_info()["fehler"] == "abgebrochen"
+
+
+def test_umbenennen_und_zusammenlegen(tmp_path):
+    from xgonav.gedaechtnis import Gedaechtnis
+    vec = {"v": einheit(1, 0, 0)}
+    g = fake(tmp_path, gesicht_fuer=lambda img: vec["v"], min_face_px=20)
+    img = np.full((300, 300, 3), 128, np.uint8)
+    for _ in range(3):
+        g.anlernen(img, "Person1")
+    g.gruss_setzen("Person1", emotion="cute")
+    g.umbenennen("Person1", "anna")
+    assert "Person1" not in g.merkmale and g.merkmale["anna"].shape == (3, 3) and g.gruss("anna") == {"emotion": "cute"}
+    g.anlernen(img, "Person2")
+    g.anlernen(img, "Person2")
+    g.gruss_setzen("Person2", emotion="laugh")
+    g.umbenennen("Person2", "anna")                              # zusammenlegen: Fotos dazu, Begrüßung von anna bleibt
+    assert g.merkmale["anna"].shape == (5, 3) and g.gruss("anna") == {"emotion": "cute"}
+    assert sorted(p.name for p in (tmp_path / "gesichter" / "anna").glob("*.npy")) == [f"0{i}.npy" for i in range(5)]
+    assert not (tmp_path / "gesichter" / "Person2").exists()
+    with pytest.raises(GesichtFehler):
+        g.umbenennen("bob", "x")
+    with pytest.raises(GesichtFehler):
+        g.umbenennen("anna", "a/b")
+    assert g.naechster_name() == "Person1"
+    ged = Gedaechtnis("", PetCfg())
+    ged.begegnung("Person1")
+    ged.setze_vertrauen("Person1", 0.4)
+    ged.begegnung("anna")
+    ged.umbenennen("Person1", "anna")
+    assert "Person1" not in ged.personen and ged.personen["anna"]["begegnungen"] == 2
+    assert ged.personen["anna"]["vertrauen"] == 0.4
+    ged.umbenennen("Person1", "bob")                            # unbekannt: nichts
+    assert "bob" not in ged.personen
+
+
+def test_app_anlernen_und_zurueck(tmp_path):
+    from xgonav.app import App
+    from xgonav.robot import SimRobot
+    from xgonav.sim import SimFloorNet, SimWorld
+    cfg = Config.neutral()
+    cfg.output.web_port = 0
+    cfg.detector.enabled = False
+    robot = SimRobot(cfg.robot)
+    world = SimWorld(cfg.camera, robot, None, start=(1.0, 1.5, 0.0))
+    app = App(cfg, robot, world, imu=None, floor_net=SimFloorNet(world))
+    app.imu = None
+    from xgonav.app import ModeNotAllowed
+    with pytest.raises(ModeNotAllowed):
+        app.set_mode("anlernen")                                  # ohne Gesichtserkennung nicht
+    app.gesichter = g = _lerner(tmp_path, _lern_vektoren(40))
+    app.set_mode("pet")
+    app._apply_pending_mode()
+    app.set_mode("anlernen")
+    app._apply_pending_mode()
+    assert app.behavior.name == "anlernen" and g.lernt and app._lern_zurueck == ("pet", None)
+    app.set_mode("idle")                                         # Moduswechsel bricht ab
+    app._apply_pending_mode()
+    assert not g.lernt and g.lern_info()["fehler"].startswith("abgebrochen")
+    app.set_mode("anlernen")
+    app._apply_pending_mode()
+    assert app._lern_zurueck == ("idle", None)
+    app._lern_zurueck = ("pet", None)
+    g.lern_abbrechen()                                           # fertig: im nächsten Bild zurück in den Modus davor
+    app.run(duration=1.0)
+    assert app.mode == "pet"
+
+
+def test_anlernmodus_speichergrenze(tmp_path):
+    from xgonav import gesicht
+    g = _lerner(tmp_path, _lern_vektoren(gesicht.LERN_KAND + 5, streu=0.6))
+    img = np.full((300, 300, 3), 128, np.uint8)
+    g.lern_start()
+    for _ in range(gesicht.LERN_KAND + 5):
+        g.lern_bild(img, PERSON)
+    assert g.lernt and g.lern_info()["n"] <= gesicht.LERN_KAND

@@ -388,6 +388,14 @@ class DetectorWorker:
         now = time.monotonic()
         if hz > 0 and now - self._face_t < 1.0 / hz:
             return
+        if getattr(g, "lernt", False):     # Modus anlernen: Kandidaten sammeln statt prüfen
+            self._face_t = now
+            try:
+                g.lern_bild(bgr, dets)
+            except Exception:
+                log.exception("Anlernen fehlgeschlagen")
+                g.lern_abbrechen("fehlgeschlagen (Log)")
+            return
         todo = [d for d in dets if d.cls == "person" and not any(_iou(d.box, b) > 0.5 for b in named)]
         if not todo:
             return

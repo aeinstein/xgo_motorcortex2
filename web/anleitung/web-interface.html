@@ -1692,7 +1692,7 @@
 </tr>
 <tr>
 <td>Gesichter (collapsed, after Samples)</td>
-<td>learned faces of <code>pet</code> from <code>[gesicht] dir</code> (<a href="faces.html">faces.md</a>): per name the aligned crops (✕ per photo, ✕ per name with confirm) and the greeting (emotion + sound or voice sample + eye colour, default/none → <code>api.php?a=gesicht_gruss</code>); upload: name + photos, shrunk to ≤ 1024 px JPEG in the browser → <code>api.php?a=gesicht_hochladen</code>; list via <code>api.php?a=gesichter</code> only when opened or on Reload; open/closed in <code>localStorage</code> <code>xgonav.gesichter</code></td>
+<td>learned faces of <code>pet</code> from <code>[gesicht] dir</code> (<a href="faces.html">faces.md</a>): per name the aligned crops (✕ per photo, ✕ per name with confirm) and the greeting (emotion + sound or voice sample + eye colour, default/none → <code>api.php?a=gesicht_gruss</code>); upload: name + photos, shrunk to ≤ 1024 px JPEG in the browser → <code>api.php?a=gesicht_hochladen</code>; <strong>Anlernen</strong> → <code>api.php?a=gesicht_anlernen</code> (progress from the live status, Cancel), ✎ per name → <code>api.php?a=gesicht_umbenennen</code>; list via <code>api.php?a=gesichter</code> only when opened or on Reload; open/closed in <code>localStorage</code> <code>xgonav.gesichter</code></td>
 </tr>
 </tbody>
 </table>
@@ -2169,6 +2169,16 @@ works without xgonav.</p>
 <td>POST</td>
 <td><code>/gesicht/loeschen?name=..&amp;nr=NN</code></td>
 <td>delete one photo (without <code>nr</code>: all of the name); 404 missing</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/gesicht/anlernen</code></td>
+<td>mode <code>anlernen</code>: learn the person in front of the camera as <code>PersonN</code> (<a href="faces.html">faces.md</a>); <code>?stop=1</code> cancels; progress/result in <code>/status</code> → <code>anlernen</code>; 409 not allowed</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/gesicht/umbenennen?name=..&amp;neu=..</code></td>
+<td>rename a learned name; existing <code>neu</code>: merge photos (≤ 50), greeting of <code>neu</code> stays; memory entry and tracks follow; 400 bad/unknown name or too many photos</td>
 </tr>
 <tr>
 <td>POST</td>
